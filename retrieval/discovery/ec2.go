@@ -16,11 +16,11 @@ package discovery
 import (
 	"fmt"
 	"net"
-	"strings"
-	"time"
-  "net/http"
+	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -35,16 +35,17 @@ import (
 )
 
 const (
-	ec2Label           = model.MetaLabelPrefix + "ec2_"
-	ec2LabelAZ         = ec2Label + "availability_zone"
-	ec2LabelInstanceID = ec2Label + "instance_id"
-	ec2LabelPublicDNS  = ec2Label + "public_dns_name"
-	ec2LabelPublicIP   = ec2Label + "public_ip"
-	ec2LabelPrivateIP  = ec2Label + "private_ip"
-	ec2LabelSubnetID   = ec2Label + "subnet_id"
-	ec2LabelTag        = ec2Label + "tag_"
-	ec2LabelVPCID      = ec2Label + "vpc_id"
-	subnetSeparator    = ","
+	ec2Label              = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAZ            = ec2Label + "availability_zone"
+	ec2LabelInstanceID    = ec2Label + "instance_id"
+	ec2LabelInstanceState = ec2Label + "instance_state"
+	ec2LabelPublicDNS     = ec2Label + "public_dns_name"
+	ec2LabelPublicIP      = ec2Label + "public_ip"
+	ec2LabelPrivateIP     = ec2Label + "private_ip"
+	ec2LabelSubnetID      = ec2Label + "subnet_id"
+	ec2LabelTag           = ec2Label + "tag_"
+	ec2LabelVPCID         = ec2Label + "vpc_id"
+	subnetSeparator       = ","
 )
 
 // EC2Discovery periodically performs EC2-SD requests. It implements
@@ -62,22 +63,23 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 		creds = defaults.DefaultChainCredentials
 	}
 
-  var awsConfig = &aws.Config{
-			Region:      &conf.Region,
-			Credentials: creds,
+	var awsConfig = &aws.Config{
+		Region:      &conf.Region,
+		Credentials: creds,
 	}
 
-  // Adds HTTP proxy to aws config
-  if os.Getenv("HTTP_PROXY") != "" {
-    proxyUrl, err := url.Parse(os.Getenv("HTTP_PROXY")); if err != nil {
-      log.Error(err)
-    }
-    client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
-    awsConfig.HTTPClient = client
-  }
+	// Adds HTTP proxy to aws config
+	if os.Getenv("HTTP_PROXY") != "" {
+		proxyUrl, err := url.Parse(os.Getenv("HTTP_PROXY"))
+		if err != nil {
+			log.Error(err)
+		}
+		client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
+		awsConfig.HTTPClient = client
+	}
 
 	return &EC2Discovery{
-		aws: awsConfig,
+		aws:      awsConfig,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 	}
@@ -137,6 +139,7 @@ func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
 				}
 
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)

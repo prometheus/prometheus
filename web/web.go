@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
@@ -55,6 +56,7 @@ type Handler struct {
 	targetManager *retrieval.TargetManager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
+	context       context.Context
 	storage       local.Storage
 
 	apiV1 *api_v1.API
@@ -71,6 +73,7 @@ type Handler struct {
 
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
+	now            func() model.Time
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -96,6 +99,14 @@ type PrometheusVersion struct {
 
 // Options for the web Handler.
 type Options struct {
+	Context       context.Context
+	Storage       local.Storage
+	QueryEngine   *promql.Engine
+	TargetManager *retrieval.TargetManager
+	RuleManager   *rules.Manager
+	Version       *PrometheusVersion
+	Flags         map[string]string
+
 	ListenAddress        string
 	ExternalURL          *url.URL
 	RoutePrefix          string
@@ -108,15 +119,7 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(
-	st local.Storage,
-	qe *promql.Engine,
-	tm *retrieval.TargetManager,
-	rm *rules.Manager,
-	version *PrometheusVersion,
-	flags map[string]string,
-	o *Options,
-) *Handler {
+func New(o *Options) *Handler {
 	router := route.New()
 
 	h := &Handler{
@@ -125,16 +128,18 @@ func New(
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan chan error),
 		options:     o,
-		versionInfo: version,
+		versionInfo: o.Version,
 		birth:       time.Now(),
-		flagsMap:    flags,
+		flagsMap:    o.Flags,
 
-		targetManager: tm,
-		ruleManager:   rm,
-		queryEngine:   qe,
-		storage:       st,
+		context:       o.Context,
+		targetManager: o.TargetManager,
+		ruleManager:   o.RuleManager,
+		queryEngine:   o.QueryEngine,
+		storage:       o.Storage,
 
-		apiV1: api_v1.NewAPI(qe, st),
+		apiV1: api_v1.NewAPI(o.Context, o.QueryEngine, o.Storage),
+		now:   model.Now,
 	}
 
 	if o.RoutePrefix != "/" {
@@ -291,7 +296,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, string(text), "__console_"+name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -464,7 +469,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, text, name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)

@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -145,7 +146,7 @@ func TestMatches(t *testing.T) {
 			matchers: metric.LabelMatchers{
 				newMatcher(metric.Equal, "all", "const"),
 				newMatcher(metric.NotEqual, "label1", "test_0"),
-				newMatcher(metric.Equal, "not_existant", ""),
+				newMatcher(metric.Equal, "not_existent", ""),
 			},
 			expected: fingerprints[10:],
 		},
@@ -194,6 +195,7 @@ func TestMatches(t *testing.T) {
 
 	for _, mt := range matcherTests {
 		metrics, err := storage.MetricsForLabelMatchers(
+			context.Background(),
 			model.Earliest, model.Latest,
 			mt.matchers,
 		)
@@ -218,6 +220,7 @@ func TestMatches(t *testing.T) {
 		}
 		// Smoketest for from/through.
 		metrics, err = storage.MetricsForLabelMatchers(
+			context.Background(),
 			model.Earliest, -10000,
 			mt.matchers,
 		)
@@ -228,6 +231,7 @@ func TestMatches(t *testing.T) {
 			t.Error("expected no matches with 'through' older than any sample")
 		}
 		metrics, err = storage.MetricsForLabelMatchers(
+			context.Background(),
 			10000, model.Latest,
 			mt.matchers,
 		)
@@ -243,6 +247,7 @@ func TestMatches(t *testing.T) {
 			through model.Time = 75
 		)
 		metrics, err = storage.MetricsForLabelMatchers(
+			context.Background(),
 			from, through,
 			mt.matchers,
 		)
@@ -451,6 +456,7 @@ func BenchmarkLabelMatching(b *testing.B) {
 		benchLabelMatchingRes = []metric.Metric{}
 		for _, mt := range matcherTests {
 			benchLabelMatchingRes, err = s.MetricsForLabelMatchers(
+				context.Background(),
 				model.Earliest, model.Latest,
 				mt,
 			)
@@ -493,7 +499,7 @@ func TestRetentionCutoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error creating label matcher: %s", err)
 	}
-	its, err := s.QueryRange(insertStart, now, lm)
+	its, err := s.QueryRange(context.Background(), insertStart, now, lm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +587,7 @@ func TestDropMetrics(t *testing.T) {
 
 	fpList := model.Fingerprints{m1.FastFingerprint(), m2.FastFingerprint(), fpToBeArchived}
 
-	n, err := s.DropMetricsForLabelMatchers(lm1)
+	n, err := s.DropMetricsForLabelMatchers(context.Background(), lm1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,7 +620,7 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("chunk file does not exist for fp=%v", fpList[2])
 	}
 
-	n, err = s.DropMetricsForLabelMatchers(lmAll)
+	n, err = s.DropMetricsForLabelMatchers(context.Background(), lmAll)
 	if err != nil {
 		t.Fatal(err)
 	}

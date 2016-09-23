@@ -5,5 +5,9 @@ language: go
 go:
 - 1.6.3
 
+go_import_path: github.com/prometheus/prometheus
+
 script:
 - make check_license style test
+
+

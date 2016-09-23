@@ -1366,9 +1366,9 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "expected type vector in call to function \"floor\", got scalar",
 	}, {
-		input:  "non_existant_function_far_bar()",
+		input:  "non_existent_function_far_bar()",
 		fail:   true,
-		errMsg: "unknown function with name \"non_existant_function_far_bar\"",
+		errMsg: "unknown function with name \"non_existent_function_far_bar\"",
 	}, {
 		input:  "rate(some_metric)",
 		fail:   true,

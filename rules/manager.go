@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -105,7 +106,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	eval(model.Time, *promql.Engine, string) (model.Vector, error)
+	eval(context.Context, model.Time, *promql.Engine, string) (model.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -256,7 +257,7 @@ func (g *Group) eval() {
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.eval(now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
+			vector, err := rule.eval(g.opts.Context, now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -341,6 +342,7 @@ type Manager struct {
 type ManagerOptions struct {
 	ExternalURL    *url.URL
 	QueryEngine    *promql.Engine
+	Context        context.Context
 	Notifier       *notifier.Notifier
 	SampleAppender storage.SampleAppender
 }
@@ -363,6 +365,9 @@ func (m *Manager) Run() {
 
 // Stop the rule manager's rule evaluation cycles.
 func (m *Manager) Stop() {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
 	log.Info("Stopping rule manager...")
 
 	for _, eg := range m.groups {

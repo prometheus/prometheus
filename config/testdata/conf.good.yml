@@ -142,3 +142,15 @@ scrape_configs:
       - localhost
       paths:
       - /monitoring
+
+- job_name: 0123service-xxx
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+      - localhost:9090
+
+- job_name: 測試
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+      - localhost:9090

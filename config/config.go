@@ -28,7 +28,6 @@ import (
 )
 
 var (
-	patJobName    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
@@ -133,6 +132,13 @@ var (
 		RetryInterval:  model.Duration(1 * time.Second),
 	}
 
+	// DefaultGCESDConfig is the default EC2 SD configuration.
+	DefaultGCESDConfig = GCESDConfig{
+		Port:            80,
+		TagSeparator:    ",",
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultEC2SDConfig is the default EC2 SD configuration.
 	DefaultEC2SDConfig = EC2SDConfig{
 		Port:            80,
@@ -143,6 +149,11 @@ var (
 	DefaultAzureSDConfig = AzureSDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(5 * time.Minute),
+	}
+
+	// DefaultRemoteWriteConfig is the default remote write configuration.
+	DefaultRemoteWriteConfig = RemoteWriteConfig{
+		RemoteTimeout: model.Duration(30 * time.Second),
 	}
 )
 
@@ -180,6 +191,8 @@ type Config struct {
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+
+	RemoteWriteConfig []RemoteWriteConfig `yaml:"remote_write,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -429,6 +442,8 @@ type ScrapeConfig struct {
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
+	// List of GCE service discovery configurations.
+	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
@@ -454,8 +469,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := checkOverflow(c.XXX, "scrape_config"); err != nil {
 		return err
 	}
-	if !patJobName.MatchString(c.JobName) {
-		return fmt.Errorf("%q is not a valid job name", c.JobName)
+	if len(c.JobName) == 0 {
+		return fmt.Errorf("job_name is empty")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
@@ -846,6 +861,48 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	return nil
 }
 
+// GCESDConfig is the configuration for GCE based service discovery.
+type GCESDConfig struct {
+	// Project: The Google Cloud Project ID
+	Project string `yaml:"project"`
+
+	// Zone: The zone of the scrape targets.
+	// If you need to configure multiple zones use multiple gce_sd_configs
+	Zone string `yaml:"zone"`
+
+	// Filter: Can be used optionally to filter the instance list by other criteria.
+	// Syntax of this filter string is described here in the filter query parameter section:
+	// https://cloud.google.com/compute/docs/reference/latest/instances/list
+	Filter string `yaml:"filter,omitempty"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+	TagSeparator    string         `yaml:"tag_separator,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultGCESDConfig
+	type plain GCESDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+		return err
+	}
+	if c.Project == "" {
+		return fmt.Errorf("GCE SD configuration requires a project")
+	}
+	if c.Zone == "" {
+		return fmt.Errorf("GCE SD configuration requires a zone")
+	}
+	return nil
+}
+
 // EC2SDConfig is the configuration for EC2 based service discovery.
 type EC2SDConfig struct {
 	Region          string         `yaml:"region"`
@@ -1014,4 +1071,29 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 		return re.original, nil
 	}
 	return nil, nil
+}
+
+// RemoteWriteConfig is the configuration for remote storage.
+type RemoteWriteConfig struct {
+	URL           URL            `yaml:"url,omitempty"`
+	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
+	BasicAuth     *BasicAuth     `yaml:"basic_auth,omitempty"`
+	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
+	ProxyURL      URL            `yaml:"proxy_url,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultRemoteWriteConfig
+	type plain RemoteWriteConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "remote_write"); err != nil {
+		return err
+	}
+	return nil
 }

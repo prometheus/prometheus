@@ -108,7 +108,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, s := range samples[len(samples)/2:] {
 		m.Append(s)
 	}
-	go m.Run()
+	m.Start()
 	defer m.Stop()
 
 	c.waitForExpectedSamples(t)
@@ -141,7 +141,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	for _, s := range samples {
 		m.Append(s)
 	}
-	go m.Run()
+	m.Start()
 	defer m.Stop()
 
 	c.waitForExpectedSamples(t)
@@ -152,8 +152,8 @@ func TestSampleDeliveryOrder(t *testing.T) {
 // the `numCalls` property will contain a count of how many times Store() was
 // called.
 type TestBlockingStorageClient struct {
-	block    chan bool
 	numCalls uint64
+	block    chan bool
 }
 
 func NewTestBlockedStorageClient() *TestBlockingStorageClient {
@@ -181,6 +181,14 @@ func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
 }
 
+func (t *StorageQueueManager) queueLen() int {
+	queueLength := 0
+	for _, shard := range t.shards {
+		queueLength += len(shard)
+	}
+	return queueLength
+}
+
 func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	// Our goal is to fully empty the queue:
 	// `MaxSamplesPerSend*Shards` samples should be consumed by the
@@ -204,7 +212,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	c := NewTestBlockedStorageClient()
 	m := NewStorageQueueManager(c, &cfg)
 
-	go m.Run()
+	m.Start()
 
 	defer func() {
 		c.unlock()

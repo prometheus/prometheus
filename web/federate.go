@@ -15,10 +15,12 @@ package web
 
 import (
 	"net/http"
+	"sort"
 
 	"github.com/golang/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
@@ -42,35 +44,56 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var (
-		minTimestamp = model.Now().Add(-promql.StalenessDelta)
+		minTimestamp = h.now().Add(-promql.StalenessDelta)
 		format       = expfmt.Negotiate(req.Header)
 		enc          = expfmt.NewEncoder(w, format)
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	protMetric := &dto.Metric{
-		Label:   []*dto.LabelPair{},
-		Untyped: &dto.Untyped{},
-	}
-	protMetricFam := &dto.MetricFamily{
-		Metric: []*dto.Metric{protMetric},
-		Type:   dto.MetricType_UNTYPED.Enum(),
-	}
-
-	vector, err := h.storage.LastSampleForLabelMatchers(minTimestamp, matcherSets...)
+	vector, err := h.storage.LastSampleForLabelMatchers(h.context, minTimestamp, matcherSets...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	for _, s := range vector {
-		globalUsed := map[model.LabelName]struct{}{}
+	sort.Sort(byName(vector))
 
-		// Reset label slice.
-		protMetric.Label = protMetric.Label[:0]
+	var (
+		lastMetricName model.LabelValue
+		protMetricFam  *dto.MetricFamily
+	)
+	for _, s := range vector {
+		nameSeen := false
+		globalUsed := map[model.LabelName]struct{}{}
+		protMetric := &dto.Metric{
+			Untyped: &dto.Untyped{},
+		}
 
 		for ln, lv := range s.Metric {
+			if lv == "" {
+				// No value means unset. Never consider those labels.
+				// This is also important to protect against nameless metrics.
+				continue
+			}
 			if ln == model.MetricNameLabel {
-				protMetricFam.Name = proto.String(string(lv))
+				nameSeen = true
+				if lv == lastMetricName {
+					// We already have the name in the current MetricFamily,
+					// and we ignore nameless metrics.
+					continue
+				}
+				// Need to start a new MetricFamily. Ship off the old one (if any) before
+				// creating the new one.
+				if protMetricFam != nil {
+					if err := enc.Encode(protMetricFam); err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+				}
+				protMetricFam = &dto.MetricFamily{
+					Type: dto.MetricType_UNTYPED.Enum(),
+					Name: proto.String(string(lv)),
+				}
+				lastMetricName = lv
 				continue
 			}
 			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
@@ -81,7 +104,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				globalUsed[ln] = struct{}{}
 			}
 		}
-
+		if !nameSeen {
+			log.With("metric", s.Metric).Warn("Ignoring nameless metric during federation.")
+			continue
+		}
 		// Attach global labels if they do not exist yet.
 		for ln, lv := range h.externalLabels {
 			if _, ok := globalUsed[ln]; !ok {
@@ -95,9 +121,24 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		protMetric.TimestampMs = proto.Int64(int64(s.Timestamp))
 		protMetric.Untyped.Value = proto.Float64(float64(s.Value))
 
+		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
+	}
+	// Still have to ship off the last MetricFamily, if any.
+	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
 		}
 	}
+}
+
+// byName makes a model.Vector sortable by metric name.
+type byName model.Vector
+
+func (vec byName) Len() int      { return len(vec) }
+func (vec byName) Swap(i, j int) { vec[i], vec[j] = vec[j], vec[i] }
+
+func (vec byName) Less(i, j int) bool {
+	ni := vec[i].Metric[model.MetricNameLabel]
+	nj := vec[j].Metric[model.MetricNameLabel]
+	return ni < nj
 }
