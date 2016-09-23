@@ -56,7 +56,7 @@ func ParseStmts(input string) (Statements, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = p.typecheck(stmts)
+
 	return stmts, err
 }
 
@@ -68,7 +68,7 @@ func ParseExpr(input string) (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = p.typecheck(expr)
+
 	return expr, err
 }
 
@@ -126,7 +126,12 @@ func (p *parser) parseStmts() (stmts Statements, err error) {
 		if p.peek().typ == itemComment {
 			continue
 		}
-		stmts = append(stmts, p.stmt())
+		stmt := p.stmt()
+		stmts = append(stmts, stmt)
+
+		if err := p.typecheck(stmt); err != nil {
+			return nil, err
+		}
 	}
 	return
 }
@@ -143,6 +148,10 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}
 		expr = p.expr()
+
+		if err := p.typecheck(expr); err != nil {
+			return nil, err
+		}
 	}
 
 	if expr == nil {
