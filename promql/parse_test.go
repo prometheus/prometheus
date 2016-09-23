@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -1516,6 +1517,7 @@ var testStatement = []struct {
 	input    string
 	expected Statements
 	fail     bool
+	errMsg   string
 }{
 	{
 		// Test a file-like input.
@@ -1723,6 +1725,28 @@ var testStatement = []struct {
 		input: `M=-=-0-0`,
 		fail:  true,
 	},
+	{
+		input: `ALERT InvalidAlert
+			  IF 0 != bool 1 # typecheck would fail here
+			  LABELS { severity = "page" }
+			  ANNOTATIONS {
+			    summary = "testalert"
+			  }
+
+			# A simple test alerting rule.
+			ALERT GlobalRequestRateLow IF(dc:http_request:rate5m < 10000) FOR 5
+			  LABELS {
+			    service = "testservice"
+			    # ... more fields here ...
+			  }
+			  ANNOTATIONS {
+			    summary = "Global request rate low"
+			    description = "The global request rate is low"
+			  }
+    `,
+		fail:   true,
+		errMsg: (&ParseErr{6, 10, errors.New("")}).Error(),
+	},
 }
 
 func TestParseStatements(t *testing.T) {
@@ -1741,6 +1765,10 @@ func TestParseStatements(t *testing.T) {
 			t.Fatalf("could not parse: %s", err)
 		}
 		if test.fail && err != nil {
+			if !strings.Contains(err.Error(), test.errMsg) {
+				t.Errorf("unexpected error on input '%s'", test.input)
+				t.Fatalf("expected error to contain %q but got %q", test.errMsg, err)
+			}
 			continue
 		}
 
