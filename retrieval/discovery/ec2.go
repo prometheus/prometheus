@@ -18,6 +18,9 @@ import (
 	"net"
 	"strings"
 	"time"
+  "net/http"
+	"net/url"
+	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -58,11 +61,23 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = defaults.DefaultChainCredentials
 	}
-	return &EC2Discovery{
-		aws: &aws.Config{
+
+  var awsConfig = &aws.Config{
 			Region:      &conf.Region,
 			Credentials: creds,
-		},
+	}
+
+  // Adds HTTP proxy to aws config
+  if os.Getenv("HTTP_PROXY") != "" {
+    proxyUrl, err := url.Parse(os.Getenv("HTTP_PROXY")); if err != nil {
+      log.Error(err)
+    }
+    client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
+    awsConfig.HTTPClient = client
+  }
+
+	return &EC2Discovery{
+		aws: awsConfig,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 	}
