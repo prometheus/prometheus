@@ -107,7 +107,7 @@ func (hs *headsScanner) scan() bool {
 		firstTime        int64
 		lastTime         int64
 		encoding         byte
-		ch               chunk
+		ch               Chunk
 		lastTimeHead     model.Time
 	)
 	if seriesFlags, hs.err = hs.r.ReadByte(); hs.err != nil {
@@ -146,7 +146,7 @@ func (hs *headsScanner) scan() bool {
 	if numChunkDescs, hs.err = binary.ReadVarint(hs.r); hs.err != nil {
 		return false
 	}
-	chunkDescs := make([]*chunkDesc, numChunkDescs)
+	chunkDescs := make([]*ChunkDesc, numChunkDescs)
 	if hs.version == headsFormatLegacyVersion {
 		if headChunkPersisted {
 			persistWatermark = numChunkDescs
@@ -163,7 +163,7 @@ func (hs *headsScanner) scan() bool {
 			if lastTime, hs.err = binary.ReadVarint(hs.r); hs.err != nil {
 				return false
 			}
-			chunkDescs[i] = &chunkDesc{
+			chunkDescs[i] = &ChunkDesc{
 				chunkFirstTime: model.Time(firstTime),
 				chunkLastTime:  model.Time(lastTime),
 			}
@@ -176,13 +176,13 @@ func (hs *headsScanner) scan() bool {
 			if encoding, hs.err = hs.r.ReadByte(); hs.err != nil {
 				return false
 			}
-			if ch, hs.err = newChunkForEncoding(chunkEncoding(encoding)); hs.err != nil {
+			if ch, hs.err = NewChunkForEncoding(ChunkEncoding(encoding)); hs.err != nil {
 				return false
 			}
-			if hs.err = ch.unmarshal(hs.r); hs.err != nil {
+			if hs.err = ch.Unmarshal(hs.r); hs.err != nil {
 				return false
 			}
-			cd := newChunkDesc(ch, ch.firstTime())
+			cd := NewChunkDesc(ch, ch.FirstTime())
 			if i < numChunkDescs-1 {
 				// This is NOT the head chunk. So it's a chunk
 				// to be persisted, and we need to populate lastTime.

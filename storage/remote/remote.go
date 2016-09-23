@@ -89,7 +89,7 @@ type Options struct {
 	GraphitePrefix          string
 }
 
-// Run starts the background processing of the storage queues.
+// Start starts the background processing of the storage queues.
 func (s *Storage) Start() {
 	for _, q := range s.queues {
 		q.Start()

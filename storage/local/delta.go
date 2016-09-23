@@ -73,7 +73,7 @@ func newDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *deltaEncod
 }
 
 // add implements chunk.
-func (c deltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
+func (c deltaEncodedChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	// TODO(beorn7): Since we return &c, this method might cause an unnecessary allocation.
 	if c.len() == 0 {
 		c = c[:deltaHeaderBytes]
@@ -174,23 +174,23 @@ func (c deltaEncodedChunk) add(s model.SamplePair) ([]chunk, error) {
 			return nil, fmt.Errorf("invalid number of bytes for floating point delta: %d", vb)
 		}
 	}
-	return []chunk{&c}, nil
+	return []Chunk{&c}, nil
 }
 
 // clone implements chunk.
-func (c deltaEncodedChunk) clone() chunk {
+func (c deltaEncodedChunk) Clone() Chunk {
 	clone := make(deltaEncodedChunk, len(c), cap(c))
 	copy(clone, c)
 	return &clone
 }
 
 // firstTime implements chunk.
-func (c deltaEncodedChunk) firstTime() model.Time {
+func (c deltaEncodedChunk) FirstTime() model.Time {
 	return c.baseTime()
 }
 
-// newIterator implements chunk.
-func (c *deltaEncodedChunk) newIterator() chunkIterator {
+// NewIterator implements chunk.
+func (c *deltaEncodedChunk) NewIterator() ChunkIterator {
 	return newIndexAccessingChunkIterator(c.len(), &deltaEncodedIndexAccessor{
 		c:      *c,
 		baseT:  c.baseTime(),
@@ -202,7 +202,7 @@ func (c *deltaEncodedChunk) newIterator() chunkIterator {
 }
 
 // marshal implements chunk.
-func (c deltaEncodedChunk) marshal(w io.Writer) error {
+func (c deltaEncodedChunk) Marshal(w io.Writer) error {
 	if len(c) > math.MaxUint16 {
 		panic("chunk buffer length would overflow a 16 bit uint.")
 	}
@@ -218,8 +218,8 @@ func (c deltaEncodedChunk) marshal(w io.Writer) error {
 	return nil
 }
 
-// marshalToBuf implements chunk.
-func (c deltaEncodedChunk) marshalToBuf(buf []byte) error {
+// MarshalToBuf implements chunk.
+func (c deltaEncodedChunk) MarshalToBuf(buf []byte) error {
 	if len(c) > math.MaxUint16 {
 		panic("chunk buffer length would overflow a 16 bit uint")
 	}
@@ -233,7 +233,7 @@ func (c deltaEncodedChunk) marshalToBuf(buf []byte) error {
 }
 
 // unmarshal implements chunk.
-func (c *deltaEncodedChunk) unmarshal(r io.Reader) error {
+func (c *deltaEncodedChunk) Unmarshal(r io.Reader) error {
 	*c = (*c)[:cap(*c)]
 	if _, err := io.ReadFull(r, *c); err != nil {
 		return err
@@ -250,7 +250,7 @@ func (c *deltaEncodedChunk) unmarshal(r io.Reader) error {
 }
 
 // unmarshalFromBuf implements chunk.
-func (c *deltaEncodedChunk) unmarshalFromBuf(buf []byte) error {
+func (c *deltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 	*c = (*c)[:cap(*c)]
 	copy(*c, buf)
 	l := binary.LittleEndian.Uint16((*c)[deltaHeaderBufLenOffset:])
@@ -265,7 +265,7 @@ func (c *deltaEncodedChunk) unmarshalFromBuf(buf []byte) error {
 }
 
 // encoding implements chunk.
-func (c deltaEncodedChunk) encoding() chunkEncoding { return delta }
+func (c deltaEncodedChunk) Encoding() ChunkEncoding { return Delta }
 
 func (c deltaEncodedChunk) timeBytes() deltaBytes {
 	return deltaBytes(c[deltaHeaderTimeBytesOffset])
