@@ -77,21 +77,11 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		return nil, err
 	}
 	cd := &Discovery{
-		client:          client,
-		clientConf:      clientConf,
-		tagSeparator:    conf.TagSeparator,
-		watchedServices: conf.Services,
-	}
-	// If the datacenter isn't set in the clientConf, let's get it from the local Consul agent
-	// (Consul default is to use local node's datacenter if one isn't given for a query).
-	if clientConf.Datacenter == "" {
-		info, err := client.Agent().Self()
-		if err != nil {
-			return nil, err
-		}
-		cd.clientDatacenter = info["Config"]["Datacenter"].(string)
-	} else {
-		cd.clientDatacenter = clientConf.Datacenter
+		client:           client,
+		clientConf:       clientConf,
+		tagSeparator:     conf.TagSeparator,
+		watchedServices:  conf.Services,
+		clientDatacenter: clientConf.Datacenter,
 	}
 	return cd, nil
 }
@@ -143,6 +133,18 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			continue
 		}
 		lastIndex = meta.LastIndex
+
+		// If the datacenter was not set from clientConf, let's get it from the local Consul agent
+		// (Consul default is to use local node's datacenter if one isn't given for a query).
+		if cd.clientDatacenter == "" {
+			info, err := cd.client.Agent().Self()
+			if err != nil {
+				log.Errorf("Error retrieving datacenter name: %s", err)
+				time.Sleep(retryInterval)
+				continue
+			}
+			cd.clientDatacenter = info["Config"]["Datacenter"].(string)
+		}
 
 		// Check for new services.
 		for name := range srvs {
