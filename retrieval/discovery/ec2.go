@@ -18,7 +18,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -69,8 +68,8 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 	}
 
 	// Adds HTTP proxy to aws config
-	if os.Getenv("HTTP_PROXY") != "" {
-		proxyUrl, err := url.Parse(os.Getenv("HTTP_PROXY"))
+	if conf.Proxy != "" {
+		proxyUrl, err := url.Parse(conf.Proxy)
 		if err != nil {
 			log.Error(err)
 		}
