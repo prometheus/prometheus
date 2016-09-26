@@ -69,7 +69,7 @@ func TestMatches(t *testing.T) {
 			t.Fatal("could not retrieve series for fp", fp)
 		}
 		storage.fpLocker.Lock(fp)
-		storage.persistence.archiveMetric(fp, s.metric, s.FirstTime(), s.lastTime)
+		storage.persistence.archiveMetric(fp, s.metric, s.firstTime(), s.lastTime)
 		storage.fpLocker.Unlock(fp)
 	}
 
@@ -1276,7 +1276,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunk.Encoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.persistence.archiveMetric(fp, series.metric, series.FirstTime(), lastTime)
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
 	archived, _, _ := s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
@@ -1317,7 +1317,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunk.Encoding) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.persistence.archiveMetric(fp, series.metric, series.FirstTime(), lastTime)
+	s.persistence.archiveMetric(fp, series.metric, series.firstTime(), lastTime)
 	archived, _, _ = s.persistence.hasArchivedMetric(fp)
 	if !archived {
 		t.Fatal("not archived")
