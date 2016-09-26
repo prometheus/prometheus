@@ -18,9 +18,8 @@ import (
 	"net/http"
 	"time"
 	"io/ioutil"
-	"encoding/json"
 	"crypto/tls"
-
+	"encoding/json"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -62,6 +61,18 @@ func init() {
 	prometheus.MustRegister(ambariSDScrapeDuration)
 }
 
+type AmbariCluster struct {
+	Href string `json:"href"`
+	Items []struct {
+		Href string `json:"href"`
+		Clusters struct {
+			     ClusterName string `json:"cluster_name"`
+			     Version string `json:"version"`
+		     } `json:"Clusters"`
+	} `json:"items"`
+}
+
+
 // AmbariDiscovery periodically performs Ambari-SD requests. It implements
 // the TargetProvider interface.
 type AmbariDiscovery struct {
@@ -75,12 +86,22 @@ func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
 		cfg:      conf,
 		interval: time.Duration(conf.RefreshInterval),
 	}
-	_, err := ad.makeAmbariRequest("api/v1/clusters") //To test API connection
-	return ad, err
+	resp, err := ad.makeAmbariRequest("api/v1/clusters") //To test API connection
+	clusters := new(AmbariCluster)
+	if err = json.Unmarshal(resp, &clusters); err != nil {
+		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
+	}
+	for _,element := range clusters.Items {
+		if element.Clusters.ClusterName == conf.Cluster{
+			return ad, nil
+		}
+	}
+	return nil, fmt.Errorf("error comminicating with Ambari API. Invalid cluster defined in config: %s", conf.Cluster)
+
 
 }
 
-func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) (interface {}, error) {
+func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) ([]uint8, error) {
 	var tr *http.Transport
 	if ad.cfg.ValidateSSL != true {
 		tr = &http.Transport{
@@ -91,7 +112,7 @@ func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) (interface {}, 
 		}
 	}
 	client := &http.Client{Transport: tr}
-	ambariUrl := fmt.Sprintf("%s://%s:%d/%s", ad.cfg.Proto, ad.cfg.Host, ad.cfg.Port, apiendpoint)
+	ambariUrl := fmt.Sprintf("%s://%s:%d/%s", ad.cfg.Proto, ad.cfg.Host, ad.cfg.AmbariPort, apiendpoint)
 	req, err := http.NewRequest("GET", ambariUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error communicating with ambari API: %s", err)
@@ -103,16 +124,9 @@ func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) (interface {}, 
 	}
 	bodyText, err := ioutil.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("error comminicating with Ambari API. Status code was: %d", resp.Status)
+		return nil, fmt.Errorf("error comminicating with Ambari API. Status code was: %s", resp.Status)
 	}
-
-	var data interface{}
-	err = json.Unmarshal(bodyText, &data)
-	if err != nil {
-		return nil, fmt.Errorf("Ambari did not return a valid Json response: %s", err)
-	}
-	log.Info(data)
-	return data, err
+	return bodyText, err
 }
 
 // Run implements the TargetProvider interface.
