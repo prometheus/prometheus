@@ -288,7 +288,7 @@ func (s *memorySeries) maybeCloseHeadChunk() bool {
 func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 	lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
 	if lenToKeep < len(s.chunkDescs) {
-		s.savedFirstTime = s.FirstTime()
+		s.savedFirstTime = s.firstTime()
 		lenEvicted := len(s.chunkDescs) - lenToKeep
 		s.chunkDescsOffset += lenEvicted
 		s.persistWatermark -= lenEvicted
@@ -514,7 +514,7 @@ func (s *memorySeries) head() *chunk.Desc {
 // firstTime returns the timestamp of the first sample in the series.
 //
 // The caller must have locked the fingerprint of the memorySeries.
-func (s *memorySeries) FirstTime() model.Time {
+func (s *memorySeries) firstTime() model.Time {
 	if s.chunkDescsOffset == 0 && len(s.chunkDescs) > 0 {
 		return s.chunkDescs[0].FirstTime()
 	}

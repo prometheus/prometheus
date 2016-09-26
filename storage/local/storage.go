@@ -657,7 +657,7 @@ func (s *MemorySeriesStorage) metricForRange(
 ) (model.Metric, *memorySeries, bool) {
 	series, ok := s.fpToSeries.get(fp)
 	if ok {
-		if series.lastTime.Before(from) || series.FirstTime().After(through) {
+		if series.lastTime.Before(from) || series.firstTime().After(through) {
 			return nil, nil, false
 		}
 		return series.metric, series, true
@@ -1264,7 +1264,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 	if iOldestNotEvicted == -1 && model.Now().Sub(series.lastTime) > headChunkTimeout {
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
-		s.persistence.archiveMetric(fp, series.metric, series.FirstTime(), series.lastTime)
+		s.persistence.archiveMetric(fp, series.metric, series.firstTime(), series.lastTime)
 		s.seriesOps.WithLabelValues(archive).Inc()
 		oldWatermark := atomic.LoadInt64((*int64)(&s.archiveHighWatermark))
 		if oldWatermark < int64(series.lastTime) {
@@ -1325,7 +1325,7 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 		chunks[i] = cd.C
 	}
 
-	if !series.FirstTime().Before(beforeTime) {
+	if !series.firstTime().Before(beforeTime) {
 		// Oldest sample not old enough, just append chunks, if any.
 		if len(cds) == 0 {
 			return false
