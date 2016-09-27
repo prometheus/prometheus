@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"crypto/tls"
 	"encoding/json"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -165,6 +166,15 @@ type AmbariDiscovery struct {
 	interval time.Duration
 }
 
+func appendHostnameIfMissing(slice []string, i string) []string {
+	for _, ele := range slice {
+		if ele == i {
+			return slice
+		}
+	}
+	return append(slice, i)
+}
+
 // NewAmbariDiscovery returns a new AmbariDiscovery which periodically refreshes its targets.
 func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
 	ad := &AmbariDiscovery{
@@ -303,6 +313,47 @@ func (ad *AmbariDiscovery) refresh() (tg *config.TargetGroup, err error) {
 				HostName:    inst.Hosts.HostName,
 			}
 			collectedHosts = append(collectedHosts, ch)
+		}
+
+	} else {
+		rootHostComponents, err := ad.getRootHostComponents()
+		if err != nil {
+			return tg, fmt.Errorf("error retrieving scrape targets from ambari: %s", err)
+		}
+		hostComponents, nil := ad.getHostComponents()
+		if err != nil {
+			return tg, fmt.Errorf("error retrieving scrape targets from ambari: %s", err)
+		}
+		var filteredHostnames []string
+		for _, filter := range ad.cfg.Services {
+			for _, rhc := range rootHostComponents.Items[0].Components {
+				if strings.ToLower(rhc.RootServiceComponents.ComponentName) == filter {
+					for _, hc := range rhc.HostComponents {
+						filteredHostnames = appendHostnameIfMissing(filteredHostnames,
+							hc.RootServiceHostComponents.HostName)
+					}
+				}
+			}
+			for _, hci := range hostComponents.Items {
+				if strings.ToLower(hci.ServiceComponentInfo.ComponentName) == filter {
+					for _, hc := range  hci.HostComponents {
+						filteredHostnames = appendHostnameIfMissing(filteredHostnames,
+							hc.HostRoles.HostName)
+					}
+				}
+			}
+		}
+		for _, hname := range filteredHostnames {
+			for _, inst := range hosts.Items {
+				if inst.Hosts.HostName == hname {
+					ch := CollectedHost{
+						ClusterName: inst.Hosts.ClusterName,
+						IP:             inst.Hosts.IP,
+						HostName:    inst.Hosts.HostName,
+					}
+					collectedHosts = append(collectedHosts, ch)
+				}
+			}
 		}
 
 	}
