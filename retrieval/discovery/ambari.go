@@ -156,8 +156,9 @@ type CollectedHost struct {
 // AmbariDiscovery periodically performs Ambari-SD requests. It implements
 // the TargetProvider interface.
 type AmbariDiscovery struct {
-	cfg      *config.AmbariSDConfig
-	interval time.Duration
+	cfg        *config.AmbariSDConfig
+	interval   time.Duration
+	httpclient *http.Client
 }
 
 func appendHostnameIfMissing(slice []string, i string) []string {
@@ -171,11 +172,24 @@ func appendHostnameIfMissing(slice []string, i string) []string {
 
 // NewAmbariDiscovery returns a new AmbariDiscovery which periodically refreshes its targets.
 func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
+	var tr *http.Transport
+	if conf.ValidateSSL != true {
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	} else {
+		tr = &http.Transport{}
+	}
+
 	ad := &AmbariDiscovery{
-		cfg:      conf,
-		interval: time.Duration(conf.RefreshInterval),
+		cfg:        conf,
+		interval:   time.Duration(conf.RefreshInterval),
+		httpclient: &http.Client{Transport: tr},
 	}
 	resp, err := ad.makeAmbariRequest("api/v1/clusters") //To test API connection
+	if err != nil {
+		return nil, err
+	}
 	clusters := new(AmbariCluster)
 	if err = json.Unmarshal(resp, &clusters); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
@@ -193,6 +207,9 @@ func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
 func (ad *AmbariDiscovery) getHostComponents() (*AmbariHostComponent, error) {
 	apiEndpoint := fmt.Sprintf("api/v1/clusters/%s/components/?fields=host_components/HostRoles/service_name", ad.cfg.Cluster)
 	resp, err := ad.makeAmbariRequest(apiEndpoint)
+	if err != nil {
+		return nil, err
+	}
 	hcs := new(AmbariHostComponent)
 	if err = json.Unmarshal(resp, &hcs); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
@@ -202,6 +219,9 @@ func (ad *AmbariDiscovery) getHostComponents() (*AmbariHostComponent, error) {
 
 func (ad *AmbariDiscovery) getRootHostComponents() (*AmbariRootHostComponent, error) {
 	resp, err := ad.makeAmbariRequest("api/v1/services/?fields=components/hostComponents/RootServiceHostComponents/service_name")
+	if err != nil {
+		return nil, err
+	}
 	rhcs := new(AmbariRootHostComponent)
 	if err = json.Unmarshal(resp, &rhcs); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
@@ -212,6 +232,9 @@ func (ad *AmbariDiscovery) getRootHostComponents() (*AmbariRootHostComponent, er
 func (ad *AmbariDiscovery) getHosts() (*AmbariHost, error) {
 	apiEndpoint := fmt.Sprintf("api/v1/clusters/%s/hosts?fields=Hosts/ip", ad.cfg.Cluster)
 	resp, err := ad.makeAmbariRequest(apiEndpoint)
+	if err != nil {
+		return nil, err
+	}
 	hosts := new(AmbariHost)
 	if err = json.Unmarshal(resp, &hosts); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
@@ -220,22 +243,14 @@ func (ad *AmbariDiscovery) getHosts() (*AmbariHost, error) {
 }
 
 func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) ([]uint8, error) {
-	var tr *http.Transport
-	if ad.cfg.ValidateSSL != true {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	} else {
-		tr = &http.Transport{}
-	}
-	client := &http.Client{Transport: tr}
+
 	ambariUrl := fmt.Sprintf("%s://%s:%d/%s", ad.cfg.Proto, ad.cfg.Host, ad.cfg.AmbariPort, apiendpoint)
 	req, err := http.NewRequest("GET", ambariUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error communicating with ambari API: %s", err)
 	}
 	req.SetBasicAuth(ad.cfg.Username, ad.cfg.Password)
-	resp, err := client.Do(req)
+	resp, err := ad.httpclient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error communicating with ambari API: %s", err)
 	}
