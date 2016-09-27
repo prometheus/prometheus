@@ -16,6 +16,7 @@ package discovery
 import (
 	"fmt"
 	"net/http"
+	"net"
 	"time"
 	"io/ioutil"
 	"crypto/tls"
@@ -31,6 +32,7 @@ import (
 
 const (
 	ambariLabelPrefix         = model.MetaLabelPrefix + "ambari_"
+	ambariLabelCluster        = ambariLabelPrefix + "_cluster"
 	ambariLabelIP   	  = ambariLabelPrefix + "_ip"
 	ambariLabelHostname	  = ambariLabelPrefix + "_hostname"
 
@@ -146,6 +148,12 @@ type AmbariHost struct {
 	} `json:"items"`
 }
 
+type CollectedHost struct{
+	HostName 	 string
+	ClusterName	 string
+	IP       	 string
+}
+
 //End of Structs representing Ambari API Responses
 
 
@@ -168,15 +176,7 @@ func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
 	if err = json.Unmarshal(resp, &clusters); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
 	}
-	rcs,_ := ad.getRootHostComponents()
-	log.Info("ROOTHOST")
-	log.Info(rcs)
-	host, _ := ad.getHosts()
-	log.Info("HOSTS")
-	log.Info(host)
-	hcs, _ := ad.getHostComponents()
-	log.Info("")
-	log.Info(hcs)
+
 	for _, element := range clusters.Items {
 		if element.Clusters.ClusterName == conf.Cluster{
 			return ad, nil
@@ -190,37 +190,32 @@ func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
 
 func(ad *AmbariDiscovery) getHostComponents() (*AmbariHostComponent, error) {
 	apiEndpoint := fmt.Sprintf("api/v1/clusters/%s/components/?fields=host_components/HostRoles/service_name", ad.cfg.Cluster)
-	log.Info(apiEndpoint)
 	resp, err := ad.makeAmbariRequest(apiEndpoint)
-	clusters := new(AmbariHostComponent)
-	if err = json.Unmarshal(resp, &clusters); err != nil {
+	hcs := new(AmbariHostComponent)
+	if err = json.Unmarshal(resp, &hcs); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
 	}
-	return clusters, nil
+	return hcs, nil
 }
 
 func(ad *AmbariDiscovery) getRootHostComponents() (*AmbariRootHostComponent, error) {
 	resp, err := ad.makeAmbariRequest("api/v1/services/?fields=components/hostComponents/RootServiceHostComponents/service_name")
-	clusters := new(AmbariRootHostComponent)
-	if err = json.Unmarshal(resp, &clusters); err != nil {
+	rhcs := new(AmbariRootHostComponent)
+	if err = json.Unmarshal(resp, &rhcs); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
 	}
-	return clusters, nil
+	return rhcs, nil
 }
 
 func(ad *AmbariDiscovery) getHosts() (*AmbariHost, error) {
 	apiEndpoint := fmt.Sprintf("api/v1/clusters/%s/hosts?fields=Hosts/ip", ad.cfg.Cluster)
-	log.Info(apiEndpoint)
 	resp, err := ad.makeAmbariRequest(apiEndpoint)
-	clusters := new(AmbariHost)
-	if err = json.Unmarshal(resp, &clusters); err != nil {
+	hosts := new(AmbariHost)
+	if err = json.Unmarshal(resp, &hosts); err != nil {
 		return nil, fmt.Errorf("error comminicating with Ambari API. API Did not return a valid JSON: %s", err)
 	}
-
-	return clusters, nil
+	return hosts, nil
 }
-
-
 
 
 
@@ -293,7 +288,33 @@ func (ad *AmbariDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	}()
 
 	tg = &config.TargetGroup{
-		Source: fmt.Sprintf("AMBARI_%s_%s", ad.cfg.Host, ad.cfg.Proto),
+		Source: fmt.Sprintf("AMBARI_%s_%s", ad.cfg.Host, ad.cfg.Cluster),
+	}
+	hosts, err := ad.getHosts()
+	var collectedHosts []CollectedHost
+	if len(ad.cfg.Services) == 0 {
+		if err != nil {
+			return tg, fmt.Errorf("error retrieving scrape targets from ambari: %s", err)
+		}
+		for _, inst := range hosts.Items {
+			ch := CollectedHost{
+				ClusterName: inst.Hosts.ClusterName,
+				IP:	     inst.Hosts.IP,
+				HostName:    inst.Hosts.HostName,
+			}
+			collectedHosts = append(collectedHosts, ch)
+		}
+
+	}
+	for _, ch := range collectedHosts {
+		labels := model.LabelSet{
+			ambariLabelCluster:      model.LabelValue(ch.ClusterName),
+			ambariLabelIP:           model.LabelValue(ch.IP),
+			ambariLabelHostname:     model.LabelValue(ch.HostName),
+		}
+		labels[model.AddressLabel] = model.LabelValue(
+			net.JoinHostPort(ch.IP, fmt.Sprintf("%d", ad.cfg.Port)))
+		tg.Targets = append(tg.Targets, labels)
 	}
 
 	if err != nil {
