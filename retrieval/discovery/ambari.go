@@ -14,14 +14,14 @@
 package discovery
 
 import (
-	"fmt"
-	"net/http"
-	"net"
-	"time"
-	"io/ioutil"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -32,12 +32,10 @@ import (
 )
 
 const (
-	ambariLabelPrefix         = model.MetaLabelPrefix + "ambari_"
-	ambariLabelCluster        = ambariLabelPrefix + "_cluster"
-	ambariLabelIP   	  = ambariLabelPrefix + "_ip"
-	ambariLabelHostname	  = ambariLabelPrefix + "_hostname"
-
-
+	ambariLabelPrefix   = model.MetaLabelPrefix + "ambari_"
+	ambariLabelCluster  = ambariLabelPrefix + "_cluster"
+	ambariLabelIP       = ambariLabelPrefix + "_ip"
+	ambariLabelHostname = ambariLabelPrefix + "_hostname"
 )
 
 var (
@@ -69,100 +67,96 @@ func init() {
 
 //Structs representing Ambari API Responses
 type AmbariCluster struct {
-	Href string `json:"href"`
+	Href  string `json:"href"`
 	Items []struct {
-		Href string `json:"href"`
+		Href     string `json:"href"`
 		Clusters struct {
-			     ClusterName string `json:"cluster_name"`
-			     Version string `json:"version"`
-		     } `json:"Clusters"`
+			ClusterName string `json:"cluster_name"`
+			Version     string `json:"version"`
+		} `json:"Clusters"`
 	} `json:"items"`
 }
 
-
 type AmbariRootHostComponent struct {
-	Href string `json:"href"`
+	Href  string `json:"href"`
 	Items []struct {
-		Href string `json:"href"`
+		Href        string `json:"href"`
 		RootService struct {
-			     ServiceName string `json:"service_name"`
-		     } `json:"RootService"`
+			ServiceName string `json:"service_name"`
+		} `json:"RootService"`
 		Components []struct {
-			Href string `json:"href"`
+			Href                  string `json:"href"`
 			RootServiceComponents struct {
-				     ComponentName string `json:"component_name"`
-				     ServiceName string `json:"service_name"`
-			     } `json:"RootServiceComponents"`
+				ComponentName string `json:"component_name"`
+				ServiceName   string `json:"service_name"`
+			} `json:"RootServiceComponents"`
 			HostComponents []struct {
-				Href string `json:"href"`
+				Href                      string `json:"href"`
 				RootServiceHostComponents struct {
-					     ComponentName string `json:"component_name"`
-					     HostName string `json:"host_name"`
-					     ServiceName string `json:"service_name"`
-				     } `json:"RootServiceHostComponents"`
+					ComponentName string `json:"component_name"`
+					HostName      string `json:"host_name"`
+					ServiceName   string `json:"service_name"`
+				} `json:"RootServiceHostComponents"`
 			} `json:"hostComponents"`
 		} `json:"components"`
 	} `json:"items"`
 }
 
-
 type AmbariHostComponent struct {
-	Href string `json:"href"`
+	Href  string `json:"href"`
 	Items []struct {
-		Href string `json:"href"`
+		Href                 string `json:"href"`
 		ServiceComponentInfo struct {
-			     ClusterName string `json:"cluster_name"`
-			     ComponentName string `json:"component_name"`
-			     ServiceName string `json:"service_name"`
-		     } `json:"ServiceComponentInfo"`
+			ClusterName   string `json:"cluster_name"`
+			ComponentName string `json:"component_name"`
+			ServiceName   string `json:"service_name"`
+		} `json:"ServiceComponentInfo"`
 		HostComponents []struct {
-			Href string `json:"href"`
+			Href    string `json:"href"`
 			Logging struct {
-				     Name string `json:"name"`
-				     Logs []struct {
-					     SearchEngineURL string `json:"searchEngineURL"`
-					     LogFileTailURL string `json:"logFileTailURL"`
-					     Name string `json:"name"`
-					     Type string `json:"type"`
-				     } `json:"logs"`
-				     LogLevelCounts interface{} `json:"log_level_counts"`
-			     } `json:"logging"`
+				Name string `json:"name"`
+				Logs []struct {
+					SearchEngineURL string `json:"searchEngineURL"`
+					LogFileTailURL  string `json:"logFileTailURL"`
+					Name            string `json:"name"`
+					Type            string `json:"type"`
+				} `json:"logs"`
+				LogLevelCounts interface{} `json:"log_level_counts"`
+			} `json:"logging"`
 			HostRoles struct {
-				     ClusterName string `json:"cluster_name"`
-				     ComponentName string `json:"component_name"`
-				     HostName string `json:"host_name"`
-				     ServiceName string `json:"service_name"`
-			     } `json:"HostRoles"`
+				ClusterName   string `json:"cluster_name"`
+				ComponentName string `json:"component_name"`
+				HostName      string `json:"host_name"`
+				ServiceName   string `json:"service_name"`
+			} `json:"HostRoles"`
 		} `json:"host_components"`
 	} `json:"items"`
 }
 
 type AmbariHost struct {
-	Href string `json:"href"`
+	Href  string `json:"href"`
 	Items []struct {
-		Href string `json:"href"`
+		Href  string `json:"href"`
 		Hosts struct {
-			     ClusterName string `json:"cluster_name"`
-			     HostName string `json:"host_name"`
-			     IP string `json:"ip"`
-		     } `json:"Hosts"`
+			ClusterName string `json:"cluster_name"`
+			HostName    string `json:"host_name"`
+			IP          string `json:"ip"`
+		} `json:"Hosts"`
 	} `json:"items"`
 }
 
-type CollectedHost struct{
-	HostName 	 string
-	ClusterName	 string
-	IP       	 string
+type CollectedHost struct {
+	HostName    string
+	ClusterName string
+	IP          string
 }
 
 //End of Structs representing Ambari API Responses
 
-
-
 // AmbariDiscovery periodically performs Ambari-SD requests. It implements
 // the TargetProvider interface.
 type AmbariDiscovery struct {
-	cfg	 *config.AmbariSDConfig
+	cfg      *config.AmbariSDConfig
 	interval time.Duration
 }
 
@@ -188,17 +182,15 @@ func NewAmbariDiscovery(conf *config.AmbariSDConfig) (*AmbariDiscovery, error) {
 	}
 
 	for _, element := range clusters.Items {
-		if element.Clusters.ClusterName == conf.Cluster{
+		if element.Clusters.ClusterName == conf.Cluster {
 			return ad, nil
 		}
 	}
 	return nil, fmt.Errorf("error comminicating with Ambari API. Invalid cluster defined in config: %s", conf.Cluster)
 
-
-
 }
 
-func(ad *AmbariDiscovery) getHostComponents() (*AmbariHostComponent, error) {
+func (ad *AmbariDiscovery) getHostComponents() (*AmbariHostComponent, error) {
 	apiEndpoint := fmt.Sprintf("api/v1/clusters/%s/components/?fields=host_components/HostRoles/service_name", ad.cfg.Cluster)
 	resp, err := ad.makeAmbariRequest(apiEndpoint)
 	hcs := new(AmbariHostComponent)
@@ -208,7 +200,7 @@ func(ad *AmbariDiscovery) getHostComponents() (*AmbariHostComponent, error) {
 	return hcs, nil
 }
 
-func(ad *AmbariDiscovery) getRootHostComponents() (*AmbariRootHostComponent, error) {
+func (ad *AmbariDiscovery) getRootHostComponents() (*AmbariRootHostComponent, error) {
 	resp, err := ad.makeAmbariRequest("api/v1/services/?fields=components/hostComponents/RootServiceHostComponents/service_name")
 	rhcs := new(AmbariRootHostComponent)
 	if err = json.Unmarshal(resp, &rhcs); err != nil {
@@ -217,7 +209,7 @@ func(ad *AmbariDiscovery) getRootHostComponents() (*AmbariRootHostComponent, err
 	return rhcs, nil
 }
 
-func(ad *AmbariDiscovery) getHosts() (*AmbariHost, error) {
+func (ad *AmbariDiscovery) getHosts() (*AmbariHost, error) {
 	apiEndpoint := fmt.Sprintf("api/v1/clusters/%s/hosts?fields=Hosts/ip", ad.cfg.Cluster)
 	resp, err := ad.makeAmbariRequest(apiEndpoint)
 	hosts := new(AmbariHost)
@@ -227,8 +219,6 @@ func(ad *AmbariDiscovery) getHosts() (*AmbariHost, error) {
 	return hosts, nil
 }
 
-
-
 func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) ([]uint8, error) {
 	var tr *http.Transport
 	if ad.cfg.ValidateSSL != true {
@@ -236,8 +226,7 @@ func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) ([]uint8, error
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	} else {
-		tr = &http.Transport{
-		}
+		tr = &http.Transport{}
 	}
 	client := &http.Client{Transport: tr}
 	ambariUrl := fmt.Sprintf("%s://%s:%d/%s", ad.cfg.Proto, ad.cfg.Host, ad.cfg.AmbariPort, apiendpoint)
@@ -247,7 +236,7 @@ func (ad *AmbariDiscovery) makeAmbariRequest(apiendpoint string) ([]uint8, error
 	}
 	req.SetBasicAuth(ad.cfg.Username, ad.cfg.Password)
 	resp, err := client.Do(req)
-	if err != nil{
+	if err != nil {
 		return nil, fmt.Errorf("error communicating with ambari API: %s", err)
 	}
 	bodyText, err := ioutil.ReadAll(resp.Body)
@@ -309,7 +298,7 @@ func (ad *AmbariDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		for _, inst := range hosts.Items {
 			ch := CollectedHost{
 				ClusterName: inst.Hosts.ClusterName,
-				IP:	     inst.Hosts.IP,
+				IP:          inst.Hosts.IP,
 				HostName:    inst.Hosts.HostName,
 			}
 			collectedHosts = append(collectedHosts, ch)
@@ -336,7 +325,7 @@ func (ad *AmbariDiscovery) refresh() (tg *config.TargetGroup, err error) {
 			}
 			for _, hci := range hostComponents.Items {
 				if strings.ToLower(hci.ServiceComponentInfo.ComponentName) == filter {
-					for _, hc := range  hci.HostComponents {
+					for _, hc := range hci.HostComponents {
 						filteredHostnames = appendHostnameIfMissing(filteredHostnames,
 							hc.HostRoles.HostName)
 					}
@@ -348,7 +337,7 @@ func (ad *AmbariDiscovery) refresh() (tg *config.TargetGroup, err error) {
 				if inst.Hosts.HostName == hname {
 					ch := CollectedHost{
 						ClusterName: inst.Hosts.ClusterName,
-						IP:             inst.Hosts.IP,
+						IP:          inst.Hosts.IP,
 						HostName:    inst.Hosts.HostName,
 					}
 					collectedHosts = append(collectedHosts, ch)
@@ -359,9 +348,9 @@ func (ad *AmbariDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	}
 	for _, ch := range collectedHosts {
 		labels := model.LabelSet{
-			ambariLabelCluster:      model.LabelValue(ch.ClusterName),
-			ambariLabelIP:           model.LabelValue(ch.IP),
-			ambariLabelHostname:     model.LabelValue(ch.HostName),
+			ambariLabelCluster:  model.LabelValue(ch.ClusterName),
+			ambariLabelIP:       model.LabelValue(ch.IP),
+			ambariLabelHostname: model.LabelValue(ch.HostName),
 		}
 		labels[model.AddressLabel] = model.LabelValue(
 			net.JoinHostPort(ch.IP, fmt.Sprintf("%d", ad.cfg.Port)))

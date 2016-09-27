@@ -419,7 +419,7 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 		app("azure", i, discovery.NewAzureDiscovery(c))
 	}
 	for i, c := range cfg.AmbariSDConfigs {
-		ad, err :=  discovery.NewAmbariDiscovery(c)
+		ad, err := discovery.NewAmbariDiscovery(c)
 		if err != nil {
 			log.Errorf("Cannot initialize Ambari discovery: %s", err)
 			continue

@@ -152,10 +152,10 @@ var (
 	}
 
 	DefaultAmbariSDConfig = AmbariSDConfig{
-		AmbariPort:	 8080,
+		AmbariPort:      8080,
 		Port:            80,
 		Proto:           "http",
-		ValidateSSL:	 true,
+		ValidateSSL:     true,
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
@@ -965,7 +965,6 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return checkOverflow(c.XXX, "azure_sd_config")
 }
 
-
 // GCESDConfig is the configuration for GCE based service discovery.
 type AmbariSDConfig struct {
 	// Username: The username to access Ambari API with
@@ -974,16 +973,13 @@ type AmbariSDConfig struct {
 	// Password: The password used to access Ambari API
 	Password string `yaml:"password"`
 
-
 	// Host: The host used to access Ambari API
 	Host string `yaml:"host"`
 
 	//Cluster: The cluster you want to collect the hosts from
 	Cluster string `yaml:"cluster"`
 
-	AmbariPort            int            `yaml:"ambari_port"`
-
-
+	AmbariPort int `yaml:"ambari_port"`
 
 	// Proto: The protocol used to access Ambari API (http/https)
 	Proto string `yaml:"proto,omitempty"`
