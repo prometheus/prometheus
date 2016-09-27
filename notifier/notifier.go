@@ -211,6 +211,15 @@ func (n *Notifier) Send(alerts ...*model.Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
+	// Attach external labels before relabelling and sending.
+	for _, a := range alerts {
+		for ln, lv := range n.opts.ExternalLabels {
+			if _, ok := a.Labels[ln]; !ok {
+				a.Labels[ln] = lv
+			}
+		}
+	}
+
 	alerts = n.relabelAlerts(alerts)
 
 	// Queue capacity should be significantly larger than a single alert
@@ -266,15 +275,6 @@ func postURL(u string) string {
 // It returns the number of sends that have failed.
 func (n *Notifier) sendAll(alerts ...*model.Alert) int {
 	begin := time.Now()
-
-	// Attach external labels before sending alerts.
-	for _, a := range alerts {
-		for ln, lv := range n.opts.ExternalLabels {
-			if _, ok := a.Labels[ln]; !ok {
-				a.Labels[ln] = lv
-			}
-		}
-	}
 
 	b, err := json.Marshal(alerts)
 	if err != nil {
