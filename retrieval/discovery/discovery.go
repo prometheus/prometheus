@@ -16,10 +16,12 @@ package discovery
 import (
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/retrieval/discovery/consul"
 	"github.com/prometheus/prometheus/retrieval/discovery/dns"
 	"github.com/prometheus/prometheus/retrieval/discovery/kubernetes"
+	"github.com/prometheus/prometheus/retrieval/discovery/kubernetes_v2"
 	"github.com/prometheus/prometheus/retrieval/discovery/marathon"
 )
 
@@ -38,6 +40,11 @@ func NewKubernetesDiscovery(conf *config.KubernetesSDConfig) (*kubernetes.Discov
 		return nil, err
 	}
 	return kd, nil
+}
+
+// NewKubernetesV2Discovery creates a Kubernetes service discovery based on the passed-in configuration.
+func NewKubernetesV2Discovery(conf *config.KubernetesV2SDConfig) (*kubernetesv2.Kubernetes, error) {
+	return kubernetesv2.New(log.Base(), conf)
 }
 
 // NewMarathon creates a new Marathon based discovery.
