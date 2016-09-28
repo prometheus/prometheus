@@ -399,6 +399,14 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 		}
 		app("kubernetes", i, k)
 	}
+	for i, c := range cfg.KubernetesV2SDConfigs {
+		k, err := discovery.NewKubernetesV2Discovery(c)
+		if err != nil {
+			log.Errorf("Cannot create Kubernetes discovery: %s", err)
+			continue
+		}
+		app("kubernetes", i, k)
+	}
 	for i, c := range cfg.ServersetSDConfigs {
 		app("serverset", i, discovery.NewServersetDiscovery(c))
 	}

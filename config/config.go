@@ -442,6 +442,8 @@ type ScrapeConfig struct {
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
+	// List of Kubernetes service discovery configurations.
+	KubernetesV2SDConfigs []*KubernetesV2SDConfig `yaml:"kubernetes_v2_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
 	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
@@ -851,6 +853,42 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	}
 	if len(c.APIServers) == 0 {
 		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
+	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	}
+	return nil
+}
+
+// KubernetesV2SDConfig is the configuration for Kubernetes service discovery.
+type KubernetesV2SDConfig struct {
+	APIServer       URL            `yaml:"api_server"`
+	Role            KubernetesRole `yaml:"role"`
+	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
+	BearerToken     string         `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *KubernetesV2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = KubernetesV2SDConfig{}
+	type plain KubernetesV2SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
+		return err
+	}
+	if c.Role == "" {
+		return fmt.Errorf("role missing (one of: container, pod, service, endpoint, node, apiserver)")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
