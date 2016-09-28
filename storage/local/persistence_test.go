@@ -65,7 +65,7 @@ func buildTestChunks(t *testing.T, encoding chunk.Encoding) map[model.Fingerprin
 	for _, fp := range fps {
 		fpToChunks[fp] = make([]chunk.Chunk, 0, 10)
 		for i := 0; i < 10; i++ {
-			ch, err := chunk.NewChunkForEncoding(encoding)
+			ch, err := chunk.NewForEncoding(encoding)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -565,7 +565,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 		for i, cd := range loadedS4.chunkDescs {
 			if cd.ChunkFirstTime != cd.C.FirstTime() {
 				t.Errorf(
-					"ChunkDesc[%d]: ChunkFirstTime not consistent with chunk, want %d, got %d",
+					"chunk.Desc[%d]: ChunkFirstTime not consistent with chunk, want %d, got %d",
 					i, cd.C.FirstTime(), cd.ChunkFirstTime,
 				)
 			}
@@ -582,7 +582,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 			}
 			if cd.ChunkLastTime != lastTime {
 				t.Errorf(
-					"ChunkDesc[%d]: ChunkLastTime not consistent with chunk, want %d, got %d",
+					"chunk.Desc[%d]: ChunkLastTime not consistent with chunk, want %d, got %d",
 					i, lastTime, cd.ChunkLastTime,
 				)
 			}
@@ -616,13 +616,13 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 			if i < 3 {
 				// Evicted chunks.
 				if cd.ChunkFirstTime == model.Earliest {
-					t.Errorf("ChunkDesc[%d]: ChunkLastTime not set", i)
+					t.Errorf("chunk.Desc[%d]: ChunkLastTime not set", i)
 				}
 				continue
 			}
 			if cd.ChunkFirstTime != cd.C.FirstTime() {
 				t.Errorf(
-					"ChunkDesc[%d]: ChunkFirstTime not consistent with chunk, want %d, got %d",
+					"chunk.Desc[%d]: ChunkFirstTime not consistent with chunk, want %d, got %d",
 					i, cd.C.FirstTime(), cd.ChunkFirstTime,
 				)
 			}
@@ -639,7 +639,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 			}
 			if cd.ChunkLastTime != lastTime {
 				t.Errorf(
-					"ChunkDesc[%d]: ChunkLastTime not consistent with chunk, want %d, got %d",
+					"chunk.Desc[%d]: ChunkLastTime not consistent with chunk, want %d, got %d",
 					i, cd.ChunkLastTime, lastTime,
 				)
 			}

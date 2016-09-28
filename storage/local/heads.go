@@ -168,7 +168,7 @@ func (hs *headsScanner) scan() bool {
 				ChunkFirstTime: model.Time(firstTime),
 				ChunkLastTime:  model.Time(lastTime),
 			}
-			chunk.NumMemChunkDescs.Inc()
+			chunk.NumMemDescs.Inc()
 		} else {
 			// Non-persisted chunk.
 			// If there are non-persisted chunks at all, we consider
@@ -177,7 +177,7 @@ func (hs *headsScanner) scan() bool {
 			if encoding, hs.err = hs.r.ReadByte(); hs.err != nil {
 				return false
 			}
-			if ch, hs.err = chunk.NewChunkForEncoding(chunk.Encoding(encoding)); hs.err != nil {
+			if ch, hs.err = chunk.NewForEncoding(chunk.Encoding(encoding)); hs.err != nil {
 				return false
 			}
 			if hs.err = ch.Unmarshal(hs.r); hs.err != nil {

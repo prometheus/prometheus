@@ -118,7 +118,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 					make([]*chunk.Desc, 0, len(s.chunkDescs)-s.persistWatermark),
 					s.chunkDescs[s.persistWatermark:]...,
 				)
-				chunk.NumMemChunkDescs.Sub(float64(s.persistWatermark))
+				chunk.NumMemDescs.Sub(float64(s.persistWatermark))
 				s.persistWatermark = 0
 				s.chunkDescsOffset = 0
 			}
@@ -315,7 +315,7 @@ func (p *persistence) sanitizeSeries(
 
 		// First, throw away the chunkDescs without chunks.
 		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
-		chunk.NumMemChunkDescs.Sub(float64(s.persistWatermark))
+		chunk.NumMemDescs.Sub(float64(s.persistWatermark))
 		cds, err := p.loadChunkDescs(fp, 0)
 		if err != nil {
 			log.Errorf(
@@ -351,7 +351,7 @@ func (p *persistence) sanitizeSeries(
 				"Recovered metric %v, fingerprint %v: all %d chunks recovered from series file.",
 				s.metric, fp, chunksInFile,
 			)
-			chunk.NumMemChunkDescs.Sub(float64(len(s.chunkDescs)))
+			chunk.NumMemDescs.Sub(float64(len(s.chunkDescs)))
 			atomic.AddInt64(&chunk.NumMemChunks, int64(-len(s.chunkDescs)))
 			s.chunkDescs = cds
 			s.headChunkClosed = true
@@ -361,7 +361,7 @@ func (p *persistence) sanitizeSeries(
 			"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered %d chunks from checkpoint.",
 			s.metric, fp, chunksInFile, len(s.chunkDescs)-keepIdx,
 		)
-		chunk.NumMemChunkDescs.Sub(float64(keepIdx))
+		chunk.NumMemDescs.Sub(float64(keepIdx))
 		atomic.AddInt64(&chunk.NumMemChunks, int64(-keepIdx))
 		if keepIdx == len(s.chunkDescs) {
 			// No chunks from series file left, head chunk is evicted, so declare it closed.

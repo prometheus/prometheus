@@ -19,7 +19,7 @@ import "github.com/prometheus/client_golang/prometheus"
 // be close to where they are used. However, the metrics below are set all over
 // the place, so we go for a separate instrumentation file in this case.
 var (
-	ChunkOps = prometheus.NewCounterVec(
+	Ops = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -28,7 +28,7 @@ var (
 		},
 		[]string{OpTypeLabel},
 	)
-	ChunkDescOps = prometheus.NewCounterVec(
+	DescOps = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -37,7 +37,7 @@ var (
 		},
 		[]string{OpTypeLabel},
 	)
-	NumMemChunkDescs = prometheus.NewGauge(prometheus.GaugeOpts{
+	NumMemDescs = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "memory_chunkdescs",
@@ -55,7 +55,7 @@ const (
 	// Op-types for ChunkOps.
 
 	// CreateAndPin is the label value for create-and-pin chunk ops.
-	CreateAndPin = "create" // A ChunkDesc creation with refCount=1.
+	CreateAndPin = "create" // A Desc creation with refCount=1.
 	// PersistAndUnpin is the label value for persist chunk ops.
 	PersistAndUnpin = "persist"
 	// Pin is the label value for pin chunk ops (excludes pin on creation).
@@ -78,9 +78,9 @@ const (
 )
 
 func init() {
-	prometheus.MustRegister(ChunkOps)
-	prometheus.MustRegister(ChunkDescOps)
-	prometheus.MustRegister(NumMemChunkDescs)
+	prometheus.MustRegister(Ops)
+	prometheus.MustRegister(DescOps)
+	prometheus.MustRegister(NumMemDescs)
 }
 
 var (
