@@ -299,7 +299,7 @@ type Iterator interface {
 	// or an error has occurred.
 	FindAtOrAfter(model.Time) bool
 	// Returns the last value scanned (by the scan method) or found (by one
-	// of the find... methods). It returns ZeroSamplePair before any of
+	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
 	// Returns the last error encountered. In general, an error signals data
@@ -409,7 +409,7 @@ func newIndexAccessingChunkIterator(len int, acc indexAccessor) *indexAccessingC
 	return &indexAccessingChunkIterator{
 		len:       len,
 		pos:       -1,
-		lastValue: model.SamplePair{Timestamp: model.Earliest},
+		lastValue: model.ZeroSamplePair,
 		acc:       acc,
 	}
 }

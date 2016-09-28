@@ -430,7 +430,7 @@ func (s *memorySeries) preloadChunksForInstant(
 	lastSample := s.lastSamplePair()
 	if !through.Before(lastSample.Timestamp) &&
 		!from.After(lastSample.Timestamp) &&
-		lastSample != ZeroSamplePair {
+		lastSample != model.ZeroSamplePair {
 		iter := &boundedIterator{
 			it: &singleSampleSeriesIterator{
 				samplePair: lastSample,
@@ -522,7 +522,7 @@ func (s *memorySeries) firstTime() model.Time {
 }
 
 // lastSamplePair returns the last ingested SamplePair. It returns
-// ZeroSamplePair if this memorySeries has never received a sample (via the add
+// model.ZeroSamplePair if this memorySeries has never received a sample (via the add
 // method), which is the case for freshly unarchived series or newly created
 // ones and also for all series after a server restart. However, in that case,
 // series will most likely be considered stale anyway.
@@ -530,7 +530,7 @@ func (s *memorySeries) firstTime() model.Time {
 // The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) lastSamplePair() model.SamplePair {
 	if !s.lastSampleValueSet {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	return model.SamplePair{
 		Timestamp: s.lastTime,
@@ -583,7 +583,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 		containsT, err := it.chunkIt.Contains(t)
 		if err != nil {
 			it.quarantine(err)
-			return ZeroSamplePair
+			return model.ZeroSamplePair
 		}
 		if containsT {
 			if it.chunkIt.FindAtOrBefore(t) {
@@ -592,12 +592,12 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 			if it.chunkIt.Err() != nil {
 				it.quarantine(it.chunkIt.Err())
 			}
-			return ZeroSamplePair
+			return model.ZeroSamplePair
 		}
 	}
 
 	if len(it.chunks) == 0 {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 
 	// Find the last chunk where FirstTime() is before or equal to t.
@@ -607,7 +607,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	})
 	if i == len(it.chunks) {
 		// Even the first chunk starts after t.
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	it.chunkIt = it.chunkIterator(l - i)
 	if it.chunkIt.FindAtOrBefore(t) {
@@ -616,7 +616,7 @@ func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePa
 	if it.chunkIt.Err() != nil {
 		it.quarantine(it.chunkIt.Err())
 	}
-	return ZeroSamplePair
+	return model.ZeroSamplePair
 }
 
 // RangeValues implements SeriesIterator.
@@ -686,7 +686,7 @@ type singleSampleSeriesIterator struct {
 // ValueAtTime implements SeriesIterator.
 func (it *singleSampleSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	if it.samplePair.Timestamp.After(t) {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	return it.samplePair
 }
@@ -712,7 +712,7 @@ type nopSeriesIterator struct{}
 
 // ValueAtTime implements SeriesIterator.
 func (i nopSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
-	return ZeroSamplePair
+	return model.ZeroSamplePair
 }
 
 // RangeValues implements SeriesIterator.

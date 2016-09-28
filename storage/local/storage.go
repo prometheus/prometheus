@@ -452,7 +452,7 @@ type boundedIterator struct {
 // ValueAtOrBeforeTime implements the SeriesIterator interface.
 func (bit *boundedIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
 	if ts < bit.start {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	return bit.it.ValueAtOrBeforeTime(ts)
 }
