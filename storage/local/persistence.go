@@ -437,7 +437,7 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 			return nil, err
 		}
 		for c := 0; c < batchSize; c++ {
-			chunk, err := chunk.NewChunkForEncoding(chunk.Encoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
+			chunk, err := chunk.NewForEncoding(chunk.Encoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
 			if err != nil {
 				return nil, err
 			}
@@ -447,7 +447,7 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 			chunks = append(chunks, chunk)
 		}
 	}
-	chunk.ChunkOps.WithLabelValues(chunk.Load).Add(float64(len(chunks)))
+	chunk.Ops.WithLabelValues(chunk.Load).Add(float64(len(chunks)))
 	atomic.AddInt64(&chunk.NumMemChunks, int64(len(chunks)))
 	return chunks, nil
 }
@@ -496,8 +496,8 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 			ChunkLastTime:  model.Time(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
 		}
 	}
-	chunk.ChunkDescOps.WithLabelValues(chunk.Load).Add(float64(len(cds)))
-	chunk.NumMemChunkDescs.Add(float64(len(cds)))
+	chunk.DescOps.WithLabelValues(chunk.Load).Add(float64(len(cds)))
+	chunk.NumMemDescs.Add(float64(len(cds)))
 	return cds, nil
 }
 
@@ -880,7 +880,7 @@ func (p *persistence) dropAndPersistChunks(
 	firstTimeNotDropped = model.Time(
 		binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
 	)
-	chunk.ChunkOps.WithLabelValues(chunk.Drop).Add(float64(numDropped))
+	chunk.Ops.WithLabelValues(chunk.Drop).Add(float64(numDropped))
 	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
 	if err != nil {
 		return
@@ -931,7 +931,7 @@ func (p *persistence) deleteSeriesFile(fp model.Fingerprint) (int, error) {
 	if err := os.Remove(fname); err != nil {
 		return -1, err
 	}
-	chunk.ChunkOps.WithLabelValues(chunk.Drop).Add(float64(numChunks))
+	chunk.Ops.WithLabelValues(chunk.Drop).Add(float64(numChunks))
 	return numChunks, nil
 }
 

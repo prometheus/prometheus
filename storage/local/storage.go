@@ -932,16 +932,16 @@ func (s *MemorySeriesStorage) handleEvictList() {
 		select {
 		case req := <-s.evictRequests:
 			if req.Evict {
-				req.CD.EvictListElement = s.evictList.PushBack(req.CD)
+				req.Desc.EvictListElement = s.evictList.PushBack(req.Desc)
 				count++
 				if count > s.maxMemoryChunks/1000 {
 					s.maybeEvict()
 					count = 0
 				}
 			} else {
-				if req.CD.EvictListElement != nil {
-					s.evictList.Remove(req.CD.EvictListElement)
-					req.CD.EvictListElement = nil
+				if req.Desc.EvictListElement != nil {
+					s.evictList.Remove(req.Desc.EvictListElement)
+					req.Desc.EvictListElement = nil
 				}
 			}
 		case <-ticker.C:
@@ -1314,7 +1314,7 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 			cd.Unpin(s.evictRequests)
 		}
 		s.incNumChunksToPersist(-len(cds))
-		chunk.ChunkOps.WithLabelValues(chunk.PersistAndUnpin).Add(float64(len(cds)))
+		chunk.Ops.WithLabelValues(chunk.PersistAndUnpin).Add(float64(len(cds)))
 		series.modTime = s.persistence.seriesFileModTime(fp)
 	}()
 

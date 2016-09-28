@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	// chunkDescEvictionFactor is a factor used for ChunkDesc eviction (as opposed
+	// chunkDescEvictionFactor is a factor used for chunk.Desc eviction (as opposed
 	// to evictions of chunks, see method evictOlderThan. A chunk takes about 20x
-	// more memory than a ChunkDesc. With a chunkDescEvictionFactor of 10, not more
+	// more memory than a chunk.Desc. With a chunkDescEvictionFactor of 10, not more
 	// than a third of the total memory taken by a series will be used for
 	// chunkDescs.
 	chunkDescEvictionFactor = 10
@@ -142,7 +142,7 @@ type memorySeries struct {
 	metric model.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
 	chunkDescs []*chunk.Desc
-	// The index (within chunkDescs above) of the first ChunkDesc that
+	// The index (within chunkDescs above) of the first chunk.Desc that
 	// points to a non-persisted chunk. If all chunks are persisted, then
 	// persistWatermark == len(chunkDescs).
 	persistWatermark int
@@ -152,7 +152,7 @@ type memorySeries struct {
 	// The chunkDescs in memory might not have all the chunkDescs for the
 	// chunks that are persisted to disk. The missing chunkDescs are all
 	// contiguous and at the tail end. chunkDescsOffset is the index of the
-	// chunk on disk that corresponds to the first ChunkDesc in memory. If
+	// chunk on disk that corresponds to the first chunk.Desc in memory. If
 	// it is 0, the chunkDescs are all loaded. A value of -1 denotes a
 	// special case: There are chunks on disk, but the offset to the
 	// chunkDescs in memory is unknown. Also, in this special case, there is
@@ -221,7 +221,7 @@ func newMemorySeries(m model.Metric, chunkDescs []*chunk.Desc, modTime time.Time
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) Add(v model.SamplePair) (int, error) {
 	if len(s.chunkDescs) == 0 || s.headChunkClosed {
-		newHead := chunk.NewDesc(chunk.NewChunk(), v.Timestamp)
+		newHead := chunk.NewDesc(chunk.New(), v.Timestamp)
 		s.chunkDescs = append(s.chunkDescs, newHead)
 		s.headChunkClosed = false
 	} else if s.headChunkUsedByIterator && s.head().RefCount() > 1 {
@@ -234,7 +234,7 @@ func (s *memorySeries) Add(v model.SamplePair) (int, error) {
 		// around and keep the head chunk pinned. We needed to track
 		// pins by version of the head chunk, which is probably not
 		// worth the effort.
-		chunk.ChunkOps.WithLabelValues(chunk.Clone).Inc()
+		chunk.Ops.WithLabelValues(chunk.Clone).Inc()
 		// No locking needed here because a non-persisted head chunk can
 		// not get evicted concurrently.
 		s.head().C = s.head().C.Clone()
@@ -292,8 +292,8 @@ func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 		lenEvicted := len(s.chunkDescs) - lenToKeep
 		s.chunkDescsOffset += lenEvicted
 		s.persistWatermark -= lenEvicted
-		chunk.ChunkDescOps.WithLabelValues(chunk.Evict).Add(float64(lenEvicted))
-		chunk.NumMemChunkDescs.Sub(float64(lenEvicted))
+		chunk.DescOps.WithLabelValues(chunk.Evict).Add(float64(lenEvicted))
+		chunk.NumMemDescs.Sub(float64(lenEvicted))
 		s.chunkDescs = append(
 			make([]*chunk.Desc, 0, lenToKeep),
 			s.chunkDescs[lenEvicted:]...,
@@ -335,7 +335,7 @@ func (s *memorySeries) dropChunks(t model.Time) error {
 	if s.chunkDescsOffset != -1 {
 		s.chunkDescsOffset += keepIdx
 	}
-	chunk.NumMemChunkDescs.Sub(float64(keepIdx))
+	chunk.NumMemDescs.Sub(float64(keepIdx))
 	s.dirty = true
 	return nil
 }
@@ -354,7 +354,7 @@ func (s *memorySeries) preloadChunks(
 			loadIndexes = append(loadIndexes, idx)
 		}
 	}
-	chunk.ChunkOps.WithLabelValues(chunk.Pin).Add(float64(len(pinnedChunkDescs)))
+	chunk.Ops.WithLabelValues(chunk.Pin).Add(float64(len(pinnedChunkDescs)))
 
 	if len(loadIndexes) > 0 {
 		if s.chunkDescsOffset == -1 {
@@ -366,7 +366,7 @@ func (s *memorySeries) preloadChunks(
 			for _, cd := range pinnedChunkDescs {
 				cd.Unpin(mss.evictRequests)
 			}
-			chunk.ChunkOps.WithLabelValues(chunk.Unpin).Add(float64(len(pinnedChunkDescs)))
+			chunk.Ops.WithLabelValues(chunk.Unpin).Add(float64(len(pinnedChunkDescs)))
 			return nopIter, err
 		}
 		for i, c := range chunks {
@@ -672,7 +672,7 @@ func (it *memorySeriesIterator) Close() {
 	for _, cd := range it.pinnedChunkDescs {
 		cd.Unpin(it.evictRequests)
 	}
-	chunk.ChunkOps.WithLabelValues(chunk.Unpin).Add(float64(len(it.pinnedChunkDescs)))
+	chunk.Ops.WithLabelValues(chunk.Unpin).Add(float64(len(it.pinnedChunkDescs)))
 }
 
 // singleSampleSeriesIterator implements Series Iterator. It is a "shortcut
