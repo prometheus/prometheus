@@ -389,7 +389,12 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 		app("consul", i, k)
 	}
 	for i, c := range cfg.MarathonSDConfigs {
-		app("marathon", i, discovery.NewMarathon(c))
+		m, err := discovery.NewMarathon(c)
+		if err != nil {
+			log.Errorf("Cannot create Marathon discovery: %s", err)
+			continue
+		}
+		app("marathon", i, m)
 	}
 	for i, c := range cfg.KubernetesSDConfigs {
 		k, err := discovery.NewKubernetesDiscovery(c)
