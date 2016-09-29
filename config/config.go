@@ -227,6 +227,13 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			kcfg.TLSConfig.CertFile = join(kcfg.TLSConfig.CertFile)
 			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
 		}
+
+		for _, mcfg := range scfg.MarathonSDConfigs {
+			mcfg.TLSConfig.CAFile = join(mcfg.TLSConfig.CAFile)
+			mcfg.TLSConfig.CertFile = join(mcfg.TLSConfig.CertFile)
+			mcfg.TLSConfig.KeyFile = join(mcfg.TLSConfig.KeyFile)
+		}
+
 	}
 }
 
@@ -773,6 +780,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type MarathonSDConfig struct {
 	Servers         []string       `yaml:"servers,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
