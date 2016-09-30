@@ -32,11 +32,12 @@ type Endpoints struct {
 	logger log.Logger
 
 	endpointsInf cache.SharedInformer
-	servicesInf  cache.SharedInformer
-	podsInf      cache.SharedInformer
+	serviceInf   cache.SharedInformer
+	podInf       cache.SharedInformer
 
 	podStore       cache.Store
 	endpointsStore cache.Store
+	serviceStore   cache.Store
 }
 
 // NewEndpoints returns a new endpoints discovery.
@@ -45,8 +46,9 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 		logger:         l,
 		endpointsInf:   eps,
 		endpointsStore: eps.GetStore(),
-		servicesInf:    svc,
-		podsInf:        pod,
+		serviceInf:     svc,
+		serviceStore:   svc.GetStore(),
+		podInf:         pod,
 		podStore:       pod.GetStore(),
 	}
 
@@ -99,8 +101,11 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		if exists && err != nil {
 			send(e.buildEndpoints(obj.(*apiv1.Endpoints)))
 		}
+		if err != nil {
+			e.logger.With("err", err).Errorln("retrieving endpoints failed")
+		}
 	}
-	e.servicesInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
 		UpdateFunc: func(_, o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
 		DeleteFunc: func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
@@ -119,9 +124,10 @@ const (
 	serviceLabelPrefix      = metaLabelPrefix + "service_label_"
 	serviceAnnotationPrefix = metaLabelPrefix + "service_annotation_"
 
-	endpointsNameLabel    = metaLabelPrefix + "endpoints_name"
-	endpointReadyLabel    = metaLabelPrefix + "endpoint_ready"
-	endpointPortNameLabel = metaLabelPrefix + "endpoint_port_name"
+	endpointsNameLabel        = metaLabelPrefix + "endpoints_name"
+	endpointReadyLabel        = metaLabelPrefix + "endpoint_ready"
+	endpointPortNameLabel     = metaLabelPrefix + "endpoint_port_name"
+	endpointPortProtocolLabel = metaLabelPrefix + "endpoint_port_protocol"
 )
 
 func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
@@ -136,22 +142,56 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 		namespaceLabel:     lv(eps.Namespace),
 		endpointsNameLabel: lv(eps.Name),
 	}
-	e.decorateService(eps.Namespace, eps.Name, tg)
+	e.addServiceLabels(eps.Namespace, eps.Name, tg)
 
-	// type podEntry struct {
-	// 	pod          *apiv1.Pod
-	// 	servicePorts []apiv1.ServicePort
-	// }
-	// seenPods := map[string]podEntry{}
+	type podEntry struct {
+		pod          *apiv1.Pod
+		servicePorts []apiv1.EndpointPort
+	}
+	seenPods := map[string]*podEntry{}
 
 	add := func(addr apiv1.EndpointAddress, port apiv1.EndpointPort, ready string) {
 		a := net.JoinHostPort(addr.IP, strconv.FormatInt(int64(port.Port), 10))
 
-		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel:    lv(a),
-			endpointPortNameLabel: lv(port.Name),
-			endpointReadyLabel:    lv(ready),
-		})
+		target := model.LabelSet{
+			model.AddressLabel:        lv(a),
+			endpointPortNameLabel:     lv(port.Name),
+			endpointPortProtocolLabel: lv(string(port.Protocol)),
+			endpointReadyLabel:        lv(ready),
+		}
+
+		pod := e.resolvePodRef(addr.TargetRef)
+		if pod == nil {
+			tg.Targets = append(tg.Targets, target)
+			return
+		}
+		s := pod.Namespace + "/" + pod.Name
+
+		sp, ok := seenPods[s]
+		if !ok {
+			sp = &podEntry{pod: pod}
+			seenPods[s] = sp
+		}
+
+		// Attach standard pod labels.
+		target = target.Merge(podLabels(pod))
+
+		// Attach potential container port labels matching the endpoint port.
+		for _, c := range pod.Spec.Containers {
+			for _, cport := range c.Ports {
+				if port.Port == cport.ContainerPort {
+					target[podContainerNameLabel] = lv(c.Name)
+					target[podContainerPortNameLabel] = lv(port.Name)
+					target[podContainerPortProtocolLabel] = lv(string(port.Protocol))
+					break
+				}
+			}
+		}
+
+		// Add service port so we know that we have already generated a target
+		// for it.
+		sp.servicePorts = append(sp.servicePorts, port)
+		tg.Targets = append(tg.Targets, target)
 	}
 
 	for _, ss := range eps.Subsets {
@@ -165,28 +205,68 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 		}
 	}
 
+	// For all seen pods, check all container ports. If they were not covered
+	// by one of the service endpoints, generate targets for them.
+	for _, pe := range seenPods {
+		for _, c := range pe.pod.Spec.Containers {
+			for _, cport := range c.Ports {
+				hasSeenPort := func() bool {
+					for _, eport := range pe.servicePorts {
+						if cport.ContainerPort == eport.Port {
+							return true
+						}
+					}
+					return false
+				}
+				if hasSeenPort() {
+					continue
+				}
+
+				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatInt(int64(cport.ContainerPort), 10))
+
+				target := model.LabelSet{
+					model.AddressLabel:            lv(a),
+					podContainerNameLabel:         lv(c.Name),
+					podContainerPortNameLabel:     lv(cport.Name),
+					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+				}
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+			}
+		}
+	}
+
 	return tg
 }
 
 func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
-	if ref.Kind != "Pod" {
+	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
-	p, exists, err := e.podStore.Get(ref)
+	p := &apiv1.Pod{}
+	p.Namespace = ref.Namespace
+	p.Name = ref.Name
+
+	obj, exists, err := e.podStore.Get(p)
 	if err != nil || !exists {
 		return nil
 	}
-	return p.(*apiv1.Pod)
+	if err != nil {
+		e.logger.With("err", err).Errorln("resolving pod ref failed")
+	}
+	return obj.(*apiv1.Pod)
 }
 
-func (e *Endpoints) decorateService(ns, name string, tg *config.TargetGroup) {
+func (e *Endpoints) addServiceLabels(ns, name string, tg *config.TargetGroup) {
 	svc := &apiv1.Service{}
 	svc.Namespace = ns
 	svc.Name = name
 
-	obj, exists, err := e.servicesInf.GetStore().Get(svc)
+	obj, exists, err := e.serviceStore.Get(svc)
 	if !exists || err != nil {
 		return
+	}
+	if err != nil {
+		e.logger.With("err", err).Errorln("retrieving service failed")
 	}
 	svc = obj.(*apiv1.Service)
 

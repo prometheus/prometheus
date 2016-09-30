@@ -121,16 +121,16 @@ func (k *Kubernetes) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 		)
 		go eps.endpointsInf.Run(ctx.Done())
-		go eps.servicesInf.Run(ctx.Done())
-		go eps.podsInf.Run(ctx.Done())
+		go eps.serviceInf.Run(ctx.Done())
+		go eps.podInf.Run(ctx.Done())
 
-		for !eps.servicesInf.HasSynced() {
+		for !eps.serviceInf.HasSynced() {
 			time.Sleep(100 * time.Millisecond)
 		}
 		for !eps.endpointsInf.HasSynced() {
 			time.Sleep(100 * time.Millisecond)
 		}
-		for !eps.podsInf.HasSynced() {
+		for !eps.podInf.HasSynced() {
 			time.Sleep(100 * time.Millisecond)
 		}
 		eps.Run(ctx, ch)

@@ -22,13 +22,14 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
 	"golang.org/x/net/context"
 	"k8s.io/client-go/1.5/pkg/api"
 	apiv1 "k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
-// Pods discovers new pod targets.
+// Pod discovers new pod targets.
 type Pod struct {
 	informer cache.SharedInformer
 	store    cache.Store
@@ -86,9 +87,10 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 const (
 	podNameLabel                  = metaLabelPrefix + "pod_name"
-	podAddressLabel               = metaLabelPrefix + "pod_address"
+	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
+	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podLabelPrefix                = metaLabelPrefix + "pod_label_"
@@ -97,18 +99,39 @@ const (
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
 )
 
-func (p *Pod) buildPod(pod *apiv1.Pod) *config.TargetGroup {
-	tg := &config.TargetGroup{
-		Source: podSource(pod),
-	}
-	tg.Labels = model.LabelSet{
-		namespaceLabel:   lv(pod.Namespace),
+func podLabels(pod *apiv1.Pod) model.LabelSet {
+	ls := model.LabelSet{
 		podNameLabel:     lv(pod.ObjectMeta.Name),
-		podAddressLabel:  lv(pod.Status.PodIP),
+		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 	}
+
+	for k, v := range pod.Labels {
+		ln := strutil.SanitizeLabelName(serviceLabelPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
+	}
+
+	for k, v := range pod.Annotations {
+		ln := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
+	}
+
+	return ls
+}
+
+func (p *Pod) buildPod(pod *apiv1.Pod) *config.TargetGroup {
+	// During startup the pod may not have an IP yet. This does not even allow
+	// for an up metric, so we skip the target.
+	if len(pod.Status.PodIP) == 0 {
+		return nil
+	}
+	tg := &config.TargetGroup{
+		Source: podSource(pod),
+	}
+	tg.Labels = podLabels(pod)
+	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
 	for _, c := range pod.Spec.Containers {
 		// If no ports are defined for the container, create an anonymous
@@ -124,11 +147,13 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *config.TargetGroup {
 		}
 		// Otherwise create one target for each container/port combination.
 		for _, port := range c.Ports {
-			addr := net.JoinHostPort(pod.Status.PodIP, strconv.FormatInt(int64(port.ContainerPort), 10))
+			ports := strconv.FormatInt(int64(port.ContainerPort), 10)
+			addr := net.JoinHostPort(pod.Status.PodIP, ports)
 
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:            lv(addr),
 				podContainerNameLabel:         lv(c.Name),
+				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),
 			})
