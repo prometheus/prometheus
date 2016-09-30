@@ -97,6 +97,31 @@ func (k *Kubernetes) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	rclient := k.client.Core().GetRESTClient()
 
 	switch k.role {
+	case "endpoint":
+		elw := cache.NewListWatchFromClient(rclient, "endpoints", api.NamespaceAll, nil)
+		slw := cache.NewListWatchFromClient(rclient, "services", api.NamespaceAll, nil)
+		plw := cache.NewListWatchFromClient(rclient, "pods", api.NamespaceAll, nil)
+		eps := NewEndpoints(
+			k.logger.With("kubernetes_sd", "endpoint"),
+			cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
+			cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
+			cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+		)
+		go eps.endpointsInf.Run(ctx.Done())
+		go eps.servicesInf.Run(ctx.Done())
+		go eps.podsInf.Run(ctx.Done())
+
+		for !eps.servicesInf.HasSynced() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		for !eps.endpointsInf.HasSynced() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		for !eps.podsInf.HasSynced() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		eps.Run(ctx, ch)
+
 	case "pod":
 		plw := cache.NewListWatchFromClient(rclient, "pods", api.NamespaceAll, nil)
 		pod := NewPods(
