@@ -788,7 +788,7 @@ func funcChanges(ev *evaluator, args Expressions) model.Value {
 		prev := model.SampleValue(samples.Values[0].Value)
 		for _, sample := range samples.Values[1:] {
 			current := sample.Value
-			if current != prev {
+			if current != prev && !(math.IsNaN(float64(current)) && math.IsNaN(float64(prev))) {
 				changes++
 			}
 			prev = current
