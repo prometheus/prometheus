@@ -50,6 +50,15 @@ eval instant at 50m changes(http_requests[50m])
 
 eval instant at 50m changes(nonexistent_metric[50m])
 
+clear
+
+load 5m
+  x{a="b"} NaN NaN NaN
+  x{a="c"} 0 NaN 0
+
+eval instant at 15m changes(x[15m])
+  {a="b"} 0
+  {a="c"} 2
 
 clear
 
