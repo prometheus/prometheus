@@ -44,6 +44,19 @@ var expectedConf = &Config{
 		"testdata/my/*.rules",
 	},
 
+	RemoteWriteConfig: RemoteWriteConfig{
+		RemoteTimeout: model.Duration(30 * time.Second),
+		WriteRelabelConfigs: []*RelabelConfig{
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Separator:    ";",
+				Regex:        MustNewRegexp("expensive.*"),
+				Replacement:  "$1",
+				Action:       RelabelDrop,
+			},
+		},
+	},
+
 	ScrapeConfigs: []*ScrapeConfig{
 		{
 			JobName: "prometheus",
