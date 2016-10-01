@@ -13,6 +13,12 @@ rule_files:
 - "/absolute/second.rules"
 - "my/*.rules"
 
+remote_write:
+  write_relabel_configs:
+  - source_labels: [__name__]
+    regex:         expensive.*
+    action:        drop
+
 scrape_configs:
 - job_name: prometheus
 

@@ -19,15 +19,16 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 )
 
 // Storage collects multiple remote storage queues.
 type ReloadableStorage struct {
 	mtx            sync.RWMutex
 	externalLabels model.LabelSet
-	conf           []config.RemoteWriteConfig
+	conf           config.RemoteWriteConfig
 
-	queues []*StorageQueueManager
+	queue *StorageQueueManager
 }
 
 // New returns a new remote Storage.
@@ -42,31 +43,32 @@ func (s *ReloadableStorage) ApplyConfig(conf *config.Config) error {
 
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
-	newQueues := []*StorageQueueManager{}
-	for i, c := range conf.RemoteWriteConfig {
-		c, err := NewClient(i, c)
+	var newQueue *StorageQueueManager
+
+	if conf.RemoteWriteConfig.URL != nil {
+		c, err := NewClient(conf.RemoteWriteConfig)
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewStorageQueueManager(c, nil))
+		newQueue = NewStorageQueueManager(c, nil)
 	}
 
-	for _, q := range s.queues {
-		q.Stop()
+	if s.queue != nil {
+		s.queue.Stop()
 	}
-	s.queues = newQueues
-	s.externalLabels = conf.GlobalConfig.ExternalLabels
+	s.queue = newQueue
 	s.conf = conf.RemoteWriteConfig
-	for _, q := range s.queues {
-		q.Start()
+	s.externalLabels = conf.GlobalConfig.ExternalLabels
+	if s.queue != nil {
+		s.queue.Start()
 	}
 	return nil
 }
 
 // Stop the background processing of the storage queues.
 func (s *ReloadableStorage) Stop() {
-	for _, q := range s.queues {
-		q.Stop()
+	if s.queue != nil {
+		s.queue.Stop()
 	}
 }
 
@@ -84,9 +86,14 @@ func (s *ReloadableStorage) Append(smpl *model.Sample) error {
 			snew.Metric[ln] = lv
 		}
 	}
+	snew.Metric = model.Metric(
+		relabel.Process(model.LabelSet(snew.Metric), s.conf.WriteRelabelConfigs...))
 
-	for _, q := range s.queues {
-		q.Append(&snew)
+	if snew.Metric == nil {
+		return nil
+	}
+	if s.queue != nil {
+		s.queue.Append(&snew)
 	}
 	return nil
 }
