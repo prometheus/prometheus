@@ -757,7 +757,7 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 		s.discardedSamplesCount.WithLabelValues(outOfOrderTimestamp).Inc()
 		return ErrOutOfOrderSample // Caused by the caller.
 	}
-	completedChunksCount, err := series.Add(model.SamplePair{
+	completedChunksCount, err := series.add(model.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
 	})
