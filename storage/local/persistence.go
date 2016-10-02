@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/util/flock"
@@ -60,7 +61,7 @@ const (
 	chunkHeaderTypeOffset      = 0
 	chunkHeaderFirstTimeOffset = 1
 	chunkHeaderLastTimeOffset  = 9
-	chunkLenWithHeader         = chunkLen + chunkHeaderLen
+	chunkLenWithHeader         = chunk.ChunkLen + chunkHeaderLen
 	chunkMaxBatchSize          = 62 // Max no. of chunks to load or write in
 	// one batch.  Note that 62 is the largest number of chunks that fit
 	// into 64kiB on disk because chunkHeaderLen is added to each 1k chunk.
@@ -370,7 +371,7 @@ func (p *persistence) labelValuesForLabelName(ln model.LabelName) (model.LabelVa
 //
 // Returning an error signals problems with the series file. In this case, the
 // caller should quarantine the series.
-func (p *persistence) persistChunks(fp model.Fingerprint, chunks []Chunk) (index int, err error) {
+func (p *persistence) persistChunks(fp model.Fingerprint, chunks []chunk.Chunk) (index int, err error) {
 	f, err := p.openChunkFileForWriting(fp)
 	if err != nil {
 		return -1, err
@@ -399,14 +400,14 @@ func (p *persistence) persistChunks(fp model.Fingerprint, chunks []Chunk) (index
 // incrementally larger indexes. The indexOffset denotes the offset to be added to
 // each index in indexes. It is the caller's responsibility to not persist or
 // drop anything for the same fingerprint concurrently.
-func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffset int) ([]Chunk, error) {
+func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffset int) ([]chunk.Chunk, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	chunks := make([]Chunk, 0, len(indexes))
+	chunks := make([]chunk.Chunk, 0, len(indexes))
 	buf := p.bufPool.Get().([]byte)
 	defer func() {
 		// buf may change below. An unwrapped 'defer p.bufPool.Put(buf)'
@@ -436,7 +437,7 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 			return nil, err
 		}
 		for c := 0; c < batchSize; c++ {
-			chunk, err := NewChunkForEncoding(ChunkEncoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
+			chunk, err := chunk.NewForEncoding(chunk.Encoding(buf[c*chunkLenWithHeader+chunkHeaderTypeOffset]))
 			if err != nil {
 				return nil, err
 			}
@@ -446,16 +447,16 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 			chunks = append(chunks, chunk)
 		}
 	}
-	chunkOps.WithLabelValues(load).Add(float64(len(chunks)))
-	atomic.AddInt64(&numMemChunks, int64(len(chunks)))
+	chunk.Ops.WithLabelValues(chunk.Load).Add(float64(len(chunks)))
+	atomic.AddInt64(&chunk.NumMemChunks, int64(len(chunks)))
 	return chunks, nil
 }
 
-// loadChunkDescs loads the chunkDescs for a series from disk. offsetFromEnd is
-// the number of chunkDescs to skip from the end of the series file. It is the
+// loadChunkDescs loads the chunk.Descs for a series from disk. offsetFromEnd is
+// the number of chunk.Descs to skip from the end of the series file. It is the
 // caller's responsibility to not persist or drop anything for the same
 // fingerprint concurrently.
-func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([]*ChunkDesc, error) {
+func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([]*chunk.Desc, error) {
 	f, err := p.openChunkFileForReading(fp)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -478,7 +479,7 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 	}
 
 	numChunks := int(fi.Size())/chunkLenWithHeader - offsetFromEnd
-	cds := make([]*ChunkDesc, numChunks)
+	cds := make([]*chunk.Desc, numChunks)
 	chunkTimesBuf := make([]byte, 16)
 	for i := 0; i < numChunks; i++ {
 		_, err := f.Seek(offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
@@ -490,13 +491,13 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 		if err != nil {
 			return nil, err
 		}
-		cds[i] = &ChunkDesc{
-			chunkFirstTime: model.Time(binary.LittleEndian.Uint64(chunkTimesBuf)),
-			chunkLastTime:  model.Time(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
+		cds[i] = &chunk.Desc{
+			ChunkFirstTime: model.Time(binary.LittleEndian.Uint64(chunkTimesBuf)),
+			ChunkLastTime:  model.Time(binary.LittleEndian.Uint64(chunkTimesBuf[8:])),
 		}
 	}
-	chunkDescOps.WithLabelValues(load).Add(float64(len(cds)))
-	numMemChunkDescs.Add(float64(len(cds)))
+	chunk.DescOps.WithLabelValues(chunk.Load).Add(float64(len(cds)))
+	chunk.NumMemDescs.Add(float64(len(cds)))
 	return cds, nil
 }
 
@@ -645,10 +646,10 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			}
 			for i, chunkDesc := range m.series.chunkDescs {
 				if i < m.series.persistWatermark {
-					if _, err = codable.EncodeVarint(w, int64(chunkDesc.firstTime())); err != nil {
+					if _, err = codable.EncodeVarint(w, int64(chunkDesc.FirstTime())); err != nil {
 						return
 					}
-					lt, err := chunkDesc.lastTime()
+					lt, err := chunkDesc.LastTime()
 					if err != nil {
 						return
 					}
@@ -657,10 +658,10 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					}
 				} else {
 					// This is a non-persisted chunk. Fully marshal it.
-					if err = w.WriteByte(byte(chunkDesc.c.Encoding())); err != nil {
+					if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
 						return
 					}
-					if err = chunkDesc.c.Marshal(w); err != nil {
+					if err = chunkDesc.C.Marshal(w); err != nil {
 						return
 					}
 				}
@@ -751,7 +752,7 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 // Returning an error signals problems with the series file. In this case, the
 // caller should quarantine the series.
 func (p *persistence) dropAndPersistChunks(
-	fp model.Fingerprint, beforeTime model.Time, chunks []Chunk,
+	fp model.Fingerprint, beforeTime model.Time, chunks []chunk.Chunk,
 ) (
 	firstTimeNotDropped model.Time,
 	offset int,
@@ -879,7 +880,7 @@ func (p *persistence) dropAndPersistChunks(
 	firstTimeNotDropped = model.Time(
 		binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
 	)
-	chunkOps.WithLabelValues(drop).Add(float64(numDropped))
+	chunk.Ops.WithLabelValues(chunk.Drop).Add(float64(numDropped))
 	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
 	if err != nil {
 		return
@@ -930,7 +931,7 @@ func (p *persistence) deleteSeriesFile(fp model.Fingerprint) (int, error) {
 	if err := os.Remove(fname); err != nil {
 		return -1, err
 	}
-	chunkOps.WithLabelValues(drop).Add(float64(numChunks))
+	chunk.Ops.WithLabelValues(chunk.Drop).Add(float64(numChunks))
 	return numChunks, nil
 }
 
@@ -1500,7 +1501,7 @@ func (p *persistence) loadFPMappings() (fpMappings, model.Fingerprint, error) {
 	return fpm, highestMappedFP, nil
 }
 
-func (p *persistence) writeChunks(w io.Writer, chunks []Chunk) error {
+func (p *persistence) writeChunks(w io.Writer, chunks []chunk.Chunk) error {
 	b := p.bufPool.Get().([]byte)
 	defer func() {
 		// buf may change below. An unwrapped 'defer p.bufPool.Put(buf)'
@@ -1547,7 +1548,7 @@ func chunkIndexForOffset(offset int64) (int, error) {
 	return int(offset) / chunkLenWithHeader, nil
 }
 
-func writeChunkHeader(header []byte, c Chunk) error {
+func writeChunkHeader(header []byte, c chunk.Chunk) error {
 	header[chunkHeaderTypeOffset] = byte(c.Encoding())
 	binary.LittleEndian.PutUint64(
 		header[chunkHeaderFirstTimeOffset:],

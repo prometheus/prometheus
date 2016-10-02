@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
@@ -149,7 +150,7 @@ func init() {
 		"If set, a crash recovery will perform checks on each series file. This might take a very long time.",
 	)
 	cfg.fs.Var(
-		&local.DefaultChunkEncoding, "storage.local.chunk-encoding-version",
+		&chunk.DefaultEncoding, "storage.local.chunk-encoding-version",
 		"Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding), 1 (double-delta encoding), and 2 (double-delta encoding with variable bit-width).",
 	)
 	// Index cache sizes.

@@ -91,7 +91,7 @@ type Querier interface {
 type SeriesIterator interface {
 	// Gets the value that is closest before the given time. In case a value
 	// exists at precisely the given time, that value is returned. If no
-	// applicable value exists, ZeroSamplePair is returned.
+	// applicable value exists, model.ZeroSamplePair is returned.
 	ValueAtOrBeforeTime(model.Time) model.SamplePair
 	// Gets all values contained within a given interval.
 	RangeValues(metric.Interval) []model.SamplePair
@@ -100,17 +100,3 @@ type SeriesIterator interface {
 	// Closes the iterator and releases the underlying data.
 	Close()
 }
-
-// ZeroSamplePair is the pseudo zero-value of model.SamplePair used by the local
-// package to signal a non-existing sample pair. It is a SamplePair with
-// timestamp model.Earliest and value 0.0. Note that the natural zero value of
-// SamplePair has a timestamp of 0, which is possible to appear in a real
-// SamplePair and thus not suitable to signal a non-existing SamplePair.
-var ZeroSamplePair = model.SamplePair{Timestamp: model.Earliest}
-
-// ZeroSample is the pseudo zero-value of model.Sample used by the local package
-// to signal a non-existing sample. It is a Sample with timestamp
-// model.Earliest, value 0.0, and metric nil. Note that the natural zero value
-// of Sample has a timestamp of 0, which is possible to appear in a real
-// Sample and thus not suitable to signal a non-existing Sample.
-var ZeroSample = model.Sample{Timestamp: model.Earliest}
