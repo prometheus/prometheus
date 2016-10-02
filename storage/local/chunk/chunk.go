@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package local
+package chunk
 
 import (
 	"container/list"
@@ -27,28 +27,37 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-// DefaultChunkEncoding can be changed via a flag.
-var DefaultChunkEncoding = DoubleDelta
+// ChunkLen is the length of a chunk in bytes.
+const ChunkLen = 1024
+
+// DefaultEncoding can be changed via a flag.
+var DefaultEncoding = DoubleDelta
 
 var errChunkBoundsExceeded = errors.New("attempted access outside of chunk boundaries")
 
-// ChunkEncoding defintes which encoding we are using, delta, doubledelta, or varbit
-type ChunkEncoding byte
+// EvictRequest is a request to evict a chunk from memory.
+type EvictRequest struct {
+	Desc  *Desc
+	Evict bool
+}
+
+// Encoding defines which encoding we are using, delta, doubledelta, or varbit
+type Encoding byte
 
 // String implements flag.Value.
-func (ce ChunkEncoding) String() string {
-	return fmt.Sprintf("%d", ce)
+func (e Encoding) String() string {
+	return fmt.Sprintf("%d", e)
 }
 
 // Set implements flag.Value.
-func (ce *ChunkEncoding) Set(s string) error {
+func (e *Encoding) Set(s string) error {
 	switch s {
 	case "0":
-		*ce = Delta
+		*e = Delta
 	case "1":
-		*ce = DoubleDelta
+		*e = DoubleDelta
 	case "2":
-		*ce = Varbit
+		*e = Varbit
 	default:
 		return fmt.Errorf("invalid chunk encoding: %s", s)
 	}
@@ -57,194 +66,192 @@ func (ce *ChunkEncoding) Set(s string) error {
 
 const (
 	// Delta encoding
-	Delta ChunkEncoding = iota
+	Delta Encoding = iota
 	// DoubleDelta encoding
 	DoubleDelta
 	// Varbit encoding
 	Varbit
 )
 
-// ChunkDesc contains meta-data for a chunk. Pay special attention to the
+// Desc contains meta-data for a chunk. Pay special attention to the
 // documented requirements for calling its methods concurrently (WRT pinning and
 // locking). The doc comments spell out the requirements for each method, but
 // here is an overview and general explanation:
 //
 // Everything that changes the pinning of the underlying chunk or deals with its
-// eviction is protected by a mutex. This affects the following methods: pin,
-// unpin, refCount, isEvicted, maybeEvict. These methods can be called at any
+// eviction is protected by a mutex. This affects the following methods: Pin,
+// Unpin, RefCount, IsEvicted, MaybeEvict. These methods can be called at any
 // time without further prerequisites.
 //
 // Another group of methods acts on (or sets) the underlying chunk. These
 // methods involve no locking. They may only be called if the caller has pinned
 // the chunk (to guarantee the chunk is not evicted concurrently). Also, the
 // caller must make sure nobody else will call these methods concurrently,
-// either by holding the sole reference to the chunkDesc (usually during loading
-// or creation) or by locking the fingerprint of the series the chunkDesc
-// belongs to. The affected methods are: add, maybePopulateLastTime, setChunk.
+// either by holding the sole reference to the Desc (usually during loading
+// or creation) or by locking the fingerprint of the series the Desc
+// belongs to. The affected methods are: Add, MaybePopulateLastTime, SetChunk.
 //
-// Finally, there are the special cases firstTime and lastTime. lastTime requires
+// Finally, there are the special cases FirstTime and LastTime. LastTime requires
 // to have locked the fingerprint of the series but the chunk does not need to
-// be pinned. That's because the chunkLastTime field in chunkDesc gets populated
+// be pinned. That's because the ChunkLastTime field in Desc gets populated
 // upon completion of the chunk (when it is still pinned, and which happens
 // while the series's fingerprint is locked). Once that has happened, calling
-// lastTime does not require the chunk to be loaded anymore. Before that has
-// happened, the chunk is pinned anyway. The chunkFirstTime field in chunkDesc
-// is populated upon creation of a chunkDesc, so it is alway safe to call
-// firstTime. The firstTime method is arguably not needed and only there for
-// consistency with lastTime.
-type ChunkDesc struct {
+// LastTime does not require the chunk to be loaded anymore. Before that has
+// happened, the chunk is pinned anyway. The ChunkFirstTime field in Desc
+// is populated upon creation of a Desc, so it is alway safe to call
+// FirstTime. The FirstTime method is arguably not needed and only there for
+// consistency with LastTime.
+type Desc struct {
 	sync.Mutex           // Protects pinning.
-	c              Chunk // nil if chunk is evicted.
+	C              Chunk // nil if chunk is evicted.
 	rCnt           int
-	chunkFirstTime model.Time // Populated at creation. Immutable.
-	chunkLastTime  model.Time // Populated on closing of the chunk, model.Earliest if unset.
+	ChunkFirstTime model.Time // Populated at creation. Immutable.
+	ChunkLastTime  model.Time // Populated on closing of the chunk, model.Earliest if unset.
 
-	// evictListElement is nil if the chunk is not in the evict list.
-	// evictListElement is _not_ protected by the chunkDesc mutex.
+	// EvictListElement is nil if the chunk is not in the evict list.
+	// EvictListElement is _not_ protected by the Desc mutex.
 	// It must only be touched by the evict list handler in MemorySeriesStorage.
-	evictListElement *list.Element
+	EvictListElement *list.Element
 }
 
-// NewChunkDesc creates a new chunkDesc pointing to the provided chunk. The
-// provided chunk is assumed to be not persisted yet. Therefore, the refCount of
-// the new chunkDesc is 1 (preventing eviction prior to persisting).
-func NewChunkDesc(c Chunk, firstTime model.Time) *ChunkDesc {
-	chunkOps.WithLabelValues(createAndPin).Inc()
-	atomic.AddInt64(&numMemChunks, 1)
-	numMemChunkDescs.Inc()
-	return &ChunkDesc{
-		c:              c,
+// NewDesc creates a new Desc pointing to the provided chunk. The provided chunk
+// is assumed to be not persisted yet. Therefore, the refCount of the new
+// Desc is 1 (preventing eviction prior to persisting).
+func NewDesc(c Chunk, firstTime model.Time) *Desc {
+	Ops.WithLabelValues(CreateAndPin).Inc()
+	atomic.AddInt64(&NumMemChunks, 1)
+	NumMemDescs.Inc()
+	return &Desc{
+		C:              c,
 		rCnt:           1,
-		chunkFirstTime: firstTime,
-		chunkLastTime:  model.Earliest,
+		ChunkFirstTime: firstTime,
+		ChunkLastTime:  model.Earliest,
 	}
 }
 
 // Add adds a sample pair to the underlying chunk. For safe concurrent access,
 // The chunk must be pinned, and the caller must have locked the fingerprint of
 // the series.
-func (cd *ChunkDesc) Add(s model.SamplePair) ([]Chunk, error) {
-	return cd.c.Add(s)
+func (d *Desc) Add(s model.SamplePair) ([]Chunk, error) {
+	return d.C.Add(s)
 }
 
-// pin increments the refCount by one. Upon increment from 0 to 1, this
-// chunkDesc is removed from the evict list. To enable the latter, the
+// Pin increments the refCount by one. Upon increment from 0 to 1, this
+// Desc is removed from the evict list. To enable the latter, the
 // evictRequests channel has to be provided. This method can be called
 // concurrently at any time.
-func (cd *ChunkDesc) pin(evictRequests chan<- evictRequest) {
-	cd.Lock()
-	defer cd.Unlock()
+func (d *Desc) Pin(evictRequests chan<- EvictRequest) {
+	d.Lock()
+	defer d.Unlock()
 
-	if cd.rCnt == 0 {
+	if d.rCnt == 0 {
 		// Remove ourselves from the evict list.
-		evictRequests <- evictRequest{cd, false}
+		evictRequests <- EvictRequest{d, false}
 	}
-	cd.rCnt++
+	d.rCnt++
 }
 
-// unpin decrements the refCount by one. Upon decrement from 1 to 0, this
-// chunkDesc is added to the evict list. To enable the latter, the evictRequests
+// Unpin decrements the refCount by one. Upon decrement from 1 to 0, this
+// Desc is added to the evict list. To enable the latter, the evictRequests
 // channel has to be provided. This method can be called concurrently at any
 // time.
-func (cd *ChunkDesc) unpin(evictRequests chan<- evictRequest) {
-	cd.Lock()
-	defer cd.Unlock()
+func (d *Desc) Unpin(evictRequests chan<- EvictRequest) {
+	d.Lock()
+	defer d.Unlock()
 
-	if cd.rCnt == 0 {
+	if d.rCnt == 0 {
 		panic("cannot unpin already unpinned chunk")
 	}
-	cd.rCnt--
-	if cd.rCnt == 0 {
+	d.rCnt--
+	if d.rCnt == 0 {
 		// Add ourselves to the back of the evict list.
-		evictRequests <- evictRequest{cd, true}
+		evictRequests <- EvictRequest{d, true}
 	}
 }
 
-// refCount returns the number of pins. This method can be called concurrently
+// RefCount returns the number of pins. This method can be called concurrently
 // at any time.
-func (cd *ChunkDesc) refCount() int {
-	cd.Lock()
-	defer cd.Unlock()
+func (d *Desc) RefCount() int {
+	d.Lock()
+	defer d.Unlock()
 
-	return cd.rCnt
+	return d.rCnt
 }
 
-// firstTime returns the timestamp of the first sample in the chunk. This method
+// FirstTime returns the timestamp of the first sample in the chunk. This method
 // can be called concurrently at any time. It only returns the immutable
-// cd.chunkFirstTime without any locking. Arguably, this method is
-// useless. However, it provides consistency with the lastTime method.
-func (cd *ChunkDesc) firstTime() model.Time {
-	return cd.chunkFirstTime
+// d.ChunkFirstTime without any locking. Arguably, this method is
+// useless. However, it provides consistency with the LastTime method.
+func (d *Desc) FirstTime() model.Time {
+	return d.ChunkFirstTime
 }
 
-// lastTime returns the timestamp of the last sample in the chunk. For safe
+// LastTime returns the timestamp of the last sample in the chunk. For safe
 // concurrent access, this method requires the fingerprint of the time series to
 // be locked.
-func (cd *ChunkDesc) lastTime() (model.Time, error) {
-	if cd.chunkLastTime != model.Earliest || cd.c == nil {
-		return cd.chunkLastTime, nil
+func (d *Desc) LastTime() (model.Time, error) {
+	if d.ChunkLastTime != model.Earliest || d.C == nil {
+		return d.ChunkLastTime, nil
 	}
-	return cd.c.NewIterator().LastTimestamp()
+	return d.C.NewIterator().LastTimestamp()
 }
 
-// maybePopulateLastTime populates the chunkLastTime from the underlying chunk
+// MaybePopulateLastTime populates the ChunkLastTime from the underlying chunk
 // if it has not yet happened. Call this method directly after having added the
 // last sample to a chunk or after closing a head chunk due to age. For safe
 // concurrent access, the chunk must be pinned, and the caller must have locked
 // the fingerprint of the series.
-func (cd *ChunkDesc) maybePopulateLastTime() error {
-	if cd.chunkLastTime == model.Earliest && cd.c != nil {
-		t, err := cd.c.NewIterator().LastTimestamp()
+func (d *Desc) MaybePopulateLastTime() error {
+	if d.ChunkLastTime == model.Earliest && d.C != nil {
+		t, err := d.C.NewIterator().LastTimestamp()
 		if err != nil {
 			return err
 		}
-		cd.chunkLastTime = t
+		d.ChunkLastTime = t
 	}
 	return nil
 }
 
-// isEvicted returns whether the chunk is evicted. For safe concurrent access,
+// IsEvicted returns whether the chunk is evicted. For safe concurrent access,
 // the caller must have locked the fingerprint of the series.
-func (cd *ChunkDesc) isEvicted() bool {
+func (d *Desc) IsEvicted() bool {
 	// Locking required here because we do not want the caller to force
 	// pinning the chunk first, so it could be evicted while this method is
 	// called.
-	cd.Lock()
-	defer cd.Unlock()
+	d.Lock()
+	defer d.Unlock()
 
-	return cd.c == nil
+	return d.C == nil
 }
 
-// setChunk sets the underlying chunk. The caller must have locked the
+// SetChunk sets the underlying chunk. The caller must have locked the
 // fingerprint of the series and must have "pre-pinned" the chunk (i.e. first
-// call pin and then set the chunk).
-func (cd *ChunkDesc) setChunk(c Chunk) {
-	if cd.c != nil {
+// call Pin and then set the chunk).
+func (d *Desc) SetChunk(c Chunk) {
+	if d.C != nil {
 		panic("chunk already set")
 	}
-	cd.c = c
+	d.C = c
 }
 
-// maybeEvict evicts the chunk if the refCount is 0. It returns whether the chunk
+// MaybeEvict evicts the chunk if the refCount is 0. It returns whether the chunk
 // is now evicted, which includes the case that the chunk was evicted even
 // before this method was called. It can be called concurrently at any time.
-func (cd *ChunkDesc) maybeEvict() bool {
-	cd.Lock()
-	defer cd.Unlock()
+func (d *Desc) MaybeEvict() bool {
+	d.Lock()
+	defer d.Unlock()
 
-	if cd.c == nil {
+	if d.C == nil {
 		return true
 	}
-	if cd.rCnt != 0 {
+	if d.rCnt != 0 {
 		return false
 	}
-	if cd.chunkLastTime == model.Earliest {
+	if d.ChunkLastTime == model.Earliest {
 		// This must never happen.
-		panic("chunkLastTime not populated for evicted chunk")
+		panic("ChunkLastTime not populated for evicted chunk")
 	}
-	cd.c = nil
-	chunkOps.WithLabelValues(evict).Inc()
-	atomic.AddInt64(&numMemChunks, -1)
+	d.C = nil
 	return true
 }
 
@@ -260,18 +267,18 @@ type Chunk interface {
 	Add(sample model.SamplePair) ([]Chunk, error)
 	Clone() Chunk
 	FirstTime() model.Time
-	NewIterator() ChunkIterator
+	NewIterator() Iterator
 	Marshal(io.Writer) error
 	MarshalToBuf([]byte) error
 	Unmarshal(io.Reader) error
 	UnmarshalFromBuf([]byte) error
-	Encoding() ChunkEncoding
+	Encoding() Encoding
 }
 
-// ChunkIterator enables efficient access to the content of a chunk. It is
-// generally not safe to use a chunkIterator concurrently with or after chunk
+// Iterator enables efficient access to the content of a chunk. It is
+// generally not safe to use an Iterator concurrently with or after chunk
 // mutation.
-type ChunkIterator interface {
+type Iterator interface {
 	// Gets the last timestamp in the chunk.
 	LastTimestamp() (model.Time, error)
 	// Whether a given timestamp is contained between first and last value
@@ -280,7 +287,7 @@ type ChunkIterator interface {
 	// Scans the next value in the chunk. Directly after the iterator has
 	// been created, the next value is the first value in the
 	// chunk. Otherwise, it is the value following the last value scanned or
-	// found (by one of the find... methods). Returns false if either the
+	// found (by one of the Find... methods). Returns false if either the
 	// end of the chunk is reached or an error has occurred.
 	Scan() bool
 	// Finds the most recent value at or before the provided time. Returns
@@ -292,7 +299,7 @@ type ChunkIterator interface {
 	// or an error has occurred.
 	FindAtOrAfter(model.Time) bool
 	// Returns the last value scanned (by the scan method) or found (by one
-	// of the find... methods). It returns ZeroSamplePair before any of
+	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
 	// Returns the last error encountered. In general, an error signals data
@@ -300,9 +307,9 @@ type ChunkIterator interface {
 	Err() error
 }
 
-// rangeValues is a utility function that retrieves all values within the given
-// range from a chunkIterator.
-func rangeValues(it ChunkIterator, in metric.Interval) ([]model.SamplePair, error) {
+// RangeValues is a utility function that retrieves all values within the given
+// range from an Iterator.
+func RangeValues(it Iterator, in metric.Interval) ([]model.SamplePair, error) {
 	result := []model.SamplePair{}
 	if !it.FindAtOrAfter(in.OldestInclusive) {
 		return result, it.Err()
@@ -320,7 +327,7 @@ func rangeValues(it ChunkIterator, in metric.Interval) ([]model.SamplePair, erro
 // chunk, adds the provided sample to it, and returns a chunk slice containing
 // the provided old chunk followed by the new overflow chunk.
 func addToOverflowChunk(c Chunk, s model.SamplePair) ([]Chunk, error) {
-	overflowChunks, err := NewChunk().Add(s)
+	overflowChunks, err := New().Add(s)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +339,7 @@ func addToOverflowChunk(c Chunk, s model.SamplePair) ([]Chunk, error) {
 // provided sample. It returns the new chunks (transcoded plus overflow) with
 // the new sample at the end.
 func transcodeAndAdd(dst Chunk, src Chunk, s model.SamplePair) ([]Chunk, error) {
-	chunkOps.WithLabelValues(transcode).Inc()
+	Ops.WithLabelValues(Transcode).Inc()
 
 	var (
 		head            = dst
@@ -358,23 +365,23 @@ func transcodeAndAdd(dst Chunk, src Chunk, s model.SamplePair) ([]Chunk, error) 
 	return append(body, NewChunks...), nil
 }
 
-// NewChunk creates a new chunk according to the encoding set by the
-// DefaultChunkEncoding flag.
-func NewChunk() Chunk {
-	chunk, err := NewChunkForEncoding(DefaultChunkEncoding)
+// New creates a new chunk according to the encoding set by the
+// DefaultEncoding flag.
+func New() Chunk {
+	chunk, err := NewForEncoding(DefaultEncoding)
 	if err != nil {
 		panic(err)
 	}
 	return chunk
 }
 
-// NewChunkForEncoding allows configuring what chunk type you want
-func NewChunkForEncoding(encoding ChunkEncoding) (Chunk, error) {
+// NewForEncoding allows configuring what chunk type you want
+func NewForEncoding(encoding Encoding) (Chunk, error) {
 	switch encoding {
 	case Delta:
-		return newDeltaEncodedChunk(d1, d0, true, chunkLen), nil
+		return newDeltaEncodedChunk(d1, d0, true, ChunkLen), nil
 	case DoubleDelta:
-		return newDoubleDeltaEncodedChunk(d1, d0, true, chunkLen), nil
+		return newDoubleDeltaEncodedChunk(d1, d0, true, ChunkLen), nil
 	case Varbit:
 		return newVarbitChunk(varbitZeroEncoding), nil
 	default:
@@ -402,23 +409,23 @@ func newIndexAccessingChunkIterator(len int, acc indexAccessor) *indexAccessingC
 	return &indexAccessingChunkIterator{
 		len:       len,
 		pos:       -1,
-		lastValue: ZeroSamplePair,
+		lastValue: model.ZeroSamplePair,
 		acc:       acc,
 	}
 }
 
-// lastTimestamp implements chunkIterator.
+// lastTimestamp implements Iterator.
 func (it *indexAccessingChunkIterator) LastTimestamp() (model.Time, error) {
 	return it.acc.timestampAtIndex(it.len - 1), it.acc.err()
 }
 
-// contains implements chunkIterator.
+// contains implements Iterator.
 func (it *indexAccessingChunkIterator) Contains(t model.Time) (bool, error) {
 	return !t.Before(it.acc.timestampAtIndex(0)) &&
 		!t.After(it.acc.timestampAtIndex(it.len-1)), it.acc.err()
 }
 
-// scan implements chunkIterator.
+// scan implements Iterator.
 func (it *indexAccessingChunkIterator) Scan() bool {
 	it.pos++
 	if it.pos >= it.len {
@@ -431,7 +438,7 @@ func (it *indexAccessingChunkIterator) Scan() bool {
 	return it.acc.err() == nil
 }
 
-// findAtOrBefore implements chunkIterator.
+// findAtOrBefore implements Iterator.
 func (it *indexAccessingChunkIterator) FindAtOrBefore(t model.Time) bool {
 	i := sort.Search(it.len, func(i int) bool {
 		return it.acc.timestampAtIndex(i).After(t)
@@ -447,7 +454,7 @@ func (it *indexAccessingChunkIterator) FindAtOrBefore(t model.Time) bool {
 	return true
 }
 
-// findAtOrAfter implements chunkIterator.
+// findAtOrAfter implements Iterator.
 func (it *indexAccessingChunkIterator) FindAtOrAfter(t model.Time) bool {
 	i := sort.Search(it.len, func(i int) bool {
 		return !it.acc.timestampAtIndex(i).Before(t)
@@ -463,12 +470,12 @@ func (it *indexAccessingChunkIterator) FindAtOrAfter(t model.Time) bool {
 	return true
 }
 
-// value implements chunkIterator.
+// value implements Iterator.
 func (it *indexAccessingChunkIterator) Value() model.SamplePair {
 	return it.lastValue
 }
 
-// err implements chunkIterator.
+// err implements Iterator.
 func (it *indexAccessingChunkIterator) Err() error {
 	return it.acc.err()
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -38,8 +39,8 @@ var (
 	m5 = model.Metric{"label": "value5"}
 )
 
-func newTestPersistence(t *testing.T, encoding ChunkEncoding) (*persistence, testutil.Closer) {
-	DefaultChunkEncoding = encoding
+func newTestPersistence(t *testing.T, encoding chunk.Encoding) (*persistence, testutil.Closer) {
+	chunk.DefaultEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
 	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.1)
 	if err != nil {
@@ -53,18 +54,18 @@ func newTestPersistence(t *testing.T, encoding ChunkEncoding) (*persistence, tes
 	})
 }
 
-func buildTestChunks(t *testing.T, encoding ChunkEncoding) map[model.Fingerprint][]Chunk {
+func buildTestChunks(t *testing.T, encoding chunk.Encoding) map[model.Fingerprint][]chunk.Chunk {
 	fps := model.Fingerprints{
 		m1.FastFingerprint(),
 		m2.FastFingerprint(),
 		m3.FastFingerprint(),
 	}
-	fpToChunks := map[model.Fingerprint][]Chunk{}
+	fpToChunks := map[model.Fingerprint][]chunk.Chunk{}
 
 	for _, fp := range fps {
-		fpToChunks[fp] = make([]Chunk, 0, 10)
+		fpToChunks[fp] = make([]chunk.Chunk, 0, 10)
 		for i := 0; i < 10; i++ {
-			ch, err := NewChunkForEncoding(encoding)
+			ch, err := chunk.NewForEncoding(encoding)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -81,7 +82,7 @@ func buildTestChunks(t *testing.T, encoding ChunkEncoding) map[model.Fingerprint
 	return fpToChunks
 }
 
-func chunksEqual(c1, c2 Chunk) bool {
+func chunksEqual(c1, c2 chunk.Chunk) bool {
 	it1 := c1.NewIterator()
 	it2 := c2.NewIterator()
 	for it1.Scan() && it2.Scan() {
@@ -92,7 +93,7 @@ func chunksEqual(c1, c2 Chunk) bool {
 	return it1.Err() == nil && it2.Err() == nil
 }
 
-func testPersistLoadDropChunks(t *testing.T, encoding ChunkEncoding) {
+func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -138,14 +139,14 @@ func testPersistLoadDropChunks(t *testing.T, encoding ChunkEncoding) {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 10)
 		}
 		for i, cd := range actualChunkDescs {
-			lastTime, err := cd.lastTime()
+			lastTime, err := cd.LastTime()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cd.firstTime() != model.Time(i) || lastTime != model.Time(i) {
+			if cd.FirstTime() != model.Time(i) || lastTime != model.Time(i) {
 				t.Errorf(
 					"Want ts=%v, got firstTime=%v, lastTime=%v.",
-					i, cd.firstTime(), lastTime,
+					i, cd.FirstTime(), lastTime,
 				)
 			}
 
@@ -159,14 +160,14 @@ func testPersistLoadDropChunks(t *testing.T, encoding ChunkEncoding) {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 5)
 		}
 		for i, cd := range actualChunkDescs {
-			lastTime, err := cd.lastTime()
+			lastTime, err := cd.LastTime()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cd.firstTime() != model.Time(i) || lastTime != model.Time(i) {
+			if cd.FirstTime() != model.Time(i) || lastTime != model.Time(i) {
 				t.Errorf(
 					"Want ts=%v, got firstTime=%v, lastTime=%v.",
-					i, cd.firstTime(), lastTime,
+					i, cd.FirstTime(), lastTime,
 				)
 			}
 
@@ -450,7 +451,7 @@ func TestPersistLoadDropChunksType1(t *testing.T) {
 	testPersistLoadDropChunks(t, 1)
 }
 
-func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding) {
+func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -499,7 +500,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		if !reflect.DeepEqual(loadedS1.metric, m1) {
 			t.Errorf("want metric %v, got %v", m1, loadedS1.metric)
 		}
-		if !reflect.DeepEqual(loadedS1.head().c, s1.head().c) {
+		if !reflect.DeepEqual(loadedS1.head().C, s1.head().C) {
 			t.Error("head chunks differ")
 		}
 		if loadedS1.chunkDescsOffset != 0 {
@@ -508,11 +509,11 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		if loadedS1.headChunkClosed {
 			t.Error("headChunkClosed is true")
 		}
-		if loadedS1.head().chunkFirstTime != 1 {
-			t.Errorf("want chunkFirstTime in head chunk to be 1, got %d", loadedS1.head().chunkFirstTime)
+		if loadedS1.head().ChunkFirstTime != 1 {
+			t.Errorf("want ChunkFirstTime in head chunk to be 1, got %d", loadedS1.head().ChunkFirstTime)
 		}
-		if loadedS1.head().chunkLastTime != model.Earliest {
-			t.Error("want chunkLastTime in head chunk to be unset")
+		if loadedS1.head().ChunkLastTime != model.Earliest {
+			t.Error("want ChunkLastTime in head chunk to be unset")
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m1)
@@ -521,7 +522,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		if !reflect.DeepEqual(loadedS3.metric, m3) {
 			t.Errorf("want metric %v, got %v", m3, loadedS3.metric)
 		}
-		if loadedS3.head().c != nil {
+		if loadedS3.head().C != nil {
 			t.Error("head chunk not evicted")
 		}
 		if loadedS3.chunkDescsOffset != 0 {
@@ -530,11 +531,11 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		if !loadedS3.headChunkClosed {
 			t.Error("headChunkClosed is false")
 		}
-		if loadedS3.head().chunkFirstTime != 2 {
-			t.Errorf("want chunkFirstTime in head chunk to be 2, got %d", loadedS3.head().chunkFirstTime)
+		if loadedS3.head().ChunkFirstTime != 2 {
+			t.Errorf("want ChunkFirstTime in head chunk to be 2, got %d", loadedS3.head().ChunkFirstTime)
 		}
-		if loadedS3.head().chunkLastTime != 2 {
-			t.Errorf("want chunkLastTime in head chunk to be 2, got %d", loadedS3.head().chunkLastTime)
+		if loadedS3.head().ChunkLastTime != 2 {
+			t.Errorf("want ChunkLastTime in head chunk to be 2, got %d", loadedS3.head().ChunkLastTime)
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m3)
@@ -549,10 +550,10 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		if got, want := loadedS4.persistWatermark, 0; got != want {
 			t.Errorf("got persistWatermark %d, want %d", got, want)
 		}
-		if loadedS4.chunkDescs[2].isEvicted() {
+		if loadedS4.chunkDescs[2].IsEvicted() {
 			t.Error("3rd chunk evicted")
 		}
-		if loadedS4.chunkDescs[3].isEvicted() {
+		if loadedS4.chunkDescs[3].IsEvicted() {
 			t.Error("4th chunk evicted")
 		}
 		if loadedS4.chunkDescsOffset != 0 {
@@ -562,27 +563,27 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 			t.Error("headChunkClosed is true")
 		}
 		for i, cd := range loadedS4.chunkDescs {
-			if cd.chunkFirstTime != cd.c.FirstTime() {
+			if cd.ChunkFirstTime != cd.C.FirstTime() {
 				t.Errorf(
-					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
-					i, cd.c.FirstTime(), cd.chunkFirstTime,
+					"chunk.Desc[%d]: ChunkFirstTime not consistent with chunk, want %d, got %d",
+					i, cd.C.FirstTime(), cd.ChunkFirstTime,
 				)
 			}
 			if i == len(loadedS4.chunkDescs)-1 {
 				// Head chunk.
-				if cd.chunkLastTime != model.Earliest {
-					t.Error("want chunkLastTime in head chunk to be unset")
+				if cd.ChunkLastTime != model.Earliest {
+					t.Error("want ChunkLastTime in head chunk to be unset")
 				}
 				continue
 			}
-			lastTime, err := cd.c.NewIterator().LastTimestamp()
+			lastTime, err := cd.C.NewIterator().LastTimestamp()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cd.chunkLastTime != lastTime {
+			if cd.ChunkLastTime != lastTime {
 				t.Errorf(
-					"chunkDesc[%d]: chunkLastTime not consistent with chunk, want %d, got %d",
-					i, lastTime, cd.chunkLastTime,
+					"chunk.Desc[%d]: ChunkLastTime not consistent with chunk, want %d, got %d",
+					i, lastTime, cd.ChunkLastTime,
 				)
 			}
 		}
@@ -599,10 +600,10 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		if got, want := loadedS5.persistWatermark, 3; got != want {
 			t.Errorf("got persistWatermark %d, want %d", got, want)
 		}
-		if !loadedS5.chunkDescs[2].isEvicted() {
+		if !loadedS5.chunkDescs[2].IsEvicted() {
 			t.Error("3rd chunk not evicted")
 		}
-		if loadedS5.chunkDescs[3].isEvicted() {
+		if loadedS5.chunkDescs[3].IsEvicted() {
 			t.Error("4th chunk evicted")
 		}
 		if loadedS5.chunkDescsOffset != 0 {
@@ -614,32 +615,32 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding ChunkEncoding
 		for i, cd := range loadedS5.chunkDescs {
 			if i < 3 {
 				// Evicted chunks.
-				if cd.chunkFirstTime == model.Earliest {
-					t.Errorf("chunkDesc[%d]: chunkLastTime not set", i)
+				if cd.ChunkFirstTime == model.Earliest {
+					t.Errorf("chunk.Desc[%d]: ChunkLastTime not set", i)
 				}
 				continue
 			}
-			if cd.chunkFirstTime != cd.c.FirstTime() {
+			if cd.ChunkFirstTime != cd.C.FirstTime() {
 				t.Errorf(
-					"chunkDesc[%d]: chunkFirstTime not consistent with chunk, want %d, got %d",
-					i, cd.c.FirstTime(), cd.chunkFirstTime,
+					"chunk.Desc[%d]: ChunkFirstTime not consistent with chunk, want %d, got %d",
+					i, cd.C.FirstTime(), cd.ChunkFirstTime,
 				)
 			}
 			if i == len(loadedS5.chunkDescs)-1 {
 				// Head chunk.
-				if cd.chunkLastTime != model.Earliest {
-					t.Error("want chunkLastTime in head chunk to be unset")
+				if cd.ChunkLastTime != model.Earliest {
+					t.Error("want ChunkLastTime in head chunk to be unset")
 				}
 				continue
 			}
-			lastTime, err := cd.c.NewIterator().LastTimestamp()
+			lastTime, err := cd.C.NewIterator().LastTimestamp()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cd.chunkLastTime != lastTime {
+			if cd.ChunkLastTime != lastTime {
 				t.Errorf(
-					"chunkDesc[%d]: chunkLastTime not consistent with chunk, want %d, got %d",
-					i, cd.chunkLastTime, lastTime,
+					"chunk.Desc[%d]: ChunkLastTime not consistent with chunk, want %d, got %d",
+					i, cd.ChunkLastTime, lastTime,
 				)
 			}
 		}
@@ -690,7 +691,7 @@ func TestCheckpointAndLoadFPMappings(t *testing.T) {
 	}
 }
 
-func testFingerprintsModifiedBefore(t *testing.T, encoding ChunkEncoding) {
+func testFingerprintsModifiedBefore(t *testing.T, encoding chunk.Encoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -769,7 +770,7 @@ func TestFingerprintsModifiedBeforeChunkType2(t *testing.T) {
 	testFingerprintsModifiedBefore(t, 2)
 }
 
-func testDropArchivedMetric(t *testing.T, encoding ChunkEncoding) {
+func testDropArchivedMetric(t *testing.T, encoding chunk.Encoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
 
@@ -843,7 +844,7 @@ type incrementalBatch struct {
 	expectedLpToFps index.LabelPairFingerprintsMapping
 }
 
-func testIndexing(t *testing.T, encoding ChunkEncoding) {
+func testIndexing(t *testing.T, encoding chunk.Encoding) {
 	batches := []incrementalBatch{
 		{
 			fpToMetric: index.FingerprintMetricMapping{

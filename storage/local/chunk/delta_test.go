@@ -15,7 +15,7 @@
 // it may make sense to split those out later, but given that the tests are
 // near-identical and share a helper, this feels simpler for now.
 
-package local
+package chunk
 
 import (
 	"bytes"
@@ -75,7 +75,7 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		chunk := c.chunkConstructor(d1, d4, false, chunkLen)
+		chunk := c.chunkConstructor(d1, d4, false, ChunkLen)
 
 		cs, err := chunk.Add(model.SamplePair{
 			Timestamp: model.Now(),
@@ -85,7 +85,7 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 			t.Fatalf("Couldn't add sample to empty %s: %s", c.chunkTypeName, err)
 		}
 
-		buf := make([]byte, chunkLen)
+		buf := make([]byte, ChunkLen)
 
 		cs[0].MarshalToBuf(buf)
 
