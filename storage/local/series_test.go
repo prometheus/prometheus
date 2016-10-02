@@ -26,11 +26,11 @@ func TestDropChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s.Add(model.SamplePair{
+	s.add(model.SamplePair{
 		Timestamp: 100,
 		Value:     42,
 	})
-	s.Add(model.SamplePair{
+	s.add(model.SamplePair{
 		Timestamp: 110,
 		Value:     4711,
 	})
