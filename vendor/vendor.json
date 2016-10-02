@@ -211,8 +211,8 @@
 		{
 			"checksumSHA1": "CKVJRc1NREmfoAWQLHxqWQlvxo0=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "ee21c31a8cbad2a29cce94a8c53855e1dab92bf7",
-			"revisionTime": "2016-09-21T02:27:24+02:00"
+			"revision": "a85e6c850a142b95b63f9dd0ffd9645e5e437da7",
+			"revisionTime": "2016-10-02T22:56:21+02:00"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
