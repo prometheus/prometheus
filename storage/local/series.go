@@ -219,7 +219,7 @@ func newMemorySeries(m model.Metric, chunkDescs []*chunk.Desc, modTime time.Time
 // completed chunks (which are now eligible for persistence).
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) Add(v model.SamplePair) (int, error) {
+func (s *memorySeries) add(v model.SamplePair) (int, error) {
 	if len(s.chunkDescs) == 0 || s.headChunkClosed {
 		newHead := chunk.NewDesc(chunk.New(), v.Timestamp)
 		s.chunkDescs = append(s.chunkDescs, newHead)
@@ -383,18 +383,18 @@ func (s *memorySeries) preloadChunks(
 	}
 
 	iter := &boundedIterator{
-		it:    s.NewIterator(pinnedChunkDescs, curriedQuarantineSeries, mss.evictRequests),
+		it:    s.newIterator(pinnedChunkDescs, curriedQuarantineSeries, mss.evictRequests),
 		start: model.Now().Add(-mss.dropAfter),
 	}
 
 	return iter, nil
 }
 
-// NewIterator( returns a new SeriesIterator for the provided chunkDescs (which
+// newIterator returns a new SeriesIterator for the provided chunkDescs (which
 // must be pinned).
 //
 // The caller must have locked the fingerprint of the memorySeries.
-func (s *memorySeries) NewIterator(
+func (s *memorySeries) newIterator(
 	pinnedChunkDescs []*chunk.Desc,
 	quarantine func(error),
 	evictRequests chan<- chunk.EvictRequest,

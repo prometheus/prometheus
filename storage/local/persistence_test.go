@@ -462,16 +462,16 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 	s3, _ := newMemorySeries(m3, nil, time.Time{})
 	s4, _ := newMemorySeries(m4, nil, time.Time{})
 	s5, _ := newMemorySeries(m5, nil, time.Time{})
-	s1.Add(model.SamplePair{Timestamp: 1, Value: 3.14})
-	s3.Add(model.SamplePair{Timestamp: 2, Value: 2.7})
+	s1.add(model.SamplePair{Timestamp: 1, Value: 3.14})
+	s3.add(model.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkClosed = true
 	s3.persistWatermark = 1
 	for i := 0; i < 10000; i++ {
-		s4.Add(model.SamplePair{
+		s4.add(model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i) / 2,
 		})
-		s5.Add(model.SamplePair{
+		s5.add(model.SamplePair{
 			Timestamp: model.Time(i),
 			Value:     model.SampleValue(i * i),
 		})
