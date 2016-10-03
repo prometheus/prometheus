@@ -120,8 +120,8 @@ type Options struct {
 
 // New initializes a new web Handler.
 func New(o *Options) *Handler {
-	router := route.New(func(r *http.Request) context.Context {
-		return o.Context
+	router := route.New(func(r *http.Request) (context.Context, error) {
+		return o.Context, nil
 	})
 
 	h := &Handler{
