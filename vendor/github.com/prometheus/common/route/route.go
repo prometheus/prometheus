@@ -1,6 +1,7 @@
 package route
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -32,7 +33,7 @@ func WithParam(ctx context.Context, p, v string) context.Context {
 	return context.WithValue(ctx, param(p), v)
 }
 
-type contextFn func(r *http.Request) context.Context
+type contextFn func(r *http.Request) (context.Context, error)
 
 // Router wraps httprouter.Router and adds support for prefixed sub-routers
 // and per-request context injections.
@@ -45,8 +46,8 @@ type Router struct {
 // New returns a new Router.
 func New(ctxFn contextFn) *Router {
 	if ctxFn == nil {
-		ctxFn = func(r *http.Request) context.Context {
-			return context.Background()
+		ctxFn = func(r *http.Request) (context.Context, error) {
+			return context.Background(), nil
 		}
 	}
 	return &Router{
@@ -63,7 +64,12 @@ func (r *Router) WithPrefix(prefix string) *Router {
 // handle turns a HandlerFunc into an httprouter.Handle.
 func (r *Router) handle(h http.HandlerFunc) httprouter.Handle {
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-		ctx, cancel := context.WithCancel(r.ctxFn(req))
+		reqCtx, err := r.ctxFn(req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error creating request context: %v", err), http.StatusBadRequest)
+			return
+		}
+		ctx, cancel := context.WithCancel(reqCtx)
 		defer cancel()
 
 		for _, p := range params {
