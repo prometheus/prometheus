@@ -192,7 +192,7 @@ type Config struct {
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
-	RemoteWriteConfig []RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteWriteConfig RemoteWriteConfig `yaml:"remote_write,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1075,11 +1075,12 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 
 // RemoteWriteConfig is the configuration for remote storage.
 type RemoteWriteConfig struct {
-	URL           URL            `yaml:"url,omitempty"`
-	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
-	BasicAuth     *BasicAuth     `yaml:"basic_auth,omitempty"`
-	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
-	ProxyURL      URL            `yaml:"proxy_url,omitempty"`
+	URL                 *URL             `yaml:"url,omitempty"`
+	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
+	BasicAuth           *BasicAuth       `yaml:"basic_auth,omitempty"`
+	TLSConfig           TLSConfig        `yaml:"tls_config,omitempty"`
+	ProxyURL            URL              `yaml:"proxy_url,omitempty"`
+	WriteRelabelConfigs []*RelabelConfig `yaml:"write_relabel_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
