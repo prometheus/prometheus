@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"testing"
 	"testing/quick"
 	"time"
@@ -470,6 +471,38 @@ func BenchmarkLabelMatching(b *testing.B) {
 	b.StopTimer()
 }
 
+func BenchmarkQueryRange(b *testing.B) {
+	now := model.Now()
+	insertStart := now.Add(-2 * time.Hour)
+
+	s, closer := NewTestStorage(b, 2)
+	defer closer.Close()
+
+	// Stop maintenance loop to prevent actual purging.
+	close(s.loopStopping)
+	<-s.loopStopped
+	<-s.logThrottlingStopped
+	// Recreate channel to avoid panic when we really shut down.
+	s.loopStopping = make(chan struct{})
+
+	for i := 0; i < 8192; i++ {
+		s.Append(&model.Sample{
+			Metric:    model.Metric{"__name__": model.LabelValue(strconv.Itoa(i)), "job": "test"},
+			Timestamp: insertStart,
+			Value:     1,
+		})
+	}
+	s.WaitForIndexing()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		lm, _ := metric.NewLabelMatcher(metric.Equal, "job", "test")
+		for pb.Next() {
+			s.QueryRange(context.Background(), insertStart, now, lm)
+		}
+	})
+}
+
 func TestRetentionCutoff(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
@@ -604,12 +637,12 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps2))
 	}
 
-	it := s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fpList[0]), model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
 
-	it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
+	it = s.preloadChunksForRange(makeFingerprintSeriesPair(s, fpList[1]), model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != N {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
@@ -637,12 +670,12 @@ func TestDropMetrics(t *testing.T) {
 		t.Errorf("unexpected number of fingerprints: %d", len(fps3))
 	}
 
-	it = s.preloadChunksForRange(fpList[0], model.Earliest, model.Latest)
+	it = s.preloadChunksForRange(makeFingerprintSeriesPair(s, fpList[0]), model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
 
-	it = s.preloadChunksForRange(fpList[1], model.Earliest, model.Latest)
+	it = s.preloadChunksForRange(makeFingerprintSeriesPair(s, fpList[1]), model.Earliest, model.Latest)
 	if vals := it.RangeValues(metric.Interval{OldestInclusive: insertStart, NewestInclusive: now}); len(vals) != 0 {
 		t.Errorf("unexpected number of samples: %d", len(vals))
 	}
@@ -720,7 +753,7 @@ func TestQuarantineMetric(t *testing.T) {
 	}
 
 	// This will access the corrupt file and lead to quarantining.
-	iter := s.preloadChunksForInstant(fpToBeArchived, now.Add(-2*time.Hour-1*time.Minute), now.Add(-2*time.Hour))
+	iter := s.preloadChunksForInstant(makeFingerprintSeriesPair(s, fpToBeArchived), now.Add(-2*time.Hour-1*time.Minute), now.Add(-2*time.Hour))
 	iter.Close()
 	time.Sleep(time.Second) // Give time to quarantine. TODO(beorn7): Find a better way to wait.
 	s.WaitForIndexing()
@@ -862,7 +895,7 @@ func testValueAtOrBeforeTime(t *testing.T, encoding chunk.Encoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), model.Earliest, model.Latest)
 
 	// #1 Exactly on a sample.
 	for i, expected := range samples {
@@ -940,7 +973,7 @@ func benchmarkValueAtOrBeforeTime(b *testing.B, encoding chunk.Encoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), model.Earliest, model.Latest)
 
 	b.ResetTimer()
 
@@ -1022,7 +1055,7 @@ func testRangeValues(t *testing.T, encoding chunk.Encoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), model.Earliest, model.Latest)
 
 	// #1 Zero length interval at sample.
 	for i, expected := range samples {
@@ -1178,7 +1211,7 @@ func benchmarkRangeValues(b *testing.B, encoding chunk.Encoding) {
 
 	fp := model.Metric{}.FastFingerprint()
 
-	it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), model.Earliest, model.Latest)
 
 	b.ResetTimer()
 
@@ -1228,7 +1261,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunk.Encoding) {
 
 	// Drop ~half of the chunks.
 	s.maintainMemorySeries(fp, 10000)
-	it := s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), model.Earliest, model.Latest)
 	actual := it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
@@ -1246,7 +1279,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunk.Encoding) {
 
 	// Drop everything.
 	s.maintainMemorySeries(fp, 100000)
-	it = s.preloadChunksForRange(fp, model.Earliest, model.Latest)
+	it = s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), model.Earliest, model.Latest)
 	actual = it.RangeValues(metric.Interval{
 		OldestInclusive: 0,
 		NewestInclusive: 100000,
@@ -1410,7 +1443,7 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunk.Encoding) {
 	}
 
 	// Load everything back.
-	it := s.preloadChunksForRange(fp, 0, 100000)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), 0, 100000)
 
 	if oldLen != len(series.chunkDescs) {
 		t.Errorf("Expected number of chunkDescs to have reached old value again, old number %d, current number %d.", oldLen, len(series.chunkDescs))
@@ -1738,7 +1771,7 @@ func verifyStorageRandom(t testing.TB, s *MemorySeriesStorage, samples model.Sam
 	for _, i := range rand.Perm(len(samples)) {
 		sample := samples[i]
 		fp := s.mapper.mapFP(sample.Metric.FastFingerprint(), sample.Metric)
-		it := s.preloadChunksForInstant(fp, sample.Timestamp, sample.Timestamp)
+		it := s.preloadChunksForInstant(makeFingerprintSeriesPair(s, fp), sample.Timestamp, sample.Timestamp)
 		found := it.ValueAtOrBeforeTime(sample.Timestamp)
 		startTime := it.(*boundedIterator).start
 		switch {
@@ -1781,7 +1814,7 @@ func verifyStorageSequential(t testing.TB, s *MemorySeriesStorage, samples model
 			if it != nil {
 				it.Close()
 			}
-			it = s.preloadChunksForRange(fp, sample.Timestamp, model.Latest)
+			it = s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), sample.Timestamp, model.Latest)
 			r = it.RangeValues(metric.Interval{
 				OldestInclusive: sample.Timestamp,
 				NewestInclusive: model.Latest,
@@ -1902,7 +1935,7 @@ func TestAppendOutOfOrder(t *testing.T) {
 
 	fp := s.mapper.mapFP(m.FastFingerprint(), m)
 
-	it := s.preloadChunksForRange(fp, 0, 2)
+	it := s.preloadChunksForRange(makeFingerprintSeriesPair(s, fp), 0, 2)
 	defer it.Close()
 
 	want := []model.SamplePair{
