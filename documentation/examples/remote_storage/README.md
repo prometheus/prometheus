@@ -7,11 +7,18 @@ To use it:
 
 ```
 go build
-remote_storage
+./remote_storage
 ```
 
-...and then run Prometheus as:
+...and then add the following to your `prometheus.yml`:
+
+```yaml
+remote_write:
+  url: "http://localhost:1234/receive"
+```
+
+Then start Prometheus:
 
 ```
-./prometheus -storage.remote.address=localhost:1234
+./prometheus
 ```
