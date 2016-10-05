@@ -273,6 +273,7 @@ type Chunk interface {
 	Unmarshal(io.Reader) error
 	UnmarshalFromBuf([]byte) error
 	Encoding() Encoding
+	Utilization() float64
 }
 
 // Iterator enables efficient access to the content of a chunk. It is

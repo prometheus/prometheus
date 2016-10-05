@@ -322,6 +322,12 @@ func (c varbitChunk) UnmarshalFromBuf(buf []byte) error {
 // encoding implements chunk.
 func (c varbitChunk) Encoding() Encoding { return Varbit }
 
+// Utilization implements chunk.
+func (c varbitChunk) Utilization() float64 {
+	// 15 bytes is the length of the chunk footer.
+	return math.Min(float64(c.nextSampleOffset()/8+15)/float64(cap(c)), 1)
+}
+
 // FirstTime implements chunk.
 func (c varbitChunk) FirstTime() model.Time {
 	return model.Time(
