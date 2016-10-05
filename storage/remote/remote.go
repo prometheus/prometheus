@@ -24,6 +24,7 @@ import (
 	influx "github.com/influxdb/influxdb/client"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
@@ -33,6 +34,7 @@ import (
 type Storage struct {
 	queues         []*StorageQueueManager
 	externalLabels model.LabelSet
+	relabelConfigs []*config.RelabelConfig
 	mtx            sync.RWMutex
 }
 
@@ -42,6 +44,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	defer s.mtx.Unlock()
 
 	s.externalLabels = conf.GlobalConfig.ExternalLabels
+	s.relabelConfigs = conf.RemoteWriteConfig.WriteRelabelConfigs
 	return nil
 }
 
@@ -116,7 +119,13 @@ func (s *Storage) Append(smpl *model.Sample) error {
 			snew.Metric[ln] = lv
 		}
 	}
+	snew.Metric = model.Metric(
+		relabel.Process(model.LabelSet(snew.Metric), s.relabelConfigs...))
 	s.mtx.RUnlock()
+
+	if snew.Metric == nil {
+		return nil
+	}
 
 	for _, q := range s.queues {
 		q.Append(&snew)
