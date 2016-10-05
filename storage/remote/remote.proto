@@ -34,10 +34,3 @@ message TimeSeries {
 message WriteRequest {
   repeated TimeSeries timeseries = 1;
 }
-
-message WriteResponse {
-}
-
-service Write {
-  rpc Write(WriteRequest) returns (WriteResponse) {}
-}
