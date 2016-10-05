@@ -21,43 +21,15 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-type server struct{}
-
-func (server *server) Write(ctx context.Context, req *remote.WriteRequest) (*remote.WriteResponse, error) {
-	for _, ts := range req.Timeseries {
-		m := make(model.Metric, len(ts.Labels))
-		for _, l := range ts.Labels {
-			m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-		}
-		fmt.Println(m)
-
-		for _, s := range ts.Samples {
-			fmt.Printf("  %f %d\n", s.Value, s.TimestampMs)
-		}
-	}
-
-	return &remote.WriteResponse{}, nil
-}
-
 func main() {
-	http.Handle("/push", AppenderHandler(&server{}))
-	http.ListenAndServe(":1234", nil)
-}
-
-type WriteServer interface {
-	Write(context.Context, *remote.WriteRequest) (*remote.WriteResponse, error)
-}
-
-// AppenderHandler returns a http.Handler that accepts proto encoded samples.
-func AppenderHandler(s WriteServer) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
 		reqBuf, err := ioutil.ReadAll(snappy.NewReader(r.Body))
 		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -67,11 +39,18 @@ func AppenderHandler(s WriteServer) http.Handler {
 			return
 		}
 
-		if _, err := s.Write(context.Background(), &req); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		for _, ts := range req.Timeseries {
+			m := make(model.Metric, len(ts.Labels))
+			for _, l := range ts.Labels {
+				m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+			}
+			fmt.Println(m)
 
-		w.WriteHeader(http.StatusOK)
+			for _, s := range ts.Samples {
+				fmt.Printf("  %f %d\n", s.Value, s.TimestampMs)
+			}
+		}
 	})
+
+	http.ListenAndServe(":1234", nil)
 }
