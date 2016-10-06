@@ -1,3 +1,43 @@
+## 1.2.0 / 2016-10-07
+
+* [FEATURE] Enable the use of query parameters in `/graph` URLs.
+* [FEATURE] PromQL: Add `minute()` function.
+* [FEATURE] Add GCE service discovery.
+* [FEATURE] Allow job names to start with a digit.
+* [FEATURE] Allow disabling local storage.
+* [FEATURE] EC2 service discovery: Expose `ec2_instance_state`.
+* [FEATURE] HTTP basic auth and TLS support for remote write path.
+* [FEATURE] Support for relabelling in remote write path.
+* [ENHANCEMENT] Add `go_import_path` to Travis so it works on a fork.
+* [ENHANCEMENT] Makefile: Promu installation now logged.
+* [ENHANCEMENT] Fingerprint locking: Avoid having contended mutexes on
+  same cacheline.
+* [ENHANCEMENT] Avoid slow `defer` in the `seriesMap.get` hot spot.
+* [ENHANCEMENT] Improve label matching performance.
+* [BUGFIX] Fix word alignment of struct fields in tests.
+* [BUGFIX] Zookeeper service discovery: Remove deleted nodes.
+* [BUGFIX] Zookeeper service discovery: Resync state after Zookeeper failure.
+* [BUGFIX] Remove JSON from HTTP Accept header.
+* [BUGFIX] Update govalidator vendoring to fix URL validation.
+* [BUGFIX] Fix race between reload and stop of the rule manager.
+* [BUGFIX] Do not fail Consul discovery on Prometheus startup when Consul
+  is down.
+* [BUGFIX] Handle NaN in `changes()` correctly.
+* [CLEANUP] Remove DNS resolution dependency from tests.
+* [CLEANUP] More tests for PromQL time functions.
+* [CLEANUP] Add contexts to PromQL and storage interfaces.
+* [CLEANUP] Consolidate web API contexts. Update `common/route` vendoring.
+* [CLEANUP] Storage: Chunk code in own package. Added Utilization method.
+* [CLEANUP] Export various identifiers for better code reuse.
+* [CLEANUP] Cleanup code issues reported by goreport and added link to
+  goreport in README.md.
+* [CLEANUP] Various other minor code cleanups and fixed typos.
+
+Below changes are not considered breaking because they affect parts marked as
+experimental or unstable:
+
+* [CHANGE] Remote write path does not use gRPC anymore.
+
 ## 1.1.3 / 2016-09-16
 
 * [ENHANCEMENT] Use golang-builder base image for tests in CircleCI.
