@@ -147,6 +147,20 @@ func (k *Kubernetes) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			time.Sleep(100 * time.Millisecond)
 		}
 		pod.Run(ctx, ch)
+
+	case "service":
+		slw := cache.NewListWatchFromClient(rclient, "services", api.NamespaceAll, nil)
+		svc := NewService(
+			k.logger.With("kubernetes_sd", "service"),
+			cache.NewSharedInformer(slw, &apiv1.Service, resyncPeriod),
+		)
+		go svc.informer.Run(ctx.Done())
+
+		for !svc.informer.HasSynced() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		svc.Run(ctx, ch)
+
 	default:
 		k.logger.Errorf("unknown Kubernetes discovery kind %q", k.role)
 	}
