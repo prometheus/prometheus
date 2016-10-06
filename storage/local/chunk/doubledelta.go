@@ -80,7 +80,7 @@ func newDoubleDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *doub
 	return &c
 }
 
-// add implements chunk.
+// Add implements chunk.
 func (c doubleDeltaEncodedChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	// TODO(beorn7): Since we return &c, this method might cause an unnecessary allocation.
 	if c.len() == 0 {
@@ -184,7 +184,7 @@ func (c doubleDeltaEncodedChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	return []Chunk{&c}, nil
 }
 
-// clone implements chunk.
+// Clone implements chunk.
 func (c doubleDeltaEncodedChunk) Clone() Chunk {
 	clone := make(doubleDeltaEncodedChunk, len(c), cap(c))
 	copy(clone, c)
@@ -210,7 +210,7 @@ func (c *doubleDeltaEncodedChunk) NewIterator() Iterator {
 	})
 }
 
-// marshal implements chunk.
+// Marshal implements chunk.
 func (c doubleDeltaEncodedChunk) Marshal(w io.Writer) error {
 	if len(c) > math.MaxUint16 {
 		panic("chunk buffer length would overflow a 16 bit uint")
@@ -241,7 +241,7 @@ func (c doubleDeltaEncodedChunk) MarshalToBuf(buf []byte) error {
 	return nil
 }
 
-// unmarshal implements chunk.
+// Unmarshal implements chunk.
 func (c *doubleDeltaEncodedChunk) Unmarshal(r io.Reader) error {
 	*c = (*c)[:cap(*c)]
 	if _, err := io.ReadFull(r, *c); err != nil {
@@ -259,7 +259,7 @@ func (c *doubleDeltaEncodedChunk) Unmarshal(r io.Reader) error {
 	return nil
 }
 
-// unmarshalFromBuf implements chunk.
+// UnmarshalFromBuf implements chunk.
 func (c *doubleDeltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 	*c = (*c)[:cap(*c)]
 	copy(*c, buf)
@@ -274,7 +274,7 @@ func (c *doubleDeltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 	return nil
 }
 
-// encoding implements chunk.
+// Encoding implements chunk.
 func (c doubleDeltaEncodedChunk) Encoding() Encoding { return DoubleDelta }
 
 // Utilization implements chunk.
