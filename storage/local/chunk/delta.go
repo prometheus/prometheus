@@ -267,6 +267,11 @@ func (c *deltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 // encoding implements chunk.
 func (c deltaEncodedChunk) Encoding() Encoding { return Delta }
 
+// Utilization implements chunk.
+func (c deltaEncodedChunk) Utilization() float64 {
+	return float64(len(c)) / float64(cap(c))
+}
+
 func (c deltaEncodedChunk) timeBytes() deltaBytes {
 	return deltaBytes(c[deltaHeaderTimeBytesOffset])
 }
