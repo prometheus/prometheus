@@ -277,6 +277,11 @@ func (c *doubleDeltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 // encoding implements chunk.
 func (c doubleDeltaEncodedChunk) Encoding() Encoding { return DoubleDelta }
 
+// Utilization implements chunk.
+func (c doubleDeltaEncodedChunk) Utilization() float64 {
+	return float64(len(c)) / float64(cap(c))
+}
+
 func (c doubleDeltaEncodedChunk) baseTime() model.Time {
 	return model.Time(
 		binary.LittleEndian.Uint64(
