@@ -120,10 +120,6 @@ func endpointsSource(ep apiv1.ObjectMeta) string {
 }
 
 const (
-	serviceNameLabel        = metaLabelPrefix + "service_name"
-	serviceLabelPrefix      = metaLabelPrefix + "service_label_"
-	serviceAnnotationPrefix = metaLabelPrefix + "service_annotation_"
-
 	endpointsNameLabel        = metaLabelPrefix + "endpoints_name"
 	endpointReadyLabel        = metaLabelPrefix + "endpoint_ready"
 	endpointPortNameLabel     = metaLabelPrefix + "endpoint_port_name"
@@ -270,11 +266,5 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *config.TargetGroup) {
 	}
 	svc = obj.(*apiv1.Service)
 
-	tg.Labels[serviceNameLabel] = lv(svc.Name)
-	for k, v := range svc.Labels {
-		tg.Labels[serviceLabelPrefix+model.LabelName(k)] = lv(v)
-	}
-	for k, v := range svc.Annotations {
-		tg.Labels[serviceAnnotationPrefix+model.LabelName(k)] = lv(v)
-	}
+	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }
