@@ -256,7 +256,7 @@ func newVarbitChunk(enc varbitValueEncoding) *varbitChunk {
 	return &c
 }
 
-// add implements chunk.
+// Add implements chunk.
 func (c *varbitChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	offset := c.nextSampleOffset()
 	switch {
@@ -272,7 +272,7 @@ func (c *varbitChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	return c.addLaterSample(s, offset)
 }
 
-// clone implements chunk.
+// Clone implements chunk.
 func (c varbitChunk) Clone() Chunk {
 	clone := make(varbitChunk, len(c))
 	copy(clone, c)
@@ -284,7 +284,7 @@ func (c varbitChunk) NewIterator() Iterator {
 	return newVarbitChunkIterator(c)
 }
 
-// marshal implements chunk.
+// Marshal implements chunk.
 func (c varbitChunk) Marshal(w io.Writer) error {
 	n, err := w.Write(c)
 	if err != nil {
@@ -296,7 +296,7 @@ func (c varbitChunk) Marshal(w io.Writer) error {
 	return nil
 }
 
-// marshalToBuf implements chunk.
+// MarshalToBuf implements chunk.
 func (c varbitChunk) MarshalToBuf(buf []byte) error {
 	n := copy(buf, c)
 	if n != len(c) {
@@ -305,13 +305,13 @@ func (c varbitChunk) MarshalToBuf(buf []byte) error {
 	return nil
 }
 
-// unmarshal implements chunk.
+// Unmarshal implements chunk.
 func (c varbitChunk) Unmarshal(r io.Reader) error {
 	_, err := io.ReadFull(r, c)
 	return err
 }
 
-// unmarshalFromBuf implements chunk.
+// UnmarshalFromBuf implements chunk.
 func (c varbitChunk) UnmarshalFromBuf(buf []byte) error {
 	if copied := copy(c, buf); copied != cap(c) {
 		return fmt.Errorf("insufficient bytes copied from buffer during unmarshaling, want %d, got %d", cap(c), copied)
@@ -319,7 +319,7 @@ func (c varbitChunk) UnmarshalFromBuf(buf []byte) error {
 	return nil
 }
 
-// encoding implements chunk.
+// Encoding implements chunk.
 func (c varbitChunk) Encoding() Encoding { return Varbit }
 
 // Utilization implements chunk.
