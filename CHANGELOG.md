@@ -1,3 +1,26 @@
+## 1.2.0 / 2016-10-07
+
+* [FEATURE] Cleaner encoding of query parameters in `/graph` URLs.
+* [FEATURE] PromQL: Add `minute()` function.
+* [FEATURE] Add GCE service discovery.
+* [FEATURE] Allow any valid UTF-8 string as job name.
+* [FEATURE] Allow disabling local storage.
+* [FEATURE] EC2 service discovery: Expose `ec2_instance_state`.
+* [ENHANCEMENT] Various performance improvements in local storage.
+* [BUGFIX] Zookeeper service discovery: Remove deleted nodes.
+* [BUGFIX] Zookeeper service discovery: Resync state after Zookeeper failure.
+* [BUGFIX] Remove JSON from HTTP Accept header.
+* [BUGFIX] Fix flag validation of Alertmanager URL.
+* [BUGFIX] Fix race condition on shutdown.
+* [BUGFIX] Do not fail Consul discovery on Prometheus startup when Consul
+  is down.
+* [BUGFIX] Handle NaN in `changes()` correctly.
+* [CHANGE] **Experimental** remote write path: Remove use of gRPC.
+* [CHANGE] **Experimental** remote write path: Configuration via config file
+  rather than command line flags.
+* [FEATURE] **Experimental** remote write path: Add HTTP basic auth and TLS.
+* [FEATURE] **Experimental** remote write path: Support for relabelling.
+
 ## 1.1.3 / 2016-09-16
 
 * [ENHANCEMENT] Use golang-builder base image for tests in CircleCI.
