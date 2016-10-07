@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kubernetesv2
+package kubernetes
 
 import (
 	"io/ioutil"
@@ -52,12 +52,12 @@ func init() {
 }
 
 // New creates a new Kubernetes discovery for the given role.
-func New(l log.Logger, conf *config.KubernetesV2SDConfig) (*Kubernetes, error) {
+func New(l log.Logger, conf *config.KubernetesSDConfig) (*Kubernetes, error) {
 	var (
 		kcfg *rest.Config
 		err  error
 	)
-	if conf.APIServer.String() == "" {
+	if conf.APIServer.URL == nil {
 		kcfg, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err
