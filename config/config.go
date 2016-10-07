@@ -127,10 +127,7 @@ var (
 	}
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
-	DefaultKubernetesSDConfig = KubernetesSDConfig{
-		RequestTimeout: model.Duration(10 * time.Second),
-		RetryInterval:  model.Duration(1 * time.Second),
-	}
+	DefaultKubernetesSDConfig = KubernetesSDConfig{}
 
 	// DefaultGCESDConfig is the default EC2 SD configuration.
 	DefaultGCESDConfig = GCESDConfig{
@@ -442,8 +439,6 @@ type ScrapeConfig struct {
 	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
-	// List of Kubernetes service discovery configurations.
-	KubernetesV2SDConfigs []*KubernetesV2SDConfig `yaml:"kubernetes_v2_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
 	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
@@ -798,31 +793,13 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return nil
 }
 
-// KubernetesSDConfig is the configuration for Kubernetes service discovery.
-type KubernetesSDConfig struct {
-	APIServers      []URL          `yaml:"api_servers"`
-	Role            KubernetesRole `yaml:"role"`
-	InCluster       bool           `yaml:"in_cluster,omitempty"`
-	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
-	BearerToken     string         `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
-	RetryInterval   model.Duration `yaml:"retry_interval,omitempty"`
-	RequestTimeout  model.Duration `yaml:"request_timeout,omitempty"`
-	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
 type KubernetesRole string
 
 const (
-	KubernetesRoleNode      = "node"
-	KubernetesRolePod       = "pod"
-	KubernetesRoleContainer = "container"
-	KubernetesRoleService   = "service"
-	KubernetesRoleEndpoint  = "endpoint"
-	KubernetesRoleAPIServer = "apiserver"
+	KubernetesRoleNode     = "node"
+	KubernetesRolePod      = "pod"
+	KubernetesRoleService  = "service"
+	KubernetesRoleEndpoint = "endpoint"
 )
 
 func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -830,41 +807,15 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	switch *c {
-	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleContainer, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleAPIServer:
+	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint:
 		return nil
 	default:
 		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
 	}
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultKubernetesSDConfig
-	type plain KubernetesSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
-		return err
-	}
-	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: container, pod, service, endpoint, node, apiserver)")
-	}
-	if len(c.APIServers) == 0 {
-		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
-	}
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
-	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
-	}
-	return nil
-}
-
-// KubernetesV2SDConfig is the configuration for Kubernetes service discovery.
-type KubernetesV2SDConfig struct {
+// KubernetesSDConfig is the configuration for Kubernetes service discovery.
+type KubernetesSDConfig struct {
 	APIServer       URL            `yaml:"api_server"`
 	Role            KubernetesRole `yaml:"role"`
 	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
@@ -877,9 +828,9 @@ type KubernetesV2SDConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesV2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = KubernetesV2SDConfig{}
-	type plain KubernetesV2SDConfig
+func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = KubernetesSDConfig{}
+	type plain KubernetesSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -888,7 +839,7 @@ func (c *KubernetesV2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) 
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: container, pod, service, endpoint, node, apiserver)")
+		return fmt.Errorf("role missing (one of: pod, service, endpoint, node)")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
