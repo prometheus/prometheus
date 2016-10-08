@@ -92,7 +92,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 // shouldWatch returns whether the service of the given name should be watched.
 func (cd *Discovery) shouldWatch(name string) bool {
 	// If there's no fixed set of watched services, we watch everything.
-	if len(cd.watchedServices) == 0 {
+	if len(cd.watchedServices) == 0 && cd.filter == "" {
 		return true
 	}
 	for _, sn := range cd.watchedServices {
@@ -101,8 +101,8 @@ func (cd *Discovery) shouldWatch(name string) bool {
 		}
 	}
 	if cd.filter != "" {
-		if match, _ := regexp.MatchString("^"+cd.filter+"$", name); !match {
-			return false
+		if match, _ := regexp.MatchString("^"+cd.filter+"$", name); match {
+			return true
 		}
 	}
 	return false
