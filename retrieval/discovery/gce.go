@@ -32,15 +32,16 @@ import (
 )
 
 const (
-	gceLabel             = model.MetaLabelPrefix + "gce_"
-	gceLabelProject      = gceLabel + "project"
-	gceLabelZone         = gceLabel + "zone"
-	gceLabelNetwork      = gceLabel + "network"
-	gceLabelSubnetwork   = gceLabel + "subnetwork"
-	gceLabelPublicIP     = gceLabel + "public_ip"
-	gceLabelPrivateIP    = gceLabel + "private_ip"
-	gceLabelInstanceName = gceLabel + "instance_name"
-	gceLabelTags         = gceLabel + "tags"
+	gceLabel               = model.MetaLabelPrefix + "gce_"
+	gceLabelProject        = gceLabel + "project"
+	gceLabelZone           = gceLabel + "zone"
+	gceLabelNetwork        = gceLabel + "network"
+	gceLabelSubnetwork     = gceLabel + "subnetwork"
+	gceLabelPublicIP       = gceLabel + "public_ip"
+	gceLabelPrivateIP      = gceLabel + "private_ip"
+	gceLabelInstanceName   = gceLabel + "instance_name"
+	gceLabelInstanceStatus = gceLabel + "instance_status"
+	gceLabelTags           = gceLabel + "tags"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -164,9 +165,10 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 				continue
 			}
 			labels := model.LabelSet{
-				gceLabelProject:      model.LabelValue(gd.project),
-				gceLabelZone:         model.LabelValue(inst.Zone),
-				gceLabelInstanceName: model.LabelValue(inst.Name),
+				gceLabelProject:        model.LabelValue(gd.project),
+				gceLabelZone:           model.LabelValue(inst.Zone),
+				gceLabelInstanceName:   model.LabelValue(inst.Name),
+				gceLabelInstanceStatus: model.LabelValue(inst.Status),
 			}
 			priIface := inst.NetworkInterfaces[0]
 			labels[gceLabelNetwork] = model.LabelValue(priIface.Network)
