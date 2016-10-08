@@ -891,7 +891,7 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+	if err := checkOverflow(c.XXX, "gce_sd_config"); err != nil {
 		return err
 	}
 	if c.Project == "" {
