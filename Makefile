@@ -66,6 +66,10 @@ assets:
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -modtime 1 -mode 0644 -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 	@$(GO) fmt ./web/ui
 
+test-assets: assets
+	@echo ">> verifying assets are up to date"
+	@git diff --name-status --exit-code web/ui/bindata.go
+
 promu:
 	@echo ">> fetching promu"
 	@GOOS=$(shell uname -s | tr A-Z a-z) \
