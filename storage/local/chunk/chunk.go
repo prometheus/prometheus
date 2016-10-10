@@ -252,6 +252,8 @@ func (d *Desc) MaybeEvict() bool {
 		panic("ChunkLastTime not populated for evicted chunk")
 	}
 	d.C = nil
+	Ops.WithLabelValues(Evict).Inc()
+	atomic.AddInt64(&NumMemChunks, -1)
 	return true
 }
 
