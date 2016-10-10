@@ -1,3 +1,9 @@
+## 1.2.1 / 2016-10-10
+
+* [BUGFIX] Count chunk evictions properly so that the server doesn't
+  assume it runs out of memory and subsequencly throttles ingestion.
+* [BUGFIX] Use Go1.7.1 for prebuilt binaries to fix issues on MacOS Sierra.
+
 ## 1.2.0 / 2016-10-07
 
 * [FEATURE] Cleaner encoding of query parameters in `/graph` URLs.
