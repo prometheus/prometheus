@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"testing/quick"
 	"time"
@@ -1412,6 +1413,10 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunk.Encoding) {
 		Value:     model.SampleValue(3.14),
 	}
 
+	// Sadly, chunk.NumMemChunks is a global variable. We have to reset it
+	// explicitly here.
+	atomic.StoreInt64(&chunk.NumMemChunks, 0)
+
 	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
@@ -1440,6 +1445,9 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunk.Encoding) {
 
 	if oldLen <= len(series.chunkDescs) {
 		t.Errorf("Expected number of chunkDescs to decrease, old number %d, current number %d.", oldLen, len(series.chunkDescs))
+	}
+	if int64(len(series.chunkDescs)) < atomic.LoadInt64(&chunk.NumMemChunks) {
+		t.Errorf("NumMemChunks is larger than number of chunk descs, number of chunk descs: %d, NumMemChunks: %d.", len(series.chunkDescs), atomic.LoadInt64(&chunk.NumMemChunks))
 	}
 
 	// Load everything back.
