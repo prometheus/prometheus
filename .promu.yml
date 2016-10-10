@@ -1,3 +1,4 @@
+go: 1.7.1
 repository:
     path: github.com/prometheus/prometheus
 build:
