@@ -312,7 +312,7 @@ func TestRelabel(t *testing.T) {
 				"a": "some-name-value",
 			},
 		},
-		{ // invalid target_label ""
+		{ // invalid target_labels
 			input: model.LabelSet{
 				"a": "some-name-value",
 			},
@@ -323,6 +323,20 @@ func TestRelabel(t *testing.T) {
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
 					TargetLabel:  model.LabelName("${3}"),
+				},
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${1}",
+					TargetLabel:  model.LabelName("0${3}"),
+				},
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${1}",
+					TargetLabel:  model.LabelName("-${3}"),
 				},
 			},
 			output: model.LabelSet{
@@ -353,20 +367,14 @@ func TestRelabel(t *testing.T) {
 					Regex:        config.MustNewRegexp(".*?(?:,|^)label:([^=]+)=([^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${2}",
-					TargetLabel:  model.LabelName("__meta_sd_add_label_${1}"),
-				},
-				{
-					Regex:       config.MustNewRegexp("__meta_sd_add_label_(.*)"),
-					Replacement: "${1}",
-					Action:      config.RelabelLabelMap,
+					TargetLabel:  model.LabelName("${1}"),
 				},
 			},
 			output: model.LabelSet{
 				"__meta_sd_tags":   "path:/secret,job:some-job,label:foo=bar",
 				"__metrics_path__": "/secret",
 				"job":              "some-job",
-				"__meta_sd_add_label_foo": "bar",
-				"foo": "bar",
+				"foo":              "bar",
 			},
 		},
 	}
