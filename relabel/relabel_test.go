@@ -277,6 +277,98 @@ func TestRelabel(t *testing.T) {
 				"my_baz":        "bbb",
 			},
 		},
+		{ // valid case
+			input: model.LabelSet{
+				"a": "some-name-value",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${2}",
+					TargetLabel:  model.LabelName("${1}"),
+				},
+			},
+			output: model.LabelSet{
+				"a":    "some-name-value",
+				"name": "value",
+			},
+		},
+		{ // invalid replacement ""
+			input: model.LabelSet{
+				"a": "some-name-value",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${3}",
+					TargetLabel:  model.LabelName("${1}"),
+				},
+			},
+			output: model.LabelSet{
+				"a": "some-name-value",
+			},
+		},
+		{ // invalid target_label ""
+			input: model.LabelSet{
+				"a": "some-name-value",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${1}",
+					TargetLabel:  model.LabelName("${3}"),
+				},
+			},
+			output: model.LabelSet{
+				"a": "some-name-value",
+			},
+		},
+		{ // more complex real-life like usecase
+			input: model.LabelSet{
+				"__meta_sd_tags": "path:/secret,job:some-job,label:foo=bar",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"__meta_sd_tags"},
+					Regex:        config.MustNewRegexp(".*?(?:,|^)path:(/[^,]+).*"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${1}",
+					TargetLabel:  model.LabelName("__metrics_path__"),
+				},
+				{
+					SourceLabels: model.LabelNames{"__meta_sd_tags"},
+					Regex:        config.MustNewRegexp(".*?(?:,|^)job:([^,]+).*"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${1}",
+					TargetLabel:  model.LabelName("job"),
+				},
+				{
+					SourceLabels: model.LabelNames{"__meta_sd_tags"},
+					Regex:        config.MustNewRegexp(".*?(?:,|^)label:([^=]+)=([^,]+).*"),
+					Action:       config.RelabelReplace,
+					Replacement:  "${2}",
+					TargetLabel:  model.LabelName("__meta_sd_add_label_${1}"),
+				},
+				{
+					Regex:       config.MustNewRegexp("__meta_sd_add_label_(.*)"),
+					Replacement: "${1}",
+					Action:      config.RelabelLabelMap,
+				},
+			},
+			output: model.LabelSet{
+				"__meta_sd_tags":   "path:/secret,job:some-job,label:foo=bar",
+				"__metrics_path__": "/secret",
+				"job":              "some-job",
+				"__meta_sd_add_label_foo": "bar",
+				"foo": "bar",
+			},
+		},
 	}
 
 	for i, test := range tests {
