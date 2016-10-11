@@ -61,17 +61,17 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
 		if indexes == nil {
 			break
 		}
+		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, string(cfg.TargetLabel), val, indexes))
+		if !target.IsValid() {
+			delete(labels, cfg.TargetLabel)
+			break
+		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
 		if len(res) == 0 {
 			delete(labels, cfg.TargetLabel)
 			break
 		}
-		target := cfg.Regex.ExpandString([]byte{}, string(cfg.TargetLabel), val, indexes)
-		if len(target) == 0 {
-			delete(labels, cfg.TargetLabel)
-			break
-		}
-		labels[model.LabelName(target)] = model.LabelValue(res)
+		labels[target] = model.LabelValue(res)
 	case config.RelabelHashMod:
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		labels[cfg.TargetLabel] = model.LabelValue(fmt.Sprintf("%d", mod))
