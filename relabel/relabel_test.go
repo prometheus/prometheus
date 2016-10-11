@@ -350,21 +350,21 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp(".*?(?:,|^)path:(/[^,]+).*"),
+					Regex:        config.MustNewRegexp("(?:.+,|^)path:(/[^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
 					TargetLabel:  model.LabelName("__metrics_path__"),
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp(".*?(?:,|^)job:([^,]+).*"),
+					Regex:        config.MustNewRegexp("(?:.+,|^)job:([^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
 					TargetLabel:  model.LabelName("job"),
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
-					Regex:        config.MustNewRegexp(".*?(?:,|^)label:([^=]+)=([^,]+).*"),
+					Regex:        config.MustNewRegexp("(?:.+,|^)label:([^=]+)=([^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${2}",
 					TargetLabel:  model.LabelName("${1}"),
