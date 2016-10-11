@@ -109,12 +109,12 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	}
 
 	for k, v := range pod.Labels {
-		ln := strutil.SanitizeLabelName(serviceLabelPrefix + k)
+		ln := strutil.SanitizeLabelName(podLabelPrefix + k)
 		ls[model.LabelName(ln)] = lv(v)
 	}
 
 	for k, v := range pod.Annotations {
-		ln := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
+		ln := strutil.SanitizeLabelName(podAnnotationPrefix + k)
 		ls[model.LabelName(ln)] = lv(v)
 	}
 
