@@ -78,7 +78,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func nodeSource(n *apiv1.Node) string {
-	return "node/" + n.Namespace + "/" + n.Name
+	return "node/" + n.Name
 }
 
 const (
