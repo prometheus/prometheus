@@ -364,7 +364,10 @@ Prometheus.Graph.prototype.submitQuery = function() {
           self.showError("Error executing query: " + err);
         }
       },
-      complete: function() {
+      complete: function(xhr, resp) {
+        if (resp == "abort") {
+          return;
+        }
         var duration = new Date().getTime() - startTime;
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s");
         self.spinner.hide();
