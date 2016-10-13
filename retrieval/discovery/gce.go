@@ -29,6 +29,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -42,6 +43,7 @@ const (
 	gceLabelInstanceName   = gceLabel + "instance_name"
 	gceLabelInstanceStatus = gceLabel + "instance_status"
 	gceLabelTags           = gceLabel + "tags"
+	gceLabelMetadata       = gceLabel + "metadata_"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -78,11 +80,12 @@ func init() {
 // the TargetProvider interface.
 type GCEDiscovery struct {
 	project      string
-	zone         string
+	zones        []string
 	filter       string
 	client       *http.Client
 	svc          *compute.Service
 	isvc         *compute.InstancesService
+	zsvc         *compute.ZonesService
 	interval     time.Duration
 	port         int
 	tagSeparator string
@@ -92,7 +95,7 @@ type GCEDiscovery struct {
 func NewGCEDiscovery(conf *config.GCESDConfig) (*GCEDiscovery, error) {
 	gd := &GCEDiscovery{
 		project:      conf.Project,
-		zone:         conf.Zone,
+		zones:        conf.Zones,
 		filter:       conf.Filter,
 		interval:     time.Duration(conf.RefreshInterval),
 		port:         conf.Port,
@@ -108,6 +111,7 @@ func NewGCEDiscovery(conf *config.GCESDConfig) (*GCEDiscovery, error) {
 		return nil, fmt.Errorf("error setting up communication with GCE service: %s", err)
 	}
 	gd.isvc = compute.NewInstancesService(gd.svc)
+	gd.zsvc = compute.NewZonesService(gd.svc)
 	return gd, nil
 }
 
@@ -151,51 +155,79 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 	}()
 
-	tg = &config.TargetGroup{
-		Source: fmt.Sprintf("GCE_%s_%s", gd.project, gd.zone),
-	}
-
-	ilc := gd.isvc.List(gd.project, gd.zone)
-	if len(gd.filter) > 0 {
-		ilc = ilc.Filter(gd.filter)
-	}
-	err = ilc.Pages(nil, func(l *compute.InstanceList) error {
-		for _, inst := range l.Items {
-			if len(inst.NetworkInterfaces) == 0 {
-				continue
-			}
-			labels := model.LabelSet{
-				gceLabelProject:        model.LabelValue(gd.project),
-				gceLabelZone:           model.LabelValue(inst.Zone),
-				gceLabelInstanceName:   model.LabelValue(inst.Name),
-				gceLabelInstanceStatus: model.LabelValue(inst.Status),
-			}
-			priIface := inst.NetworkInterfaces[0]
-			labels[gceLabelNetwork] = model.LabelValue(priIface.Network)
-			labels[gceLabelSubnetwork] = model.LabelValue(priIface.Subnetwork)
-			labels[gceLabelPrivateIP] = model.LabelValue(priIface.NetworkIP)
-			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, gd.port)
-			labels[model.AddressLabel] = model.LabelValue(addr)
-
-			if inst.Tags != nil && len(inst.Tags.Items) > 0 {
-				// We surround the separated list with the separator as well. This way regular expressions
-				// in relabeling rules don't have to consider tag positions.
-				tags := gd.tagSeparator + strings.Join(inst.Tags.Items, gd.tagSeparator) + gd.tagSeparator
-				labels[gceLabelTags] = model.LabelValue(tags)
-			}
-
-			if len(priIface.AccessConfigs) > 0 {
-				ac := priIface.AccessConfigs[0]
-				if ac.Type == "ONE_TO_ONE_NAT" {
-					labels[gceLabelPublicIP] = model.LabelValue(ac.NatIP)
-				}
-			}
-			tg.Targets = append(tg.Targets, labels)
+	zones := gd.zones
+	// if the list of zones in the config is empty we can assume that we are
+	// supposed to scrape all availabe zones, otherwise this SD config should
+	// not be defined at all.
+	if len(zones) < 1 {
+		zl, err := gd.zsvc.List(gd.project).Do()
+		if err != nil {
+			return tg, fmt.Errorf("error retrieving scrape target zones from gce: %s", err)
 		}
-		return nil
-	})
-	if err != nil {
-		return tg, fmt.Errorf("error retrieving scrape targets from gce: %s", err)
+		for _, zone := range zl.Items {
+			zones = append(zones, zone.Name)
+		}
+	}
+
+	tg = &config.TargetGroup{
+		Source: fmt.Sprintf("GCE_%s_%s", gd.project, strings.Join(zones, "_")),
+	}
+
+	for _, zone := range zones {
+		ilc := gd.isvc.List(gd.project, zone)
+		if len(gd.filter) > 0 {
+			ilc = ilc.Filter(gd.filter)
+		}
+		err = ilc.Pages(nil, func(l *compute.InstanceList) error {
+			for _, inst := range l.Items {
+				if len(inst.NetworkInterfaces) == 0 {
+					continue
+				}
+				labels := model.LabelSet{
+					gceLabelProject:        model.LabelValue(gd.project),
+					gceLabelZone:           model.LabelValue(inst.Zone),
+					gceLabelInstanceName:   model.LabelValue(inst.Name),
+					gceLabelInstanceStatus: model.LabelValue(inst.Status),
+				}
+				priIface := inst.NetworkInterfaces[0]
+				labels[gceLabelNetwork] = model.LabelValue(priIface.Network)
+				labels[gceLabelSubnetwork] = model.LabelValue(priIface.Subnetwork)
+				labels[gceLabelPrivateIP] = model.LabelValue(priIface.NetworkIP)
+				addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, gd.port)
+				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				// tags in GCE are mostly used for networking rules (unlike e.g. AWS EC2 tags)
+				if inst.Tags != nil && len(inst.Tags.Items) > 0 {
+					// We surround the separated list with the separator as well. This way regular expressions
+					// in relabeling rules don't have to consider tag positions.
+					tags := gd.tagSeparator + strings.Join(inst.Tags.Items, gd.tagSeparator) + gd.tagSeparator
+					labels[gceLabelTags] = model.LabelValue(tags)
+				}
+
+				// GCE metadata are free-form key-value pairs similar to AWS EC2 tags
+				if inst.Metadata != nil && len(inst.Metadata.Items) > 0 {
+					for _, i := range inst.Metadata.Items {
+						if i.Value == nil {
+							continue
+						}
+						name := strutil.SanitizeLabelName(i.Key)
+						labels[gceLabelMetadata+model.LabelName(name)] = model.LabelValue(*i.Value)
+					}
+				}
+
+				if len(priIface.AccessConfigs) > 0 {
+					ac := priIface.AccessConfigs[0]
+					if ac.Type == "ONE_TO_ONE_NAT" {
+						labels[gceLabelPublicIP] = model.LabelValue(ac.NatIP)
+					}
+				}
+				tg.Targets = append(tg.Targets, labels)
+			}
+			return nil
+		})
+		if err != nil {
+			return tg, fmt.Errorf("error retrieving scrape targets from gce: %s", err)
+		}
 	}
 	return tg, nil
 }

@@ -866,9 +866,9 @@ type GCESDConfig struct {
 	// Project: The Google Cloud Project ID
 	Project string `yaml:"project"`
 
-	// Zone: The zone of the scrape targets.
-	// If you need to configure multiple zones use multiple gce_sd_configs
-	Zone string `yaml:"zone"`
+	// Zones: The zones of the scrape targets.
+	// If omited will scrape all zones.
+	Zones []string `yaml:"zones"`
 
 	// Filter: Can be used optionally to filter the instance list by other criteria.
 	// Syntax of this filter string is described here in the filter query parameter section:
@@ -896,9 +896,6 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.Project == "" {
 		return fmt.Errorf("GCE SD configuration requires a project")
-	}
-	if c.Zone == "" {
-		return fmt.Errorf("GCE SD configuration requires a zone")
 	}
 	return nil
 }
