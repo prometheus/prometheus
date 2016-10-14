@@ -158,6 +158,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 
 		pod := e.resolvePodRef(addr.TargetRef)
 		if pod == nil {
+			// This target is not a Pod, so don't continue with Pod specific logic.
 			tg.Targets = append(tg.Targets, target)
 			return
 		}
@@ -195,6 +196,8 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 			for _, addr := range ss.Addresses {
 				add(addr, port, "true")
 			}
+			// Although this generates the same target again, as it was generated in
+			// the loop above, it causes the ready meta label to be overridden.
 			for _, addr := range ss.NotReadyAddresses {
 				add(addr, port, "false")
 			}
