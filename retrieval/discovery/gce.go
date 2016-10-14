@@ -29,6 +29,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -42,6 +43,7 @@ const (
 	gceLabelInstanceName   = gceLabel + "instance_name"
 	gceLabelInstanceStatus = gceLabel + "instance_status"
 	gceLabelTags           = gceLabel + "tags"
+	gceLabelMetadata       = gceLabel + "metadata_"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -177,11 +179,23 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, gd.port)
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
+			// tags in GCE are mostly used for networking rules (unlike e.g. AWS EC2 tags)
 			if inst.Tags != nil && len(inst.Tags.Items) > 0 {
 				// We surround the separated list with the separator as well. This way regular expressions
 				// in relabeling rules don't have to consider tag positions.
 				tags := gd.tagSeparator + strings.Join(inst.Tags.Items, gd.tagSeparator) + gd.tagSeparator
 				labels[gceLabelTags] = model.LabelValue(tags)
+			}
+
+			// GCE metadata are free-form key-value pairs similar to AWS EC2 tags
+			if inst.Metadata != nil && len(inst.Metadata.Items) > 0 {
+				for _, i := range inst.Metadata.Items {
+					if i.Value == nil {
+						continue
+					}
+					name := strutil.SanitizeLabelName(i.Key)
+					labels[gceLabelMetadata+model.LabelName(name)] = model.LabelValue(*i.Value)
+				}
 			}
 
 			if len(priIface.AccessConfigs) > 0 {
