@@ -108,6 +108,7 @@ var (
 	// DefaultConsulSDConfig is the default Consul SD configuration.
 	DefaultConsulSDConfig = ConsulSDConfig{
 		TagSeparator: ",",
+		SvcSeparator: ",",
 		Scheme:       "http",
 	}
 
@@ -671,6 +672,7 @@ type ConsulSDConfig struct {
 	Token        string `yaml:"token,omitempty"`
 	Datacenter   string `yaml:"datacenter,omitempty"`
 	TagSeparator string `yaml:"tag_separator,omitempty"`
+	SvcSeparator string `yaml:"svc_separator,omitempty"`
 	Scheme       string `yaml:"scheme,omitempty"`
 	Username     string `yaml:"username,omitempty"`
 	Password     string `yaml:"password,omitempty"`
