@@ -123,6 +123,18 @@ scrape_configs:
       username: 'myusername'
       password: 'mypassword'
 
+- job_name: service-kubernetes-namespace
+
+  kubernetes_sd_configs:
+  - role: endpoint
+    api_servers:
+    - 'https://localhost:1234'
+    namespace: default
+
+    basic_auth:
+      username: 'myusername'
+      password: 'mypassword'
+
 - job_name: service-marathon
   marathon_sd_configs:
   - servers:
