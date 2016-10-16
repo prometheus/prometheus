@@ -403,6 +403,19 @@ func (s *MemorySeriesStorage) Stop() error {
 	return nil
 }
 
+type memorySeriesStorageQuerier struct {
+	*MemorySeriesStorage
+}
+
+func (memorySeriesStorageQuerier) Close() error {
+	return nil
+}
+
+// Querier implements the storage interface.
+func (s *MemorySeriesStorage) Querier() (Querier, error) {
+	return memorySeriesStorageQuerier{s}, nil
+}
+
 // WaitForIndexing implements Storage.
 func (s *MemorySeriesStorage) WaitForIndexing() {
 	s.persistence.waitForIndexing()
