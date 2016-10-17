@@ -3,8 +3,7 @@ scrape_configs:
 
     kubernetes_sd_configs:
     - role: pod
-      api_servers:
-      - 'https://localhost:1234'
+      api_server: 'https://localhost:1234'
 
       bearer_token: 1234
       basic_auth:

@@ -235,14 +235,12 @@ var expectedConf = &Config{
 
 			KubernetesSDConfigs: []*KubernetesSDConfig{
 				{
-					APIServers: []URL{kubernetesSDHostURL()},
-					Role:       KubernetesRoleEndpoint,
+					APIServer: kubernetesSDHostURL(),
+					Role:      KubernetesRoleEndpoint,
 					BasicAuth: &BasicAuth{
 						Username: "myusername",
 						Password: "mypassword",
 					},
-					RequestTimeout: model.Duration(10 * time.Second),
-					RetryInterval:  model.Duration(1 * time.Second),
 				},
 			},
 		},
