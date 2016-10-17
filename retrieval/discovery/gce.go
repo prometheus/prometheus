@@ -179,7 +179,7 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, gd.port)
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
-			// Tags in GCE are mostly used for networking rules (unlike e.g. AWS EC2 tags).
+			// Tags in GCE are usually only used for networking rules.
 			if inst.Tags != nil && len(inst.Tags.Items) > 0 {
 				// We surround the separated list with the separator as well. This way regular expressions
 				// in relabeling rules don't have to consider tag positions.
@@ -187,9 +187,10 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 				labels[gceLabelTags] = model.LabelValue(tags)
 			}
 
-			// GCE metadata are key-value pairs similar to AWS EC2 tags.
-			if inst.Metadata != nil && len(inst.Metadata.Items) > 0 {
+			// GCE metadata are key-value pairs for user supplied attributes.
+			if inst.Metadata != nil {
 				for _, i := range inst.Metadata.Items {
+					// Protect against occasional nil pointers.
 					if i.Value == nil {
 						continue
 					}
