@@ -196,9 +196,44 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           self.insertMetric[0].options.add(new Option(metrics[i], metrics[i]));
         }
 
+        self.fuzzyResult = {
+          query: null,
+          result: null,
+          map: {}
+        }
+
         self.expr.typeahead({
           source: metrics,
-          items: "all"
+          items: "all",
+          matcher: function(item) {
+            // If we have result for current query, skip
+            if (!self.fuzzyResult.query || self.fuzzyResult.query !== this.query) {
+              self.fuzzyResult.query = this.query;
+              self.fuzzyResult.map = {};
+              self.fuzzyResult.result = fuzzy.filter(this.query.replace('_', ' '), metrics, {
+                pre: '<strong>',
+                post: '</strong>',
+                extract: function(el) { return el.replace('_', ' ') }
+              });
+              self.fuzzyResult.result.forEach(function(r) {
+                self.fuzzyResult.map[r.original] = r;
+              });
+            }
+
+            return item in self.fuzzyResult.map;
+          },
+
+          sorter: function(items) {
+            items.sort(function(a,b) {
+              var i = self.fuzzyResult.map[b].score - self.fuzzyResult.map[a].score;
+              return i === 0 ? a.localeCompare(b) : i;
+            });
+            return items;
+          },
+
+          highlighter: function (item) {
+            return $('<div>' + self.fuzzyResult.map[item].string.replace(' ', '_') + '</div>')
+          },
         });
         // This needs to happen after attaching the typeahead plugin, as it
         // otherwise breaks the typeahead functionality.
