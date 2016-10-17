@@ -799,7 +799,7 @@ const (
 	KubernetesRoleNode     = "node"
 	KubernetesRolePod      = "pod"
 	KubernetesRoleService  = "service"
-	KubernetesRoleEndpoint = "endpoint"
+	KubernetesRoleEndpoint = "endpoints"
 )
 
 func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -839,7 +839,7 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: pod, service, endpoint, node)")
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, node)")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
