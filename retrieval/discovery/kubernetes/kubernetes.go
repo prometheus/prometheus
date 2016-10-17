@@ -137,7 +137,7 @@ func (k *Kubernetes) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	case "pod":
 		plw := cache.NewListWatchFromClient(rclient, "pods", api.NamespaceAll, nil)
-		pod := NewPods(
+		pod := NewPod(
 			k.logger.With("kubernetes_sd", "pod"),
 			cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 		)

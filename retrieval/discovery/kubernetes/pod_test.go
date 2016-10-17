@@ -33,7 +33,7 @@ func newFakePodInformer() *fakeInformer {
 
 func makeTestPodDiscovery() (*Pod, *fakeInformer) {
 	i := newFakePodInformer()
-	return NewPods(log.Base(), i), i
+	return NewPod(log.Base(), i), i
 }
 
 func makeMultiPortPod() *v1.Pod {

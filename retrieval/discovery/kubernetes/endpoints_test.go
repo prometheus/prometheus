@@ -14,7 +14,6 @@
 package kubernetes
 
 import (
-	//"fmt"
 	"testing"
 
 	"github.com/prometheus/common/log"
@@ -23,22 +22,22 @@ import (
 	"k8s.io/client-go/1.5/pkg/api/v1"
 )
 
-func endpointStoreKeyFunc(obj interface{}) (string, error) {
+func endpointsStoreKeyFunc(obj interface{}) (string, error) {
 	return obj.(*v1.Endpoints).ObjectMeta.Name, nil
 }
 
-func newFakeEndpointInformer() *fakeInformer {
-	return newFakeInformer(endpointStoreKeyFunc)
+func newFakeEndpointsInformer() *fakeInformer {
+	return newFakeInformer(endpointsStoreKeyFunc)
 }
 
-func makeTestEndpointDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fakeInformer) {
+func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fakeInformer) {
 	svc := newFakeServiceInformer()
-	eps := newFakeEndpointInformer()
+	eps := newFakeEndpointsInformer()
 	pod := newFakePodInformer()
 	return NewEndpoints(log.Base(), svc, eps, pod), svc, eps, pod
 }
 
-func makeEndpoint() *v1.Endpoints {
+func makeEndpoints() *v1.Endpoints {
 	return &v1.Endpoints{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "testendpoints",
@@ -82,9 +81,9 @@ func makeEndpoint() *v1.Endpoints {
 	}
 }
 
-func TestEndpointDiscoveryInitial(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointDiscovery()
-	eps.GetStore().Add(makeEndpoint())
+func TestEndpointsDiscoveryInitial(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
 		discovery: n,
@@ -120,8 +119,8 @@ func TestEndpointDiscoveryInitial(t *testing.T) {
 	}.Run(t)
 }
 
-func TestEndpointDiscoveryAdd(t *testing.T) {
-	n, _, eps, pods := makeTestEndpointDiscovery()
+func TestEndpointsDiscoveryAdd(t *testing.T) {
+	n, _, eps, pods := makeTestEndpointsDiscovery()
 	pods.GetStore().Add(&v1.Pod{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "testpod",
@@ -207,7 +206,8 @@ func TestEndpointDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_node_name":               "testnode",
 						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":          "c1",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_name":     "mainport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
 					},
 					model.LabelSet{
@@ -219,6 +219,7 @@ func TestEndpointDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":          "c2",
 						"__meta_kubernetes_pod_container_port_name":     "sideport",
+						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
 					},
 				},
@@ -232,13 +233,13 @@ func TestEndpointDiscoveryAdd(t *testing.T) {
 	}.Run(t)
 }
 
-func TestEndpointDiscoveryDelete(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointDiscovery()
-	eps.GetStore().Add(makeEndpoint())
+func TestEndpointsDiscoveryDelete(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
 		discovery:  n,
-		afterStart: func() { go func() { eps.Delete(makeEndpoint()) }() },
+		afterStart: func() { go func() { eps.Delete(makeEndpoints()) }() },
 		expectedRes: []*config.TargetGroup{
 			&config.TargetGroup{
 				Source: "endpoints/default/testendpoints",
@@ -247,9 +248,9 @@ func TestEndpointDiscoveryDelete(t *testing.T) {
 	}.Run(t)
 }
 
-func TestEndpointDiscoveryUpdate(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointDiscovery()
-	eps.GetStore().Add(makeEndpoint())
+func TestEndpointsDiscoveryUpdate(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
 		discovery: n,

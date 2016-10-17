@@ -106,6 +106,8 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		}
 	}
 	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		// TODO(fabxc): potentially remove add and delete event handlers. Those should
+		// be triggered via the endpoint handlers already.
 		AddFunc:    func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
 		UpdateFunc: func(_, o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
 		DeleteFunc: func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
@@ -147,7 +149,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 	seenPods := map[string]*podEntry{}
 
 	add := func(addr apiv1.EndpointAddress, port apiv1.EndpointPort, ready string) {
-		a := net.JoinHostPort(addr.IP, strconv.FormatInt(int64(port.Port), 10))
+		a := net.JoinHostPort(addr.IP, strconv.FormatUint(uint64(port.Port), 10))
 
 		target := model.LabelSet{
 			model.AddressLabel:        lv(a),
@@ -177,8 +179,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 		for _, c := range pod.Spec.Containers {
 			for _, cport := range c.Ports {
 				if port.Port == cport.ContainerPort {
+					ports := strconv.FormatUint(uint64(port.Port), 10)
+
 					target[podContainerNameLabel] = lv(c.Name)
-					target[podContainerPortNameLabel] = lv(port.Name)
+					target[podContainerPortNameLabel] = lv(cport.Name)
+					target[podContainerPortNumberLabel] = lv(ports)
 					target[podContainerPortProtocolLabel] = lv(string(port.Protocol))
 					break
 				}
@@ -221,12 +226,14 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 					continue
 				}
 
-				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatInt(int64(cport.ContainerPort), 10))
+				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
 				target := model.LabelSet{
 					model.AddressLabel:            lv(a),
 					podContainerNameLabel:         lv(c.Name),
 					podContainerPortNameLabel:     lv(cport.Name),
+					podContainerPortNumberLabel:   lv(ports),
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 				}
 				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))

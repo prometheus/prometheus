@@ -14,8 +14,8 @@
 package kubernetes
 
 import (
+	"encoding/json"
 	"fmt"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/tools/cache"
@@ -120,33 +121,28 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 	initialRes := <-ch
 	if d.expectedInitial != nil {
-		if !reflect.DeepEqual(d.expectedInitial, initialRes) {
-			printExpected(d.expectedInitial, initialRes)
-			t.Fatal("Initial result target group not generated as expected")
-		}
+		requireTargetGroups(t, d.expectedInitial, initialRes)
 	}
 
 	if d.afterStart != nil && d.expectedRes != nil {
 		d.afterStart()
 		res := <-ch
 
-		if !reflect.DeepEqual(d.expectedRes, res) {
-			printExpected(d.expectedRes, res)
-			t.Fatal("Result target group not generated as expected")
-		}
+		requireTargetGroups(t, d.expectedRes, res)
 	}
 }
 
-func printExpected(expected, res []*config.TargetGroup) {
-	fmt.Printf("\nExpected %d TargetGroups:\n\n", len(expected))
-	for _, e := range expected {
-		fmt.Printf("%#v\n\n", e)
+func requireTargetGroups(t *testing.T, expected, res []*config.TargetGroup) {
+	b1, err := json.Marshal(expected)
+	if err != nil {
+		panic(err)
+	}
+	b2, err := json.Marshal(res)
+	if err != nil {
+		panic(err)
 	}
 
-	fmt.Printf("\nResult %d TargetGroups:\n\n%", len(res))
-	for _, e := range res {
-		fmt.Printf("%#v\n\n", e)
-	}
+	require.JSONEq(t, string(b1), string(b2))
 }
 
 func nodeStoreKeyFunc(obj interface{}) (string, error) {

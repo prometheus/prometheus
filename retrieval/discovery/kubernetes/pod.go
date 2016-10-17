@@ -36,8 +36,8 @@ type Pod struct {
 	logger   log.Logger
 }
 
-// NewPods creates a new pod discovery.
-func NewPods(l log.Logger, pods cache.SharedInformer) *Pod {
+// NewPod creates a new pod discovery.
+func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	return &Pod{
 		informer: pods,
 		store:    pods.GetStore(),
@@ -147,7 +147,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *config.TargetGroup {
 		}
 		// Otherwise create one target for each container/port combination.
 		for _, port := range c.Ports {
-			ports := strconv.FormatInt(int64(port.ContainerPort), 10)
+			ports := strconv.FormatUint(uint64(port.ContainerPort), 10)
 			addr := net.JoinHostPort(pod.Status.PodIP, ports)
 
 			tg.Targets = append(tg.Targets, model.LabelSet{
