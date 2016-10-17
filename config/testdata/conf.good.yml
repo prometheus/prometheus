@@ -115,7 +115,7 @@ scrape_configs:
 - job_name: service-kubernetes
 
   kubernetes_sd_configs:
-  - role: endpoint 
+  - role: endpoints
     api_server: 'https://localhost:1234'
 
     basic_auth:
