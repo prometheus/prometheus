@@ -899,6 +899,7 @@ type EC2SDConfig struct {
 	SecretKey       string         `yaml:"secret_key,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -928,6 +929,7 @@ type AzureSDConfig struct {
 	ClientID        string         `yaml:"client_id,omitempty"`
 	ClientSecret    string         `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
