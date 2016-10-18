@@ -290,6 +290,7 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) int {
 		}
 		defer resp.Body.Close()
 
+		// Any HTTP status 2xx is OK.
 		if resp.StatusCode/100 != 2 {
 			return fmt.Errorf("bad response status %v", resp.Status)
 		}

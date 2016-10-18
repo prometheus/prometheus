@@ -518,7 +518,7 @@ func (c *varbitChunk) addSecondSample(s model.SamplePair) ([]Chunk, error) {
 	return []Chunk{c}, nil
 }
 
-// addLastSample isa a helper method only used by c.add() and in other helper
+// addLastSample is a helper method only used by c.add() and in other helper
 // methods called by c.add(). It simply sets the given sample as the last sample
 // in the heador and declares the chunk closed. In other words, addLastSample
 // adds the very last sample added to this chunk ever, while setLastSample sets
