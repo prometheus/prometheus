@@ -110,7 +110,7 @@ func (k *Kubernetes) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	rclient := k.client.Core().GetRESTClient()
 
 	switch k.role {
-	case "endpoint":
+	case "endpoints":
 		elw := cache.NewListWatchFromClient(rclient, "endpoints", api.NamespaceAll, nil)
 		slw := cache.NewListWatchFromClient(rclient, "services", api.NamespaceAll, nil)
 		plw := cache.NewListWatchFromClient(rclient, "pods", api.NamespaceAll, nil)
