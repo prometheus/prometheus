@@ -207,6 +207,17 @@ var expectedConf = &Config{
 					Scheme:       DefaultConsulSDConfig.Scheme,
 				},
 			},
+
+			RelabelConfigs: []*RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"__meta_sd_consul_tags"},
+					Regex:        MustNewRegexp("label:([^=]+)=([^,]+)"),
+					Separator:    ",",
+					TargetLabel:  "${1}",
+					Replacement:  "${2}",
+					Action:       RelabelReplace,
+				},
+			},
 		},
 		{
 			JobName: "service-z",

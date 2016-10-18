@@ -31,7 +31,7 @@ var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
-	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$\{?[\w]+}?)+\w*)+$`)
+	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$\{?[\w]+\}?)+\w*)+$`)
 )
 
 // Load parses the YAML input s into a Config.
