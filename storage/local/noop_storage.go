@@ -40,23 +40,35 @@ func (s *NoopStorage) Stop() error {
 func (s *NoopStorage) WaitForIndexing() {
 }
 
-// LastSampleForLabelMatchers implements Storage.
-func (s *NoopStorage) LastSampleForLabelMatchers(ctx context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
+// Querier implements Storage.
+func (s *NoopStorage) Querier() (Querier, error) {
+	return &NoopQuerier{}, nil
+}
+
+type NoopQuerier struct{}
+
+// Close implements Querier.
+func (s *NoopQuerier) Close() error {
+	return nil
+}
+
+// LastSampleForLabelMatchers implements Querier.
+func (s *NoopQuerier) LastSampleForLabelMatchers(ctx context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
 	return nil, nil
 }
 
-// QueryRange implements Storage.
-func (s *NoopStorage) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+// QueryRange implements Querier
+func (s *NoopQuerier) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	return nil, nil
 }
 
-// QueryInstant implements Storage.
-func (s *NoopStorage) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+// QueryInstant implements Querier.
+func (s *NoopQuerier) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	return nil, nil
 }
 
-// MetricsForLabelMatchers implements Storage.
-func (s *NoopStorage) MetricsForLabelMatchers(
+// MetricsForLabelMatchers implements Querier.
+func (s *NoopQuerier) MetricsForLabelMatchers(
 	ctx context.Context,
 	from, through model.Time,
 	matcherSets ...metric.LabelMatchers,
@@ -64,8 +76,8 @@ func (s *NoopStorage) MetricsForLabelMatchers(
 	return nil, nil
 }
 
-// LabelValuesForLabelName implements Storage.
-func (s *NoopStorage) LabelValuesForLabelName(ctx context.Context, labelName model.LabelName) (model.LabelValues, error) {
+// LabelValuesForLabelName implements Querier.
+func (s *NoopQuerier) LabelValuesForLabelName(ctx context.Context, labelName model.LabelName) (model.LabelValues, error) {
 	return nil, nil
 }
 

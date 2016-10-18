@@ -218,22 +218,27 @@ func contextDone(ctx context.Context, env string) error {
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	// The querier on which the engine operates.
-	querier local.Querier
+	// A Querier constructor against an underlying storage.
+	queryable Queryable
 	// The gate limiting the maximum number of concurrent and waiting queries.
 	gate    *queryGate
 	options *EngineOptions
 }
 
+// Queryable allows opening a storage querier.
+type Queryable interface {
+	Querier() (local.Querier, error)
+}
+
 // NewEngine returns a new engine.
-func NewEngine(querier local.Querier, o *EngineOptions) *Engine {
+func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
 	return &Engine{
-		querier: querier,
-		gate:    newQueryGate(o.MaxConcurrentQueries),
-		options: o,
+		queryable: queryable,
+		gate:      newQueryGate(o.MaxConcurrentQueries),
+		options:   o,
 	}
 }
 
@@ -351,13 +356,18 @@ func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (model.Value, error) {
+	querier, err := ng.queryable.Querier()
+	if err != nil {
+		return nil, err
+	}
+	defer querier.Close()
+
 	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
-	err := ng.populateIterators(ctx, s)
+	err = ng.populateIterators(ctx, querier, s)
 	prepareTimer.Stop()
 	if err != nil {
 		return nil, err
 	}
-
 	defer ng.closeIterators(s)
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
@@ -463,20 +473,20 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return resMatrix, nil
 }
 
-func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) error {
+func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, s *EvalStmt) error {
 	var queryErr error
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if s.Start.Equal(s.End) {
-				n.iterators, queryErr = ng.querier.QueryInstant(
+				n.iterators, queryErr = querier.QueryInstant(
 					ctx,
 					s.Start.Add(-n.Offset),
 					StalenessDelta,
 					n.LabelMatchers...,
 				)
 			} else {
-				n.iterators, queryErr = ng.querier.QueryRange(
+				n.iterators, queryErr = querier.QueryRange(
 					ctx,
 					s.Start.Add(-n.Offset-StalenessDelta),
 					s.End.Add(-n.Offset),
@@ -487,7 +497,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) error {
 				return false
 			}
 		case *MatrixSelector:
-			n.iterators, queryErr = ng.querier.QueryRange(
+			n.iterators, queryErr = querier.QueryRange(
 				ctx,
 				s.Start.Add(-n.Offset-n.Range),
 				s.End.Add(-n.Offset),

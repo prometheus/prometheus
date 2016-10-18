@@ -14,357 +14,112 @@
 package kubernetes
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net"
-	"net/http"
-	"sync"
-	"time"
+	"strconv"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	"golang.org/x/net/context"
+	apiv1 "k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 )
 
-type serviceDiscovery struct {
-	mtx           sync.RWMutex
-	services      map[string]map[string]*Service
-	retryInterval time.Duration
-	kd            *Discovery
+// Service implements discovery of Kubernetes services.
+type Service struct {
+	logger   log.Logger
+	informer cache.SharedInformer
+	store    cache.Store
 }
 
-func (d *serviceDiscovery) run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	update := make(chan interface{}, 10)
-	go d.startServiceWatch(update, ctx.Done(), d.retryInterval)
+// NewService returns a new service discovery.
+func NewService(l log.Logger, inf cache.SharedInformer) *Service {
+	return &Service{logger: l, informer: inf, store: inf.GetStore()}
+}
 
-	for {
-		tgs := []*config.TargetGroup{}
+// Run implements the TargetProvider interface.
+func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+	// Send full initial set of pod targets.
+	var initial []*config.TargetGroup
+	for _, o := range s.store.List() {
+		tg := s.buildService(o.(*apiv1.Service))
+		initial = append(initial, tg)
+	}
+	select {
+	case <-ctx.Done():
+		return
+	case ch <- initial:
+	}
+
+	// Send target groups for service updates.
+	send := func(tg *config.TargetGroup) {
 		select {
 		case <-ctx.Done():
-			return
-		case event := <-update:
-			switch e := event.(type) {
-			case *endpointsEvent:
-				log.Debugf("k8s discovery received endpoint event (EventType=%s, Endpoint Name=%s)", e.EventType, e.Endpoints.ObjectMeta.Name)
-				tgs = append(tgs, d.updateServiceEndpoints(e.Endpoints, e.EventType))
-			case *serviceEvent:
-				log.Debugf("k8s discovery received service event (EventType=%s, Service Name=%s)", e.EventType, e.Service.ObjectMeta.Name)
-				tgs = append(tgs, d.updateService(e.Service, e.EventType))
-			}
-		}
-		if tgs == nil {
-			continue
-		}
-
-		for _, tg := range tgs {
-			select {
-			case ch <- []*config.TargetGroup{tg}:
-			case <-ctx.Done():
-				return
-			}
+		case ch <- []*config.TargetGroup{tg}:
 		}
 	}
-
-}
-
-func (d *serviceDiscovery) getServices() (map[string]map[string]*Service, string, error) {
-	res, err := d.kd.queryAPIServerPath(servicesURL)
-	if err != nil {
-		// If we can't list services then we can't watch them. Assume this is a misconfiguration
-		// & return error.
-		return nil, "", fmt.Errorf("unable to list Kubernetes services: %s", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("unable to list Kubernetes services; unexpected response: %d %s", res.StatusCode, res.Status)
-	}
-	var services ServiceList
-	if err := json.NewDecoder(res.Body).Decode(&services); err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return nil, "", fmt.Errorf("unable to list Kubernetes services; unexpected response body: %s", string(body))
-	}
-
-	serviceMap := map[string]map[string]*Service{}
-	for idx, service := range services.Items {
-		namespace, ok := serviceMap[service.ObjectMeta.Namespace]
-		if !ok {
-			namespace = map[string]*Service{}
-			serviceMap[service.ObjectMeta.Namespace] = namespace
-		}
-		namespace[service.ObjectMeta.Name] = &services.Items[idx]
-	}
-
-	return serviceMap, services.ResourceVersion, nil
-}
-
-// watchServices watches services as they come & go.
-func (d *serviceDiscovery) startServiceWatch(events chan<- interface{}, done <-chan struct{}, retryInterval time.Duration) {
-	until(func() {
-		// We use separate target groups for each discovered service so we'll need to clean up any if they've been deleted
-		// in Kubernetes while we couldn't connect - small chance of this, but worth dealing with.
-		d.mtx.Lock()
-		existingServices := d.services
-
-		// Reset the known services.
-		d.services = map[string]map[string]*Service{}
-		d.mtx.Unlock()
-
-		services, resourceVersion, err := d.getServices()
-		if err != nil {
-			log.Errorf("Cannot initialize services collection: %s", err)
-			return
-		}
-
-		// Now let's loop through the old services & see if they still exist in here
-		for oldNSName, oldNS := range existingServices {
-			if ns, ok := services[oldNSName]; !ok {
-				for _, service := range existingServices[oldNSName] {
-					events <- &serviceEvent{Deleted, service}
-				}
-			} else {
-				for oldServiceName, oldService := range oldNS {
-					if _, ok := ns[oldServiceName]; !ok {
-						events <- &serviceEvent{Deleted, oldService}
-					}
-				}
-			}
-		}
-
-		// Discard the existing services map for GC.
-		existingServices = nil
-
-		for _, ns := range services {
-			for _, service := range ns {
-				events <- &serviceEvent{Added, service}
-			}
-		}
-
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go func() {
-			d.watchServices(resourceVersion, events, done)
-			wg.Done()
-		}()
-		go func() {
-			d.watchServiceEndpoints(resourceVersion, events, done)
-			wg.Done()
-		}()
-
-		wg.Wait()
-	}, retryInterval, done)
-}
-
-func (d *serviceDiscovery) watchServices(resourceVersion string, events chan<- interface{}, done <-chan struct{}) {
-	req, err := http.NewRequest("GET", servicesURL, nil)
-	if err != nil {
-		log.Errorf("Failed to create services request: %s", err)
-		return
-	}
-	values := req.URL.Query()
-	values.Add("watch", "true")
-	values.Add("resourceVersion", resourceVersion)
-	req.URL.RawQuery = values.Encode()
-
-	res, err := d.kd.queryAPIServerReq(req)
-	if err != nil {
-		log.Errorf("Failed to watch services: %s", err)
-		return
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to watch services: %d", res.StatusCode)
-		return
-	}
-
-	dec := json.NewDecoder(res.Body)
-
-	for {
-		var event serviceEvent
-		if err := dec.Decode(&event); err != nil {
-			log.Errorf("Watch services unexpectedly closed: %s", err)
-			return
-		}
-
-		select {
-		case events <- &event:
-		case <-done:
-			return
-		}
-	}
-}
-
-// watchServiceEndpoints watches service endpoints as they come & go.
-func (d *serviceDiscovery) watchServiceEndpoints(resourceVersion string, events chan<- interface{}, done <-chan struct{}) {
-	req, err := http.NewRequest("GET", endpointsURL, nil)
-	if err != nil {
-		log.Errorf("Failed to create service endpoints request: %s", err)
-		return
-	}
-	values := req.URL.Query()
-	values.Add("watch", "true")
-	values.Add("resourceVersion", resourceVersion)
-	req.URL.RawQuery = values.Encode()
-
-	res, err := d.kd.queryAPIServerReq(req)
-	if err != nil {
-		log.Errorf("Failed to watch service endpoints: %s", err)
-		return
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to watch service endpoints: %d", res.StatusCode)
-		return
-	}
-
-	dec := json.NewDecoder(res.Body)
-
-	for {
-		var event endpointsEvent
-		if err := dec.Decode(&event); err != nil {
-			log.Errorf("Watch service endpoints unexpectedly closed: %s", err)
-			return
-		}
-
-		select {
-		case events <- &event:
-		case <-done:
-		}
-	}
-}
-
-func (d *serviceDiscovery) updateService(service *Service, eventType EventType) *config.TargetGroup {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-
-	switch eventType {
-	case Deleted:
-		return d.deleteService(service)
-	case Added, Modified:
-		return d.addService(service)
-	}
-	return nil
-}
-
-func (d *serviceDiscovery) deleteService(service *Service) *config.TargetGroup {
-	tg := &config.TargetGroup{Source: serviceSource(service)}
-
-	delete(d.services[service.ObjectMeta.Namespace], service.ObjectMeta.Name)
-	if len(d.services[service.ObjectMeta.Namespace]) == 0 {
-		delete(d.services, service.ObjectMeta.Namespace)
-	}
-
-	return tg
-}
-
-func (d *serviceDiscovery) addService(service *Service) *config.TargetGroup {
-	namespace, ok := d.services[service.ObjectMeta.Namespace]
-	if !ok {
-		namespace = map[string]*Service{}
-		d.services[service.ObjectMeta.Namespace] = namespace
-	}
-
-	namespace[service.ObjectMeta.Name] = service
-	endpointURL := fmt.Sprintf(serviceEndpointsURL, service.ObjectMeta.Namespace, service.ObjectMeta.Name)
-
-	res, err := d.kd.queryAPIServerPath(endpointURL)
-	if err != nil {
-		log.Errorf("Error getting service endpoints: %s", err)
-		return nil
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Failed to get service endpoints: %d", res.StatusCode)
-		return nil
-	}
-
-	var eps Endpoints
-	if err := json.NewDecoder(res.Body).Decode(&eps); err != nil {
-		log.Errorf("Error getting service endpoints: %s", err)
-		return nil
-	}
-
-	return d.updateServiceTargetGroup(service, &eps)
-}
-
-func (d *serviceDiscovery) updateServiceTargetGroup(service *Service, eps *Endpoints) *config.TargetGroup {
-	tg := &config.TargetGroup{
-		Source: serviceSource(service),
-		Labels: model.LabelSet{
-			serviceNamespaceLabel: model.LabelValue(service.ObjectMeta.Namespace),
-			serviceNameLabel:      model.LabelValue(service.ObjectMeta.Name),
+	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			send(s.buildService(o.(*apiv1.Service)))
 		},
+		DeleteFunc: func(o interface{}) {
+			send(&config.TargetGroup{Source: serviceSource(o.(*apiv1.Service))})
+		},
+		UpdateFunc: func(_, o interface{}) {
+			send(s.buildService(o.(*apiv1.Service)))
+		},
+	})
+
+	// Block until the target provider is explicitly canceled.
+	<-ctx.Done()
+}
+
+func serviceSource(s *apiv1.Service) string {
+	return "svc/" + s.Namespace + "/" + s.Name
+}
+
+const (
+	serviceNameLabel         = metaLabelPrefix + "service_name"
+	serviceLabelPrefix       = metaLabelPrefix + "service_label_"
+	serviceAnnotationPrefix  = metaLabelPrefix + "service_annotation_"
+	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
+	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
+)
+
+func serviceLabels(svc *apiv1.Service) model.LabelSet {
+	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
+
+	ls[serviceNameLabel] = lv(svc.Name)
+
+	for k, v := range svc.Labels {
+		ln := strutil.SanitizeLabelName(serviceLabelPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
 	}
 
-	for k, v := range service.ObjectMeta.Labels {
-		labelName := strutil.SanitizeLabelName(serviceLabelPrefix + k)
-		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
+	for k, v := range svc.Annotations {
+		ln := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
 	}
+	return ls
+}
 
-	for k, v := range service.ObjectMeta.Annotations {
-		labelName := strutil.SanitizeLabelName(serviceAnnotationPrefix + k)
-		tg.Labels[model.LabelName(labelName)] = model.LabelValue(v)
+func (s *Service) buildService(svc *apiv1.Service) *config.TargetGroup {
+	tg := &config.TargetGroup{
+		Source: serviceSource(svc),
 	}
+	tg.Labels = serviceLabels(svc)
+	tg.Labels[namespaceLabel] = lv(svc.Namespace)
 
-	serviceAddress := service.ObjectMeta.Name + "." + service.ObjectMeta.Namespace + ".svc"
+	for _, port := range svc.Spec.Ports {
+		addr := net.JoinHostPort(svc.Name+"."+svc.Namespace+".svc", strconv.FormatInt(int64(port.Port), 10))
 
-	// Append the first TCP service port if one exists.
-	for _, port := range service.Spec.Ports {
-		if port.Protocol == ProtocolTCP {
-			serviceAddress += fmt.Sprintf(":%d", port.Port)
-			break
-		}
-	}
-	switch d.kd.Conf.Role {
-	case config.KubernetesRoleService:
-		t := model.LabelSet{
-			model.AddressLabel: model.LabelValue(serviceAddress),
-			roleLabel:          model.LabelValue("service"),
-		}
-		tg.Targets = append(tg.Targets, t)
-
-	case config.KubernetesRoleEndpoint:
-		// Now let's loop through the endpoints & add them to the target group
-		// with appropriate labels.
-		for _, ss := range eps.Subsets {
-			epPort := ss.Ports[0].Port
-
-			for _, addr := range ss.Addresses {
-				ipAddr := addr.IP
-				if len(ipAddr) == net.IPv6len {
-					ipAddr = "[" + ipAddr + "]"
-				}
-				address := net.JoinHostPort(ipAddr, fmt.Sprintf("%d", epPort))
-
-				t := model.LabelSet{
-					model.AddressLabel: model.LabelValue(address),
-					roleLabel:          model.LabelValue("endpoint"),
-				}
-
-				tg.Targets = append(tg.Targets, t)
-			}
-		}
+		tg.Targets = append(tg.Targets, model.LabelSet{
+			model.AddressLabel:       lv(addr),
+			servicePortNameLabel:     lv(port.Name),
+			servicePortProtocolLabel: lv(string(port.Protocol)),
+		})
 	}
 
 	return tg
-}
-
-func (d *serviceDiscovery) updateServiceEndpoints(endpoints *Endpoints, eventType EventType) *config.TargetGroup {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-
-	serviceNamespace := endpoints.ObjectMeta.Namespace
-	serviceName := endpoints.ObjectMeta.Name
-
-	if service, ok := d.services[serviceNamespace][serviceName]; ok {
-		return d.updateServiceTargetGroup(service, endpoints)
-	}
-	return nil
-}
-
-func serviceSource(service *Service) string {
-	return sourceServicePrefix + ":" + service.ObjectMeta.Namespace + "/" + service.ObjectMeta.Name
 }
