@@ -50,7 +50,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	vector, err := h.storage.LastSampleForLabelMatchers(h.context, minTimestamp, matcherSets...)
+	q, err := h.storage.Querier()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer q.Close()
+
+	vector, err := q.LastSampleForLabelMatchers(h.context, minTimestamp, matcherSets...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

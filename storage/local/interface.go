@@ -26,7 +26,8 @@ import (
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
-	Querier
+	// Querier returns a new Querier on the storage.
+	Querier() (Querier, error)
 
 	// This SampleAppender needs multiple samples for the same fingerprint to be
 	// submitted in chronological order, from oldest to newest. When Append has
@@ -57,6 +58,9 @@ type Storage interface {
 
 // Querier allows querying a time series storage.
 type Querier interface {
+	// Close closes the querier. Behavior for subsequent calls to Querier methods
+	// is undefined.
+	Close() error
 	// QueryRange returns a list of series iterators for the selected
 	// time range and label matchers. The iterators need to be closed
 	// after usage.
