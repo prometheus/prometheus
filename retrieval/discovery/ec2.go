@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -67,15 +66,10 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 		Credentials: creds,
 	}
 
-	// Adds HTTP proxy to aws config
-	if conf.Proxy != "" {
-		proxyUrl, err := url.Parse(conf.Proxy)
-		if err != nil {
-			log.Error(err)
-		}
-		client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
-		awsConfig.HTTPClient = client
-	}
+	client := &http.Client{Transport: &http.Transport{
+		Proxy: http.ProxyURL(conf.ProxyURL.URL),
+	}}
+	awsConfig.HTTPClient = client
 
 	return &EC2Discovery{
 		aws:      awsConfig,
