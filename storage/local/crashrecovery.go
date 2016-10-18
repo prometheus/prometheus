@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 )
@@ -114,10 +115,10 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 					)
 				}
 				s.chunkDescs = append(
-					make([]*chunkDesc, 0, len(s.chunkDescs)-s.persistWatermark),
+					make([]*chunk.Desc, 0, len(s.chunkDescs)-s.persistWatermark),
 					s.chunkDescs[s.persistWatermark:]...,
 				)
-				numMemChunkDescs.Sub(float64(s.persistWatermark))
+				chunk.NumMemDescs.Sub(float64(s.persistWatermark))
 				s.persistWatermark = 0
 				s.chunkDescsOffset = 0
 			}
@@ -290,8 +291,8 @@ func (p *persistence) sanitizeSeries(
 			)
 			s.chunkDescs = cds
 			s.chunkDescsOffset = 0
-			s.savedFirstTime = cds[0].firstTime()
-			s.lastTime, err = cds[len(cds)-1].lastTime()
+			s.savedFirstTime = cds[0].FirstTime()
+			s.lastTime, err = cds[len(cds)-1].LastTime()
 			if err != nil {
 				log.Errorf(
 					"Failed to determine time of the last sample for metric %v, fingerprint %v: %s",
@@ -314,7 +315,7 @@ func (p *persistence) sanitizeSeries(
 
 		// First, throw away the chunkDescs without chunks.
 		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
-		numMemChunkDescs.Sub(float64(s.persistWatermark))
+		chunk.NumMemDescs.Sub(float64(s.persistWatermark))
 		cds, err := p.loadChunkDescs(fp, 0)
 		if err != nil {
 			log.Errorf(
@@ -326,10 +327,10 @@ func (p *persistence) sanitizeSeries(
 		}
 		s.persistWatermark = len(cds)
 		s.chunkDescsOffset = 0
-		s.savedFirstTime = cds[0].firstTime()
+		s.savedFirstTime = cds[0].FirstTime()
 		s.modTime = modTime
 
-		lastTime, err := cds[len(cds)-1].lastTime()
+		lastTime, err := cds[len(cds)-1].LastTime()
 		if err != nil {
 			log.Errorf(
 				"Failed to determine time of the last sample for metric %v, fingerprint %v: %s",
@@ -340,7 +341,7 @@ func (p *persistence) sanitizeSeries(
 		}
 		keepIdx := -1
 		for i, cd := range s.chunkDescs {
-			if cd.firstTime() >= lastTime {
+			if cd.FirstTime() >= lastTime {
 				keepIdx = i
 				break
 			}
@@ -350,8 +351,8 @@ func (p *persistence) sanitizeSeries(
 				"Recovered metric %v, fingerprint %v: all %d chunks recovered from series file.",
 				s.metric, fp, chunksInFile,
 			)
-			numMemChunkDescs.Sub(float64(len(s.chunkDescs)))
-			atomic.AddInt64(&numMemChunks, int64(-len(s.chunkDescs)))
+			chunk.NumMemDescs.Sub(float64(len(s.chunkDescs)))
+			atomic.AddInt64(&chunk.NumMemChunks, int64(-len(s.chunkDescs)))
 			s.chunkDescs = cds
 			s.headChunkClosed = true
 			return fp, true
@@ -360,8 +361,8 @@ func (p *persistence) sanitizeSeries(
 			"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered %d chunks from checkpoint.",
 			s.metric, fp, chunksInFile, len(s.chunkDescs)-keepIdx,
 		)
-		numMemChunkDescs.Sub(float64(keepIdx))
-		atomic.AddInt64(&numMemChunks, int64(-keepIdx))
+		chunk.NumMemDescs.Sub(float64(keepIdx))
+		atomic.AddInt64(&chunk.NumMemChunks, int64(-keepIdx))
 		if keepIdx == len(s.chunkDescs) {
 			// No chunks from series file left, head chunk is evicted, so declare it closed.
 			s.headChunkClosed = true

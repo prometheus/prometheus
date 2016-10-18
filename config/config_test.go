@@ -44,6 +44,19 @@ var expectedConf = &Config{
 		"testdata/my/*.rules",
 	},
 
+	RemoteWriteConfig: RemoteWriteConfig{
+		RemoteTimeout: model.Duration(30 * time.Second),
+		WriteRelabelConfigs: []*RelabelConfig{
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Separator:    ";",
+				Regex:        MustNewRegexp("expensive.*"),
+				Replacement:  "$1",
+				Action:       RelabelDrop,
+			},
+		},
+	},
+
 	ScrapeConfigs: []*ScrapeConfig{
 		{
 			JobName: "prometheus",
@@ -222,14 +235,12 @@ var expectedConf = &Config{
 
 			KubernetesSDConfigs: []*KubernetesSDConfig{
 				{
-					APIServers: []URL{kubernetesSDHostURL()},
-					Role:       KubernetesRoleEndpoint,
+					APIServer: kubernetesSDHostURL(),
+					Role:      KubernetesRoleEndpoint,
 					BasicAuth: &BasicAuth{
 						Username: "myusername",
 						Password: "mypassword",
 					},
-					RequestTimeout: model.Duration(10 * time.Second),
-					RetryInterval:  model.Duration(1 * time.Second),
 				},
 			},
 		},
@@ -349,7 +360,7 @@ func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
 	if _, err := LoadFile("testdata/global_timeout.good.yml"); err != nil {
-		t.Errorf("Error parsing %s: %s", "testdata/conf.good.yml", err)
+		t.Errorf("Error parsing %s: %s", "testdata/global_timeout.good.yml", err)
 	}
 
 	c, err := LoadFile("testdata/conf.good.yml")

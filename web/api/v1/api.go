@@ -85,7 +85,6 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Context     context.Context
 	Storage     local.Storage
 	QueryEngine *promql.Engine
 
@@ -94,9 +93,8 @@ type API struct {
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(ctx context.Context, qe *promql.Engine, st local.Storage) *API {
+func NewAPI(qe *promql.Engine, st local.Storage) *API {
 	return &API{
-		Context:     ctx,
 		QueryEngine: qe,
 		Storage:     st,
 		context:     route.Context,
@@ -159,7 +157,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec(api.Context)
+	res := qry.Exec(api.context(r))
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -206,7 +204,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec(api.Context)
+	res := qry.Exec(api.context(r))
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -228,7 +226,13 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
 	}
-	vals, err := api.Storage.LabelValuesForLabelName(api.Context, model.LabelName(name))
+	q, err := api.Storage.Querier()
+	if err != nil {
+		return nil, &apiError{errorExec, err}
+	}
+	defer q.Close()
+
+	vals, err := q.LabelValuesForLabelName(api.context(r), model.LabelName(name))
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
@@ -274,7 +278,13 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	res, err := api.Storage.MetricsForLabelMatchers(api.Context, start, end, matcherSets...)
+	q, err := api.Storage.Querier()
+	if err != nil {
+		return nil, &apiError{errorExec, err}
+	}
+	defer q.Close()
+
+	res, err := q.MetricsForLabelMatchers(api.context(r), start, end, matcherSets...)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}

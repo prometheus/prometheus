@@ -120,7 +120,9 @@ type Options struct {
 
 // New initializes a new web Handler.
 func New(o *Options) *Handler {
-	router := route.New()
+	router := route.New(func(r *http.Request) (context.Context, error) {
+		return o.Context, nil
+	})
 
 	h := &Handler{
 		router:      router,
@@ -138,7 +140,7 @@ func New(o *Options) *Handler {
 		queryEngine:   o.QueryEngine,
 		storage:       o.Storage,
 
-		apiV1: api_v1.NewAPI(o.Context, o.QueryEngine, o.Storage),
+		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage),
 		now:   model.Now,
 	}
 

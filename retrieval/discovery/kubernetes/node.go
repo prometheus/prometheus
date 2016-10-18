@@ -14,229 +14,148 @@
 package kubernetes
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
-	"net/http"
 	"strconv"
-	"sync"
-	"time"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	"golang.org/x/net/context"
+	"k8s.io/client-go/1.5/pkg/api"
+	apiv1 "k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 )
 
-type nodeDiscovery struct {
-	mtx           sync.RWMutex
-	nodes         map[string]*Node
-	retryInterval time.Duration
-	kd            *Discovery
+// Node discovers Kubernetes nodes.
+type Node struct {
+	logger   log.Logger
+	informer cache.SharedInformer
+	store    cache.Store
 }
 
-func (d *nodeDiscovery) run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// NewNode returns a new node discovery.
+func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
+	return &Node{logger: l, informer: inf, store: inf.GetStore()}
+}
+
+// Run implements the TargetProvider interface.
+func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+	// Send full initial set of pod targets.
+	var initial []*config.TargetGroup
+	for _, o := range n.store.List() {
+		tg := n.buildNode(o.(*apiv1.Node))
+		initial = append(initial, tg)
+	}
 	select {
-	case ch <- []*config.TargetGroup{d.updateNodesTargetGroup()}:
 	case <-ctx.Done():
 		return
+	case ch <- initial:
 	}
 
-	update := make(chan *nodeEvent, 10)
-	go d.watchNodes(update, ctx.Done(), d.retryInterval)
-
-	for {
-		tgs := []*config.TargetGroup{}
+	// Send target groups for service updates.
+	send := func(tg *config.TargetGroup) {
 		select {
 		case <-ctx.Done():
-			return
-		case e := <-update:
-			log.Debugf("k8s discovery received node event (EventType=%s, Node Name=%s)", e.EventType, e.Node.ObjectMeta.Name)
-			d.updateNode(e.Node, e.EventType)
-			tgs = append(tgs, d.updateNodesTargetGroup())
-		}
-		if tgs == nil {
-			continue
-		}
-
-		for _, tg := range tgs {
-			select {
-			case ch <- []*config.TargetGroup{tg}:
-			case <-ctx.Done():
-				return
-			}
+		case ch <- []*config.TargetGroup{tg}:
 		}
 	}
+	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			send(n.buildNode(o.(*apiv1.Node)))
+		},
+		DeleteFunc: func(o interface{}) {
+			send(&config.TargetGroup{Source: nodeSource(o.(*apiv1.Node))})
+		},
+		UpdateFunc: func(_, o interface{}) {
+			send(n.buildNode(o.(*apiv1.Node)))
+		},
+	})
+
+	// Block until the target provider is explicitly canceled.
+	<-ctx.Done()
 }
 
-func (d *nodeDiscovery) updateNodesTargetGroup() *config.TargetGroup {
-	d.mtx.RLock()
-	defer d.mtx.RUnlock()
+func nodeSource(n *apiv1.Node) string {
+	return "node/" + n.Name
+}
 
+const (
+	nodeNameLabel        = metaLabelPrefix + "node_name"
+	nodeLabelPrefix      = metaLabelPrefix + "node_label_"
+	nodeAnnotationPrefix = metaLabelPrefix + "node_annotation_"
+	nodeAddressPrefix    = metaLabelPrefix + "node_address_"
+)
+
+func nodeLabels(n *apiv1.Node) model.LabelSet {
+	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+2)
+
+	ls[nodeNameLabel] = lv(n.Name)
+
+	for k, v := range n.Labels {
+		ln := strutil.SanitizeLabelName(nodeLabelPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
+	}
+
+	for k, v := range n.Annotations {
+		ln := strutil.SanitizeLabelName(nodeAnnotationPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
+	}
+	return ls
+}
+
+func (n *Node) buildNode(node *apiv1.Node) *config.TargetGroup {
 	tg := &config.TargetGroup{
-		Source: nodesTargetGroupName,
-		Labels: model.LabelSet{
-			roleLabel: model.LabelValue("node"),
-		},
+		Source: nodeSource(node),
+	}
+	tg.Labels = nodeLabels(node)
+
+	addr, addrMap, err := nodeAddress(node)
+	if err != nil {
+		n.logger.With("err", err).Debugf("No node address found")
+		return nil
+	}
+	addr = net.JoinHostPort(addr, strconv.FormatInt(int64(node.Status.DaemonEndpoints.KubeletEndpoint.Port), 10))
+
+	t := model.LabelSet{
+		model.AddressLabel:  lv(addr),
+		model.InstanceLabel: lv(node.Name),
 	}
 
-	// Now let's loop through the nodes & add them to the target group with appropriate labels.
-	for nodeName, node := range d.nodes {
-		defaultNodeAddress, nodeAddressMap, err := nodeAddresses(node)
-		if err != nil {
-			log.Debugf("Skipping node %s: %s", node.Name, err)
-			continue
-		}
-
-		kubeletPort := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
-
-		address := net.JoinHostPort(defaultNodeAddress.String(), fmt.Sprintf("%d", kubeletPort))
-
-		t := model.LabelSet{
-			model.AddressLabel:  model.LabelValue(address),
-			model.InstanceLabel: model.LabelValue(nodeName),
-		}
-
-		for addrType, ip := range nodeAddressMap {
-			labelName := strutil.SanitizeLabelName(nodeAddressPrefix + string(addrType))
-			t[model.LabelName(labelName)] = model.LabelValue(ip[0].String())
-		}
-
-		t[model.LabelName(nodePortLabel)] = model.LabelValue(strconv.Itoa(kubeletPort))
-
-		for k, v := range node.ObjectMeta.Labels {
-			labelName := strutil.SanitizeLabelName(nodeLabelPrefix + k)
-			t[model.LabelName(labelName)] = model.LabelValue(v)
-		}
-		tg.Targets = append(tg.Targets, t)
+	for ty, a := range addrMap {
+		ln := strutil.SanitizeLabelName(nodeAddressPrefix + string(ty))
+		t[model.LabelName(ln)] = lv(a[0])
 	}
+	tg.Targets = append(tg.Targets, t)
 
 	return tg
-}
-
-// watchNodes watches nodes as they come & go.
-func (d *nodeDiscovery) watchNodes(events chan *nodeEvent, done <-chan struct{}, retryInterval time.Duration) {
-	until(func() {
-		nodes, resourceVersion, err := d.getNodes()
-		if err != nil {
-			log.Errorf("Cannot initialize nodes collection: %s", err)
-			return
-		}
-
-		// Reset the known nodes.
-		d.mtx.Lock()
-		d.nodes = map[string]*Node{}
-		d.mtx.Unlock()
-
-		for _, node := range nodes {
-			events <- &nodeEvent{Added, node}
-		}
-
-		req, err := http.NewRequest("GET", nodesURL, nil)
-		if err != nil {
-			log.Errorf("Cannot create nodes request: %s", err)
-			return
-		}
-		values := req.URL.Query()
-		values.Add("watch", "true")
-		values.Add("resourceVersion", resourceVersion)
-		req.URL.RawQuery = values.Encode()
-		res, err := d.kd.queryAPIServerReq(req)
-		if err != nil {
-			log.Errorf("Failed to watch nodes: %s", err)
-			return
-		}
-		defer res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch nodes: %d", res.StatusCode)
-			return
-		}
-
-		d := json.NewDecoder(res.Body)
-
-		for {
-			var event nodeEvent
-			if err := d.Decode(&event); err != nil {
-				log.Errorf("Watch nodes unexpectedly closed: %s", err)
-				return
-			}
-
-			select {
-			case events <- &event:
-			case <-done:
-			}
-		}
-	}, retryInterval, done)
-}
-
-func (d *nodeDiscovery) updateNode(node *Node, eventType EventType) {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-
-	updatedNodeName := node.ObjectMeta.Name
-	switch eventType {
-	case Deleted:
-		// Deleted - remove from nodes map.
-		delete(d.nodes, updatedNodeName)
-	case Added, Modified:
-		// Added/Modified - update the node in the nodes map.
-		d.nodes[updatedNodeName] = node
-	}
-}
-
-func (d *nodeDiscovery) getNodes() (map[string]*Node, string, error) {
-	res, err := d.kd.queryAPIServerPath(nodesURL)
-	if err != nil {
-		// If we can't list nodes then we can't watch them. Assume this is a misconfiguration
-		// & return error.
-		return nil, "", fmt.Errorf("unable to list Kubernetes nodes: %s", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("unable to list Kubernetes nodes; unexpected response: %d %s", res.StatusCode, res.Status)
-	}
-
-	var nodes NodeList
-	if err := json.NewDecoder(res.Body).Decode(&nodes); err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return nil, "", fmt.Errorf("unable to list Kubernetes nodes; unexpected response body: %s", string(body))
-	}
-
-	nodeMap := map[string]*Node{}
-	for idx, node := range nodes.Items {
-		nodeMap[node.ObjectMeta.Name] = &nodes.Items[idx]
-	}
-
-	return nodeMap, nodes.ResourceVersion, nil
 }
 
 // nodeAddresses returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeExternalIP
 // 3. NodeLegacyHostIP
+// 3. NodeHostName
 //
-// Copied from k8s.io/kubernetes/pkg/util/node/node.go
-func nodeAddresses(node *Node) (net.IP, map[NodeAddressType][]net.IP, error) {
-	addresses := node.Status.Addresses
-	addressMap := map[NodeAddressType][]net.IP{}
-	for _, addr := range addresses {
-		ip := net.ParseIP(addr.Address)
-		// All addresses should be valid IPs.
-		if ip == nil {
-			continue
-		}
-		addressMap[addr.Type] = append(addressMap[addr.Type], ip)
+// Derived from k8s.io/kubernetes/pkg/util/node/node.go
+func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
+	m := map[apiv1.NodeAddressType][]string{}
+	for _, a := range node.Status.Addresses {
+		m[a.Type] = append(m[a.Type], a.Address)
 	}
-	if addresses, ok := addressMap[NodeInternalIP]; ok {
-		return addresses[0], addressMap, nil
+
+	if addresses, ok := m[apiv1.NodeInternalIP]; ok {
+		return addresses[0], m, nil
 	}
-	if addresses, ok := addressMap[NodeExternalIP]; ok {
-		return addresses[0], addressMap, nil
+	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
+		return addresses[0], m, nil
 	}
-	if addresses, ok := addressMap[NodeLegacyHostIP]; ok {
-		return addresses[0], addressMap, nil
+	if addresses, ok := m[apiv1.NodeAddressType(api.NodeLegacyHostIP)]; ok {
+		return addresses[0], m, nil
 	}
-	return nil, nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
+	if addresses, ok := m[apiv1.NodeHostName]; ok {
+		return addresses[0], m, nil
+	}
+	return "", m, fmt.Errorf("host address unknown")
 }

@@ -14,337 +14,164 @@
 package kubernetes
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
-	"net/http"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	"golang.org/x/net/context"
+	"k8s.io/client-go/1.5/pkg/api"
+	apiv1 "k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 )
 
-type podDiscovery struct {
-	mtx           sync.RWMutex
-	pods          map[string]map[string]*Pod
-	retryInterval time.Duration
-	kd            *Discovery
+// Pod discovers new pod targets.
+type Pod struct {
+	informer cache.SharedInformer
+	store    cache.Store
+	logger   log.Logger
 }
 
-func (d *podDiscovery) run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	pods, _, err := d.getPods()
-	if err != nil {
-		log.Errorf("Cannot initialize pods collection: %s", err)
-		return
+// NewPod creates a new pod discovery.
+func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
+	return &Pod{
+		informer: pods,
+		store:    pods.GetStore(),
+		logger:   l,
 	}
-	d.pods = pods
+}
 
-	initial := []*config.TargetGroup{}
-	switch d.kd.Conf.Role {
-	case config.KubernetesRolePod:
-		initial = append(initial, d.updatePodsTargetGroup())
-	case config.KubernetesRoleContainer:
-		for _, ns := range d.pods {
-			for _, pod := range ns {
-				initial = append(initial, d.updateContainerTargetGroup(pod))
-			}
-		}
+// Run implements the TargetProvider interface.
+func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+	// Send full initial set of pod targets.
+	var initial []*config.TargetGroup
+	for _, o := range p.store.List() {
+		tg := p.buildPod(o.(*apiv1.Pod))
+		initial = append(initial, tg)
+
+		p.logger.With("tg", fmt.Sprintf("%#v", tg)).Debugln("initial pod")
 	}
-
 	select {
-	case ch <- initial:
 	case <-ctx.Done():
 		return
+	case ch <- initial:
 	}
 
-	update := make(chan *podEvent, 10)
-	go d.watchPods(update, ctx.Done(), d.retryInterval)
-
-	for {
-		tgs := []*config.TargetGroup{}
+	// Send target groups for pod updates.
+	send := func(tg *config.TargetGroup) {
+		p.logger.With("tg", fmt.Sprintf("%#v", tg)).Debugln("pod update")
 		select {
 		case <-ctx.Done():
-			return
-		case e := <-update:
-			log.Debugf("k8s discovery received pod event (EventType=%s, Pod Name=%s)", e.EventType, e.Pod.ObjectMeta.Name)
-			d.updatePod(e.Pod, e.EventType)
-
-			switch d.kd.Conf.Role {
-			case config.KubernetesRoleContainer:
-				// Update the per-pod target group
-				tgs = append(tgs, d.updateContainerTargetGroup(e.Pod))
-			case config.KubernetesRolePod:
-				// Update the all pods target group
-				tgs = append(tgs, d.updatePodsTargetGroup())
-			}
-		}
-		if tgs == nil {
-			continue
-		}
-
-		for _, tg := range tgs {
-			select {
-			case ch <- []*config.TargetGroup{tg}:
-			case <-ctx.Done():
-				return
-			}
+		case ch <- []*config.TargetGroup{tg}:
 		}
 	}
+	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			send(p.buildPod(o.(*apiv1.Pod)))
+		},
+		DeleteFunc: func(o interface{}) {
+			send(&config.TargetGroup{Source: podSource(o.(*apiv1.Pod))})
+		},
+		UpdateFunc: func(_, o interface{}) {
+			send(p.buildPod(o.(*apiv1.Pod)))
+		},
+	})
+
+	// Block until the target provider is explicitly canceled.
+	<-ctx.Done()
 }
 
-func (d *podDiscovery) getPods() (map[string]map[string]*Pod, string, error) {
-	res, err := d.kd.queryAPIServerPath(podsURL)
-	if err != nil {
-		return nil, "", fmt.Errorf("unable to list Kubernetes pods: %s", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("unable to list Kubernetes pods; unexpected response: %d %s", res.StatusCode, res.Status)
+const (
+	podNameLabel                  = metaLabelPrefix + "pod_name"
+	podIPLabel                    = metaLabelPrefix + "pod_ip"
+	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
+	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
+	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
+	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
+	podReadyLabel                 = metaLabelPrefix + "pod_ready"
+	podLabelPrefix                = metaLabelPrefix + "pod_label_"
+	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
+	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
+	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
+)
+
+func podLabels(pod *apiv1.Pod) model.LabelSet {
+	ls := model.LabelSet{
+		podNameLabel:     lv(pod.ObjectMeta.Name),
+		podIPLabel:       lv(pod.Status.PodIP),
+		podReadyLabel:    podReady(pod),
+		podNodeNameLabel: lv(pod.Spec.NodeName),
+		podHostIPLabel:   lv(pod.Status.HostIP),
 	}
 
-	var pods PodList
-	if err := json.NewDecoder(res.Body).Decode(&pods); err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return nil, "", fmt.Errorf("unable to list Kubernetes pods; unexpected response body: %s", string(body))
+	for k, v := range pod.Labels {
+		ln := strutil.SanitizeLabelName(podLabelPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
 	}
 
-	podMap := map[string]map[string]*Pod{}
-	for idx, pod := range pods.Items {
-		if _, ok := podMap[pod.ObjectMeta.Namespace]; !ok {
-			podMap[pod.ObjectMeta.Namespace] = map[string]*Pod{}
-		}
-		log.Debugf("Got pod %s in namespace %s", pod.ObjectMeta.Name, pod.ObjectMeta.Namespace)
-		podMap[pod.ObjectMeta.Namespace][pod.ObjectMeta.Name] = &pods.Items[idx]
+	for k, v := range pod.Annotations {
+		ln := strutil.SanitizeLabelName(podAnnotationPrefix + k)
+		ls[model.LabelName(ln)] = lv(v)
 	}
 
-	return podMap, pods.ResourceVersion, nil
+	return ls
 }
 
-func (d *podDiscovery) watchPods(events chan *podEvent, done <-chan struct{}, retryInterval time.Duration) {
-	until(func() {
-		pods, resourceVersion, err := d.getPods()
-		if err != nil {
-			log.Errorf("Cannot initialize pods collection: %s", err)
-			return
-		}
-		d.mtx.Lock()
-		d.pods = pods
-		d.mtx.Unlock()
-
-		req, err := http.NewRequest("GET", podsURL, nil)
-		if err != nil {
-			log.Errorf("Cannot create pods request: %s", err)
-			return
-		}
-
-		values := req.URL.Query()
-		values.Add("watch", "true")
-		values.Add("resourceVersion", resourceVersion)
-		req.URL.RawQuery = values.Encode()
-		res, err := d.kd.queryAPIServerReq(req)
-		if err != nil {
-			log.Errorf("Failed to watch pods: %s", err)
-			return
-		}
-		defer res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			log.Errorf("Failed to watch pods: %d", res.StatusCode)
-			return
-		}
-
-		d := json.NewDecoder(res.Body)
-
-		for {
-			var event podEvent
-			if err := d.Decode(&event); err != nil {
-				log.Errorf("Watch pods unexpectedly closed: %s", err)
-				return
-			}
-
-			select {
-			case events <- &event:
-			case <-done:
-			}
-		}
-	}, retryInterval, done)
-}
-
-func (d *podDiscovery) updatePod(pod *Pod, eventType EventType) {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-
-	switch eventType {
-	case Deleted:
-		if _, ok := d.pods[pod.ObjectMeta.Namespace]; ok {
-			delete(d.pods[pod.ObjectMeta.Namespace], pod.ObjectMeta.Name)
-			if len(d.pods[pod.ObjectMeta.Namespace]) == 0 {
-				delete(d.pods, pod.ObjectMeta.Namespace)
-			}
-		}
-	case Added, Modified:
-		if _, ok := d.pods[pod.ObjectMeta.Namespace]; !ok {
-			d.pods[pod.ObjectMeta.Namespace] = map[string]*Pod{}
-		}
-		d.pods[pod.ObjectMeta.Namespace][pod.ObjectMeta.Name] = pod
+func (p *Pod) buildPod(pod *apiv1.Pod) *config.TargetGroup {
+	// During startup the pod may not have an IP yet. This does not even allow
+	// for an up metric, so we skip the target.
+	if len(pod.Status.PodIP) == 0 {
+		return nil
 	}
-}
-
-func (d *podDiscovery) updateContainerTargetGroup(pod *Pod) *config.TargetGroup {
-	d.mtx.RLock()
-	defer d.mtx.RUnlock()
-
 	tg := &config.TargetGroup{
 		Source: podSource(pod),
 	}
+	tg.Labels = podLabels(pod)
+	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
-	// If this pod doesn't exist, return an empty target group
-	if _, ok := d.pods[pod.ObjectMeta.Namespace]; !ok {
-		return tg
-	}
-	if _, ok := d.pods[pod.ObjectMeta.Namespace][pod.ObjectMeta.Name]; !ok {
-		return tg
-	}
-
-	tg.Labels = model.LabelSet{
-		roleLabel: model.LabelValue("container"),
-	}
-	tg.Targets = updatePodTargets(pod, true)
-
-	return tg
-}
-
-func (d *podDiscovery) updatePodsTargetGroup() *config.TargetGroup {
-	tg := &config.TargetGroup{
-		Source: podsTargetGroupName,
-		Labels: model.LabelSet{
-			roleLabel: model.LabelValue("pod"),
-		},
-	}
-
-	for _, namespace := range d.pods {
-		for _, pod := range namespace {
-			tg.Targets = append(tg.Targets, updatePodTargets(pod, false)...)
-		}
-	}
-
-	return tg
-}
-
-func podSource(pod *Pod) string {
-	return sourcePodPrefix + ":" + pod.ObjectMeta.Namespace + ":" + pod.ObjectMeta.Name
-}
-
-func updatePodTargets(pod *Pod, allContainers bool) []model.LabelSet {
-	var targets []model.LabelSet = make([]model.LabelSet, 0, len(pod.PodSpec.Containers))
-	if pod.PodStatus.PodIP == "" {
-		log.Debugf("skipping pod %s -- PodStatus.PodIP is empty", pod.ObjectMeta.Name)
-		return targets
-	}
-
-	if pod.PodStatus.Phase != "Running" {
-		log.Debugf("skipping pod %s -- status is not `Running`", pod.ObjectMeta.Name)
-		return targets
-	}
-
-	// Should never hit this (running pods should always have this set), but better to be defensive.
-	if pod.PodStatus.HostIP == "" {
-		log.Debugf("skipping pod %s -- PodStatus.HostIP is empty", pod.ObjectMeta.Name)
-		return targets
-	}
-
-	ready := "unknown"
-	for _, cond := range pod.PodStatus.Conditions {
-		if strings.ToLower(cond.Type) == "ready" {
-			ready = strings.ToLower(cond.Status)
-		}
-	}
-
-	sort.Sort(ByContainerName(pod.PodSpec.Containers))
-
-	for _, container := range pod.PodSpec.Containers {
-		// Collect a list of TCP ports
-		// Sort by port number, ascending
-		// Product a target pointed at the first port
-		// Include a label containing all ports (portName=port,PortName=port,...,)
-		var tcpPorts []ContainerPort
-		var portLabel *bytes.Buffer = bytes.NewBufferString(",")
-
-		for _, port := range container.Ports {
-			if port.Protocol == "TCP" {
-				tcpPorts = append(tcpPorts, port)
-			}
-		}
-
-		if len(tcpPorts) == 0 {
-			log.Debugf("skipping container %s with no TCP ports", container.Name)
+	for _, c := range pod.Spec.Containers {
+		// If no ports are defined for the container, create an anonymous
+		// target per container.
+		if len(c.Ports) == 0 {
+			// We don't have a port so we just set the address label to the pod IP.
+			// The user has to add a port manually.
+			tg.Targets = append(tg.Targets, model.LabelSet{
+				model.AddressLabel:    lv(pod.Status.PodIP),
+				podContainerNameLabel: lv(c.Name),
+			})
 			continue
 		}
+		// Otherwise create one target for each container/port combination.
+		for _, port := range c.Ports {
+			ports := strconv.FormatUint(uint64(port.ContainerPort), 10)
+			addr := net.JoinHostPort(pod.Status.PodIP, ports)
 
-		sort.Sort(ByContainerPort(tcpPorts))
-
-		t := model.LabelSet{
-			model.AddressLabel:        model.LabelValue(net.JoinHostPort(pod.PodIP, strconv.FormatInt(int64(tcpPorts[0].ContainerPort), 10))),
-			podNameLabel:              model.LabelValue(pod.ObjectMeta.Name),
-			podAddressLabel:           model.LabelValue(pod.PodStatus.PodIP),
-			podNamespaceLabel:         model.LabelValue(pod.ObjectMeta.Namespace),
-			podContainerNameLabel:     model.LabelValue(container.Name),
-			podContainerPortNameLabel: model.LabelValue(tcpPorts[0].Name),
-			podReadyLabel:             model.LabelValue(ready),
-			podNodeNameLabel:          model.LabelValue(pod.PodSpec.NodeName),
-			podHostIPLabel:            model.LabelValue(pod.PodStatus.HostIP),
-		}
-
-		for _, port := range tcpPorts {
-			portLabel.WriteString(port.Name)
-			portLabel.WriteString("=")
-			portLabel.WriteString(strconv.FormatInt(int64(port.ContainerPort), 10))
-			portLabel.WriteString(",")
-			t[model.LabelName(podContainerPortMapPrefix+port.Name)] = model.LabelValue(strconv.FormatInt(int64(port.ContainerPort), 10))
-		}
-
-		t[model.LabelName(podContainerPortListLabel)] = model.LabelValue(portLabel.String())
-
-		for k, v := range pod.ObjectMeta.Labels {
-			labelName := strutil.SanitizeLabelName(podLabelPrefix + k)
-			t[model.LabelName(labelName)] = model.LabelValue(v)
-		}
-
-		for k, v := range pod.ObjectMeta.Annotations {
-			labelName := strutil.SanitizeLabelName(podAnnotationPrefix + k)
-			t[model.LabelName(labelName)] = model.LabelValue(v)
-		}
-
-		targets = append(targets, t)
-
-		if !allContainers {
-			break
+			tg.Targets = append(tg.Targets, model.LabelSet{
+				model.AddressLabel:            lv(addr),
+				podContainerNameLabel:         lv(c.Name),
+				podContainerPortNumberLabel:   lv(ports),
+				podContainerPortNameLabel:     lv(port.Name),
+				podContainerPortProtocolLabel: lv(string(port.Protocol)),
+			})
 		}
 	}
 
-	if len(targets) == 0 {
-		log.Debugf("no targets for pod %s", pod.ObjectMeta.Name)
-	}
-
-	return targets
+	return tg
 }
 
-type ByContainerPort []ContainerPort
+func podSource(pod *apiv1.Pod) string {
+	return "pod/" + pod.Namespace + "/" + pod.Name
+}
 
-func (a ByContainerPort) Len() int           { return len(a) }
-func (a ByContainerPort) Less(i, j int) bool { return a[i].ContainerPort < a[j].ContainerPort }
-func (a ByContainerPort) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-type ByContainerName []Container
-
-func (a ByContainerName) Len() int           { return len(a) }
-func (a ByContainerName) Less(i, j int) bool { return a[i].Name < a[j].Name }
-func (a ByContainerName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func podReady(pod *apiv1.Pod) model.LabelValue {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == apiv1.PodReady {
+			return lv(strings.ToLower(string(cond.Status)))
+		}
+	}
+	return lv(strings.ToLower(string(api.ConditionUnknown)))
+}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/codable"
 )
 
@@ -107,7 +108,7 @@ func (hs *headsScanner) scan() bool {
 		firstTime        int64
 		lastTime         int64
 		encoding         byte
-		ch               chunk
+		ch               chunk.Chunk
 		lastTimeHead     model.Time
 	)
 	if seriesFlags, hs.err = hs.r.ReadByte(); hs.err != nil {
@@ -146,7 +147,7 @@ func (hs *headsScanner) scan() bool {
 	if numChunkDescs, hs.err = binary.ReadVarint(hs.r); hs.err != nil {
 		return false
 	}
-	chunkDescs := make([]*chunkDesc, numChunkDescs)
+	chunkDescs := make([]*chunk.Desc, numChunkDescs)
 	if hs.version == headsFormatLegacyVersion {
 		if headChunkPersisted {
 			persistWatermark = numChunkDescs
@@ -163,11 +164,11 @@ func (hs *headsScanner) scan() bool {
 			if lastTime, hs.err = binary.ReadVarint(hs.r); hs.err != nil {
 				return false
 			}
-			chunkDescs[i] = &chunkDesc{
-				chunkFirstTime: model.Time(firstTime),
-				chunkLastTime:  model.Time(lastTime),
+			chunkDescs[i] = &chunk.Desc{
+				ChunkFirstTime: model.Time(firstTime),
+				ChunkLastTime:  model.Time(lastTime),
 			}
-			numMemChunkDescs.Inc()
+			chunk.NumMemDescs.Inc()
 		} else {
 			// Non-persisted chunk.
 			// If there are non-persisted chunks at all, we consider
@@ -176,24 +177,24 @@ func (hs *headsScanner) scan() bool {
 			if encoding, hs.err = hs.r.ReadByte(); hs.err != nil {
 				return false
 			}
-			if ch, hs.err = newChunkForEncoding(chunkEncoding(encoding)); hs.err != nil {
+			if ch, hs.err = chunk.NewForEncoding(chunk.Encoding(encoding)); hs.err != nil {
 				return false
 			}
-			if hs.err = ch.unmarshal(hs.r); hs.err != nil {
+			if hs.err = ch.Unmarshal(hs.r); hs.err != nil {
 				return false
 			}
-			cd := newChunkDesc(ch, ch.firstTime())
+			cd := chunk.NewDesc(ch, ch.FirstTime())
 			if i < numChunkDescs-1 {
 				// This is NOT the head chunk. So it's a chunk
 				// to be persisted, and we need to populate lastTime.
 				hs.chunksToPersistTotal++
-				cd.maybePopulateLastTime()
+				cd.MaybePopulateLastTime()
 			}
 			chunkDescs[i] = cd
 		}
 	}
 
-	if lastTimeHead, hs.err = chunkDescs[len(chunkDescs)-1].lastTime(); hs.err != nil {
+	if lastTimeHead, hs.err = chunkDescs[len(chunkDescs)-1].LastTime(); hs.err != nil {
 		return false
 	}
 

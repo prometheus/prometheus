@@ -127,10 +127,7 @@ var (
 	}
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
-	DefaultKubernetesSDConfig = KubernetesSDConfig{
-		RequestTimeout: model.Duration(10 * time.Second),
-		RetryInterval:  model.Duration(1 * time.Second),
-	}
+	DefaultKubernetesSDConfig = KubernetesSDConfig{}
 
 	// DefaultGCESDConfig is the default EC2 SD configuration.
 	DefaultGCESDConfig = GCESDConfig{
@@ -192,7 +189,7 @@ type Config struct {
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
-	RemoteWriteConfig []RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteWriteConfig RemoteWriteConfig `yaml:"remote_write,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -796,31 +793,13 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return nil
 }
 
-// KubernetesSDConfig is the configuration for Kubernetes service discovery.
-type KubernetesSDConfig struct {
-	APIServers      []URL          `yaml:"api_servers"`
-	Role            KubernetesRole `yaml:"role"`
-	InCluster       bool           `yaml:"in_cluster,omitempty"`
-	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
-	BearerToken     string         `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
-	RetryInterval   model.Duration `yaml:"retry_interval,omitempty"`
-	RequestTimeout  model.Duration `yaml:"request_timeout,omitempty"`
-	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
 type KubernetesRole string
 
 const (
-	KubernetesRoleNode      = "node"
-	KubernetesRolePod       = "pod"
-	KubernetesRoleContainer = "container"
-	KubernetesRoleService   = "service"
-	KubernetesRoleEndpoint  = "endpoint"
-	KubernetesRoleAPIServer = "apiserver"
+	KubernetesRoleNode     = "node"
+	KubernetesRolePod      = "pod"
+	KubernetesRoleService  = "service"
+	KubernetesRoleEndpoint = "endpoints"
 )
 
 func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -828,16 +807,29 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	switch *c {
-	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleContainer, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleAPIServer:
+	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint:
 		return nil
 	default:
 		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
 	}
 }
 
+// KubernetesSDConfig is the configuration for Kubernetes service discovery.
+type KubernetesSDConfig struct {
+	APIServer       URL            `yaml:"api_server"`
+	Role            KubernetesRole `yaml:"role"`
+	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
+	BearerToken     string         `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultKubernetesSDConfig
+	*c = KubernetesSDConfig{}
 	type plain KubernetesSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
@@ -847,10 +839,7 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: container, pod, service, endpoint, node, apiserver)")
-	}
-	if len(c.APIServers) == 0 {
-		return fmt.Errorf("Kubernetes SD configuration requires at least one Kubernetes API server")
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, node)")
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
@@ -891,7 +880,7 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+	if err := checkOverflow(c.XXX, "gce_sd_config"); err != nil {
 		return err
 	}
 	if c.Project == "" {
@@ -940,6 +929,7 @@ type AzureSDConfig struct {
 	ClientID        string         `yaml:"client_id,omitempty"`
 	ClientSecret    string         `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -1076,11 +1066,12 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 
 // RemoteWriteConfig is the configuration for remote storage.
 type RemoteWriteConfig struct {
-	URL           URL            `yaml:"url,omitempty"`
-	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
-	BasicAuth     *BasicAuth     `yaml:"basic_auth,omitempty"`
-	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
-	ProxyURL      URL            `yaml:"proxy_url,omitempty"`
+	URL                 *URL             `yaml:"url,omitempty"`
+	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
+	BasicAuth           *BasicAuth       `yaml:"basic_auth,omitempty"`
+	TLSConfig           TLSConfig        `yaml:"tls_config,omitempty"`
+	ProxyURL            URL              `yaml:"proxy_url,omitempty"`
+	WriteRelabelConfigs []*RelabelConfig `yaml:"write_relabel_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

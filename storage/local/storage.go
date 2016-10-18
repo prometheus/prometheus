@@ -29,13 +29,13 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
 const (
 	evictRequestsCap      = 1024
 	quarantineRequestsCap = 1024
-	chunkLen              = 1024
 
 	// See waitForNextFP.
 	fpMaxSweepTime    = 6 * time.Hour
@@ -88,11 +88,6 @@ var (
 		nil, nil,
 	)
 )
-
-type evictRequest struct {
-	cd    *chunkDesc
-	evict bool
-}
 
 type quarantineRequest struct {
 	fp     model.Fingerprint
@@ -171,7 +166,7 @@ type MemorySeriesStorage struct {
 	mapper      *fpMapper
 
 	evictList                   *list.List
-	evictRequests               chan evictRequest
+	evictRequests               chan chunk.EvictRequest
 	evictStopping, evictStopped chan struct{}
 
 	quarantineRequests                    chan quarantineRequest
@@ -226,7 +221,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 		maxChunksToPersist: o.MaxChunksToPersist,
 
 		evictList:     list.New(),
-		evictRequests: make(chan evictRequest, evictRequestsCap),
+		evictRequests: make(chan chunk.EvictRequest, evictRequestsCap),
 		evictStopping: make(chan struct{}),
 		evictStopped:  make(chan struct{}),
 
@@ -408,6 +403,19 @@ func (s *MemorySeriesStorage) Stop() error {
 	return nil
 }
 
+type memorySeriesStorageQuerier struct {
+	*MemorySeriesStorage
+}
+
+func (memorySeriesStorageQuerier) Close() error {
+	return nil
+}
+
+// Querier implements the storage interface.
+func (s *MemorySeriesStorage) Querier() (Querier, error) {
+	return memorySeriesStorageQuerier{s}, nil
+}
+
 // WaitForIndexing implements Storage.
 func (s *MemorySeriesStorage) WaitForIndexing() {
 	s.persistence.waitForIndexing()
@@ -415,19 +423,19 @@ func (s *MemorySeriesStorage) WaitForIndexing() {
 
 // LastSampleForLabelMatchers implements Storage.
 func (s *MemorySeriesStorage) LastSampleForLabelMatchers(_ context.Context, cutoff model.Time, matcherSets ...metric.LabelMatchers) (model.Vector, error) {
-	fps := map[model.Fingerprint]struct{}{}
+	mergedFPs := map[model.Fingerprint]struct{}{}
 	for _, matchers := range matcherSets {
-		fpToMetric, err := s.metricsForLabelMatchers(cutoff, model.Latest, matchers...)
+		fps, err := s.fpsForLabelMatchers(cutoff, model.Latest, matchers...)
 		if err != nil {
 			return nil, err
 		}
-		for fp := range fpToMetric {
-			fps[fp] = struct{}{}
+		for fp := range fps {
+			mergedFPs[fp] = struct{}{}
 		}
 	}
 
-	res := make(model.Vector, 0, len(fps))
-	for fp := range fps {
+	res := make(model.Vector, 0, len(mergedFPs))
+	for fp := range mergedFPs {
 		s.fpLocker.Lock(fp)
 
 		series, ok := s.fpToSeries.get(fp)
@@ -457,7 +465,7 @@ type boundedIterator struct {
 // ValueAtOrBeforeTime implements the SeriesIterator interface.
 func (bit *boundedIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
 	if ts < bit.start {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	return bit.it.ValueAtOrBeforeTime(ts)
 }
@@ -485,13 +493,13 @@ func (bit *boundedIterator) Close() {
 
 // QueryRange implements Storage.
 func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
-	fpToMetric, err := s.metricsForLabelMatchers(from, through, matchers...)
+	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, matchers...)
 	if err != nil {
 		return nil, err
 	}
-	iterators := make([]SeriesIterator, 0, len(fpToMetric))
-	for fp := range fpToMetric {
-		it := s.preloadChunksForRange(fp, from, through)
+	iterators := make([]SeriesIterator, 0, len(fpSeriesPairs))
+	for _, pair := range fpSeriesPairs {
+		it := s.preloadChunksForRange(pair, from, through)
 		iterators = append(iterators, it)
 	}
 	return iterators, nil
@@ -502,13 +510,13 @@ func (s *MemorySeriesStorage) QueryInstant(_ context.Context, ts model.Time, sta
 	from := ts.Add(-stalenessDelta)
 	through := ts
 
-	fpToMetric, err := s.metricsForLabelMatchers(from, through, matchers...)
+	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, matchers...)
 	if err != nil {
 		return nil, err
 	}
-	iterators := make([]SeriesIterator, 0, len(fpToMetric))
-	for fp := range fpToMetric {
-		it := s.preloadChunksForInstant(fp, from, through)
+	iterators := make([]SeriesIterator, 0, len(fpSeriesPairs))
+	for _, pair := range fpSeriesPairs {
+		it := s.preloadChunksForInstant(pair, from, through)
 		iterators = append(iterators, it)
 	}
 	return iterators, nil
@@ -563,43 +571,43 @@ func (s *MemorySeriesStorage) MetricsForLabelMatchers(
 	return metrics, nil
 }
 
-func (s *MemorySeriesStorage) metricsForLabelMatchers(
-	from, through model.Time,
+// candidateFPsForLabelMatchers returns candidate FPs for given matchers and remaining matchers to be checked.
+func (s *MemorySeriesStorage) candidateFPsForLabelMatchers(
 	matchers ...*metric.LabelMatcher,
-) (map[model.Fingerprint]metric.Metric, error) {
+) (map[model.Fingerprint]struct{}, []*metric.LabelMatcher, error) {
 	sort.Sort(metric.LabelMatchers(matchers))
 
 	if len(matchers) == 0 || matchers[0].MatchesEmptyString() {
 		// No matchers at all or even the best matcher matches the empty string.
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var (
 		matcherIdx   int
-		remainingFPs map[model.Fingerprint]struct{}
+		candidateFPs map[model.Fingerprint]struct{}
 	)
 
 	// Equal matchers.
-	for ; matcherIdx < len(matchers) && (remainingFPs == nil || len(remainingFPs) > fpEqualMatchThreshold); matcherIdx++ {
+	for ; matcherIdx < len(matchers) && (candidateFPs == nil || len(candidateFPs) > fpEqualMatchThreshold); matcherIdx++ {
 		m := matchers[matcherIdx]
 		if m.Type != metric.Equal || m.MatchesEmptyString() {
 			break
 		}
-		remainingFPs = s.fingerprintsForLabelPair(
+		candidateFPs = s.fingerprintsForLabelPair(
 			model.LabelPair{
 				Name:  m.Name,
 				Value: m.Value,
 			},
 			nil,
-			remainingFPs,
+			candidateFPs,
 		)
-		if len(remainingFPs) == 0 {
-			return nil, nil
+		if len(candidateFPs) == 0 {
+			return nil, nil, nil
 		}
 	}
 
 	// Other matchers.
-	for ; matcherIdx < len(matchers) && (remainingFPs == nil || len(remainingFPs) > fpOtherMatchThreshold); matcherIdx++ {
+	for ; matcherIdx < len(matchers) && (candidateFPs == nil || len(candidateFPs) > fpOtherMatchThreshold); matcherIdx++ {
 		m := matchers[matcherIdx]
 		if m.MatchesEmptyString() {
 			break
@@ -607,11 +615,11 @@ func (s *MemorySeriesStorage) metricsForLabelMatchers(
 
 		lvs, err := s.LabelValuesForLabelName(context.TODO(), m.Name)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		lvs = m.Filter(lvs)
 		if len(lvs) == 0 {
-			return nil, nil
+			return nil, nil, nil
 		}
 		fps := map[model.Fingerprint]struct{}{}
 		for _, lv := range lvs {
@@ -621,29 +629,104 @@ func (s *MemorySeriesStorage) metricsForLabelMatchers(
 					Value: lv,
 				},
 				fps,
-				remainingFPs,
+				candidateFPs,
 			)
 		}
-		remainingFPs = fps
-		if len(remainingFPs) == 0 {
-			return nil, nil
+		candidateFPs = fps
+		if len(candidateFPs) == 0 {
+			return nil, nil, nil
 		}
+	}
+	return candidateFPs, matchers[matcherIdx:], nil
+}
+
+func (s *MemorySeriesStorage) seriesForLabelMatchers(
+	from, through model.Time,
+	matchers ...*metric.LabelMatcher,
+) ([]fingerprintSeriesPair, error) {
+	candidateFPs, matchersToCheck, err := s.candidateFPsForLabelMatchers(matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	result := []fingerprintSeriesPair{}
+FPLoop:
+	for fp := range candidateFPs {
+		s.fpLocker.Lock(fp)
+		series := s.seriesForRange(fp, from, through)
+		s.fpLocker.Unlock(fp)
+
+		if series == nil {
+			continue FPLoop
+		}
+
+		for _, m := range matchersToCheck {
+			if !m.Match(series.metric[m.Name]) {
+				continue FPLoop
+			}
+		}
+		result = append(result, fingerprintSeriesPair{fp, series})
+	}
+	return result, nil
+}
+
+func (s *MemorySeriesStorage) fpsForLabelMatchers(
+	from, through model.Time,
+	matchers ...*metric.LabelMatcher,
+) (map[model.Fingerprint]struct{}, error) {
+	candidateFPs, matchersToCheck, err := s.candidateFPsForLabelMatchers(matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+FPLoop:
+	for fp := range candidateFPs {
+		s.fpLocker.Lock(fp)
+		met, _, ok := s.metricForRange(fp, from, through)
+		s.fpLocker.Unlock(fp)
+
+		if !ok {
+			delete(candidateFPs, fp)
+			continue FPLoop
+		}
+
+		for _, m := range matchersToCheck {
+			if !m.Match(met[m.Name]) {
+				delete(candidateFPs, fp)
+				continue FPLoop
+			}
+		}
+	}
+	return candidateFPs, nil
+}
+
+func (s *MemorySeriesStorage) metricsForLabelMatchers(
+	from, through model.Time,
+	matchers ...*metric.LabelMatcher,
+) (map[model.Fingerprint]metric.Metric, error) {
+
+	candidateFPs, matchersToCheck, err := s.candidateFPsForLabelMatchers(matchers...)
+	if err != nil {
+		return nil, err
 	}
 
 	result := map[model.Fingerprint]metric.Metric{}
-	for fp := range remainingFPs {
+FPLoop:
+	for fp := range candidateFPs {
 		s.fpLocker.Lock(fp)
-		if met, _, ok := s.metricForRange(fp, from, through); ok {
-			result[fp] = metric.Metric{Metric: met}
-		}
+		met, _, ok := s.metricForRange(fp, from, through)
 		s.fpLocker.Unlock(fp)
-	}
-	for _, m := range matchers[matcherIdx:] {
-		for fp, met := range result {
-			if !m.Match(met.Metric[m.Name]) {
-				delete(result, fp)
+
+		if !ok {
+			continue FPLoop
+		}
+
+		for _, m := range matchersToCheck {
+			if !m.Match(met[m.Name]) {
+				continue FPLoop
 			}
 		}
+		result[fp] = metric.Metric{Metric: met}
 	}
 	return result, nil
 }
@@ -701,14 +784,14 @@ func (s *MemorySeriesStorage) LabelValuesForLabelName(_ context.Context, labelNa
 
 // DropMetricsForLabelMatchers implements Storage.
 func (s *MemorySeriesStorage) DropMetricsForLabelMatchers(_ context.Context, matchers ...*metric.LabelMatcher) (int, error) {
-	fpToMetric, err := s.metricsForLabelMatchers(model.Earliest, model.Latest, matchers...)
+	fps, err := s.fpsForLabelMatchers(model.Earliest, model.Latest, matchers...)
 	if err != nil {
 		return 0, err
 	}
-	for fp := range fpToMetric {
+	for fp := range fps {
 		s.purgeSeries(fp, nil, nil)
 	}
-	return len(fpToMetric), nil
+	return len(fps), nil
 }
 
 var (
@@ -779,7 +862,7 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 // NeedsThrottling implements Storage.
 func (s *MemorySeriesStorage) NeedsThrottling() bool {
 	if s.getNumChunksToPersist() > s.maxChunksToPersist ||
-		float64(atomic.LoadInt64(&numMemChunks)) > float64(s.maxMemoryChunks)*toleranceFactorMemChunks {
+		float64(atomic.LoadInt64(&chunk.NumMemChunks)) > float64(s.maxMemoryChunks)*toleranceFactorMemChunks {
 		select {
 		case s.throttled <- struct{}{}:
 		default: // Do nothing, signal already pending.
@@ -813,7 +896,7 @@ func (s *MemorySeriesStorage) logThrottling() {
 				log.
 					With("chunksToPersist", s.getNumChunksToPersist()).
 					With("maxChunksToPersist", s.maxChunksToPersist).
-					With("memoryChunks", atomic.LoadInt64(&numMemChunks)).
+					With("memoryChunks", atomic.LoadInt64(&chunk.NumMemChunks)).
 					With("maxToleratedMemChunks", int(float64(s.maxMemoryChunks)*toleranceFactorMemChunks)).
 					Error("Storage needs throttling. Scrapes and rule evaluations will be skipped.")
 			}
@@ -821,7 +904,7 @@ func (s *MemorySeriesStorage) logThrottling() {
 			log.
 				With("chunksToPersist", s.getNumChunksToPersist()).
 				With("maxChunksToPersist", s.maxChunksToPersist).
-				With("memoryChunks", atomic.LoadInt64(&numMemChunks)).
+				With("memoryChunks", atomic.LoadInt64(&chunk.NumMemChunks)).
 				With("maxToleratedMemChunks", int(float64(s.maxMemoryChunks)*toleranceFactorMemChunks)).
 				Info("Storage does not need throttling anymore.")
 		case <-s.loopStopping:
@@ -833,7 +916,7 @@ func (s *MemorySeriesStorage) logThrottling() {
 func (s *MemorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Metric) (*memorySeries, error) {
 	series, ok := s.fpToSeries.get(fp)
 	if !ok {
-		var cds []*chunkDesc
+		var cds []*chunk.Desc
 		var modTime time.Time
 		unarchived, err := s.persistence.unarchiveMetric(fp)
 		if err != nil {
@@ -842,9 +925,9 @@ func (s *MemorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 		}
 		if unarchived {
 			s.seriesOps.WithLabelValues(unarchive).Inc()
-			// We have to load chunkDescs anyway to do anything with
+			// We have to load chunk.Descs anyway to do anything with
 			// the series, so let's do it right now so that we don't
-			// end up with a series without any chunkDescs for a
+			// end up with a series without any chunk.Descs for a
 			// while (which is confusing as it makes the series
 			// appear as archived or purged).
 			cds, err = s.loadChunkDescs(fp, 0)
@@ -869,7 +952,7 @@ func (s *MemorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 	return series, nil
 }
 
-// seriesForRange is a helper method for preloadChunksForRange and preloadChunksForInstant.
+// seriesForRange is a helper method for seriesForLabelMatchers.
 //
 // The caller must have locked the fp.
 func (s *MemorySeriesStorage) seriesForRange(
@@ -888,16 +971,17 @@ func (s *MemorySeriesStorage) seriesForRange(
 }
 
 func (s *MemorySeriesStorage) preloadChunksForRange(
-	fp model.Fingerprint,
+	pair fingerprintSeriesPair,
 	from model.Time, through model.Time,
 ) SeriesIterator {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	series := s.seriesForRange(fp, from, through)
+	fp, series := pair.fp, pair.series
 	if series == nil {
 		return nopIter
 	}
+
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
 	iter, err := series.preloadChunksForRange(fp, from, through, s)
 	if err != nil {
 		s.quarantineSeries(fp, series.metric, err)
@@ -907,16 +991,17 @@ func (s *MemorySeriesStorage) preloadChunksForRange(
 }
 
 func (s *MemorySeriesStorage) preloadChunksForInstant(
-	fp model.Fingerprint,
+	pair fingerprintSeriesPair,
 	from model.Time, through model.Time,
 ) SeriesIterator {
-	s.fpLocker.Lock(fp)
-	defer s.fpLocker.Unlock(fp)
-
-	series := s.seriesForRange(fp, from, through)
+	fp, series := pair.fp, pair.series
 	if series == nil {
 		return nopIter
 	}
+
+	s.fpLocker.Lock(fp)
+	defer s.fpLocker.Unlock(fp)
+
 	iter, err := series.preloadChunksForInstant(fp, from, through, s)
 	if err != nil {
 		s.quarantineSeries(fp, series.metric, err)
@@ -936,17 +1021,17 @@ func (s *MemorySeriesStorage) handleEvictList() {
 		// evict run is more than maxMemoryChunks/1000.
 		select {
 		case req := <-s.evictRequests:
-			if req.evict {
-				req.cd.evictListElement = s.evictList.PushBack(req.cd)
+			if req.Evict {
+				req.Desc.EvictListElement = s.evictList.PushBack(req.Desc)
 				count++
 				if count > s.maxMemoryChunks/1000 {
 					s.maybeEvict()
 					count = 0
 				}
 			} else {
-				if req.cd.evictListElement != nil {
-					s.evictList.Remove(req.cd.evictListElement)
-					req.cd.evictListElement = nil
+				if req.Desc.EvictListElement != nil {
+					s.evictList.Remove(req.Desc.EvictListElement)
+					req.Desc.EvictListElement = nil
 				}
 			}
 		case <-ticker.C:
@@ -971,39 +1056,39 @@ func (s *MemorySeriesStorage) handleEvictList() {
 
 // maybeEvict is a local helper method. Must only be called by handleEvictList.
 func (s *MemorySeriesStorage) maybeEvict() {
-	numChunksToEvict := int(atomic.LoadInt64(&numMemChunks)) - s.maxMemoryChunks
+	numChunksToEvict := int(atomic.LoadInt64(&chunk.NumMemChunks)) - s.maxMemoryChunks
 	if numChunksToEvict <= 0 {
 		return
 	}
-	chunkDescsToEvict := make([]*chunkDesc, numChunksToEvict)
+	chunkDescsToEvict := make([]*chunk.Desc, numChunksToEvict)
 	for i := range chunkDescsToEvict {
 		e := s.evictList.Front()
 		if e == nil {
 			break
 		}
-		cd := e.Value.(*chunkDesc)
-		cd.evictListElement = nil
+		cd := e.Value.(*chunk.Desc)
+		cd.EvictListElement = nil
 		chunkDescsToEvict[i] = cd
 		s.evictList.Remove(e)
 	}
 	// Do the actual eviction in a goroutine as we might otherwise deadlock,
-	// in the following way: A chunk was unpinned completely and therefore
+	// in the following way: A chunk was Unpinned completely and therefore
 	// scheduled for eviction. At the time we actually try to evict it,
 	// another goroutine is pinning the chunk. The pinning goroutine has
 	// currently locked the chunk and tries to send the evict request (to
 	// remove the chunk from the evict list) to the evictRequests
 	// channel. The send blocks because evictRequests is full. However, the
 	// goroutine that is supposed to empty the channel is waiting for the
-	// chunkDesc lock to try to evict the chunk.
+	// Chunk.Desc lock to try to evict the chunk.
 	go func() {
 		for _, cd := range chunkDescsToEvict {
 			if cd == nil {
 				break
 			}
-			cd.maybeEvict()
+			cd.MaybeEvict()
 			// We don't care if the eviction succeeds. If the chunk
 			// was pinned in the meantime, it will be added to the
-			// evict list once it gets unpinned again.
+			// evict list once it gets Unpinned again.
 		}
 	}()
 }
@@ -1224,7 +1309,7 @@ loop:
 // Next, the method checks if all chunks in the series are evicted. In that
 // case, it archives the series and returns true.
 //
-// Finally, it evicts chunkDescs if there are too many.
+// Finally, it evicts chunk.Descs if there are too many.
 func (s *MemorySeriesStorage) maintainMemorySeries(
 	fp model.Fingerprint, beforeTime model.Time,
 ) (becameDirty bool) {
@@ -1258,7 +1343,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 
 	iOldestNotEvicted := -1
 	for i, cd := range series.chunkDescs {
-		if !cd.isEvicted() {
+		if !cd.IsEvicted() {
 			iOldestNotEvicted = i
 			break
 		}
@@ -1282,7 +1367,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 		}
 		return
 	}
-	// If we are here, the series is not archived, so check for chunkDesc
+	// If we are here, the series is not archived, so check for Chunk.Desc
 	// eviction next.
 	series.evictChunkDescs(iOldestNotEvicted)
 
@@ -1316,18 +1401,18 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 		// that belong to a series that is scheduled for quarantine
 		// anyway.
 		for _, cd := range cds {
-			cd.unpin(s.evictRequests)
+			cd.Unpin(s.evictRequests)
 		}
 		s.incNumChunksToPersist(-len(cds))
-		chunkOps.WithLabelValues(persistAndUnpin).Add(float64(len(cds)))
+		chunk.Ops.WithLabelValues(chunk.PersistAndUnpin).Add(float64(len(cds)))
 		series.modTime = s.persistence.seriesFileModTime(fp)
 	}()
 
-	// Get the actual chunks from underneath the chunkDescs.
+	// Get the actual chunks from underneath the chunk.Descs.
 	// No lock required as chunks still to persist cannot be evicted.
-	chunks := make([]chunk, len(cds))
+	chunks := make([]chunk.Chunk, len(cds))
 	for i, cd := range cds {
-		chunks[i] = cd.c
+		chunks[i] = cd.C
 	}
 
 	if !series.firstTime().Before(beforeTime) {
@@ -1413,12 +1498,12 @@ func (s *MemorySeriesStorage) maintainArchivedSeries(fp model.Fingerprint, befor
 }
 
 // See persistence.loadChunks for detailed explanation.
-func (s *MemorySeriesStorage) loadChunks(fp model.Fingerprint, indexes []int, indexOffset int) ([]chunk, error) {
+func (s *MemorySeriesStorage) loadChunks(fp model.Fingerprint, indexes []int, indexOffset int) ([]chunk.Chunk, error) {
 	return s.persistence.loadChunks(fp, indexes, indexOffset)
 }
 
 // See persistence.loadChunkDescs for detailed explanation.
-func (s *MemorySeriesStorage) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([]*chunkDesc, error) {
+func (s *MemorySeriesStorage) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([]*chunk.Desc, error) {
 	return s.persistence.loadChunkDescs(fp, offsetFromEnd)
 }
 
@@ -1468,7 +1553,7 @@ func (s *MemorySeriesStorage) calculatePersistenceUrgencyScore() float64 {
 	var (
 		chunksToPersist    = float64(s.getNumChunksToPersist())
 		maxChunksToPersist = float64(s.maxChunksToPersist)
-		memChunks          = float64(atomic.LoadInt64(&numMemChunks))
+		memChunks          = float64(atomic.LoadInt64(&chunk.NumMemChunks))
 		maxMemChunks       = float64(s.maxMemoryChunks)
 	)
 	score := chunksToPersist / maxChunksToPersist
@@ -1578,12 +1663,12 @@ func (s *MemorySeriesStorage) purgeSeries(fp model.Fingerprint, m model.Metric, 
 		s.numSeries.Dec()
 		m = series.metric
 
-		// Adjust s.numChunksToPersist and numMemChunks down by
+		// Adjust s.numChunksToPersist and chunk.NumMemChunks down by
 		// the number of chunks in this series that are not
 		// persisted yet. Persisted chunks will be deducted from
-		// numMemChunks upon eviction.
+		// chunk.NumMemChunks upon eviction.
 		numChunksNotYetPersisted := len(series.chunkDescs) - series.persistWatermark
-		atomic.AddInt64(&numMemChunks, int64(-numChunksNotYetPersisted))
+		atomic.AddInt64(&chunk.NumMemChunks, int64(-numChunksNotYetPersisted))
 		if !series.headChunkClosed {
 			// Head chunk wasn't counted as waiting for persistence yet.
 			// (But it was counted as a chunk in memory.)
@@ -1641,7 +1726,7 @@ func (s *MemorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	ch <- s.ingestedSamplesCount.Desc()
 	s.discardedSamplesCount.Describe(ch)
 	ch <- s.nonExistentSeriesMatchesCount.Desc()
-	ch <- numMemChunksDesc
+	ch <- chunk.NumMemChunksDesc
 	s.maintainSeriesDuration.Describe(ch)
 	ch <- s.persistenceUrgencyScore.Desc()
 	ch <- s.rushedMode.Desc()
@@ -1669,9 +1754,9 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.discardedSamplesCount.Collect(ch)
 	ch <- s.nonExistentSeriesMatchesCount
 	ch <- prometheus.MustNewConstMetric(
-		numMemChunksDesc,
+		chunk.NumMemChunksDesc,
 		prometheus.GaugeValue,
-		float64(atomic.LoadInt64(&numMemChunks)),
+		float64(atomic.LoadInt64(&chunk.NumMemChunks)),
 	)
 	s.maintainSeriesDuration.Collect(ch)
 	ch <- s.persistenceUrgencyScore
