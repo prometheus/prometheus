@@ -47,12 +47,6 @@ const (
 )
 
 var (
-	ec2SDScrapesCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "ec2_sd_scrapes_total",
-			Help:      "The number of EC2-SD scrapes.",
-		})
 	ec2SDScrapeFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
@@ -62,13 +56,12 @@ var (
 	ec2SDScrapeDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "ec2_sd_scrape_duration",
+			Name:      "ec2_sd_scrape_duration_seconds",
 			Help:      "The duration of a EC2-SD scrape in seconds.",
 		})
 )
 
 func init() {
-	prometheus.MustRegister(ec2SDScrapesCount)
 	prometheus.MustRegister(ec2SDScrapeFailuresCount)
 	prometheus.MustRegister(ec2SDScrapeDuration)
 }
@@ -131,7 +124,6 @@ func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
 		ec2SDScrapeDuration.Observe(time.Since(t0).Seconds())
-		ec2SDScrapesCount.Inc()
 		if err != nil {
 			ec2SDScrapeFailuresCount.Inc()
 		}
