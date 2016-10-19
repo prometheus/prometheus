@@ -207,6 +207,17 @@ var expectedConf = &Config{
 					Scheme:       DefaultConsulSDConfig.Scheme,
 				},
 			},
+
+			RelabelConfigs: []*RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"__meta_sd_consul_tags"},
+					Regex:        MustNewRegexp("label:([^=]+)=([^,]+)"),
+					Separator:    ",",
+					TargetLabel:  "${1}",
+					Replacement:  "${2}",
+					Action:       RelabelReplace,
+				},
+			},
 		},
 		{
 			JobName: "service-z",
@@ -498,6 +509,34 @@ func TestEmptyGlobalBlock(t *testing.T) {
 
 	if !reflect.DeepEqual(*c, exp) {
 		t.Fatalf("want %v, got %v", exp, c)
+	}
+}
+
+func TestTargetLabelValidity(t *testing.T) {
+	tests := []struct {
+		str   string
+		valid bool
+	}{
+		{"-label", false},
+		{"label", true},
+		{"label${1}", true},
+		{"${1}label", true},
+		{"${1}", true},
+		{"${1}label", true},
+		{"${", false},
+		{"$", false},
+		{"${}", false},
+		{"foo${", false},
+		{"$1", true},
+		{"asd$2asd", true},
+		{"-foo${1}bar-", false},
+		{"_${1}_", true},
+		{"foo${bar}foo", true},
+	}
+	for _, test := range tests {
+		if relabelTarget.Match([]byte(test.str)) != test.valid {
+			t.Fatalf("Expected %q to be %v", test.str, test.valid)
+		}
 	}
 }
 
