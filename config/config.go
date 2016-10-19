@@ -1015,10 +1015,10 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if (c.Action == RelabelReplace || c.Action == RelabelHashMod) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == RelabelReplace && !relabelTarget.Match([]byte(c.TargetLabel)) {
+	if c.Action == RelabelReplace && !relabelTarget.MatchString(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if c.Action == RelabelHashMod && !model.LabelNameRE.Match([]byte(c.TargetLabel)) {
+	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	return nil
