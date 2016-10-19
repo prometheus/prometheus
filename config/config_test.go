@@ -512,6 +512,34 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	}
 }
 
+func TestTargetLabelValidity(t *testing.T) {
+	tests := []struct {
+		str   string
+		valid bool
+	}{
+		{"-label", false},
+		{"label", true},
+		{"label${1}", true},
+		{"${1}label", true},
+		{"${1}", true},
+		{"${1}label", true},
+		{"${", false},
+		{"$", false},
+		{"${}", false},
+		{"foo${", false},
+		{"$1", true},
+		{"asd$2asd", true},
+		{"-foo${1}bar-", false},
+		{"_${1}_", true},
+		{"foo${bar}foo", true},
+	}
+	for _, test := range tests {
+		if relabelTarget.Match([]byte(test.str)) != test.valid {
+			t.Fatalf("Expected %q to be %v", test.str, test.valid)
+		}
+	}
+}
+
 func kubernetesSDHostURL() URL {
 	tURL, _ := url.Parse("https://localhost:1234")
 	return URL{URL: tURL}
