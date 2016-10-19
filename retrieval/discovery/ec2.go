@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -44,6 +45,26 @@ const (
 	ec2LabelVPCID         = ec2Label + "vpc_id"
 	subnetSeparator       = ","
 )
+
+var (
+	ec2SDScrapeFailuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "ec2_sd_scape_failures_total",
+			Help:      "The number of EC2-SD scrape failures.",
+		})
+	ec2SDScrapeDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Namespace: namespace,
+			Name:      "ec2_sd_scrape_duration_seconds",
+			Help:      "The duration of a EC2-SD scrape in seconds.",
+		})
+)
+
+func init() {
+	prometheus.MustRegister(ec2SDScrapeFailuresCount)
+	prometheus.MustRegister(ec2SDScrapeDuration)
+}
 
 // EC2Discovery periodically performs EC2-SD requests. It implements
 // the TargetProvider interface.
@@ -99,12 +120,20 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 	}
 }
 
-func (ed *EC2Discovery) refresh() (*config.TargetGroup, error) {
+func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
+	t0 := time.Now()
+	defer func() {
+		ec2SDScrapeDuration.Observe(time.Since(t0).Seconds())
+		if err != nil {
+			ec2SDScrapeFailuresCount.Inc()
+		}
+	}()
+
 	ec2s := ec2.New(ed.aws)
-	tg := &config.TargetGroup{
+	tg = &config.TargetGroup{
 		Source: *ed.aws.Region,
 	}
-	if err := ec2s.DescribeInstancesPages(nil, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err = ec2s.DescribeInstancesPages(nil, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
