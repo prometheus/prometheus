@@ -50,7 +50,7 @@ var (
 	ec2SDScrapeFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "ec2_sd_scape_failures_total",
+			Name:      "ec2_sd_scrape_failures_total",
 			Help:      "The number of EC2-SD scrape failures.",
 		})
 	ec2SDScrapeDuration = prometheus.NewSummary(
