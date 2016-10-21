@@ -40,17 +40,17 @@ var (
 			Name:      "sd_file_scan_duration_seconds",
 			Help:      "The duration of the File-SD scan in seconds.",
 		})
-	fileSDScanErrorsCount = prometheus.NewCounter(
+	fileSDReadErrorsCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "sd_file_scan_errors_total",
-			Help:      "The number of File-SD scan errors.",
+			Name:      "sd_file_read_errors_total",
+			Help:      "The number of File-SD read errors.",
 		})
 )
 
 func init() {
 	prometheus.MustRegister(fileSDScanDuration)
-	prometheus.MustRegister(fileSDScanErrorsCount)
+	prometheus.MustRegister(fileSDReadErrorsCount)
 }
 
 // FileDiscovery provides service discovery functionality based
@@ -203,7 +203,7 @@ func (fd *FileDiscovery) refresh(ch chan<- []*config.TargetGroup) {
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
 		if err != nil {
-			fileSDScanErrorsCount.Inc()
+			fileSDReadErrorsCount.Inc()
 			log.Errorf("Error reading file %q: %s", p, err)
 			// Prevent deletion down below.
 			ref[p] = fd.lastRefresh[p]
