@@ -55,32 +55,29 @@ const (
 )
 
 var (
-	rpcCount = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "consul_sd_rpc_calls_total",
-			Help:      "Number of Consul RPC calls.",
-		},
-		[]string{"endpoint", "call"},
-	)
 	rpcFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "consul_sd_rpc_call_failures_total",
+			Name:      "sd_consul_rpc_call_failures_total",
 			Help:      "The number of Consul RPC call failures.",
 		})
-	rpcDuration = prometheus.NewSummary(
+	rpcDuration = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "consul_sd_rpc_call_duration",
+			Name:      "sd_consul_rpc_call_duration_seconds",
 			Help:      "The duration of a Consul RPC call in seconds.",
-		})
+		},
+		[]string{"endpoint", "call"},
+	)
 )
 
 func init() {
-	prometheus.MustRegister(rpcCount)
 	prometheus.MustRegister(rpcFailuresCount)
 	prometheus.MustRegister(rpcDuration)
+
+	// Initialize metric vectors.
+	rpcDuration.WithLabelValues("catalog", "service")
+	rpcDuration.WithLabelValues("catalog", "services")
 }
 
 // Discovery retrieves target information from a Consul server
@@ -148,8 +145,7 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			WaitIndex: lastIndex,
 			WaitTime:  watchTimeout,
 		})
-		rpcCount.WithLabelValues("catalog", "services").Inc()
-		rpcDuration.Observe(time.Since(t0).Seconds())
+		rpcDuration.WithLabelValues("catalog", "services").Observe(time.Since(t0).Seconds())
 
 		// We have to check the context at least once. The checks during channel sends
 		// do not guarantee that.
@@ -244,8 +240,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 			WaitIndex: lastIndex,
 			WaitTime:  watchTimeout,
 		})
-		rpcCount.WithLabelValues("catalog", "service").Inc()
-		rpcDuration.Observe(time.Since(t0).Seconds())
+		rpcDuration.WithLabelValues("catalog", "service").Observe(time.Since(t0).Seconds())
 
 		// Check the context before potentially falling in a continue-loop.
 		select {
