@@ -46,9 +46,9 @@ var (
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "sd_kubernetes_events_total",
-			Help:      "The number of Kubernetes events received.",
+			Help:      "The number of Kubernetes events handled.",
 		},
-		[]string{"type", "event"},
+		[]string{"role", "event"},
 	)
 )
 
