@@ -50,28 +50,21 @@ const (
 )
 
 var (
-	gceSDScrapesCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "gce_sd_scrapes_total",
-			Help:      "The number of GCE-SD scrapes.",
-		})
 	gceSDScrapeFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "gce_sd_scrape_failures_total",
+			Name:      "sd_gce_scrape_failures_total",
 			Help:      "The number of GCE-SD scrape failures.",
 		})
 	gceSDScrapeDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "gce_sd_scrape_duration",
+			Name:      "sd_gce_scrape_duration",
 			Help:      "The duration of a GCE-SD scrape in seconds.",
 		})
 )
 
 func init() {
-	prometheus.MustRegister(gceSDScrapesCount)
 	prometheus.MustRegister(gceSDScrapeFailuresCount)
 	prometheus.MustRegister(gceSDScrapeDuration)
 }
@@ -147,7 +140,6 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
 		gceSDScrapeDuration.Observe(time.Since(t0).Seconds())
-		gceSDScrapesCount.Inc()
 		if err != nil {
 			gceSDScrapeFailuresCount.Inc()
 		}
