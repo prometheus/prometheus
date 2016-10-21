@@ -46,13 +46,13 @@ var (
 	azureSDScrapeFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "azure_sd_scrape_failures_total",
+			Name:      "sd_azure_scrape_failures_total",
 			Help:      "Number of Azure-SD scrape failures.",
 		})
 	azureSDScrapeDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "azure_sd_scrape_duration_seconds",
+			Name:      "sd_azure_scrape_duration_seconds",
 			Help:      "The duration of a Azure-SD scrape in seconds.",
 		})
 )
