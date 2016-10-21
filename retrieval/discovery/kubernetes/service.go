@@ -61,12 +61,15 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "add").Inc()
 			send(s.buildService(o.(*apiv1.Service)))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "delete").Inc()
 			send(&config.TargetGroup{Source: serviceSource(o.(*apiv1.Service))})
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("service", "update").Inc()
 			send(s.buildService(o.(*apiv1.Service)))
 		},
 	})

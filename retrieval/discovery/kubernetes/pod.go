@@ -71,12 +71,15 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("pod", "add").Inc()
 			send(p.buildPod(o.(*apiv1.Pod)))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("pod", "delete").Inc()
 			send(&config.TargetGroup{Source: podSource(o.(*apiv1.Pod))})
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("pod", "update").Inc()
 			send(p.buildPod(o.(*apiv1.Pod)))
 		},
 	})

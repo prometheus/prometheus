@@ -63,12 +63,15 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("node", "add").Inc()
 			send(n.buildNode(o.(*apiv1.Node)))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("node", "delete").Inc()
 			send(&config.TargetGroup{Source: nodeSource(o.(*apiv1.Node))})
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("node", "update").Inc()
 			send(n.buildNode(o.(*apiv1.Node)))
 		},
 	})

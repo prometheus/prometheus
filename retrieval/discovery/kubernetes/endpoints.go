@@ -83,12 +83,15 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("endpoint", "add").Inc()
 			send(e.buildEndpoints(o.(*apiv1.Endpoints)))
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("endpoint", "update").Inc()
 			send(e.buildEndpoints(o.(*apiv1.Endpoints)))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("endpoint", "delete").Inc()
 			send(&config.TargetGroup{Source: endpointsSource(o.(*apiv1.Endpoints).ObjectMeta)})
 		},
 	})
