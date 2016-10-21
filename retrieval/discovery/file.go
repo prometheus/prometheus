@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -31,6 +32,26 @@ import (
 )
 
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
+
+var (
+	fileSDScanDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Namespace: namespace,
+			Name:      "sd_file_scan_duration_seconds",
+			Help:      "The duration of the File-SD scan in seconds.",
+		})
+	fileSDReadErrorsCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "sd_file_read_errors_total",
+			Help:      "The number of File-SD read errors.",
+		})
+)
+
+func init() {
+	prometheus.MustRegister(fileSDScanDuration)
+	prometheus.MustRegister(fileSDReadErrorsCount)
+}
 
 // FileDiscovery provides service discovery functionality based
 // on files that contain target groups in JSON or YAML format. Refreshing
@@ -173,10 +194,16 @@ func (fd *FileDiscovery) stop() {
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
 func (fd *FileDiscovery) refresh(ch chan<- []*config.TargetGroup) {
+	t0 := time.Now()
+	defer func() {
+		fileSDScanDuration.Observe(time.Since(t0).Seconds())
+	}()
+
 	ref := map[string]int{}
 	for _, p := range fd.listFiles() {
 		tgroups, err := readFile(p)
 		if err != nil {
+			fileSDReadErrorsCount.Inc()
 			log.Errorf("Error reading file %q: %s", p, err)
 			// Prevent deletion down below.
 			ref[p] = fd.lastRefresh[p]
