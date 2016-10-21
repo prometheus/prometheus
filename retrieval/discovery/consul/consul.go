@@ -58,13 +58,13 @@ var (
 	rpcFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "sd_consul_rpc_call_failures_total",
+			Name:      "sd_consul_rpc_failures_total",
 			Help:      "The number of Consul RPC call failures.",
 		})
 	rpcDuration = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "sd_consul_rpc_call_duration_seconds",
+			Name:      "sd_consul_rpc_duration_seconds",
 			Help:      "The duration of a Consul RPC call in seconds.",
 		},
 		[]string{"endpoint", "call"},
