@@ -111,9 +111,18 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
-		AddFunc:    func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
-		UpdateFunc: func(_, o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
-		DeleteFunc: func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
+		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "add").Inc()
+			serviceUpdate(o.(*apiv1.Service))
+		},
+		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("service", "update").Inc()
+			serviceUpdate(o.(*apiv1.Service))
+		},
+		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "delete").Inc()
+			serviceUpdate(o.(*apiv1.Service))
+		},
 	})
 
 	// Block until the target provider is explicitly canceled.
