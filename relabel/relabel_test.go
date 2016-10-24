@@ -38,7 +38,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"a"},
 					Regex:        config.MustNewRegexp("f(.*)"),
-					TargetLabel:  model.LabelName("d"),
+					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "ch${1}-ch${1}",
 					Action:       config.RelabelReplace,
@@ -61,7 +61,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"a", "b"},
 					Regex:        config.MustNewRegexp("f(.*);(.*)r"),
-					TargetLabel:  model.LabelName("a"),
+					TargetLabel:  "a",
 					Separator:    ";",
 					Replacement:  "b${1}${2}m", // boobam
 					Action:       config.RelabelReplace,
@@ -69,7 +69,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"c", "a"},
 					Regex:        config.MustNewRegexp("(b).*b(.*)ba(.*)"),
-					TargetLabel:  model.LabelName("d"),
+					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "$1$2$2$3",
 					Action:       config.RelabelReplace,
@@ -94,7 +94,7 @@ func TestRelabel(t *testing.T) {
 				}, {
 					SourceLabels: model.LabelNames{"a"},
 					Regex:        config.MustNewRegexp("f(.*)"),
-					TargetLabel:  model.LabelName("d"),
+					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "ch$1-ch$1",
 					Action:       config.RelabelReplace,
@@ -124,7 +124,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"a"},
 					Regex:        config.MustNewRegexp(".*(b).*"),
-					TargetLabel:  model.LabelName("d"),
+					TargetLabel:  "d",
 					Separator:    ";",
 					Replacement:  "$1",
 					Action:       config.RelabelReplace,
@@ -202,7 +202,7 @@ func TestRelabel(t *testing.T) {
 				{
 					SourceLabels: model.LabelNames{"a"},
 					Regex:        config.MustNewRegexp("f"),
-					TargetLabel:  model.LabelName("b"),
+					TargetLabel:  "b",
 					Replacement:  "bar",
 					Action:       config.RelabelReplace,
 				},
@@ -220,7 +220,7 @@ func TestRelabel(t *testing.T) {
 			relabel: []*config.RelabelConfig{
 				{
 					SourceLabels: model.LabelNames{"c"},
-					TargetLabel:  model.LabelName("d"),
+					TargetLabel:  "d",
 					Separator:    ";",
 					Action:       config.RelabelHashMod,
 					Modulus:      1000,
@@ -287,7 +287,7 @@ func TestRelabel(t *testing.T) {
 					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${2}",
-					TargetLabel:  model.LabelName("${1}"),
+					TargetLabel:  "${1}",
 				},
 			},
 			output: model.LabelSet{
@@ -305,7 +305,7 @@ func TestRelabel(t *testing.T) {
 					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${3}",
-					TargetLabel:  model.LabelName("${1}"),
+					TargetLabel:  "${1}",
 				},
 			},
 			output: model.LabelSet{
@@ -322,21 +322,21 @@ func TestRelabel(t *testing.T) {
 					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
-					TargetLabel:  model.LabelName("${3}"),
+					TargetLabel:  "${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
 					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
-					TargetLabel:  model.LabelName("0${3}"),
+					TargetLabel:  "0${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
 					Regex:        config.MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
-					TargetLabel:  model.LabelName("-${3}"),
+					TargetLabel:  "-${3}",
 				},
 			},
 			output: model.LabelSet{
@@ -353,21 +353,21 @@ func TestRelabel(t *testing.T) {
 					Regex:        config.MustNewRegexp("(?:.+,|^)path:(/[^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
-					TargetLabel:  model.LabelName("__metrics_path__"),
+					TargetLabel:  "__metrics_path__",
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
 					Regex:        config.MustNewRegexp("(?:.+,|^)job:([^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${1}",
-					TargetLabel:  model.LabelName("job"),
+					TargetLabel:  "job",
 				},
 				{
 					SourceLabels: model.LabelNames{"__meta_sd_tags"},
 					Regex:        config.MustNewRegexp("(?:.+,|^)label:([^=]+)=([^,]+).*"),
 					Action:       config.RelabelReplace,
 					Replacement:  "${2}",
-					TargetLabel:  model.LabelName("${1}"),
+					TargetLabel:  "${1}",
 				},
 			},
 			output: model.LabelSet{

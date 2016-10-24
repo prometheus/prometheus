@@ -31,6 +31,7 @@ var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
+	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
 )
 
 // Load parses the YAML input s into a Config.
@@ -362,7 +363,6 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
 	}
 	*c = *gc
-
 	return nil
 }
 
@@ -907,6 +907,7 @@ type EC2SDConfig struct {
 	SecretKey       string         `yaml:"secret_key,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -936,6 +937,7 @@ type AzureSDConfig struct {
 	ClientID        string         `yaml:"client_id,omitempty"`
 	ClientSecret    string         `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -993,8 +995,9 @@ type RelabelConfig struct {
 	Regex Regexp `yaml:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
 	Modulus uint64 `yaml:"modulus,omitempty"`
-	// The label to which the resulting string is written in a replacement.
-	TargetLabel model.LabelName `yaml:"target_label,omitempty"`
+	// TargetLabel is the label to which the resulting string is written in a replacement.
+	// Regexp interpolation is allowed for the replace action.
+	TargetLabel string `yaml:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
@@ -1019,6 +1022,12 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if (c.Action == RelabelReplace || c.Action == RelabelHashMod) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
+	}
+	if c.Action == RelabelReplace && !relabelTarget.MatchString(c.TargetLabel) {
+		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
+		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	return nil
 }
