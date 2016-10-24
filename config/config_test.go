@@ -267,9 +267,14 @@ var expectedConf = &Config{
 			MarathonSDConfigs: []*MarathonSDConfig{
 				{
 					Servers: []string{
-						"http://marathon.example.com:8080",
+						"https://marathon.example.com:443",
 					},
+					Timeout:         model.Duration(30 * time.Second),
 					RefreshInterval: model.Duration(30 * time.Second),
+					TLSConfig: TLSConfig{
+						CertFile: "testdata/valid_cert_file",
+						KeyFile:  "testdata/valid_key_file",
+					},
 				},
 			},
 		},

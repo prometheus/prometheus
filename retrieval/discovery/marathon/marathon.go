@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -71,10 +72,33 @@ const appListPath string = "/v2/apps/?embed=apps.tasks"
 
 // Discovery provides service discovery based on a Marathon instance.
 type Discovery struct {
-	Servers         []string
-	RefreshInterval time.Duration
+	client          *http.Client
+	servers         []string
+	refreshInterval time.Duration
 	lastRefresh     map[string]*config.TargetGroup
-	Client          AppListClient
+	appsClient      AppListClient
+}
+
+// Initialize sets up the discovery for usage.
+func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
+	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{
+		Timeout: time.Duration(conf.Timeout),
+		Transport: &http.Transport{
+			TLSClientConfig: tls,
+		},
+	}
+
+	return &Discovery{
+		client:          client,
+		servers:         conf.Servers,
+		refreshInterval: time.Duration(conf.RefreshInterval),
+		appsClient:      fetchApps,
+	}, nil
 }
 
 // Run implements the TargetProvider interface.
@@ -85,7 +109,7 @@ func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(md.RefreshInterval):
+		case <-time.After(md.refreshInterval):
 			err := md.updateServices(ctx, ch)
 			if err != nil {
 				log.Errorf("Error while updating services: %s", err)
@@ -137,8 +161,8 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 }
 
 func (md *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
-	url := RandomAppsURL(md.Servers)
-	apps, err := md.Client(url)
+	url := RandomAppsURL(md.servers)
+	apps, err := md.appsClient(md.client, url)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +203,11 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(url string) (*AppList, error)
+type AppListClient func(client *http.Client, url string) (*AppList, error)
 
-// FetchApps requests a list of applications from a marathon server.
-func FetchApps(url string) (*AppList, error) {
-	resp, err := http.Get(url)
+// fetchApps requests a list of applications from a marathon server.
+func fetchApps(client *http.Client, url string) (*AppList, error) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}

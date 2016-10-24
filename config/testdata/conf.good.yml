@@ -132,7 +132,11 @@ scrape_configs:
 - job_name: service-marathon
   marathon_sd_configs:
   - servers:
-    - 'http://marathon.example.com:8080'
+    - 'https://marathon.example.com:443'
+
+    tls_config:
+      cert_file: valid_cert_file
+      key_file: valid_key_file
 
 - job_name: service-ec2
   ec2_sd_configs:
