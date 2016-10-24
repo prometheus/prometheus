@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -42,7 +43,30 @@ const (
 	imageLabel model.LabelName = metaLabelPrefix + "image"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
+
+	// Constants for instrumentation.
+	namespace = "prometheus"
 )
+
+var (
+	scrapeFailuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "sd_marathon_scrape_failures_total",
+			Help:      "The number of Marathon-SD scrape failures.",
+		})
+	scrapeDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Namespace: namespace,
+			Name:      "sd_marathon_scrape_duration_seconds",
+			Help:      "The duration of a Marathon-SD scrape in seconds.",
+		})
+)
+
+func init() {
+	prometheus.MustRegister(scrapeFailuresCount)
+	prometheus.MustRegister(scrapeDuration)
+}
 
 const appListPath string = "/v2/apps/?embed=apps.tasks"
 
@@ -93,7 +117,15 @@ func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
-func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) error {
+func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
+	t0 := time.Now()
+	defer func() {
+		scrapeDuration.Observe(time.Since(t0).Seconds())
+		if err != nil {
+			scrapeFailuresCount.Inc()
+		}
+	}()
+
 	targetMap, err := md.fetchTargetGroups()
 	if err != nil {
 		return err

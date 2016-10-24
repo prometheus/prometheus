@@ -1,3 +1,16 @@
+## 1.3.0-beta.0 / 2016-10-18
+
+This is a breaking change to the Kubernetes service discovery.
+
+* [CHANGE] Rework Kubernetes SD.
+* [FEATURE] Add support for interpolating `target_label`.
+* [FEATURE] Add GCE metadata as Prometheus meta labels.
+* [ENHANCEMENT] Add EC2 SD metrics.
+* [ENHANCEMENT] Add Azure SD metrics.
+* [ENHANCEMENT] Add fuzzy search to `/graph` textarea.
+* [ENHANCEMENT] Always show instance labels on target page.
+* [BUGFIX] Correctly handle on() in alerts.
+
 ## 1.2.1 / 2016-10-10
 
 * [BUGFIX] Count chunk evictions properly so that the server doesn't
