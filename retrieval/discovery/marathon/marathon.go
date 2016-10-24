@@ -87,6 +87,7 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 	}
 
 	client := &http.Client{
+		Timeout: time.Duration(conf.Timeout),
 		Transport: &http.Transport{
 			TLSClientConfig: tls,
 		},

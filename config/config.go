@@ -124,6 +124,7 @@ var (
 
 	// DefaultMarathonSDConfig is the default Marathon SD configuration.
 	DefaultMarathonSDConfig = MarathonSDConfig{
+		Timeout:         model.Duration(30 * time.Second),
 		RefreshInterval: model.Duration(30 * time.Second),
 	}
 
@@ -776,6 +777,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // MarathonSDConfig is the configuration for services running on Marathon.
 type MarathonSDConfig struct {
 	Servers         []string       `yaml:"servers,omitempty"`
+	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
 

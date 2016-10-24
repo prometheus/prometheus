@@ -269,6 +269,7 @@ var expectedConf = &Config{
 					Servers: []string{
 						"https://marathon.example.com:443",
 					},
+					Timeout:         model.Duration(30 * time.Second),
 					RefreshInterval: model.Duration(30 * time.Second),
 					TLSConfig: TLSConfig{
 						CertFile: "testdata/valid_cert_file",
