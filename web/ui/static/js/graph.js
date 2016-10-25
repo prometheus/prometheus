@@ -779,9 +779,8 @@ Prometheus.Page.QueryParamHelper.prototype.parseQueryParamsOfOneGraph = function
   queryParams.forEach(function(tuple) {
     var optionNameAndValue = tuple.split('=');
     var optionName = optionNameAndValue[0];
-    var optionValue = decodeURIComponent(optionNameAndValue[1]);
 
-    optionValue = optionValue.replace(/\+/g, " "); // $.param turns spaces into pluses
+    var optionValue = decodeURIComponent(optionNameAndValue[1].replace(/\+/g, " "));
 
     if (optionName == "tab") {
       optionValue = parseInt(optionValue); // tab is integer
