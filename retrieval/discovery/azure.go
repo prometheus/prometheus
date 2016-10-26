@@ -43,23 +43,23 @@ const (
 )
 
 var (
-	azureSDScrapeFailuresCount = prometheus.NewCounter(
+	azureSDRefreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "sd_azure_scrape_failures_total",
-			Help:      "Number of Azure-SD scrape failures.",
+			Name:      "sd_azure_refresh_failures_total",
+			Help:      "Number of Azure-SD refresh failures.",
 		})
-	azureSDScrapeDuration = prometheus.NewSummary(
+	azureSDRefreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "sd_azure_scrape_duration_seconds",
-			Help:      "The duration of a Azure-SD scrape in seconds.",
+			Name:      "sd_azure_refresh_duration_seconds",
+			Help:      "The duration of a Azure-SD refresh in seconds.",
 		})
 )
 
 func init() {
-	prometheus.MustRegister(azureSDScrapeDuration)
-	prometheus.MustRegister(azureSDScrapeFailuresCount)
+	prometheus.MustRegister(azureSDRefreshDuration)
+	prometheus.MustRegister(azureSDRefreshFailuresCount)
 }
 
 // AzureDiscovery periodically performs Azure-SD requests. It implements
@@ -159,9 +159,9 @@ func newAzureResourceFromID(id string) (azureResource, error) {
 func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
-		azureSDScrapeDuration.Observe(time.Since(t0).Seconds())
+		azureSDRefreshDuration.Observe(time.Since(t0).Seconds())
 		if err != nil {
-			azureSDScrapeFailuresCount.Inc()
+			azureSDRefreshFailuresCount.Inc()
 		}
 	}()
 	tg = &config.TargetGroup{}
