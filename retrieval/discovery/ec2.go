@@ -48,23 +48,23 @@ const (
 )
 
 var (
-	ec2SDScrapeFailuresCount = prometheus.NewCounter(
+	ec2SDRefreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "sd_ec2_scrape_failures_total",
+			Name:      "sd_ec2_refresh_failures_total",
 			Help:      "The number of EC2-SD scrape failures.",
 		})
-	ec2SDScrapeDuration = prometheus.NewSummary(
+	ec2SDRefreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "sd_ec2_scrape_duration_seconds",
-			Help:      "The duration of a EC2-SD scrape in seconds.",
+			Name:      "sd_ec2_refresh_duration_seconds",
+			Help:      "The duration of a EC2-SD refresh in seconds.",
 		})
 )
 
 func init() {
-	prometheus.MustRegister(ec2SDScrapeFailuresCount)
-	prometheus.MustRegister(ec2SDScrapeDuration)
+	prometheus.MustRegister(ec2SDRefreshFailuresCount)
+	prometheus.MustRegister(ec2SDRefreshDuration)
 }
 
 // EC2Discovery periodically performs EC2-SD requests. It implements
@@ -124,9 +124,9 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
-		ec2SDScrapeDuration.Observe(time.Since(t0).Seconds())
+		ec2SDRefreshDuration.Observe(time.Since(t0).Seconds())
 		if err != nil {
-			ec2SDScrapeFailuresCount.Inc()
+			ec2SDRefreshFailuresCount.Inc()
 		}
 	}()
 
