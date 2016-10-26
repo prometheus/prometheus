@@ -213,6 +213,11 @@ func init() {
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
 
+	cfg.fs.DurationVar(
+		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
+		"The timeout to use when sending samples to the remote storage.",
+	)
+
 	// Alertmanager.
 	cfg.fs.Var(
 		&cfg.alertmanagerURLs, "alertmanager.url",
