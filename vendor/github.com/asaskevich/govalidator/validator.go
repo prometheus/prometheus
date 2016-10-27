@@ -496,6 +496,12 @@ func IsIPv6(str string) bool {
 	return ip != nil && strings.Contains(str, ":")
 }
 
+// IsCIDR check if the string is an valid CIDR notiation (IPV4 & IPV6)
+func IsCIDR(str string) bool {
+	_, _, err := net.ParseCIDR(str)
+	return err == nil
+}
+
 // IsMAC check if a string is valid MAC address.
 // Possible MAC formats:
 // 01:23:45:67:89:ab
