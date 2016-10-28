@@ -471,48 +471,6 @@
 			"path": "gopkg.in/yaml.v2",
 			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
 			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
-		},
-		{
-			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
-			"path": "gopkg.in/yaml.v2",
-			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
-			"revisionTime": "2015-06-24T11:29:02+01:00"
 		}
 	],
 	"rootPath": "github.com/prometheus/prometheus"
