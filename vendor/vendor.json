@@ -313,14 +313,14 @@
 		{
 			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",
 			"path": "golang.org/x/net/context",
-			"revision": "b400c2eff1badec7022a8c8f5bea058b6315eed7",
-			"revisionTime": "2016-06-19T19:44:24Z"
+			"revision": "b336a971b799939dd16ae9b1df8334cb8b977c4d",
+			"revisionTime": "2016-10-27T19:58:04Z"
 		},
 		{
-			"checksumSHA1": "Do+l129/Bafh54VFaquooqtCcfk=",
+			"checksumSHA1": "WHc3uByvGaMcnSoI21fhzYgbOgg=",
 			"path": "golang.org/x/net/context/ctxhttp",
-			"revision": "b400c2eff1badec7022a8c8f5bea058b6315eed7",
-			"revisionTime": "2016-06-19T19:44:24Z"
+			"revision": "b336a971b799939dd16ae9b1df8334cb8b977c4d",
+			"revisionTime": "2016-10-27T19:58:04Z"
 		},
 		{
 			"checksumSHA1": "/k7k6eJDkxXx6K9Zpo/OwNm58XM=",
