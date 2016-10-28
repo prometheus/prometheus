@@ -1,3 +1,11 @@
+## 1.2.2 / 2016-10-28
+
+* [BUGFIX] UI: Deal properly with aborted requests.
+* [BUGFIX] UI: Decode URL query parameters properly.
+* [BUGFIX] Storage: Deal better with data corruption (non-monotonic timestamps).
+* [BUGFIX] Remote storage: Re-add accidentally removed timeout flag.
+* [BUGFIX] Updated a number of vendored packages to pick up upstream bug fixes.
+
 ## 1.2.1 / 2016-10-10
 
 * [BUGFIX] Count chunk evictions properly so that the server doesn't
