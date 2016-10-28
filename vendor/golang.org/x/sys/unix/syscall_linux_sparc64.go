@@ -1,15 +1,20 @@
-// Copyright 2015 The Go Authors. All rights reserved.
+// Copyright 2009 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build arm64,linux
+// +build sparc64,linux
 
 package unix
 
-//sys	EpollWait(epfd int, events []EpollEvent, msec int) (n int, err error) = SYS_EPOLL_PWAIT
+import (
+	"sync/atomic"
+	"syscall"
+)
+
+//sys	EpollWait(epfd int, events []EpollEvent, msec int) (n int, err error)
+//sys	Dup2(oldfd int, newfd int) (err error)
 //sys	Fchown(fd int, uid int, gid int) (err error)
 //sys	Fstat(fd int, stat *Stat_t) (err error)
-//sys	Fstatat(fd int, path string, stat *Stat_t, flags int) (err error)
 //sys	Fstatfs(fd int, buf *Statfs_t) (err error)
 //sys	Ftruncate(fd int, length int64) (err error)
 //sysnb	Getegid() (egid int)
@@ -17,11 +22,15 @@ package unix
 //sysnb	Getgid() (gid int)
 //sysnb	Getrlimit(resource int, rlim *Rlimit) (err error)
 //sysnb	Getuid() (uid int)
+//sysnb	InotifyInit() (fd int, err error)
+//sys	Lchown(path string, uid int, gid int) (err error)
 //sys	Listen(s int, n int) (err error)
+//sys	Lstat(path string, stat *Stat_t) (err error)
+//sys	Pause() (err error)
 //sys	Pread(fd int, p []byte, offset int64) (n int, err error) = SYS_PREAD64
 //sys	Pwrite(fd int, p []byte, offset int64) (n int, err error) = SYS_PWRITE64
 //sys	Seek(fd int, offset int64, whence int) (off int64, err error) = SYS_LSEEK
-//sys	Select(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timeval) (n int, err error) = SYS_PSELECT6
+//sys	Select(nfd int, r *FdSet, w *FdSet, e *FdSet, timeout *Timeval) (n int, err error)
 //sys	sendfile(outfd int, infd int, offset *int64, count int) (written int, err error)
 //sys	Setfsgid(gid int) (err error)
 //sys	Setfsuid(uid int) (err error)
@@ -32,19 +41,7 @@ package unix
 //sysnb	Setreuid(ruid int, euid int) (err error)
 //sys	Shutdown(fd int, how int) (err error)
 //sys	Splice(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n int64, err error)
-
-func Stat(path string, stat *Stat_t) (err error) {
-	return Fstatat(AT_FDCWD, path, stat, 0)
-}
-
-func Lchown(path string, uid int, gid int) (err error) {
-	return Fchownat(AT_FDCWD, path, uid, gid, AT_SYMLINK_NOFOLLOW)
-}
-
-func Lstat(path string, stat *Stat_t) (err error) {
-	return Fstatat(AT_FDCWD, path, stat, AT_SYMLINK_NOFOLLOW)
-}
-
+//sys	Stat(path string, stat *Stat_t) (err error)
 //sys	Statfs(path string, buf *Statfs_t) (err error)
 //sys	SyncFileRange(fd int, off int64, n int64, flags int) (err error)
 //sys	Truncate(path string, length int64) (err error)
@@ -66,9 +63,44 @@ func Lstat(path string, stat *Stat_t) (err error) {
 //sys	sendmsg(s int, msg *Msghdr, flags int) (n int, err error)
 //sys	mmap(addr uintptr, length uintptr, prot int, flags int, fd int, offset int64) (xaddr uintptr, err error)
 
-func Getpagesize() int { return 65536 }
+func sysconf(name int) (n int64, err syscall.Errno)
+
+// pageSize caches the value of Getpagesize, since it can't change
+// once the system is booted.
+var pageSize int64 // accessed atomically
+
+func Getpagesize() int {
+	n := atomic.LoadInt64(&pageSize)
+	if n == 0 {
+		n, _ = sysconf(_SC_PAGESIZE)
+		atomic.StoreInt64(&pageSize, n)
+	}
+	return int(n)
+}
+
+func Ioperm(from int, num int, on int) (err error) {
+	return ENOSYS
+}
+
+func Iopl(level int) (err error) {
+	return ENOSYS
+}
 
 //sysnb	Gettimeofday(tv *Timeval) (err error)
+
+func Time(t *Time_t) (tt Time_t, err error) {
+	var tv Timeval
+	err = Gettimeofday(&tv)
+	if err != nil {
+		return 0, err
+	}
+	if t != nil {
+		*t = Time_t(tv.Sec)
+	}
+	return Time_t(tv.Sec), nil
+}
+
+//sys	Utime(path string, buf *Utimbuf) (err error)
 
 func TimespecToNsec(ts Timespec) int64 { return int64(ts.Sec)*1e9 + int64(ts.Nsec) }
 
@@ -81,36 +113,34 @@ func NsecToTimespec(nsec int64) (ts Timespec) {
 func NsecToTimeval(nsec int64) (tv Timeval) {
 	nsec += 999 // round up to microsecond
 	tv.Sec = nsec / 1e9
-	tv.Usec = nsec % 1e9 / 1e3
+	tv.Usec = int32(nsec % 1e9 / 1e3)
 	return
 }
 
-func Time(t *Time_t) (Time_t, error) {
-	var tv Timeval
-	err := Gettimeofday(&tv)
-	if err != nil {
-		return 0, err
-	}
-	if t != nil {
-		*t = Time_t(tv.Sec)
-	}
-	return Time_t(tv.Sec), nil
+func (r *PtraceRegs) PC() uint64 { return r.Tpc }
+
+func (r *PtraceRegs) SetPC(pc uint64) { r.Tpc = pc }
+
+func (iov *Iovec) SetLen(length int) {
+	iov.Len = uint64(length)
 }
 
-func Utime(path string, buf *Utimbuf) error {
-	tv := []Timeval{
-		{Sec: buf.Actime},
-		{Sec: buf.Modtime},
-	}
-	return Utimes(path, tv)
+func (msghdr *Msghdr) SetControllen(length int) {
+	msghdr.Controllen = uint64(length)
 }
+
+func (cmsg *Cmsghdr) SetLen(length int) {
+	cmsg.Len = uint64(length)
+}
+
+//sysnb pipe(p *[2]_C_int) (err error)
 
 func Pipe(p []int) (err error) {
 	if len(p) != 2 {
 		return EINVAL
 	}
 	var pp [2]_C_int
-	err = pipe2(&pp, 0)
+	err = pipe(&pp)
 	p[0] = int(pp[0])
 	p[1] = int(pp[1])
 	return
@@ -129,62 +159,11 @@ func Pipe2(p []int, flags int) (err error) {
 	return
 }
 
-func (r *PtraceRegs) PC() uint64 { return r.Pc }
-
-func (r *PtraceRegs) SetPC(pc uint64) { r.Pc = pc }
-
-func (iov *Iovec) SetLen(length int) {
-	iov.Len = uint64(length)
-}
-
-func (msghdr *Msghdr) SetControllen(length int) {
-	msghdr.Controllen = uint64(length)
-}
-
-func (cmsg *Cmsghdr) SetLen(length int) {
-	cmsg.Len = uint64(length)
-}
-
-func InotifyInit() (fd int, err error) {
-	return InotifyInit1(0)
-}
-
-func Dup2(oldfd int, newfd int) (err error) {
-	return Dup3(oldfd, newfd, 0)
-}
-
-func Pause() (err error) {
-	_, _, e1 := Syscall6(SYS_PPOLL, 0, 0, 0, 0, 0, 0)
-	if e1 != 0 {
-		err = errnoErr(e1)
-	}
-	return
-}
-
-// TODO(dfc): constants that should be in zsysnum_linux_arm64.go, remove
-// these when the deprecated syscalls that the syscall package relies on
-// are removed.
-const (
-	SYS_GETPGRP      = 1060
-	SYS_UTIMES       = 1037
-	SYS_FUTIMESAT    = 1066
-	SYS_PAUSE        = 1061
-	SYS_USTAT        = 1070
-	SYS_UTIME        = 1063
-	SYS_LCHOWN       = 1032
-	SYS_TIME         = 1062
-	SYS_EPOLL_CREATE = 1042
-	SYS_EPOLL_WAIT   = 1069
-)
+//sys	poll(fds *PollFd, nfds int, timeout int) (n int, err error)
 
 func Poll(fds []PollFd, timeout int) (n int, err error) {
-	var ts *Timespec
-	if timeout >= 0 {
-		ts = new(Timespec)
-		*ts = NsecToTimespec(int64(timeout) * 1e6)
-	}
 	if len(fds) == 0 {
-		return ppoll(nil, 0, ts, nil)
+		return poll(nil, 0, timeout)
 	}
-	return ppoll(&fds[0], len(fds), ts, nil)
+	return poll(&fds[0], len(fds), timeout)
 }
