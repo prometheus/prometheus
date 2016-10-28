@@ -135,9 +135,10 @@
 			"revisionTime": "2016-10-12T20:53:35Z"
 		},
 		{
+			"checksumSHA1": "2a/SsTUBMKtcM6VtpbdPGO+c6c8=",
 			"path": "github.com/golang/snappy",
 			"revision": "d9eb7a3d35ec988b8585d4a0068e462c27d28380",
-			"revisionTime": "2016-05-29T15:00:41+10:00"
+			"revisionTime": "2016-05-29T05:00:41Z"
 		},
 		{
 			"path": "github.com/hashicorp/consul/api",
