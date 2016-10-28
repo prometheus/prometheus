@@ -50,6 +50,12 @@ func (s *session) version() *version {
 	return s.stVersion
 }
 
+func (s *session) tLen(level int) int {
+	s.vmu.Lock()
+	defer s.vmu.Unlock()
+	return s.stVersion.tLen(level)
+}
+
 // Set current version to v.
 func (s *session) setVersion(v *version) {
 	s.vmu.Lock()
@@ -197,7 +203,7 @@ func (s *session) newManifest(rec *sessionRecord, v *version) (err error) {
 			if s.manifestWriter != nil {
 				s.manifestWriter.Close()
 			}
-			if !s.manifestFd.Nil() {
+			if !s.manifestFd.Zero() {
 				s.stor.Remove(s.manifestFd)
 			}
 			s.manifestFd = fd

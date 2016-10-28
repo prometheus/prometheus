@@ -16,20 +16,23 @@ package log
 import (
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
 )
 
-type levelFlag struct{}
+type levelFlag string
 
 // String implements flag.Value.
 func (f levelFlag) String() string {
-	return origLogger.Level.String()
+	return fmt.Sprintf("%q", string(f))
 }
 
 // Set implements flag.Value.
@@ -45,20 +48,23 @@ func (f levelFlag) Set(level string) error {
 // setSyslogFormatter is nil if the target architecture does not support syslog.
 var setSyslogFormatter func(string, string) error
 
+// setEventlogFormatter is nil if the target OS does not support Eventlog (i.e., is not Windows).
+var setEventlogFormatter func(string, bool) error
+
 func setJSONFormatter() {
 	origLogger.Formatter = &logrus.JSONFormatter{}
 }
 
-type logFormatFlag struct{ uri string }
+type logFormatFlag url.URL
 
 // String implements flag.Value.
 func (f logFormatFlag) String() string {
-	return f.uri
+	u := url.URL(f)
+	return fmt.Sprintf("%q", u.String())
 }
 
 // Set implements flag.Value.
 func (f logFormatFlag) Set(format string) error {
-	f.uri = format
 	u, err := url.Parse(format)
 	if err != nil {
 		return err
@@ -79,13 +85,23 @@ func (f logFormatFlag) Set(format string) error {
 		appname := u.Query().Get("appname")
 		facility := u.Query().Get("local")
 		return setSyslogFormatter(appname, facility)
+	case "eventlog":
+		if setEventlogFormatter == nil {
+			return fmt.Errorf("system does not support eventlog")
+		}
+		name := u.Query().Get("name")
+		debugAsInfo := false
+		debugAsInfoRaw := u.Query().Get("debugAsInfo")
+		if parsedDebugAsInfo, err := strconv.ParseBool(debugAsInfoRaw); err == nil {
+			debugAsInfo = parsedDebugAsInfo
+		}
+		return setEventlogFormatter(name, debugAsInfo)
 	case "stdout":
 		origLogger.Out = os.Stdout
 	case "stderr":
 		origLogger.Out = os.Stderr
-
 	default:
-		return fmt.Errorf("unsupported logger %s", u.Opaque)
+		return fmt.Errorf("unsupported logger %q", u.Opaque)
 	}
 	return nil
 }
@@ -99,10 +115,19 @@ func init() {
 // adds the flags to flag.CommandLine anyway. Thus, it's usually enough to call
 // flag.Parse() to make the logging flags take effect.
 func AddFlags(fs *flag.FlagSet) {
-	fs.Var(levelFlag{}, "log.level", "Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal].")
-	fs.Var(logFormatFlag{}, "log.format", "If set use a syslog logger or JSON logging. Example: logger:syslog?appname=bob&local=7 or logger:stdout?json=true. Defaults to stderr.")
+	fs.Var(
+		levelFlag(origLogger.Level.String()),
+		"log.level",
+		"Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal]",
+	)
+	fs.Var(
+		logFormatFlag(url.URL{Scheme: "logger", Opaque: "stderr"}),
+		"log.format",
+		`Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`,
+	)
 }
 
+// Logger is the interface for loggers used in the Prometheus components.
 type Logger interface {
 	Debug(...interface{})
 	Debugln(...interface{})
@@ -227,10 +252,26 @@ func (l logger) sourced() *logrus.Entry {
 var origLogger = logrus.New()
 var baseLogger = logger{entry: logrus.NewEntry(origLogger)}
 
+// Base returns the default Logger logging to
 func Base() Logger {
 	return baseLogger
 }
 
+// NewLogger returns a new Logger logging to out.
+func NewLogger(w io.Writer) Logger {
+	l := logrus.New()
+	l.Out = w
+	return logger{entry: logrus.NewEntry(l)}
+}
+
+// NewNopLogger returns a logger that discards all log messages.
+func NewNopLogger() Logger {
+	l := logrus.New()
+	l.Out = ioutil.Discard
+	return logger{entry: logrus.NewEntry(l)}
+}
+
+// With adds a field to the logger.
 func With(key string, value interface{}) Logger {
 	return baseLogger.With(key, value)
 }
@@ -240,7 +281,7 @@ func Debug(args ...interface{}) {
 	baseLogger.sourced().Debug(args...)
 }
 
-// Debug logs a message at level Debug on the standard logger.
+// Debugln logs a message at level Debug on the standard logger.
 func Debugln(args ...interface{}) {
 	baseLogger.sourced().Debugln(args...)
 }
@@ -255,7 +296,7 @@ func Info(args ...interface{}) {
 	baseLogger.sourced().Info(args...)
 }
 
-// Info logs a message at level Info on the standard logger.
+// Infoln logs a message at level Info on the standard logger.
 func Infoln(args ...interface{}) {
 	baseLogger.sourced().Infoln(args...)
 }
@@ -270,7 +311,7 @@ func Warn(args ...interface{}) {
 	baseLogger.sourced().Warn(args...)
 }
 
-// Warn logs a message at level Warn on the standard logger.
+// Warnln logs a message at level Warn on the standard logger.
 func Warnln(args ...interface{}) {
 	baseLogger.sourced().Warnln(args...)
 }
@@ -285,7 +326,7 @@ func Error(args ...interface{}) {
 	baseLogger.sourced().Error(args...)
 }
 
-// Error logs a message at level Error on the standard logger.
+// Errorln logs a message at level Error on the standard logger.
 func Errorln(args ...interface{}) {
 	baseLogger.sourced().Errorln(args...)
 }
@@ -300,7 +341,7 @@ func Fatal(args ...interface{}) {
 	baseLogger.sourced().Fatal(args...)
 }
 
-// Fatal logs a message at level Fatal on the standard logger.
+// Fatalln logs a message at level Fatal on the standard logger.
 func Fatalln(args ...interface{}) {
 	baseLogger.sourced().Fatalln(args...)
 }
