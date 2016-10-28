@@ -792,12 +792,12 @@ func (p *textParser) readAny(v reflect.Value, props *Properties) error {
 		fv.Set(reflect.Append(fv, reflect.New(at.Elem()).Elem()))
 		return p.readAny(fv.Index(fv.Len()-1), props)
 	case reflect.Bool:
-		// Either "true", "false", 1 or 0.
+		// true/1/t/True or false/f/0/False.
 		switch tok.value {
-		case "true", "1":
+		case "true", "1", "t", "True":
 			fv.SetBool(true)
 			return nil
-		case "false", "0":
+		case "false", "0", "f", "False":
 			fv.SetBool(false)
 			return nil
 		}
