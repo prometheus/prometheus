@@ -129,10 +129,10 @@
 			"revisionTime": "2016-03-07T15:28:38-08:00"
 		},
 		{
-			"checksumSHA1": "XnbEHQRzINRKXKmu9GcaqGkK4Lg=",
+			"checksumSHA1": "yDh5kmmr0zEF1r+rvYqbZcR7iLs=",
 			"path": "github.com/golang/protobuf/proto",
-			"revision": "888eb0692c857ec880338addf316bd662d5e630e",
-			"revisionTime": "2016-08-23T21:25:17Z"
+			"revision": "98fa357170587e470c5f27d3c3ea0947b71eb455",
+			"revisionTime": "2016-10-12T20:53:35Z"
 		},
 		{
 			"path": "github.com/golang/snappy",
