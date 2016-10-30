@@ -4,6 +4,15 @@ import (
 	"fmt"
 )
 
+const (
+	// HealthAny is special, and is used as a wild card,
+	// not as a specific state.
+	HealthAny      = "any"
+	HealthPassing  = "passing"
+	HealthWarning  = "warning"
+	HealthCritical = "critical"
+)
+
 // HealthCheck is used to represent a single check
 type HealthCheck struct {
 	Node        string
@@ -85,7 +94,7 @@ func (h *Health) Service(service, tag string, passingOnly bool, q *QueryOptions)
 		r.params.Set("tag", tag)
 	}
 	if passingOnly {
-		r.params.Set("passing", "1")
+		r.params.Set(HealthPassing, "1")
 	}
 	rtt, resp, err := requireOK(h.c.doRequest(r))
 	if err != nil {
@@ -104,15 +113,14 @@ func (h *Health) Service(service, tag string, passingOnly bool, q *QueryOptions)
 	return out, qm, nil
 }
 
-// State is used to retreive all the checks in a given state.
+// State is used to retrieve all the checks in a given state.
 // The wildcard "any" state can also be used for all checks.
 func (h *Health) State(state string, q *QueryOptions) ([]*HealthCheck, *QueryMeta, error) {
 	switch state {
-	case "any":
-	case "warning":
-	case "critical":
-	case "passing":
-	case "unknown":
+	case HealthAny:
+	case HealthWarning:
+	case HealthCritical:
+	case HealthPassing:
 	default:
 		return nil, nil, fmt.Errorf("Unsupported state: %v", state)
 	}
