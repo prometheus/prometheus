@@ -1,4 +1,4 @@
-// +build !windows,!plan9
+// +build !windows
 
 package dns
 
