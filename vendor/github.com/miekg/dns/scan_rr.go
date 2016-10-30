@@ -1443,64 +1443,6 @@ func setEUI64(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	return rr, nil, ""
 }
 
-func setWKS(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
-	rr := new(WKS)
-	rr.Hdr = h
-
-	l := <-c
-	if l.length == 0 {
-		return rr, nil, l.comment
-	}
-	rr.Address = net.ParseIP(l.token)
-	if rr.Address == nil || l.err {
-		return nil, &ParseError{f, "bad WKS Address", l}, ""
-	}
-
-	<-c // zBlank
-	l = <-c
-	proto := "tcp"
-	i, e := strconv.Atoi(l.token)
-	if e != nil || l.err {
-		return nil, &ParseError{f, "bad WKS Protocol", l}, ""
-	}
-	rr.Protocol = uint8(i)
-	switch rr.Protocol {
-	case 17:
-		proto = "udp"
-	case 6:
-		proto = "tcp"
-	default:
-		return nil, &ParseError{f, "bad WKS Protocol", l}, ""
-	}
-
-	<-c
-	l = <-c
-	rr.BitMap = make([]uint16, 0)
-	var (
-		k   int
-		err error
-	)
-	for l.value != zNewline && l.value != zEOF {
-		switch l.value {
-		case zBlank:
-			// Ok
-		case zString:
-			if k, err = net.LookupPort(proto, l.token); err != nil {
-				i, e := strconv.Atoi(l.token) // If a number use that
-				if e != nil {
-					return nil, &ParseError{f, "bad WKS BitMap", l}, ""
-				}
-				rr.BitMap = append(rr.BitMap, uint16(i))
-			}
-			rr.BitMap = append(rr.BitMap, uint16(k))
-		default:
-			return nil, &ParseError{f, "bad WKS BitMap", l}, ""
-		}
-		l = <-c
-	}
-	return rr, nil, l.comment
-}
-
 func setSSHFP(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	rr := new(SSHFP)
 	rr.Hdr = h
@@ -1797,6 +1739,41 @@ func setTLSA(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	rr.MatchingType = uint8(i)
 	// So this needs be e2 (i.e. different than e), because...??t
 	s, e2, c1 := endingToString(c, "bad TLSA Certificate", f)
+	if e2 != nil {
+		return nil, e2, c1
+	}
+	rr.Certificate = s
+	return rr, nil, c1
+}
+
+func setSMIMEA(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
+	rr := new(SMIMEA)
+	rr.Hdr = h
+	l := <-c
+	if l.length == 0 {
+		return rr, nil, l.comment
+	}
+	i, e := strconv.Atoi(l.token)
+	if e != nil || l.err {
+		return nil, &ParseError{f, "bad SMIMEA Usage", l}, ""
+	}
+	rr.Usage = uint8(i)
+	<-c // zBlank
+	l = <-c
+	i, e = strconv.Atoi(l.token)
+	if e != nil || l.err {
+		return nil, &ParseError{f, "bad SMIMEA Selector", l}, ""
+	}
+	rr.Selector = uint8(i)
+	<-c // zBlank
+	l = <-c
+	i, e = strconv.Atoi(l.token)
+	if e != nil || l.err {
+		return nil, &ParseError{f, "bad SMIMEA MatchingType", l}, ""
+	}
+	rr.MatchingType = uint8(i)
+	// So this needs be e2 (i.e. different than e), because...??t
+	s, e2, c1 := endingToString(c, "bad SMIMEA Certificate", f)
 	if e2 != nil {
 		return nil, e2, c1
 	}
@@ -2103,73 +2080,6 @@ func setPX(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	return rr, nil, ""
 }
 
-func setIPSECKEY(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
-	rr := new(IPSECKEY)
-	rr.Hdr = h
-	l := <-c
-	if l.length == 0 {
-		return rr, nil, l.comment
-	}
-	i, err := strconv.Atoi(l.token)
-	if err != nil || l.err {
-		return nil, &ParseError{f, "bad IPSECKEY Precedence", l}, ""
-	}
-	rr.Precedence = uint8(i)
-	<-c // zBlank
-	l = <-c
-	i, err = strconv.Atoi(l.token)
-	if err != nil || l.err {
-		return nil, &ParseError{f, "bad IPSECKEY GatewayType", l}, ""
-	}
-	rr.GatewayType = uint8(i)
-	<-c // zBlank
-	l = <-c
-	i, err = strconv.Atoi(l.token)
-	if err != nil || l.err {
-		return nil, &ParseError{f, "bad IPSECKEY Algorithm", l}, ""
-	}
-	rr.Algorithm = uint8(i)
-
-	// Now according to GatewayType we can have different elements here
-	<-c // zBlank
-	l = <-c
-	switch rr.GatewayType {
-	case 0:
-		fallthrough
-	case 3:
-		rr.GatewayName = l.token
-		if l.token == "@" {
-			rr.GatewayName = o
-		}
-		_, ok := IsDomainName(l.token)
-		if !ok || l.length == 0 || l.err {
-			return nil, &ParseError{f, "bad IPSECKEY GatewayName", l}, ""
-		}
-		if rr.GatewayName[l.length-1] != '.' {
-			rr.GatewayName = appendOrigin(rr.GatewayName, o)
-		}
-	case 1:
-		rr.GatewayA = net.ParseIP(l.token)
-		if rr.GatewayA == nil {
-			return nil, &ParseError{f, "bad IPSECKEY GatewayA", l}, ""
-		}
-	case 2:
-		rr.GatewayAAAA = net.ParseIP(l.token)
-		if rr.GatewayAAAA == nil {
-			return nil, &ParseError{f, "bad IPSECKEY GatewayAAAA", l}, ""
-		}
-	default:
-		return nil, &ParseError{f, "bad IPSECKEY GatewayType", l}, ""
-	}
-
-	s, e, c1 := endingToString(c, "bad IPSECKEY PublicKey", f)
-	if e != nil {
-		return nil, e, c1
-	}
-	rr.PublicKey = s
-	return rr, nil, c1
-}
-
 func setCAA(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 	rr := new(CAA)
 	rr.Hdr = h
@@ -2203,68 +2113,67 @@ func setCAA(h RR_Header, c chan lex, o, f string) (RR, *ParseError, string) {
 }
 
 var typeToparserFunc = map[uint16]parserFunc{
-	TypeAAAA:       parserFunc{setAAAA, false},
-	TypeAFSDB:      parserFunc{setAFSDB, false},
-	TypeA:          parserFunc{setA, false},
-	TypeCAA:        parserFunc{setCAA, true},
-	TypeCDS:        parserFunc{setCDS, true},
-	TypeCDNSKEY:    parserFunc{setCDNSKEY, true},
-	TypeCERT:       parserFunc{setCERT, true},
-	TypeCNAME:      parserFunc{setCNAME, false},
-	TypeDHCID:      parserFunc{setDHCID, true},
-	TypeDLV:        parserFunc{setDLV, true},
-	TypeDNAME:      parserFunc{setDNAME, false},
-	TypeKEY:        parserFunc{setKEY, true},
-	TypeDNSKEY:     parserFunc{setDNSKEY, true},
-	TypeDS:         parserFunc{setDS, true},
-	TypeEID:        parserFunc{setEID, true},
-	TypeEUI48:      parserFunc{setEUI48, false},
-	TypeEUI64:      parserFunc{setEUI64, false},
-	TypeGID:        parserFunc{setGID, false},
-	TypeGPOS:       parserFunc{setGPOS, false},
-	TypeHINFO:      parserFunc{setHINFO, true},
-	TypeHIP:        parserFunc{setHIP, true},
-	TypeIPSECKEY:   parserFunc{setIPSECKEY, true},
-	TypeKX:         parserFunc{setKX, false},
-	TypeL32:        parserFunc{setL32, false},
-	TypeL64:        parserFunc{setL64, false},
-	TypeLOC:        parserFunc{setLOC, true},
-	TypeLP:         parserFunc{setLP, false},
-	TypeMB:         parserFunc{setMB, false},
-	TypeMD:         parserFunc{setMD, false},
-	TypeMF:         parserFunc{setMF, false},
-	TypeMG:         parserFunc{setMG, false},
-	TypeMINFO:      parserFunc{setMINFO, false},
-	TypeMR:         parserFunc{setMR, false},
-	TypeMX:         parserFunc{setMX, false},
-	TypeNAPTR:      parserFunc{setNAPTR, false},
-	TypeNID:        parserFunc{setNID, false},
-	TypeNIMLOC:     parserFunc{setNIMLOC, true},
-	TypeNINFO:      parserFunc{setNINFO, true},
-	TypeNSAPPTR:    parserFunc{setNSAPPTR, false},
-	TypeNSEC3PARAM: parserFunc{setNSEC3PARAM, false},
-	TypeNSEC3:      parserFunc{setNSEC3, true},
-	TypeNSEC:       parserFunc{setNSEC, true},
-	TypeNS:         parserFunc{setNS, false},
-	TypeOPENPGPKEY: parserFunc{setOPENPGPKEY, true},
-	TypePTR:        parserFunc{setPTR, false},
-	TypePX:         parserFunc{setPX, false},
-	TypeSIG:        parserFunc{setSIG, true},
-	TypeRKEY:       parserFunc{setRKEY, true},
-	TypeRP:         parserFunc{setRP, false},
-	TypeRRSIG:      parserFunc{setRRSIG, true},
-	TypeRT:         parserFunc{setRT, false},
-	TypeSOA:        parserFunc{setSOA, false},
-	TypeSPF:        parserFunc{setSPF, true},
-	TypeSRV:        parserFunc{setSRV, false},
-	TypeSSHFP:      parserFunc{setSSHFP, true},
-	TypeTALINK:     parserFunc{setTALINK, false},
-	TypeTA:         parserFunc{setTA, true},
-	TypeTLSA:       parserFunc{setTLSA, true},
-	TypeTXT:        parserFunc{setTXT, true},
-	TypeUID:        parserFunc{setUID, false},
-	TypeUINFO:      parserFunc{setUINFO, true},
-	TypeURI:        parserFunc{setURI, true},
-	TypeWKS:        parserFunc{setWKS, true},
-	TypeX25:        parserFunc{setX25, false},
+	TypeAAAA:       {setAAAA, false},
+	TypeAFSDB:      {setAFSDB, false},
+	TypeA:          {setA, false},
+	TypeCAA:        {setCAA, true},
+	TypeCDS:        {setCDS, true},
+	TypeCDNSKEY:    {setCDNSKEY, true},
+	TypeCERT:       {setCERT, true},
+	TypeCNAME:      {setCNAME, false},
+	TypeDHCID:      {setDHCID, true},
+	TypeDLV:        {setDLV, true},
+	TypeDNAME:      {setDNAME, false},
+	TypeKEY:        {setKEY, true},
+	TypeDNSKEY:     {setDNSKEY, true},
+	TypeDS:         {setDS, true},
+	TypeEID:        {setEID, true},
+	TypeEUI48:      {setEUI48, false},
+	TypeEUI64:      {setEUI64, false},
+	TypeGID:        {setGID, false},
+	TypeGPOS:       {setGPOS, false},
+	TypeHINFO:      {setHINFO, true},
+	TypeHIP:        {setHIP, true},
+	TypeKX:         {setKX, false},
+	TypeL32:        {setL32, false},
+	TypeL64:        {setL64, false},
+	TypeLOC:        {setLOC, true},
+	TypeLP:         {setLP, false},
+	TypeMB:         {setMB, false},
+	TypeMD:         {setMD, false},
+	TypeMF:         {setMF, false},
+	TypeMG:         {setMG, false},
+	TypeMINFO:      {setMINFO, false},
+	TypeMR:         {setMR, false},
+	TypeMX:         {setMX, false},
+	TypeNAPTR:      {setNAPTR, false},
+	TypeNID:        {setNID, false},
+	TypeNIMLOC:     {setNIMLOC, true},
+	TypeNINFO:      {setNINFO, true},
+	TypeNSAPPTR:    {setNSAPPTR, false},
+	TypeNSEC3PARAM: {setNSEC3PARAM, false},
+	TypeNSEC3:      {setNSEC3, true},
+	TypeNSEC:       {setNSEC, true},
+	TypeNS:         {setNS, false},
+	TypeOPENPGPKEY: {setOPENPGPKEY, true},
+	TypePTR:        {setPTR, false},
+	TypePX:         {setPX, false},
+	TypeSIG:        {setSIG, true},
+	TypeRKEY:       {setRKEY, true},
+	TypeRP:         {setRP, false},
+	TypeRRSIG:      {setRRSIG, true},
+	TypeRT:         {setRT, false},
+	TypeSMIMEA:     {setSMIMEA, true},
+	TypeSOA:        {setSOA, false},
+	TypeSPF:        {setSPF, true},
+	TypeSRV:        {setSRV, false},
+	TypeSSHFP:      {setSSHFP, true},
+	TypeTALINK:     {setTALINK, false},
+	TypeTA:         {setTA, true},
+	TypeTLSA:       {setTLSA, true},
+	TypeTXT:        {setTXT, true},
+	TypeUID:        {setUID, false},
+	TypeUINFO:      {setUINFO, true},
+	TypeURI:        {setURI, true},
+	TypeX25:        {setX25, false},
 }
