@@ -29,9 +29,6 @@ const (
 	FmtProtoDelim   Format = ProtoFmt + ` encoding=delimited`
 	FmtProtoText    Format = ProtoFmt + ` encoding=text`
 	FmtProtoCompact Format = ProtoFmt + ` encoding=compact-text`
-
-	// fmtJSON2 is hidden as it is deprecated.
-	fmtJSON2 Format = `application/json; version=0.0.2`
 )
 
 const (

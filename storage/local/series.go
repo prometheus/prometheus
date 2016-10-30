@@ -14,6 +14,7 @@
 package local
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -495,6 +496,10 @@ func (s *memorySeries) preloadChunksForRange(
 	}
 	if throughIdx == len(s.chunkDescs) {
 		throughIdx--
+	}
+	if fromIdx > throughIdx {
+		// Guard against nonsensical result. The caller will quarantine the series with a meaningful log entry.
+		return nopIter, fmt.Errorf("fromIdx=%d is greater than throughIdx=%d, likely caused by data corruption", fromIdx, throughIdx)
 	}
 
 	pinIndexes := make([]int, 0, throughIdx-fromIdx+1)
