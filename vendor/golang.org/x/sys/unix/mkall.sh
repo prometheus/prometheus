@@ -223,6 +223,13 @@ linux_s390x)
 	# package generates its version of the types file.
 	mktypes="GOARCH=$GOARCH go tool cgo -godefs -- -fsigned-char"
 	;;
+linux_sparc64)
+	GOOSARCH_in=syscall_linux_sparc64.go
+	unistd_h=/usr/include/sparc64-linux-gnu/asm/unistd.h
+	mkerrors="$mkerrors -m64"
+	mksysnum="./mksysnum_linux.pl $unistd_h"
+	mktypes="GOARCH=$GOARCH go tool cgo -godefs"
+	;;
 netbsd_386)
 	mkerrors="$mkerrors -m32"
 	mksyscall="./mksyscall.pl -l32 -netbsd"

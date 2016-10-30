@@ -127,6 +127,7 @@ includes_Linux='
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/icmpv6.h>
+#include <linux/serial.h>
 #include <net/route.h>
 #include <asm/termbits.h>
 
@@ -140,6 +141,12 @@ includes_Linux='
 
 #ifndef PTRACE_SETREGS
 #define PTRACE_SETREGS	0xd
+#endif
+
+#ifdef SOL_BLUETOOTH
+// SPARC includes this in /usr/include/sparc64-linux-gnu/bits/socket.h
+// but it is already in bluetooth_linux.go
+#undef SOL_BLUETOOTH
 #endif
 '
 
