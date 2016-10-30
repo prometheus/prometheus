@@ -2,7 +2,6 @@ package dns
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,7 +15,7 @@ import (
 // * [[ttl][class]]
 // * type
 // * rhs (rdata)
-// But we are lazy here, only the range is parsed *all* occurrences
+// But we are lazy here, only the range is parsed *all* occurences
 // of $ after that are interpreted.
 // Any error are returned as a string value, the empty string signals
 // "no error".
@@ -26,7 +25,7 @@ func generate(l lex, c chan lex, t chan *Token, o string) string {
 		if i+1 == len(l.token) {
 			return "bad step in $GENERATE range"
 		}
-		if s, err := strconv.Atoi(l.token[i+1:]); err == nil {
+		if s, e := strconv.Atoi(l.token[i+1:]); e == nil {
 			if s < 0 {
 				return "bad step in $GENERATE range"
 			}
@@ -66,7 +65,7 @@ BuildRR:
 			escape bool
 			dom    bytes.Buffer
 			mod    string
-			err    error
+			err    string
 			offset int
 		)
 
@@ -105,8 +104,8 @@ BuildRR:
 						return "bad modifier in $GENERATE"
 					}
 					mod, offset, err = modToPrintf(s[j+2 : j+2+sep])
-					if err != nil {
-						return err.Error()
+					if err != "" {
+						return err
 					}
 					j += 2 + sep // Jump to it
 				}
@@ -120,9 +119,9 @@ BuildRR:
 			}
 		}
 		// Re-parse the RR and send it on the current channel t
-		rx, err := NewRR("$ORIGIN " + o + "\n" + dom.String())
-		if err != nil {
-			return err.Error()
+		rx, e := NewRR("$ORIGIN " + o + "\n" + dom.String())
+		if e != nil {
+			return e.(*ParseError).err
 		}
 		t <- &Token{RR: rx}
 		// Its more efficient to first built the rrlist and then parse it in
@@ -132,28 +131,28 @@ BuildRR:
 }
 
 // Convert a $GENERATE modifier 0,0,d to something Printf can deal with.
-func modToPrintf(s string) (string, int, error) {
+func modToPrintf(s string) (string, int, string) {
 	xs := strings.SplitN(s, ",", 3)
 	if len(xs) != 3 {
-		return "", 0, errors.New("bad modifier in $GENERATE")
+		return "", 0, "bad modifier in $GENERATE"
 	}
 	// xs[0] is offset, xs[1] is width, xs[2] is base
 	if xs[2] != "o" && xs[2] != "d" && xs[2] != "x" && xs[2] != "X" {
-		return "", 0, errors.New("bad base in $GENERATE")
+		return "", 0, "bad base in $GENERATE"
 	}
 	offset, err := strconv.Atoi(xs[0])
 	if err != nil || offset > 255 {
-		return "", 0, errors.New("bad offset in $GENERATE")
+		return "", 0, "bad offset in $GENERATE"
 	}
 	width, err := strconv.Atoi(xs[1])
 	if err != nil || width > 255 {
-		return "", offset, errors.New("bad width in $GENERATE")
+		return "", offset, "bad width in $GENERATE"
 	}
 	switch {
 	case width < 0:
-		return "", offset, errors.New("bad width in $GENERATE")
+		return "", offset, "bad width in $GENERATE"
 	case width == 0:
-		return "%" + xs[1] + xs[2], offset, nil
+		return "%" + xs[1] + xs[2], offset, ""
 	}
-	return "%0" + xs[1] + xs[2], offset, nil
+	return "%0" + xs[1] + xs[2], offset, ""
 }

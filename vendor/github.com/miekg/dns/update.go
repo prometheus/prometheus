@@ -3,22 +3,18 @@ package dns
 // NameUsed sets the RRs in the prereq section to
 // "Name is in use" RRs. RFC 2136 section 2.4.4.
 func (u *Msg) NameUsed(rr []RR) {
-	if u.Answer == nil {
-		u.Answer = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		u.Answer = append(u.Answer, &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: TypeANY, Class: ClassANY}})
+	u.Answer = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Answer[i] = &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: TypeANY, Class: ClassANY}}
 	}
 }
 
 // NameNotUsed sets the RRs in the prereq section to
 // "Name is in not use" RRs. RFC 2136 section 2.4.5.
 func (u *Msg) NameNotUsed(rr []RR) {
-	if u.Answer == nil {
-		u.Answer = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		u.Answer = append(u.Answer, &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: TypeANY, Class: ClassNONE}})
+	u.Answer = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Answer[i] = &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: TypeANY, Class: ClassNONE}}
 	}
 }
 
@@ -28,34 +24,34 @@ func (u *Msg) Used(rr []RR) {
 	if len(u.Question) == 0 {
 		panic("dns: empty question section")
 	}
-	if u.Answer == nil {
-		u.Answer = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		r.Header().Class = u.Question[0].Qclass
-		u.Answer = append(u.Answer, r)
+	u.Answer = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Answer[i] = r
+		u.Answer[i].Header().Class = u.Question[0].Qclass
 	}
 }
 
 // RRsetUsed sets the RRs in the prereq section to
 // "RRset exists (value independent -- no rdata)" RRs. RFC 2136 section 2.4.1.
 func (u *Msg) RRsetUsed(rr []RR) {
-	if u.Answer == nil {
-		u.Answer = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		u.Answer = append(u.Answer, &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: r.Header().Rrtype, Class: ClassANY}})
+	u.Answer = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Answer[i] = r
+		u.Answer[i].Header().Class = ClassANY
+		u.Answer[i].Header().Ttl = 0
+		u.Answer[i].Header().Rdlength = 0
 	}
 }
 
 // RRsetNotUsed sets the RRs in the prereq section to
 // "RRset does not exist" RRs. RFC 2136 section 2.4.3.
 func (u *Msg) RRsetNotUsed(rr []RR) {
-	if u.Answer == nil {
-		u.Answer = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		u.Answer = append(u.Answer, &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: r.Header().Rrtype, Class: ClassNONE}})
+	u.Answer = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Answer[i] = r
+		u.Answer[i].Header().Class = ClassNONE
+		u.Answer[i].Header().Rdlength = 0
+		u.Answer[i].Header().Ttl = 0
 	}
 }
 
@@ -64,43 +60,35 @@ func (u *Msg) Insert(rr []RR) {
 	if len(u.Question) == 0 {
 		panic("dns: empty question section")
 	}
-	if u.Ns == nil {
-		u.Ns = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		r.Header().Class = u.Question[0].Qclass
-		u.Ns = append(u.Ns, r)
+	u.Ns = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Ns[i] = r
+		u.Ns[i].Header().Class = u.Question[0].Qclass
 	}
 }
 
 // RemoveRRset creates a dynamic update packet that deletes an RRset, see RFC 2136 section 2.5.2.
 func (u *Msg) RemoveRRset(rr []RR) {
-	if u.Ns == nil {
-		u.Ns = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		u.Ns = append(u.Ns, &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: r.Header().Rrtype, Class: ClassANY}})
+	u.Ns = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Ns[i] = &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: r.Header().Rrtype, Class: ClassANY}}
 	}
 }
 
 // RemoveName creates a dynamic update packet that deletes all RRsets of a name, see RFC 2136 section 2.5.3
 func (u *Msg) RemoveName(rr []RR) {
-	if u.Ns == nil {
-		u.Ns = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		u.Ns = append(u.Ns, &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: TypeANY, Class: ClassANY}})
+	u.Ns = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Ns[i] = &ANY{Hdr: RR_Header{Name: r.Header().Name, Ttl: 0, Rrtype: TypeANY, Class: ClassANY}}
 	}
 }
 
-// Remove creates a dynamic update packet deletes RR from a RRSset, see RFC 2136 section 2.5.4
+// Remove creates a dynamic update packet deletes RR from the RRSset, see RFC 2136 section 2.5.4
 func (u *Msg) Remove(rr []RR) {
-	if u.Ns == nil {
-		u.Ns = make([]RR, 0, len(rr))
-	}
-	for _, r := range rr {
-		r.Header().Class = ClassNONE
-		r.Header().Ttl = 0
-		u.Ns = append(u.Ns, r)
+	u.Ns = make([]RR, len(rr))
+	for i, r := range rr {
+		u.Ns[i] = r
+		u.Ns[i].Header().Class = ClassNONE
+		u.Ns[i].Header().Ttl = 0
 	}
 }

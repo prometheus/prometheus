@@ -4,8 +4,6 @@ package dns
 
 import (
 	"bytes"
-	"crypto/tls"
-	"encoding/binary"
 	"io"
 	"net"
 	"time"
@@ -26,22 +24,27 @@ type Conn struct {
 
 // A Client defines parameters for a DNS client.
 type Client struct {
-	Net            string            // if "tcp" or "tcp-tls" (DNS over TLS) a TCP query will be initiated, otherwise an UDP one (default is "" for UDP)
+	Net            string            // if "tcp" a TCP query will be initiated, otherwise an UDP one (default is "" for UDP)
 	UDPSize        uint16            // minimum receive buffer for UDP messages
-	TLSConfig      *tls.Config       // TLS connection configuration
-	Timeout        time.Duration     // a cumulative timeout for dial, write and read, defaults to 0 (disabled) - overrides DialTimeout, ReadTimeout and WriteTimeout when non-zero
-	DialTimeout    time.Duration     // net.DialTimeout, defaults to 2 seconds - overridden by Timeout when that value is non-zero
-	ReadTimeout    time.Duration     // net.Conn.SetReadTimeout value for connections, defaults to 2 seconds - overridden by Timeout when that value is non-zero
-	WriteTimeout   time.Duration     // net.Conn.SetWriteTimeout value for connections, defaults to 2 seconds - overridden by Timeout when that value is non-zero
+	DialTimeout    time.Duration     // net.DialTimeout, defaults to 2 seconds
+	ReadTimeout    time.Duration     // net.Conn.SetReadTimeout value for connections, defaults to 2 seconds
+	WriteTimeout   time.Duration     // net.Conn.SetWriteTimeout value for connections, defaults to 2 seconds
 	TsigSecret     map[string]string // secret(s) for Tsig map[<zonename>]<base64 secret>, zonename must be fully qualified
 	SingleInflight bool              // if true suppress multiple outstanding queries for the same Qname, Qtype and Qclass
 	group          singleflight
 }
 
 // Exchange performs a synchronous UDP query. It sends the message m to the address
-// contained in a and waits for a reply. Exchange does not retry a failed query, nor
+// contained in a and waits for an reply. Exchange does not retry a failed query, nor
 // will it fall back to TCP in case of truncation.
-// See client.Exchange for more information on setting larger buffer sizes.
+// If you need to send a DNS message on an already existing connection, you can use the
+// following:
+//
+//	co := &dns.Conn{Conn: c} // c is your net.Conn
+//	co.WriteMsg(m)
+//	in, err  := co.ReadMsg()
+//	co.Close()
+//
 func Exchange(m *Msg, a string) (r *Msg, err error) {
 	var co *Conn
 	co, err = DialTimeout("udp", a, dnsTimeout)
@@ -50,6 +53,8 @@ func Exchange(m *Msg, a string) (r *Msg, err error) {
 	}
 
 	defer co.Close()
+	co.SetReadDeadline(time.Now().Add(dnsTimeout))
+	co.SetWriteDeadline(time.Now().Add(dnsTimeout))
 
 	opt := m.IsEdns0()
 	// If EDNS0 is used use that for size.
@@ -57,12 +62,9 @@ func Exchange(m *Msg, a string) (r *Msg, err error) {
 		co.UDPSize = opt.UDPSize()
 	}
 
-	co.SetWriteDeadline(time.Now().Add(dnsTimeout))
 	if err = co.WriteMsg(m); err != nil {
 		return nil, err
 	}
-
-	co.SetReadDeadline(time.Now().Add(dnsTimeout))
 	r, err = co.ReadMsg()
 	if err == nil && r.Id != m.Id {
 		err = ErrId
@@ -93,18 +95,14 @@ func ExchangeConn(c net.Conn, m *Msg) (r *Msg, err error) {
 	return r, err
 }
 
-// Exchange performs a synchronous query. It sends the message m to the address
-// contained in a and waits for a reply. Basic use pattern with a *dns.Client:
+// Exchange performs an synchronous query. It sends the message m to the address
+// contained in a and waits for an reply. Basic use pattern with a *dns.Client:
 //
 //	c := new(dns.Client)
 //	in, rtt, err := c.Exchange(message, "127.0.0.1:53")
 //
 // Exchange does not retry a failed query, nor will it fall back to TCP in
 // case of truncation.
-// It is up to the caller to create a message that allows for larger responses to be
-// returned. Specifically this means adding an EDNS0 OPT RR that will advertise a larger
-// buffer, see SetEdns0. Messsages without an OPT RR will fallback to the historic limit
-// of 512 bytes.
 func (c *Client) Exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err error) {
 	if !c.SingleInflight {
 		return c.exchange(m, a)
@@ -131,9 +129,6 @@ func (c *Client) Exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err erro
 }
 
 func (c *Client) dialTimeout() time.Duration {
-	if c.Timeout != 0 {
-		return c.Timeout
-	}
 	if c.DialTimeout != 0 {
 		return c.DialTimeout
 	}
@@ -156,36 +151,11 @@ func (c *Client) writeTimeout() time.Duration {
 
 func (c *Client) exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err error) {
 	var co *Conn
-	network := "udp"
-	tls := false
-
-	switch c.Net {
-	case "tcp-tls":
-		network = "tcp"
-		tls = true
-	case "tcp4-tls":
-		network = "tcp4"
-		tls = true
-	case "tcp6-tls":
-		network = "tcp6"
-		tls = true
-	default:
-		if c.Net != "" {
-			network = c.Net
-		}
-	}
-
-	var deadline time.Time
-	if c.Timeout != 0 {
-		deadline = time.Now().Add(c.Timeout)
-	}
-
-	if tls {
-		co, err = DialTimeoutWithTLS(network, a, c.TLSConfig, c.dialTimeout())
+	if c.Net == "" {
+		co, err = DialTimeout("udp", a, c.dialTimeout())
 	} else {
-		co, err = DialTimeout(network, a, c.dialTimeout())
+		co, err = DialTimeout(c.Net, a, c.dialTimeout())
 	}
-
 	if err != nil {
 		return nil, 0, err
 	}
@@ -201,13 +171,13 @@ func (c *Client) exchange(m *Msg, a string) (r *Msg, rtt time.Duration, err erro
 		co.UDPSize = c.UDPSize
 	}
 
+	co.SetReadDeadline(time.Now().Add(c.readTimeout()))
+	co.SetWriteDeadline(time.Now().Add(c.writeTimeout()))
+
 	co.TsigSecret = c.TsigSecret
-	co.SetWriteDeadline(deadlineOrTimeout(deadline, c.writeTimeout()))
 	if err = co.WriteMsg(m); err != nil {
 		return nil, 0, err
 	}
-
-	co.SetReadDeadline(deadlineOrTimeout(deadline, c.readTimeout()))
 	r, err = co.ReadMsg()
 	if err == nil && r.Id != m.Id {
 		err = ErrId
@@ -226,12 +196,6 @@ func (co *Conn) ReadMsg() (*Msg, error) {
 
 	m := new(Msg)
 	if err := m.Unpack(p); err != nil {
-		// If ErrTruncated was returned, we still want to allow the user to use
-		// the message, but naively they can just check err if they don't want
-		// to use a truncated message
-		if err == ErrTruncated {
-			return m, err
-		}
 		return nil, err
 	}
 	if t := m.IsTsig(); t != nil {
@@ -254,26 +218,21 @@ func (co *Conn) ReadMsgHeader(hdr *Header) ([]byte, error) {
 		err error
 	)
 
-	switch t := co.Conn.(type) {
-	case *net.TCPConn, *tls.Conn:
-		r := t.(io.Reader)
-
+	if t, ok := co.Conn.(*net.TCPConn); ok {
 		// First two bytes specify the length of the entire message.
-		l, err := tcpMsgLen(r)
+		l, err := tcpMsgLen(t)
 		if err != nil {
 			return nil, err
 		}
 		p = make([]byte, l)
-		n, err = tcpRead(r, p)
-		co.rtt = time.Since(co.t)
-	default:
+		n, err = tcpRead(t, p)
+	} else {
 		if co.UDPSize > MinMsgSize {
 			p = make([]byte, co.UDPSize)
 		} else {
 			p = make([]byte, MinMsgSize)
 		}
 		n, err = co.Read(p)
-		co.rtt = time.Since(co.t)
 	}
 
 	if err != nil {
@@ -284,17 +243,15 @@ func (co *Conn) ReadMsgHeader(hdr *Header) ([]byte, error) {
 
 	p = p[:n]
 	if hdr != nil {
-		dh, _, err := unpackMsgHdr(p, 0)
-		if err != nil {
+		if _, err = UnpackStruct(hdr, p, 0); err != nil {
 			return nil, err
 		}
-		*hdr = dh
 	}
 	return p, err
 }
 
 // tcpMsgLen is a helper func to read first two bytes of stream as uint16 packet length.
-func tcpMsgLen(t io.Reader) (int, error) {
+func tcpMsgLen(t *net.TCPConn) (int, error) {
 	p := []byte{0, 0}
 	n, err := t.Read(p)
 	if err != nil {
@@ -303,7 +260,7 @@ func tcpMsgLen(t io.Reader) (int, error) {
 	if n != 2 {
 		return 0, ErrShortRead
 	}
-	l := binary.BigEndian.Uint16(p)
+	l, _ := unpackUint16(p, 0)
 	if l == 0 {
 		return 0, ErrShortRead
 	}
@@ -311,7 +268,7 @@ func tcpMsgLen(t io.Reader) (int, error) {
 }
 
 // tcpRead calls TCPConn.Read enough times to fill allocated buffer.
-func tcpRead(t io.Reader, p []byte) (int, error) {
+func tcpRead(t *net.TCPConn, p []byte) (int, error) {
 	n, err := t.Read(p)
 	if err != nil {
 		return n, err
@@ -334,28 +291,27 @@ func (co *Conn) Read(p []byte) (n int, err error) {
 	if len(p) < 2 {
 		return 0, io.ErrShortBuffer
 	}
-	switch t := co.Conn.(type) {
-	case *net.TCPConn, *tls.Conn:
-		r := t.(io.Reader)
-
-		l, err := tcpMsgLen(r)
+	if t, ok := co.Conn.(*net.TCPConn); ok {
+		l, err := tcpMsgLen(t)
 		if err != nil {
 			return 0, err
 		}
 		if l > len(p) {
 			return int(l), io.ErrShortBuffer
 		}
-		return tcpRead(r, p[:l])
+		return tcpRead(t, p[:l])
 	}
 	// UDP connection
 	n, err = co.Conn.Read(p)
 	if err != nil {
 		return n, err
 	}
+
+	co.rtt = time.Since(co.t)
 	return n, err
 }
 
-// WriteMsg sends a message through the connection co.
+// WriteMsg sends a message throught the connection co.
 // If the message m contains a TSIG record the transaction
 // signature is calculated.
 func (co *Conn) WriteMsg(m *Msg) (err error) {
@@ -366,7 +322,7 @@ func (co *Conn) WriteMsg(m *Msg) (err error) {
 			return ErrSecret
 		}
 		out, mac, err = TsigGenerate(m, co.TsigSecret[t.Hdr.Name], co.tsigRequestMAC, false)
-		// Set for the next read, although only used in zone transfers
+		// Set for the next read, allthough only used in zone transfers
 		co.tsigRequestMAC = mac
 	} else {
 		out, err = m.Pack()
@@ -383,10 +339,7 @@ func (co *Conn) WriteMsg(m *Msg) (err error) {
 
 // Write implements the net.Conn Write method.
 func (co *Conn) Write(p []byte) (n int, err error) {
-	switch t := co.Conn.(type) {
-	case *net.TCPConn, *tls.Conn:
-		w := t.(io.Writer)
-
+	if t, ok := co.Conn.(*net.TCPConn); ok {
 		lp := len(p)
 		if lp < 2 {
 			return 0, io.ErrShortBuffer
@@ -395,9 +348,9 @@ func (co *Conn) Write(p []byte) (n int, err error) {
 			return 0, &Error{err: "message too large"}
 		}
 		l := make([]byte, 2, lp+2)
-		binary.BigEndian.PutUint16(l, uint16(lp))
+		l[0], l[1] = packUint16(uint16(lp))
 		p = append(l, p...)
-		n, err := io.Copy(w, bytes.NewReader(p))
+		n, err := io.Copy(t, bytes.NewReader(p))
 		return int(n), err
 	}
 	n, err = co.Conn.(*net.UDPConn).Write(p)
@@ -422,34 +375,4 @@ func DialTimeout(network, address string, timeout time.Duration) (conn *Conn, er
 		return nil, err
 	}
 	return conn, nil
-}
-
-// DialWithTLS connects to the address on the named network with TLS.
-func DialWithTLS(network, address string, tlsConfig *tls.Config) (conn *Conn, err error) {
-	conn = new(Conn)
-	conn.Conn, err = tls.Dial(network, address, tlsConfig)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
-}
-
-// DialTimeoutWithTLS acts like DialWithTLS but takes a timeout.
-func DialTimeoutWithTLS(network, address string, tlsConfig *tls.Config, timeout time.Duration) (conn *Conn, err error) {
-	var dialer net.Dialer
-	dialer.Timeout = timeout
-
-	conn = new(Conn)
-	conn.Conn, err = tls.DialWithDialer(&dialer, network, address, tlsConfig)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
-}
-
-func deadlineOrTimeout(deadline time.Time, timeout time.Duration) time.Time {
-	if deadline.IsZero() {
-		return time.Now().Add(timeout)
-	}
-	return deadline
 }
