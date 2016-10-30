@@ -1,4 +1,4 @@
-// +build !linux,!plan9
+// +build !linux
 
 package dns
 
