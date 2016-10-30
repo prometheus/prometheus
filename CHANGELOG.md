@@ -1,4 +1,4 @@
-## 1.2.2 / 2016-10-28
+## 1.2.2 / 2016-10-30
 
 * [BUGFIX] UI: Deal properly with aborted requests.
 * [BUGFIX] UI: Decode URL query parameters properly.
