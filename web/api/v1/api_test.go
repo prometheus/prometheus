@@ -198,6 +198,17 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
+		// Start after end
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"2"},
+				"end":   []string{"1"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
 		{
 			endpoint: api.labelValues,
 			params: map[string]string{
