@@ -480,6 +480,10 @@ func (bit *boundedIterator) Close() {
 
 // QueryRange implements Storage.
 func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+	if through.Before(from) {
+		// In that case, nothing will match.
+		return nil, nil
+	}
 	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, matchers...)
 	if err != nil {
 		return nil, err
@@ -494,6 +498,9 @@ func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.
 
 // QueryInstant implements Storage.
 func (s *MemorySeriesStorage) QueryInstant(_ context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+	if stalenessDelta < 0 {
+		panic("negative staleness delta")
+	}
 	from := ts.Add(-stalenessDelta)
 	through := ts
 
