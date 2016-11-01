@@ -81,7 +81,6 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = defaults.DefaultChainCredentials
 	}
-
 	return &EC2Discovery{
 		aws: &aws.Config{
 			Region:      &conf.Region,
