@@ -16,7 +16,6 @@ package discovery
 import (
 	"fmt"
 	"net"
-	"net/http"
 	"strings"
 	"time"
 
@@ -83,18 +82,12 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 		creds = defaults.DefaultChainCredentials
 	}
 
-	var awsConfig = &aws.Config{
-		Region:      &conf.Region,
-		Credentials: creds,
-	}
-
-	client := &http.Client{Transport: &http.Transport{
-		Proxy: http.ProxyURL(conf.ProxyURL.URL),
-	}}
-	awsConfig.HTTPClient = client
-
 	return &EC2Discovery{
-		aws:      awsConfig,
+		aws: &aws.Config{
+			Region:      &conf.Region,
+			Credentials: creds,
+			HTTPClient:  defaults.DefaultConfig.HTTPClient,
+		},
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 	}
