@@ -504,6 +504,39 @@ func BenchmarkQueryRange(b *testing.B) {
 	})
 }
 
+func TestQueryRangeThroughBeforeFrom(t *testing.T) {
+	now := model.Now()
+	insertStart := now.Add(-2 * time.Hour)
+
+	s, closer := NewTestStorage(t, 2)
+	defer closer.Close()
+
+	// Stop maintenance loop to prevent actual purging.
+	close(s.loopStopping)
+	<-s.loopStopped
+	<-s.logThrottlingStopped
+	// Recreate channel to avoid panic when we really shut down.
+	s.loopStopping = make(chan struct{})
+
+	for i := 0; i < 8192; i++ {
+		s.Append(&model.Sample{
+			Metric:    model.Metric{"__name__": "testmetric", "job": "test"},
+			Timestamp: insertStart.Add(time.Duration(i) * time.Second),
+			Value:     model.SampleValue(rand.Float64()),
+		})
+	}
+	s.WaitForIndexing()
+
+	lm, _ := metric.NewLabelMatcher(metric.Equal, "job", "test")
+	iters, err := s.QueryRange(context.Background(), now.Add(-30*time.Minute), now.Add(-90*time.Minute), lm)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(iters) != 0 {
+		t.Errorf("expected no iters to be returned, got %d", len(iters))
+	}
+}
+
 func TestRetentionCutoff(t *testing.T) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
