@@ -262,6 +262,10 @@ func parse(args []string) error {
 		return err
 	}
 
+	if promql.StalenessDelta < 0 {
+		return fmt.Errorf("negative staleness delta: %s", promql.StalenessDelta)
+	}
+
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
