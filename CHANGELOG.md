@@ -1,5 +1,6 @@
 ## 1.2.2 / 2016-10-30
 
+* [BUGFIX] Correctly handle on() in alerts.
 * [BUGFIX] UI: Deal properly with aborted requests.
 * [BUGFIX] UI: Decode URL query parameters properly.
 * [BUGFIX] Storage: Deal better with data corruption (non-monotonic timestamps).
