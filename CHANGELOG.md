@@ -1,4 +1,4 @@
-## 1.3.0-beta.0 / 2016-10-18
+## 1.3.0 / 2016-11-01
 
 This is a breaking change to the Kubernetes service discovery.
 
@@ -9,6 +9,8 @@ This is a breaking change to the Kubernetes service discovery.
 * [ENHANCEMENT] Add Azure SD metrics.
 * [ENHANCEMENT] Add fuzzy search to `/graph` textarea.
 * [ENHANCEMENT] Always show instance labels on target page.
+* [BUGFIX] Validate query end time is not before start time.
+* [BUGFIX] Error on negative `-storage.staleness-delta`
 
 ## 1.2.2 / 2016-10-30
 
