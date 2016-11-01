@@ -182,6 +182,11 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start time")
+		return nil, &apiError{errorBadData, err}
+	}
+
 	step, err := parseDuration(r.FormValue("step"))
 	if err != nil {
 		return nil, &apiError{errorBadData, err}

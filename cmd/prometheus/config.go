@@ -213,6 +213,11 @@ func init() {
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
 
+	cfg.fs.DurationVar(
+		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
+		"The timeout to use when sending samples to the remote storage.",
+	)
+
 	// Alertmanager.
 	cfg.fs.Var(
 		&cfg.alertmanagerURLs, "alertmanager.url",
@@ -255,6 +260,10 @@ func parse(args []string) error {
 			err = fmt.Errorf("Non-flag argument on command line: %q", cfg.fs.Args()[0])
 		}
 		return err
+	}
+
+	if promql.StalenessDelta < 0 {
+		return fmt.Errorf("negative staleness delta: %s", promql.StalenessDelta)
 	}
 
 	if err := parsePrometheusURL(); err != nil {

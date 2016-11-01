@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/arm/network"
 	"github.com/Azure/go-autorest/autorest/azure"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -40,6 +41,26 @@ const (
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 )
+
+var (
+	azureSDRefreshFailuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "sd_azure_refresh_failures_total",
+			Help:      "Number of Azure-SD refresh failures.",
+		})
+	azureSDRefreshDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Namespace: namespace,
+			Name:      "sd_azure_refresh_duration_seconds",
+			Help:      "The duration of a Azure-SD refresh in seconds.",
+		})
+)
+
+func init() {
+	prometheus.MustRegister(azureSDRefreshDuration)
+	prometheus.MustRegister(azureSDRefreshFailuresCount)
+}
 
 // AzureDiscovery periodically performs Azure-SD requests. It implements
 // the TargetProvider interface.
@@ -135,8 +156,15 @@ func newAzureResourceFromID(id string) (azureResource, error) {
 	}, nil
 }
 
-func (ad *AzureDiscovery) refresh() (*config.TargetGroup, error) {
-	tg := &config.TargetGroup{}
+func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
+	t0 := time.Now()
+	defer func() {
+		azureSDRefreshDuration.Observe(time.Since(t0).Seconds())
+		if err != nil {
+			azureSDRefreshFailuresCount.Inc()
+		}
+	}()
+	tg = &config.TargetGroup{}
 	client, err := createAzureClient(*ad.cfg)
 	if err != nil {
 		return tg, fmt.Errorf("could not create Azure client: %s", err)

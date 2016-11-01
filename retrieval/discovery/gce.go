@@ -50,30 +50,23 @@ const (
 )
 
 var (
-	gceSDScrapesCount = prometheus.NewCounter(
+	gceSDRefreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Name:      "gce_sd_scrapes_total",
-			Help:      "The number of GCE-SD scrapes.",
+			Name:      "sd_gce_refresh_failures_total",
+			Help:      "The number of GCE-SD refresh failures.",
 		})
-	gceSDScrapeFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "gce_sd_scrape_failures_total",
-			Help:      "The number of GCE-SD scrape failures.",
-		})
-	gceSDScrapeDuration = prometheus.NewSummary(
+	gceSDRefreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
-			Name:      "gce_sd_scrape_duration",
-			Help:      "The duration of a GCE-SD scrape in seconds.",
+			Name:      "sd_gce_refresh_duration",
+			Help:      "The duration of a GCE-SD refresh in seconds.",
 		})
 )
 
 func init() {
-	prometheus.MustRegister(gceSDScrapesCount)
-	prometheus.MustRegister(gceSDScrapeFailuresCount)
-	prometheus.MustRegister(gceSDScrapeDuration)
+	prometheus.MustRegister(gceSDRefreshFailuresCount)
+	prometheus.MustRegister(gceSDRefreshDuration)
 }
 
 // GCEDiscovery periodically performs GCE-SD requests. It implements
@@ -146,10 +139,9 @@ func (gd *GCEDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
-		gceSDScrapeDuration.Observe(time.Since(t0).Seconds())
-		gceSDScrapesCount.Inc()
+		gceSDRefreshDuration.Observe(time.Since(t0).Seconds())
 		if err != nil {
-			gceSDScrapeFailuresCount.Inc()
+			gceSDRefreshFailuresCount.Inc()
 		}
 	}()
 
@@ -210,7 +202,7 @@ func (gd *GCEDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		return nil
 	})
 	if err != nil {
-		return tg, fmt.Errorf("error retrieving scrape targets from gce: %s", err)
+		return tg, fmt.Errorf("error retrieving refresh targets from gce: %s", err)
 	}
 	return tg, nil
 }

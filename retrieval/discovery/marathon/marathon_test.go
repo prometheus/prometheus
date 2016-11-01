@@ -15,6 +15,7 @@ package marathon
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -27,13 +28,15 @@ import (
 var (
 	marathonValidLabel = map[string]string{"prometheus": "yes"}
 	testServers        = []string{"http://localhost:8080"}
+	conf               = config.MarathonSDConfig{Servers: testServers}
 )
 
 func testUpdateServices(client AppListClient, ch chan []*config.TargetGroup) error {
-	md := Discovery{
-		Servers: testServers,
-		Client:  client,
+	md, err := NewDiscovery(&conf)
+	if err != nil {
+		return err
 	}
+	md.appsClient = client
 	return md.updateServices(context.Background(), ch)
 }
 
@@ -41,7 +44,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 	var (
 		errTesting = errors.New("testing failure")
 		ch         = make(chan []*config.TargetGroup, 1)
-		client     = func(url string) (*AppList, error) { return nil, errTesting }
+		client     = func(client *http.Client, url string) (*AppList, error) { return nil, errTesting }
 	)
 	if err := testUpdateServices(client, ch); err != errTesting {
 		t.Fatalf("Expected error: %s", err)
@@ -56,7 +59,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 func TestMarathonSDEmptyList(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(url string) (*AppList, error) { return &AppList{}, nil }
+		client = func(client *http.Client, url string) (*AppList, error) { return &AppList{}, nil }
 	)
 	if err := testUpdateServices(client, ch); err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -95,7 +98,7 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 func TestMarathonSDSendGroup(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(url string) (*AppList, error) {
+		client = func(client *http.Client, url string) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 	)
@@ -122,16 +125,14 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	var (
-		ch     = make(chan []*config.TargetGroup)
-		client = func(url string) (*AppList, error) {
-			return marathonTestAppList(marathonValidLabel, 1), nil
-		}
-		md = Discovery{
-			Servers: testServers,
-			Client:  client,
-		}
-	)
+	var ch = make(chan []*config.TargetGroup)
+	md, err := NewDiscovery(&conf)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
+		return marathonTestAppList(marathonValidLabel, 1), nil
+	}
 	go func() {
 		up1 := (<-ch)[0]
 		up2 := (<-ch)[0]
@@ -142,32 +143,31 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 			}
 		}
 	}()
-	err := md.updateServices(context.Background(), ch)
-	if err != nil {
+	if err := md.updateServices(context.Background(), ch); err != nil {
 		t.Fatalf("Got error on first update: %s", err)
 	}
 
-	md.Client = func(url string) (*AppList, error) {
+	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
-	err = md.updateServices(context.Background(), ch)
-	if err != nil {
+	if err := md.updateServices(context.Background(), ch); err != nil {
 		t.Fatalf("Got error on second update: %s", err)
 	}
 }
 
 func TestMarathonSDRunAndStop(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup)
-		client = func(url string) (*AppList, error) {
-			return marathonTestAppList(marathonValidLabel, 1), nil
-		}
-		md = Discovery{
-			Servers:         testServers,
-			Client:          client,
-			RefreshInterval: time.Millisecond * 10,
-		}
+		refreshInterval = model.Duration(time.Millisecond * 10)
+		conf            = config.MarathonSDConfig{Servers: testServers, RefreshInterval: refreshInterval}
+		ch              = make(chan []*config.TargetGroup)
 	)
+	md, err := NewDiscovery(&conf)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
+		return marathonTestAppList(marathonValidLabel, 1), nil
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -178,7 +178,7 @@ func TestMarathonSDRunAndStop(t *testing.T) {
 					return
 				}
 				cancel()
-			case <-time.After(md.RefreshInterval * 3):
+			case <-time.After(md.refreshInterval * 3):
 				cancel()
 				t.Fatalf("Update took too long.")
 			}
@@ -213,7 +213,7 @@ func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int)
 func TestMarathonZeroTaskPorts(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(url string) (*AppList, error) {
+		client = func(client *http.Client, url string) (*AppList, error) {
 			return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 		}
 	)

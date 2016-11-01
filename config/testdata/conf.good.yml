@@ -104,6 +104,13 @@ scrape_configs:
   - server: 'localhost:1234'
     services: ['nginx', 'cache', 'mysql']
 
+  relabel_configs:
+  - source_labels: [__meta_sd_consul_tags]
+    separator:     ','
+    regex:         label:([^=]+)=([^,]+)
+    target_label:  ${1}
+    replacement:   ${2}
+
 - job_name: service-z
 
   tls_config:
@@ -125,7 +132,11 @@ scrape_configs:
 - job_name: service-marathon
   marathon_sd_configs:
   - servers:
-    - 'http://marathon.example.com:8080'
+    - 'https://marathon.example.com:443'
+
+    tls_config:
+      cert_file: valid_cert_file
+      key_file: valid_key_file
 
 - job_name: service-ec2
   ec2_sd_configs:
