@@ -70,9 +70,10 @@ func init() {
 // EC2Discovery periodically performs EC2-SD requests. It implements
 // the TargetProvider interface.
 type EC2Discovery struct {
-	aws      *aws.Config
-	interval time.Duration
-	port     int
+	aws             *aws.Config
+	interval        time.Duration
+	port            int
+	ec2RequestInput *ec2.DescribeInstancesInput
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
@@ -86,8 +87,58 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 			Region:      &conf.Region,
 			Credentials: creds,
 		},
-		interval: time.Duration(conf.RefreshInterval),
-		port:     conf.Port,
+		interval:        time.Duration(conf.RefreshInterval),
+		port:            conf.Port,
+		ec2RequestInput: buildEc2RequestInput(conf.TagFilters),
+	}
+}
+
+//Break the config supplied tag filters apart and build the filters for the aws ec2 api
+func buildEc2RequestInput(tagFilters []string) *ec2.DescribeInstancesInput {
+
+	var FilterSet []*ec2.Filter
+
+	//preserves the current default behaviour (no tag filtering)
+	if len(tagFilters) == 0 {
+		return nil
+	}
+
+	//create a filter for each tag or tag=value found in the config
+	for i := 0; i < len(tagFilters); i++ {
+
+		//for non-empty criteria build an ec2 filter
+		if (len(tagFilters[i])) > 0 {
+			filter := ec2TagFilter(tagFilters[i])
+			FilterSet = append(FilterSet, &filter)
+		}
+	}
+
+	return &ec2.DescribeInstancesInput{
+		Filters: FilterSet,
+	}
+}
+
+func ec2TagFilter(tagfilterstring string) ec2.Filter {
+
+	//the comma is not a valid tag character so atm safe to assume it is a prom config separator and not inside AWS tags
+	splitString := strings.Split(tagfilterstring, ",")
+	filterName := ("tag:" + splitString[0])
+	var filterValues []*string
+
+	//if no tagvalue filters, add the wildcard
+	if len(splitString) == 1 {
+		wildcard := "*"
+		filterValues = append(filterValues, &wildcard)
+	}
+	//else add filter values to the []*string
+	for i := 1; i < len(splitString); i++ {
+		filterValue := splitString[i]
+		filterValues = append(filterValues, &filterValue)
+	}
+
+	return ec2.Filter{
+		Name:   aws.String(filterName),
+		Values: filterValues,
 	}
 }
 
@@ -134,7 +185,7 @@ func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 	tg = &config.TargetGroup{
 		Source: *ed.aws.Region,
 	}
-	if err = ec2s.DescribeInstancesPages(nil, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err := ec2s.DescribeInstancesPages(ed.ec2RequestInput, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
