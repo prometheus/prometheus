@@ -1017,6 +1017,9 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := checkOverflow(c.XXX, "relabel_config"); err != nil {
 		return err
 	}
+	if c.Regex.Regexp == nil {
+		c.Regex = MustNewRegexp("")
+	}
 	if c.Modulus == 0 && c.Action == RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
