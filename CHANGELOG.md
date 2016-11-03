@@ -1,3 +1,11 @@
+## 1.2.3 / 2016-11-04
+
+* [BUGFIX] Correctly handle end time before start time in range queries.
+* [BUGFIX] Correctly handle empty Regex entry in relabel config.
+* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
+* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
+* [ENHANCEMENT] Improved DNS error reporting.
+
 ## 1.2.2 / 2016-10-30
 
 * [BUGFIX] Correctly handle on() in alerts.
