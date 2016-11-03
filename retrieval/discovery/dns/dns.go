@@ -184,7 +184,12 @@ func lookupAll(name string, qtype uint16) (*dns.Msg, error) {
 		for _, suffix := range conf.Search {
 			response, err = lookup(name, qtype, client, servAddr, suffix, false)
 			if err != nil {
-				log.Warnf("resolving %s.%s failed: %s", name, suffix, err)
+				log.
+					With("server", server).
+					With("name", name).
+					With("suffix", suffix).
+					With("reason", err).
+					Warn("DNS resolution failed.")
 				continue
 			}
 			if len(response.Answer) > 0 {
@@ -195,8 +200,13 @@ func lookupAll(name string, qtype uint16) (*dns.Msg, error) {
 		if err == nil {
 			return response, nil
 		}
+		log.
+			With("server", server).
+			With("name", name).
+			With("reason", err).
+			Warn("DNS resolution failed.")
 	}
-	return response, fmt.Errorf("could not resolve %s: No server responded", name)
+	return response, fmt.Errorf("could not resolve %s: no server responded", name)
 }
 
 func lookup(name string, queryType uint16, client *dns.Client, servAddr string, suffix string, edns bool) (*dns.Msg, error) {
@@ -205,33 +215,24 @@ func lookup(name string, queryType uint16, client *dns.Client, servAddr string, 
 	msg.SetQuestion(dns.Fqdn(lname), queryType)
 
 	if edns {
-		opt := &dns.OPT{
-			Hdr: dns.RR_Header{
-				Name:   ".",
-				Rrtype: dns.TypeOPT,
-			},
-		}
-		opt.SetUDPSize(dns.DefaultMsgSize)
-		msg.Extra = append(msg.Extra, opt)
+		msg.SetEdns0(dns.DefaultMsgSize, false)
 	}
 
 	response, _, err := client.Exchange(msg, servAddr)
-	if err != nil {
-		return nil, err
-	}
-	if msg.Id != response.Id {
-		return nil, fmt.Errorf("DNS ID mismatch, request: %d, response: %d", msg.Id, response.Id)
-	}
-
-	if response.MsgHdr.Truncated {
+	if err == dns.ErrTruncated {
 		if client.Net == "tcp" {
-			return nil, fmt.Errorf("got truncated message on tcp")
+			return nil, fmt.Errorf("got truncated message on TCP (64kiB limit exceeded?)")
 		}
 		if edns { // Truncated even though EDNS is used
 			client.Net = "tcp"
 		}
 		return lookup(name, queryType, client, servAddr, suffix, !edns)
 	}
-
+	if err != nil {
+		return nil, err
+	}
+	if msg.Id != response.Id {
+		return nil, fmt.Errorf("DNS ID mismatch, request: %d, response: %d", msg.Id, response.Id)
+	}
 	return response, nil
 }
