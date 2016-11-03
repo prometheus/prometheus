@@ -5,9 +5,9 @@
 # Kubernetes labels will be added as Prometheus labels on metrics via the
 # `labelmap` relabeling action.
 
-# Scrape config for cluster components.
+# Scrape config for API servers.
 scrape_configs:
-- job_name: 'kubernetes-cluster'
+- job_name: 'kubernetes-apiservers'
 
   # Default to scraping over https. If required, just disable this or change to
   # `http`.
@@ -28,11 +28,13 @@ scrape_configs:
     # insecure_skip_verify: true
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
-  kubernetes_sd_configs:
-  - api_servers:
-    - 'https://kubernetes.default.svc'
-    in_cluster: true
-    role: apiserver
+  # Keep only the default/kubernetes service endpoints for the https port. This
+  # will add targets for each API server which Kubernetes adds an endpoint to
+  # the default/kubernetes service.
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+    action: keep
+    regex: default;kubernetes;https
 
 - job_name: 'kubernetes-nodes'
 
@@ -56,10 +58,7 @@ scrape_configs:
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
-  - api_servers:
-    - 'https://kubernetes.default.svc'
-    in_cluster: true
-    role: node
+  - role: node
 
   relabel_configs:
   - action: labelmap
@@ -79,10 +78,7 @@ scrape_configs:
 - job_name: 'kubernetes-service-endpoints'
 
   kubernetes_sd_configs:
-  - api_servers:
-    - 'https://kubernetes.default.svc'
-    in_cluster: true
-    role: endpoint
+  - role: endpoints
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
@@ -123,10 +119,7 @@ scrape_configs:
     module: [http_2xx]
 
   kubernetes_sd_configs:
-  - api_servers:
-    - 'https://kubernetes.default.svc'
-    in_cluster: true
-    role: service
+  - role: service
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
@@ -156,10 +149,7 @@ scrape_configs:
 - job_name: 'kubernetes-pods'
 
   kubernetes_sd_configs:
-  - api_servers:
-    - 'https://kubernetes.default.svc'
-    in_cluster: true
-    role: pod
+  - role: pod
 
   relabel_configs:
   - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
