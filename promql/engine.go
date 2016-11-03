@@ -1012,7 +1012,7 @@ func scalarBinop(op itemType, lhs, rhs model.SampleValue) model.SampleValue {
 	case itemPOW:
 		return model.SampleValue(math.Pow(float64(lhs), float64(rhs)))
 	case itemMOD:
-		if rhs != 0 {
+		if int(rhs) != 0 {
 			return model.SampleValue(int(lhs) % int(rhs))
 		}
 		return model.SampleValue(math.NaN())
@@ -1046,7 +1046,7 @@ func vectorElemBinop(op itemType, lhs, rhs model.SampleValue) (model.SampleValue
 	case itemPOW:
 		return model.SampleValue(math.Pow(float64(lhs), float64(rhs))), true
 	case itemMOD:
-		if rhs != 0 {
+		if int(rhs) != 0 {
 			return model.SampleValue(int(lhs) % int(rhs)), true
 		}
 		return model.SampleValue(math.NaN()), true
