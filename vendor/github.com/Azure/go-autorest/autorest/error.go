@@ -24,7 +24,7 @@ type DetailedError struct {
 	Method string
 
 	// StatusCode is the HTTP Response StatusCode (if non-zero) that led to the error.
-	StatusCode int
+	StatusCode interface{}
 
 	// Message is the error message.
 	Message string
@@ -57,6 +57,7 @@ func NewErrorWithError(original error, packageType string, method string, resp *
 	if resp != nil {
 		statusCode = resp.StatusCode
 	}
+
 	return DetailedError{
 		Original:    original,
 		PackageType: packageType,
@@ -70,7 +71,7 @@ func NewErrorWithError(original error, packageType string, method string, resp *
 // StatusCode, Message, and original error (if any)).
 func (e DetailedError) Error() string {
 	if e.Original == nil {
-		return fmt.Sprintf("%s:%s %v %s", e.PackageType, e.Method, e.StatusCode, e.Message)
+		return fmt.Sprintf("%s#%s: %s: StatusCode=%d", e.PackageType, e.Method, e.Message, e.StatusCode)
 	}
-	return fmt.Sprintf("%s:%s %v %s -- Original Error: %v", e.PackageType, e.Method, e.StatusCode, e.Message, e.Original)
+	return fmt.Sprintf("%s#%s: %s: StatusCode=%d -- Original Error: %v", e.PackageType, e.Method, e.Message, e.StatusCode, e.Original)
 }
