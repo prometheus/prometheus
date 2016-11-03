@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -12,31 +11,42 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awsutil"
-	"github.com/aws/aws-sdk-go/aws/service/serviceinfo"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/client/metadata"
 )
 
 // A Request is the service request to be made.
 type Request struct {
+	Config     aws.Config
+	ClientInfo metadata.ClientInfo
+	Handlers   Handlers
+
 	Retryer
-	Service      serviceinfo.ServiceInfo
-	Handlers     Handlers
-	Time         time.Time
-	ExpireTime   time.Duration
-	Operation    *Operation
-	HTTPRequest  *http.Request
-	HTTPResponse *http.Response
-	Body         io.ReadSeeker
-	BodyStart    int64 // offset from beginning of Body that the request body starts
-	Params       interface{}
-	Error        error
-	Data         interface{}
-	RequestID    string
-	RetryCount   uint
-	Retryable    *bool
-	RetryDelay   time.Duration
+	Time             time.Time
+	ExpireTime       time.Duration
+	Operation        *Operation
+	HTTPRequest      *http.Request
+	HTTPResponse     *http.Response
+	Body             io.ReadSeeker
+	BodyStart        int64 // offset from beginning of Body that the request body starts
+	Params           interface{}
+	Error            error
+	Data             interface{}
+	RequestID        string
+	RetryCount       int
+	Retryable        *bool
+	RetryDelay       time.Duration
+	NotHoist         bool
+	SignedHeaderVals http.Header
+	LastSignedAt     time.Time
 
 	built bool
+
+	// Need to persist an intermideant body betweend the input Body and HTTP
+	// request body because the HTTP Client's transport can maintain a reference
+	// to the HTTP request's body after the client has returned. This value is
+	// safe to use concurrently and rewraps the input Body for each HTTP request.
+	safeBody *offsetReader
 }
 
 // An Operation is the service API operation to be made.
@@ -61,30 +71,36 @@ type Paginator struct {
 // Params is any value of input parameters to be the request payload.
 // Data is pointer value to an object which the request's response
 // payload will be deserialized to.
-func New(service serviceinfo.ServiceInfo, handlers Handlers, retryer Retryer, operation *Operation, params interface{}, data interface{}) *Request {
+func New(cfg aws.Config, clientInfo metadata.ClientInfo, handlers Handlers,
+	retryer Retryer, operation *Operation, params interface{}, data interface{}) *Request {
+
 	method := operation.HTTPMethod
 	if method == "" {
 		method = "POST"
 	}
-	p := operation.HTTPPath
-	if p == "" {
-		p = "/"
-	}
 
 	httpReq, _ := http.NewRequest(method, "", nil)
-	httpReq.URL, _ = url.Parse(service.Endpoint + p)
+
+	var err error
+	httpReq.URL, err = url.Parse(clientInfo.Endpoint + operation.HTTPPath)
+	if err != nil {
+		httpReq.URL = &url.URL{}
+		err = awserr.New("InvalidEndpointURL", "invalid endpoint uri", err)
+	}
 
 	r := &Request{
+		Config:     cfg,
+		ClientInfo: clientInfo,
+		Handlers:   handlers.Copy(),
+
 		Retryer:     retryer,
-		Service:     service,
-		Handlers:    handlers.Copy(),
 		Time:        time.Now(),
 		ExpireTime:  0,
 		Operation:   operation,
 		HTTPRequest: httpReq,
 		Body:        nil,
 		Params:      params,
-		Error:       nil,
+		Error:       err,
 		Data:        data,
 	}
 	r.SetBufferBody([]byte{})
@@ -124,14 +140,15 @@ func (r *Request) SetStringBody(s string) {
 
 // SetReaderBody will set the request's body reader.
 func (r *Request) SetReaderBody(reader io.ReadSeeker) {
-	r.HTTPRequest.Body = ioutil.NopCloser(reader)
 	r.Body = reader
+	r.ResetBody()
 }
 
 // Presign returns the request's signed URL. Error will be returned
 // if the signing fails.
 func (r *Request) Presign(expireTime time.Duration) (string, error) {
 	r.ExpireTime = expireTime
+	r.NotHoist = false
 	r.Sign()
 	if r.Error != nil {
 		return "", r.Error
@@ -139,8 +156,20 @@ func (r *Request) Presign(expireTime time.Duration) (string, error) {
 	return r.HTTPRequest.URL.String(), nil
 }
 
+// PresignRequest behaves just like presign, but hoists all headers and signs them.
+// Also returns the signed hash back to the user
+func (r *Request) PresignRequest(expireTime time.Duration) (string, http.Header, error) {
+	r.ExpireTime = expireTime
+	r.NotHoist = true
+	r.Sign()
+	if r.Error != nil {
+		return "", nil, r.Error
+	}
+	return r.HTTPRequest.URL.String(), r.SignedHeaderVals, nil
+}
+
 func debugLogReqError(r *Request, stage string, retrying bool, err error) {
-	if !r.Service.Config.LogLevel.Matches(aws.LogDebugWithRequestErrors) {
+	if !r.Config.LogLevel.Matches(aws.LogDebugWithRequestErrors) {
 		return
 	}
 
@@ -149,8 +178,8 @@ func debugLogReqError(r *Request, stage string, retrying bool, err error) {
 		retryStr = "will retry"
 	}
 
-	r.Service.Config.Logger.Log(fmt.Sprintf("DEBUG: %s %s/%s failed, %s, error %v",
-		stage, r.Service.ServiceName, r.Operation.Name, retryStr, err))
+	r.Config.Logger.Log(fmt.Sprintf("DEBUG: %s %s/%s failed, %s, error %v",
+		stage, r.ClientInfo.ServiceName, r.Operation.Name, retryStr, err))
 }
 
 // Build will build the request's object so it can be signed and sent
@@ -165,20 +194,23 @@ func debugLogReqError(r *Request, stage string, retrying bool, err error) {
 // which occurred will be returned.
 func (r *Request) Build() error {
 	if !r.built {
-		r.Error = nil
 		r.Handlers.Validate.Run(r)
 		if r.Error != nil {
 			debugLogReqError(r, "Validate Request", false, r.Error)
 			return r.Error
 		}
 		r.Handlers.Build.Run(r)
+		if r.Error != nil {
+			debugLogReqError(r, "Build Request", false, r.Error)
+			return r.Error
+		}
 		r.built = true
 	}
 
 	return r.Error
 }
 
-// Sign will sign the request retuning error if errors are encountered.
+// Sign will sign the request returning error if errors are encountered.
 //
 // Send will build the request prior to signing. All Sign Handlers will
 // be executed in the order they were set.
@@ -193,32 +225,71 @@ func (r *Request) Sign() error {
 	return r.Error
 }
 
+// ResetBody rewinds the request body backto its starting position, and
+// set's the HTTP Request body reference. When the body is read prior
+// to being sent in the HTTP request it will need to be rewound.
+func (r *Request) ResetBody() {
+	if r.safeBody != nil {
+		r.safeBody.Close()
+	}
+
+	r.safeBody = newOffsetReader(r.Body, r.BodyStart)
+	r.HTTPRequest.Body = r.safeBody
+}
+
+// GetBody will return an io.ReadSeeker of the Request's underlying
+// input body with a concurrency safe wrapper.
+func (r *Request) GetBody() io.ReadSeeker {
+	return r.safeBody
+}
+
 // Send will send the request returning error if errors are encountered.
 //
 // Send will sign the request prior to sending. All Send Handlers will
 // be executed in the order they were set.
+//
+// Canceling a request is non-deterministic. If a request has been canceled,
+// then the transport will choose, randomly, one of the state channels during
+// reads or getting the connection.
+//
+// readLoop() and getConn(req *Request, cm connectMethod)
+// https://github.com/golang/go/blob/master/src/net/http/transport.go
+//
+// Send will not close the request.Request's body.
 func (r *Request) Send() error {
 	for {
+		if aws.BoolValue(r.Retryable) {
+			if r.Config.LogLevel.Matches(aws.LogDebugWithRequestRetries) {
+				r.Config.Logger.Log(fmt.Sprintf("DEBUG: Retrying Request %s/%s, attempt %d",
+					r.ClientInfo.ServiceName, r.Operation.Name, r.RetryCount))
+			}
+
+			// The previous http.Request will have a reference to the r.Body
+			// and the HTTP Client's Transport may still be reading from
+			// the request's body even though the Client's Do returned.
+			r.HTTPRequest = copyHTTPRequest(r.HTTPRequest, nil)
+			r.ResetBody()
+
+			// Closing response body to ensure that no response body is leaked
+			// between retry attempts.
+			if r.HTTPResponse != nil && r.HTTPResponse.Body != nil {
+				r.HTTPResponse.Body.Close()
+			}
+		}
+
 		r.Sign()
 		if r.Error != nil {
 			return r.Error
 		}
 
-		if aws.BoolValue(r.Retryable) {
-			if r.Service.Config.LogLevel.Matches(aws.LogDebugWithRequestRetries) {
-				r.Service.Config.Logger.Log(fmt.Sprintf("DEBUG: Retrying Request %s/%s, attempt %d",
-					r.Service.ServiceName, r.Operation.Name, r.RetryCount))
-			}
-
-			// Re-seek the body back to the original point in for a retry so that
-			// send will send the body's contents again in the upcoming request.
-			r.Body.Seek(r.BodyStart, 0)
-			r.HTTPRequest.Body = ioutil.NopCloser(r.Body)
-		}
 		r.Retryable = nil
 
 		r.Handlers.Send.Run(r)
 		if r.Error != nil {
+			if strings.Contains(r.Error.Error(), "net/http: request canceled") {
+				return r.Error
+			}
+
 			err := r.Error
 			r.Handlers.Retry.Run(r)
 			r.Handlers.AfterRetry.Run(r)
@@ -229,7 +300,6 @@ func (r *Request) Send() error {
 			debugLogReqError(r, "Send Request", true, err)
 			continue
 		}
-
 		r.Handlers.UnmarshalMeta.Run(r)
 		r.Handlers.ValidateResponse.Run(r)
 		if r.Error != nil {
@@ -264,85 +334,11 @@ func (r *Request) Send() error {
 	return nil
 }
 
-// HasNextPage returns true if this request has more pages of data available.
-func (r *Request) HasNextPage() bool {
-	return r.nextPageTokens() != nil
-}
-
-// nextPageTokens returns the tokens to use when asking for the next page of
-// data.
-func (r *Request) nextPageTokens() []interface{} {
-	if r.Operation.Paginator == nil {
-		return nil
+// AddToUserAgent adds the string to the end of the request's current user agent.
+func AddToUserAgent(r *Request, s string) {
+	curUA := r.HTTPRequest.Header.Get("User-Agent")
+	if len(curUA) > 0 {
+		s = curUA + " " + s
 	}
-
-	if r.Operation.TruncationToken != "" {
-		tr := awsutil.ValuesAtAnyPath(r.Data, r.Operation.TruncationToken)
-		if tr == nil || len(tr) == 0 {
-			return nil
-		}
-		switch v := tr[0].(type) {
-		case bool:
-			if v == false {
-				return nil
-			}
-		}
-	}
-
-	found := false
-	tokens := make([]interface{}, len(r.Operation.OutputTokens))
-
-	for i, outtok := range r.Operation.OutputTokens {
-		v := awsutil.ValuesAtAnyPath(r.Data, outtok)
-		if v != nil && len(v) > 0 {
-			found = true
-			tokens[i] = v[0]
-		}
-	}
-
-	if found {
-		return tokens
-	}
-	return nil
-}
-
-// NextPage returns a new Request that can be executed to return the next
-// page of result data. Call .Send() on this request to execute it.
-func (r *Request) NextPage() *Request {
-	tokens := r.nextPageTokens()
-	if tokens == nil {
-		return nil
-	}
-
-	data := reflect.New(reflect.TypeOf(r.Data).Elem()).Interface()
-	nr := New(r.Service, r.Handlers, r.Retryer, r.Operation, awsutil.CopyOf(r.Params), data)
-	for i, intok := range nr.Operation.InputTokens {
-		awsutil.SetValueAtAnyPath(nr.Params, intok, tokens[i])
-	}
-	return nr
-}
-
-// EachPage iterates over each page of a paginated request object. The fn
-// parameter should be a function with the following sample signature:
-//
-//   func(page *T, lastPage bool) bool {
-//       return true // return false to stop iterating
-//   }
-//
-// Where "T" is the structure type matching the output structure of the given
-// operation. For example, a request object generated by
-// DynamoDB.ListTablesRequest() would expect to see dynamodb.ListTablesOutput
-// as the structure "T". The lastPage value represents whether the page is
-// the last page of data or not. The return value of this function should
-// return true to keep iterating or false to stop.
-func (r *Request) EachPage(fn func(data interface{}, isLastPage bool) (shouldContinue bool)) error {
-	for page := r; page != nil; page = page.NextPage() {
-		page.Send()
-		shouldContinue := fn(page.Data, !page.HasNextPage())
-		if page.Error != nil || !shouldContinue {
-			return page.Error
-		}
-	}
-
-	return nil
+	r.HTTPRequest.Header.Set("User-Agent", s)
 }
