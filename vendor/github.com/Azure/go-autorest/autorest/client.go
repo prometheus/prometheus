@@ -2,10 +2,12 @@ package autorest
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"time"
 )
 
@@ -15,7 +17,18 @@ const (
 
 	// DefaultPollingDuration is a reasonable total polling duration.
 	DefaultPollingDuration = 15 * time.Minute
+
+	// DefaultRetryAttempts is number of attempts for retry status codes (5xx).
+	DefaultRetryAttempts = 3
 )
+
+var statusCodesForRetry = []int{
+	http.StatusRequestTimeout,      // 408
+	http.StatusInternalServerError, // 500
+	http.StatusBadGateway,          // 502
+	http.StatusServiceUnavailable,  // 503
+	http.StatusGatewayTimeout,      // 504
+}
 
 const (
 	requestFormat = `HTTP Request Begin ===================================================
@@ -53,7 +66,9 @@ func (li LoggingInspector) WithInspection() PrepareDecorator {
 			defer r.Body.Close()
 
 			r.Body = ioutil.NopCloser(io.TeeReader(r.Body, &body))
-			r.Write(&b)
+			if err := r.Write(&b); err != nil {
+				return nil, fmt.Errorf("Failed to write response: %v", err)
+			}
 
 			li.Logger.Printf(requestFormat, b.String())
 
@@ -72,11 +87,11 @@ func (li LoggingInspector) ByInspecting() RespondDecorator {
 	return func(r Responder) Responder {
 		return ResponderFunc(func(resp *http.Response) error {
 			var body, b bytes.Buffer
-
 			defer resp.Body.Close()
-
 			resp.Body = ioutil.NopCloser(io.TeeReader(resp.Body, &body))
-			resp.Write(&b)
+			if err := resp.Write(&b); err != nil {
+				return fmt.Errorf("Failed to write response: %v", err)
+			}
 
 			li.Logger.Printf(responseFormat, b.String())
 
@@ -103,17 +118,35 @@ type Client struct {
 	RequestInspector  PrepareDecorator
 	ResponseInspector RespondDecorator
 
+	// PollingDelay sets the polling frequency used in absence of a Retry-After HTTP header
+	PollingDelay time.Duration
+
+	// PollingDuration sets the maximum polling time after which an error is returned.
+	PollingDuration time.Duration
+
+	// RetryAttempts sets the default number of retry attempts for client.
+	RetryAttempts int
+
+	// RetryDuration sets the delay duration for retries.
+	RetryDuration time.Duration
+
 	// UserAgent, if not empty, will be set as the HTTP User-Agent header on all requests sent
 	// through the Do method.
 	UserAgent string
+
+	Jar http.CookieJar
 }
 
 // NewClientWithUserAgent returns an instance of a Client with the UserAgent set to the passed
 // string.
 func NewClientWithUserAgent(ua string) Client {
-	c := Client{}
-	c.UserAgent = ua
-	return c
+	return Client{
+		PollingDelay:    DefaultPollingDelay,
+		PollingDuration: DefaultPollingDuration,
+		RetryAttempts:   DefaultRetryAttempts,
+		RetryDuration:   30 * time.Second,
+		UserAgent:       ua,
+	}
 }
 
 // Do implements the Sender interface by invoking the active Sender after applying authorization.
@@ -130,18 +163,18 @@ func (c Client) Do(r *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, NewErrorWithError(err, "autorest/Client", "Do", nil, "Preparing request failed")
 	}
-
-	resp, err := c.sender().Do(r)
+	resp, err := SendWithSender(c.sender(), r,
+		DoRetryForStatusCodes(c.RetryAttempts, c.RetryDuration, statusCodesForRetry...))
 	Respond(resp,
 		c.ByInspecting())
-
 	return resp, err
 }
 
 // sender returns the Sender to which to send requests.
 func (c Client) sender() Sender {
 	if c.Sender == nil {
-		return http.DefaultClient
+		j, _ := cookiejar.New(nil)
+		return &http.Client{Jar: j}
 	}
 	return c.Sender
 }
