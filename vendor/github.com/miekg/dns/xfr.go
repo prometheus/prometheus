@@ -23,14 +23,26 @@ type Transfer struct {
 // Think we need to away to stop the transfer
 
 // In performs an incoming transfer with the server in a.
+// If you would like to set the source IP, or some other attribute
+// of a Dialer for a Transfer, you can do so by specifying the attributes
+// in the Transfer.Conn:
+//
+//	d := net.Dialer{LocalAddr: transfer_source}
+//	con, err := d.Dial("tcp", master)
+//	dnscon := &dns.Conn{Conn:con}
+//	transfer = &dns.Transfer{Conn: dnscon}
+//	channel, err := transfer.In(message, master)
+//
 func (t *Transfer) In(q *Msg, a string) (env chan *Envelope, err error) {
 	timeout := dnsTimeout
 	if t.DialTimeout != 0 {
 		timeout = t.DialTimeout
 	}
-	t.Conn, err = DialTimeout("tcp", a, timeout)
-	if err != nil {
-		return nil, err
+	if t.Conn == nil {
+		t.Conn, err = DialTimeout("tcp", a, timeout)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := t.WriteMsg(q); err != nil {
 		return nil, err
@@ -150,8 +162,8 @@ func (t *Transfer) inIxfr(id uint16, c chan *Envelope) {
 //
 //	ch := make(chan *dns.Envelope)
 //	tr := new(dns.Transfer)
-//	tr.Out(w, r, ch)
-//	c <- &dns.Envelope{RR: []dns.RR{soa, rr1, rr2, rr3, soa}}
+//	go tr.Out(w, r, ch)
+//	ch <- &dns.Envelope{RR: []dns.RR{soa, rr1, rr2, rr3, soa}}
 //	close(ch)
 //	w.Hijack()
 //	// w.Close() // Client closes connection
