@@ -34,6 +34,10 @@ eval instant at 50m SUM(http_requests) BY (job) % 3
 	{job="api-server"} 1
 	{job="app-server"} 2
 
+eval instant at 50m SUM(http_requests) BY (job) % 0.3
+	{job="api-server"} NaN
+	{job="app-server"} NaN
+
 eval instant at 50m SUM(http_requests) BY (job) ^ 2
 	{job="api-server"} 1000000
 	{job="app-server"} 6760000
@@ -347,3 +351,13 @@ eval instant at 5m metricA + ignoring() metricB
 
 eval instant at 5m metricA + metricB
   {baz="meh"} 7
+
+clear
+
+load 5m
+  finite{foo="bar"} 42
+  almost_zero{foo="bar"} 0.123
+
+# MOD by "almost zero" with vector.
+eval instant at 5m finite % almost_zero
+  {foo="bar"} NaN
