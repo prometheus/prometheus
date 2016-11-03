@@ -21,7 +21,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -72,6 +72,7 @@ func init() {
 type EC2Discovery struct {
 	aws      *aws.Config
 	interval time.Duration
+	profile  string
 	port     int
 }
 
@@ -79,13 +80,14 @@ type EC2Discovery struct {
 func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
-		creds = defaults.DefaultChainCredentials
+		creds = nil
 	}
 	return &EC2Discovery{
 		aws: &aws.Config{
 			Region:      &conf.Region,
 			Credentials: creds,
 		},
+		profile:  conf.Profile,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 	}
@@ -130,7 +132,15 @@ func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 	}()
 
-	ec2s := ec2.New(ed.aws)
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Config:  *ed.aws,
+		Profile: ed.profile,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not create aws session: %s", err)
+	}
+
+	ec2s := ec2.New(sess)
 	tg = &config.TargetGroup{
 		Source: *ed.aws.Region,
 	}
