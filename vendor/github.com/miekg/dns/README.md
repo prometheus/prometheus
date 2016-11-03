@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/miekg/dns.svg?branch=master)](https://travis-ci.org/miekg/dns)
+[![Build Status](https://travis-ci.org/miekg/dns.svg?branch=master)](https://travis-ci.org/miekg/dns) [![](https://godoc.org/github.com/miekg/dns?status.svg)](https://godoc.org/github.com/miekg/dns)
 
 # Alternative (more granular) approach to a DNS library
 
@@ -10,9 +10,9 @@ If there is stuff you should know as a DNS programmer there isn't a convenience
 function for it. Server side and client side programming is supported, i.e. you
 can build servers and resolvers with it.
 
-If you like this, you may also be interested in:
-
-* https://github.com/miekg/unbound -- Go wrapper for the Unbound resolver.
+We try to keep the "master" branch as sane as possible and at the bleeding edge
+of standards, avoiding breaking changes wherever reasonable. We support the last
+two versions of Go, currently: 1.5 and 1.6.
 
 # Goals
 
@@ -33,6 +33,7 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://github.com/fcambus/rrda
 * https://github.com/kenshinx/godns
 * https://github.com/skynetservices/skydns
+* https://github.com/hashicorp/consul
 * https://github.com/DevelopersPL/godnsagent
 * https://github.com/duedil-ltd/discodns
 * https://github.com/StalkR/dns-reverse-proxy
@@ -42,6 +43,16 @@ A not-so-up-to-date-list-that-may-be-actually-current:
 * https://play.google.com/store/apps/details?id=com.turbobytes.dig
 * https://github.com/fcambus/statzone
 * https://github.com/benschw/dns-clb-go
+* https://github.com/corny/dnscheck for http://public-dns.info/
+* https://namesmith.io
+* https://github.com/miekg/unbound
+* https://github.com/miekg/exdns
+* https://dnslookup.org
+* https://github.com/looterz/grimd
+* https://github.com/phamhongviet/serf-dns
+* https://github.com/mehrdadrad/mylg
+* https://github.com/bamarni/dockness
+* https://github.com/fffaraz/microdns
 
 Send pull request if you want to be listed here.
 
@@ -55,9 +66,10 @@ Send pull request if you want to be listed here.
 * Server side programming (mimicking the net/http package);
 * Client side programming;
 * DNSSEC: signing, validating and key generation for DSA, RSA and ECDSA;
-* EDNS0, NSID;
+* EDNS0, NSID, Cookies;
 * AXFR/IXFR;
 * TSIG, SIG(0);
+* DNS over TLS: optional encrypted connection between client and server;
 * DNS name compression;
 * Depends only on the standard library.
 
@@ -104,7 +116,6 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 340{1,2,3} - NAPTR record
 * 3445 - Limiting the scope of (DNS)KEY
 * 3597 - Unknown RRs
-* 4025 - IPSECKEY
 * 403{3,4,5} - DNSSEC + validation functions
 * 4255 - SSHFP record
 * 4343 - Case insensitivity
@@ -123,6 +134,7 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 6605 - ECDSA
 * 6725 - IANA Registry Update
 * 6742 - ILNP DNS
+* 6840 - Clarifications and Implementation Notes for DNS Security
 * 6844 - CAA record
 * 6891 - EDNS0 update
 * 6895 - DNS IANA considerations
@@ -130,6 +142,8 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * 7043 - EUI48/EUI64 records
 * 7314 - DNS (EDNS) EXPIRE Option
 * 7553 - URI record
+* 7858 - DNS over TLS: Initiation and Performance Considerations (draft)
+* 7873 - Domain Name System (DNS) Cookies (draft-ietf-dnsop-cookies)
 * xxxx - EDNS0 DNS Update Lease (draft)
 
 ## Loosely based upon
@@ -138,11 +152,3 @@ Example programs can be found in the `github.com/miekg/exdns` repository.
 * `NSD`
 * `Net::DNS`
 * `GRONG`
-
-## TODO
-
-* privatekey.Precompute() when signing?
-* Last remaining RRs: APL, ATMA, A6, NSAP and NXT.
-* Missing in parsing: ISDN, UNSPEC, NSAP and ATMA.
-* NSEC(3) cover/match/closest enclose.
-* Replies with TC bit are not parsed to the end.
