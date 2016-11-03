@@ -907,6 +907,7 @@ type EC2SDConfig struct {
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
 	SecretKey       string         `yaml:"secret_key,omitempty"`
+	Profile         string         `yaml:"profile,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 

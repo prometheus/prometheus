@@ -143,6 +143,7 @@ scrape_configs:
     - region: us-east-1
       access_key: access
       secret_key: secret
+      profile: profile
 
 - job_name: service-azure
   azure_sd_configs:

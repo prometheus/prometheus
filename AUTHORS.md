@@ -29,6 +29,7 @@ The following individuals have contributed code to this repository
 * Joonas Bergius <joonas@digitalocean.com>
 * Joseph Wilk <joe@josephwilk.net>
 * Julius Volz <julius.volz@gmail.com>
+* Kraig Amador <kraig@bigkraig.com>
 * Laurie Malau <laurie.malau@gmail.com>
 * Marko Mikulicic <mkm@cesanta.com>
 * Matt T. Proud <matt.proud@gmail.com>
