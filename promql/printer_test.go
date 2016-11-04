@@ -94,7 +94,11 @@ func TestExprString(t *testing.T) {
 			in: `a - ON(b) GROUP_LEFT(x, y) c`,
 		},
 		{
-			in: `a - ON(b) GROUP_LEFT c`,
+			in:  `a - ON(b) GROUP_LEFT c`,
+			out: `a - ON(b) GROUP_LEFT() c`,
+		},
+		{
+			in: `a - ON(b) GROUP_LEFT() (c)`,
 		},
 		{
 			in: `a - IGNORING(b) c`,
