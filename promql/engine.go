@@ -30,6 +30,18 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 )
 
+const (
+	// The largest SampleValue that can be converted to an int64 without overflow.
+	maxInt64 model.SampleValue = 9223372036854774784
+	// The smallest SampleValue that can be converted to an int64 without underflow.
+	minInt64 model.SampleValue = -9223372036854775808
+)
+
+// convertibleToInt64 returns true if v does not over-/underflow an int64.
+func convertibleToInt64(v model.SampleValue) bool {
+	return v <= maxInt64 && v >= minInt64
+}
+
 // sampleStream is a stream of Values belonging to an attached COWMetric.
 type sampleStream struct {
 	Metric metric.Metric
@@ -585,9 +597,12 @@ func (ev *evaluator) evalVector(e Expr) vector {
 }
 
 // evalInt attempts to evaluate e into an integer and errors otherwise.
-func (ev *evaluator) evalInt(e Expr) int {
+func (ev *evaluator) evalInt(e Expr) int64 {
 	sc := ev.evalScalar(e)
-	return int(sc.Value)
+	if !convertibleToInt64(sc.Value) {
+		ev.errorf("scalar value %v overflows int64", sc.Value)
+	}
+	return int64(sc.Value)
 }
 
 // evalFloat attempts to evaluate e into a float and errors otherwise.
@@ -1022,8 +1037,8 @@ func scalarBinop(op itemType, lhs, rhs model.SampleValue) model.SampleValue {
 	case itemPOW:
 		return model.SampleValue(math.Pow(float64(lhs), float64(rhs)))
 	case itemMOD:
-		if int(rhs) != 0 {
-			return model.SampleValue(int(lhs) % int(rhs))
+		if int64(rhs) != 0 && convertibleToInt64(lhs) && convertibleToInt64(rhs) {
+			return model.SampleValue(int64(lhs) % int64(rhs))
 		}
 		return model.SampleValue(math.NaN())
 	case itemEQL:
@@ -1056,8 +1071,8 @@ func vectorElemBinop(op itemType, lhs, rhs model.SampleValue) (model.SampleValue
 	case itemPOW:
 		return model.SampleValue(math.Pow(float64(lhs), float64(rhs))), true
 	case itemMOD:
-		if int(rhs) != 0 {
-			return model.SampleValue(int(lhs) % int(rhs)), true
+		if int64(rhs) != 0 && convertibleToInt64(lhs) && convertibleToInt64(rhs) {
+			return model.SampleValue(int64(lhs) % int64(rhs)), true
 		}
 		return model.SampleValue(math.NaN()), true
 	case itemEQL:
@@ -1099,7 +1114,7 @@ type groupedAggregation struct {
 func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, param Expr, vec vector) vector {
 
 	result := map[uint64]*groupedAggregation{}
-	var k int
+	var k int64
 	if op == itemTopK || op == itemBottomK {
 		k = ev.evalInt(param)
 		if k < 1 {
@@ -1202,15 +1217,15 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 			groupedResult.valuesSquaredSum += s.Value * s.Value
 			groupedResult.groupCount++
 		case itemTopK:
-			if len(groupedResult.heap) < k || groupedResult.heap[0].Value < s.Value || math.IsNaN(float64(groupedResult.heap[0].Value)) {
-				if len(groupedResult.heap) == k {
+			if int64(len(groupedResult.heap)) < k || groupedResult.heap[0].Value < s.Value || math.IsNaN(float64(groupedResult.heap[0].Value)) {
+				if int64(len(groupedResult.heap)) == k {
 					heap.Pop(&groupedResult.heap)
 				}
 				heap.Push(&groupedResult.heap, &sample{Value: s.Value, Metric: s.Metric})
 			}
 		case itemBottomK:
-			if len(groupedResult.reverseHeap) < k || groupedResult.reverseHeap[0].Value > s.Value || math.IsNaN(float64(groupedResult.reverseHeap[0].Value)) {
-				if len(groupedResult.reverseHeap) == k {
+			if int64(len(groupedResult.reverseHeap)) < k || groupedResult.reverseHeap[0].Value > s.Value || math.IsNaN(float64(groupedResult.reverseHeap[0].Value)) {
+				if int64(len(groupedResult.reverseHeap)) == k {
 					heap.Pop(&groupedResult.reverseHeap)
 				}
 				heap.Push(&groupedResult.reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
