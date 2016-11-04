@@ -13,6 +13,7 @@ import (
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 	"encoding/asn1"
+	"encoding/binary"
 	"encoding/hex"
 	"math/big"
 	"sort"
@@ -103,9 +104,7 @@ const (
 	ZONE   = 1 << 8
 )
 
-// The RRSIG needs to be converted to wireformat with some of
-// the rdata (the signature) missing. Use this struct to easy
-// the conversion (and re-use the pack/unpack functions).
+// The RRSIG needs to be converted to wireformat with some of the rdata (the signature) missing.
 type rrsigWireFmt struct {
 	TypeCovered uint16
 	Algorithm   uint8
@@ -144,7 +143,7 @@ func (k *DNSKEY) KeyTag() uint16 {
 		// at the base64 values. But I'm lazy.
 		modulus, _ := fromBase64([]byte(k.PublicKey))
 		if len(modulus) > 1 {
-			x, _ := unpackUint16(modulus, len(modulus)-2)
+			x := binary.BigEndian.Uint16(modulus[len(modulus)-2:])
 			keytag = int(x)
 		}
 	default:
@@ -154,7 +153,7 @@ func (k *DNSKEY) KeyTag() uint16 {
 		keywire.Algorithm = k.Algorithm
 		keywire.PublicKey = k.PublicKey
 		wire := make([]byte, DefaultMsgSize)
-		n, err := PackStruct(keywire, wire, 0)
+		n, err := packKeyWire(keywire, wire)
 		if err != nil {
 			return 0
 		}
@@ -192,7 +191,7 @@ func (k *DNSKEY) ToDS(h uint8) *DS {
 	keywire.Algorithm = k.Algorithm
 	keywire.PublicKey = k.PublicKey
 	wire := make([]byte, DefaultMsgSize)
-	n, err := PackStruct(keywire, wire, 0)
+	n, err := packKeyWire(keywire, wire)
 	if err != nil {
 		return nil
 	}
@@ -248,13 +247,12 @@ func (d *DS) ToCDS() *CDS {
 	return c
 }
 
-// Sign signs an RRSet. The signature needs to be filled in with
-// the values: Inception, Expiration, KeyTag, SignerName and Algorithm.
-// The rest is copied from the RRset. Sign returns true when the signing went OK,
-// otherwise false.
-// There is no check if RRSet is a proper (RFC 2181) RRSet.
-// If OrigTTL is non zero, it is used as-is, otherwise the TTL of the RRset
-// is used as the OrigTTL.
+// Sign signs an RRSet. The signature needs to be filled in with the values:
+// Inception, Expiration, KeyTag, SignerName and Algorithm.  The rest is copied
+// from the RRset. Sign returns a non-nill error when the signing went OK.
+// There is no check if RRSet is a proper (RFC 2181) RRSet.  If OrigTTL is non
+// zero, it is used as-is, otherwise the TTL of the RRset is used as the
+// OrigTTL.
 func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 	if k == nil {
 		return ErrPrivKey
@@ -290,7 +288,7 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 
 	// Create the desired binary blob
 	signdata := make([]byte, DefaultMsgSize)
-	n, err := PackStruct(sigwire, signdata, 0)
+	n, err := packSigWire(sigwire, signdata)
 	if err != nil {
 		return err
 	}
@@ -408,7 +406,7 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 	sigwire.SignerName = strings.ToLower(rr.SignerName)
 	// Create the desired binary blob
 	signeddata := make([]byte, DefaultMsgSize)
-	n, err := PackStruct(sigwire, signeddata, 0)
+	n, err := packSigWire(sigwire, signeddata)
 	if err != nil {
 		return err
 	}
@@ -421,8 +419,8 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 
 	sigbuf := rr.sigBuf()           // Get the binary signature data
 	if rr.Algorithm == PRIVATEDNS { // PRIVATEOID
-		// TODO(mg)
-		// remove the domain name and assume its our
+		// TODO(miek)
+		// remove the domain name and assume its ours?
 	}
 
 	hash, ok := AlgorithmToHash[rr.Algorithm]
@@ -609,6 +607,12 @@ func rawSignatureData(rrset []RR, s *RRSIG) (buf []byte, err error) {
 		//   NS, MD, MF, CNAME, SOA, MB, MG, MR, PTR,
 		//   HINFO, MINFO, MX, RP, AFSDB, RT, SIG, PX, NXT, NAPTR, KX,
 		//   SRV, DNAME, A6
+		//
+		// RFC 6840 - Clarifications and Implementation Notes for DNS Security (DNSSEC):
+		//	Section 6.2 of [RFC4034] also erroneously lists HINFO as a record
+		//	that needs conversion to lowercase, and twice at that.  Since HINFO
+		//	records contain no domain names, they are not subject to case
+		//	conversion.
 		switch x := r1.(type) {
 		case *NS:
 			x.Ns = strings.ToLower(x.Ns)
@@ -656,4 +660,62 @@ func rawSignatureData(rrset []RR, s *RRSIG) (buf []byte, err error) {
 		buf = append(buf, wire...)
 	}
 	return buf, nil
+}
+
+func packSigWire(sw *rrsigWireFmt, msg []byte) (int, error) {
+	// copied from zmsg.go RRSIG packing
+	off, err := packUint16(sw.TypeCovered, msg, 0)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint8(sw.Algorithm, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint8(sw.Labels, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint32(sw.OrigTtl, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint32(sw.Expiration, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint32(sw.Inception, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint16(sw.KeyTag, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = PackDomainName(sw.SignerName, msg, off, nil, false)
+	if err != nil {
+		return off, err
+	}
+	return off, nil
+}
+
+func packKeyWire(dw *dnskeyWireFmt, msg []byte) (int, error) {
+	// copied from zmsg.go DNSKEY packing
+	off, err := packUint16(dw.Flags, msg, 0)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint8(dw.Protocol, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packUint8(dw.Algorithm, msg, off)
+	if err != nil {
+		return off, err
+	}
+	off, err = packStringBase64(dw.PublicKey, msg, off)
+	if err != nil {
+		return off, err
+	}
+	return off, nil
 }

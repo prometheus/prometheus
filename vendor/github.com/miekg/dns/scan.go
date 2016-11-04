@@ -67,7 +67,7 @@ const (
 )
 
 // ParseError is a parsing error. It contains the parse error and the location in the io.Reader
-// where the error occured.
+// where the error occurred.
 type ParseError struct {
 	file string
 	err  string
@@ -86,7 +86,7 @@ func (e *ParseError) Error() (s string) {
 type lex struct {
 	token      string // text of the token
 	tokenUpper string // uppercase text of the token
-	length     int    // lenght of the token
+	length     int    // length of the token
 	err        bool   // when true, token text has lexer error
 	value      uint8  // value: zString, _BLANK, etc.
 	line       int    // line in the file
@@ -99,7 +99,7 @@ type lex struct {
 type Token struct {
 	// The scanned resource record when error is not nil.
 	RR
-	// When an error occured, this has the error specifics.
+	// When an error occurred, this has the error specifics.
 	Error *ParseError
 	// A potential comment positioned after the RR and on the same line.
 	Comment string
@@ -144,8 +144,10 @@ func ReadRR(q io.Reader, filename string) (RR, error) {
 //
 //	for x := range dns.ParseZone(strings.NewReader(z), "", "") {
 //		if x.Error != nil {
-//			// Do something with x.RR
-//		}
+//                  // log.Println(x.Error)
+//              } else {
+//                  // Do something with x.RR
+//              }
 //	}
 //
 // Comments specified after an RR (and on the same line!) are returned too:
@@ -375,8 +377,8 @@ func parseZone(r io.Reader, origin, f string, t chan *Token, include int) {
 				t <- &Token{Error: &ParseError{f, "expecting $GENERATE value, not this...", l}}
 				return
 			}
-			if e := generate(l, c, t, origin); e != "" {
-				t <- &Token{Error: &ParseError{f, e, l}}
+			if errMsg := generate(l, c, t, origin); errMsg != "" {
+				t <- &Token{Error: &ParseError{f, errMsg, l}}
 				return
 			}
 			st = zExpectOwnerDir
@@ -625,6 +627,7 @@ func zlexer(s *scan, c chan lex) {
 			if stri > 0 {
 				l.value = zString
 				l.token = string(str[:stri])
+				l.tokenUpper = strings.ToUpper(l.token)
 				l.length = stri
 				debug.Printf("[4 %+v]", l.token)
 				c <- l
@@ -661,6 +664,7 @@ func zlexer(s *scan, c chan lex) {
 					owner = true
 					l.value = zNewline
 					l.token = "\n"
+					l.tokenUpper = l.token
 					l.length = 1
 					l.comment = string(com[:comi])
 					debug.Printf("[3 %+v %+v]", l.token, l.comment)
@@ -694,6 +698,7 @@ func zlexer(s *scan, c chan lex) {
 				}
 				l.value = zNewline
 				l.token = "\n"
+				l.tokenUpper = l.token
 				l.length = 1
 				debug.Printf("[1 %+v]", l.token)
 				c <- l
@@ -738,6 +743,7 @@ func zlexer(s *scan, c chan lex) {
 			if stri != 0 {
 				l.value = zString
 				l.token = string(str[:stri])
+				l.tokenUpper = strings.ToUpper(l.token)
 				l.length = stri
 
 				debug.Printf("[%+v]", l.token)
@@ -748,6 +754,7 @@ func zlexer(s *scan, c chan lex) {
 			// send quote itself as separate token
 			l.value = zQuote
 			l.token = "\""
+			l.tokenUpper = l.token
 			l.length = 1
 			c <- l
 			quote = !quote
@@ -773,6 +780,7 @@ func zlexer(s *scan, c chan lex) {
 				brace--
 				if brace < 0 {
 					l.token = "extra closing brace"
+					l.tokenUpper = l.token
 					l.err = true
 					debug.Printf("[%+v]", l.token)
 					c <- l
@@ -797,6 +805,7 @@ func zlexer(s *scan, c chan lex) {
 	if stri > 0 {
 		// Send remainder
 		l.token = string(str[:stri])
+		l.tokenUpper = strings.ToUpper(l.token)
 		l.length = stri
 		l.value = zString
 		debug.Printf("[%+v]", l.token)
@@ -964,8 +973,8 @@ func stringToNodeID(l lex) (uint64, *ParseError) {
 		return 0, &ParseError{l.token, "bad NID/L64 NodeID/Locator64", l}
 	}
 	s := l.token[0:4] + l.token[5:9] + l.token[10:14] + l.token[15:19]
-	u, e := strconv.ParseUint(s, 16, 64)
-	if e != nil {
+	u, err := strconv.ParseUint(s, 16, 64)
+	if err != nil {
 		return 0, &ParseError{l.token, "bad NID/L64 NodeID/Locator64", l}
 	}
 	return u, nil
