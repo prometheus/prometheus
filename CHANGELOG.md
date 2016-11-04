@@ -1,3 +1,23 @@
+## 1.3.1 / 2016-11-04
+
+This bug-fix release pulls in the fixes from the 1.2.3 release.
+
+* [BUGFIX] Correctly handle empty Regex entry in relabel config.
+* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
+* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
+* [ENHANCEMENT] Improved DNS error reporting.
+
+## 1.2.3 / 2016-11-04
+
+Note that this release is chronologically after 1.3.0.
+
+* [BUGFIX] Correctly handle end time before start time in range queries.
+* [BUGFIX] Error on negative `-storage.staleness-delta`
+* [BUGFIX] Correctly handle empty Regex entry in relabel config.
+* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
+* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
+* [ENHANCEMENT] Improved DNS error reporting.
+
 ## 1.3.0 / 2016-11-01
 
 This is a breaking change to the Kubernetes service discovery.
