@@ -54,6 +54,9 @@ scrape_configs:
     target_label:  cde
   - replacement:   static
     target_label:  abc
+  - regex:
+    replacement:   static
+    target_label:  abc
 
   bearer_token_file: valid_token_file
 
