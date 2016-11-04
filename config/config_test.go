@@ -115,6 +115,12 @@ var expectedConf = &Config{
 					Regex:       DefaultRelabelConfig.Regex,
 					Replacement: "static",
 					Action:      RelabelReplace,
+				}, {
+					TargetLabel: "abc",
+					Separator:   ";",
+					Regex:       MustNewRegexp(""),
+					Replacement: "static",
+					Action:      RelabelReplace,
 				},
 			},
 		},
