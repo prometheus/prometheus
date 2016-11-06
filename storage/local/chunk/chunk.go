@@ -260,7 +260,7 @@ func (d *Desc) MaybeEvict() bool {
 // Chunk is the interface for all chunks. Chunks are generally not
 // goroutine-safe.
 type Chunk interface {
-	// add adds a SamplePair to the chunks, performs any necessary
+	// Add adds a SamplePair to the chunks, performs any necessary
 	// re-encoding, and adds any necessary overflow chunks. It returns the
 	// new version of the original chunk, followed by overflow chunks, if
 	// any. The first chunk returned might be the same as the original one
@@ -276,6 +276,10 @@ type Chunk interface {
 	UnmarshalFromBuf([]byte) error
 	Encoding() Encoding
 	Utilization() float64
+
+	// Len returns the number of samples in the chunk.  Implementations may be
+	// expensive.
+	Len() int
 }
 
 // Iterator enables efficient access to the content of a chunk. It is

@@ -75,7 +75,7 @@ func newDeltaEncodedChunk(tb, vb deltaBytes, isInt bool, length int) *deltaEncod
 // Add implements chunk.
 func (c deltaEncodedChunk) Add(s model.SamplePair) ([]Chunk, error) {
 	// TODO(beorn7): Since we return &c, this method might cause an unnecessary allocation.
-	if c.len() == 0 {
+	if c.Len() == 0 {
 		c = c[:deltaHeaderBytes]
 		binary.LittleEndian.PutUint64(c[deltaHeaderBaseTimeOffset:], uint64(s.Timestamp))
 		binary.LittleEndian.PutUint64(c[deltaHeaderBaseValueOffset:], math.Float64bits(float64(s.Value)))
@@ -191,7 +191,7 @@ func (c deltaEncodedChunk) FirstTime() model.Time {
 
 // NewIterator implements chunk.
 func (c *deltaEncodedChunk) NewIterator() Iterator {
-	return newIndexAccessingChunkIterator(c.len(), &deltaEncodedIndexAccessor{
+	return newIndexAccessingChunkIterator(c.Len(), &deltaEncodedIndexAccessor{
 		c:      *c,
 		baseT:  c.baseTime(),
 		baseV:  c.baseValue(),
@@ -296,7 +296,8 @@ func (c deltaEncodedChunk) sampleSize() int {
 	return int(c.timeBytes() + c.valueBytes())
 }
 
-func (c deltaEncodedChunk) len() int {
+// Len implements Chunk. Runs in constant time.
+func (c deltaEncodedChunk) Len() int {
 	if len(c) < deltaHeaderBytes {
 		return 0
 	}
