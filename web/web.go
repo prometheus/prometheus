@@ -191,6 +191,10 @@ func New(o *Options) *Handler {
 	}
 
 	router.Post("/-/reload", h.reload)
+	router.Get("/-/reload", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, "This endpoint requires a POST request.\n")
+	})
 
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
