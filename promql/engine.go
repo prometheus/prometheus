@@ -1037,10 +1037,7 @@ func scalarBinop(op itemType, lhs, rhs model.SampleValue) model.SampleValue {
 	case itemPOW:
 		return model.SampleValue(math.Pow(float64(lhs), float64(rhs)))
 	case itemMOD:
-		if int64(rhs) != 0 && convertibleToInt64(lhs) && convertibleToInt64(rhs) {
-			return model.SampleValue(int64(lhs) % int64(rhs))
-		}
-		return model.SampleValue(math.NaN())
+		return model.SampleValue(math.Mod(float64(lhs), float64(rhs)))
 	case itemEQL:
 		return btos(lhs == rhs)
 	case itemNEQ:
@@ -1071,10 +1068,7 @@ func vectorElemBinop(op itemType, lhs, rhs model.SampleValue) (model.SampleValue
 	case itemPOW:
 		return model.SampleValue(math.Pow(float64(lhs), float64(rhs))), true
 	case itemMOD:
-		if int64(rhs) != 0 && convertibleToInt64(lhs) && convertibleToInt64(rhs) {
-			return model.SampleValue(int64(lhs) % int64(rhs)), true
-		}
-		return model.SampleValue(math.NaN()), true
+		return model.SampleValue(math.Mod(float64(lhs), float64(rhs))), true
 	case itemEQL:
 		return lhs, lhs == rhs
 	case itemNEQ:
