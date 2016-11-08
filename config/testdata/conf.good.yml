@@ -155,6 +155,17 @@ scrape_configs:
       client_secret: nAdvAK2oBuVym4IXix
       port: 9100
 
+- job_name: service-amb
+  ambari_sd_configs:
+    - username: 11AAAA11-A11A-111A-A111-1111A1111A11
+      password: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
+      host: "ambari.host"
+      proto: "http"
+      cluster: "c1"
+      port: 9100
+      refresh_interval: 5m
+      services: ['kafka_broker', 'resourcemanager']
+
 - job_name: service-nerve
   nerve_sd_configs:
     - servers:

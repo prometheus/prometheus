@@ -369,7 +369,6 @@ func (ts *targetSet) update(name string, tgroup *config.TargetGroup) error {
 // providersFromConfig returns all TargetProviders configured in cfg.
 func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	providers := map[string]TargetProvider{}
-
 	app := func(mech string, i int, tp TargetProvider) {
 		providers[fmt.Sprintf("%s/%d", mech, i)] = tp
 	}
@@ -423,6 +422,14 @@ func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
 	}
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, discovery.NewAzureDiscovery(c))
+	}
+	for i, c := range cfg.AmbariSDConfigs {
+		ad, err := discovery.NewAmbariDiscovery(c)
+		if err != nil {
+			log.Errorf("Cannot initialize Ambari discovery: %s", err)
+			continue
+		}
+		app("ambari", i, ad)
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
