@@ -74,7 +74,21 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(p.buildPod(o.(*apiv1.Pod)))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: podSource(o.(*apiv1.Pod))})
+			pod, isPod := o.(*apiv1.Pod)
+			if !isPod {
+				deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					p.logger.Errorln("Received unexpected object: %v", o)
+					return
+				}
+				pod, ok = deletedState.Obj.(*apiv1.Pod)
+				if !ok {
+					p.logger.Errorln("DeletedFinalStateUnknown contained non-Pod object: %v", deletedState.Obj)
+					return
+				}
+			}
+
+			send(&config.TargetGroup{Source: podSource(pod)})
 		},
 		UpdateFunc: func(_, o interface{}) {
 			send(p.buildPod(o.(*apiv1.Pod)))

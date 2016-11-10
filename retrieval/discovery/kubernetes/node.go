@@ -66,7 +66,21 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(n.buildNode(o.(*apiv1.Node)))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: nodeSource(o.(*apiv1.Node))})
+			node, isNode := o.(*apiv1.Node)
+			if !isNode {
+				deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					n.logger.Errorln("Received unexpected object: %v", o)
+					return
+				}
+				node, ok = deletedState.Obj.(*apiv1.Node)
+				if !ok {
+					n.logger.Errorln("DeletedFinalStateUnknown contained non-Node object: %v", deletedState.Obj)
+					return
+				}
+			}
+
+			send(&config.TargetGroup{Source: nodeSource(node)})
 		},
 		UpdateFunc: func(_, o interface{}) {
 			send(n.buildNode(o.(*apiv1.Node)))

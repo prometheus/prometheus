@@ -89,7 +89,21 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(e.buildEndpoints(o.(*apiv1.Endpoints)))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: endpointsSource(o.(*apiv1.Endpoints).ObjectMeta)})
+			endpoints, isEndpoints := o.(*apiv1.Endpoints)
+			if !isEndpoints {
+				deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					e.logger.Errorln("Received unexpected object: %v", o)
+					return
+				}
+				endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
+				if !ok {
+					e.logger.Errorln("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
+					return
+				}
+			}
+
+			send(&config.TargetGroup{Source: endpointsSource(endpoints.ObjectMeta)})
 		},
 	})
 
@@ -110,7 +124,23 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		// be triggered via the endpoint handlers already.
 		AddFunc:    func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
 		UpdateFunc: func(_, o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
-		DeleteFunc: func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
+		DeleteFunc: func(o interface{}) {
+			service, isService := o.(*apiv1.Service)
+			if !isService {
+				deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					e.logger.Errorln("Received unexpected object: %v", o)
+					return
+				}
+				service, ok = deletedState.Obj.(*apiv1.Service)
+				if !ok {
+					e.logger.Errorln("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
+					return
+				}
+			}
+
+			serviceUpdate(service)
+		},
 	})
 
 	// Block until the target provider is explicitly canceled.

@@ -64,7 +64,21 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(s.buildService(o.(*apiv1.Service)))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: serviceSource(o.(*apiv1.Service))})
+			service, isService := o.(*apiv1.Service)
+			if !isService {
+				deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					s.logger.Errorln("Received unexpected object: %v", o)
+					return
+				}
+				service, ok = deletedState.Obj.(*apiv1.Service)
+				if !ok {
+					s.logger.Errorln("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
+					return
+				}
+			}
+
+			send(&config.TargetGroup{Source: serviceSource(service)})
 		},
 		UpdateFunc: func(_, o interface{}) {
 			send(s.buildService(o.(*apiv1.Service)))
