@@ -6,8 +6,17 @@
 # `labelmap` relabeling action.
 
 # Scrape config for API servers.
+#
+# Kubernetes exposes API servers as endpoints to the default/kubernetes
+# service so this uses `endpoints` role and uses relabelling to only keep
+# the endpoints associated with the default/kubernetes service using the
+# default named port `https`. This works for single API server deployments as
+# well as HA API server deployments.
 scrape_configs:
 - job_name: 'kubernetes-apiservers'
+
+  kubernetes_sd_configs:
+  - role: endpoints
 
   # Default to scraping over https. If required, just disable this or change to
   # `http`.
