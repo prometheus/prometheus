@@ -46,9 +46,11 @@ type Kubernetes struct {
 }
 
 func init() {
-	runtime.ErrorHandlers = append(runtime.ErrorHandlers, func(err error) {
-		log.With("component", "kube_client_runtime").Errorln(err)
-	})
+	runtime.ErrorHandlers = []func(error){
+		func(err error) {
+			log.With("component", "kube_client_runtime").Errorln(err)
+		},
+	}
 }
 
 // New creates a new Kubernetes discovery for the given role.
