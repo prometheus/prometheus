@@ -63,18 +63,49 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			send(n.buildNode(o.(*apiv1.Node)))
+			node, err := convertToNode(o)
+			if err != nil {
+				n.logger.With("err", err).Errorln("converting to Node object failed")
+				return
+			}
+			send(n.buildNode(node))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: nodeSource(o.(*apiv1.Node))})
+			node, err := convertToNode(o)
+			if err != nil {
+				n.logger.With("err", err).Errorln("converting to Node object failed")
+				return
+			}
+			send(&config.TargetGroup{Source: nodeSource(node)})
 		},
 		UpdateFunc: func(_, o interface{}) {
-			send(n.buildNode(o.(*apiv1.Node)))
+			node, err := convertToNode(o)
+			if err != nil {
+				n.logger.With("err", err).Errorln("converting to Node object failed")
+				return
+			}
+			send(n.buildNode(node))
 		},
 	})
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func convertToNode(o interface{}) (*apiv1.Node, error) {
+	node, isNode := o.(*apiv1.Node)
+	if !isNode {
+		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			return nil, fmt.Errorf("Received unexpected object: %v", o)
+		}
+		node, ok = deletedState.Obj.(*apiv1.Node)
+		if !ok {
+			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Node object: %v", deletedState.Obj)
+		}
+	}
+
+	return node, nil
 }
 
 func nodeSource(n *apiv1.Node) string {

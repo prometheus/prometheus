@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 )
 
 func endpointsStoreKeyFunc(obj interface{}) (string, error) {
@@ -240,6 +241,21 @@ func TestEndpointsDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { eps.Delete(makeEndpoints()) }() },
+		expectedRes: []*config.TargetGroup{
+			&config.TargetGroup{
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
+
+	k8sDiscoveryTest{
+		discovery:  n,
+		afterStart: func() { go func() { eps.Delete(cache.DeletedFinalStateUnknown{Obj: makeEndpoints()}) }() },
 		expectedRes: []*config.TargetGroup{
 			&config.TargetGroup{
 				Source: "endpoints/default/testendpoints",
