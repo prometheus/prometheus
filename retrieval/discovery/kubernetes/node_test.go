@@ -270,6 +270,36 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 	}.Run(t)
 }
 
+func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
+	n, i := makeTestNodeDiscovery()
+	i.GetStore().Add(makeEnumeratedNode(0))
+
+	k8sDiscoveryTest{
+		discovery:  n,
+		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makeEnumeratedNode(0)}) }() },
+		expectedInitial: []*config.TargetGroup{
+			&config.TargetGroup{
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__address__": "1.2.3.4:10250",
+						"instance":    "test0",
+						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_node_name": "test0",
+				},
+				Source: "node/test0",
+			},
+		},
+		expectedRes: []*config.TargetGroup{
+			&config.TargetGroup{
+				Source: "node/test0",
+			},
+		},
+	}.Run(t)
+}
+
 func TestNodeDiscoveryUpdate(t *testing.T) {
 	n, i := makeTestNodeDiscovery()
 	i.GetStore().Add(makeEnumeratedNode(0))

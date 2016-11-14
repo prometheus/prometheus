@@ -71,18 +71,49 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			send(p.buildPod(o.(*apiv1.Pod)))
+			pod, err := convertToPod(o)
+			if err != nil {
+				p.logger.With("err", err).Errorln("converting to Pod object failed")
+				return
+			}
+			send(p.buildPod(pod))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: podSource(o.(*apiv1.Pod))})
+			pod, err := convertToPod(o)
+			if err != nil {
+				p.logger.With("err", err).Errorln("converting to Pod object failed")
+				return
+			}
+			send(&config.TargetGroup{Source: podSource(pod)})
 		},
 		UpdateFunc: func(_, o interface{}) {
-			send(p.buildPod(o.(*apiv1.Pod)))
+			pod, err := convertToPod(o)
+			if err != nil {
+				p.logger.With("err", err).Errorln("converting to Pod object failed")
+				return
+			}
+			send(p.buildPod(pod))
 		},
 	})
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func convertToPod(o interface{}) (*apiv1.Pod, error) {
+	pod, isPod := o.(*apiv1.Pod)
+	if !isPod {
+		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			return nil, fmt.Errorf("Received unexpected object: %v", o)
+		}
+		pod, ok = deletedState.Obj.(*apiv1.Pod)
+		if !ok {
+			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Pod object: %v", deletedState.Obj)
+		}
+	}
+
+	return pod, nil
 }
 
 const (

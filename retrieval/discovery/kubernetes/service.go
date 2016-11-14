@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 
@@ -61,18 +62,49 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			send(s.buildService(o.(*apiv1.Service)))
+			svc, err := convertToService(o)
+			if err != nil {
+				s.logger.With("err", err).Errorln("converting to Service object failed")
+				return
+			}
+			send(s.buildService(svc))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: serviceSource(o.(*apiv1.Service))})
+			svc, err := convertToService(o)
+			if err != nil {
+				s.logger.With("err", err).Errorln("converting to Service object failed")
+				return
+			}
+			send(&config.TargetGroup{Source: serviceSource(svc)})
 		},
 		UpdateFunc: func(_, o interface{}) {
-			send(s.buildService(o.(*apiv1.Service)))
+			svc, err := convertToService(o)
+			if err != nil {
+				s.logger.With("err", err).Errorln("converting to Service object failed")
+				return
+			}
+			send(s.buildService(svc))
 		},
 	})
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func convertToService(o interface{}) (*apiv1.Service, error) {
+	service, isService := o.(*apiv1.Service)
+	if !isService {
+		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			return nil, fmt.Errorf("Received unexpected object: %v", o)
+		}
+		service, ok = deletedState.Obj.(*apiv1.Service)
+		if !ok {
+			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
+		}
+	}
+
+	return service, nil
 }
 
 func serviceSource(s *apiv1.Service) string {

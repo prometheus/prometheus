@@ -83,17 +83,38 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			send(e.buildEndpoints(o.(*apiv1.Endpoints)))
+			eps, err := convertToEndpoints(o)
+			if err != nil {
+				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
+				return
+			}
+			send(e.buildEndpoints(eps))
 		},
 		UpdateFunc: func(_, o interface{}) {
-			send(e.buildEndpoints(o.(*apiv1.Endpoints)))
+			eps, err := convertToEndpoints(o)
+			if err != nil {
+				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
+				return
+			}
+			send(e.buildEndpoints(eps))
 		},
 		DeleteFunc: func(o interface{}) {
-			send(&config.TargetGroup{Source: endpointsSource(o.(*apiv1.Endpoints).ObjectMeta)})
+			eps, err := convertToEndpoints(o)
+			if err != nil {
+				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
+				return
+			}
+			send(&config.TargetGroup{Source: endpointsSource(eps)})
 		},
 	})
 
-	serviceUpdate := func(svc *apiv1.Service) {
+	serviceUpdate := func(o interface{}) {
+		svc, err := convertToService(o)
+		if err != nil {
+			e.logger.With("err", err).Errorln("converting to Service object failed")
+			return
+		}
+
 		ep := &apiv1.Endpoints{}
 		ep.Namespace = svc.Namespace
 		ep.Name = svc.Name
@@ -108,17 +129,33 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
-		AddFunc:    func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
-		UpdateFunc: func(_, o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
-		DeleteFunc: func(o interface{}) { serviceUpdate(o.(*apiv1.Service)) },
+		AddFunc:    func(o interface{}) { serviceUpdate(o) },
+		UpdateFunc: func(_, o interface{}) { serviceUpdate(o) },
+		DeleteFunc: func(o interface{}) { serviceUpdate(o) },
 	})
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
 }
 
-func endpointsSource(ep apiv1.ObjectMeta) string {
-	return "endpoints/" + ep.Namespace + "/" + ep.Name
+func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
+	endpoints, isEndpoints := o.(*apiv1.Endpoints)
+	if !isEndpoints {
+		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			return nil, fmt.Errorf("Received unexpected object: %v", o)
+		}
+		endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
+		if !ok {
+			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
+		}
+	}
+
+	return endpoints, nil
+}
+
+func endpointsSource(ep *apiv1.Endpoints) string {
+	return "endpoints/" + ep.ObjectMeta.Namespace + "/" + ep.ObjectMeta.Name
 }
 
 const (
@@ -134,7 +171,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
 	}
 
 	tg := &config.TargetGroup{
-		Source: endpointsSource(eps.ObjectMeta),
+		Source: endpointsSource(eps),
 	}
 	tg.Labels = model.LabelSet{
 		namespaceLabel:     lv(eps.Namespace),
