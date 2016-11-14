@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 )
 
 func serviceStoreKeyFunc(obj interface{}) (string, error) {
@@ -147,6 +148,37 @@ func TestServiceDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { i.Delete(makeService()) }() },
+		expectedInitial: []*config.TargetGroup{
+			&config.TargetGroup{
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                             "testservice.default.svc:30900",
+						"__meta_kubernetes_service_port_name":     "testport",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/testservice",
+			},
+		},
+		expectedRes: []*config.TargetGroup{
+			&config.TargetGroup{
+				Source: "svc/default/testservice",
+			},
+		},
+	}.Run(t)
+}
+
+func TestServiceDiscoveryDeleteUnknownCacheState(t *testing.T) {
+	n, i := makeTestServiceDiscovery()
+	i.GetStore().Add(makeService())
+
+	k8sDiscoveryTest{
+		discovery:  n,
+		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makeService()}) }() },
 		expectedInitial: []*config.TargetGroup{
 			&config.TargetGroup{
 				Targets: []model.LabelSet{
