@@ -62,9 +62,9 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 		if err != nil {
 			return err
 		}
-		defer dir.Close()
 		for fis := []os.FileInfo{}; err != io.EOF; fis, err = dir.Readdir(1024) {
 			if err != nil {
+				dir.Close()
 				return err
 			}
 			for _, fi := range fis {
@@ -78,6 +78,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 				}
 			}
 		}
+		dir.Close()
 	}
 	log.Infof("File scan complete. %d series found.", len(fpsSeen))
 
