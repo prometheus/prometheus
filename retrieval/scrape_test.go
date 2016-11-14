@@ -506,7 +506,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
-	done := make(chan struct{})
+	errc := make(chan error)
 
 	go func() {
 		time.Sleep(1 * time.Second)
@@ -515,15 +515,18 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 
 	go func() {
 		if _, err := ts.scrape(ctx, time.Now()); err != context.Canceled {
-			t.Fatalf("Expected context cancelation error but got: %s", err)
+			errc <- fmt.Errorf("Expected context cancelation error but got: %s", err)
 		}
-		close(done)
+		close(errc)
 	}()
 
 	select {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape function did not return unexpectedly")
-	case <-done:
+	case err := <-errc:
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
 	}
 	// If this is closed in a defer above the function the test server
 	// does not terminate and the test doens't complete.

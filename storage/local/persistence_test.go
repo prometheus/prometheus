@@ -1097,11 +1097,12 @@ func TestQuranatineSeriesFile(t *testing.T) {
 			t.Errorf("Unexpected state of quarantined file %q. Expected it to exist: %t. os.Stat returned: %s.", quarantinedFile, seriesFileShouldExist, err)
 		}
 		f, err := os.Open(hintFile)
-		defer f.Close()
 		if err != nil {
 			t.Errorf("Could not open hint file %q: %s", hintFile, err)
 			return
 		}
+		defer f.Close()
+
 		scanner := bufio.NewScanner(f)
 		for _, want := range contentHintFile {
 			if !scanner.Scan() {
