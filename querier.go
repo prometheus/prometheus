@@ -2,26 +2,24 @@ package tsdb
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/index"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 // SeriesIterator provides iteration over a time series associated with a metric.
 type SeriesIterator interface {
-	Metric() metric.Metric
+	Metric() map[string]string
 	Seek(model.Time) (model.SamplePair, bool)
 	Next() (model.SamplePair, bool)
 	Err() error
 }
 
 type chunkSeriesIterator struct {
-	m      metric.Metric
+	m      map[string]string
 	chunks []chunks.Chunk
 
 	err    error
@@ -29,14 +27,14 @@ type chunkSeriesIterator struct {
 	curPos int
 }
 
-func newChunkSeriesIterator(m metric.Metric, chunks []chunks.Chunk) *chunkSeriesIterator {
+func newChunkSeriesIterator(m map[string]string, chunks []chunks.Chunk) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
 		m:      m,
 		chunks: chunks,
 	}
 }
 
-func (it *chunkSeriesIterator) Metric() metric.Metric {
+func (it *chunkSeriesIterator) Metric() map[string]string {
 	return it.m
 }
 
@@ -106,34 +104,8 @@ func (q *Querier) Close() error {
 
 // Iterator returns an iterator over all chunks that match all given
 // label matchers. The iterator is only valid until the Querier is closed.
-func (q *Querier) Iterator(matchers ...*metric.LabelMatcher) (index.Iterator, error) {
-	var its []index.Iterator
-	for _, m := range matchers {
-		var matcher index.Matcher
-		switch m.Type {
-		case metric.Equal:
-			matcher = index.NewEqualMatcher(string(m.Value))
-		case metric.RegexMatch:
-			var err error
-			matcher, err = index.NewRegexpMatcher(string(m.Value))
-			if err != nil {
-				return nil, err
-			}
-		default:
-			return nil, fmt.Errorf("matcher type %q not supported", m.Type)
-		}
-		it, err := q.iq.Search(string(m.Name), matcher)
-		if err != nil {
-			return nil, err
-		}
-		if it != nil {
-			its = append(its, it)
-		}
-	}
-	if len(its) == 0 {
-		return nil, errors.New("not found")
-	}
-	return index.Intersect(its...), nil
+func (q *Querier) Iterator(key string, matcher index.Matcher) (index.Iterator, error) {
+	return q.iq.Search(key, matcher)
 }
 
 // RangeIterator returns an iterator over chunks that are present in the given time range.
@@ -148,11 +120,15 @@ func (q *Querier) InstantIterator(at model.Time) (index.Iterator, error) {
 	return nil, nil
 }
 
+func hash(m map[string]string) uint64 {
+	return model.LabelsToSignature(m)
+}
+
 // Series returns a list of series iterators over all chunks in the given iterator.
 // The returned series iterators are only valid until the querier is closed.
 func (q *Querier) Series(it index.Iterator) ([]SeriesIterator, error) {
-	mets := map[model.Fingerprint]metric.Metric{}
-	its := map[model.Fingerprint][]chunks.Chunk{}
+	mets := map[uint64]map[string]string{}
+	its := map[uint64][]chunks.Chunk{}
 
 	id, err := it.Seek(0)
 	for ; err == nil; id, err = it.Next() {
@@ -160,11 +136,11 @@ func (q *Querier) Series(it index.Iterator) ([]SeriesIterator, error) {
 		if err != nil {
 			return nil, err
 		}
-		met := make(model.Metric, len(terms))
+		met := make(map[string]string, len(terms))
 		for _, t := range terms {
-			met[model.LabelName(t.Field)] = model.LabelValue(t.Val)
+			met[t.Field] = t.Val
 		}
-		fp := met.Fingerprint()
+		fp := hash(met)
 
 		chunk, err := q.chunk(ChunkID(id))
 		if err != nil {
@@ -175,7 +151,7 @@ func (q *Querier) Series(it index.Iterator) ([]SeriesIterator, error) {
 		if _, ok := mets[fp]; ok {
 			continue
 		}
-		mets[fp] = metric.Metric{Metric: met, Copied: true}
+		mets[fp] = met
 	}
 	if err != io.EOF {
 		return nil, err
@@ -220,9 +196,9 @@ func (q *Querier) chunk(id ChunkID) (chunks.Chunk, error) {
 }
 
 // Metrics returns the unique metrics found across all chunks in the provided iterator.
-func (q *Querier) Metrics(it index.Iterator) ([]metric.Metric, error) {
-	m := []metric.Metric{}
-	fps := map[model.Fingerprint]struct{}{}
+func (q *Querier) Metrics(it index.Iterator) ([]map[string]string, error) {
+	m := []map[string]string{}
+	fps := map[uint64]struct{}{}
 
 	id, err := it.Seek(0)
 	for ; err == nil; id, err = it.Next() {
@@ -230,16 +206,16 @@ func (q *Querier) Metrics(it index.Iterator) ([]metric.Metric, error) {
 		if err != nil {
 			return nil, err
 		}
-		met := make(model.Metric, len(terms))
+		met := make(map[string]string, len(terms))
 		for _, t := range terms {
-			met[model.LabelName(t.Field)] = model.LabelValue(t.Val)
+			met[t.Field] = t.Val
 		}
-		fp := met.Fingerprint()
+		fp := hash(met)
 		if _, ok := fps[fp]; ok {
 			continue
 		}
 		fps[fp] = struct{}{}
-		m = append(m, metric.Metric{Metric: met, Copied: true})
+		m = append(m, met)
 	}
 	if err != io.EOF {
 		return nil, err
