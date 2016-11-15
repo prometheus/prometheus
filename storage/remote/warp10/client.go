@@ -2,12 +2,15 @@ package warp10
 
 import (
 	"bytes"
-	"github.com/prometheus/common/model"
+	"errors"
+	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"strconv"
+	"net/url"
 	"time"
+
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
 )
 
 const Version string = "0.1.0"
@@ -22,7 +25,7 @@ func NewClient(server, writeToken string) *Client {
 	return &Client{
 		server:     server,
 		writeToken: writeToken,
-		client : &http.Client{
+		client: &http.Client{
 			Timeout: time.Second * 2,
 		},
 	}
@@ -31,37 +34,31 @@ func NewClient(server, writeToken string) *Client {
 func (c *Client) Store(samples model.Samples) error {
 	buffer := &bytes.Buffer{}
 	for _, e := range samples {
-		buffer.WriteString(strconv.FormatInt(int64(e.Timestamp)*1000, 10))
-		buffer.WriteString("// ")
-		buffer.WriteString(string(e.Metric[model.MetricNameLabel]))
-		buffer.WriteString("{")
+		fmt.Fprintf(buffer, "%d// %s{", int64(e.Timestamp)*1000, url.QueryEscape(string(e.Metric[model.MetricNameLabel])))
 		i := 0
 		for l, v := range e.Metric {
 			if l != model.MetricNameLabel {
-
-				buffer.WriteString(string(l))
-				buffer.WriteString("=")
-				buffer.WriteString(string(v))
+				fmt.Fprintf(buffer, "%s=%s", url.QueryEscape(string(l)), url.QueryEscape(string(v)))
 				if i != 0 {
-					buffer.WriteString(",")
+					buffer.WriteRune(',')
 				}
 				i++
 			}
 		}
-		buffer.WriteString("} ")
-		buffer.WriteString(strconv.FormatFloat(float64(e.Value), 'f', -1, 64))
-		buffer.WriteString("\n")
+		fmt.Fprintf(buffer, "} %f\n", float64(e.Value))
 	}
-
 	req, _ := http.NewRequest("POST", c.server, buffer)
 	req.Header.Add("X-Warp10-Token", c.writeToken)
-	req.Header.Add("User-Agent", "Prometheus remote v "+Version)
+	req.Header.Add("User-Agent", "Prometheus remote "+Version)
 	resp, err := c.client.Do(req)
+	defer resp.Body.Close()
 	if err != nil {
-		log.Println("Cannot send metrics to warp10")
-	} else {
-		defer resp.Body.Close()
-		ioutil.ReadAll(resp.Body)
+		log.Errorf("Cannot send metrics to warp10 %s", err)
+		return err
+	} else if resp.StatusCode != 200 {
+		content, _ := ioutil.ReadAll(resp.Body)
+		log.Errorf("%s", content)
+		return errors.New("Warp10 ingress errors")
 	}
 	return nil
 }

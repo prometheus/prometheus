@@ -40,10 +40,11 @@ func TestClient(t *testing.T) {
 			if _, ok := r.Header["X-Warp10-Token"]; ok == false {
 				t.Fatalf("Header X-Warp10-Token must be set")
 			}
-			_, err := ioutil.ReadAll(r.Body)
+			body, err := ioutil.ReadAll(r.Body)
 			if err != nil {
 				t.Fatalf("Error reading body: %s", err)
 			}
+			t.Logf("%s", body)
 
 		},
 	))
@@ -52,6 +53,6 @@ func TestClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to parse server URL %s: %s", server.URL, err)
 	}
-	client := NewClient(serverURL.Host, token)
+	client := NewClient(serverURL.Scheme+"://"+serverURL.Host+"/api/v0/update", token)
 	client.Store(samples)
 }
