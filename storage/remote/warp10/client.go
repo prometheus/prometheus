@@ -26,7 +26,7 @@ func NewClient(server, writeToken string) *Client {
 		server:     server,
 		writeToken: writeToken,
 		client: &http.Client{
-			Timeout: time.Second * 2,
+			Timeout: time.Second * 5,
 		},
 	}
 }
@@ -51,14 +51,16 @@ func (c *Client) Store(samples model.Samples) error {
 	req.Header.Add("X-Warp10-Token", c.writeToken)
 	req.Header.Add("User-Agent", "Prometheus remote "+Version)
 	resp, err := c.client.Do(req)
-	defer resp.Body.Close()
 	if err != nil {
 		log.Errorf("Cannot send metrics to warp10 %s", err)
 		return err
 	} else if resp.StatusCode != 200 {
+		defer resp.Body.Close()
 		content, _ := ioutil.ReadAll(resp.Body)
 		log.Errorf("%s", content)
 		return errors.New("Warp10 ingress errors")
+	} else {
+		defer resp.Body.Close()		
 	}
 	return nil
 }
