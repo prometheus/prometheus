@@ -47,20 +47,23 @@ func (c *Client) Store(samples model.Samples) error {
 		}
 		fmt.Fprintf(buffer, "} %f\n", float64(e.Value))
 	}
-	req, _ := http.NewRequest("POST", c.server, buffer)
+	req, err := http.NewRequest("POST", c.server, buffer)
+	if err != nil {
+		log.Errorf("Cannot create request to %s", c.server)
+		return err
+	}
 	req.Header.Add("X-Warp10-Token", c.writeToken)
 	req.Header.Add("User-Agent", "Prometheus remote "+Version)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		log.Errorf("Cannot send metrics to warp10 %s", err)
 		return err
-	} else if resp.StatusCode != 200 {
-		defer resp.Body.Close()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
 		content, _ := ioutil.ReadAll(resp.Body)
 		log.Errorf("%s", content)
 		return errors.New("Warp10 ingress errors")
-	} else {
-		defer resp.Body.Close()		
 	}
 	return nil
 }
