@@ -3,8 +3,6 @@ var graphTemplate;
 
 var SECOND = 1000;
 
-Handlebars.registerHelper('pathPrefix', function() { return PATH_PREFIX; });
-
 Prometheus.Graph = function(element, options, handleChange, handleRemove) {
   this.el = element;
   this.graphHTML = null;
@@ -48,7 +46,9 @@ Prometheus.Graph.prototype.initialize = function() {
 
   // Draw graph controls and container from Handlebars template.
 
-  self.graphHTML = $(graphTemplate(self.options));
+  var options = {'pathPrefix': PATH_PREFIX};
+  jQuery.extend(options, self.options);
+  self.graphHTML = $(Mustache.render(graphTemplate, options));
   self.el.append(self.graphHTML);
 
   // Get references to all the interesting elements in the graph container and
@@ -822,7 +822,9 @@ function init() {
   $.ajax({
     url: PATH_PREFIX + "/static/js/graph_template.handlebar",
     success: function(data) {
-      graphTemplate = Handlebars.compile(data);
+
+      graphTemplate = data;
+      Mustache.parse(data);
       if (isDeprecatedGraphURL()) {
         redirectToMigratedURL();
       } else {
