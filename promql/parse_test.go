@@ -237,11 +237,11 @@ var testExpr = []struct {
 	}, {
 		input:  `-"string"`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or vector, got "string"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "string"`,
 	}, {
 		input:  `-test[5m]`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or vector, got "matrix"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "range vector"`,
 	}, {
 		input:  `*test`,
 		fail:   true,
@@ -772,11 +772,11 @@ var testExpr = []struct {
 	}, {
 		input:  "1 or on(bar) foo",
 		fail:   true,
-		errMsg: "vector matching only allowed between vectors",
+		errMsg: "vector matching only allowed between instant vectors",
 	}, {
 		input:  "foo == on(bar) 10",
 		fail:   true,
-		errMsg: "vector matching only allowed between vectors",
+		errMsg: "vector matching only allowed between instant vectors",
 	}, {
 		input:  "foo and on(bar) group_left(baz) bar",
 		fail:   true,
@@ -1286,7 +1286,7 @@ var testExpr = []struct {
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got vector",
+		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant vector",
 	}, {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
@@ -1364,7 +1364,7 @@ var testExpr = []struct {
 	}, {
 		input:  "floor(1)",
 		fail:   true,
-		errMsg: "expected type vector in call to function \"floor\", got scalar",
+		errMsg: "expected type instant vector in call to function \"floor\", got scalar",
 	}, {
 		input:  "non_existent_function_far_bar()",
 		fail:   true,
@@ -1372,7 +1372,7 @@ var testExpr = []struct {
 	}, {
 		input:  "rate(some_metric)",
 		fail:   true,
-		errMsg: "expected type matrix in call to function \"rate\", got vector",
+		errMsg: "expected type range vector in call to function \"rate\", got instant vector",
 	},
 	// Fuzzing regression tests.
 	{
