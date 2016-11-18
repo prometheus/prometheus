@@ -126,9 +126,10 @@ type Group struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
-func NewGroup(name string, rules []Rule, opts *ManagerOptions) *Group {
+func NewGroup(name string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
 		name:       name,
+		interval:   interval,
 		rules:      rules,
 		opts:       opts,
 		done:       make(chan struct{}),
@@ -396,7 +397,8 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 		files = append(files, fs...)
 	}
 
-	groups, err := m.loadGroups(files...)
+	// To be replaced with a configurable per-group interval.
+	groups, err := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
 	if err != nil {
 		return fmt.Errorf("error loading rules, previous rule set restored: %s", err)
 	}
@@ -404,9 +406,6 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	var wg sync.WaitGroup
 
 	for _, newg := range groups {
-		// To be replaced with a configurable per-group interval.
-		newg.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
-
 		wg.Add(1)
 
 		// If there is an old group with the same identifier, stop it and wait for
@@ -444,7 +443,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 // loadGroups reads groups from a list of files.
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
-func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
+func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, error) {
 	rules := []Rule{}
 	for _, fn := range filenames {
 		content, err := ioutil.ReadFile(fn)
@@ -475,7 +474,7 @@ func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
 
 	// Currently there is no group syntax implemented. Thus all rules
 	// are read into a single default group.
-	g := NewGroup("default", rules, m.opts)
+	g := NewGroup("default", interval, rules, m.opts)
 	groups := map[string]*Group{g.name: g}
 	return groups, nil
 }
