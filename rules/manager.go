@@ -125,9 +125,11 @@ type Group struct {
 	terminated chan struct{}
 }
 
-func newGroup(name string, opts *ManagerOptions) *Group {
+// NewGroup makes a new Group with the given name, options, and rules.
+func NewGroup(name string, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
 		name:       name,
+		rules:      rules,
 		opts:       opts,
 		done:       make(chan struct{}),
 		terminated: make(chan struct{}),
@@ -151,7 +153,7 @@ func (g *Group) run() {
 			return
 		}
 		start := time.Now()
-		g.eval()
+		g.Eval()
 
 		iterationDuration.Observe(time.Since(start).Seconds())
 	}
@@ -234,10 +236,10 @@ func typeForRule(r Rule) ruleType {
 	panic(fmt.Errorf("unknown rule type: %T", r))
 }
 
-// eval runs a single evaluation cycle in which all rules are evaluated in parallel.
+// Eval runs a single evaluation cycle in which all rules are evaluated in parallel.
 // In the future a single group will be evaluated sequentially to properly handle
 // rule dependency.
-func (g *Group) eval() {
+func (g *Group) Eval() {
 	var (
 		now = model.Now()
 		wg  sync.WaitGroup
@@ -443,13 +445,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
 func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
-	groups := map[string]*Group{}
-
-	// Currently there is no group syntax implemented. Thus all rules
-	// are read into a single default group.
-	g := newGroup("default", m.opts)
-	groups[g.name] = g
-
+	rules := []Rule{}
 	for _, fn := range filenames {
 		content, err := ioutil.ReadFile(fn)
 		if err != nil {
@@ -473,10 +469,14 @@ func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
 			default:
 				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
 			}
-			g.rules = append(g.rules, rule)
+			rules = append(rules, rule)
 		}
 	}
 
+	// Currently there is no group syntax implemented. Thus all rules
+	// are read into a single default group.
+	g := NewGroup("default", rules, m.opts)
+	groups := map[string]*Group{g.name: g}
 	return groups, nil
 }
 
