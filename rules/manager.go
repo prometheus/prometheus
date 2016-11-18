@@ -106,7 +106,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	eval(context.Context, model.Time, *promql.Engine, string) (model.Vector, error)
+	Eval(context.Context, model.Time, *promql.Engine, string) (model.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -257,7 +257,7 @@ func (g *Group) eval() {
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.eval(g.opts.Context, now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
+			vector, err := rule.Eval(g.opts.Context, now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
