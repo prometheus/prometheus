@@ -107,8 +107,6 @@ const resyncPeriod = 10 * time.Minute
 
 // Run implements the TargetProvider interface.
 func (k *Kubernetes) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
-
 	rclient := k.client.Core().GetRESTClient()
 
 	switch k.role {

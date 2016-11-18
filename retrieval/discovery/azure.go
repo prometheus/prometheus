@@ -81,7 +81,6 @@ func NewAzureDiscovery(cfg *config.AzureSDConfig) *AzureDiscovery {
 
 // Run implements the TargetProvider interface.
 func (ad *AzureDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
 	ticker := time.NewTicker(ad.interval)
 	defer ticker.Stop()
 
@@ -96,7 +95,10 @@ func (ad *AzureDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGro
 		if err != nil {
 			log.Errorf("unable to refresh during Azure discovery: %s", err)
 		} else {
-			ch <- []*config.TargetGroup{tg}
+			select {
+			case <-ctx.Done():
+			case ch <- []*config.TargetGroup{tg}:
+			}
 		}
 
 		select {
