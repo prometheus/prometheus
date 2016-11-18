@@ -18,6 +18,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	consul "github.com/hashicorp/consul/api"
@@ -132,7 +133,11 @@ func (cd *Discovery) shouldWatch(name string) bool {
 
 // Run implements the TargetProvider interface.
 func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		close(ch)
+	}()
 
 	// Watched services and their cancelation functions.
 	services := map[string]func(){}
@@ -199,7 +204,11 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			}
 
 			wctx, cancel := context.WithCancel(ctx)
-			go srv.watch(wctx, ch)
+			wg.Add(1)
+			go func() {
+				srv.watch(wctx, ch)
+				wg.Done()
+			}()
 
 			services[name] = cancel
 		}
