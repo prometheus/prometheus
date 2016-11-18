@@ -108,14 +108,15 @@ func NewGCEDiscovery(conf *config.GCESDConfig) (*GCEDiscovery, error) {
 
 // Run implements the TargetProvider interface.
 func (gd *GCEDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
-
 	// Get an initial set right away.
 	tg, err := gd.refresh()
 	if err != nil {
 		log.Error(err)
 	} else {
-		ch <- []*config.TargetGroup{tg}
+		select {
+		case ch <- []*config.TargetGroup{tg}:
+		case <-ctx.Done():
+		}
 	}
 
 	ticker := time.NewTicker(gd.interval)
@@ -127,8 +128,11 @@ func (gd *GCEDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 			tg, err := gd.refresh()
 			if err != nil {
 				log.Error(err)
-			} else {
-				ch <- []*config.TargetGroup{tg}
+				continue
+			}
+			select {
+			case ch <- []*config.TargetGroup{tg}:
+			case <-ctx.Done():
 			}
 		case <-ctx.Done():
 			return
