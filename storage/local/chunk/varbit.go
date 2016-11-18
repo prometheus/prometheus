@@ -328,6 +328,15 @@ func (c varbitChunk) Utilization() float64 {
 	return math.Min(float64(c.nextSampleOffset()/8+15)/float64(cap(c)), 1)
 }
 
+// Len implements chunk.  Runs in O(n).
+func (c varbitChunk) Len() int {
+	it := c.NewIterator()
+	i := 0
+	for ; it.Scan(); i++ {
+	}
+	return i
+}
+
 // FirstTime implements chunk.
 func (c varbitChunk) FirstTime() model.Time {
 	return model.Time(
