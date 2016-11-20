@@ -121,6 +121,198 @@ func (c *rawChunk) append(b []byte) error {
 	return nil
 }
 
+type bitChunk struct {
+	d []byte
+
+	sz    int
+	pos   uint32 // bytes used in the chunk
+	count uint32 // valid bits in last byte
+
+	// Read copies of above values used when retrieving iterators.
+	rl     uint32
+	rcount uint32
+}
+
+type bit bool
+
+const (
+	zero bit = false
+	one  bit = true
+)
+
+func newBitChunk(sz int, enc Encoding) bitChunk {
+	c := bitChunk{d: make([]byte, sz+1), pos: 1, count: 8}
+	c.d[0] = byte(enc)
+	return c
+}
+
+func (c *bitChunk) encoding() Encoding {
+	return Encoding(c.d[0])
+}
+
+func (c *bitChunk) Data() []byte {
+	return c.d[:c.pos]
+}
+
+func (c *bitChunk) reader() *bitChunkReader {
+	fmt.Println(len(c.d), c.pos)
+	return &bitChunkReader{d: c.d[1 : c.pos+1], count: 8}
+}
+
+type bitChunkReader struct {
+	d     []byte
+	count uint8
+	l     uint32
+}
+
+func (r *bitChunkReader) readBit() (bit, error) {
+	if len(r.d) == 0 {
+		return false, io.EOF
+	}
+
+	if r.count == 0 {
+		r.d = r.d[1:]
+		// did we just run out of stuff to read?
+		if len(r.d) == 0 {
+			return false, io.EOF
+		}
+		r.count = 8
+	}
+
+	r.count--
+	d := r.d[0] & 0x80
+	r.d[0] <<= 1
+	return d != 0, nil
+}
+
+func (r *bitChunkReader) readByte() (byte, error) {
+	if len(r.d) == 0 {
+		return 0, io.EOF
+	}
+
+	if r.count == 0 {
+		r.d = r.d[1:]
+
+		if len(r.d) == 0 {
+			return 0, io.EOF
+		}
+
+		r.count = 8
+	}
+
+	if r.count == 8 {
+		r.count = 0
+		return r.d[0], nil
+	}
+
+	byt := r.d[0]
+	r.d = r.d[1:]
+
+	if len(r.d) == 0 {
+		return 0, io.EOF
+	}
+
+	byt |= r.d[0] >> r.count
+	r.d[0] <<= (8 - r.count)
+
+	return byt, nil
+}
+
+func (r *bitChunkReader) readBits(nbits int) (uint64, error) {
+	var u uint64
+
+	for nbits >= 8 {
+		byt, err := r.readByte()
+		if err != nil {
+			return 0, err
+		}
+
+		u = (u << 8) | uint64(byt)
+		nbits -= 8
+	}
+
+	if nbits == 0 {
+		return u, nil
+	}
+
+	if nbits > int(r.count) {
+		u = (u << uint(r.count)) | uint64(r.d[0]>>(8-r.count))
+		nbits -= int(r.count)
+		r.d = r.d[1:]
+
+		if len(r.d) == 0 {
+			return 0, io.EOF
+		}
+		r.count = 8
+	}
+
+	u = (u << uint(nbits)) | uint64(r.d[0]>>(8-uint(nbits)))
+	r.d[0] <<= uint(nbits)
+	r.count -= uint8(nbits)
+	return u, nil
+}
+
+// append appends the first nbits bits from b into the chunk.
+// b must contain at least nbits bits.
+// We are using fixed 16 bytes as it might perform better due to
+// more static assumptions.
+func (c *bitChunk) append(b [20]byte, nbits int) error {
+	if nbits > 8*(len(c.d)-int(c.pos)-1)-int(c.count) {
+		return ErrChunkFull
+	}
+
+	c.writeBits(b, nbits)
+	// Swap the working length and count integers into the ones used
+	// to retrieve iterators. This allows to concurrently retrieve
+	// iteartors while appending to a chunk.
+	// This does not make it safe for concurrent appends!
+	atomic.StoreUint32(&c.rl, c.pos)
+	atomic.StoreUint32(&c.rcount, c.count)
+	return nil
+}
+
+func (c *bitChunk) writeBit(bit bit) {
+	if c.count == 0 {
+		c.pos++
+		c.count = 8
+	}
+
+	if bit {
+		c.d[c.pos] |= 1 << (c.count - 1)
+	}
+
+	c.count--
+}
+
+func (c *bitChunk) writeByte(byt byte) {
+	if c.count == 0 {
+		c.pos++
+		c.count = 8
+	}
+
+	// fill up b.b with b.count bits from byt
+	c.d[c.pos] |= byt >> (8 - c.count)
+
+	c.pos++
+	c.d[c.pos] = byt << c.count
+}
+
+func (c *bitChunk) writeBits(b [20]byte, nbits int) {
+	i := 0
+	for nbits >= 8 {
+		c.writeByte(b[i])
+		i++
+		nbits -= 8
+	}
+
+	bi := b[i]
+	for nbits > 0 {
+		c.writeBit((bi >> 7) == 1)
+		bi <<= 1
+		nbits--
+	}
+}
+
 // PlainChunk implements a Chunk using simple 16 byte representations
 // of sample pairs.
 type PlainChunk struct {

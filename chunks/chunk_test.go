@@ -105,6 +105,7 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	fmt.Println("num", b.N)
 
 	res := make([]model.SamplePair, 0, 1024)
 	for i := 0; i < len(chunks); i++ {
@@ -115,7 +116,7 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 			res = append(res, s)
 		}
 		if it.Err() != io.EOF {
-			b.Fatal(it.Err())
+			require.NoError(b, it.Err())
 		}
 		res = res[:0]
 	}
@@ -130,6 +131,18 @@ func BenchmarkPlainIterator(b *testing.B) {
 func BenchmarkDoubleDeltaIterator(b *testing.B) {
 	benchmarkIterator(b, func(sz int) Chunk {
 		return NewDoubleDeltaChunk(sz)
+	})
+}
+
+func BenchmarkXORIterator(b *testing.B) {
+	benchmarkIterator(b, func(sz int) Chunk {
+		return NewXORChunk(sz)
+	})
+}
+
+func BenchmarkXORAppender(b *testing.B) {
+	benchmarkAppender(b, func(sz int) Chunk {
+		return NewXORChunk(sz)
 	})
 }
 
