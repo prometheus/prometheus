@@ -55,7 +55,7 @@ func testXORChunk(t *testing.T) {
 }
 
 func TestXORChunk(t *testing.T) {
-	for i := 0; i < 1000000; i++ {
+	for i := 0; i < 10; i++ {
 		testXORChunk(t)
 	}
 }
