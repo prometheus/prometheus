@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package gce
 
 import (
 	"fmt"
@@ -52,15 +52,13 @@ const (
 var (
 	gceSDRefreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_gce_refresh_failures_total",
-			Help:      "The number of GCE-SD refresh failures.",
+			Name: "prometheus_sd_gce_refresh_failures_total",
+			Help: "The number of GCE-SD refresh failures.",
 		})
 	gceSDRefreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_gce_refresh_duration",
-			Help:      "The duration of a GCE-SD refresh in seconds.",
+			Name: "prometheus_sd_gce_refresh_duration",
+			Help: "The duration of a GCE-SD refresh in seconds.",
 		})
 )
 
@@ -84,7 +82,7 @@ type GCEDiscovery struct {
 }
 
 // NewGCEDiscovery returns a new GCEDiscovery which periodically refreshes its targets.
-func NewGCEDiscovery(conf *config.GCESDConfig) (*GCEDiscovery, error) {
+func NewDiscovery(conf *config.GCESDConfig) (*GCEDiscovery, error) {
 	gd := &GCEDiscovery{
 		project:      conf.Project,
 		zone:         conf.Zone,

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package file
 
 import (
 	"encoding/json"
@@ -36,15 +36,13 @@ const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 var (
 	fileSDScanDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_file_scan_duration_seconds",
-			Help:      "The duration of the File-SD scan in seconds.",
+			Name: "prometheus_sd_file_scan_duration_seconds",
+			Help: "The duration of the File-SD scan in seconds.",
 		})
 	fileSDReadErrorsCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_file_read_errors_total",
-			Help:      "The number of File-SD read errors.",
+			Name: "prometheus_sd_file_read_errors_total",
+			Help: "The number of File-SD read errors.",
 		})
 )
 
@@ -67,8 +65,8 @@ type FileDiscovery struct {
 	lastRefresh map[string]int
 }
 
-// NewFileDiscovery returns a new file discovery for the given paths.
-func NewFileDiscovery(conf *config.FileSDConfig) *FileDiscovery {
+// NewDiscovery returns a new file discovery for the given paths.
+func NewDiscovery(conf *config.FileSDConfig) *FileDiscovery {
 	return &FileDiscovery{
 		paths:    conf.Files,
 		interval: time.Duration(conf.RefreshInterval),

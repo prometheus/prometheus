@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package zookeeper
 
 import (
 	"encoding/json"
@@ -42,17 +42,17 @@ type ZookeeperDiscovery struct {
 
 // NewNerveDiscovery returns a new NerveDiscovery for the given config.
 func NewNerveDiscovery(conf *config.NerveSDConfig) *ZookeeperDiscovery {
-	return NewZookeeperDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, parseNerveMember)
+	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, parseNerveMember)
 }
 
 // NewServersetDiscovery returns a new ServersetDiscovery for the given config.
 func NewServersetDiscovery(conf *config.ServersetSDConfig) *ZookeeperDiscovery {
-	return NewZookeeperDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, parseServersetMember)
+	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, parseServersetMember)
 }
 
-// NewZookeeperDiscovery returns a new discovery along Zookeeper parses with
+// NewDiscovery returns a new discovery along Zookeeper parses with
 // the given parse function.
-func NewZookeeperDiscovery(
+func NewDiscovery(
 	srvs []string,
 	timeout time.Duration,
 	paths []string,
