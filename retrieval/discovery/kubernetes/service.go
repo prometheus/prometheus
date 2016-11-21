@@ -62,6 +62,8 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "add").Inc()
+
 			svc, err := convertToService(o)
 			if err != nil {
 				s.logger.With("err", err).Errorln("converting to Service object failed")
@@ -70,6 +72,8 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(s.buildService(svc))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "delete").Inc()
+
 			svc, err := convertToService(o)
 			if err != nil {
 				s.logger.With("err", err).Errorln("converting to Service object failed")
@@ -78,6 +82,8 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(&config.TargetGroup{Source: serviceSource(svc)})
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("service", "update").Inc()
+
 			svc, err := convertToService(o)
 			if err != nil {
 				s.logger.With("err", err).Errorln("converting to Service object failed")
