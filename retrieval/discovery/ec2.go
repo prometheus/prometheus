@@ -95,8 +95,6 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 
 // Run implements the TargetProvider interface.
 func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
-
 	ticker := time.NewTicker(ed.interval)
 	defer ticker.Stop()
 
@@ -105,7 +103,11 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 	if err != nil {
 		log.Error(err)
 	} else {
-		ch <- []*config.TargetGroup{tg}
+		select {
+		case ch <- []*config.TargetGroup{tg}:
+		case <-ctx.Done():
+			return
+		}
 	}
 
 	for {
@@ -114,8 +116,13 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 			tg, err := ed.refresh()
 			if err != nil {
 				log.Error(err)
-			} else {
-				ch <- []*config.TargetGroup{tg}
+				continue
+			}
+
+			select {
+			case ch <- []*config.TargetGroup{tg}:
+			case <-ctx.Done():
+				return
 			}
 		case <-ctx.Done():
 			return

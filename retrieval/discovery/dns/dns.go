@@ -90,8 +90,6 @@ func NewDiscovery(conf *config.DNSSDConfig) *Discovery {
 
 // Run implements the TargetProvider interface.
 func (dd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
-
 	ticker := time.NewTicker(dd.interval)
 	defer ticker.Stop()
 
