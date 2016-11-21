@@ -298,6 +298,7 @@ var expectedConf = &Config{
 					Region:          "us-east-1",
 					AccessKey:       "access",
 					SecretKey:       "secret",
+					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
 				},
