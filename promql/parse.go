@@ -990,7 +990,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 func (p *parser) expectType(node Node, want model.ValueType, context string) {
 	t := p.checkType(node)
 	if t != want {
-		p.errorf("expected type %s in %s, got %s", want, context, t)
+		p.errorf("expected type %s in %s, got %s", documentedType(want), context, documentedType(t))
 	}
 }
 
@@ -1024,20 +1024,20 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 	case *EvalStmt:
 		ty := p.checkType(n.Expr)
 		if ty == model.ValNone {
-			p.errorf("evaluation statement must have a valid expression type but got %s", ty)
+			p.errorf("evaluation statement must have a valid expression type but got %s", documentedType(ty))
 		}
 
 	case *RecordStmt:
 		ty := p.checkType(n.Expr)
 		if ty != model.ValVector && ty != model.ValScalar {
-			p.errorf("record statement must have a valid expression of type vector or scalar but got %s", ty)
+			p.errorf("record statement must have a valid expression of type instant vector or scalar but got %s", documentedType(ty))
 		}
 
 	case Expressions:
 		for _, e := range n {
 			ty := p.checkType(e)
 			if ty == model.ValNone {
-				p.errorf("expression must have a valid expression type but got %s", ty)
+				p.errorf("expression must have a valid expression type but got %s", documentedType(ty))
 			}
 		}
 	case *AggregateExpr:
@@ -1060,12 +1060,12 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			p.errorf("binary expression does not support operator %q", n.Op)
 		}
 		if (lt != model.ValScalar && lt != model.ValVector) || (rt != model.ValScalar && rt != model.ValVector) {
-			p.errorf("binary expression must contain only scalar and vector types")
+			p.errorf("binary expression must contain only scalar and instant vector types")
 		}
 
 		if (lt != model.ValVector || rt != model.ValVector) && n.VectorMatching != nil {
 			if len(n.VectorMatching.MatchingLabels) > 0 {
-				p.errorf("vector matching only allowed between vectors")
+				p.errorf("vector matching only allowed between instant vectors")
 			}
 			n.VectorMatching = nil
 		} else {
@@ -1104,7 +1104,7 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 			p.errorf("only + and - operators allowed for unary expressions")
 		}
 		if t := p.checkType(n.Expr); t != model.ValScalar && t != model.ValVector {
-			p.errorf("unary expression only allowed on expressions of type scalar or vector, got %q", t)
+			p.errorf("unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
 		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:

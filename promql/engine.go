@@ -120,7 +120,7 @@ func (r *Result) Matrix() (model.Matrix, error) {
 	}
 	v, ok := r.Value.(model.Matrix)
 	if !ok {
-		return nil, fmt.Errorf("query result is not a matrix")
+		return nil, fmt.Errorf("query result is not a range vector")
 	}
 	return v, nil
 }
@@ -286,7 +286,7 @@ func (ng *Engine) NewRangeQuery(qs string, start, end model.Time, interval time.
 		return nil, err
 	}
 	if expr.Type() != model.ValVector && expr.Type() != model.ValScalar {
-		return nil, fmt.Errorf("invalid expression type %q for range query, must be scalar or vector", expr.Type())
+		return nil, fmt.Errorf("invalid expression type %q for range query, must be scalar or instant vector", documentedType(expr.Type()))
 	}
 	qry := ng.newQuery(expr, start, end, interval)
 	qry.q = qs
@@ -581,7 +581,7 @@ func (ev *evaluator) evalScalar(e Expr) *model.Scalar {
 	val := ev.eval(e)
 	sv, ok := val.(*model.Scalar)
 	if !ok {
-		ev.errorf("expected scalar but got %s", val.Type())
+		ev.errorf("expected scalar but got %s", documentedType(val.Type()))
 	}
 	return sv
 }
@@ -591,7 +591,7 @@ func (ev *evaluator) evalVector(e Expr) vector {
 	val := ev.eval(e)
 	vec, ok := val.(vector)
 	if !ok {
-		ev.errorf("expected vector but got %s", val.Type())
+		ev.errorf("expected instant vector but got %s", documentedType(val.Type()))
 	}
 	return vec
 }
@@ -612,11 +612,13 @@ func (ev *evaluator) evalFloat(e Expr) float64 {
 }
 
 // evalMatrix attempts to evaluate e into a matrix and errors otherwise.
+// The error message uses the term "range vector" to match the user facing
+// documentation.
 func (ev *evaluator) evalMatrix(e Expr) matrix {
 	val := ev.eval(e)
 	mat, ok := val.(matrix)
 	if !ok {
-		ev.errorf("expected matrix but got %s", val.Type())
+		ev.errorf("expected range vector but got %s", documentedType(val.Type()))
 	}
 	return mat
 }
@@ -626,7 +628,7 @@ func (ev *evaluator) evalString(e Expr) *model.String {
 	val := ev.eval(e)
 	sv, ok := val.(*model.String)
 	if !ok {
-		ev.errorf("expected string but got %s", val.Type())
+		ev.errorf("expected string but got %s", documentedType(val.Type()))
 	}
 	return sv
 }
@@ -635,7 +637,7 @@ func (ev *evaluator) evalString(e Expr) *model.String {
 func (ev *evaluator) evalOneOf(e Expr, t1, t2 model.ValueType) model.Value {
 	val := ev.eval(e)
 	if val.Type() != t1 && val.Type() != t2 {
-		ev.errorf("expected %s or %s but got %s", t1, t2, val.Type())
+		ev.errorf("expected %s or %s but got %s", documentedType(t1), documentedType(t2), documentedType(val.Type()))
 	}
 	return val
 }
@@ -1335,5 +1337,18 @@ func (g *queryGate) Done() {
 	case <-g.ch:
 	default:
 		panic("engine.queryGate.Done: more operations done than started")
+	}
+}
+
+// documentedType returns the internal type to the equivalent
+// user facing terminology as defined in the documentation.
+func documentedType(t model.ValueType) string {
+	switch t.String() {
+	case "vector":
+		return "instant vector"
+	case "matrix":
+		return "range vector"
+	default:
+		return t.String()
 	}
 }
