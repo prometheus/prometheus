@@ -31,22 +31,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// A TargetProvider provides information about target groups. It maintains a set
-// of sources from which TargetGroups can originate. Whenever a target provider
-// detects a potential change, it sends the TargetGroup through its provided channel.
-//
-// The TargetProvider does not have to guarantee that an actual change happened.
-// It does guarantee that it sends the new TargetGroup whenever a change happens.
-//
-// Providers must initially send all known target groups as soon as it can.
-type TargetProvider interface {
-	// Run hands a channel to the target provider through which it can send
-	// updated target groups. The channel must be closed by the target provider
-	// if no more updates will be sent.
-	// On receiving from done Run must return.
-	Run(ctx context.Context, up chan<- []*config.TargetGroup)
-}
-
 // TargetManager maintains a set of targets, starts and stops their scraping and
 // creates the new targets based on the target groups it receives from various
 // target providers.
@@ -123,7 +107,7 @@ func (tm *TargetManager) reload() {
 		} else {
 			ts.reload(scfg)
 		}
-		ts.runProviders(tm.ctx, providersFromConfig(scfg))
+		ts.runProviders(tm.ctx, discovery.ProvidersFromConfig(scfg))
 	}
 
 	// Remove old target sets. Waiting for stopping is already guaranteed
@@ -257,7 +241,7 @@ func (ts *targetSet) sync() {
 	ts.scrapePool.sync(all)
 }
 
-func (ts *targetSet) runProviders(ctx context.Context, providers map[string]TargetProvider) {
+func (ts *targetSet) runProviders(ctx context.Context, providers map[string]discovery.TargetProvider) {
 	// Lock for the entire time. This may mean up to 5 seconds until the full initial set
 	// is retrieved and applied.
 	// We could release earlier with some tweaks, but this is easier to reason about.
@@ -281,7 +265,7 @@ func (ts *targetSet) runProviders(ctx context.Context, providers map[string]Targ
 
 		updates := make(chan []*config.TargetGroup)
 
-		go func(name string, prov TargetProvider) {
+		go func(name string, prov discovery.TargetProvider) {
 			select {
 			case <-ctx.Done():
 			case initial, ok := <-updates:
@@ -364,71 +348,6 @@ func (ts *targetSet) update(name string, tgroup *config.TargetGroup) error {
 	}
 
 	return nil
-}
-
-// providersFromConfig returns all TargetProviders configured in cfg.
-func providersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
-	providers := map[string]TargetProvider{}
-
-	app := func(mech string, i int, tp TargetProvider) {
-		providers[fmt.Sprintf("%s/%d", mech, i)] = tp
-	}
-
-	for i, c := range cfg.DNSSDConfigs {
-		app("dns", i, discovery.NewDNS(c))
-	}
-	for i, c := range cfg.FileSDConfigs {
-		app("file", i, discovery.NewFileDiscovery(c))
-	}
-	for i, c := range cfg.ConsulSDConfigs {
-		k, err := discovery.NewConsul(c)
-		if err != nil {
-			log.Errorf("Cannot create Consul discovery: %s", err)
-			continue
-		}
-		app("consul", i, k)
-	}
-	for i, c := range cfg.MarathonSDConfigs {
-		m, err := discovery.NewMarathon(c)
-		if err != nil {
-			log.Errorf("Cannot create Marathon discovery: %s", err)
-			continue
-		}
-		app("marathon", i, m)
-	}
-	for i, c := range cfg.KubernetesSDConfigs {
-		k, err := discovery.NewKubernetesDiscovery(c)
-		if err != nil {
-			log.Errorf("Cannot create Kubernetes discovery: %s", err)
-			continue
-		}
-		app("kubernetes", i, k)
-	}
-	for i, c := range cfg.ServersetSDConfigs {
-		app("serverset", i, discovery.NewServersetDiscovery(c))
-	}
-	for i, c := range cfg.NerveSDConfigs {
-		app("nerve", i, discovery.NewNerveDiscovery(c))
-	}
-	for i, c := range cfg.EC2SDConfigs {
-		app("ec2", i, discovery.NewEC2Discovery(c))
-	}
-	for i, c := range cfg.GCESDConfigs {
-		gced, err := discovery.NewGCEDiscovery(c)
-		if err != nil {
-			log.Errorf("Cannot initialize GCE discovery: %s", err)
-			continue
-		}
-		app("gce", i, gced)
-	}
-	for i, c := range cfg.AzureSDConfigs {
-		app("azure", i, discovery.NewAzureDiscovery(c))
-	}
-	if len(cfg.StaticConfigs) > 0 {
-		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
-	}
-
-	return providers
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.
@@ -529,29 +448,4 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Targ
 		}
 	}
 	return targets, nil
-}
-
-// StaticProvider holds a list of target groups that never change.
-type StaticProvider struct {
-	TargetGroups []*config.TargetGroup
-}
-
-// NewStaticProvider returns a StaticProvider configured with the given
-// target groups.
-func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
-	for i, tg := range groups {
-		tg.Source = fmt.Sprintf("%d", i)
-	}
-	return &StaticProvider{groups}
-}
-
-// Run implements the TargetProvider interface.
-func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	// We still have to consider that the consumer exits right away in which case
-	// the context will be canceled.
-	select {
-	case ch <- sd.TargetGroups:
-	case <-ctx.Done():
-	}
-	close(ch)
 }

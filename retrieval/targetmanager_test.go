@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval/discovery"
 	"github.com/prometheus/prometheus/storage/local"
 )
 
@@ -55,7 +56,7 @@ static_configs:
 
 	ts := newTargetSet(scrapeConfig, mss)
 
-	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
+	ts.runProviders(context.Background(), discovery.ProvidersFromConfig(scrapeConfig))
 
 	verifyPresence(ts.tgroups, "static/0/0", true)
 	verifyPresence(ts.tgroups, "static/0/1", true)
@@ -69,7 +70,7 @@ static_configs:
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 
-	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
+	ts.runProviders(context.Background(), discovery.ProvidersFromConfig(scrapeConfig))
 
 	verifyPresence(ts.tgroups, "static/0/0", true)
 	verifyPresence(ts.tgroups, "static/0/1", false)

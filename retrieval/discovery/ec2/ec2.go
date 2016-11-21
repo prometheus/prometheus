@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package ec2
 
 import (
 	"fmt"
@@ -50,15 +50,13 @@ const (
 var (
 	ec2SDRefreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_ec2_refresh_failures_total",
-			Help:      "The number of EC2-SD scrape failures.",
+			Name: "prometheus_sd_ec2_refresh_failures_total",
+			Help: "The number of EC2-SD scrape failures.",
 		})
 	ec2SDRefreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_ec2_refresh_duration_seconds",
-			Help:      "The duration of a EC2-SD refresh in seconds.",
+			Name: "prometheus_sd_ec2_refresh_duration_seconds",
+			Help: "The duration of a EC2-SD refresh in seconds.",
 		})
 )
 
@@ -76,8 +74,8 @@ type EC2Discovery struct {
 	port     int
 }
 
-// NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
+// NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
+func NewDiscovery(conf *config.EC2SDConfig) *EC2Discovery {
 	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = nil
