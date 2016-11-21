@@ -83,6 +83,8 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("endpoints", "add").Inc()
+
 			eps, err := convertToEndpoints(o)
 			if err != nil {
 				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
@@ -91,6 +93,8 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(e.buildEndpoints(eps))
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("endpoints", "update").Inc()
+
 			eps, err := convertToEndpoints(o)
 			if err != nil {
 				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
@@ -99,6 +103,8 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(e.buildEndpoints(eps))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("endpoints", "delete").Inc()
+
 			eps, err := convertToEndpoints(o)
 			if err != nil {
 				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
@@ -129,9 +135,18 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
-		AddFunc:    func(o interface{}) { serviceUpdate(o) },
-		UpdateFunc: func(_, o interface{}) { serviceUpdate(o) },
-		DeleteFunc: func(o interface{}) { serviceUpdate(o) },
+		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "add").Inc()
+			serviceUpdate(o)
+		},
+		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("service", "update").Inc()
+			serviceUpdate(o)
+		},
+		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "delete").Inc()
+			serviceUpdate(o)
+		},
 	})
 
 	// Block until the target provider is explicitly canceled.

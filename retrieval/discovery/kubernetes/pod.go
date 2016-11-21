@@ -71,6 +71,8 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("pod", "add").Inc()
+
 			pod, err := convertToPod(o)
 			if err != nil {
 				p.logger.With("err", err).Errorln("converting to Pod object failed")
@@ -79,6 +81,8 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(p.buildPod(pod))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("pod", "delete").Inc()
+
 			pod, err := convertToPod(o)
 			if err != nil {
 				p.logger.With("err", err).Errorln("converting to Pod object failed")
@@ -87,6 +91,8 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(&config.TargetGroup{Source: podSource(pod)})
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("pod", "update").Inc()
+
 			pod, err := convertToPod(o)
 			if err != nil {
 				p.logger.With("err", err).Errorln("converting to Pod object failed")

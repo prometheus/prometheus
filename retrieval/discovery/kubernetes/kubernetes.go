@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
 
 	"github.com/prometheus/common/log"
@@ -36,6 +37,27 @@ const (
 	metaLabelPrefix = model.MetaLabelPrefix + "kubernetes_"
 	namespaceLabel  = metaLabelPrefix + "namespace"
 )
+
+var (
+	eventCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_kubernetes_events_total",
+			Help: "The number of Kubernetes events handled.",
+		},
+		[]string{"role", "event"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(eventCount)
+
+	// Initialize metric vectors.
+	for _, role := range []string{"endpoints", "node", "pod", "service"} {
+		for _, evt := range []string{"add", "delete", "update"} {
+			eventCount.WithLabelValues(role, evt)
+		}
+	}
+}
 
 // Kubernetes implements the TargetProvider interface for discovering
 // targets from Kubernetes.

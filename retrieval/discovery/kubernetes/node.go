@@ -63,6 +63,8 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("node", "add").Inc()
+
 			node, err := convertToNode(o)
 			if err != nil {
 				n.logger.With("err", err).Errorln("converting to Node object failed")
@@ -71,6 +73,8 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(n.buildNode(node))
 		},
 		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("node", "delete").Inc()
+
 			node, err := convertToNode(o)
 			if err != nil {
 				n.logger.With("err", err).Errorln("converting to Node object failed")
@@ -79,6 +83,8 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(&config.TargetGroup{Source: nodeSource(node)})
 		},
 		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("node", "update").Inc()
+
 			node, err := convertToNode(o)
 			if err != nil {
 				n.logger.With("err", err).Errorln("converting to Node object failed")
