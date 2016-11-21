@@ -109,7 +109,6 @@ func (fd *FileDiscovery) watchFiles() {
 
 // Run implements the TargetProvider interface.
 func (fd *FileDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
 	defer fd.stop()
 
 	watcher, err := fsnotify.NewWatcher()
@@ -119,47 +118,40 @@ func (fd *FileDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGrou
 	}
 	fd.watcher = watcher
 
-	fd.refresh(ch)
+	fd.refresh(ctx, ch)
 
 	ticker := time.NewTicker(fd.interval)
 	defer ticker.Stop()
 
 	for {
-		// Stopping has priority over refreshing. Thus we wrap the actual select
-		// clause to always catch done signals.
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			select {
-			case <-ctx.Done():
-				return
 
-			case event := <-fd.watcher.Events:
-				// fsnotify sometimes sends a bunch of events without name or operation.
-				// It's unclear what they are and why they are sent - filter them out.
-				if len(event.Name) == 0 {
-					break
-				}
-				// Everything but a chmod requires rereading.
-				if event.Op^fsnotify.Chmod == 0 {
-					break
-				}
-				// Changes to a file can spawn various sequences of events with
-				// different combinations of operations. For all practical purposes
-				// this is inaccurate.
-				// The most reliable solution is to reload everything if anything happens.
-				fd.refresh(ch)
+		case event := <-fd.watcher.Events:
+			// fsnotify sometimes sends a bunch of events without name or operation.
+			// It's unclear what they are and why they are sent - filter them out.
+			if len(event.Name) == 0 {
+				break
+			}
+			// Everything but a chmod requires rereading.
+			if event.Op^fsnotify.Chmod == 0 {
+				break
+			}
+			// Changes to a file can spawn various sequences of events with
+			// different combinations of operations. For all practical purposes
+			// this is inaccurate.
+			// The most reliable solution is to reload everything if anything happens.
+			fd.refresh(ctx, ch)
 
-			case <-ticker.C:
-				// Setting a new watch after an update might fail. Make sure we don't lose
-				// those files forever.
-				fd.refresh(ch)
+		case <-ticker.C:
+			// Setting a new watch after an update might fail. Make sure we don't lose
+			// those files forever.
+			fd.refresh(ctx, ch)
 
-			case err := <-fd.watcher.Errors:
-				if err != nil {
-					log.Errorf("Error on file watch: %s", err)
-				}
+		case err := <-fd.watcher.Errors:
+			if err != nil {
+				log.Errorf("Error on file watch: %s", err)
 			}
 		}
 	}
@@ -193,7 +185,7 @@ func (fd *FileDiscovery) stop() {
 
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
-func (fd *FileDiscovery) refresh(ch chan<- []*config.TargetGroup) {
+func (fd *FileDiscovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	t0 := time.Now()
 	defer func() {
 		fileSDScanDuration.Observe(time.Since(t0).Seconds())
@@ -209,7 +201,11 @@ func (fd *FileDiscovery) refresh(ch chan<- []*config.TargetGroup) {
 			ref[p] = fd.lastRefresh[p]
 			continue
 		}
-		ch <- tgroups
+		select {
+		case ch <- tgroups:
+		case <-ctx.Done():
+			return
+		}
 
 		ref[p] = len(tgroups)
 	}
@@ -218,8 +214,10 @@ func (fd *FileDiscovery) refresh(ch chan<- []*config.TargetGroup) {
 		m, ok := ref[f]
 		if !ok || n > m {
 			for i := m; i < n; i++ {
-				ch <- []*config.TargetGroup{
-					{Source: fileSource(f, i)},
+				select {
+				case ch <- []*config.TargetGroup{{Source: fileSource(f, i)}}:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}

@@ -103,8 +103,6 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 
 // Run implements the TargetProvider interface.
 func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer close(ch)
-
 	for {
 		select {
 		case <-ctx.Done():
