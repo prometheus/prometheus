@@ -15,6 +15,8 @@ package discovery
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/config"
@@ -37,12 +39,12 @@ import (
 // The TargetProvider does not have to guarantee that an actual change happened.
 // It does guarantee that it sends the new TargetGroup whenever a change happens.
 //
-// Providers must initially send all known target groups as soon as it can.
+// TargetProviders should initially send a full set of all discoverable TargetGroups.
 type TargetProvider interface {
 	// Run hands a channel to the target provider through which it can send
-	// updated target groups. The channel must be closed by the target provider
-	// if no more updates will be sent.
-	// On receiving from done Run must return.
+	// updated target groups.
+	// Must returns if the context gets canceled. It should not close the update
+	// channel on returning.
 	Run(ctx context.Context, up chan<- []*config.TargetGroup)
 }
 
@@ -134,4 +136,167 @@ func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*config.TargetGro
 	case <-ctx.Done():
 	}
 	close(ch)
+}
+
+// TargetSet handles multiple TargetProviders and sends a full overview of their
+// discovered TargetGroups to a Syncer.
+type TargetSet struct {
+	mtx sync.RWMutex
+	// Sets of targets by a source string that is unique across target providers.
+	tgroups map[string]*config.TargetGroup
+
+	syncer Syncer
+
+	syncCh          chan struct{}
+	providerCh      chan map[string]TargetProvider
+	cancelProviders func()
+}
+
+// Syncer receives updates complete sets of TargetGroups.
+type Syncer interface {
+	Sync([]*config.TargetGroup)
+}
+
+// NewTargetSet returns a new target sending TargetGroups to the Syncer.
+func NewTargetSet(s Syncer) *TargetSet {
+	return &TargetSet{
+		syncCh:     make(chan struct{}, 1),
+		providerCh: make(chan map[string]TargetProvider),
+		syncer:     s,
+	}
+}
+
+// Run starts the processing of target providers and their updates.
+// It blocks until the context gets canceled.
+func (ts *TargetSet) Run(ctx context.Context) {
+Loop:
+	for {
+		// Throttle syncing to once per five seconds.
+		select {
+		case <-ctx.Done():
+			break Loop
+		case p := <-ts.providerCh:
+			ts.updateProviders(ctx, p)
+		case <-time.After(5 * time.Second):
+		}
+
+		select {
+		case <-ctx.Done():
+			break Loop
+		case <-ts.syncCh:
+			ts.sync()
+		case p := <-ts.providerCh:
+			ts.updateProviders(ctx, p)
+		}
+	}
+}
+
+func (ts *TargetSet) sync() {
+	ts.mtx.RLock()
+	var all []*config.TargetGroup
+	for _, tg := range ts.tgroups {
+		all = append(all, tg)
+	}
+	ts.mtx.RUnlock()
+
+	ts.syncer.Sync(all)
+}
+
+// UpdateProviders sets new target providers for the target set.
+func (ts *TargetSet) UpdateProviders(p map[string]TargetProvider) {
+	ts.providerCh <- p
+}
+
+func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]TargetProvider) {
+	// Lock for the entire time. This may mean up to 5 seconds until the full initial set
+	// is retrieved and applied.
+	// We could release earlier with some tweaks, but this is easier to reason about.
+	ts.mtx.Lock()
+	defer ts.mtx.Unlock()
+
+	// Stop all previous target providers of the target set.
+	if ts.cancelProviders != nil {
+		ts.cancelProviders()
+	}
+	ctx, ts.cancelProviders = context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+	// (Re-)create a fresh tgroups map to not keep stale targets around. We
+	// will retrieve all targets below anyway, so cleaning up everything is
+	// safe and doesn't inflict any additional cost.
+	ts.tgroups = map[string]*config.TargetGroup{}
+
+	for name, prov := range providers {
+		wg.Add(1)
+
+		updates := make(chan []*config.TargetGroup)
+		go prov.Run(ctx, updates)
+
+		go func(name string, prov TargetProvider) {
+			select {
+			case <-ctx.Done():
+			case initial, ok := <-updates:
+				// Handle the case that a target provider exits and closes the channel
+				// before the context is done.
+				if !ok {
+					break
+				}
+				// First set of all targets the provider knows.
+				for _, tgroup := range initial {
+					ts.setTargetGroup(name, tgroup)
+				}
+			case <-time.After(5 * time.Second):
+				// Initial set didn't arrive. Act as if it was empty
+				// and wait for updates later on.
+			}
+			wg.Done()
+
+			// Start listening for further updates.
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case tgs, ok := <-updates:
+					// Handle the case that a target provider exits and closes the channel
+					// before the context is done.
+					if !ok {
+						return
+					}
+					for _, tg := range tgs {
+						ts.update(name, tg)
+					}
+				}
+			}
+		}(name, prov)
+	}
+
+	// We wait for a full initial set of target groups before releasing the mutex
+	// to ensure the initial sync is complete and there are no races with subsequent updates.
+	wg.Wait()
+	// Just signal that there are initial sets to sync now. Actual syncing must only
+	// happen in the runScraping loop.
+	select {
+	case ts.syncCh <- struct{}{}:
+	default:
+	}
+}
+
+// update handles a target group update from a target provider identified by the name.
+func (ts *TargetSet) update(name string, tgroup *config.TargetGroup) {
+	ts.mtx.Lock()
+	defer ts.mtx.Unlock()
+
+	ts.setTargetGroup(name, tgroup)
+
+	select {
+	case ts.syncCh <- struct{}{}:
+	default:
+	}
+}
+
+func (ts *TargetSet) setTargetGroup(name string, tg *config.TargetGroup) {
+	if tg == nil {
+		return
+	}
+	ts.tgroups[name+"/"+tg.Source] = tg
 }

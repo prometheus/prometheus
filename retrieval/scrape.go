@@ -115,7 +115,7 @@ type scrapePool struct {
 	newLoop func(context.Context, scraper, storage.SampleAppender, storage.SampleAppender) loop
 }
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
+func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
 	client, err := NewHTTPClient(cfg)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
@@ -124,18 +124,12 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.SampleAppender) *scrape
 	return &scrapePool{
 		appender: app,
 		config:   cfg,
+		ctx:      ctx,
 		client:   client,
 		targets:  map[uint64]*Target{},
 		loops:    map[uint64]loop{},
 		newLoop:  newScrapeLoop,
 	}
-}
-
-func (sp *scrapePool) init(ctx context.Context) {
-	sp.mtx.Lock()
-	defer sp.mtx.Unlock()
-
-	sp.ctx = ctx
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -165,6 +159,7 @@ func (sp *scrapePool) stop() {
 // This method returns after all scrape loops that were stopped have fully terminated.
 func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	start := time.Now()
+
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
@@ -206,11 +201,32 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	)
 }
 
+// Sync converts target groups into actual scrape targets and synchronizes
+// the currently running scraper with the resulting set.
+func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
+	start := time.Now()
+
+	var all []*Target
+	for _, tg := range tgs {
+		targets, err := targetsFromGroup(tg, sp.config)
+		if err != nil {
+			log.With("err", err).Error("creating targets failed")
+			continue
+		}
+		all = append(all, targets...)
+	}
+	sp.sync(all)
+
+	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
+		time.Since(start).Seconds(),
+	)
+	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
+}
+
 // sync takes a list of potentially duplicated targets, deduplicates them, starts
 // scrape loops for new targets, and stops scrape loops for disappeared targets.
 // It returns after all stopped scrape loops terminated.
 func (sp *scrapePool) sync(targets []*Target) {
-	start := time.Now()
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
@@ -256,10 +272,6 @@ func (sp *scrapePool) sync(targets []*Target) {
 	// may be active and tries to insert. The old scraper that didn't terminate yet could still
 	// be inserting a previous sample set.
 	wg.Wait()
-	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
-		time.Since(start).Seconds(),
-	)
-	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
 }
 
 // sampleAppender returns an appender for ingested samples from the target.
