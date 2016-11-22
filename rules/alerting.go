@@ -218,8 +218,11 @@ func (r *AlertingRule) Eval(ctx context.Context, ts model.Time, engine *promql.E
 		fp := smpl.Metric.Fingerprint()
 		resultFPs[fp] = struct{}{}
 
+		// Check whether we already have alerting state for the identifying label set.
+		// Update the last value and annotations if so, create a new alert entry otherwise.
 		if alert, ok := r.active[fp]; ok && alert.State != StateInactive {
 			alert.Value = smpl.Value
+			alert.Annotations = annotations
 			continue
 		}
 
