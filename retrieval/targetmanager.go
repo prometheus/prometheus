@@ -14,12 +14,8 @@
 package retrieval
 
 import (
-	"fmt"
-	"net"
 	"sort"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -27,7 +23,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -45,6 +40,14 @@ type TargetManager struct {
 
 	// Set of unqiue targets by scrape configuration.
 	targetSets map[string]*targetSet
+}
+
+type targetSet struct {
+	ctx    context.Context
+	cancel func()
+
+	ts *discovery.TargetSet
+	sp *scrapePool
 }
 
 // NewTargetManager creates a new TargetManager.
@@ -95,23 +98,33 @@ func (tm *TargetManager) reload() {
 
 		ts, ok := tm.targetSets[scfg.JobName]
 		if !ok {
-			ts = newTargetSet(scfg, tm.appender)
+			ctx, cancel := context.WithCancel(tm.ctx)
+			ts = &targetSet{
+				ctx:    ctx,
+				cancel: cancel,
+				sp:     newScrapePool(ctx, scfg, tm.appender),
+			}
+			ts.ts = discovery.NewTargetSet(ts.sp)
+
 			tm.targetSets[scfg.JobName] = ts
 
 			tm.wg.Add(1)
 
 			go func(ts *targetSet) {
-				ts.runScraping(tm.ctx)
+				// Run target set, which blocks until its context is canceled.
+				// Gracefully shut down pending scrapes in the scrape pool afterwards.
+				ts.ts.Run(ctx)
+				ts.sp.stop()
 				tm.wg.Done()
 			}(ts)
 		} else {
-			ts.reload(scfg)
+			ts.sp.reload(scfg)
 		}
-		ts.runProviders(tm.ctx, discovery.ProvidersFromConfig(scfg))
+		ts.ts.UpdateProviders(discovery.ProvidersFromConfig(scfg))
 	}
 
-	// Remove old target sets. Waiting for stopping is already guaranteed
-	// by the goroutine that started the target set.
+	// Remove old target sets. Waiting for scrape pools to complete pending
+	// scrape inserts is already guaranteed by the goroutine that started the target set.
 	for name, ts := range tm.targetSets {
 		if _, ok := jobs[name]; !ok {
 			ts.cancel()
@@ -129,14 +142,14 @@ func (tm *TargetManager) Pools() map[string]Targets {
 
 	// TODO(fabxc): this is just a hack to maintain compatibility for now.
 	for _, ps := range tm.targetSets {
-		ps.scrapePool.mtx.RLock()
+		ps.sp.mtx.RLock()
 
-		for _, t := range ps.scrapePool.targets {
+		for _, t := range ps.sp.targets {
 			job := string(t.Labels()[model.JobLabel])
 			pools[job] = append(pools[job], t)
 		}
 
-		ps.scrapePool.mtx.RUnlock()
+		ps.sp.mtx.RUnlock()
 	}
 	for _, targets := range pools {
 		sort.Sort(targets)
@@ -156,296 +169,4 @@ func (tm *TargetManager) ApplyConfig(cfg *config.Config) error {
 		tm.reload()
 	}
 	return nil
-}
-
-// targetSet holds several TargetProviders for which the same scrape configuration
-// is used. It maintains target groups from all given providers and sync them
-// to a scrape pool.
-type targetSet struct {
-	mtx sync.RWMutex
-
-	// Sets of targets by a source string that is unique across target providers.
-	tgroups map[string][]*Target
-
-	scrapePool *scrapePool
-	config     *config.ScrapeConfig
-
-	syncCh          chan struct{}
-	cancelScraping  func()
-	cancelProviders func()
-}
-
-func newTargetSet(cfg *config.ScrapeConfig, app storage.SampleAppender) *targetSet {
-	ts := &targetSet{
-		scrapePool: newScrapePool(cfg, app),
-		syncCh:     make(chan struct{}, 1),
-		config:     cfg,
-	}
-	return ts
-}
-
-func (ts *targetSet) cancel() {
-	ts.mtx.RLock()
-	defer ts.mtx.RUnlock()
-
-	if ts.cancelScraping != nil {
-		ts.cancelScraping()
-	}
-	if ts.cancelProviders != nil {
-		ts.cancelProviders()
-	}
-}
-
-func (ts *targetSet) reload(cfg *config.ScrapeConfig) {
-	ts.mtx.Lock()
-	ts.config = cfg
-	ts.mtx.Unlock()
-
-	ts.scrapePool.reload(cfg)
-}
-
-func (ts *targetSet) runScraping(ctx context.Context) {
-	ctx, ts.cancelScraping = context.WithCancel(ctx)
-
-	ts.scrapePool.init(ctx)
-
-Loop:
-	for {
-		// Throttle syncing to once per five seconds.
-		select {
-		case <-ctx.Done():
-			break Loop
-		case <-time.After(5 * time.Second):
-		}
-
-		select {
-		case <-ctx.Done():
-			break Loop
-		case <-ts.syncCh:
-			ts.mtx.RLock()
-			ts.sync()
-			ts.mtx.RUnlock()
-		}
-	}
-
-	// We want to wait for all pending target scrapes to complete though to ensure there'll
-	// be no more storage writes after this point.
-	ts.scrapePool.stop()
-}
-
-func (ts *targetSet) sync() {
-	var all []*Target
-	for _, targets := range ts.tgroups {
-		all = append(all, targets...)
-	}
-	ts.scrapePool.sync(all)
-}
-
-func (ts *targetSet) runProviders(ctx context.Context, providers map[string]discovery.TargetProvider) {
-	// Lock for the entire time. This may mean up to 5 seconds until the full initial set
-	// is retrieved and applied.
-	// We could release earlier with some tweaks, but this is easier to reason about.
-	ts.mtx.Lock()
-	defer ts.mtx.Unlock()
-
-	var wg sync.WaitGroup
-
-	if ts.cancelProviders != nil {
-		ts.cancelProviders()
-	}
-	ctx, ts.cancelProviders = context.WithCancel(ctx)
-
-	// (Re-)create a fresh tgroups map to not keep stale targets around. We
-	// will retrieve all targets below anyway, so cleaning up everything is
-	// safe and doesn't inflict any additional cost.
-	ts.tgroups = map[string][]*Target{}
-
-	for name, prov := range providers {
-		wg.Add(1)
-
-		updates := make(chan []*config.TargetGroup)
-
-		go func(name string, prov discovery.TargetProvider) {
-			select {
-			case <-ctx.Done():
-			case initial, ok := <-updates:
-				// Handle the case that a target provider exits and closes the channel
-				// before the context is done.
-				if !ok {
-					break
-				}
-				// First set of all targets the provider knows.
-				for _, tgroup := range initial {
-					if tgroup == nil {
-						continue
-					}
-					targets, err := targetsFromGroup(tgroup, ts.config)
-					if err != nil {
-						log.With("target_group", tgroup).Errorf("Target update failed: %s", err)
-						continue
-					}
-					ts.tgroups[name+"/"+tgroup.Source] = targets
-				}
-			case <-time.After(5 * time.Second):
-				// Initial set didn't arrive. Act as if it was empty
-				// and wait for updates later on.
-			}
-
-			wg.Done()
-
-			// Start listening for further updates.
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case tgs, ok := <-updates:
-					// Handle the case that a target provider exits and closes the channel
-					// before the context is done.
-					if !ok {
-						return
-					}
-					for _, tg := range tgs {
-						if err := ts.update(name, tg); err != nil {
-							log.With("target_group", tg).Errorf("Target update failed: %s", err)
-						}
-					}
-				}
-			}
-		}(name, prov)
-
-		go prov.Run(ctx, updates)
-	}
-
-	// We wait for a full initial set of target groups before releasing the mutex
-	// to ensure the initial sync is complete and there are no races with subsequent updates.
-	wg.Wait()
-	// Just signal that there are initial sets to sync now. Actual syncing must only
-	// happen in the runScraping loop.
-	select {
-	case ts.syncCh <- struct{}{}:
-	default:
-	}
-}
-
-// update handles a target group update from a target provider identified by the name.
-func (ts *targetSet) update(name string, tgroup *config.TargetGroup) error {
-	if tgroup == nil {
-		return nil
-	}
-	targets, err := targetsFromGroup(tgroup, ts.config)
-	if err != nil {
-		return err
-	}
-
-	ts.mtx.Lock()
-	defer ts.mtx.Unlock()
-
-	ts.tgroups[name+"/"+tgroup.Source] = targets
-
-	select {
-	case ts.syncCh <- struct{}{}:
-	default:
-	}
-
-	return nil
-}
-
-// populateLabels builds a label set from the given label set and scrape configuration.
-// It returns a label set before relabeling was applied as the second return value.
-// Returns a nil label set if the target is dropped during relabeling.
-func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig model.LabelSet, err error) {
-	if _, ok := lset[model.AddressLabel]; !ok {
-		return nil, nil, fmt.Errorf("no address")
-	}
-	// Copy labels into the labelset for the target if they are not
-	// set already. Apply the labelsets in order of decreasing precedence.
-	scrapeLabels := model.LabelSet{
-		model.SchemeLabel:      model.LabelValue(cfg.Scheme),
-		model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
-		model.JobLabel:         model.LabelValue(cfg.JobName),
-	}
-	for ln, lv := range scrapeLabels {
-		if _, ok := lset[ln]; !ok {
-			lset[ln] = lv
-		}
-	}
-	// Encode scrape query parameters as labels.
-	for k, v := range cfg.Params {
-		if len(v) > 0 {
-			lset[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
-		}
-	}
-
-	preRelabelLabels := lset
-	lset = relabel.Process(lset, cfg.RelabelConfigs...)
-
-	// Check if the target was dropped.
-	if lset == nil {
-		return nil, nil, nil
-	}
-
-	// addPort checks whether we should add a default port to the address.
-	// If the address is not valid, we don't append a port either.
-	addPort := func(s string) bool {
-		// If we can split, a port exists and we don't have to add one.
-		if _, _, err := net.SplitHostPort(s); err == nil {
-			return false
-		}
-		// If adding a port makes it valid, the previous error
-		// was not due to an invalid address and we can append a port.
-		_, _, err := net.SplitHostPort(s + ":1234")
-		return err == nil
-	}
-	// If it's an address with no trailing port, infer it based on the used scheme.
-	if addr := string(lset[model.AddressLabel]); addPort(addr) {
-		// Addresses reaching this point are already wrapped in [] if necessary.
-		switch lset[model.SchemeLabel] {
-		case "http", "":
-			addr = addr + ":80"
-		case "https":
-			addr = addr + ":443"
-		default:
-			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
-		}
-		lset[model.AddressLabel] = model.LabelValue(addr)
-	}
-	if err := config.CheckTargetAddress(lset[model.AddressLabel]); err != nil {
-		return nil, nil, err
-	}
-
-	// Meta labels are deleted after relabelling. Other internal labels propagate to
-	// the target which decides whether they will be part of their label set.
-	for ln := range lset {
-		if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
-			delete(lset, ln)
-		}
-	}
-
-	// Default the instance label to the target address.
-	if _, ok := lset[model.InstanceLabel]; !ok {
-		lset[model.InstanceLabel] = lset[model.AddressLabel]
-	}
-	return lset, preRelabelLabels, nil
-}
-
-// targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
-	targets := make([]*Target, 0, len(tg.Targets))
-
-	for i, lset := range tg.Targets {
-		// Combine target labels with target group labels.
-		for ln, lv := range tg.Labels {
-			if _, ok := lset[ln]; !ok {
-				lset[ln] = lv
-			}
-		}
-		labels, origLabels, err := populateLabels(lset, cfg)
-		if err != nil {
-			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
-		}
-		if labels != nil {
-			targets = append(targets, NewTarget(labels, origLabels, cfg.Params))
-		}
-	}
-	return targets, nil
 }
