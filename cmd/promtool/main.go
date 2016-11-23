@@ -102,15 +102,15 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 	}
 
 	for _, scfg := range cfg.ScrapeConfigs {
-		if err := checkFileExists(scfg.BearerTokenFile); err != nil {
-			return nil, fmt.Errorf("error checking bearer token file %q: %s", scfg.BearerTokenFile, err)
+		if err := checkFileExists(scfg.HTTPClientConfig.BearerTokenFile); err != nil {
+			return nil, fmt.Errorf("error checking bearer token file %q: %s", scfg.HTTPClientConfig.BearerTokenFile, err)
 		}
 
-		if err := checkTLSConfig(scfg.TLSConfig); err != nil {
+		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig); err != nil {
 			return nil, err
 		}
 
-		for _, kd := range scfg.KubernetesSDConfigs {
+		for _, kd := range scfg.ServiceDiscoveryConfig.KubernetesSDConfigs {
 			if err := checkTLSConfig(kd.TLSConfig); err != nil {
 				return nil, err
 			}
