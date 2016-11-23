@@ -86,6 +86,7 @@ func NewEC2Discovery(conf *config.EC2SDConfig) *EC2Discovery {
 		aws: &aws.Config{
 			Region:      &conf.Region,
 			Credentials: creds,
+			HTTPClient:  defaults.DefaultConfig.HTTPClient,
 		},
 		profile:  conf.Profile,
 		interval: time.Duration(conf.RefreshInterval),
