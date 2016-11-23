@@ -27,34 +27,34 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
-func TestPostURL(t *testing.T) {
+func TestPostPath(t *testing.T) {
 	var cases = []struct {
 		in, out string
 	}{
 		{
-			in:  "http://localhost:9093",
-			out: "http://localhost:9093/api/v1/alerts",
+			in:  "",
+			out: "/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/",
-			out: "http://localhost:9093/api/v1/alerts",
+			in:  "/",
+			out: "/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/prefix",
-			out: "http://localhost:9093/prefix/api/v1/alerts",
+			in:  "/prefix",
+			out: "/prefix/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/prefix//",
-			out: "http://localhost:9093/prefix/api/v1/alerts",
+			in:  "/prefix//",
+			out: "/prefix/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/prefix//",
-			out: "http://localhost:9093/prefix/api/v1/alerts",
+			in:  "prefix//",
+			out: "/prefix/api/v1/alerts",
 		},
 	}
 	for _, c := range cases {
-		if res := postURL(c.in); res != c.out {
-			t.Errorf("Expected post URL %q for %q but got %q", c.out, c.in, res)
+		if res := postPath(c.in); res != c.out {
+			t.Errorf("Expected post path %q for %q but got %q", c.out, c.in, res)
 		}
 	}
 }
@@ -123,9 +123,6 @@ func TestHandlerSendAll(t *testing.T) {
 	)
 
 	f := func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != alertPushEndpoint {
-			t.Fatalf("Bad endpoint %q used, expected %q", r.URL.Path, alertPushEndpoint)
-		}
 		defer r.Body.Close()
 
 		var alerts model.Alerts
@@ -150,9 +147,15 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{
-		AlertmanagerURLs: []string{server1.URL, server2.URL},
-		Timeout:          time.Minute,
+	h := New(&Options{})
+	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+		ams: []alertmanager{
+			{plainURL: server1.URL},
+			{plainURL: server2.URL},
+		},
+		cfg: &config.AlertmanagersConfig{
+			Timeout: time.Second,
+		},
 	})
 
 	for i := range make([]struct{}, maxBatchSize) {
@@ -170,18 +173,18 @@ func TestHandlerSendAll(t *testing.T) {
 
 	status1 = http.StatusOK
 	status2 = http.StatusOK
-	if ne := h.sendAll(h.queue...); ne != 0 {
-		t.Fatalf("Unexpected number of failed sends: %d", ne)
+	if !h.sendAll(h.queue...) {
+		t.Fatalf("all sends failed unexpectedly")
 	}
 
 	status1 = http.StatusNotFound
-	if ne := h.sendAll(h.queue...); ne != 1 {
-		t.Fatalf("Unexpected number of failed sends: %d", ne)
+	if !h.sendAll(h.queue...) {
+		t.Fatalf("all sends failed unexpectedly")
 	}
 
 	status2 = http.StatusInternalServerError
-	if ne := h.sendAll(h.queue...); ne != 2 {
-		t.Fatalf("Unexpected number of failed sends: %d", ne)
+	if h.sendAll(h.queue...) {
+		t.Fatalf("all sends succeeded unexpectedly")
 	}
 }
 
@@ -305,9 +308,15 @@ func TestHandlerQueueing(t *testing.T) {
 	}))
 
 	h := New(&Options{
-		AlertmanagerURLs: []string{server.URL},
-		Timeout:          time.Second,
-		QueueCapacity:    3 * maxBatchSize,
+		QueueCapacity: 3 * maxBatchSize,
+	})
+	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+		ams: []alertmanager{
+			{plainURL: server.URL},
+		},
+		cfg: &config.AlertmanagersConfig{
+			Timeout: time.Second,
+		},
 	})
 
 	var alerts model.Alerts
