@@ -176,9 +176,7 @@ func (node *BinaryExpr) String() string {
 			} else {
 				matching += "RIGHT"
 			}
-			if len(vm.Include) > 0 {
-				matching += fmt.Sprintf("(%s)", vm.Include)
-			}
+			matching += fmt.Sprintf("(%s)", vm.Include)
 		}
 	}
 	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
