@@ -128,6 +128,7 @@ func Main() int {
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.TargetManager = targetManager
 	cfg.web.RuleManager = ruleManager
+	cfg.web.Notifier = notifier
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,

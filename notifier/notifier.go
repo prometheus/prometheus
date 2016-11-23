@@ -281,6 +281,25 @@ func (n *Notifier) setMore() {
 	}
 }
 
+// Alertmanagers returns a list Alertmanager URLs.
+func (n *Notifier) Alertmanagers() []string {
+	n.mtx.RLock()
+	amSets := n.alertmanagers
+	n.mtx.RUnlock()
+
+	var res []string
+
+	for _, ams := range amSets {
+		ams.mtx.RLock()
+		for _, am := range ams.ams {
+			res = append(res, am.url())
+		}
+		ams.mtx.RUnlock()
+	}
+
+	return res
+}
+
 // sendAll sends the alerts to all configured Alertmanagers at concurrently.
 // It returns the number of sends that have failed and true if all failed.
 func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
