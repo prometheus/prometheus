@@ -36,56 +36,46 @@ const (
 	scrapeHealthMetricName   = "up"
 	scrapeDurationMetricName = "scrape_duration_seconds"
 	scrapeSamplesMetricName  = "scrape_samples_scraped"
-
-	// Constants for instrumentation.
-	namespace = "prometheus"
-	interval  = "interval"
-	scrapeJob = "scrape_job"
 )
 
 var (
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "target_interval_length_seconds",
+			Name:       "prometheus_target_interval_length_seconds",
 			Help:       "Actual intervals between scrapes.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
-		[]string{interval},
+		[]string{"interval"},
 	)
 	targetSkippedScrapes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "target_skipped_scrapes_total",
-			Help:      "Total number of scrapes that were skipped because the metric storage was throttled.",
+			Name: "prometheus_target_skipped_scrapes_total",
+			Help: "Total number of scrapes that were skipped because the metric storage was throttled.",
 		},
-		[]string{interval},
+		[]string{"interval"},
 	)
 	targetReloadIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "target_reload_length_seconds",
+			Name:       "prometheus_target_reload_length_seconds",
 			Help:       "Actual interval to reload the scrape pool with a given configuration.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
-		[]string{interval},
+		[]string{"interval"},
 	)
 	targetSyncIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "target_sync_length_seconds",
+			Name:       "prometheus_target_sync_length_seconds",
 			Help:       "Actual interval to sync the scrape pool.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 		},
-		[]string{scrapeJob},
+		[]string{"scrape_job"},
 	)
 	targetScrapePoolSyncsCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "target_scrape_pool_sync_total",
-			Help:      "Total number of syncs that were executed on a scrape pool.",
+			Name: "prometheus_target_scrape_pool_sync_total",
+			Help: "Total number of syncs that were executed on a scrape pool.",
 		},
-		[]string{scrapeJob},
+		[]string{"scrape_job"},
 	)
 )
 
