@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package azure
 
 import (
 	"fmt"
@@ -45,15 +45,13 @@ const (
 var (
 	azureSDRefreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_azure_refresh_failures_total",
-			Help:      "Number of Azure-SD refresh failures.",
+			Name: "prometheus_sd_azure_refresh_failures_total",
+			Help: "Number of Azure-SD refresh failures.",
 		})
 	azureSDRefreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Namespace: namespace,
-			Name:      "sd_azure_refresh_duration_seconds",
-			Help:      "The duration of a Azure-SD refresh in seconds.",
+			Name: "prometheus_sd_azure_refresh_duration_seconds",
+			Help: "The duration of a Azure-SD refresh in seconds.",
 		})
 )
 
@@ -70,8 +68,8 @@ type AzureDiscovery struct {
 	port     int
 }
 
-// NewAzureDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewAzureDiscovery(cfg *config.AzureSDConfig) *AzureDiscovery {
+// NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
+func NewDiscovery(cfg *config.AzureSDConfig) *AzureDiscovery {
 	return &AzureDiscovery{
 		cfg:      cfg,
 		interval: time.Duration(cfg.RefreshInterval),

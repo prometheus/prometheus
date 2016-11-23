@@ -17,63 +17,9 @@ import (
 	"reflect"
 	"testing"
 
-	"golang.org/x/net/context"
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/storage/local"
 )
-
-func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-
-	verifyPresence := func(tgroups map[string][]*Target, name string, present bool) {
-		if _, ok := tgroups[name]; ok != present {
-			msg := ""
-			if !present {
-				msg = "not "
-			}
-			t.Fatalf("'%s' should %sbe present in TargetSet.tgroups: %s", name, msg, tgroups)
-		}
-
-	}
-
-	scrapeConfig := &config.ScrapeConfig{}
-
-	sOne := `
-job_name: "foo"
-static_configs:
-- targets: ["foo:9090"]
-- targets: ["bar:9090"]
-`
-	if err := yaml.Unmarshal([]byte(sOne), scrapeConfig); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
-
-	// Not properly setting it up, but that seems okay
-	mss := &local.MemorySeriesStorage{}
-
-	ts := newTargetSet(scrapeConfig, mss)
-
-	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
-
-	verifyPresence(ts.tgroups, "static/0/0", true)
-	verifyPresence(ts.tgroups, "static/0/1", true)
-
-	sTwo := `
-job_name: "foo"
-static_configs:
-- targets: ["foo:9090"]
-`
-	if err := yaml.Unmarshal([]byte(sTwo), scrapeConfig); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
-	}
-
-	ts.runProviders(context.Background(), providersFromConfig(scrapeConfig))
-
-	verifyPresence(ts.tgroups, "static/0/0", true)
-	verifyPresence(ts.tgroups, "static/0/1", false)
-}
 
 func mustNewRegexp(s string) config.Regexp {
 	re, err := config.NewRegexp(s)
