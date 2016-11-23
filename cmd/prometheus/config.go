@@ -47,6 +47,7 @@ var cfg = struct {
 	storage            local.MemorySeriesStorageOptions
 	localStorageEngine string
 	notifier           notifier.Options
+	notifierTimeout    time.Duration
 	queryEngine        promql.EngineOptions
 	web                web.Options
 	remote             remote.Options
@@ -228,7 +229,7 @@ func init() {
 		"The capacity of the queue for pending alert manager notifications.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.notifier.Timeout, "alertmanager.timeout", 10*time.Second,
+		&cfg.notifierTimeout, "alertmanager.timeout", 10*time.Second,
 		"Alert manager HTTP API timeout.",
 	)
 
@@ -283,7 +284,6 @@ func parse(args []string) error {
 		if err := validateAlertmanagerURL(u); err != nil {
 			return err
 		}
-		cfg.notifier.AlertmanagerURLs = cfg.alertmanagerURLs.slice()
 	}
 
 	cfg.remote.InfluxdbPassword = os.Getenv("INFLUXDB_PW")
