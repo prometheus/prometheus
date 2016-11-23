@@ -210,6 +210,7 @@ var expectedConf = &Config{
 					Server:       "localhost:1234",
 					Services:     []string{"nginx", "cache", "mysql"},
 					TagSeparator: DefaultConsulSDConfig.TagSeparator,
+					SvcSeparator: DefaultConsulSDConfig.SvcSeparator,
 					Scheme:       DefaultConsulSDConfig.Scheme,
 				},
 			},

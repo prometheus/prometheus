@@ -27,6 +27,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -37,6 +38,8 @@ const (
 	addressLabel = model.MetaLabelPrefix + "consul_address"
 	// nodeLabel is the name for the label containing a target's node name.
 	nodeLabel = model.MetaLabelPrefix + "consul_node"
+	// healthLabel is the name of the label containing the health check IDs.
+	healthLabel = model.MetaLabelPrefix + "consul_health_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
@@ -87,6 +90,7 @@ type Discovery struct {
 	clientConf       *consul.Config
 	clientDatacenter string
 	tagSeparator     string
+	svcSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
 }
 
@@ -110,6 +114,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		client:           client,
 		clientConf:       clientConf,
 		tagSeparator:     conf.TagSeparator,
+		svcSeparator:     conf.SvcSeparator,
 		watchedServices:  conf.Services,
 		clientDatacenter: clientConf.Datacenter,
 	}
@@ -194,6 +199,7 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 					datacenterLabel: model.LabelValue(cd.clientDatacenter),
 				},
 				tagSeparator: cd.tagSeparator,
+				svcSeparator: cd.svcSeparator,
 			}
 
 			wctx, cancel := context.WithCancel(ctx)
@@ -226,10 +232,12 @@ type consulService struct {
 	labels       model.LabelSet
 	client       *consul.Client
 	tagSeparator string
+	svcSeparator string
 }
 
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	catalog := srv.client.Catalog()
+	health := srv.client.Health()
 
 	lastIndex := uint64(0)
 	for {
@@ -268,6 +276,21 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 
 		for _, node := range nodes {
 
+			// Consul healthchecks can be defined on service and on node level.
+			allChecks := map[string][]string{}
+			svcChecks, _, err := health.Checks(srv.name, nil)
+			if err == nil {
+				for _, check := range svcChecks {
+					allChecks[check.Status] = append(allChecks[check.Status], check.CheckID)
+				}
+			}
+			nodeChecks, _, err := health.Node(node.Node, nil)
+			if err == nil {
+				for _, check := range nodeChecks {
+					allChecks[check.Status] = append(allChecks[check.Status], check.CheckID)
+				}
+			}
+
 			// We surround the separated list with the separator as well. This way regular expressions
 			// in relabeling rules don't have to consider tag positions.
 			var tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
@@ -281,7 +304,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
 			}
 
-			tgroup.Targets = append(tgroup.Targets, model.LabelSet{
+			labels := model.LabelSet{
 				model.AddressLabel:  model.LabelValue(addr),
 				addressLabel:        model.LabelValue(node.Address),
 				nodeLabel:           model.LabelValue(node.Node),
@@ -289,7 +312,14 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				serviceAddressLabel: model.LabelValue(node.ServiceAddress),
 				servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
 				serviceIDLabel:      model.LabelValue(node.ServiceID),
-			})
+			}
+
+			for state, checks := range allChecks {
+				name := strutil.SanitizeLabelName(state)
+				var checks = srv.svcSeparator + strings.Join(checks, srv.svcSeparator) + srv.svcSeparator
+				labels[healthLabel+model.LabelName(name)] = model.LabelValue(checks)
+			}
+			tgroup.Targets = append(tgroup.Targets, labels)
 		}
 		// Check context twice to ensure we always catch cancelation.
 		select {
