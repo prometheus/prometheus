@@ -16,6 +16,7 @@ package consul
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -88,6 +89,7 @@ type Discovery struct {
 	clientDatacenter string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
+	filter           string
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -111,6 +113,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		clientConf:       clientConf,
 		tagSeparator:     conf.TagSeparator,
 		watchedServices:  conf.Services,
+		filter:           conf.Filter,
 		clientDatacenter: clientConf.Datacenter,
 	}
 	return cd, nil
@@ -119,11 +122,16 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 // shouldWatch returns whether the service of the given name should be watched.
 func (cd *Discovery) shouldWatch(name string) bool {
 	// If there's no fixed set of watched services, we watch everything.
-	if len(cd.watchedServices) == 0 {
+	if len(cd.watchedServices) == 0 && cd.filter == "" {
 		return true
 	}
 	for _, sn := range cd.watchedServices {
 		if sn == name {
+			return true
+		}
+	}
+	if cd.filter != "" {
+		if match, _ := regexp.MatchString("^"+cd.filter+"$", name); match {
 			return true
 		}
 	}
