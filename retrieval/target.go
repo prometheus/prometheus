@@ -68,7 +68,7 @@ func NewTarget(labels, metaLabels model.LabelSet, params url.Values) *Target {
 }
 
 // NewHTTPClient returns a new HTTP client configured for the given scrape configuration.
-func NewHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
+func NewHTTPClient(cfg config.HTTPClientConfig) (*http.Client, error) {
 	tlsConfig, err := httputil.NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err

@@ -33,15 +33,14 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 		}
 	}
 
-	scrapeConfig := &config.ScrapeConfig{}
+	cfg := &config.ServiceDiscoveryConfig{}
 
 	sOne := `
-job_name: "foo"
 static_configs:
 - targets: ["foo:9090"]
 - targets: ["bar:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sOne), scrapeConfig); err != nil {
+	if err := yaml.Unmarshal([]byte(sOne), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	called := make(chan struct{})
@@ -54,22 +53,21 @@ static_configs:
 
 	go ts.Run(ctx)
 
-	ts.UpdateProviders(ProvidersFromConfig(scrapeConfig))
+	ts.UpdateProviders(ProvidersFromConfig(*cfg))
 	<-called
 
 	verifyPresence(ts.tgroups, "static/0/0", true)
 	verifyPresence(ts.tgroups, "static/0/1", true)
 
 	sTwo := `
-job_name: "foo"
 static_configs:
 - targets: ["foo:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sTwo), scrapeConfig); err != nil {
+	if err := yaml.Unmarshal([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 
-	ts.UpdateProviders(ProvidersFromConfig(scrapeConfig))
+	ts.UpdateProviders(ProvidersFromConfig(*cfg))
 	<-called
 
 	verifyPresence(ts.tgroups, "static/0/0", true)

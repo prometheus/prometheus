@@ -68,29 +68,33 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			BearerTokenFile: "testdata/valid_token_file",
-
-			StaticConfigs: []*TargetGroup{
-				{
-					Targets: []model.LabelSet{
-						{model.AddressLabel: "localhost:9090"},
-						{model.AddressLabel: "localhost:9191"},
-					},
-					Labels: model.LabelSet{
-						"my":   "label",
-						"your": "label",
-					},
-				},
+			HTTPClientConfig: HTTPClientConfig{
+				BearerTokenFile: "testdata/valid_token_file",
 			},
 
-			FileSDConfigs: []*FileSDConfig{
-				{
-					Files:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
-					RefreshInterval: model.Duration(10 * time.Minute),
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				StaticConfigs: []*TargetGroup{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+							{model.AddressLabel: "localhost:9191"},
+						},
+						Labels: model.LabelSet{
+							"my":   "label",
+							"your": "label",
+						},
+					},
 				},
-				{
-					Files:           []string{"bar/*.yaml"},
-					RefreshInterval: model.Duration(5 * time.Minute),
+
+				FileSDConfigs: []*FileSDConfig{
+					{
+						Files:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
+						RefreshInterval: model.Duration(10 * time.Minute),
+					},
+					{
+						Files:           []string{"bar/*.yaml"},
+						RefreshInterval: model.Duration(5 * time.Minute),
+					},
 				},
 			},
 
@@ -130,28 +134,32 @@ var expectedConf = &Config{
 			ScrapeInterval: model.Duration(50 * time.Second),
 			ScrapeTimeout:  model.Duration(5 * time.Second),
 
-			BasicAuth: &BasicAuth{
-				Username: "admin_name",
-				Password: "admin_password",
+			HTTPClientConfig: HTTPClientConfig{
+				BasicAuth: &BasicAuth{
+					Username: "admin_name",
+					Password: "admin_password",
+				},
 			},
 			MetricsPath: "/my_path",
 			Scheme:      "https",
 
-			DNSSDConfigs: []*DNSSDConfig{
-				{
-					Names: []string{
-						"first.dns.address.domain.com",
-						"second.dns.address.domain.com",
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				DNSSDConfigs: []*DNSSDConfig{
+					{
+						Names: []string{
+							"first.dns.address.domain.com",
+							"second.dns.address.domain.com",
+						},
+						RefreshInterval: model.Duration(15 * time.Second),
+						Type:            "SRV",
 					},
-					RefreshInterval: model.Duration(15 * time.Second),
-					Type:            "SRV",
-				},
-				{
-					Names: []string{
-						"first.dns.address.domain.com",
+					{
+						Names: []string{
+							"first.dns.address.domain.com",
+						},
+						RefreshInterval: model.Duration(30 * time.Second),
+						Type:            "SRV",
 					},
-					RefreshInterval: model.Duration(30 * time.Second),
-					Type:            "SRV",
 				},
 			},
 
@@ -205,12 +213,14 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ConsulSDConfigs: []*ConsulSDConfig{
-				{
-					Server:       "localhost:1234",
-					Services:     []string{"nginx", "cache", "mysql"},
-					TagSeparator: DefaultConsulSDConfig.TagSeparator,
-					Scheme:       DefaultConsulSDConfig.Scheme,
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				ConsulSDConfigs: []*ConsulSDConfig{
+					{
+						Server:       "localhost:1234",
+						Services:     []string{"nginx", "cache", "mysql"},
+						TagSeparator: DefaultConsulSDConfig.TagSeparator,
+						Scheme:       DefaultConsulSDConfig.Scheme,
+					},
 				},
 			},
 
@@ -234,12 +244,14 @@ var expectedConf = &Config{
 			MetricsPath: "/metrics",
 			Scheme:      "http",
 
-			TLSConfig: TLSConfig{
-				CertFile: "testdata/valid_cert_file",
-				KeyFile:  "testdata/valid_key_file",
-			},
+			HTTPClientConfig: HTTPClientConfig{
+				TLSConfig: TLSConfig{
+					CertFile: "testdata/valid_cert_file",
+					KeyFile:  "testdata/valid_key_file",
+				},
 
-			BearerToken: "avalidtoken",
+				BearerToken: "avalidtoken",
+			},
 		},
 		{
 			JobName: "service-kubernetes",
@@ -250,13 +262,15 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			KubernetesSDConfigs: []*KubernetesSDConfig{
-				{
-					APIServer: kubernetesSDHostURL(),
-					Role:      KubernetesRoleEndpoint,
-					BasicAuth: &BasicAuth{
-						Username: "myusername",
-						Password: "mypassword",
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				KubernetesSDConfigs: []*KubernetesSDConfig{
+					{
+						APIServer: kubernetesSDHostURL(),
+						Role:      KubernetesRoleEndpoint,
+						BasicAuth: &BasicAuth{
+							Username: "myusername",
+							Password: "mypassword",
+						},
 					},
 				},
 			},
@@ -270,16 +284,18 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			MarathonSDConfigs: []*MarathonSDConfig{
-				{
-					Servers: []string{
-						"https://marathon.example.com:443",
-					},
-					Timeout:         model.Duration(30 * time.Second),
-					RefreshInterval: model.Duration(30 * time.Second),
-					TLSConfig: TLSConfig{
-						CertFile: "testdata/valid_cert_file",
-						KeyFile:  "testdata/valid_key_file",
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				MarathonSDConfigs: []*MarathonSDConfig{
+					{
+						Servers: []string{
+							"https://marathon.example.com:443",
+						},
+						Timeout:         model.Duration(30 * time.Second),
+						RefreshInterval: model.Duration(30 * time.Second),
+						TLSConfig: TLSConfig{
+							CertFile: "testdata/valid_cert_file",
+							KeyFile:  "testdata/valid_key_file",
+						},
 					},
 				},
 			},
@@ -293,14 +309,16 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			EC2SDConfigs: []*EC2SDConfig{
-				{
-					Region:          "us-east-1",
-					AccessKey:       "access",
-					SecretKey:       "secret",
-					Profile:         "profile",
-					RefreshInterval: model.Duration(60 * time.Second),
-					Port:            80,
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				EC2SDConfigs: []*EC2SDConfig{
+					{
+						Region:          "us-east-1",
+						AccessKey:       "access",
+						SecretKey:       "secret",
+						Profile:         "profile",
+						RefreshInterval: model.Duration(60 * time.Second),
+						Port:            80,
+					},
 				},
 			},
 		},
@@ -313,14 +331,16 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			AzureSDConfigs: []*AzureSDConfig{
-				{
-					SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
-					TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
-					ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
-					ClientSecret:    "nAdvAK2oBuVym4IXix",
-					RefreshInterval: model.Duration(5 * time.Minute),
-					Port:            9100,
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				AzureSDConfigs: []*AzureSDConfig{
+					{
+						SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
+						TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
+						ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
+						ClientSecret:    "nAdvAK2oBuVym4IXix",
+						RefreshInterval: model.Duration(5 * time.Minute),
+						Port:            9100,
+					},
 				},
 			},
 		},
@@ -333,11 +353,13 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			NerveSDConfigs: []*NerveSDConfig{
-				{
-					Servers: []string{"localhost"},
-					Paths:   []string{"/monitoring"},
-					Timeout: model.Duration(10 * time.Second),
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				NerveSDConfigs: []*NerveSDConfig{
+					{
+						Servers: []string{"localhost"},
+						Paths:   []string{"/monitoring"},
+						Timeout: model.Duration(10 * time.Second),
+					},
 				},
 			},
 		},
@@ -350,10 +372,12 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			StaticConfigs: []*TargetGroup{
-				{
-					Targets: []model.LabelSet{
-						{model.AddressLabel: "localhost:9090"},
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				StaticConfigs: []*TargetGroup{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+						},
 					},
 				},
 			},
@@ -367,10 +391,12 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			StaticConfigs: []*TargetGroup{
-				{
-					Targets: []model.LabelSet{
-						{model.AddressLabel: "localhost:9090"},
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				StaticConfigs: []*TargetGroup{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+						},
 					},
 				},
 			},
