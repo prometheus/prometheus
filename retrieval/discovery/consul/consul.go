@@ -117,11 +117,12 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 }
 
 // shouldWatch returns whether the service of the given name should be watched.
-func (cd *Discovery) shouldWatch(name string) bool {
+func (cd *Discovery) shouldWatch(name string, tags []string) bool {
 	// If there's no fixed set of watched services, we watch everything.
 	if len(cd.watchedServices) == 0 {
 		return true
 	}
+	// TODO do something with tags
 	for _, sn := range cd.watchedServices {
 		if sn == name {
 			return true
@@ -178,8 +179,8 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		}
 
 		// Check for new services.
-		for name := range srvs {
-			if !cd.shouldWatch(name) {
+		for name, tags := range srvs {
+			if !cd.shouldWatch(name, tags) {
 				continue
 			}
 			if _, ok := services[name]; ok {
