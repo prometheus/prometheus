@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package file
 
 import (
 	"fmt"
@@ -41,7 +41,7 @@ func testFileSD(t *testing.T, ext string) {
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (
-		fsd         = NewFileDiscovery(&conf)
+		fsd         = NewDiscovery(&conf)
 		ch          = make(chan []*config.TargetGroup)
 		ctx, cancel = context.WithCancel(context.Background())
 	)

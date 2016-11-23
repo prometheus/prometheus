@@ -36,7 +36,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app = &nopAppender{}
 		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(cfg, app)
+		sp  = newScrapePool(context.Background(), cfg, app)
 	)
 
 	if a, ok := sp.appender.(*nopAppender); !ok || a != app {
@@ -231,7 +231,7 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppender{}
 
-	sp := newScrapePool(cfg, app)
+	sp := newScrapePool(context.Background(), cfg, app)
 
 	cfg.HonorLabels = false
 	wrapped := sp.reportAppender(target)
@@ -266,7 +266,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppender{}
 
-	sp := newScrapePool(cfg, app)
+	sp := newScrapePool(context.Background(), cfg, app)
 
 	cfg.HonorLabels = false
 	wrapped := sp.sampleAppender(target)
