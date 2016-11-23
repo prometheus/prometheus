@@ -174,3 +174,12 @@ scrape_configs:
   static_configs:
     - targets:
       - localhost:9090
+
+alerting:
+  alertmanagers:
+  - scheme: https
+    static_configs:
+    - targets:
+      - "1.2.3.4:9093"
+      - "1.2.3.5:9093"
+      - "1.2.3.6:9093"
