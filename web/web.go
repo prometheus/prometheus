@@ -39,6 +39,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -58,6 +59,7 @@ type Handler struct {
 	queryEngine   *promql.Engine
 	context       context.Context
 	storage       local.Storage
+	notifier      *notifier.Notifier
 
 	apiV1 *api_v1.API
 
@@ -104,6 +106,7 @@ type Options struct {
 	QueryEngine   *promql.Engine
 	TargetManager *retrieval.TargetManager
 	RuleManager   *rules.Manager
+	Notifier      *notifier.Notifier
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
@@ -139,6 +142,7 @@ func New(o *Options) *Handler {
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
 		storage:       o.Storage,
+		notifier:      o.Notifier,
 
 		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage),
 		now:   model.Now,
@@ -322,11 +326,13 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "status.html", struct {
-		Birth   time.Time
-		Version *PrometheusVersion
+		Birth         time.Time
+		Version       *PrometheusVersion
+		Alertmanagers []string
 	}{
-		Birth:   h.birth,
-		Version: h.versionInfo,
+		Birth:         h.birth,
+		Version:       h.versionInfo,
+		Alertmanagers: h.notifier.Alertmanagers(),
 	})
 }
 
@@ -346,7 +352,11 @@ func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
-	h.executeTemplate(w, "targets.html", h.targetManager)
+	h.executeTemplate(w, "targets.html", struct {
+		TargetManager *retrieval.TargetManager
+	}{
+		TargetManager: h.targetManager,
+	})
 }
 
 func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
