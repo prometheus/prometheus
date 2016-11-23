@@ -89,7 +89,8 @@ var (
 
 	// DefaultAlertmanagersConfig is the default alertmanager configuration.
 	DefaultAlertmanagersConfig = AlertmanagersConfig{
-		Scheme: "http",
+		Scheme:  "http",
+		Timeout: 10 * time.Second,
 	}
 
 	// DefaultRelabelConfig is the default Relabel configuration.
@@ -535,7 +536,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // AlertingConfig configures alerting and alertmanager related configs
 type AlertingConfig struct {
-	AlertRelabelConfigs []*RelabelConfig `yaml:"alert_relabel_configs,omitempty"`
+	AlertRelabelConfigs  []*RelabelConfig       `yaml:"alert_relabel_configs,omitempty"`
+	AlertmanagersConfigs []*AlertmanagersConfig `yaml:"alertmanagers,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -552,6 +554,61 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 	if err := checkOverflow(c.XXX, "alerting config"); err != nil {
 		return err
+	}
+	return nil
+}
+
+// AlertmanagersConfig configures how Alertmanagers can be discovered and communicated with.
+type AlertmanagersConfig struct {
+	// We cannot do proper Go type embedding below as the parser will then parse
+	// values arbitrarily into the overflow maps of further-down types.
+
+	ServiceDiscoveryConfig ServiceDiscoveryConfig `yaml:",inline"`
+	HTTPClientConfig       HTTPClientConfig       `yaml:",inline"`
+
+	// The URL scheme to use when talking to Alertmanagers.
+	Scheme string `yaml:"scheme,omitempty"`
+	// Path prefix to add in front of the push endpoint path.
+	PathPrefix string `yaml:"path_prefix,omitempty"`
+	// The timeout used when sending alerts.
+	Timeout time.Duration `yaml:"timeout,omitempty"`
+
+	// List of Alertmanager relabel configurations.
+	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *AlertmanagersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultAlertmanagersConfig
+	type plain AlertmanagersConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "alertmanager config"); err != nil {
+		return err
+	}
+	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if len(c.HTTPClientConfig.BearerToken) > 0 && len(c.HTTPClientConfig.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.HTTPClientConfig.BasicAuth != nil && (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	}
+
+	// Check for users putting URLs in target groups.
+	if len(c.RelabelConfigs) == 0 {
+		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
+			for _, t := range tg.Targets {
+				if err := CheckTargetAddress(t[model.AddressLabel]); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }

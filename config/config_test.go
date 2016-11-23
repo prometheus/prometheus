@@ -402,6 +402,25 @@ var expectedConf = &Config{
 			},
 		},
 	},
+	AlertingConfig: AlertingConfig{
+		AlertmanagersConfigs: []*AlertmanagersConfig{
+			{
+				Scheme:  "https",
+				Timeout: 10 * time.Second,
+				ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+					StaticConfigs: []*TargetGroup{
+						{
+							Targets: []model.LabelSet{
+								{model.AddressLabel: "1.2.3.4:9093"},
+								{model.AddressLabel: "1.2.3.5:9093"},
+								{model.AddressLabel: "1.2.3.6:9093"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 	original: "",
 }
 
