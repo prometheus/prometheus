@@ -403,7 +403,7 @@ var expectedConf = &Config{
 		},
 	},
 	AlertingConfig: AlertingConfig{
-		AlertmanagersConfigs: []*AlertmanagersConfig{
+		AlertmanagerConfigs: []*AlertmanagerConfig{
 			{
 				Scheme:  "https",
 				Timeout: 10 * time.Second,

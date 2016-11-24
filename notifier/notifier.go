@@ -149,7 +149,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	amSets := []*alertmanagerSet{}
 	ctx, cancel := context.WithCancel(n.ctx)
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagersConfigs {
+	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
 		ams, err := newAlertmanagerSet(cfg)
 		if err != nil {
 			return err
@@ -300,8 +300,8 @@ func (n *Notifier) Alertmanagers() []string {
 	return res
 }
 
-// sendAll sends the alerts to all configured Alertmanagers at concurrently.
-// It returns the number of sends that have failed and true if all failed.
+// sendAll sends the alerts to all configured Alertmanagers concurrently.
+// It returns true if the alerts could be sent successfully to at least on Alertmanager.
 func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 	begin := time.Now()
 
@@ -380,8 +380,7 @@ func (n *Notifier) Collect(ch chan<- prometheus.Metric) {
 	ch <- n.queueCapacity
 }
 
-// alertmanager holds all necessary information to send alerts
-// to an Alertmanager endpoint.
+// alertmanager holds Alertmanager endpoint information.
 type alertmanager struct {
 	plainURL string // test injection hook
 	labels   model.LabelSet
@@ -419,14 +418,14 @@ func (a alertmanager) send(ctx context.Context, c *http.Client, b []byte) error 
 // discovery definitions that have a common configuration on how alerts should be sent.
 type alertmanagerSet struct {
 	ts     *discovery.TargetSet
-	cfg    *config.AlertmanagersConfig
+	cfg    *config.AlertmanagerConfig
 	client *http.Client
 
 	mtx sync.RWMutex
 	ams []alertmanager
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagersConfig) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig) (*alertmanagerSet, error) {
 	client, err := retrieval.NewHTTPClient(cfg.HTTPClientConfig)
 	if err != nil {
 		return nil, err
@@ -477,7 +476,7 @@ func postPath(pre string) string {
 
 // alertmanagersFromGroup extracts a list of alertmanagers from a target group and an associcated
 // AlertmanagerConfig.
-func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagersConfig) ([]alertmanager, error) {
+func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfig) ([]alertmanager, error) {
 	var res []alertmanager
 
 	for _, lset := range tg.Targets {
