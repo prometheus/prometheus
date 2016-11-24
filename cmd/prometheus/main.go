@@ -268,7 +268,7 @@ func reloadConfig(filename string, rls ...Reloadable) (err error) {
 		if err != nil {
 			return err
 		}
-		acfg := &config.AlertmanagersConfig{
+		acfg := &config.AlertmanagerConfig{
 			Scheme:     u.Scheme,
 			PathPrefix: u.Path,
 			Timeout:    cfg.notifierTimeout,
@@ -284,7 +284,7 @@ func reloadConfig(filename string, rls ...Reloadable) (err error) {
 				},
 			},
 		}
-		conf.AlertingConfig.AlertmanagersConfigs = append(conf.AlertingConfig.AlertmanagersConfigs, acfg)
+		conf.AlertingConfig.AlertmanagerConfigs = append(conf.AlertingConfig.AlertmanagerConfigs, acfg)
 	}
 
 	failed := false

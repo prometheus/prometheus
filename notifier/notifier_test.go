@@ -153,7 +153,7 @@ func TestHandlerSendAll(t *testing.T) {
 			{plainURL: server1.URL},
 			{plainURL: server2.URL},
 		},
-		cfg: &config.AlertmanagersConfig{
+		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
 	})
@@ -314,7 +314,7 @@ func TestHandlerQueueing(t *testing.T) {
 		ams: []alertmanager{
 			{plainURL: server.URL},
 		},
-		cfg: &config.AlertmanagersConfig{
+		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
 	})

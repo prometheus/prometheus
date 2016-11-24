@@ -88,7 +88,7 @@ var (
 	}
 
 	// DefaultAlertmanagersConfig is the default alertmanager configuration.
-	DefaultAlertmanagersConfig = AlertmanagersConfig{
+	DefaultAlertmanagersConfig = AlertmanagerConfig{
 		Scheme:  "http",
 		Timeout: 10 * time.Second,
 	}
@@ -220,27 +220,33 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		cfg.RuleFiles[i] = join(rf)
 	}
 
-	for _, cfg := range cfg.ScrapeConfigs {
-		scfg := &cfg.HTTPClientConfig
-
+	clientPaths := func(scfg *HTTPClientConfig) {
 		scfg.BearerTokenFile = join(scfg.BearerTokenFile)
 		scfg.TLSConfig.CAFile = join(scfg.TLSConfig.CAFile)
 		scfg.TLSConfig.CertFile = join(scfg.TLSConfig.CertFile)
 		scfg.TLSConfig.KeyFile = join(scfg.TLSConfig.KeyFile)
-
-		for _, kcfg := range cfg.ServiceDiscoveryConfig.KubernetesSDConfigs {
+	}
+	sdPaths := func(cfg *ServiceDiscoveryConfig) {
+		for _, kcfg := range cfg.KubernetesSDConfigs {
 			kcfg.BearerTokenFile = join(kcfg.BearerTokenFile)
 			kcfg.TLSConfig.CAFile = join(kcfg.TLSConfig.CAFile)
 			kcfg.TLSConfig.CertFile = join(kcfg.TLSConfig.CertFile)
 			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
 		}
-
-		for _, mcfg := range cfg.ServiceDiscoveryConfig.MarathonSDConfigs {
+		for _, mcfg := range cfg.MarathonSDConfigs {
 			mcfg.TLSConfig.CAFile = join(mcfg.TLSConfig.CAFile)
 			mcfg.TLSConfig.CertFile = join(mcfg.TLSConfig.CertFile)
 			mcfg.TLSConfig.KeyFile = join(mcfg.TLSConfig.KeyFile)
 		}
+	}
 
+	for _, cfg := range cfg.ScrapeConfigs {
+		clientPaths(&cfg.HTTPClientConfig)
+		sdPaths(&cfg.ServiceDiscoveryConfig)
+	}
+	for _, cfg := range cfg.AlertingConfig.AlertmanagerConfigs {
+		clientPaths(&cfg.HTTPClientConfig)
+		sdPaths(&cfg.ServiceDiscoveryConfig)
 	}
 }
 
@@ -442,7 +448,7 @@ func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "TLS config"); err != nil {
+	if err := checkOverflow(c.XXX, "service discovery config"); err != nil {
 		return err
 	}
 	return nil
@@ -463,6 +469,16 @@ type HTTPClientConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
+}
+
+func (c *HTTPClientConfig) validate() error {
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	}
+	return nil
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
@@ -511,14 +527,12 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.JobName) == 0 {
 		return fmt.Errorf("job_name is empty")
 	}
+
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if len(c.HTTPClientConfig.BearerToken) > 0 && len(c.HTTPClientConfig.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
-	if c.HTTPClientConfig.BasicAuth != nil && (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	if err := c.HTTPClientConfig.validate(); err != nil {
+		return err
 	}
 
 	// Check for users putting URLs in target groups.
@@ -536,8 +550,8 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // AlertingConfig configures alerting and alertmanager related configs
 type AlertingConfig struct {
-	AlertRelabelConfigs  []*RelabelConfig       `yaml:"alert_relabel_configs,omitempty"`
-	AlertmanagersConfigs []*AlertmanagersConfig `yaml:"alertmanagers,omitempty"`
+	AlertRelabelConfigs []*RelabelConfig      `yaml:"alert_relabel_configs,omitempty"`
+	AlertmanagerConfigs []*AlertmanagerConfig `yaml:"alertmanagers,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -559,7 +573,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 }
 
 // AlertmanagersConfig configures how Alertmanagers can be discovered and communicated with.
-type AlertmanagersConfig struct {
+type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
@@ -581,23 +595,21 @@ type AlertmanagersConfig struct {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *AlertmanagersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultAlertmanagersConfig
-	type plain AlertmanagersConfig
+	type plain AlertmanagerConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 	if err := checkOverflow(c.XXX, "alertmanager config"); err != nil {
 		return err
 	}
+
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if len(c.HTTPClientConfig.BearerToken) > 0 && len(c.HTTPClientConfig.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
-	if c.HTTPClientConfig.BasicAuth != nil && (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	if err := c.HTTPClientConfig.validate(); err != nil {
+		return err
 	}
 
 	// Check for users putting URLs in target groups.
