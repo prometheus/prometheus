@@ -3,7 +3,7 @@ sudo: false
 language: go
 
 go:
-- 1.6.3
+- 1.7.3
 
 go_import_path: github.com/prometheus/prometheus
 
