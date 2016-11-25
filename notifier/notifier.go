@@ -301,7 +301,7 @@ func (n *Notifier) Alertmanagers() []string {
 }
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
-// It returns true if the alerts could be sent successfully to at least on Alertmanager.
+// It returns true if the alerts could be sent successfully to at least one Alertmanager.
 func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 	begin := time.Now()
 
