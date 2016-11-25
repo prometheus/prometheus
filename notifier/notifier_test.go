@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/config"
 )
 
@@ -150,8 +149,12 @@ func TestHandlerSendAll(t *testing.T) {
 	h := New(&Options{})
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
-			{plainURL: server1.URL},
-			{plainURL: server2.URL},
+			alertmanagerMock{
+				urlf: func() string { return server1.URL },
+			},
+			alertmanagerMock{
+				urlf: func() string { return server2.URL },
+			},
 		},
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
@@ -312,7 +315,9 @@ func TestHandlerQueueing(t *testing.T) {
 	})
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
-			{plainURL: server.URL},
+			alertmanagerMock{
+				urlf: func() string { return server.URL },
+			},
 		},
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
@@ -370,4 +375,12 @@ func TestHandlerQueueing(t *testing.T) {
 			t.Fatalf("Alerts were not pushed")
 		}
 	}
+}
+
+type alertmanagerMock struct {
+	urlf func() string
+}
+
+func (a alertmanagerMock) url() string {
+	return a.urlf()
 }
