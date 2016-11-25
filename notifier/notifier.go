@@ -331,7 +331,7 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 			go func(am alertmanager) {
 				u := am.url()
 
-				if err := am.send(ctx, ams.client, b); err != nil {
+				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
 					log.With("alertmanager", u).With("count", len(alerts)).Errorf("Error sending alerts: %s", err)
 					n.errors.WithLabelValues(u).Inc()
 				} else {
@@ -348,6 +348,20 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 	wg.Wait()
 
 	return numSuccess > 0
+}
+
+func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
+	resp, err := ctxhttp.Post(ctx, c, url, contentTypeJSON, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Any HTTP status 2xx is OK.
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("bad response status %v", resp.Status)
+	}
+	return err
 }
 
 // Stop shuts down the notification handler.
@@ -381,37 +395,21 @@ func (n *Notifier) Collect(ch chan<- prometheus.Metric) {
 }
 
 // alertmanager holds Alertmanager endpoint information.
-type alertmanager struct {
-	plainURL string // test injection hook
-	labels   model.LabelSet
+type alertmanager interface {
+	url() string
 }
+
+type alertmanagerLabels model.LabelSet
 
 const pathLabel = "__alerts_path__"
 
-func (a alertmanager) url() string {
-	if a.plainURL != "" {
-		return a.plainURL
-	}
+func (a alertmanagerLabels) url() string {
 	u := &url.URL{
-		Scheme: string(a.labels[model.SchemeLabel]),
-		Host:   string(a.labels[model.AddressLabel]),
-		Path:   string(a.labels[pathLabel]),
+		Scheme: string(a[model.SchemeLabel]),
+		Host:   string(a[model.AddressLabel]),
+		Path:   string(a[pathLabel]),
 	}
 	return u.String()
-}
-
-func (a alertmanager) send(ctx context.Context, c *http.Client, b []byte) error {
-	resp, err := ctxhttp.Post(ctx, c, a.url(), contentTypeJSON, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Any HTTP status 2xx is OK.
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("bad response status %v", resp.Status)
-	}
-	return err
 }
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -532,7 +530,7 @@ func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfi
 			}
 		}
 
-		res = append(res, alertmanager{labels: lset})
+		res = append(res, alertmanagerLabels(lset))
 	}
 	return res, nil
 }
