@@ -1,3 +1,16 @@
+## 1.4.0 / 2016-11-25
+
+* [FEATURE] Allow configuring Alertmanagers via service discovery
+* [FEATURE] Display used Alertmanagers on runtime page in the UI
+* [FEATURE] Support profiles in AWS EC2 service discovery configuration
+* [ENHANCEMENT] Remove duplicated logging of Kubernetes client errors
+* [ENHANCEMENT] Add metrics about Kubernetes service discovery
+* [BUGFIX] Update alert annotations on re-evaluation
+* [BUGFIX] Fix export of group modifier in PromQL queries
+* [BUGFIX] Remove potential deadlocks in several service discovery implementations
+* [BUGFIX] Use proper float64 modulo in PromQL `%` binary operations
+* [BUGFIX] Fix crash bug in Kubernetes service discovery
+
 ## 1.3.1 / 2016-11-04
 
 This bug-fix release pulls in the fixes from the 1.2.3 release.
