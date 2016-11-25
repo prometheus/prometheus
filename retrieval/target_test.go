@@ -151,9 +151,8 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
-		BearerToken:   "1234",
+	cfg := config.HTTPClientConfig{
+		BearerToken: "1234",
 	}
 	c, err := NewHTTPClient(cfg)
 	if err != nil {
@@ -179,8 +178,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout:   model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
 	c, err := NewHTTPClient(cfg)
@@ -206,8 +204,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		BasicAuth: &config.BasicAuth{
 			Username: "user",
 			Password: "password123",
@@ -236,8 +233,7 @@ func TestNewHTTPCACert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
 			CAFile: caCertPath,
 		},
@@ -269,8 +265,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
 			CAFile:   caCertPath,
 			CertFile: "testdata/client.cer",
@@ -300,8 +295,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
 			CAFile:     caCertPath,
 			ServerName: "prometheus.rocks",
@@ -330,8 +324,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
 			CAFile:     caCertPath,
 			ServerName: "badname",
@@ -369,8 +362,7 @@ func newTLSConfig(certName string, t *testing.T) *tls.Config {
 }
 
 func TestNewClientWithBadTLSConfig(t *testing.T) {
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
 			CAFile:   "testdata/nonexistent_ca.cer",
 			CertFile: "testdata/nonexistent_client.cer",

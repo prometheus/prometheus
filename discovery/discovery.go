@@ -49,7 +49,7 @@ type TargetProvider interface {
 }
 
 // ProvidersFromConfig returns all TargetProviders configured in cfg.
-func ProvidersFromConfig(cfg *config.ScrapeConfig) map[string]TargetProvider {
+func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]TargetProvider {
 	providers := map[string]TargetProvider{}
 
 	app := func(mech string, i int, tp TargetProvider) {
