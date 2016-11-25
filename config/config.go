@@ -87,8 +87,8 @@ var (
 		HonorLabels: false,
 	}
 
-	// DefaultAlertmanagersConfig is the default alertmanager configuration.
-	DefaultAlertmanagersConfig = AlertmanagerConfig{
+	// DefaultAlertmanagerConfig is the default alertmanager configuration.
+	DefaultAlertmanagerConfig = AlertmanagerConfig{
 		Scheme:  "http",
 		Timeout: 10 * time.Second,
 	}
@@ -548,7 +548,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// AlertingConfig configures alerting and alertmanager related configs
+// AlertingConfig configures alerting and alertmanager related configs.
 type AlertingConfig struct {
 	AlertRelabelConfigs []*RelabelConfig      `yaml:"alert_relabel_configs,omitempty"`
 	AlertmanagerConfigs []*AlertmanagerConfig `yaml:"alertmanagers,omitempty"`
@@ -596,7 +596,7 @@ type AlertmanagerConfig struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultAlertmanagersConfig
+	*c = DefaultAlertmanagerConfig
 	type plain AlertmanagerConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
