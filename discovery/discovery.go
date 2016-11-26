@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/foreman"
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
@@ -105,6 +106,14 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]TargetPro
 	}
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, azure.NewDiscovery(c))
+	}
+	for i, c := range cfg.ForemanSDConfigs {
+		foremand, err := foreman.NewDiscovery(c)
+		if err != nil {
+			log.Errorf("Cannot initialize Foreman discovery: %s", err)
+			continue
+		}
+		app("foreman", i, foremand)
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		app("static", 0, NewStaticProvider(cfg.StaticConfigs))

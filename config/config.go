@@ -156,6 +156,13 @@ var (
 		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
+	// DefaultForemanSDConfig is the default Foreman SD configuration.
+	DefaultForemanSDConfig = ForemanSDConfig{
+		Port:            80,
+		Timeout:         model.Duration(30 * time.Second),
+		RefreshInterval: model.Duration(10 * time.Minute),
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout: model.Duration(30 * time.Second),
@@ -437,6 +444,8 @@ type ServiceDiscoveryConfig struct {
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of Foreman service discovery configurations.
+	ForemanSDConfigs []*ForemanSDConfig `yaml:"foreman_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1084,6 +1093,41 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	return checkOverflow(c.XXX, "azure_sd_config")
+}
+
+// ForemanSDConfig is the configuration for Foreman based service discovery.
+type ForemanSDConfig struct {
+	Server          string         `yaml:"server,omitempty"`
+	Username        string         `yaml:"username,omitempty"`
+	Password        string         `yaml:"password,omitempty"`
+	Queries         []string       `yaml:"queries,omitempty"`
+	Port            int            `yaml:"port,omitempty"` // service port for scraping metrics
+	Timeout         model.Duration `yaml:"timeout,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *ForemanSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultForemanSDConfig
+	type plain ForemanSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+
+	if c.Username == "" {
+		return fmt.Errorf("Foreman SD configuration requires a username")
+	}
+
+	if c.Password == "" {
+		return fmt.Errorf("Foreman SD configuration requires a password")
+	}
+
+	return checkOverflow(c.XXX, "foreman_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.

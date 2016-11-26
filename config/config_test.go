@@ -401,6 +401,36 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-foreman",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				ForemanSDConfigs: []*ForemanSDConfig{
+					{
+						Server:   "https://foreman.example.com:443",
+						Username: "foreman_user",
+						Password: "s3cr3t",
+						Queries: []string{
+							"environment = development and hostgroup = web",
+							"environment = development and hostgroup = database",
+						},
+						Port:            80,
+						Timeout:         model.Duration(30 * time.Second),
+						RefreshInterval: model.Duration(30 * time.Second),
+						TLSConfig: TLSConfig{
+							CertFile: "testdata/valid_cert_file",
+							KeyFile:  "testdata/valid_key_file",
+						},
+					},
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{

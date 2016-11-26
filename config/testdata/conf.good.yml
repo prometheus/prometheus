@@ -175,6 +175,26 @@ scrape_configs:
     - targets:
       - localhost:9090
 
+- job_name: service-foreman
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  metrics_path: /metrics
+  scheme: http
+  foreman_sd_configs:
+    - server: https://foreman.example.com:443
+      username: foreman_user
+      password: s3cr3t
+      queries:
+        - environment = development and hostgroup = web
+        - environment = development and hostgroup = database
+      port: 80
+      timeout: 30s
+      refresh_interval: 30s
+      tls_config:
+        cert_file: testdata/valid_cert_file
+        key_file: testdata/valid_key_file
+        insecure_skip_verify: false
+
 alerting:
   alertmanagers:
   - scheme: https
