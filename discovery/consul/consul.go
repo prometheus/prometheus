@@ -197,7 +197,7 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			}
 
 			wctx, cancel := context.WithCancel(ctx)
-			srv.watch(wctx, ch)
+			go srv.watch(wctx, ch)
 
 			services[name] = cancel
 		}

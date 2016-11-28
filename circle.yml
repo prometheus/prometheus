@@ -2,7 +2,7 @@ machine:
   environment:
     DOCKER_IMAGE_NAME: prom/prometheus
     QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
-    DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.6-base
+    DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.7-base
     REPO_PATH: github.com/prometheus/prometheus
   pre:
     - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
