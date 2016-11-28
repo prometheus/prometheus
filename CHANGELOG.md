@@ -1,3 +1,7 @@
+## 1.4.1 / 2016-11-28
+
+* [BUGFIX] Fix Consul service discovery
+
 ## 1.4.0 / 2016-11-25
 
 * [FEATURE] Allow configuring Alertmanagers via service discovery
