@@ -1,46 +1,82 @@
 package chunks
 
 import (
+	"encoding/binary"
 	"math"
 
 	bits "github.com/dgryski/go-bits"
-	"github.com/prometheus/common/model"
 )
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
-	bstream
-
+	b   *bstream
 	num uint16
 	sz  int
-
-	lastLen   int
-	lastCount uint8
 }
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
-func NewXORChunk(sz int) *XORChunk {
-	return &XORChunk{sz: sz}
+func NewXORChunk(size int) *XORChunk {
+	b := make([]byte, 3, 64)
+	b[0] = byte(EncXOR)
+
+	return &XORChunk{
+		b:   &bstream{stream: b, count: 0},
+		sz:  size,
+		num: 0,
+	}
 }
 
-func (c *XORChunk) Data() []byte {
-	return nil
+// Bytes returns the underlying byte slice of the chunk.
+func (c *XORChunk) Bytes() []byte {
+	b := c.b.bytes()
+	// Lazily populate length bytes – probably not necessary to have the
+	// cache value in struct.
+	binary.LittleEndian.PutUint16(b[1:3], c.num)
+	return b
 }
 
 // Appender implements the Chunk interface.
-func (c *XORChunk) Appender() Appender {
-	return &xorAppender{c: c}
+func (c *XORChunk) Appender() (Appender, error) {
+	it := c.iterator()
+
+	// To get an appender we must know the state it would have if we had
+	// appended all existing data from scratch.
+	// We iterate through the end and populate via the iterator's state.
+	for it.Next() {
+	}
+	if err := it.Err(); err != nil {
+		return nil, err
+	}
+
+	return &xorAppender{
+		c:        c,
+		b:        c.b,
+		t:        it.t,
+		v:        it.val,
+		tDelta:   it.tDelta,
+		leading:  it.leading,
+		trailing: it.trailing,
+	}, nil
+}
+
+func (c *XORChunk) iterator() *xorIterator {
+	// Should iterators guarantee to act on a copy of the data so it doesn't lock append?
+	// When using striped locks to guard access to chunks, probably yes.
+	// Could only copy data if the chunk is not completed yet.
+	return &xorIterator{
+		br:       newBReader(c.b.bytes()[3:]),
+		numTotal: c.num,
+	}
 }
 
 // Iterator implements the Chunk interface.
 func (c *XORChunk) Iterator() Iterator {
-	br := c.bstream.clone()
-	br.count = 8
-	return &xorIterator{br: br, numTotal: c.num}
+	return fancyIterator{c.iterator()}
 }
 
 type xorAppender struct {
 	c *XORChunk
+	b *bstream
 
 	t      int64
 	v      float64
@@ -48,26 +84,20 @@ type xorAppender struct {
 
 	leading  uint8
 	trailing uint8
-	finished bool
 }
 
-func (a *xorAppender) Append(ts model.Time, v model.SampleValue) error {
-	// TODO(fabxc): remove Prometheus types from interface.
-	return a.append(int64(ts), float64(v))
-}
-
-func (a *xorAppender) append(t int64, v float64) error {
+func (a *xorAppender) Append(t int64, v float64) error {
 	var tDelta uint64
 
 	if a.c.num == 0 {
 		// TODO: store varint time?
-		a.c.writeBits(uint64(t), 64)
-		a.c.writeBits(math.Float64bits(v), 64)
+		a.b.writeBits(uint64(t), 64)
+		a.b.writeBits(math.Float64bits(v), 64)
 
 	} else if a.c.num == 1 {
 		tDelta = uint64(t - a.t)
 		// TODO: use varint or other encoding for first delta?
-		a.c.writeBits(tDelta, 64)
+		a.b.writeBits(tDelta, 64)
 		a.writeVDelta(v)
 
 	} else {
@@ -78,25 +108,25 @@ func (a *xorAppender) append(t int64, v float64) error {
 		// Thus we use higher value range steps with larger bit size.
 		switch {
 		case dod == 0:
-			a.c.writeBit(zero)
+			a.b.writeBit(zero)
 		case -8191 <= dod && dod <= 8192:
-			a.c.writeBits(0x02, 2) // '10'
-			a.c.writeBits(uint64(dod), 14)
+			a.b.writeBits(0x02, 2) // '10'
+			a.b.writeBits(uint64(dod), 14)
 		case -65535 <= dod && dod <= 65536:
-			a.c.writeBits(0x06, 3) // '110'
-			a.c.writeBits(uint64(dod), 17)
+			a.b.writeBits(0x06, 3) // '110'
+			a.b.writeBits(uint64(dod), 17)
 		case -524287 <= dod && dod <= 524288:
-			a.c.writeBits(0x0e, 4) // '1110'
-			a.c.writeBits(uint64(dod), 20)
+			a.b.writeBits(0x0e, 4) // '1110'
+			a.b.writeBits(uint64(dod), 20)
 		default:
-			a.c.writeBits(0x0f, 4) // '1111'
-			a.c.writeBits(uint64(dod), 64)
+			a.b.writeBits(0x0f, 4) // '1111'
+			a.b.writeBits(uint64(dod), 64)
 		}
 
 		a.writeVDelta(v)
 	}
 
-	if len(a.c.stream) > a.c.sz {
+	if len(a.b.bytes()) > a.c.sz {
 		return ErrChunkFull
 	}
 
@@ -104,8 +134,7 @@ func (a *xorAppender) append(t int64, v float64) error {
 	a.v = v
 	a.c.num++
 	a.tDelta = tDelta
-	a.c.lastCount = a.c.count
-	a.c.lastLen = len(a.c.stream)
+
 	return nil
 }
 
@@ -113,10 +142,10 @@ func (a *xorAppender) writeVDelta(v float64) {
 	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)
 
 	if vDelta == 0 {
-		a.c.writeBit(zero)
+		a.b.writeBit(zero)
 		return
 	}
-	a.c.writeBit(one)
+	a.b.writeBit(one)
 
 	leading := uint8(bits.Clz(vDelta))
 	trailing := uint8(bits.Ctz(vDelta))
@@ -128,20 +157,20 @@ func (a *xorAppender) writeVDelta(v float64) {
 
 	// TODO(dgryski): check if it's 'cheaper' to reset the leading/trailing bits instead
 	if a.leading != ^uint8(0) && leading >= a.leading && trailing >= a.trailing {
-		a.c.writeBit(zero)
-		a.c.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
+		a.b.writeBit(zero)
+		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 	} else {
 		a.leading, a.trailing = leading, trailing
 
-		a.c.writeBit(one)
-		a.c.writeBits(uint64(leading), 5)
+		a.b.writeBit(one)
+		a.b.writeBits(uint64(leading), 5)
 
 		// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
 		// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
 		// So instead we write out a 0 and adjust it back to 64 on unpacking.
 		sigbits := 64 - leading - trailing
-		a.c.writeBits(uint64(sigbits), 6)
-		a.c.writeBits(vDelta>>trailing, int(sigbits))
+		a.b.writeBits(uint64(sigbits), 6)
+		a.b.writeBits(vDelta>>trailing, int(sigbits))
 	}
 }
 
@@ -156,7 +185,7 @@ type xorIterator struct {
 	leading  uint8
 	trailing uint8
 
-	tDelta int64
+	tDelta uint64
 	err    error
 }
 
@@ -164,15 +193,14 @@ func (it *xorIterator) Values() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) NextB() bool {
+func (it *xorIterator) Err() error {
+	return it.err
+}
+
+func (it *xorIterator) Next() bool {
 	if it.err != nil || it.numRead == it.numTotal {
 		return false
 	}
-
-	var d byte
-	var dod int32
-	var sz uint
-	var tDelta int64
 
 	if it.numRead == 0 {
 		t, err := it.br.readBits(64)
@@ -197,12 +225,13 @@ func (it *xorIterator) NextB() bool {
 			it.err = err
 			return false
 		}
-		it.tDelta = int64(tDelta)
-		it.t = it.t + it.tDelta
+		it.tDelta = tDelta
+		it.t = it.t + int64(it.tDelta)
 
-		goto ReadValue
+		return it.readValue()
 	}
 
+	var d byte
 	// read delta-of-delta
 	for i := 0; i < 4; i++ {
 		d <<= 1
@@ -216,7 +245,8 @@ func (it *xorIterator) NextB() bool {
 		}
 		d |= 1
 	}
-
+	var sz uint8
+	var dod int64
 	switch d {
 	case 0x00:
 		// dod == 0
@@ -233,7 +263,7 @@ func (it *xorIterator) NextB() bool {
 			return false
 		}
 
-		dod = int32(bits)
+		dod = int64(bits)
 	}
 
 	if sz != 0 {
@@ -246,16 +276,16 @@ func (it *xorIterator) NextB() bool {
 			// or something
 			bits = bits - (1 << sz)
 		}
-		dod = int32(bits)
+		dod = int64(bits)
 	}
 
-	tDelta = it.tDelta + int64(dod)
+	it.tDelta = uint64(int64(it.tDelta) + dod)
+	it.t = it.t + int64(it.tDelta)
 
-	it.tDelta = tDelta
-	it.t = it.t + it.tDelta
+	return it.readValue()
+}
 
-ReadValue:
-	// read compressed value
+func (it *xorIterator) readValue() bool {
 	bit, err := it.br.readBit()
 	if err != nil {
 		it.err = err
@@ -265,8 +295,8 @@ ReadValue:
 	if bit == zero {
 		// it.val = it.val
 	} else {
-		bit, itErr := it.br.readBit()
-		if itErr != nil {
+		bit, err := it.br.readBit()
+		if err != nil {
 			it.err = err
 			return false
 		}
@@ -307,20 +337,4 @@ ReadValue:
 
 	it.numRead++
 	return true
-}
-
-func (it *xorIterator) First() (model.SamplePair, bool) {
-	return model.SamplePair{}, false
-}
-
-func (it *xorIterator) Seek(ts model.Time) (model.SamplePair, bool) {
-	return model.SamplePair{}, false
-}
-
-func (it *xorIterator) Next() (model.SamplePair, bool) {
-	return model.SamplePair{}, false
-}
-
-func (it *xorIterator) Err() error {
-	return it.err
 }

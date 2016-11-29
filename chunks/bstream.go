@@ -145,7 +145,6 @@ func (b *bstream) readByte() (byte, error) {
 }
 
 func (b *bstream) readBits(nbits int) (uint64, error) {
-
 	var u uint64
 
 	for nbits >= 8 {
