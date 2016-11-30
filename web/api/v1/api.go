@@ -28,6 +28,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -87,16 +88,18 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 type API struct {
 	Storage     local.Storage
 	QueryEngine *promql.Engine
+	RuleManager *rules.Manager
 
 	context func(r *http.Request) context.Context
 	now     func() model.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage) *API {
+func NewAPI(qe *promql.Engine, st local.Storage, rm *rules.Manager) *API {
 	return &API{
 		QueryEngine: qe,
 		Storage:     st,
+		RuleManager: rm,
 		context:     route.Context,
 		now:         model.Now,
 	}
@@ -129,6 +132,8 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/series", instr("series", api.series))
 	r.Del("/series", instr("drop_series", api.dropSeries))
+
+	r.Get("/rules", instr("rules", api.rules))
 }
 
 type queryData struct {
@@ -326,6 +331,14 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 		NumDeleted: numDeleted,
 	}
 	return res, nil
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError) {
+	ruleList := []string{}
+	for _, rule := range api.RuleManager.Rules() {
+		ruleList = append(ruleList, rule.String())
+	}
+	return ruleList, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
