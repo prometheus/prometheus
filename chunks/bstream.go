@@ -1,18 +1,14 @@
 package chunks
 
-import (
-	"bytes"
-	"encoding/binary"
-	"io"
-)
+import "io"
 
 // bstream is a stream of bits
 type bstream struct {
 	// the data stream
 	stream []byte
 
-	// how many bits are valid in current byte
-	count uint8
+	count uint8 // how many bits are valid in current byte
+	shift uint8 // pos of next bit in current byte
 }
 
 func newBReader(b []byte) *bstream {
@@ -41,7 +37,6 @@ const (
 )
 
 func (b *bstream) writeBit(bit bit) {
-
 	if b.count == 0 {
 		b.stream = append(b.stream, 0)
 		b.count = 8
@@ -57,7 +52,6 @@ func (b *bstream) writeBit(bit bit) {
 }
 
 func (b *bstream) writeByte(byt byte) {
-
 	if b.count == 0 {
 		b.stream = append(b.stream, 0)
 		b.count = 8
@@ -89,14 +83,22 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 	}
 }
 
-func (b *bstream) readBit() (bit, error) {
+func (b *bstream) headByte() byte {
+	return b.stream[0] << b.shift
+}
 
+func (b *bstream) advance() {
+	b.stream = b.stream[1:]
+	b.shift = 0
+}
+
+func (b *bstream) readBit() (bit, error) {
 	if len(b.stream) == 0 {
 		return false, io.EOF
 	}
 
 	if b.count == 0 {
-		b.stream = b.stream[1:]
+		b.advance()
 		// did we just run out of stuff to read?
 		if len(b.stream) == 0 {
 			return false, io.EOF
@@ -104,20 +106,19 @@ func (b *bstream) readBit() (bit, error) {
 		b.count = 8
 	}
 
+	d := b.headByte() & 0x80
 	b.count--
-	d := b.stream[0] & 0x80
-	b.stream[0] <<= 1
+	b.shift++
 	return d != 0, nil
 }
 
 func (b *bstream) readByte() (byte, error) {
-
 	if len(b.stream) == 0 {
 		return 0, io.EOF
 	}
 
 	if b.count == 0 {
-		b.stream = b.stream[1:]
+		b.advance()
 
 		if len(b.stream) == 0 {
 			return 0, io.EOF
@@ -128,18 +129,19 @@ func (b *bstream) readByte() (byte, error) {
 
 	if b.count == 8 {
 		b.count = 0
-		return b.stream[0], nil
+		return b.headByte(), nil
 	}
 
-	byt := b.stream[0]
-	b.stream = b.stream[1:]
+	byt := b.headByte()
+	b.advance()
 
 	if len(b.stream) == 0 {
 		return 0, io.EOF
 	}
 
+	// We just advanced the stream and can assume the shift to be 0.
 	byt |= b.stream[0] >> b.count
-	b.stream[0] <<= (8 - b.count)
+	b.shift = 8 - b.count
 
 	return byt, nil
 }
@@ -162,9 +164,9 @@ func (b *bstream) readBits(nbits int) (uint64, error) {
 	}
 
 	if nbits > int(b.count) {
-		u = (u << uint(b.count)) | uint64(b.stream[0]>>(8-b.count))
+		u = (u << uint(b.count)) | uint64(b.headByte()>>(8-b.count))
 		nbits -= int(b.count)
-		b.stream = b.stream[1:]
+		b.advance()
 
 		if len(b.stream) == 0 {
 			return 0, io.EOF
@@ -172,37 +174,8 @@ func (b *bstream) readBits(nbits int) (uint64, error) {
 		b.count = 8
 	}
 
-	u = (u << uint(nbits)) | uint64(b.stream[0]>>(8-uint(nbits)))
-	b.stream[0] <<= uint(nbits)
+	u = (u << uint(nbits)) | uint64(b.headByte()>>(8-uint(nbits)))
+	b.shift = b.shift + uint8(nbits)
 	b.count -= uint8(nbits)
 	return u, nil
-}
-
-// MarshalBinary implements the encoding.BinaryMarshaler interface
-func (b *bstream) MarshalBinary() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.BigEndian, b.count)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Write(buf, binary.BigEndian, b.stream)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// UnmarshalBinary implements the encoding.BinaryUnmarshaler interface
-func (b *bstream) UnmarshalBinary(bIn []byte) error {
-	buf := bytes.NewReader(bIn)
-	err := binary.Read(buf, binary.BigEndian, &b.count)
-	if err != nil {
-		return err
-	}
-	b.stream = make([]byte, buf.Len())
-	err = binary.Read(buf, binary.BigEndian, &b.stream)
-	if err != nil {
-		return err
-	}
-	return nil
 }

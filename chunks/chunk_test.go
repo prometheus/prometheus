@@ -20,18 +20,20 @@ func TestChunk(t *testing.T) {
 		EncXOR: func(sz int) Chunk { return NewXORChunk(sz) },
 	} {
 		t.Run(fmt.Sprintf("%s", enc), func(t *testing.T) {
-			for range make([]struct{}, 10000) {
-				c := nc(rand.Intn(512))
-				testChunk(t, c)
+			for range make([]struct{}, 3000) {
+				c := nc(rand.Intn(1024))
+				if err := testChunk(c); err != nil {
+					t.Fatal(err)
+				}
 			}
 		})
 	}
 }
 
-func testChunk(t *testing.T, c Chunk) {
+func testChunk(c Chunk) error {
 	app, err := c.Appender()
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
 	var exp []pair
@@ -39,18 +41,31 @@ func testChunk(t *testing.T, c Chunk) {
 		ts = int64(1234123324)
 		v  = 1243535.123
 	)
-	for {
+	i := 0
+	for i < 3 {
 		ts += int64(rand.Intn(10000) + 1)
 		v = rand.Float64()
+		// v += float64(100)
 
-		err := app.Append(ts, v)
+		// Start with a new appender every 10th sample. This emulates starting
+		// appending to a partially filled chunk.
+		if i%10 == 0 {
+			app, err = c.Appender()
+			if err != nil {
+				return err
+			}
+		}
+
+		err = app.Append(ts, v)
 		if err != nil {
 			if err == ErrChunkFull {
 				break
 			}
-			t.Fatal(err)
+			return err
 		}
 		exp = append(exp, pair{t: ts, v: v})
+		i++
+		// fmt.Println("appended", len(c.Bytes()), c.Bytes())
 	}
 
 	it := c.Iterator()
@@ -60,11 +75,12 @@ func testChunk(t *testing.T, c Chunk) {
 		res = append(res, pair{t: ts, v: v})
 	}
 	if it.Err() != nil {
-		t.Fatal(it.Err())
+		return it.Err()
 	}
 	if !reflect.DeepEqual(exp, res) {
-		t.Fatalf("unexpected result\n\ngot: %v\n\nexp: %v", res, exp)
+		return fmt.Errorf("unexpected result\n\ngot: %v\n\nexp: %v", res, exp)
 	}
+	return nil
 }
 
 func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
@@ -75,7 +91,8 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 	var exp []pair
 	for i := 0; i < b.N; i++ {
 		t += int64(rand.Intn(10000) + 1)
-		v = rand.Float64()
+		// v = rand.Float64()
+		v += float64(100)
 		exp = append(exp, pair{t: t, v: v})
 	}
 
@@ -140,7 +157,8 @@ func benchmarkAppender(b *testing.B, newChunk func(int) Chunk) {
 	var exp []pair
 	for i := 0; i < b.N; i++ {
 		t += int64(rand.Intn(10000) + 1)
-		v = rand.Float64()
+		// v = rand.Float64()
+		v += float64(100)
 		exp = append(exp, pair{t: t, v: v})
 	}
 
