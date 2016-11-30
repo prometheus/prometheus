@@ -24,8 +24,10 @@ scrape_configs:
 
   # This TLS & bearer token file config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
-  # configuration (`in_cluster` below) because discovery & scraping are two
-  # separate concerns in Prometheus.
+  # configuration because discovery & scraping are two separate concerns in
+  # Prometheus. The discovery auth config is automatic if Prometheus runs inside
+  # the cluster. Otherwise, more config options have to be provided within the
+  # <kubernetes_sd_config>.
   tls_config:
     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
     # If your node certificates are self-signed or use a different CA to the
@@ -53,8 +55,10 @@ scrape_configs:
 
   # This TLS & bearer token file config is used to connect to the actual scrape
   # endpoints for cluster components. This is separate to discovery auth
-  # configuration (`in_cluster` below) because discovery & scraping are two
-  # separate concerns in Prometheus.
+  # configuration because discovery & scraping are two separate concerns in
+  # Prometheus. The discovery auth config is automatic if Prometheus runs inside
+  # the cluster. Otherwise, more config options have to be provided within the
+  # <kubernetes_sd_config>.
   tls_config:
     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
     # If your node certificates are self-signed or use a different CA to the
@@ -108,7 +112,7 @@ scrape_configs:
     replacement: $1:$2
   - action: labelmap
     regex: __meta_kubernetes_service_label_(.+)
-  - source_labels: [__meta_kubernetes_service_namespace]
+  - source_labels: [__meta_kubernetes_namespace]
     action: replace
     target_label: kubernetes_namespace
   - source_labels: [__meta_kubernetes_service_name]
@@ -175,7 +179,7 @@ scrape_configs:
     target_label: __address__
   - action: labelmap
     regex: __meta_kubernetes_pod_label_(.+)
-  - source_labels: [__meta_kubernetes_pod_namespace]
+  - source_labels: [__meta_kubernetes_namespace]
     action: replace
     target_label: kubernetes_namespace
   - source_labels: [__meta_kubernetes_pod_name]
