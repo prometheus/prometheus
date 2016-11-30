@@ -90,7 +90,8 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 	)
 	var exp []pair
 	for i := 0; i < b.N; i++ {
-		t += int64(rand.Intn(10000) + 1)
+		// t += int64(rand.Intn(10000) + 1)
+		t += int64(1000)
 		// v = rand.Float64()
 		v += float64(100)
 		exp = append(exp, pair{t: t, v: v})
@@ -156,7 +157,8 @@ func benchmarkAppender(b *testing.B, newChunk func(int) Chunk) {
 	)
 	var exp []pair
 	for i := 0; i < b.N; i++ {
-		t += int64(rand.Intn(10000) + 1)
+		// t += int64(rand.Intn(10000) + 1)
+		t += int64(1000)
 		// v = rand.Float64()
 		v += float64(100)
 		exp = append(exp, pair{t: t, v: v})

@@ -90,14 +90,20 @@ func (a *xorAppender) Append(t int64, v float64) error {
 	var tDelta uint64
 
 	if a.c.num == 0 {
-		// TODO: store varint time?
-		a.b.writeBits(uint64(t), 64)
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutVarint(buf, t)] {
+			a.b.writeByte(b)
+		}
 		a.b.writeBits(math.Float64bits(v), 64)
 
 	} else if a.c.num == 1 {
 		tDelta = uint64(t - a.t)
-		// TODO: use varint or other encoding for first delta?
-		a.b.writeBits(tDelta, 64)
+
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+			a.b.writeByte(b)
+		}
+
 		a.writeVDelta(v)
 
 	} else {
@@ -203,7 +209,7 @@ func (it *xorIterator) Next() bool {
 	}
 
 	if it.numRead == 0 {
-		t, err := it.br.readBits(64)
+		t, err := binary.ReadVarint(it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -220,7 +226,7 @@ func (it *xorIterator) Next() bool {
 		return true
 	}
 	if it.numRead == 1 {
-		tDelta, err := it.br.readBits(64)
+		tDelta, err := binary.ReadUvarint(it.br)
 		if err != nil {
 			it.err = err
 			return false

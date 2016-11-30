@@ -99,6 +99,10 @@ func (b *bstream) readBit() (bit, error) {
 	return d != 0, nil
 }
 
+func (b *bstream) ReadByte() (byte, error) {
+	return b.readByte()
+}
+
 func (b *bstream) readByte() (byte, error) {
 	if len(b.stream) == 0 {
 		return 0, io.EOF
