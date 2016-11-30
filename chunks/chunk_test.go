@@ -20,7 +20,7 @@ func TestChunk(t *testing.T) {
 		EncXOR: func(sz int) Chunk { return NewXORChunk(sz) },
 	} {
 		t.Run(fmt.Sprintf("%s", enc), func(t *testing.T) {
-			for range make([]struct{}, 3000) {
+			for range make([]struct{}, 1) {
 				c := nc(rand.Intn(1024))
 				if err := testChunk(c); err != nil {
 					t.Fatal(err)
@@ -42,10 +42,14 @@ func testChunk(c Chunk) error {
 		v  = 1243535.123
 	)
 	i := 0
-	for i < 3 {
+	for {
 		ts += int64(rand.Intn(10000) + 1)
-		v = rand.Float64()
-		// v += float64(100)
+		// v = rand.Float64()
+		if i%2 == 0 {
+			v += float64(rand.Intn(1000000))
+		} else {
+			v -= float64(rand.Intn(1000000))
+		}
 
 		// Start with a new appender every 10th sample. This emulates starting
 		// appending to a partially filled chunk.
@@ -93,7 +97,7 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 		// t += int64(rand.Intn(10000) + 1)
 		t += int64(1000)
 		// v = rand.Float64()
-		v += float64(100)
+		// v += float64(100)
 		exp = append(exp, pair{t: t, v: v})
 	}
 

@@ -48,7 +48,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
-	return &xorAppender{
+	a := &xorAppender{
 		c:        c,
 		b:        c.b,
 		t:        it.t,
@@ -56,7 +56,11 @@ func (c *XORChunk) Appender() (Appender, error) {
 		tDelta:   it.tDelta,
 		leading:  it.leading,
 		trailing: it.trailing,
-	}, nil
+	}
+	if c.num == 0 {
+		a.leading = 0xff
+	}
+	return a, nil
 }
 
 func (c *XORChunk) iterator() *xorIterator {
@@ -88,6 +92,7 @@ type xorAppender struct {
 
 func (a *xorAppender) Append(t int64, v float64) error {
 	var tDelta uint64
+	l := len(a.b.bytes())
 
 	if a.c.num == 0 {
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -133,6 +138,9 @@ func (a *xorAppender) Append(t int64, v float64) error {
 	}
 
 	if len(a.b.bytes()) > a.c.sz {
+		// If the appended data exceeded the size limit, we truncate
+		// the underlying data slice back to the length we started with.
+		a.b.stream = a.b.stream[:l]
 		return ErrChunkFull
 	}
 
@@ -156,13 +164,12 @@ func (a *xorAppender) writeVDelta(v float64) {
 	leading := uint8(bits.Clz(vDelta))
 	trailing := uint8(bits.Ctz(vDelta))
 
-	// clamp number of leading zeros to avoid overflow when encoding
+	// Clamp number of leading zeros to avoid overflow when encoding.
 	if leading >= 32 {
 		leading = 31
 	}
 
-	// TODO(dgryski): check if it's 'cheaper' to reset the leading/trailing bits instead
-	if a.leading != ^uint8(0) && leading >= a.leading && trailing >= a.trailing {
+	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
 		a.b.writeBit(zero)
 		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
 	} else {
