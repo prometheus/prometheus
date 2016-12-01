@@ -111,6 +111,7 @@ type Options struct {
 	Flags         map[string]string
 
 	ListenAddress        string
+	ReadTimeout          time.Duration
 	ExternalURL          *url.URL
 	RoutePrefix          string
 	MetricsPath          string
@@ -247,9 +248,10 @@ func (h *Handler) Reload() <-chan chan error {
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
 	server := &http.Server{
-		Addr:     h.options.ListenAddress,
-		Handler:  h.router,
-		ErrorLog: log.NewErrorLogger(),
+		Addr:        h.options.ListenAddress,
+		Handler:     h.router,
+		ErrorLog:    log.NewErrorLogger(),
+		ReadTimeout: h.options.ReadTimeout,
 	}
 	h.listenErrCh <- server.ListenAndServe()
 }
