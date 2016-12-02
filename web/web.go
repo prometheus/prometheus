@@ -144,7 +144,7 @@ func New(o *Options) *Handler {
 		storage:       o.Storage,
 		notifier:      o.Notifier,
 
-		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage),
+		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager),
 		now:   model.Now,
 	}
 
