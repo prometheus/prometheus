@@ -352,10 +352,17 @@ func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
+	// Bucket targets by job label
+	tps := map[string][]retrieval.Target{}
+	for _, t := range h.targetManager.Targets() {
+		job := string(t.Labels()[model.JobLabel])
+		tps[job] = append(tps[job], t)
+	}
+
 	h.executeTemplate(w, "targets.html", struct {
-		TargetManager *retrieval.TargetManager
+		TargetPools map[string][]retrieval.Target
 	}{
-		TargetManager: h.targetManager,
+		TargetPools: tps,
 	})
 }
 
