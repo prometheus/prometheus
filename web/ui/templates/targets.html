@@ -4,7 +4,7 @@
   <div class="container-fluid">
     <h2 id="targets">Targets</h2>
       <table class="table table-condensed table-bordered table-striped table-hover">
-        {{range $job, $pool := .TargetManager.Pools}}
+        {{range $job, $pool := .TargetPools }}
           <thead>
             <tr><th colspan="5" class="job_header"><a id="job-{{$job}}" href="#job-{{$job}}">{{$job}}</a></th></tr>
             <tr>
