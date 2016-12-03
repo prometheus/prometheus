@@ -71,6 +71,7 @@ type Handler struct {
 	configString string
 	versionInfo  *PrometheusVersion
 	birth        time.Time
+	cwd          string
 	flagsMap     map[string]string
 
 	externalLabels model.LabelSet
@@ -127,6 +128,12 @@ func New(o *Options) *Handler {
 		return o.Context, nil
 	})
 
+	cwd, err := os.Getwd()
+
+	if err != nil {
+		cwd = "<error retrieving current working directory>"
+	}
+
 	h := &Handler{
 		router:      router,
 		listenErrCh: make(chan error),
@@ -135,6 +142,7 @@ func New(o *Options) *Handler {
 		options:     o,
 		versionInfo: o.Version,
 		birth:       time.Now(),
+		cwd:         cwd,
 		flagsMap:    o.Flags,
 
 		context:       o.Context,
@@ -327,10 +335,12 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "status.html", struct {
 		Birth         time.Time
+		CWD           string
 		Version       *PrometheusVersion
 		Alertmanagers []string
 	}{
 		Birth:         h.birth,
+		CWD:           h.cwd,
 		Version:       h.versionInfo,
 		Alertmanagers: h.notifier.Alertmanagers(),
 	})
