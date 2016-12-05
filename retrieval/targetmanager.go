@@ -14,11 +14,9 @@
 package retrieval
 
 import (
-	"sort"
 	"sync"
 
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
@@ -133,28 +131,23 @@ func (tm *TargetManager) reload() {
 	}
 }
 
-// Pools returns the targets currently being scraped bucketed by their job name.
-func (tm *TargetManager) Pools() map[string]Targets {
+// Targets returns the targets currently being scraped bucketed by their job name.
+func (tm *TargetManager) Targets() []Target {
 	tm.mtx.RLock()
 	defer tm.mtx.RUnlock()
 
-	pools := map[string]Targets{}
-
-	// TODO(fabxc): this is just a hack to maintain compatibility for now.
+	targets := []Target{}
 	for _, ps := range tm.targetSets {
 		ps.sp.mtx.RLock()
 
 		for _, t := range ps.sp.targets {
-			job := string(t.Labels()[model.JobLabel])
-			pools[job] = append(pools[job], t)
+			targets = append(targets, *t)
 		}
 
 		ps.sp.mtx.RUnlock()
 	}
-	for _, targets := range pools {
-		sort.Sort(targets)
-	}
-	return pools
+
+	return targets
 }
 
 // ApplyConfig resets the manager's target providers and job configurations as defined

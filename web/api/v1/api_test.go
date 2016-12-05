@@ -30,7 +30,14 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/retrieval"
 )
+
+type targetRetrieverFunc func() []retrieval.Target
+
+func (f targetRetrieverFunc) Targets() []retrieval.Target {
+	return f()
+}
 
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
@@ -49,10 +56,26 @@ func TestEndpoints(t *testing.T) {
 	}
 
 	now := model.Now()
+
+	tr := targetRetrieverFunc(func() []retrieval.Target {
+		return []retrieval.Target{
+			*retrieval.NewTarget(
+				model.LabelSet{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+				},
+				model.LabelSet{},
+				url.Values{},
+			),
+		}
+	})
+
 	api := &API{
-		Storage:     suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
-		now:         func() model.Time { return now },
+		Storage:         suite.Storage(),
+		QueryEngine:     suite.QueryEngine(),
+		targetRetriever: tr,
+		now:             func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -404,6 +427,16 @@ func TestEndpoints(t *testing.T) {
 			response: struct {
 				NumDeleted int `json:"numDeleted"`
 			}{2},
+		}, {
+			endpoint: api.targets,
+			response: []*Target{
+				&Target{
+					DiscoveredLabels: model.LabelSet{},
+					Labels:           model.LabelSet{},
+					ScrapeUrl:        "http://example.com:8080/metrics",
+					Health:           "unknown",
+				},
+			},
 		},
 	}
 
