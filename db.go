@@ -80,6 +80,9 @@ type Matcher interface {
 // Querier provides querying access over time series data of a fixed
 // time range.
 type Querier interface {
+	// Range returns the timestamp range of the Querier.
+	Range() (start, end int64)
+
 	// Iterator returns an interator over the inverted index that
 	// matches the key label by the constraints of Matcher.
 	Iterator(key string, m Matcher) Iterator
@@ -90,11 +93,14 @@ type Querier interface {
 	// Series returns series provided in the index iterator.
 	Series(Iterator) []Series
 
+	// LabelValues returns all potential values for a label name.
+	LabelValues(string) []string
+	// LabelValuesFor returns all potential values for a label name.
+	// under the constraint of another label.
+	LabelValuesFor(string, Label) []string
+
 	// Close releases the resources of the Querier.
 	Close() error
-
-	// Range returns the timestamp range of the Querier.
-	Range() (start, end int64)
 }
 
 // Series represents a single time series.
@@ -119,6 +125,8 @@ type SeriesIterator interface {
 	Err() error
 }
 
+// LabelRefs contains a reference to a label set that can be resolved
+// against a Querier.
 type LabelRefs struct {
 	block   uint64
 	offsets []uint32
@@ -142,9 +150,9 @@ func (ls Labels) Hash() uint64 {
 	b := make([]byte, 0, 512)
 	for _, v := range ls {
 		b = append(b, v.Name...)
-		b = append(b, '\xff')
+		b = append(b, sep)
 		b = append(b, v.Value...)
-		b = append(b, '\xff')
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
 }
