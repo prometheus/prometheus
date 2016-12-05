@@ -45,7 +45,7 @@ const (
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
 	// Labels before any processing.
-	metaLabels model.LabelSet
+	discoveredLabels model.LabelSet
 	// Any labels that are added to this target and its metrics.
 	labels model.LabelSet
 	// Additional URL parmeters that are part of the target URL.
@@ -58,12 +58,12 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels, metaLabels model.LabelSet, params url.Values) *Target {
+func NewTarget(labels, discoveredLabels model.LabelSet, params url.Values) *Target {
 	return &Target{
-		labels:     labels,
-		metaLabels: metaLabels,
-		params:     params,
-		health:     HealthUnknown,
+		labels:           labels,
+		discoveredLabels: discoveredLabels,
+		params:           params,
+		health:           HealthUnknown,
 	}
 }
 
@@ -144,9 +144,9 @@ func (t *Target) Labels() model.LabelSet {
 	return lset
 }
 
-// MetaLabels returns a copy of the target's labels before any processing.
-func (t *Target) MetaLabels() model.LabelSet {
-	return t.metaLabels.Clone()
+// DiscoveredLabels returns a copy of the target's labels before any processing.
+func (t *Target) DiscoveredLabels() model.LabelSet {
+	return t.discoveredLabels.Clone()
 }
 
 // URL returns a copy of the target's URL.
