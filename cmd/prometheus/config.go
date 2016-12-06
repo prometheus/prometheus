@@ -85,7 +85,7 @@ func init() {
 		"Maximum duration before timing out read of the request, and closing idle connections.",
 	)
 	cfg.fs.IntVar(
-		&cfg.web.MaxConnections, "web.max-connections", 100,
+		&cfg.web.MaxConnections, "web.max-connections", 512,
 		"Maximum number of simultaneous connections.",
 	)
 	cfg.fs.StringVar(
