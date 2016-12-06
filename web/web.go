@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
+	"golang.org/x/net/netutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -112,6 +113,8 @@ type Options struct {
 	Flags         map[string]string
 
 	ListenAddress        string
+	ReadTimeout          time.Duration
+	MaxConnections       int
 	ExternalURL          *url.URL
 	RoutePrefix          string
 	MetricsPath          string
@@ -255,11 +258,18 @@ func (h *Handler) Reload() <-chan chan error {
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
 	server := &http.Server{
-		Addr:     h.options.ListenAddress,
-		Handler:  h.router,
-		ErrorLog: log.NewErrorLogger(),
+		Addr:        h.options.ListenAddress,
+		Handler:     h.router,
+		ErrorLog:    log.NewErrorLogger(),
+		ReadTimeout: h.options.ReadTimeout,
 	}
-	h.listenErrCh <- server.ListenAndServe()
+	listener, err := net.Listen("tcp", h.options.ListenAddress)
+	if err != nil {
+		h.listenErrCh <- err
+	} else {
+		limitedListener := netutil.LimitListener(listener, h.options.MaxConnections)
+		h.listenErrCh <- server.Serve(limitedListener)
+	}
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
