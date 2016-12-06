@@ -84,6 +84,10 @@ func init() {
 		&cfg.web.ReadTimeout, "web.read-timeout", 30*time.Second,
 		"Maximum duration before timing out read of the request, and closing idle connections.",
 	)
+	cfg.fs.IntVar(
+		&cfg.web.MaxConnections, "web.max-connections", 100,
+		"Maximum number of simultaneous connections.",
+	)
 	cfg.fs.StringVar(
 		&cfg.prometheusURL, "web.external-url", "",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
