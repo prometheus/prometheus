@@ -18,6 +18,7 @@ import (
 	"sort"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/log"
@@ -25,6 +26,13 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/metric"
+)
+
+var (
+	federationErrors = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_web_federation_errors_total",
+		Help: "Total number of errors that occurred while sending federation responses.",
+	})
 )
 
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
@@ -52,6 +60,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	q, err := h.storage.Querier()
 	if err != nil {
+		federationErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -59,6 +68,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	vector, err := q.LastSampleForLabelMatchers(h.context, minTimestamp, matcherSets...)
 	if err != nil {
+		federationErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -92,7 +102,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				// creating the new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
+						federationErrors.Inc()
+						log.With("err", err).Error("federation failed")
 						return
 					}
 				}
@@ -133,7 +144,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	// Still have to ship off the last MetricFamily, if any.
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			federationErrors.Inc()
+			log.With("err", err).Error("federation failed")
 		}
 	}
 }
