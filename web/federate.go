@@ -92,7 +92,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				// creating the new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
+						log.With("err", err).Error("federation failed")
 						return
 					}
 				}
@@ -133,7 +133,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	// Still have to ship off the last MetricFamily, if any.
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.With("err", err).Error("federation failed")
 		}
 	}
 }
