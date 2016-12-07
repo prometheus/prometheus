@@ -120,13 +120,13 @@ func (a *xorAppender) Append(t int64, v float64) error {
 		switch {
 		case dod == 0:
 			a.b.writeBit(zero)
-		case -8191 <= dod && dod <= 8192:
+		case bitRange(dod, 14):
 			a.b.writeBits(0x02, 2) // '10'
 			a.b.writeBits(uint64(dod), 14)
-		case -65535 <= dod && dod <= 65536:
+		case bitRange(dod, 17):
 			a.b.writeBits(0x06, 3) // '110'
 			a.b.writeBits(uint64(dod), 17)
-		case -524287 <= dod && dod <= 524288:
+		case bitRange(dod, 20):
 			a.b.writeBits(0x0e, 4) // '1110'
 			a.b.writeBits(uint64(dod), 20)
 		default:
@@ -150,6 +150,10 @@ func (a *xorAppender) Append(t int64, v float64) error {
 	a.tDelta = tDelta
 
 	return nil
+}
+
+func bitRange(x int64, nbits uint8) bool {
+	return -((1<<(nbits-1))-1) <= x && x <= 1<<(nbits-1)
 }
 
 func (a *xorAppender) writeVDelta(v float64) {
