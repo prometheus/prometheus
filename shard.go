@@ -40,6 +40,8 @@ type HeadBlock struct {
 	forward map[uint32]*chunkDesc   // chunk ID to chunk desc
 	values  map[string][]string     // label names to possible values
 	index   *memIndex               // inverted index for label pairs
+
+	samples uint64
 }
 
 // Block handles reads against a completed block of time series data within a time window.
@@ -97,7 +99,12 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 		// Store forward index for the returned ID.
 		h.forward[id] = chkd
 	}
-	return chkd.append(ts, v)
+	if err := chkd.append(ts, v); err != nil {
+		return err
+	}
+
+	h.samples++
+	return nil
 }
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.

@@ -31,8 +31,9 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	numSeriesShards = 32
-	maxChunkSize    = 1024
+	seriesShardShift = 3
+	numSeriesShards  = 1 << seriesShardShift
+	maxChunkSize     = 1024
 )
 
 // Open or create a new DB.
@@ -63,6 +64,12 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 
 // Close the database.
 func (db *DB) Close() error {
+	for i, shard := range db.shards {
+		fmt.Println("shard", i)
+		fmt.Println("	num chunks", len(shard.head.forward))
+		fmt.Println("	num samples", shard.head.samples)
+	}
+
 	return fmt.Errorf("not implemented")
 }
 
@@ -214,26 +221,49 @@ func LabelsFromMap(m map[string]string) Labels {
 // Vector is a set of LabelSet associated with one value each.
 // Label sets and values must have equal length.
 type Vector struct {
-	LabelSets []Labels
-	Values    []float64
+	Buckets map[uint16][]Sample
+}
+
+type Sample struct {
+	Hash   uint64
+	Labels Labels
+	Value  float64
+}
+
+// Reset the vector but keep resources allocated.
+func (v *Vector) Reset() {
+	v.Buckets = make(map[uint16][]Sample, len(v.Buckets))
+}
+
+// Add a sample to the vector.
+func (v *Vector) Add(lset Labels, val float64) {
+	h := lset.Hash()
+	s := uint16(h >> (64 - seriesShardShift))
+
+	v.Buckets[s] = append(v.Buckets[s], Sample{
+		Hash:   h,
+		Labels: lset,
+		Value:  val,
+	})
 }
 
 // AppendVector adds values for a list of label sets for the given timestamp
 // in milliseconds.
 func (db *DB) AppendVector(ts int64, v *Vector) error {
 	// Sequentially add samples to shards.
-	for i, ls := range v.LabelSets {
-		h := ls.Hash()
-		shard := db.shards[h>>(64-uint(len(db.shards)))]
+	for s, bkt := range v.Buckets {
+		shard := db.shards[s]
 
 		// TODO(fabxc): benchmark whether grouping into shards and submitting to
 		// shards in batches is more efficient.
 		shard.head.mtx.Lock()
 
-		if err := shard.head.append(h, ls, ts, v.Values[i]); err != nil {
-			shard.head.mtx.Unlock()
-			// TODO(fabxc): handle gracefully and collect multi-error.
-			return err
+		for _, smpl := range bkt {
+			if err := shard.head.append(smpl.Hash, smpl.Labels, ts, smpl.Value); err != nil {
+				shard.head.mtx.Unlock()
+				// TODO(fabxc): handle gracefully and collect multi-error.
+				return err
+			}
 		}
 		shard.head.mtx.Unlock()
 	}
