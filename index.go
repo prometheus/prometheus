@@ -15,7 +15,7 @@ type memIndex struct {
 
 // Postings returns an iterator over the postings list for s.
 func (ix *memIndex) Postings(s string) Iterator {
-	return &listIterator{list: ix.m[s]}
+	return &listIterator{list: ix.m[s], idx: -1}
 }
 
 // add adds a document to the index. The caller has to ensure that no

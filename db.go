@@ -4,10 +4,13 @@ package tsdb
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/cespare/xxhash"
+	"github.com/fabxc/tsdb/chunks"
 	"github.com/prometheus/common/log"
 )
 
@@ -25,6 +28,7 @@ type Options struct {
 type DB struct {
 	logger log.Logger
 	opts   *Options
+	path   string
 
 	shards []*SeriesShard
 }
@@ -48,6 +52,7 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	c := &DB{
 		logger: l,
 		opts:   opts,
+		path:   path,
 	}
 
 	// Initialize vertical shards.
@@ -68,6 +73,21 @@ func (db *DB) Close() error {
 		fmt.Println("shard", i)
 		fmt.Println("	num chunks", len(shard.head.forward))
 		fmt.Println("	num samples", shard.head.samples)
+
+		f, err := os.Create(filepath.Join(db.path, fmt.Sprintf("shard-%d-series", i)))
+		if err != nil {
+			return err
+		}
+		bw := &blockWriter{block: shard.head}
+		n, err := bw.writeSeries(f)
+		if err != nil {
+			return err
+		}
+		fmt.Println("	wrote bytes", n)
+
+		if err := f.Close(); err != nil {
+			return err
+		}
 	}
 
 	return nil

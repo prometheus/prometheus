@@ -1,8 +1,6 @@
 package tsdb
 
 import (
-	"fmt"
-	"io"
 	"math"
 	"sync"
 
@@ -18,14 +16,6 @@ type HeadBlock struct {
 	index   *memIndex               // inverted index for label pairs
 
 	samples uint64
-}
-
-// WriteTo serializes the current head block contents into w.
-func (h *HeadBlock) WriteTo(w io.Writer) (int64, error) {
-	h.mtx.RLock()
-	defer h.mtx.RUnlock()
-
-	return 0, fmt.Errorf("not implemented")
 }
 
 // get retrieves the chunk with the hash and label set and creates
@@ -76,5 +66,42 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 	}
 
 	h.samples++
+	return nil
+}
+
+func (h *HeadBlock) stats() *seriesStats {
+	return &seriesStats{}
+}
+
+func (h *HeadBlock) seriesData() seriesDataIterator {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	it := &chunkDescsIterator{
+		descs: make([]*chunkDesc, 0, len(h.forward)),
+		i:     -1,
+	}
+
+	for _, cd := range h.forward {
+		it.descs = append(it.descs, cd)
+	}
+	return it
+}
+
+type chunkDescsIterator struct {
+	descs []*chunkDesc
+	i     int
+}
+
+func (it *chunkDescsIterator) next() bool {
+	it.i++
+	return it.i < len(it.descs)
+}
+
+func (it *chunkDescsIterator) values() (skiplist, []chunks.Chunk) {
+	return &simpleSkiplist{}, []chunks.Chunk{it.descs[it.i].chunk}
+}
+
+func (it *chunkDescsIterator) err() error {
 	return nil
 }
