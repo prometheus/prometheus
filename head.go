@@ -9,30 +9,6 @@ import (
 	"github.com/fabxc/tsdb/chunks"
 )
 
-const sep = '\xff'
-
-// SeriesShard handles reads and writes of time series falling into
-// a hashed shard of a series.
-type SeriesShard struct {
-	mtx    sync.RWMutex
-	blocks *Block
-	head   *HeadBlock
-}
-
-// NewSeriesShard returns a new SeriesShard.
-func NewSeriesShard() *SeriesShard {
-	return &SeriesShard{
-		// TODO(fabxc): restore from checkpoint.
-		head: &HeadBlock{
-			index:   newMemIndex(),
-			descs:   map[uint64][]*chunkDesc{},
-			values:  map[string][]string{},
-			forward: map[uint32]*chunkDesc{},
-		},
-		// TODO(fabxc): provide access to persisted blocks.
-	}
-}
-
 // HeadBlock handles reads and writes of time series data within a time window.
 type HeadBlock struct {
 	mtx     sync.RWMutex
@@ -42,10 +18,6 @@ type HeadBlock struct {
 	index   *memIndex               // inverted index for label pairs
 
 	samples uint64
-}
-
-// Block handles reads against a completed block of time series data within a time window.
-type Block struct {
 }
 
 // WriteTo serializes the current head block contents into w.
@@ -105,29 +77,4 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 
 	h.samples++
 	return nil
-}
-
-// chunkDesc wraps a plain data chunk and provides cached meta data about it.
-type chunkDesc struct {
-	lset  Labels
-	chunk chunks.Chunk
-
-	// Caching fields.
-	lastTimestamp int64
-	lastValue     float64
-
-	app chunks.Appender // Current appender for the chunks.
-}
-
-func (cd *chunkDesc) append(ts int64, v float64) (err error) {
-	if cd.app == nil {
-		cd.app, err = cd.chunk.Appender()
-		if err != nil {
-			return err
-		}
-	}
-	cd.lastTimestamp = ts
-	cd.lastValue = v
-
-	return cd.app.Append(ts, v)
 }
