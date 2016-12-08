@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"sort"
 	"sync"
 	"time"
 
@@ -172,16 +173,33 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 	var sc tsdb.Vector
 	ts := int64(model.Now())
 
+	type sample struct {
+		labels tsdb.Labels
+		value  int64
+	}
+
+	scrape := make(map[uint64]*sample, len(metrics))
+
+	for _, m := range metrics {
+		lset := make(tsdb.Labels, 0, len(m))
+		for k, v := range m {
+			lset = append(lset, tsdb.Label{Name: string(k), Value: string(v)})
+		}
+		sort.Sort(lset)
+
+		scrape[lset.Hash()] = &sample{
+			labels: lset,
+			value:  123456789,
+		}
+	}
+
 	for i := 0; i < scrapeCount; i++ {
 		ts = ts + int64(i*10000)
 		sc.Reset()
 
-		for _, m := range metrics {
-			lset := make([]tsdb.Label, 0, len(m))
-			for k, v := range m {
-				lset = append(lset, tsdb.Label{Name: string(k), Value: string(v)})
-			}
-			sc.Add(lset, float64(rand.Int63()))
+		for _, s := range scrape {
+			s.value += rand.Int63n(1000)
+			sc.Add(s.labels, float64(s.value))
 		}
 		if err := b.storage.ingestScrape(ts, &sc); err != nil {
 			return err

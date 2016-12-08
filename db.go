@@ -70,7 +70,7 @@ func (db *DB) Close() error {
 		fmt.Println("	num samples", shard.head.samples)
 	}
 
-	return fmt.Errorf("not implemented")
+	return nil
 }
 
 // Querier returns a new querier over the database.
@@ -154,7 +154,8 @@ func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
-	b := make([]byte, 0, 512)
+	b := make([]byte, 0, 1024)
+
 	for _, v := range ls {
 		b = append(b, v.Name...)
 		b = append(b, sep)
@@ -222,6 +223,7 @@ func LabelsFromMap(m map[string]string) Labels {
 // Label sets and values must have equal length.
 type Vector struct {
 	Buckets map[uint16][]Sample
+	reused  int
 }
 
 type Sample struct {
@@ -232,7 +234,15 @@ type Sample struct {
 
 // Reset the vector but keep resources allocated.
 func (v *Vector) Reset() {
-	v.Buckets = make(map[uint16][]Sample, len(v.Buckets))
+	// Do a full reset every n-th reusage to avoid memory leaks.
+	if v.Buckets == nil || v.reused > 100 {
+		v.Buckets = make(map[uint16][]Sample, 0)
+		return
+	}
+	for x, bkt := range v.Buckets {
+		v.Buckets[x] = bkt[:0]
+	}
+	v.reused++
 }
 
 // Add a sample to the vector.

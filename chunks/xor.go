@@ -16,7 +16,7 @@ type XORChunk struct {
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunk(size int) *XORChunk {
-	b := make([]byte, 3, 64)
+	b := make([]byte, 3, 128)
 	b[0] = byte(EncXOR)
 
 	return &XORChunk{

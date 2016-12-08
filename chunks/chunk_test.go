@@ -41,8 +41,7 @@ func testChunk(c Chunk) error {
 		ts = int64(1234123324)
 		v  = 1243535.123
 	)
-	i := 0
-	for {
+	for i := 0; i < 300; i++ {
 		ts += int64(rand.Intn(10000) + 1)
 		// v = rand.Float64()
 		if i%2 == 0 {
@@ -68,7 +67,6 @@ func testChunk(c Chunk) error {
 			return err
 		}
 		exp = append(exp, pair{t: ts, v: v})
-		i++
 		// fmt.Println("appended", len(c.Bytes()), c.Bytes())
 	}
 
