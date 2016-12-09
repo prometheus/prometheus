@@ -77,8 +77,8 @@ func (db *DB) Close() error {
 
 	for i, shard := range db.shards {
 		fmt.Println("shard", i)
-		fmt.Println("	num chunks", len(shard.head.forward))
-		fmt.Println("	num samples", shard.head.samples)
+		fmt.Println("	num chunks", shard.head.stats().series)
+		fmt.Println("	num samples", shard.head.stats().samples)
 
 		wg.Add(1)
 		go func(i int, shard *SeriesShard) {
@@ -185,14 +185,14 @@ func NewSeriesShard(path string) *SeriesShard {
 	return &SeriesShard{
 		path: path,
 		// TODO(fabxc): restore from checkpoint.
-		head: &HeadBlock{
-			ivIndex: newMemIndex(),
-			descs:   map[uint64][]*chunkDesc{},
-			values:  map[string]stringset{},
-			forward: map[uint32]*chunkDesc{},
-		},
+		head: NewHeadBlock(),
 		// TODO(fabxc): provide access to persisted blocks.
 	}
+}
+
+// blockFor returns the block of shard series that contains the given timestamp.
+func (s *SeriesShard) blockFor(ts int64) block {
+	return nil
 }
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.

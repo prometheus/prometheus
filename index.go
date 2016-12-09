@@ -1,38 +1,86 @@
 package tsdb
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Index provides read access to an inverted index.
 type Index interface {
 	Postings(ref uint32) Iterator
 }
 
-// memIndex is an inverted in-memory index.
 type memIndex struct {
 	lastID uint32
-	m      map[string][]uint32
+
+	forward  map[uint32]*chunkDesc // chunk ID to chunk desc
+	values   map[string]stringset  // label names to possible values
+	postings *memPostings          // postings lists for terms
+}
+
+// newMemIndex returns a new in-memory  index.
+func newMemIndex() *memIndex {
+	return &memIndex{
+		lastID:   0,
+		forward:  make(map[uint32]*chunkDesc),
+		values:   make(map[string]stringset),
+		postings: &memPostings{m: make(map[string][]uint32)},
+	}
+}
+
+func (ix *memIndex) numSeries() int {
+	return len(ix.forward)
+}
+
+func (ix *memIndex) Postings(s string) Iterator {
+	return ix.postings.get(s)
+}
+
+func (ix *memIndex) add(chkd *chunkDesc) {
+	// Add each label pair as a term to the inverted index.
+	terms := make([]string, 0, len(chkd.lset))
+	b := make([]byte, 0, 64)
+
+	for _, l := range chkd.lset {
+		b = append(b, l.Name...)
+		b = append(b, sep)
+		b = append(b, l.Value...)
+
+		terms = append(terms, string(b))
+		b = b[:0]
+
+		// Add to label name to values index.
+		valset, ok := ix.values[l.Name]
+		if !ok {
+			valset = stringset{}
+			ix.values[l.Name] = valset
+		}
+		valset.set(l.Value)
+	}
+	ix.lastID++
+	id := ix.lastID
+
+	ix.postings.add(id, terms...)
+
+	// Store forward index for the returned ID.
+	ix.forward[id] = chkd
+}
+
+type memPostings struct {
+	m map[string][]uint32
 }
 
 // Postings returns an iterator over the postings list for s.
-func (ix *memIndex) Postings(s string) Iterator {
-	return &listIterator{list: ix.m[s], idx: -1}
+func (p *memPostings) get(s string) Iterator {
+	return &listIterator{list: p.m[s], idx: -1}
 }
 
 // add adds a document to the index. The caller has to ensure that no
 // term argument appears twice.
-func (ix *memIndex) add(terms ...string) uint32 {
-	ix.lastID++
-
+func (p *memPostings) add(id uint32, terms ...string) {
 	for _, t := range terms {
-		ix.m[t] = append(ix.m[t], ix.lastID)
+		p.m[t] = append(p.m[t], id)
 	}
-
-	return ix.lastID
-}
-
-// newMemIndex returns a new in-memory index.
-func newMemIndex() *memIndex {
-	return &memIndex{m: make(map[string][]uint32)}
 }
 
 // Iterator provides iterative access over a postings list.
@@ -45,11 +93,6 @@ type Iterator interface {
 	Seek(v uint32) bool
 	// Value returns the value at the current iterator position.
 	Value() uint32
-}
-
-// compressIndex returns a compressed index for the given input index.
-func compressIndex(ix Index) {
-
 }
 
 // Intersect returns a new iterator over the intersection of the
@@ -132,4 +175,28 @@ func (it *listIterator) Seek(x uint32) bool {
 		return it.list[i+it.idx] >= x
 	})
 	return it.idx < len(it.list)
+}
+
+type stringset map[string]struct{}
+
+func (ss stringset) set(s string) {
+	ss[s] = struct{}{}
+}
+
+func (ss stringset) has(s string) bool {
+	_, ok := ss[s]
+	return ok
+}
+
+func (ss stringset) String() string {
+	return strings.Join(ss.slice(), ",")
+}
+
+func (ss stringset) slice() []string {
+	slice := make([]string, 0, len(ss))
+	for k := range ss {
+		slice = append(slice, k)
+	}
+	sort.Strings(slice)
+	return slice
 }

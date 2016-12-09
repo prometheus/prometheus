@@ -19,12 +19,11 @@ const (
 type Block interface{}
 
 type block interface {
-	stats() *seriesStats
+	stats() *blockStats
 	seriesData() seriesDataIterator
 }
 
 type persistedBlock struct {
-    
 }
 
 type seriesDataIterator interface {
@@ -50,7 +49,7 @@ const (
 
 const (
 	seriesMetaSize  = int(unsafe.Sizeof(seriesMeta{}))
-	seriesStatsSize = int(unsafe.Sizeof(seriesStats{}))
+	seriesStatsSize = int(unsafe.Sizeof(blockStats{}))
 )
 
 type seriesMeta struct {
@@ -59,7 +58,7 @@ type seriesMeta struct {
 	_     [7]byte // padding/reserved
 }
 
-type seriesStats struct {
+type blockStats struct {
 	series  uint32
 	samples uint64
 	_       [4]byte // padding/reserved
@@ -69,9 +68,9 @@ func (s *persistedSeries) meta() *seriesMeta {
 	return (*seriesMeta)(unsafe.Pointer(&s.data[0]))
 }
 
-func (s *persistedSeries) stats() *seriesStats {
+func (s *persistedSeries) stats() *blockStats {
 	// The stats start right behind the block meta data.
-	return (*seriesStats)(unsafe.Pointer(&s.data[seriesMetaSize]))
+	return (*blockStats)(unsafe.Pointer(&s.data[seriesMetaSize]))
 }
 
 // seriesAt returns the series stored at offset as a skiplist and the chunks
