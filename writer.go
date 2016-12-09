@@ -82,7 +82,7 @@ func (w *seriesWriter) WriteSeries(lset Labels, chks []*chunkDesc) error {
 	}
 	// For normal reads we don't need the length of the chunk section but
 	// it allows us to verify checksums without reading the index file.
-	if err := w.write(w.w, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
 		return err
 	}
 
@@ -177,15 +177,15 @@ type indexWriter struct {
 	offsets [][]ChunkOffset
 
 	symbols      map[string]uint32 // symbol offsets
-	labelIndexes map[string]uint32 // label index offsets
+	labelIndexes []hashEntry       // label index offsets
 }
 
 func newIndexWriter(w io.Writer) *indexWriter {
 	return &indexWriter{
 		w:            w,
 		n:            0,
-		symbols:      make(map[string]uint32),
-		labelIndexes: make(map[string]uint32),
+		symbols:      make(map[string]uint32, 4096),
+		labelIndexes: make([]hashEntry, 10),
 	}
 }
 
@@ -233,21 +233,26 @@ func (w *indexWriter) writeSymbols() error {
 	}
 	sort.Strings(symbols)
 
+	buf := make([]byte, binary.MaxVarintLen32)
+	b := append(make([]byte, 4096), flagStd)
+
+	for _, s := range symbols {
+		w.symbols[s] = uint32(w.n) + uint32(len(b))
+
+		n := binary.PutUvarint(buf, uint64(len(s)))
+		b = append(b, buf[:n]...)
+		b = append(b, s...)
+	}
+
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	buf := make([]byte, binary.MaxVarintLen32)
-
-	for _, s := range symbols {
-		n := binary.PutUvarint(buf, uint64(len(s)))
-		w.symbols[s] = uint32(w.n)
-
-		if err := w.write(wr, buf[:n]); err != nil {
-			return err
-		}
-		if err := w.write(wr, []byte(s)); err != nil {
-			return err
-		}
+	l := len(b)
+	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+		return err
+	}
+	if err := w.write(wr, b); err != nil {
+		return err
 	}
 
 	return w.write(w.w, h.Sum(nil))
@@ -262,12 +267,25 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	w.labelIndexes[names[0]] = uint32(w.n)
+	w.labelIndexes = append(w.labelIndexes, hashEntry{
+		name:   names[0],
+		offset: uint32(w.n),
+	})
+
+	l := 1 + len(values)*4
+
+	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+		return err
+	}
+	if err := w.write(wr, []byte{flagStd}); err != nil {
+		return err
+	}
 
 	for _, v := range values {
 		o := w.symbols[v]
+		b := ((*[4]byte)(unsafe.Pointer(&o)))[:]
 
-		if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&o)))[:]); err != nil {
+		if err := w.write(wr, b); err != nil {
 			return err
 		}
 	}
@@ -287,7 +305,39 @@ func (w *indexWriter) Size() int64 {
 	return w.n
 }
 
+type hashEntry struct {
+	name   string
+	offset uint32
+}
+
+const hashEntrySize = uint32(unsafe.Sizeof(hashEntry{}))
+
+func (w *indexWriter) finalize() error {
+	l := 1 + uint32(len(w.labelIndexes))*hashEntrySize
+
+	if err := w.write(w.w, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+		return err
+	}
+	if err := w.write(w.w, []byte{flagStd}); err != nil {
+		return err
+	}
+
+	for _, e := range w.labelIndexes {
+		b := ((*[hashEntrySize]byte)(unsafe.Pointer(&e)))[:]
+
+		if err := w.write(w.w, b); err != nil {
+			return nil
+		}
+	}
+
+	return nil
+}
+
 func (w *indexWriter) Close() error {
+	if err := w.finalize(); err != nil {
+		return err
+	}
+
 	if f, ok := w.w.(*os.File); ok {
 		if err := f.Sync(); err != nil {
 			return err
