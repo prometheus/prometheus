@@ -62,36 +62,3 @@ func (h *HeadBlock) stats() *blockStats {
 		samples: h.samples,
 	}
 }
-
-func (h *HeadBlock) seriesData() seriesDataIterator {
-	h.mtx.RLock()
-	defer h.mtx.RUnlock()
-
-	it := &chunkDescsIterator{
-		descs: make([]*chunkDesc, 0, len(h.index.forward)),
-		i:     -1,
-	}
-
-	for _, cd := range h.index.forward {
-		it.descs = append(it.descs, cd)
-	}
-	return it
-}
-
-type chunkDescsIterator struct {
-	descs []*chunkDesc
-	i     int
-}
-
-func (it *chunkDescsIterator) next() bool {
-	it.i++
-	return it.i < len(it.descs)
-}
-
-func (it *chunkDescsIterator) values() (skiplist, []chunks.Chunk) {
-	return &simpleSkiplist{}, []chunks.Chunk{it.descs[it.i].chunk}
-}
-
-func (it *chunkDescsIterator) err() error {
-	return nil
-}

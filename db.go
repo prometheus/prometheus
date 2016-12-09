@@ -112,10 +112,12 @@ func (db *DB) appendSingle(lset Labels, ts int64, v float64) error {
 	h := lset.Hash()
 	s := uint16(h >> (64 - seriesShardShift))
 
-	return db.shards[s].appendBatch(ts, Sample{
-		Hash:   h,
-		Labels: lset,
-		Value:  v,
+	return db.shards[s].appendBatch(ts, []Sample{
+		{
+			Hash:   h,
+			Labels: lset,
+			Value:  v,
+		},
 	})
 }
 
@@ -211,11 +213,6 @@ func (s *SeriesShard) Close() error {
 	return nil
 }
 
-// blockFor returns the block of shard series that contains the given timestamp.
-func (s *SeriesShard) blockFor(ts int64) block {
-	return nil
-}
-
 func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
 	// TODO(fabxc): make configurable.
 	const persistenceTimeThreshold = 1000 * 60 * 60 // 1 hour if timestamp in ms
@@ -236,7 +233,6 @@ func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
 
 	// TODO(fabxc): randomize over time
 	if s.head.stats().samples/uint64(s.head.stats().chunks) > 400 {
-		s.persist()
 		select {
 		case s.persistCh <- struct{}{}:
 			go s.persist()
@@ -276,19 +272,14 @@ func (s *SeriesShard) persist() error {
 		return err
 	}
 
-	bw := &blockWriter{block: head}
-	n, err := bw.writeSeries(f)
-	if err != nil {
-		return err
+	w := newSeriesWriter(f, s.head.baseTimestamp)
+	defer w.Close()
+
+	for _, cd := range head.index.forward {
+		w.WriteSeries(cd.lset, []*chunkDesc{cd})
 	}
 
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	sz := fmt.Sprintf("%fMiB", float64(n)/1024/1024)
+	sz := fmt.Sprintf("%fMiB", float64(w.Size())/1024/1024)
 
 	s.logger.With("size", sz).
 		With("samples", head.samples).

@@ -16,8 +16,7 @@ type XORChunk struct {
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunk(size int) *XORChunk {
-	b := make([]byte, 3, 128)
-	b[0] = byte(EncXOR)
+	b := make([]byte, 2, 128)
 
 	return &XORChunk{
 		b:   &bstream{stream: b, count: 0},
@@ -26,12 +25,16 @@ func NewXORChunk(size int) *XORChunk {
 	}
 }
 
+func (c *XORChunk) Encoding() Encoding {
+	return EncXOR
+}
+
 // Bytes returns the underlying byte slice of the chunk.
 func (c *XORChunk) Bytes() []byte {
 	b := c.b.bytes()
 	// Lazily populate length bytes – probably not necessary to have the
 	// cache value in struct.
-	binary.LittleEndian.PutUint16(b[1:3], c.num)
+	binary.LittleEndian.PutUint16(b[:2], c.num)
 	return b
 }
 
@@ -68,7 +71,7 @@ func (c *XORChunk) iterator() *xorIterator {
 	// When using striped locks to guard access to chunks, probably yes.
 	// Could only copy data if the chunk is not completed yet.
 	return &xorIterator{
-		br:       newBReader(c.b.bytes()[3:]),
+		br:       newBReader(c.b.bytes()[2:]),
 		numTotal: c.num,
 	}
 }

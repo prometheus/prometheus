@@ -34,22 +34,18 @@ var (
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
 	Bytes() []byte
+	Encoding() Encoding
 	Appender() (Appender, error)
 	Iterator() Iterator
 }
 
-// FromBytes returns a chunk from a byte slice of chunk data.
-func FromBytes(d []byte) (Chunk, error) {
-	if len(d) < 1 {
-		return nil, fmt.Errorf("no data")
-	}
-	e := Encoding(d[0])
-
+// FromData returns a chunk from a byte slice of chunk data.
+func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return &XORChunk{
 			b:   &bstream{count: 8},
-			num: binary.LittleEndian.Uint16(d[1:3]),
+			num: binary.LittleEndian.Uint16(d),
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown chunk encoding: %d", e)

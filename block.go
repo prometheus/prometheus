@@ -2,12 +2,9 @@ package tsdb
 
 import (
 	"fmt"
-	"hash/crc64"
 	"io"
 	"sort"
 	"unsafe"
-
-	"github.com/fabxc/tsdb/chunks"
 )
 
 const (
@@ -17,24 +14,6 @@ const (
 
 // Block handles reads against a block of time series data within a time window.
 type Block interface{}
-
-type block interface {
-	stats() *blockStats
-	seriesData() seriesDataIterator
-}
-
-type persistedBlock struct {
-}
-
-type seriesDataIterator interface {
-	next() bool
-	values() (skiplist, []chunks.Chunk)
-	err() error
-}
-
-func compactBlocks(a, b block) error {
-	return nil
-}
 
 type persistedSeries struct {
 	size    int
@@ -140,87 +119,4 @@ func (sl simpleSkiplist) WriteTo(w io.Writer) (n int64, err error) {
 		n += int64(m)
 	}
 	return n, err
-}
-
-type blockWriter struct {
-	block block
-}
-
-func (bw *blockWriter) writeSeries(ow io.Writer) (n int64, err error) {
-	// Duplicate all writes through a CRC64 hash writer.
-	h := crc64.New(crc64.MakeTable(crc64.ECMA))
-	w := io.MultiWriter(h, ow)
-
-	// Write file header including padding.
-	//
-	// XXX(fabxc): binary.Write is theoretically more appropriate for serialization.
-	// However, we'll have to pick correct endianness for the unsafe casts to work
-	// when reading again. That and the added slowness due to reflection seem to make
-	// it somewhat pointless.
-	meta := &meta{magic: magicSeries, flag: flagStd}
-	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
-
-	m, err := w.Write(metab)
-	if err != nil {
-		return n + int64(m), err
-	}
-	n += int64(m)
-
-	// Write stats section including padding.
-	statsb := ((*[seriesStatsSize]byte)(unsafe.Pointer(bw.block.stats())))[:]
-
-	m, err = w.Write(statsb)
-	if err != nil {
-		return n + int64(m), err
-	}
-	n += int64(m)
-
-	// Write series data sections.
-	//
-	// TODO(fabxc): cache the offsets so we can use them on writing down the index.
-	it := bw.block.seriesData()
-
-	for it.next() {
-		sl, chunks := it.values()
-
-		m, err := sl.WriteTo(w)
-		if err != nil {
-			return n + int64(m), err
-		}
-		n += int64(m)
-
-		for _, c := range chunks {
-			m, err := w.Write(c.Bytes())
-			if err != nil {
-				return n + int64(m), err
-			}
-			n += int64(m)
-		}
-	}
-	if it.err() != nil {
-		return n, it.err()
-	}
-
-	// Write checksum to the original writer.
-	m, err = ow.Write(h.Sum(nil))
-	return n + int64(m), err
-}
-
-func (bw *blockWriter) writeIndex(ow io.Writer) (n int64, err error) {
-	// Duplicate all writes through a CRC64 hash writer.
-	h := crc64.New(crc64.MakeTable(crc64.ECMA))
-	w := io.MultiWriter(h, ow)
-
-	meta := &meta{magic: magicSeries, flag: flagStd}
-	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
-
-	m, err := w.Write(metab)
-	if err != nil {
-		return n + int64(m), err
-	}
-	n += int64(m)
-
-	// Write checksum to the original writer.
-	m, err = ow.Write(h.Sum(nil))
-	return n + int64(m), err
 }
