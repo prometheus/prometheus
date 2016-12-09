@@ -153,9 +153,6 @@ type IndexWriter interface {
 	// The passed in values chained tuples of strings of the length of names.
 	WriteLabelIndex(names []string, values []string) error
 
-	// WritesSeries serializes series identifying labels.
-	WriteSeries(ref uint32, ls ...Labels) error
-
 	// WritePostings writes a postings list for a single label pair.
 	WritePostings(name, value string, it Iterator) error
 
@@ -173,8 +170,9 @@ type indexWriter struct {
 	w io.Writer
 	n int64
 
-	series  []Labels
-	offsets [][]ChunkOffset
+	series        []Labels        // series in data section
+	offsets       [][]ChunkOffset // chunk offsets per series
+	seriesOffsets []uint32        // offset of series references
 
 	symbols      map[string]uint32 // symbol offsets
 	labelIndexes []hashEntry       // label index offsets
@@ -221,6 +219,9 @@ func (w *indexWriter) WriteStats(*BlockStats) error {
 		if err := w.writeSymbols(); err != nil {
 			return err
 		}
+		if err := w.writeSeries(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -233,13 +234,13 @@ func (w *indexWriter) writeSymbols() error {
 	}
 	sort.Strings(symbols)
 
-	buf := make([]byte, binary.MaxVarintLen32)
+	buf := [binary.MaxVarintLen32]byte{}
 	b := append(make([]byte, 4096), flagStd)
 
 	for _, s := range symbols {
 		w.symbols[s] = uint32(w.n) + uint32(len(b))
 
-		n := binary.PutUvarint(buf, uint64(len(s)))
+		n := binary.PutUvarint(buf[:], uint64(len(s)))
 		b = append(b, buf[:n]...)
 		b = append(b, s...)
 	}
@@ -247,7 +248,41 @@ func (w *indexWriter) writeSymbols() error {
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	l := len(b)
+	l := len(b) + 1
+	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+		return err
+	}
+	if err := w.write(wr, []byte{flagStd}); err != nil {
+		return err
+	}
+
+	if err := w.write(wr, b); err != nil {
+		return err
+	}
+
+	return w.write(w.w, h.Sum(nil))
+}
+
+func (w *indexWriter) writeSeries() error {
+	b := make([]byte, 0, 4096)
+	buf := [binary.MaxVarintLen32]byte{}
+
+	for _, lset := range w.series {
+		for _, l := range lset {
+			n := binary.PutUvarint(buf[:], uint64(len(lset)))
+			b = append(b, buf[:n]...)
+
+			n = binary.PutUvarint(buf[:], uint64(w.symbols[l.Name]))
+			b = append(b, buf[:n]...)
+			n = binary.PutUvarint(buf[:], uint64(w.symbols[l.Value]))
+			b = append(b, buf[:n]...)
+		}
+	}
+
+	h := crc32.NewIEEE()
+	wr := io.MultiWriter(h, w.w)
+
+	l := len(b) + 1
 	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
 		return err
 	}
@@ -291,10 +326,6 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	}
 
 	return w.write(w.w, h.Sum(nil))
-}
-
-func (w *indexWriter) WriteSeries(ref uint32, ls ...Labels) error {
-	return nil
 }
 
 func (w *indexWriter) WritePostings(name, value string, it Iterator) error {
