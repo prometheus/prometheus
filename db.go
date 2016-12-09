@@ -267,19 +267,32 @@ func (s *SeriesShard) persist() error {
 		return err
 	}
 
-	f, err := os.Create(filepath.Join(p, "series"))
+	sf, err := os.Create(filepath.Join(p, "series"))
+	if err != nil {
+		return err
+	}
+	xf, err := os.Create(filepath.Join(p, "index"))
 	if err != nil {
 		return err
 	}
 
-	w := newSeriesWriter(f, s.head.baseTimestamp)
-	defer w.Close()
+	iw := newIndexWriter(xf)
+	sw := newSeriesWriter(sf, iw, s.head.baseTimestamp)
+
+	defer sw.Close()
+	defer iw.Close()
 
 	for _, cd := range head.index.forward {
-		w.WriteSeries(cd.lset, []*chunkDesc{cd})
+		if err := sw.WriteSeries(cd.lset, []*chunkDesc{cd}); err != nil {
+			return err
+		}
 	}
 
-	sz := fmt.Sprintf("%fMiB", float64(w.Size())/1024/1024)
+	if err := iw.WriteStats(nil); err != nil {
+		return err
+	}
+
+	sz := fmt.Sprintf("%fMiB", float64(sw.Size()+iw.Size())/1024/1024)
 
 	s.logger.With("size", sz).
 		With("samples", head.samples).
