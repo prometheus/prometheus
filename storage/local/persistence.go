@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
@@ -154,7 +155,11 @@ func newPersistence(
 		// empty. If not, we have found an old storage directory without
 		// version file, so we have to bail out.
 		if err := os.MkdirAll(basePath, 0700); err != nil {
-			return nil, err
+			if abspath, e := filepath.Abs(basePath); e != nil {
+				return nil, errors.Wrapf(err, "cannot create parsistent path %s", basePath)
+			} else {
+				return nil, errors.Wrapf(err, "cannot create persistent path %s", abspath)
+			}
 		}
 		fis, err := ioutil.ReadDir(basePath)
 		if err != nil {
