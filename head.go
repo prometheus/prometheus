@@ -13,13 +13,17 @@ type HeadBlock struct {
 	descs map[uint64][]*chunkDesc // labels hash to possible chunks descs
 	index *memIndex
 
-	samples uint64 // total samples in the block.
+	samples       uint64 // total samples in the block
+	highTimestamp int64  // highest timestamp of any sample
+	baseTimestamp int64  // all samples are strictly later
 }
 
-func NewHeadBlock() *HeadBlock {
+// NewHeadBlock creates a new empty head block.
+func NewHeadBlock(baseTime int64) *HeadBlock {
 	return &HeadBlock{
-		descs: make(map[uint64][]*chunkDesc, 2048),
-		index: newMemIndex(),
+		descs:         make(map[uint64][]*chunkDesc, 2048),
+		index:         newMemIndex(),
+		baseTimestamp: baseTime,
 	}
 }
 
@@ -54,7 +58,7 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 
 func (h *HeadBlock) stats() *blockStats {
 	return &blockStats{
-		series:  uint32(h.index.numSeries()),
+		chunks:  uint32(h.index.numSeries()),
 		samples: h.samples,
 	}
 }

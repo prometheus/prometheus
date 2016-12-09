@@ -61,7 +61,7 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	// for the bitshift-modulo when finding the right shard.
 	for i := 0; i < numSeriesShards; i++ {
 		path := filepath.Join(path, fmt.Sprintf("%d", i))
-		c.shards = append(c.shards, NewSeriesShard(path))
+		c.shards = append(c.shards, NewSeriesShard(path, l.With("shard", i)))
 	}
 
 	// TODO(fabxc): run background compaction + GC.
@@ -73,30 +73,11 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 func (db *DB) Close() error {
 	var wg sync.WaitGroup
 
-	start := time.Now()
-
 	for i, shard := range db.shards {
-		fmt.Println("shard", i)
-		fmt.Println("	num chunks", shard.head.stats().series)
-		fmt.Println("	num samples", shard.head.stats().samples)
-
 		wg.Add(1)
 		go func(i int, shard *SeriesShard) {
-			f, err := os.Create(filepath.Join(db.path, fmt.Sprintf("shard-%d-series", i)))
-			if err != nil {
-				panic(err)
-			}
-			bw := &blockWriter{block: shard.head}
-			n, err := bw.writeSeries(f)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println("	wrote bytes", n)
-			if err := f.Sync(); err != nil {
-				panic(err)
-			}
-
-			if err := f.Close(); err != nil {
+			if err := shard.Close(); err != nil {
+				// TODO(fabxc): handle with multi error.
 				panic(err)
 			}
 			wg.Done()
@@ -104,13 +85,26 @@ func (db *DB) Close() error {
 	}
 	wg.Wait()
 
-	fmt.Println("final serialization took", time.Since(start))
-
 	return nil
 }
 
 // Querier returns a new querier over the database.
 func (db *DB) Querier(start, end int64) Querier {
+	return nil
+}
+
+// AppendVector adds values for a list of label sets for the given timestamp
+// in milliseconds.
+func (db *DB) AppendVector(ts int64, v *Vector) error {
+	// Sequentially add samples to shards.
+	for s, bkt := range v.Buckets {
+		shard := db.shards[s]
+		if err := shard.appendBatch(ts, bkt); err != nil {
+			// TODO(fabxc): handle gracefully and collect multi-error.
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -173,7 +167,10 @@ const sep = '\xff'
 // SeriesShard handles reads and writes of time series falling into
 // a hashed shard of a series.
 type SeriesShard struct {
-	path string
+	path      string
+	persistCh chan struct{}
+	done      chan struct{}
+	logger    log.Logger
 
 	mtx    sync.RWMutex
 	blocks *Block
@@ -181,17 +178,128 @@ type SeriesShard struct {
 }
 
 // NewSeriesShard returns a new SeriesShard.
-func NewSeriesShard(path string) *SeriesShard {
-	return &SeriesShard{
-		path: path,
+func NewSeriesShard(path string, logger log.Logger) *SeriesShard {
+	s := &SeriesShard{
+		path:      path,
+		persistCh: make(chan struct{}, 1),
+		done:      make(chan struct{}),
+		logger:    logger,
 		// TODO(fabxc): restore from checkpoint.
-		head: NewHeadBlock(),
 		// TODO(fabxc): provide access to persisted blocks.
 	}
+	// TODO(fabxc): get base time from pre-existing blocks. Otherwise
+	// it should come from a user defined start timestamp.
+	// Use actual time for now.
+	s.head = NewHeadBlock(time.Now().UnixNano() / int64(time.Millisecond))
+
+	go s.run()
+
+	return s
+}
+
+func (s *SeriesShard) run() {
+	// for {
+	// 	select {
+	// 	case <-s.done:
+	// 		return
+	// 	case <-s.persistCh:
+	// 		if err := s.persist(); err != nil {
+	// 			s.logger.With("err", err).Error("persistence failed")
+	// 		}
+	// 	}
+	// }
+}
+
+// Close the series shard.
+func (s *SeriesShard) Close() error {
+	close(s.done)
+	return nil
 }
 
 // blockFor returns the block of shard series that contains the given timestamp.
 func (s *SeriesShard) blockFor(ts int64) block {
+	return nil
+}
+
+func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
+	// TODO(fabxc): make configurable.
+	const persistenceTimeThreshold = 1000 * 60 * 60 // 1 hour if timestamp in ms
+
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	for _, smpl := range samples {
+		if err := s.head.append(smpl.Hash, smpl.Labels, ts, smpl.Value); err != nil {
+			// TODO(fabxc): handle gracefully and collect multi-error.
+			return err
+		}
+	}
+
+	if ts > s.head.highTimestamp {
+		s.head.highTimestamp = ts
+	}
+
+	// TODO(fabxc): randomize over time
+	if s.head.stats().samples/uint64(s.head.stats().chunks) > 400 {
+		select {
+		case s.persistCh <- struct{}{}:
+			s.logger.Debug("trigger persistence")
+			go s.persist()
+		default:
+		}
+	}
+
+	return nil
+}
+
+// TODO(fabxc): make configurable.
+const shardGracePeriod = 60 * 1000 // 60 seconds for millisecond scale
+
+func (s *SeriesShard) persist() error {
+	s.mtx.Lock()
+
+	// Set new head block.
+	head := s.head
+	s.head = NewHeadBlock(head.highTimestamp)
+
+	s.mtx.Unlock()
+
+	defer func() {
+		<-s.persistCh
+	}()
+
+	// TODO(fabxc): add grace period where we can still append to old head shard
+	// before actually persisting it.
+	p := filepath.Join(s.path, fmt.Sprintf("%d", head.baseTimestamp))
+
+	if err := os.MkdirAll(p, 0777); err != nil {
+		return err
+	}
+
+	f, err := os.Create(filepath.Join(p, "series"))
+	if err != nil {
+		return err
+	}
+
+	bw := &blockWriter{block: head}
+	n, err := bw.writeSeries(f)
+	if err != nil {
+		return err
+	}
+
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	sz := fmt.Sprintf("%fMiB", float64(n)/1024/1024)
+
+	s.logger.With("size", sz).
+		With("samples", head.samples).
+		With("chunks", head.stats().chunks).
+		Debug("persisted head")
+
 	return nil
 }
 
@@ -347,28 +455,4 @@ func (v *Vector) Add(lset Labels, val float64) {
 		Labels: lset,
 		Value:  val,
 	})
-}
-
-// AppendVector adds values for a list of label sets for the given timestamp
-// in milliseconds.
-func (db *DB) AppendVector(ts int64, v *Vector) error {
-	// Sequentially add samples to shards.
-	for s, bkt := range v.Buckets {
-		shard := db.shards[s]
-
-		// TODO(fabxc): benchmark whether grouping into shards and submitting to
-		// shards in batches is more efficient.
-		shard.head.mtx.Lock()
-
-		for _, smpl := range bkt {
-			if err := shard.head.append(smpl.Hash, smpl.Labels, ts, smpl.Value); err != nil {
-				shard.head.mtx.Unlock()
-				// TODO(fabxc): handle gracefully and collect multi-error.
-				return err
-			}
-		}
-		shard.head.mtx.Unlock()
-	}
-
-	return nil
 }

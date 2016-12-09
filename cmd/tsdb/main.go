@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -30,6 +31,8 @@ func main() {
 	root.AddCommand(
 		NewBenchCommand(),
 	)
+
+	flag.CommandLine.Set("log.level", "debug")
 
 	root.Execute()
 }
@@ -131,7 +134,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		if err := b.ingestScrapes(metrics, 1000); err != nil {
+		if err := b.ingestScrapes(metrics, 3000); err != nil {
 			exitWithError(err)
 		}
 	})
@@ -193,7 +196,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 	}
 
 	for i := 0; i < scrapeCount; i++ {
-		ts += int64(10000)
+		ts += int64(30000)
 		sc.Reset()
 
 		for _, s := range scrape {
@@ -372,9 +375,9 @@ func readPrometheusLabels(r io.Reader, n int) ([]model.Metric, error) {
 	if dups > 0 {
 		fmt.Println("dropped duplicate metrics:", dups)
 	}
-	fmt.Println("read metrics", len(mets))
+	fmt.Println("read metrics", len(mets[:n]))
 
-	return mets, nil
+	return mets[:n], nil
 }
 
 func exitWithError(err error) {

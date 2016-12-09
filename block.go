@@ -59,7 +59,7 @@ type seriesMeta struct {
 }
 
 type blockStats struct {
-	series  uint32
+	chunks  uint32
 	samples uint64
 	_       [4]byte // padding/reserved
 }
