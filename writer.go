@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
@@ -175,14 +176,16 @@ type indexWriter struct {
 	series  []Labels
 	offsets [][]ChunkOffset
 
-	symbols map[string]uint32
+	symbols      map[string]uint32 // symbol offsets
+	labelIndexes map[string]uint32 // label index offsets
 }
 
 func newIndexWriter(w io.Writer) *indexWriter {
 	return &indexWriter{
-		w:       w,
-		n:       0,
-		symbols: make(map[string]uint32),
+		w:            w,
+		n:            0,
+		symbols:      make(map[string]uint32),
+		labelIndexes: make(map[string]uint32),
 	}
 }
 
@@ -251,7 +254,25 @@ func (w *indexWriter) writeSymbols() error {
 }
 
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
-	return nil
+	if len(names) != 1 {
+		return fmt.Errorf("not supported")
+	}
+	sort.Strings(values)
+
+	h := crc32.NewIEEE()
+	wr := io.MultiWriter(h, w.w)
+
+	w.labelIndexes[names[0]] = uint32(w.n)
+
+	for _, v := range values {
+		o := w.symbols[v]
+
+		if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&o)))[:]); err != nil {
+			return err
+		}
+	}
+
+	return w.write(w.w, h.Sum(nil))
 }
 
 func (w *indexWriter) WriteSeries(ref uint32, ls ...Labels) error {

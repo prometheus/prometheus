@@ -291,6 +291,15 @@ func (s *SeriesShard) persist() error {
 	if err := iw.WriteStats(nil); err != nil {
 		return err
 	}
+	for n, v := range head.index.values {
+		s := make([]string, 0, len(v))
+		for x := range v {
+			s = append(s, x)
+		}
+
+		iw.WriteLabelIndex([]string{n}, s)
+
+	}
 
 	sz := fmt.Sprintf("%fMiB", float64(sw.Size()+iw.Size())/1024/1024)
 
