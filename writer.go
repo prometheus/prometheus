@@ -193,6 +193,24 @@ func (w *indexWriter) write(wr io.Writer, b []byte) error {
 	return err
 }
 
+// section writes a CRC32 checksummed section of length l and guarded by flag.
+func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) error {
+	h := crc32.NewIEEE()
+	wr := io.MultiWriter(h, w.w)
+
+	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+		return err
+	}
+	if err := w.write(wr, []byte{flagStd}); err != nil {
+		return err
+	}
+
+	if err := f(wr); err != nil {
+		return err
+	}
+	return w.write(w.w, h.Sum(nil))
+}
+
 func (w *indexWriter) writeMeta() error {
 	meta := &meta{magic: MagicSeries, flag: flagStd}
 	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
@@ -245,22 +263,11 @@ func (w *indexWriter) writeSymbols() error {
 		b = append(b, s...)
 	}
 
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
+	l := uint32(len(b) + 1)
 
-	l := len(b) + 1
-	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
-		return err
-	}
-	if err := w.write(wr, []byte{flagStd}); err != nil {
-		return err
-	}
-
-	if err := w.write(wr, b); err != nil {
-		return err
-	}
-
-	return w.write(w.w, h.Sum(nil))
+	return w.section(l, flagStd, func(wr io.Writer) error {
+		return w.write(wr, b)
+	})
 }
 
 func (w *indexWriter) writeSeries() error {
@@ -279,18 +286,11 @@ func (w *indexWriter) writeSeries() error {
 		}
 	}
 
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
+	l := uint32(len(b) + 1)
 
-	l := len(b) + 1
-	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
-		return err
-	}
-	if err := w.write(wr, b); err != nil {
-		return err
-	}
-
-	return w.write(w.w, h.Sum(nil))
+	return w.section(l, flagStd, func(wr io.Writer) error {
+		return w.write(wr, b)
+	})
 }
 
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
@@ -299,33 +299,24 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	}
 	sort.Strings(values)
 
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
-
 	w.labelIndexes = append(w.labelIndexes, hashEntry{
 		name:   names[0],
 		offset: uint32(w.n),
 	})
 
-	l := 1 + len(values)*4
+	l := uint32(1 + len(values)*4)
 
-	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
-		return err
-	}
-	if err := w.write(wr, []byte{flagStd}); err != nil {
-		return err
-	}
+	return w.section(l, flagStd, func(wr io.Writer) error {
+		for _, v := range values {
+			o := w.symbols[v]
+			b := ((*[4]byte)(unsafe.Pointer(&o)))[:]
 
-	for _, v := range values {
-		o := w.symbols[v]
-		b := ((*[4]byte)(unsafe.Pointer(&o)))[:]
-
-		if err := w.write(wr, b); err != nil {
-			return err
+			if err := w.write(wr, b); err != nil {
+				return err
+			}
 		}
-	}
-
-	return w.write(w.w, h.Sum(nil))
+		return nil
+	})
 }
 
 func (w *indexWriter) WritePostings(name, value string, it Iterator) error {
@@ -346,22 +337,16 @@ const hashEntrySize = uint32(unsafe.Sizeof(hashEntry{}))
 func (w *indexWriter) finalize() error {
 	l := 1 + uint32(len(w.labelIndexes))*hashEntrySize
 
-	if err := w.write(w.w, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
-		return err
-	}
-	if err := w.write(w.w, []byte{flagStd}); err != nil {
-		return err
-	}
+	return w.section(l, flagStd, func(wr io.Writer) error {
+		for _, e := range w.labelIndexes {
+			b := ((*[hashEntrySize]byte)(unsafe.Pointer(&e)))[:]
 
-	for _, e := range w.labelIndexes {
-		b := ((*[hashEntrySize]byte)(unsafe.Pointer(&e)))[:]
-
-		if err := w.write(w.w, b); err != nil {
-			return nil
+			if err := w.write(w.w, b); err != nil {
+				return nil
+			}
 		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func (w *indexWriter) Close() error {
