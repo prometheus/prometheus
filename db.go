@@ -108,6 +108,17 @@ func (db *DB) AppendVector(ts int64, v *Vector) error {
 	return nil
 }
 
+func (db *DB) appendSingle(lset Labels, ts int64, v float64) error {
+	h := lset.Hash()
+	s := uint16(h >> (64 - seriesShardShift))
+
+	return db.shards[s].appendBatch(ts, Sample{
+		Hash:   h,
+		Labels: lset,
+		Value:  v,
+	})
+}
+
 // Matcher matches a string.
 type Matcher interface {
 	// Match returns true if the matcher applies to the string value.
@@ -142,8 +153,7 @@ type Querier interface {
 
 // Series represents a single time series.
 type Series interface {
-	// LabelsRef returns the label set reference
-	LabelRefs() LabelRefs
+	Labels() Labels
 	// Iterator returns a new iterator of the data of the series.
 	Iterator() SeriesIterator
 }
@@ -192,22 +202,7 @@ func NewSeriesShard(path string, logger log.Logger) *SeriesShard {
 	// Use actual time for now.
 	s.head = NewHeadBlock(time.Now().UnixNano() / int64(time.Millisecond))
 
-	go s.run()
-
 	return s
-}
-
-func (s *SeriesShard) run() {
-	// for {
-	// 	select {
-	// 	case <-s.done:
-	// 		return
-	// 	case <-s.persistCh:
-	// 		if err := s.persist(); err != nil {
-	// 			s.logger.With("err", err).Error("persistence failed")
-	// 		}
-	// 	}
-	// }
 }
 
 // Close the series shard.
@@ -241,9 +236,9 @@ func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
 
 	// TODO(fabxc): randomize over time
 	if s.head.stats().samples/uint64(s.head.stats().chunks) > 400 {
+		s.persist()
 		select {
 		case s.persistCh <- struct{}{}:
-			s.logger.Debug("trigger persistence")
 			go s.persist()
 		default:
 		}

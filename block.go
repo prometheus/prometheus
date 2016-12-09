@@ -48,11 +48,11 @@ const (
 )
 
 const (
-	seriesMetaSize  = int(unsafe.Sizeof(seriesMeta{}))
+	metaSize        = int(unsafe.Sizeof(meta{}))
 	seriesStatsSize = int(unsafe.Sizeof(blockStats{}))
 )
 
-type seriesMeta struct {
+type meta struct {
 	magic uint32
 	flag  byte
 	_     [7]byte // padding/reserved
@@ -64,19 +64,19 @@ type blockStats struct {
 	_       [4]byte // padding/reserved
 }
 
-func (s *persistedSeries) meta() *seriesMeta {
-	return (*seriesMeta)(unsafe.Pointer(&s.data[0]))
+func (s *persistedSeries) meta() *meta {
+	return (*meta)(unsafe.Pointer(&s.data[0]))
 }
 
 func (s *persistedSeries) stats() *blockStats {
 	// The stats start right behind the block meta data.
-	return (*blockStats)(unsafe.Pointer(&s.data[seriesMetaSize]))
+	return (*blockStats)(unsafe.Pointer(&s.data[metaSize]))
 }
 
 // seriesAt returns the series stored at offset as a skiplist and the chunks
 // it points to as a byte slice.
 func (s *persistedSeries) seriesAt(offset int) (skiplist, []byte, error) {
-	offset += seriesMetaSize
+	offset += metaSize
 	offset += seriesStatsSize
 
 	switch b := s.data[offset]; b {
@@ -157,8 +157,8 @@ func (bw *blockWriter) writeSeries(ow io.Writer) (n int64, err error) {
 	// However, we'll have to pick correct endianness for the unsafe casts to work
 	// when reading again. That and the added slowness due to reflection seem to make
 	// it somewhat pointless.
-	meta := &seriesMeta{magic: magicSeries, flag: flagStd}
-	metab := ((*[seriesMetaSize]byte)(unsafe.Pointer(meta)))[:]
+	meta := &meta{magic: magicSeries, flag: flagStd}
+	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
 
 	m, err := w.Write(metab)
 	if err != nil {
@@ -200,6 +200,25 @@ func (bw *blockWriter) writeSeries(ow io.Writer) (n int64, err error) {
 	if it.err() != nil {
 		return n, it.err()
 	}
+
+	// Write checksum to the original writer.
+	m, err = ow.Write(h.Sum(nil))
+	return n + int64(m), err
+}
+
+func (bw *blockWriter) writeIndex(ow io.Writer) (n int64, err error) {
+	// Duplicate all writes through a CRC64 hash writer.
+	h := crc64.New(crc64.MakeTable(crc64.ECMA))
+	w := io.MultiWriter(h, ow)
+
+	meta := &meta{magic: magicSeries, flag: flagStd}
+	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
+
+	m, err := w.Write(metab)
+	if err != nil {
+		return n + int64(m), err
+	}
+	n += int64(m)
 
 	// Write checksum to the original writer.
 	m, err = ow.Write(h.Sum(nil))

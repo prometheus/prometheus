@@ -5,7 +5,6 @@ package tsdb
 // 	"fmt"
 // 	"time"
 
-// 	"github.com/fabxc/tsdb/index"
 // 	"github.com/prometheus/common/model"
 // 	"github.com/prometheus/prometheus/storage/local"
 // 	"github.com/prometheus/prometheus/storage/metric"
@@ -13,33 +12,37 @@ package tsdb
 // )
 
 // type DefaultSeriesIterator struct {
+// 	s  Series
 // 	it SeriesIterator
 // }
 
 // func (it *DefaultSeriesIterator) ValueAtOrBeforeTime(ts model.Time) model.SamplePair {
-// 	sp, ok := it.it.Seek(ts)
+// 	ok := it.it.Seek(int64(ts))
 // 	if !ok {
 // 		return model.SamplePair{Timestamp: model.Earliest}
 // 	}
-// 	return sp
+// 	t, v := it.it.Values()
+// 	return model.SamplePair{Timestamp: model.Time(t), Value: model.SampleValue(v)}
 // }
 
 // func (it *DefaultSeriesIterator) Metric() metric.Metric {
-// 	m := it.it.Metric()
-// 	met := make(model.Metric, len(m))
-// 	for k, v := range m {
-// 		met[model.LabelName(k)] = model.LabelValue(v)
+// 	ls := it.s.Labels()
+// 	met := make(model.Metric, len(ls))
+// 	for _, l := range ls {
+// 		met[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 // 	}
 // 	return metric.Metric{Metric: met, Copied: true}
 // }
 
 // func (it *DefaultSeriesIterator) RangeValues(interval metric.Interval) []model.SamplePair {
 // 	var res []model.SamplePair
-// 	for sp, ok := it.it.Seek(interval.NewestInclusive); ok; sp, ok = it.it.Next() {
-// 		if sp.Timestamp > interval.OldestInclusive {
+
+// 	for ok := it.it.Seek(int64(interval.NewestInclusive)); ok; ok = it.it.Next() {
+// 		t, v := it.it.Values()
+// 		if model.Time(t) > interval.OldestInclusive {
 // 			break
 // 		}
-// 		res = append(res, sp)
+// 		res = append(res, model.SamplePair{Timestamp: model.Time(t), Value: model.SampleValue(v)})
 // 	}
 // 	return res
 // }
@@ -80,12 +83,15 @@ package tsdb
 // // indexed. Indexing is needed for FingerprintsForLabelMatchers and
 // // LabelValuesForLabelName and may lag behind.
 // func (da *DefaultAdapter) WaitForIndexing() {
-// 	da.db.indexer.wait()
 // }
 
 // func (da *DefaultAdapter) Append(s *model.Sample) error {
+// 	labels := make([]Label, len(s.Metric))
+// 	for k, v := range s.Metric {
+// 		labels = append(labels, Label{Name: string(k), Value: string(v)})
+// 	}
 // 	// Ignore the Scrape batching for now.
-// 	return da.db.memChunks.append(s.Metric, s.Timestamp, s.Value)
+// 	return da.db.appendSingle(labels, int64(s.Timestamp), float64(s.Value))
 // }
 
 // func (da *DefaultAdapter) NeedsThrottling() bool {
@@ -93,15 +99,16 @@ package tsdb
 // }
 
 // func (da *DefaultAdapter) Querier() (local.Querier, error) {
-// 	q, err := da.db.Querier()
-// 	if err != nil {
-// 		return nil, err
-// 	}
+// 	// q, err := da.db.Querier()
+// 	// if err != nil {
+// 	// 	return nil, err
+// 	// }
+
 // 	return defaultQuerierAdapter{q: q}, nil
 // }
 
 // type defaultQuerierAdapter struct {
-// 	q *Querier
+// 	q Querier
 // }
 
 // func (da defaultQuerierAdapter) Close() error {
