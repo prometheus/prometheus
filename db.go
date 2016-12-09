@@ -14,14 +14,15 @@ import (
 	"github.com/prometheus/common/log"
 )
 
-// DefaultOptions used for the DB.
+// DefaultOptions used for the DB. They are sane for setups using
+// millisecond precision timestamps.
 var DefaultOptions = &Options{
-	StalenessDelta: 5 * time.Minute,
+	Retention: 15 * 24 * 3600 * 1000, // 15 days
 }
 
 // Options of the DB storage.
 type Options struct {
-	StalenessDelta time.Duration
+	Retention int64
 }
 
 // DB is a time series storage.
@@ -59,7 +60,8 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	// TODO(fabxc): validate shard number to be power of 2, which is required
 	// for the bitshift-modulo when finding the right shard.
 	for i := 0; i < numSeriesShards; i++ {
-		c.shards = append(c.shards, NewSeriesShard())
+		path := filepath.Join(path, fmt.Sprintf("%d", i))
+		c.shards = append(c.shards, NewSeriesShard(path))
 	}
 
 	// TODO(fabxc): run background compaction + GC.
@@ -69,26 +71,40 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 
 // Close the database.
 func (db *DB) Close() error {
+	var wg sync.WaitGroup
+
+	start := time.Now()
+
 	for i, shard := range db.shards {
 		fmt.Println("shard", i)
 		fmt.Println("	num chunks", len(shard.head.forward))
 		fmt.Println("	num samples", shard.head.samples)
 
-		f, err := os.Create(filepath.Join(db.path, fmt.Sprintf("shard-%d-series", i)))
-		if err != nil {
-			return err
-		}
-		bw := &blockWriter{block: shard.head}
-		n, err := bw.writeSeries(f)
-		if err != nil {
-			return err
-		}
-		fmt.Println("	wrote bytes", n)
+		wg.Add(1)
+		go func(i int, shard *SeriesShard) {
+			f, err := os.Create(filepath.Join(db.path, fmt.Sprintf("shard-%d-series", i)))
+			if err != nil {
+				panic(err)
+			}
+			bw := &blockWriter{block: shard.head}
+			n, err := bw.writeSeries(f)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println("	wrote bytes", n)
+			if err := f.Sync(); err != nil {
+				panic(err)
+			}
 
-		if err := f.Close(); err != nil {
-			return err
-		}
+			if err := f.Close(); err != nil {
+				panic(err)
+			}
+			wg.Done()
+		}(i, shard)
 	}
+	wg.Wait()
+
+	fmt.Println("final serialization took", time.Since(start))
 
 	return nil
 }
@@ -150,6 +166,62 @@ type SeriesIterator interface {
 	Next() bool
 	// Err returns the current error.
 	Err() error
+}
+
+const sep = '\xff'
+
+// SeriesShard handles reads and writes of time series falling into
+// a hashed shard of a series.
+type SeriesShard struct {
+	path string
+
+	mtx    sync.RWMutex
+	blocks *Block
+	head   *HeadBlock
+}
+
+// NewSeriesShard returns a new SeriesShard.
+func NewSeriesShard(path string) *SeriesShard {
+	return &SeriesShard{
+		path: path,
+		// TODO(fabxc): restore from checkpoint.
+		head: &HeadBlock{
+			ivIndex: newMemIndex(),
+			descs:   map[uint64][]*chunkDesc{},
+			values:  map[string]stringset{},
+			forward: map[uint32]*chunkDesc{},
+		},
+		// TODO(fabxc): provide access to persisted blocks.
+	}
+}
+
+// chunkDesc wraps a plain data chunk and provides cached meta data about it.
+type chunkDesc struct {
+	lset  Labels
+	chunk chunks.Chunk
+
+	// Caching fields.
+	lastTimestamp int64
+	lastValue     float64
+
+	app chunks.Appender // Current appender for the chunks.
+}
+
+func (cd *chunkDesc) append(ts int64, v float64) (err error) {
+	if cd.app == nil {
+		cd.app, err = cd.chunk.Appender()
+		if err != nil {
+			return err
+		}
+	}
+	if err := cd.app.Append(ts, v); err != nil {
+		return err
+	}
+
+	cd.lastTimestamp = ts
+	cd.lastValue = v
+
+	return nil
 }
 
 // LabelRefs contains a reference to a label set that can be resolved
@@ -299,53 +371,4 @@ func (db *DB) AppendVector(ts int64, v *Vector) error {
 	}
 
 	return nil
-}
-
-const sep = '\xff'
-
-// SeriesShard handles reads and writes of time series falling into
-// a hashed shard of a series.
-type SeriesShard struct {
-	mtx    sync.RWMutex
-	blocks *Block
-	head   *HeadBlock
-}
-
-// NewSeriesShard returns a new SeriesShard.
-func NewSeriesShard() *SeriesShard {
-	return &SeriesShard{
-		// TODO(fabxc): restore from checkpoint.
-		head: &HeadBlock{
-			index:   newMemIndex(),
-			descs:   map[uint64][]*chunkDesc{},
-			values:  map[string][]string{},
-			forward: map[uint32]*chunkDesc{},
-		},
-		// TODO(fabxc): provide access to persisted blocks.
-	}
-}
-
-// chunkDesc wraps a plain data chunk and provides cached meta data about it.
-type chunkDesc struct {
-	lset  Labels
-	chunk chunks.Chunk
-
-	// Caching fields.
-	lastTimestamp int64
-	lastValue     float64
-
-	app chunks.Appender // Current appender for the chunks.
-}
-
-func (cd *chunkDesc) append(ts int64, v float64) (err error) {
-	if cd.app == nil {
-		cd.app, err = cd.chunk.Appender()
-		if err != nil {
-			return err
-		}
-	}
-	cd.lastTimestamp = ts
-	cd.lastValue = v
-
-	return cd.app.Append(ts, v)
 }

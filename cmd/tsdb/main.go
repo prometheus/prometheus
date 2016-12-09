@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -194,11 +193,11 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 	}
 
 	for i := 0; i < scrapeCount; i++ {
-		ts = ts + int64(i*10000)
+		ts += int64(10000)
 		sc.Reset()
 
 		for _, s := range scrape {
-			s.value += rand.Int63n(1000)
+			s.value += 1000
 			sc.Add(s.labels, float64(s.value))
 		}
 		if err := b.storage.ingestScrape(ts, &sc); err != nil {

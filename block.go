@@ -23,6 +23,10 @@ type block interface {
 	seriesData() seriesDataIterator
 }
 
+type persistedBlock struct {
+    
+}
+
 type seriesDataIterator interface {
 	next() bool
 	values() (skiplist, []chunks.Chunk)
@@ -33,12 +37,10 @@ func compactBlocks(a, b block) error {
 	return nil
 }
 
-const maxMmapSize = 1 << 20
-
 type persistedSeries struct {
 	size    int
 	dataref []byte
-	data    *[maxMmapSize]byte
+	data    *[maxMapSize]byte
 }
 
 const (
@@ -70,6 +72,32 @@ func (s *persistedSeries) meta() *seriesMeta {
 func (s *persistedSeries) stats() *seriesStats {
 	// The stats start right behind the block meta data.
 	return (*seriesStats)(unsafe.Pointer(&s.data[seriesMetaSize]))
+}
+
+// seriesAt returns the series stored at offset as a skiplist and the chunks
+// it points to as a byte slice.
+func (s *persistedSeries) seriesAt(offset int) (skiplist, []byte, error) {
+	offset += seriesMetaSize
+	offset += seriesStatsSize
+
+	switch b := s.data[offset]; b {
+	case flagStd:
+	default:
+		return nil, nil, fmt.Errorf("invalid flag: %x", b)
+	}
+	offset++
+
+	var (
+		slLen  = *(*uint16)(unsafe.Pointer(&s.data[offset]))
+		slSize = int(slLen) / int(unsafe.Sizeof(skiplistPair{}))
+		sl     = ((*[maxAllocSize]skiplistPair)(unsafe.Pointer(&s.data[offset+2])))[:slSize]
+	)
+	offset += 3
+
+	chunksLen := *(*uint32)(unsafe.Pointer(&s.data[offset]))
+	chunks := ((*[maxAllocSize]byte)(unsafe.Pointer(&s.data[offset])))[:chunksLen]
+
+	return simpleSkiplist(sl), chunks, nil
 }
 
 // A skiplist maps offsets to values. The values found in the data at an
@@ -113,32 +141,6 @@ func (sl simpleSkiplist) WriteTo(w io.Writer) (n int64, err error) {
 		n += int64(m)
 	}
 	return n, err
-}
-
-// seriesAt returns the series stored at offset as a skiplist and the chunks
-// it points to as a byte slice.
-func (s *persistedSeries) seriesAt(offset int) (skiplist, []byte, error) {
-	offset += seriesMetaSize
-	offset += seriesStatsSize
-
-	switch b := s.data[offset]; b {
-	case flagStd:
-	default:
-		return nil, nil, fmt.Errorf("invalid flag: %x", b)
-	}
-	offset++
-
-	var (
-		slLen  = *(*uint16)(unsafe.Pointer(&s.data[offset]))
-		slSize = int(slLen) / int(unsafe.Sizeof(skiplistPair{}))
-		sl     = ((*[maxAllocSize]skiplistPair)(unsafe.Pointer(&s.data[offset+2])))[:slSize]
-	)
-	offset += 3
-
-	chunksLen := *(*uint32)(unsafe.Pointer(&s.data[offset]))
-	chunks := ((*[maxAllocSize]byte)(unsafe.Pointer(&s.data[offset])))[:chunksLen]
-
-	return simpleSkiplist(sl), chunks, nil
 }
 
 type blockWriter struct {
