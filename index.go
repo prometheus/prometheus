@@ -24,7 +24,7 @@ func newMemIndex() *memIndex {
 		lastID:   0,
 		forward:  make(map[uint32]*chunkDesc),
 		values:   make(map[string]stringset),
-		postings: &memPostings{m: make(map[string][]uint32)},
+		postings: &memPostings{m: make(map[term][]uint32)},
 	}
 }
 
@@ -32,22 +32,20 @@ func (ix *memIndex) numSeries() int {
 	return len(ix.forward)
 }
 
-func (ix *memIndex) Postings(s string) Iterator {
-	return ix.postings.get(s)
+func (ix *memIndex) Postings(t term) Iterator {
+	return ix.postings.get(t)
+}
+
+type term struct {
+	name, value string
 }
 
 func (ix *memIndex) add(chkd *chunkDesc) {
 	// Add each label pair as a term to the inverted index.
-	terms := make([]string, 0, len(chkd.lset))
-	b := make([]byte, 0, 64)
+	terms := make([]term, 0, len(chkd.lset))
 
 	for _, l := range chkd.lset {
-		b = append(b, l.Name...)
-		b = append(b, sep)
-		b = append(b, l.Value...)
-
-		terms = append(terms, string(b))
-		b = b[:0]
+		terms = append(terms, term{name: l.Name, value: l.Value})
 
 		// Add to label name to values index.
 		valset, ok := ix.values[l.Name]
@@ -67,17 +65,17 @@ func (ix *memIndex) add(chkd *chunkDesc) {
 }
 
 type memPostings struct {
-	m map[string][]uint32
+	m map[term][]uint32
 }
 
 // Postings returns an iterator over the postings list for s.
-func (p *memPostings) get(s string) Iterator {
-	return &listIterator{list: p.m[s], idx: -1}
+func (p *memPostings) get(t term) Iterator {
+	return &listIterator{list: p.m[t], idx: -1}
 }
 
 // add adds a document to the index. The caller has to ensure that no
 // term argument appears twice.
-func (p *memPostings) add(id uint32, terms ...string) {
+func (p *memPostings) add(id uint32, terms ...term) {
 	for _, t := range terms {
 		p.m[t] = append(p.m[t], id)
 	}

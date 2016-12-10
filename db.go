@@ -282,8 +282,8 @@ func (s *SeriesShard) persist() error {
 	defer sw.Close()
 	defer iw.Close()
 
-	for _, cd := range head.index.forward {
-		if err := sw.WriteSeries(cd.lset, []*chunkDesc{cd}); err != nil {
+	for ref, cd := range head.index.forward {
+		if err := sw.WriteSeries(ref, cd.lset, []*chunkDesc{cd}); err != nil {
 			return err
 		}
 	}
@@ -297,8 +297,15 @@ func (s *SeriesShard) persist() error {
 			s = append(s, x)
 		}
 
-		iw.WriteLabelIndex([]string{n}, s)
+		if err := iw.WriteLabelIndex([]string{n}, s); err != nil {
+			return err
+		}
+	}
 
+	for t := range head.index.postings.m {
+		if err := iw.WritePostings(t.name, t.value, head.index.postings.get(t)); err != nil {
+			return err
+		}
 	}
 
 	sz := fmt.Sprintf("%fMiB", float64(sw.Size()+iw.Size())/1024/1024)
