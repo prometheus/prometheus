@@ -1,7 +1,6 @@
 package tsdb
 
 import (
-	"fmt"
 	"io"
 	"sort"
 	"unsafe"
@@ -15,68 +14,10 @@ const (
 // Block handles reads against a block of time series data within a time window.
 type Block interface{}
 
-type persistedSeries struct {
-	size    int
-	dataref []byte
-	data    *[maxMapSize]byte
-}
-
 const (
 	flagNone = 0
 	flagStd  = 1
 )
-
-const (
-	metaSize        = int(unsafe.Sizeof(meta{}))
-	seriesStatsSize = int(unsafe.Sizeof(blockStats{}))
-)
-
-type meta struct {
-	magic uint32
-	flag  byte
-	_     [7]byte // padding/reserved
-}
-
-type blockStats struct {
-	chunks  uint32
-	samples uint64
-	_       [4]byte // padding/reserved
-}
-
-func (s *persistedSeries) meta() *meta {
-	return (*meta)(unsafe.Pointer(&s.data[0]))
-}
-
-func (s *persistedSeries) stats() *blockStats {
-	// The stats start right behind the block meta data.
-	return (*blockStats)(unsafe.Pointer(&s.data[metaSize]))
-}
-
-// seriesAt returns the series stored at offset as a skiplist and the chunks
-// it points to as a byte slice.
-func (s *persistedSeries) seriesAt(offset int) (skiplist, []byte, error) {
-	offset += metaSize
-	offset += seriesStatsSize
-
-	switch b := s.data[offset]; b {
-	case flagStd:
-	default:
-		return nil, nil, fmt.Errorf("invalid flag: %x", b)
-	}
-	offset++
-
-	var (
-		slLen  = *(*uint16)(unsafe.Pointer(&s.data[offset]))
-		slSize = int(slLen) / int(unsafe.Sizeof(skiplistPair{}))
-		sl     = ((*[maxAllocSize]skiplistPair)(unsafe.Pointer(&s.data[offset+2])))[:slSize]
-	)
-	offset += 3
-
-	chunksLen := *(*uint32)(unsafe.Pointer(&s.data[offset]))
-	chunks := ((*[maxAllocSize]byte)(unsafe.Pointer(&s.data[offset])))[:chunksLen]
-
-	return simpleSkiplist(sl), chunks, nil
-}
 
 // A skiplist maps offsets to values. The values found in the data at an
 // offset are strictly greater than the indexed value.

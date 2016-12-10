@@ -56,6 +56,11 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 	return nil
 }
 
+type blockStats struct {
+	chunks  uint32
+	samples uint64
+}
+
 func (h *HeadBlock) stats() *blockStats {
 	return &blockStats{
 		chunks:  uint32(h.index.numSeries()),

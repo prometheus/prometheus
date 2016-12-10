@@ -2,6 +2,7 @@
 package tsdb
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,6 +94,72 @@ func (db *DB) Querier(start, end int64) Querier {
 	return nil
 }
 
+// Appender adds a batch of samples.
+type Appender interface {
+	// Add adds a sample pair to the appended batch.
+	Add(l Labels, t int64, v float64)
+
+	// Commit submits the collected samples.
+	Commit() error
+}
+
+// Vector is a set of LabelSet associated with one value each.
+// Label sets and values must have equal length.
+type Vector struct {
+	Buckets map[uint16][]Sample
+	reused  int
+}
+
+type Sample struct {
+	Hash   uint64
+	Labels Labels
+	Value  float64
+}
+
+// Reset the vector but keep resources allocated.
+func (v *Vector) Reset() {
+	// Do a full reset every n-th reusage to avoid memory leaks.
+	if v.Buckets == nil || v.reused > 100 {
+		v.Buckets = make(map[uint16][]Sample, 0)
+		return
+	}
+	for x, bkt := range v.Buckets {
+		v.Buckets[x] = bkt[:0]
+	}
+	v.reused++
+}
+
+// Add a sample to the vector.
+func (v *Vector) Add(lset Labels, val float64) {
+	h := lset.Hash()
+	s := uint16(h >> (64 - seriesShardShift))
+
+	v.Buckets[s] = append(v.Buckets[s], Sample{
+		Hash:   h,
+		Labels: lset,
+		Value:  val,
+	})
+}
+
+// func (db *DB) Appender() Appender {
+// 	return &bucketAppender{
+// 		samples: make([]Sample, 1024),
+// 	}
+// }
+
+// type bucketAppender struct {
+// 	db *DB
+// 	// buckets []Sam
+// }
+
+// func (a *bucketAppender) Add(l Labels, t int64, v float64) {
+
+// }
+
+// func (a *bucketAppender) Commit() error {
+// 	// f
+// }
+
 // AppendVector adds values for a list of label sets for the given timestamp
 // in milliseconds.
 func (db *DB) AppendVector(ts int64, v *Vector) error {
@@ -119,59 +186,6 @@ func (db *DB) appendSingle(lset Labels, ts int64, v float64) error {
 			Value:  v,
 		},
 	})
-}
-
-// Matcher matches a string.
-type Matcher interface {
-	// Match returns true if the matcher applies to the string value.
-	Match(v string) bool
-}
-
-// Querier provides querying access over time series data of a fixed
-// time range.
-type Querier interface {
-	// Range returns the timestamp range of the Querier.
-	Range() (start, end int64)
-
-	// Iterator returns an interator over the inverted index that
-	// matches the key label by the constraints of Matcher.
-	Iterator(key string, m Matcher) Iterator
-
-	// Labels resolves a label reference into a set of labels.
-	Labels(ref LabelRefs) (Labels, error)
-
-	// Series returns series provided in the index iterator.
-	Series(Iterator) []Series
-
-	// LabelValues returns all potential values for a label name.
-	LabelValues(string) []string
-	// LabelValuesFor returns all potential values for a label name.
-	// under the constraint of another label.
-	LabelValuesFor(string, Label) []string
-
-	// Close releases the resources of the Querier.
-	Close() error
-}
-
-// Series represents a single time series.
-type Series interface {
-	Labels() Labels
-	// Iterator returns a new iterator of the data of the series.
-	Iterator() SeriesIterator
-}
-
-// SeriesIterator iterates over the data of a time series.
-type SeriesIterator interface {
-	// Seek advances the iterator forward to the given timestamp.
-	// If there's no value exactly at ts, it advances to the last value
-	// before ts.
-	Seek(ts int64) bool
-	// Values returns the current timestamp/value pair.
-	Values() (int64, float64)
-	// Next advances the iterator by one.
-	Next() bool
-	// Err returns the current error.
-	Err() error
 }
 
 const sep = '\xff'
@@ -434,40 +448,24 @@ func LabelsFromMap(m map[string]string) Labels {
 	return NewLabels(l...)
 }
 
-// Vector is a set of LabelSet associated with one value each.
-// Label sets and values must have equal length.
-type Vector struct {
-	Buckets map[uint16][]Sample
-	reused  int
-}
+// The MultiError type implements the error interface, and contains the
+// Errors used to construct it.
+type MultiError []error
 
-type Sample struct {
-	Hash   uint64
-	Labels Labels
-	Value  float64
-}
+// Returns a concatenated string of the contained errors
+func (es MultiError) Error() string {
+	var buf bytes.Buffer
 
-// Reset the vector but keep resources allocated.
-func (v *Vector) Reset() {
-	// Do a full reset every n-th reusage to avoid memory leaks.
-	if v.Buckets == nil || v.reused > 100 {
-		v.Buckets = make(map[uint16][]Sample, 0)
-		return
+	if len(es) > 0 {
+		fmt.Fprintf(&buf, "%d errors: ", len(es))
 	}
-	for x, bkt := range v.Buckets {
-		v.Buckets[x] = bkt[:0]
+
+	for i, err := range es {
+		if i != 0 {
+			buf.WriteString("; ")
+		}
+		buf.WriteString(err.Error())
 	}
-	v.reused++
-}
 
-// Add a sample to the vector.
-func (v *Vector) Add(lset Labels, val float64) {
-	h := lset.Hash()
-	s := uint16(h >> (64 - seriesShardShift))
-
-	v.Buckets[s] = append(v.Buckets[s], Sample{
-		Hash:   h,
-		Labels: lset,
-		Value:  val,
-	})
+	return buf.String()
 }

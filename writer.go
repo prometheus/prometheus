@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"unsafe"
 )
 
 const (
@@ -60,10 +59,12 @@ func (w *seriesWriter) write(wr io.Writer, b []byte) error {
 }
 
 func (w *seriesWriter) writeMeta() error {
-	meta := &meta{magic: MagicSeries, flag: flagStd}
-	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
+	b := [64]byte{}
 
-	return w.write(w.w, metab)
+	binary.BigEndian.PutUint32(b[:4], MagicSeries)
+	b[4] = flagStd
+
+	return w.write(w.w, b[:])
 }
 
 func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) error {
@@ -78,13 +79,16 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) e
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	l := uint32(0)
+	l := 0
 	for _, cd := range chks {
-		l += uint32(len(cd.chunk.Bytes()))
+		l += len(cd.chunk.Bytes())
 	}
 	// For normal reads we don't need the length of the chunk section but
 	// it allows us to verify checksums without reading the index file.
-	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
+	b := [4]byte{}
+	binary.BigEndian.PutUint32(b[:], uint32(l))
+
+	if err := w.write(wr, b[:]); err != nil {
 		return err
 	}
 
@@ -210,10 +214,11 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	if err := w.write(wr, ((*[4]byte)(unsafe.Pointer(&l)))[:]); err != nil {
-		return err
-	}
-	if err := w.write(wr, []byte{flagStd}); err != nil {
+	b := [5]byte{}
+	binary.BigEndian.PutUint32(b[:4], l)
+	b[4] = flagStd
+
+	if err := w.write(wr, b[:]); err != nil {
 		return err
 	}
 
@@ -224,10 +229,12 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 }
 
 func (w *indexWriter) writeMeta() error {
-	meta := &meta{magic: MagicSeries, flag: flagStd}
-	metab := ((*[metaSize]byte)(unsafe.Pointer(meta)))[:]
+	b := [64]byte{}
 
-	return w.write(w.w, metab)
+	binary.BigEndian.PutUint32(b[:4], MagicIndex)
+	b[4] = flagStd
+
+	return w.write(w.w, b[:])
 }
 
 func (w *indexWriter) AddSeries(ref uint32, lset Labels, offsets ...ChunkOffset) {
@@ -325,11 +332,11 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	return w.section(l, flagStd, func(wr io.Writer) error {
 		for _, v := range values {
 			o := w.symbols[v]
-			b := ((*[4]byte)(unsafe.Pointer(&o)))[:]
 
-			if err := w.write(wr, b); err != nil {
+			if err := binary.Write(wr, binary.BigEndian, o); err != nil {
 				return err
 			}
+			w.n += 4
 		}
 		return nil
 	})
@@ -344,10 +351,13 @@ func (w *indexWriter) WritePostings(name, value string, it Iterator) error {
 	})
 
 	b := make([]byte, 0, 4096)
+	buf := [4]byte{}
 
 	for it.Next() {
 		v := w.series[it.Value()].offset
-		b = append(b, ((*[4]byte)(unsafe.Pointer(&v)))[:]...)
+		binary.BigEndian.PutUint32(buf[:], v)
+
+		b = append(b, buf[:]...)
 	}
 
 	return w.section(uint32(len(b)), flagStd, func(wr io.Writer) error {
@@ -364,20 +374,21 @@ type hashEntry struct {
 	offset uint32
 }
 
-const hashEntrySize = uint32(unsafe.Sizeof(hashEntry{}))
-
 func (w *indexWriter) writeHashmap(h []hashEntry) error {
-	l := uint32(len(h)) * hashEntrySize
+	b := make([]byte, 0, 4096)
+	buf := make([]byte, 4)
 
-	return w.section(l, flagStd, func(wr io.Writer) error {
-		for _, e := range w.labelIndexes {
-			b := ((*[hashEntrySize]byte)(unsafe.Pointer(&e)))[:]
+	for _, e := range h {
+		binary.PutUvarint(buf, uint64(len(e.name)))
+		b = append(b, buf...)
+		b = append(b, e.name...)
 
-			if err := w.write(w.w, b); err != nil {
-				return nil
-			}
-		}
-		return nil
+		binary.BigEndian.PutUint32(buf, e.offset)
+		b = append(b, buf...)
+	}
+
+	return w.section(uint32(len(buf)), flagStd, func(wr io.Writer) error {
+		return w.write(wr, b)
 	})
 }
 
@@ -399,14 +410,11 @@ func (w *indexWriter) finalize() error {
 	// iteration over all existing series?
 	// TODO(fabxc): store references like these that are not resolved via direct
 	// mmap using explicit endianness?
-	if err := w.write(w.w, ((*[hashEntrySize]byte)(unsafe.Pointer(&lo)))[:]); err != nil {
-		return err
-	}
-	if err := w.write(w.w, ((*[hashEntrySize]byte)(unsafe.Pointer(&po)))[:]); err != nil {
-		return err
-	}
+	b := [8]byte{}
+	binary.BigEndian.PutUint32(b[:4], lo)
+	binary.BigEndian.PutUint32(b[4:], po)
 
-	return nil
+	return w.write(w.w, b[:])
 }
 
 func (w *indexWriter) Close() error {
