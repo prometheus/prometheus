@@ -205,6 +205,8 @@ func (w *indexWriter) write(wr io.Writer, b []byte) error {
 
 // section writes a CRC32 checksummed section of length l and guarded by flag.
 func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) error {
+	l++ // account for flag byte
+
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
@@ -275,7 +277,7 @@ func (w *indexWriter) writeSymbols() error {
 		b = append(b, s...)
 	}
 
-	l := uint32(len(b) + 1)
+	l := uint32(len(b))
 
 	return w.section(l, flagStd, func(wr io.Writer) error {
 		return w.write(wr, b)
@@ -300,7 +302,7 @@ func (w *indexWriter) writeSeries() error {
 		}
 	}
 
-	l := uint32(len(b) + 1)
+	l := uint32(len(b))
 
 	return w.section(l, flagStd, func(wr io.Writer) error {
 		return w.write(wr, b)
@@ -318,7 +320,7 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 		offset: uint32(w.n),
 	})
 
-	l := uint32(1 + len(values)*4)
+	l := uint32(len(values) * 4)
 
 	return w.section(l, flagStd, func(wr io.Writer) error {
 		for _, v := range values {
@@ -364,10 +366,10 @@ type hashEntry struct {
 
 const hashEntrySize = uint32(unsafe.Sizeof(hashEntry{}))
 
-func (w *indexWriter) finalize() error {
-	l := 1 + uint32(len(w.labelIndexes))*hashEntrySize
+func (w *indexWriter) writeHashmap(h []hashEntry) error {
+	l := uint32(len(h)) * hashEntrySize
 
-	err := w.section(l, flagStd, func(wr io.Writer) error {
+	return w.section(l, flagStd, func(wr io.Writer) error {
 		for _, e := range w.labelIndexes {
 			b := ((*[hashEntrySize]byte)(unsafe.Pointer(&e)))[:]
 
@@ -377,24 +379,34 @@ func (w *indexWriter) finalize() error {
 		}
 		return nil
 	})
+}
 
-	if err != nil {
+func (w *indexWriter) finalize() error {
+	// Write out hash maps to jump to correct label index and postings sections.
+	lo := uint32(w.n)
+	if err := w.writeHashmap(w.labelIndexes); err != nil {
 		return err
 	}
 
-	err = w.section(l, flagStd, func(wr io.Writer) error {
-		for _, e := range w.postings {
-			b := ((*[hashEntrySize]byte)(unsafe.Pointer(&e)))[:]
+	po := uint32(w.n)
+	if err := w.writeHashmap(w.postings); err != nil {
+		return err
+	}
 
-			if err := w.write(w.w, b); err != nil {
-				return nil
-			}
-		}
-		return nil
-	})
-	// TODO(fabxc): write hashmap offsets.
+	// Terminate index file with offsets to hashmaps. This is the entry Pointer
+	// for any index query.
+	// TODO(fabxc): also store offset to series section to allow plain
+	// iteration over all existing series?
+	// TODO(fabxc): store references like these that are not resolved via direct
+	// mmap using explicit endianness?
+	if err := w.write(w.w, ((*[hashEntrySize]byte)(unsafe.Pointer(&lo)))[:]); err != nil {
+		return err
+	}
+	if err := w.write(w.w, ((*[hashEntrySize]byte)(unsafe.Pointer(&po)))[:]); err != nil {
+		return err
+	}
 
-	return err
+	return nil
 }
 
 func (w *indexWriter) Close() error {
