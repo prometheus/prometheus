@@ -322,7 +322,7 @@ func (s *SeriesShard) persist() error {
 		}
 	}
 
-	sz := fmt.Sprintf("%fMiB", float64(sw.Size()+iw.Size())/1024/1024)
+	sz := fmt.Sprintf("%.2fMiB", float64(sw.Size()+iw.Size())/1024/1024)
 
 	s.logger.With("size", sz).
 		With("samples", head.samples).
