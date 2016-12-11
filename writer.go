@@ -59,7 +59,7 @@ func (w *seriesWriter) write(wr io.Writer, b []byte) error {
 }
 
 func (w *seriesWriter) writeMeta() error {
-	b := [64]byte{}
+	b := [8]byte{}
 
 	binary.BigEndian.PutUint32(b[:4], MagicSeries)
 	b[4] = flagStd
@@ -79,16 +79,15 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) e
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	l := 0
-	for _, cd := range chks {
-		l += len(cd.chunk.Bytes())
-	}
-	// For normal reads we don't need the length of the chunk section but
+	// For normal reads we don't need the number of the chunk section but
 	// it allows us to verify checksums without reading the index file.
-	b := [4]byte{}
-	binary.BigEndian.PutUint32(b[:], uint32(l))
+	// The offsets are also technically enough to calculate chunk size. but
+	// holding the length of each chunk could later allow for adding padding
+	// between chunks.
+	b := [binary.MaxVarintLen32]byte{}
+	n := binary.PutUvarint(b[:], uint64(len(chks)))
 
-	if err := w.write(wr, b[:]); err != nil {
+	if err := w.write(wr, b[:n]); err != nil {
 		return err
 	}
 
@@ -100,7 +99,11 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) e
 			Value:  lastTimestamp,
 			Offset: uint32(w.n),
 		})
+		n = binary.PutUvarint(b[:], uint64(len(cd.chunk.Bytes())))
 
+		if err := w.write(wr, b[:n]); err != nil {
+			return err
+		}
 		if err := w.write(wr, []byte{byte(cd.chunk.Encoding())}); err != nil {
 			return err
 		}
@@ -229,7 +232,7 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 }
 
 func (w *indexWriter) writeMeta() error {
-	b := [64]byte{}
+	b := [8]byte{}
 
 	binary.BigEndian.PutUint32(b[:4], MagicIndex)
 	b[4] = flagStd
