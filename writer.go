@@ -277,7 +277,7 @@ func (w *indexWriter) writeSymbols() error {
 	sort.Strings(symbols)
 
 	buf := [binary.MaxVarintLen32]byte{}
-	b := append(make([]byte, 4096), flagStd)
+	b := append(make([]byte, 0, 4096), flagStd)
 
 	for _, s := range symbols {
 		w.symbols[s] = uint32(w.n) + uint32(len(b))
