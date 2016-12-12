@@ -70,6 +70,8 @@ type StringTuples interface {
 }
 
 type indexReader struct {
+	series SeriesReader
+
 	// The underlying byte slice holding the encoded series data.
 	b []byte
 
@@ -83,11 +85,14 @@ var (
 	errInvalidFlag = fmt.Errorf("invalid flag")
 )
 
-func newIndexReader(b []byte) (*indexReader, error) {
+func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
 	if len(b) < 16 {
 		return nil, errInvalidSize
 	}
-	r := &indexReader{b: b}
+	r := &indexReader{
+		series: s,
+		b:      b,
+	}
 
 	// Verify magic number.
 	if m := binary.BigEndian.Uint32(b[:4]); m != MagicIndex {
@@ -276,13 +281,15 @@ func (r *indexReader) Series(ref uint32) (Series, error) {
 	s := &series{
 		labels:  labels,
 		offsets: coffsets,
+		chunk:   r.series.Chunk,
 	}
 	return s, nil
 }
 
 type series struct {
 	labels  Labels
-	offsets []ChunkOffset
+	offsets []ChunkOffset // in-order chunk refs
+	chunk   func(ref uint32) (chunks.Chunk, error)
 }
 
 func (s *series) Labels() (Labels, error) {
