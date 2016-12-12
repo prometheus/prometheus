@@ -34,7 +34,7 @@ func (c *XORChunk) Bytes() []byte {
 	b := c.b.bytes()
 	// Lazily populate length bytes – probably not necessary to have the
 	// cache value in struct.
-	binary.LittleEndian.PutUint16(b[:2], c.num)
+	binary.BigEndian.PutUint16(b[:2], c.num)
 	return b
 }
 

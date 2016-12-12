@@ -45,7 +45,7 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	case EncXOR:
 		return &XORChunk{
 			b:   &bstream{count: 8},
-			num: binary.LittleEndian.Uint16(d),
+			num: binary.BigEndian.Uint16(d),
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown chunk encoding: %d", e)
