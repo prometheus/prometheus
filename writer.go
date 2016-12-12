@@ -2,11 +2,11 @@ package tsdb
 
 import (
 	"encoding/binary"
-	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
 	"sort"
+	"strings"
 )
 
 const (
@@ -319,26 +319,32 @@ func (w *indexWriter) writeSeries() error {
 }
 
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
-	if len(names) != 1 {
-		return fmt.Errorf("not supported")
+	valt, err := newStringTuples(values, len(names))
+	if err != nil {
+		return err
 	}
-	sort.Strings(values)
+	sort.Sort(valt)
 
 	w.labelIndexes = append(w.labelIndexes, hashEntry{
-		name:   names[0],
+		name:   strings.Join(names, string(sep)),
 		offset: uint32(w.n),
 	})
 
-	l := uint32(len(values) * 4)
+	l := 1 + uint32(len(values)*4)
 
 	return w.section(l, flagStd, func(wr io.Writer) error {
-		for _, v := range values {
-			o := w.symbols[v]
+		// First byte indicates tuple size for index.
+		if err := w.write(wr, []byte{byte(len(names))}); err != nil {
+			return err
+		}
+		buf := make([]byte, 4)
 
-			if err := binary.Write(wr, binary.BigEndian, o); err != nil {
+		for _, v := range valt.s {
+			binary.BigEndian.PutUint32(buf, w.symbols[v])
+
+			if err := w.write(wr, buf); err != nil {
 				return err
 			}
-			w.n += 4
 		}
 		return nil
 	})

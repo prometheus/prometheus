@@ -61,15 +61,12 @@ type IndexReader interface {
 	Series(ref uint32) (Series, error)
 }
 
-// StringTuple is a tuple of strings.
-type StringTuple []string
-
 // StringTuples provides access to a sorted list of string tuples.
 type StringTuples interface {
 	// Total number of tuples in the list.
 	Len() int
 	// At returns the tuple at position i.
-	At(i int) (StringTuple, error)
+	At(i int) ([]string, error)
 }
 
 type indexReader struct {
@@ -188,4 +185,86 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	if err != nil {
 		return nil, fmt.Errorf("section: %s", err)
 	}
+	if flag != flagStd {
+		return nil, errInvalidFlag
+	}
+	if len(b) < 1 {
+		return nil, errInvalidSize
+	}
+
+	st := &serializedStringTuples{
+		l:      int(b[0]),
+		b:      b[1:],
+		lookup: r.lookupSymbol,
+	}
+	return st, nil
+}
+
+type stringTuples struct {
+	l int      // tuple length
+	s []string // flattened tuple entries
+}
+
+func newStringTuples(s []string, l int) (*stringTuples, error) {
+	if len(s)%l != 0 {
+		return nil, errInvalidSize
+	}
+	return &stringTuples{s: s, l: l}, nil
+}
+
+func (t *stringTuples) Len() int                   { return len(t.s) / t.l }
+func (t *stringTuples) At(i int) ([]string, error) { return t.s[i : i+t.l], nil }
+
+func (t *stringTuples) Swap(i, j int) {
+	c := make([]string, t.l)
+	copy(c, t.s[i:i+t.l])
+
+	for k := 0; k < t.l; k++ {
+		t.s[i+k] = t.s[j+k]
+		t.s[j+k] = c[k]
+	}
+}
+
+func (t *stringTuples) Less(i, j int) bool {
+	for k := 0; k < t.l; k++ {
+		d := strings.Compare(t.s[i+k], t.s[j+k])
+
+		if d < 0 {
+			return true
+		}
+		if d > 0 {
+			return false
+		}
+	}
+	return false
+}
+
+type serializedStringTuples struct {
+	l      int
+	b      []byte
+	lookup func(uint32) ([]byte, error)
+}
+
+func (t *serializedStringTuples) Len() int {
+	// TODO(fabxc): Cache this?
+	return len(t.b) / (4 * t.l)
+}
+
+func (t *serializedStringTuples) At(i int) ([]string, error) {
+	if len(t.b) < (i+t.l)*4 {
+		return nil, errInvalidSize
+	}
+	res := make([]string, t.l)
+
+	for k := 0; k < t.l; k++ {
+		offset := binary.BigEndian.Uint32(t.b[i*4:])
+
+		b, err := t.lookup(offset)
+		if err != nil {
+			return nil, fmt.Errorf("lookup: %s", err)
+		}
+		res = append(res, string(b))
+	}
+
+	return res, nil
 }
