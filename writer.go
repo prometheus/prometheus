@@ -217,9 +217,8 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	b := [5]byte{}
-	binary.BigEndian.PutUint32(b[:4], l)
-	b[4] = flagStd
+	b := [5]byte{flagStd, 0, 0, 0, 0}
+	binary.BigEndian.PutUint32(b[1:], l)
 
 	if err := w.write(wr, b[:]); err != nil {
 		return err
@@ -379,15 +378,15 @@ type hashEntry struct {
 
 func (w *indexWriter) writeHashmap(h []hashEntry) error {
 	b := make([]byte, 0, 4096)
-	buf := make([]byte, 4)
+	buf := [binary.MaxVarintLen32]byte{}
 
 	for _, e := range h {
-		binary.PutUvarint(buf, uint64(len(e.name)))
-		b = append(b, buf...)
+		n := binary.PutUvarint(buf[:], uint64(len(e.name)))
+		b = append(b, buf[:n]...)
 		b = append(b, e.name...)
 
-		binary.BigEndian.PutUint32(buf, e.offset)
-		b = append(b, buf...)
+		n = binary.PutUvarint(buf[:], uint64(e.offset))
+		b = append(b, buf[:n]...)
 	}
 
 	return w.section(uint32(len(buf)), flagStd, func(wr io.Writer) error {
