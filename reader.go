@@ -188,16 +188,110 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	if flag != flagStd {
 		return nil, errInvalidFlag
 	}
-	if len(b) < 1 {
+	l, n := binary.Uvarint(b)
+	if n < 1 {
 		return nil, errInvalidSize
 	}
 
 	st := &serializedStringTuples{
-		l:      int(b[0]),
-		b:      b[1:],
+		l:      int(l),
+		b:      b[n:],
 		lookup: r.lookupSymbol,
 	}
 	return st, nil
+}
+
+func (r *indexReader) Series(ref uint32) (Series, error) {
+	k, n := binary.Uvarint(r.b[ref:])
+	if n < 1 {
+		return nil, errInvalidSize
+	}
+
+	b := r.b[int(ref)+n:]
+	offsets := make([]uint32, 0, k)
+
+	for i := 0; i < int(k); i++ {
+		o, n := binary.Uvarint(b)
+		if n < 1 {
+			return nil, errInvalidSize
+		}
+		offsets = append(offsets, uint32(o))
+
+		b = b[n:]
+	}
+	// Offests must occur in pairs representing name and value.
+	if len(offsets)&1 != 0 {
+		return nil, errInvalidSize
+	}
+
+	// TODO(fabxc): Fully materialize series for now. Figure out later if it
+	// makes sense to decode those lazily.
+	// The references are expected to be sorted and match the order of
+	// the underlying strings.
+	labels := make(Labels, 0, k)
+
+	for i := 0; i < int(k); i += 2 {
+		n, err := r.lookupSymbol(offsets[i])
+		if err != nil {
+			return nil, err
+		}
+		v, err := r.lookupSymbol(offsets[i+1])
+		if err != nil {
+			return nil, err
+		}
+		labels = append(labels, Label{
+			Name:  string(n),
+			Value: string(v),
+		})
+	}
+
+	// Read the chunk offsets.
+	k, n = binary.Uvarint(r.b[ref:])
+	if n < 1 {
+		return nil, errInvalidSize
+	}
+
+	b = b[n:]
+	coffsets := make([]ChunkOffset, 0, k)
+
+	for i := 0; i < int(k); i++ {
+		v, n := binary.Varint(b)
+		if n < 1 {
+			return nil, errInvalidSize
+		}
+		b = b[n:]
+
+		o, n := binary.Uvarint(b)
+		if n < 1 {
+			return nil, errInvalidSize
+		}
+		b = b[n:]
+
+		coffsets = append(coffsets, ChunkOffset{
+			Offset: uint32(o),
+			Value:  v,
+		})
+	}
+
+	s := &series{
+		labels:  labels,
+		offsets: coffsets,
+	}
+	return s, nil
+}
+
+type series struct {
+	labels  Labels
+	offsets []ChunkOffset
+}
+
+func (s *series) Labels() (Labels, error) {
+	return s.labels, nil
+}
+
+func (s *series) Iterator() (SeriesIterator, error) {
+	// dereference skiplist and construct from chunk iterators.
+	return nil, nil
 }
 
 type stringTuples struct {

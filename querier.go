@@ -34,9 +34,9 @@ type Querier interface {
 
 // Series represents a single time series.
 type Series interface {
-	Labels() Labels
+	Labels() (Labels, error)
 	// Iterator returns a new iterator of the data of the series.
-	Iterator() SeriesIterator
+	Iterator() (SeriesIterator, error)
 }
 
 // SeriesIterator iterates over the data of a time series.

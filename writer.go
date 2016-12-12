@@ -295,18 +295,31 @@ func (w *indexWriter) writeSymbols() error {
 
 func (w *indexWriter) writeSeries() error {
 	b := make([]byte, 0, 4096)
-	buf := [binary.MaxVarintLen32]byte{}
+	buf := make([]byte, binary.MaxVarintLen64)
 
 	for _, s := range w.series {
+		// Write label set symbol references.
 		s.offset = uint32(w.n) + uint32(len(b))
 
-		n := binary.PutUvarint(buf[:], uint64(len(s.labels)))
+		n := binary.PutUvarint(buf, uint64(len(s.labels)))
 		b = append(b, buf[:n]...)
 
 		for _, l := range s.labels {
-			n = binary.PutUvarint(buf[:], uint64(w.symbols[l.Name]))
+			n = binary.PutUvarint(buf, uint64(w.symbols[l.Name]))
 			b = append(b, buf[:n]...)
-			n = binary.PutUvarint(buf[:], uint64(w.symbols[l.Value]))
+			n = binary.PutUvarint(buf, uint64(w.symbols[l.Value]))
+			b = append(b, buf[:n]...)
+		}
+
+		// Write skiplist to chunk offsets.
+		n = binary.PutUvarint(buf, uint64(len(s.chunks)))
+		b = append(b, buf[:n]...)
+
+		for _, c := range s.chunks {
+			n = binary.PutVarint(buf, c.Value)
+			b = append(b, buf[:n]...)
+
+			n = binary.PutUvarint(buf, uint64(c.Offset))
 			b = append(b, buf[:n]...)
 		}
 	}
@@ -330,14 +343,16 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 		offset: uint32(w.n),
 	})
 
-	l := 1 + uint32(len(values)*4)
+	buf := make([]byte, binary.MaxVarintLen32)
+	n := binary.PutUvarint(buf, uint64(len(names)))
+
+	l := uint32(n) + uint32(len(values)*4)
 
 	return w.section(l, flagStd, func(wr io.Writer) error {
 		// First byte indicates tuple size for index.
-		if err := w.write(wr, []byte{byte(len(names))}); err != nil {
+		if err := w.write(wr, buf[:n]); err != nil {
 			return err
 		}
-		buf := make([]byte, 4)
 
 		for _, v := range valt.s {
 			binary.BigEndian.PutUint32(buf, w.symbols[v])
