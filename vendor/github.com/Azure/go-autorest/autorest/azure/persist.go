@@ -14,6 +14,7 @@ func LoadToken(path string) (*Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file (%s) while loading token: %v", path, err)
 	}
+	defer file.Close()
 
 	var token Token
 
@@ -34,13 +35,13 @@ func SaveToken(path string, mode os.FileMode, token Token) error {
 		return fmt.Errorf("failed to create directory (%s) to store token in: %v", dir, err)
 	}
 
-	newFile, err := ioutil.TempFile(os.TempDir(), "token")
+	newFile, err := ioutil.TempFile(dir, "token")
 	if err != nil {
 		return fmt.Errorf("failed to create the temp file to write the token: %v", err)
 	}
 	tempPath := newFile.Name()
 
-	if json.NewEncoder(newFile).Encode(token); err != nil {
+	if err := json.NewEncoder(newFile).Encode(token); err != nil {
 		return fmt.Errorf("failed to encode token to file (%s) while saving token: %v", tempPath, err)
 	}
 	if err := newFile.Close(); err != nil {
@@ -49,7 +50,7 @@ func SaveToken(path string, mode os.FileMode, token Token) error {
 
 	// Atomic replace to avoid multi-writer file corruptions
 	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("failed to move temporary token to desired output location. source=(%s). destination=(%s). error = %v", tempPath, path, err)
+		return fmt.Errorf("failed to move temporary token to desired output location. src=%s dst=%s: %v", tempPath, path, err)
 	}
 	if err := os.Chmod(path, mode); err != nil {
 		return fmt.Errorf("failed to chmod the token file %s: %v", path, err)

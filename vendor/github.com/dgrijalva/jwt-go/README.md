@@ -1,10 +1,15 @@
-A [go](http://www.golang.org) (or 'golang' for search engine friendliness) implementation of [JSON Web Tokens](http://self-issued.info/docs/draft-jones-json-web-token.html)
+A [go](http://www.golang.org) (or 'golang' for search engine friendliness) implementation of [JSON Web Tokens](http://self-issued.info/docs/draft-ietf-oauth-json-web-token.html)
 
 [![Build Status](https://travis-ci.org/dgrijalva/jwt-go.svg?branch=master)](https://travis-ci.org/dgrijalva/jwt-go)
 
+**BREAKING CHANGES:*** Version 3.0.0 is here. It includes _a lot_ of changes including a few that break the API.  We've tried to break as few things as possible, so there should just be a few type signature changes.  A full list of breaking changes is available in `VERSION_HISTORY.md`.  See `MIGRATION_GUIDE.md` for more information on updating your code.
+
 **NOTICE:** A vulnerability in JWT was [recently published](https://auth0.com/blog/2015/03/31/critical-vulnerabilities-in-json-web-token-libraries/).  As this library doesn't force users to validate the `alg` is what they expected, it's possible your usage is effected.  There will be an update soon to remedy this, and it will likey require backwards-incompatible changes to the API.  In the short term, please make sure your implementation verifies the `alg` is what you expect.
 
+
 ## What the heck is a JWT?
+
+JWT.io has [a great introduction](https://jwt.io/introduction) to JSON Web Tokens.
 
 In short, it's a signed JSON object that does something useful (for example, authentication).  It's commonly used for `Bearer` tokens in Oauth 2.  A token is made of three parts, separated by `.`'s.  The first two parts are JSON objects, that have been [base64url](http://tools.ietf.org/html/rfc4648) encoded.  The last part is the signature, encoded the same way.
 
@@ -16,43 +21,25 @@ The part in the middle is the interesting bit.  It's called the Claims and conta
 
 This library supports the parsing and verification as well as the generation and signing of JWTs.  Current supported signing algorithms are HMAC SHA, RSA, RSA-PSS, and ECDSA, though hooks are present for adding your own.
 
-## Parse and Verify
+## Examples
 
-Parsing and verifying tokens is pretty straight forward.  You pass in the token and a function for looking up the key.  This is done as a callback since you may need to parse the token to find out what signing method and key was used.
+See [the project documentation](https://godoc.org/github.com/dgrijalva/jwt-go) for examples of usage:
 
-```go
-	token, err := jwt.Parse(myToken, func(token *jwt.Token) (interface{}, error) {
-		// Don't forget to validate the alg is what you expect:
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
-		}
-		return myLookupKey(token.Header["kid"]), nil
-	})
-
-	if err == nil && token.Valid {
-		deliverGoodness("!")
-	} else {
-		deliverUtterRejection(":(")
-	}
-```
-	
-## Create a token
-
-```go
-	// Create the token
-	token := jwt.New(jwt.SigningMethodHS256)
-	// Set some claims
-	token.Claims["foo"] = "bar"
-	token.Claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
-	// Sign and get the complete encoded token as a string
-	tokenString, err := token.SignedString(mySigningKey)
-```	
+* [Simple example of parsing and validating a token](https://godoc.org/github.com/dgrijalva/jwt-go#example-Parse--Hmac)
+* [Simple example of building and signing a token](https://godoc.org/github.com/dgrijalva/jwt-go#example-New--Hmac)
+* [Directory of Examples](https://godoc.org/github.com/dgrijalva/jwt-go#pkg-examples)
 
 ## Extensions
 
 This library publishes all the necessary components for adding your own signing methods.  Simply implement the `SigningMethod` interface and register a factory method using `RegisterSigningMethod`.  
 
 Here's an example of an extension that integrates with the Google App Engine signing tools: https://github.com/someone1/gcp-jwt-go
+
+## Compliance
+
+This library was last reviewed to comply with [RTF 7519](http://www.rfc-editor.org/info/rfc7519) dated May 2015 with a few notable differences: 
+
+* In order to protect against accidental use of [Unsecured JWTs](http://self-issued.info/docs/draft-ietf-oauth-json-web-token.html#UnsecuredJWT), tokens using `alg=none` will only be accepted if the constant `jwt.UnsafeAllowNoneSignatureType` is provided as the key.
 
 ## Project Status & Versioning
 
@@ -95,4 +82,4 @@ Without going too far down the rabbit hole, here's a description of the interact
 
 Documentation can be found [on godoc.org](http://godoc.org/github.com/dgrijalva/jwt-go).
 
-The command line utility included in this project (cmd/jwt) provides a straightforward example of token creation and parsing as well as a useful tool for debugging your own integration.  For a more http centric example, see [this gist](https://gist.github.com/cryptix/45c33ecf0ae54828e63b).
+The command line utility included in this project (cmd/jwt) provides a straightforward example of token creation and parsing as well as a useful tool for debugging your own integration.  You'll also find several implementation examples in to documentation.
