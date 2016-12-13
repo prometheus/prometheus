@@ -154,11 +154,10 @@ func newPersistence(
 		// empty. If not, we have found an old storage directory without
 		// version file, so we have to bail out.
 		if err := os.MkdirAll(basePath, 0700); err != nil {
-			if abspath, e := filepath.Abs(basePath); e != nil {
-				return nil, fmt.Errorf("cannot create persistent directory %s: %s", basePath, err)
-			} else {
+			if abspath, e := filepath.Abs(basePath); e == nil {
 				return nil, fmt.Errorf("cannot create persistent directory %s: %s", abspath, err)
 			}
+			return nil, fmt.Errorf("cannot create persistent directory %s: %s", basePath, err)
 		}
 		fis, err := ioutil.ReadDir(basePath)
 		if err != nil {
