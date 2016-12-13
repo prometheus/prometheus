@@ -238,27 +238,36 @@ func (c *deltaEncodedChunk) Unmarshal(r io.Reader) error {
 	if _, err := io.ReadFull(r, *c); err != nil {
 		return err
 	}
-	l := binary.LittleEndian.Uint16((*c)[deltaHeaderBufLenOffset:])
-	if int(l) > cap(*c) {
-		return fmt.Errorf("chunk length exceeded during unmarshaling: %d", l)
-	}
-	if int(l) < deltaHeaderBytes {
-		return fmt.Errorf("chunk length less than header size: %d < %d", l, deltaHeaderBytes)
-	}
-	*c = (*c)[:l]
-	return nil
+	return c.setLen()
 }
 
 // UnmarshalFromBuf implements chunk.
 func (c *deltaEncodedChunk) UnmarshalFromBuf(buf []byte) error {
 	*c = (*c)[:cap(*c)]
 	copy(*c, buf)
+	return c.setLen()
+}
+
+// setLen sets the length of the underlying slice and performs some sanity checks.
+func (c *deltaEncodedChunk) setLen() error {
 	l := binary.LittleEndian.Uint16((*c)[deltaHeaderBufLenOffset:])
 	if int(l) > cap(*c) {
-		return fmt.Errorf("chunk length exceeded during unmarshaling: %d", l)
+		return fmt.Errorf("delta chunk length exceeded during unmarshaling: %d", l)
 	}
 	if int(l) < deltaHeaderBytes {
-		return fmt.Errorf("chunk length less than header size: %d < %d", l, deltaHeaderBytes)
+		return fmt.Errorf("delta chunk length less than header size: %d < %d", l, deltaHeaderBytes)
+	}
+	switch c.timeBytes() {
+	case d1, d2, d4, d8:
+		// Pass.
+	default:
+		return fmt.Errorf("invalid number of time bytes in delta chunk: %d", c.timeBytes())
+	}
+	switch c.valueBytes() {
+	case d0, d1, d2, d4, d8:
+		// Pass.
+	default:
+		return fmt.Errorf("invalid number of value bytes in delta chunk: %d", c.valueBytes())
 	}
 	*c = (*c)[:l]
 	return nil
