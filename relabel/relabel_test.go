@@ -377,6 +377,39 @@ func TestRelabel(t *testing.T) {
 				"foo":              "bar",
 			},
 		},
+		{
+			input: model.LabelSet{
+				"a":  "foo",
+				"b1": "bar",
+				"b2": "baz",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					Regex:  config.MustNewRegexp("(b.*)"),
+					Action: config.RelabelLabelKeep,
+				},
+			},
+			output: model.LabelSet{
+				"b1": "bar",
+				"b2": "baz",
+			},
+		},
+		{
+			input: model.LabelSet{
+				"a":  "foo",
+				"b1": "bar",
+				"b2": "baz",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					Regex:  config.MustNewRegexp("(b.*)"),
+					Action: config.RelabelLabelDrop,
+				},
+			},
+			output: model.LabelSet{
+				"a": "foo",
+			},
+		},
 	}
 
 	for i, test := range tests {
