@@ -45,6 +45,9 @@ func (s *NoopStorage) Querier() (Querier, error) {
 	return &NoopQuerier{}, nil
 }
 
+// NoopQuerier is a dummy Querier for use when Prometheus's local storage is
+// disabled. It is returned by the NoopStorage Querier method and always returns
+// empty results.
 type NoopQuerier struct{}
 
 // Close implements Querier.

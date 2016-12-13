@@ -319,31 +319,31 @@ func TestFingerprintsForLabels(t *testing.T) {
 		expected model.Fingerprints
 	}{
 		{
-			pairs:    []model.LabelPair{{"label1", "x"}},
+			pairs:    []model.LabelPair{{Name: "label1", Value: "x"}},
 			expected: fingerprints[:0],
 		},
 		{
-			pairs:    []model.LabelPair{{"label1", "test_0"}},
+			pairs:    []model.LabelPair{{Name: "label1", Value: "test_0"}},
 			expected: fingerprints[:10],
 		},
 		{
 			pairs: []model.LabelPair{
-				{"label1", "test_0"},
-				{"label1", "test_1"},
+				{Name: "label1", Value: "test_0"},
+				{Name: "label1", Value: "test_1"},
 			},
 			expected: fingerprints[:0],
 		},
 		{
 			pairs: []model.LabelPair{
-				{"label1", "test_0"},
-				{"label2", "test_1"},
+				{Name: "label1", Value: "test_0"},
+				{Name: "label2", Value: "test_1"},
 			},
 			expected: fingerprints[5:10],
 		},
 		{
 			pairs: []model.LabelPair{
-				{"label1", "test_1"},
-				{"label2", "test_2"},
+				{Name: "label1", Value: "test_1"},
+				{Name: "label2", Value: "test_2"},
 			},
 			expected: fingerprints[15:20],
 		},
