@@ -32,21 +32,20 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 		err error,
 		chunkTypeName string,
 		unmarshalMethod string,
-		badLen int) {
+		expectedStr string,
+	) {
 
 		if err == nil {
-			t.Errorf("Failed to obtain an error when unmarshalling %s (from %s) with corrupt length of %d", chunkTypeName, unmarshalMethod, badLen)
+			t.Errorf("Failed to obtain an error when unmarshalling corrupt %s (from %s)", chunkTypeName, unmarshalMethod)
 			return
 		}
 
-		expectedStr := "header size"
 		if !strings.Contains(err.Error(), expectedStr) {
 			t.Errorf(
-				"'%s' not present in error when unmarshalling %s (from %s) with corrupt length %d: '%s'",
+				"'%s' not present in error when unmarshalling corrupt %s (from %s): '%s'",
 				expectedStr,
 				chunkTypeName,
 				unmarshalMethod,
-				badLen,
 				err.Error())
 		}
 	}
@@ -56,6 +55,7 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 		chunkConstructor func(deltaBytes, deltaBytes, bool, int) Chunk
 		minHeaderLen     int
 		chunkLenPos      int
+		timeBytesPos     int
 	}{
 		{
 			chunkTypeName: "deltaEncodedChunk",
@@ -64,6 +64,7 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 			},
 			minHeaderLen: deltaHeaderBytes,
 			chunkLenPos:  deltaHeaderBufLenOffset,
+			timeBytesPos: deltaHeaderTimeBytesOffset,
 		},
 		{
 			chunkTypeName: "doubleDeltaEncodedChunk",
@@ -72,6 +73,7 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 			},
 			minHeaderLen: doubleDeltaHeaderMinBytes,
 			chunkLenPos:  doubleDeltaHeaderBufLenOffset,
+			timeBytesPos: doubleDeltaHeaderTimeBytesOffset,
 		},
 	}
 	for _, c := range cases {
@@ -89,15 +91,26 @@ func TestUnmarshalingCorruptedDeltaReturnsAnError(t *testing.T) {
 
 		cs[0].MarshalToBuf(buf)
 
+		// Corrupt time byte to 0, which is illegal.
+		buf[c.timeBytesPos] = 0
+		err = cs[0].UnmarshalFromBuf(buf)
+		verifyUnmarshallingError(err, c.chunkTypeName, "buf", "invalid number of time bytes")
+
+		err = cs[0].Unmarshal(bytes.NewBuffer(buf))
+		verifyUnmarshallingError(err, c.chunkTypeName, "Reader", "invalid number of time bytes")
+
+		// Fix the corruption to go on.
+		buf[c.timeBytesPos] = byte(d1)
+
 		// Corrupt the length to be every possible too-small value
 		for i := 0; i < c.minHeaderLen; i++ {
 			binary.LittleEndian.PutUint16(buf[c.chunkLenPos:], uint16(i))
 
 			err = cs[0].UnmarshalFromBuf(buf)
-			verifyUnmarshallingError(err, c.chunkTypeName, "buf", i)
+			verifyUnmarshallingError(err, c.chunkTypeName, "buf", "header size")
 
 			err = cs[0].Unmarshal(bytes.NewBuffer(buf))
-			verifyUnmarshallingError(err, c.chunkTypeName, "Reader", i)
+			verifyUnmarshallingError(err, c.chunkTypeName, "Reader", "header size")
 		}
 	}
 }
