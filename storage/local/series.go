@@ -462,10 +462,18 @@ func (s *memorySeries) preloadChunksForRange(
 		if err != nil {
 			return nopIter, err
 		}
+		if s.chunkDescsOffset != -1 && len(cds) != s.chunkDescsOffset {
+			return nopIter, fmt.Errorf(
+				"unexpected number of chunk descs loaded for fingerprint %v: expected %d, got %d",
+				fp, s.chunkDescsOffset, len(cds),
+			)
+		}
 		s.chunkDescs = append(cds, s.chunkDescs...)
 		s.chunkDescsOffset = 0
 		s.persistWatermark += len(cds)
-		firstChunkDescTime = s.chunkDescs[0].FirstTime()
+		if len(s.chunkDescs) > 0 {
+			firstChunkDescTime = s.chunkDescs[0].FirstTime()
+		}
 	}
 
 	if len(s.chunkDescs) == 0 || through.Before(firstChunkDescTime) {
