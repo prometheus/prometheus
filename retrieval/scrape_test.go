@@ -139,7 +139,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app, reportApp storage.SampleAppender) loop {
+	newLoop := func(ctx context.Context, s scraper, app storage.SampleAppender, mut func(storage.SampleAppender) storage.SampleAppender, reportApp storage.SampleAppender) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -269,7 +269,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	sp := newScrapePool(context.Background(), cfg, app)
 
 	cfg.HonorLabels = false
-	wrapped := sp.sampleAppender(target)
+	wrapped := sp.sampleMutator(target)(app)
 
 	rl, ok := wrapped.(ruleLabelsAppender)
 	if !ok {
@@ -284,7 +284,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	}
 
 	cfg.HonorLabels = true
-	wrapped = sp.sampleAppender(target)
+	wrapped = sp.sampleMutator(target)(app)
 
 	hl, ok := wrapped.(honorLabelsAppender)
 	if !ok {
@@ -301,7 +301,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 
 func TestScrapeLoopStop(t *testing.T) {
 	scraper := &testScraper{}
-	sl := newScrapeLoop(context.Background(), scraper, nil, nil)
+	sl := newScrapeLoop(context.Background(), scraper, nil, nil, nil)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
 	// loops are syarted asynchronously. Thus it's possible, that a loop is stopped
@@ -353,12 +353,13 @@ func TestScrapeLoopRun(t *testing.T) {
 
 		scraper   = &testScraper{}
 		app       = &nopAppender{}
+		mut       = func(storage.SampleAppender) storage.SampleAppender { return &nopAppender{} }
 		reportApp = &nopAppender{}
 	)
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp)
+	sl := newScrapeLoop(ctx, scraper, app, mut, reportApp)
 
 	// The loop must terminate during the initial offset if the context
 	// is canceled.
@@ -396,7 +397,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
-	sl = newScrapeLoop(ctx, scraper, app, reportApp)
+	sl = newScrapeLoop(ctx, scraper, app, mut, reportApp)
 
 	go func() {
 		sl.run(time.Second, 100*time.Millisecond, errc)
