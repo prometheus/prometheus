@@ -332,6 +332,10 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 					Metric: model.Metric{"__name__": "scrape_samples_scraped"},
 					Value:  2,
 				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_post_metric_relabeling"},
+					Value:  2,
+				},
 			},
 			expectedIngestedSamplesCount: 2,
 		},
@@ -357,6 +361,10 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 					Metric: model.Metric{"__name__": "scrape_samples_scraped"},
 					Value:  2,
 				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_post_metric_relabeling"},
+					Value:  1,
+				},
 			},
 			expectedIngestedSamplesCount: 1,
 		},
@@ -374,6 +382,10 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 				},
 				{
 					Metric: model.Metric{"__name__": "scrape_samples_scraped"},
+					Value:  0,
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_post_metric_relabeling"},
 					Value:  0,
 				},
 			},
