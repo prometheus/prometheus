@@ -278,6 +278,17 @@ func (app relabelAppender) Append(s *model.Sample) error {
 	return app.SampleAppender.Append(s)
 }
 
+// Appends samples to the given buffer.
+type bufferAppender struct {
+	storage.SampleAppender
+	buffer model.Samples
+}
+
+func (app bufferAppender) Append(s *model.Sample) error {
+	app.buffer = append(app.buffer, s)
+	return nil
+}
+
 // populateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns a nil label set if the target is dropped during relabeling.
