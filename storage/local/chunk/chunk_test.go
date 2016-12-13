@@ -39,7 +39,10 @@ func TestLen(t *testing.T) {
 				t.Errorf("chunk type %s should have %d samples, had %d", c.Encoding(), i, c.Len())
 			}
 
-			cs, _ := c.Add(model.SamplePair{model.Time(i), model.SampleValue(i)})
+			cs, _ := c.Add(model.SamplePair{
+				Timestamp: model.Time(i),
+				Value:     model.SampleValue(i),
+			})
 			c = cs[0]
 		}
 	}
