@@ -17,6 +17,48 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "oIt4tXgFYnZJBsCac1BQLnTWALM=",
+			"path": "github.com/Azure/azure-sdk-for-go/arm/compute",
+			"revision": "bd73d950fa4440dae889bd9917bff7cef539f86e",
+			"revisionTime": "2016-10-28T18:31:11Z"
+		},
+		{
+			"checksumSHA1": "QKi6LiSyD5GnRK8ExpMgZl4XiMI=",
+			"path": "github.com/Azure/azure-sdk-for-go/arm/network",
+			"revision": "bd73d950fa4440dae889bd9917bff7cef539f86e",
+			"revisionTime": "2016-10-28T18:31:11Z"
+		},
+		{
+			"checksumSHA1": "eVSHe6GIHj9/ziFrQLZ1SC7Nn6k=",
+			"path": "github.com/Azure/go-autorest/autorest",
+			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
+			"revisionTime": "2016-10-25T18:07:34Z"
+		},
+		{
+			"checksumSHA1": "0sYi0JprevG/PZjtMbOh8h0pt0g=",
+			"path": "github.com/Azure/go-autorest/autorest/azure",
+			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
+			"revisionTime": "2016-10-25T18:07:34Z"
+		},
+		{
+			"checksumSHA1": "q9Qz8PAxK5FTOZwgYKe5Lj38u4c=",
+			"path": "github.com/Azure/go-autorest/autorest/date",
+			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
+			"revisionTime": "2016-10-25T18:07:34Z"
+		},
+		{
+			"checksumSHA1": "Ev8qCsbFjDlMlX0N2tYAhYQFpUc=",
+			"path": "github.com/Azure/go-autorest/autorest/to",
+			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
+			"revisionTime": "2016-10-25T18:07:34Z"
+		},
+		{
+			"checksumSHA1": "oBixceM+55gdk47iff8DSEIh3po=",
+			"path": "github.com/Azure/go-autorest/autorest/validation",
+			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
+			"revisionTime": "2016-10-25T18:07:34Z"
+		},
+		{
 			"checksumSHA1": "IatnluZB5jTVUncMN134e4VOV34=",
 			"origin": "k8s.io/client-go/1.5/vendor/github.com/PuerkitoBio/purell",
 			"path": "github.com/PuerkitoBio/purell",
@@ -263,10 +305,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "1LWe3iDPpInibsVD1TzbTWSDXFc=",
+			"checksumSHA1": "2Fy1Y6Z3lRRX1891WF/+HT4XS2I=",
 			"path": "github.com/dgrijalva/jwt-go",
-			"revision": "9a4b9f2ac1f7685147a5c01544e3b922dbc1f4a0",
-			"revisionTime": "2016-03-07T15:28:38-08:00"
+			"revision": "9ed569b5d1ac936e6494082958d63a6aa4fff99a",
+			"revisionTime": "2016-11-01T19:39:35Z"
 		},
 		{
 			"checksumSHA1": "f1wARLDzsF/JoyN01yoxXEwFIp8=",

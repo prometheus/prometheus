@@ -1,8 +1,13 @@
 package autorest
 
 import (
+	"bytes"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"strings"
 )
 
 // Responder is the interface that wraps the Respond method.
@@ -68,6 +73,20 @@ func ByIgnoring() RespondDecorator {
 	}
 }
 
+// ByCopying copies the contents of the http.Response Body into the passed bytes.Buffer as
+// the Body is read.
+func ByCopying(b *bytes.Buffer) RespondDecorator {
+	return func(r Responder) Responder {
+		return ResponderFunc(func(resp *http.Response) error {
+			err := r.Respond(resp)
+			if err == nil && resp != nil && resp.Body != nil {
+				resp.Body = TeeReadCloser(resp.Body, b)
+			}
+			return err
+		})
+	}
+}
+
 // ByClosing returns a RespondDecorator that first invokes the passed Responder after which it
 // closes the response body. Since the passed Responder is invoked prior to closing the response
 // body, the decorator may occur anywhere within the set.
@@ -76,7 +95,9 @@ func ByClosing() RespondDecorator {
 		return ResponderFunc(func(resp *http.Response) error {
 			err := r.Respond(resp)
 			if resp != nil && resp.Body != nil {
-				resp.Body.Close()
+				if err := resp.Body.Close(); err != nil {
+					return fmt.Errorf("Error closing the response body: %v", err)
+				}
 			}
 			return err
 		})
@@ -90,91 +111,9 @@ func ByClosingIfError() RespondDecorator {
 		return ResponderFunc(func(resp *http.Response) error {
 			err := r.Respond(resp)
 			if err != nil && resp != nil && resp.Body != nil {
-				resp.Body.Close()
-			}
-			return err
-		})
-	}
-}
-
-// ByUnmarshallingBool returns a RespondDecorator that decodes the http.Response Body into a bool
-// pointed to by b.
-func ByUnmarshallingBool(b *bool) RespondDecorator {
-	return func(r Responder) Responder {
-		return ResponderFunc(func(resp *http.Response) error {
-			err := r.Respond(resp)
-			if err == nil {
-				*b, err = readBool(resp.Body)
-			}
-			return err
-		})
-	}
-}
-
-// ByUnmarshallingFloat32 returns a RespondDecorator that decodes the http.Response Body into a
-// float32 pointed to by f.
-func ByUnmarshallingFloat32(f *float32) RespondDecorator {
-	return func(r Responder) Responder {
-		return ResponderFunc(func(resp *http.Response) error {
-			err := r.Respond(resp)
-			if err == nil {
-				*f, err = readFloat32(resp.Body)
-			}
-			return err
-		})
-	}
-}
-
-// ByUnmarshallingFloat64 returns a RespondDecorator that decodes the http.Response Body into a
-// float64 pointed to by f.
-func ByUnmarshallingFloat64(f *float64) RespondDecorator {
-	return func(r Responder) Responder {
-		return ResponderFunc(func(resp *http.Response) error {
-			err := r.Respond(resp)
-			if err == nil {
-				*f, err = readFloat64(resp.Body)
-			}
-			return err
-		})
-	}
-}
-
-// ByUnmarshallingInt32 returns a RespondDecorator that decodes the http.Response Body into an
-// int32 pointed to by i.
-func ByUnmarshallingInt32(i *int32) RespondDecorator {
-	return func(r Responder) Responder {
-		return ResponderFunc(func(resp *http.Response) error {
-			err := r.Respond(resp)
-			if err == nil {
-				*i, err = readInt32(resp.Body)
-			}
-			return err
-		})
-	}
-}
-
-// ByUnmarshallingInt64 returns a RespondDecorator that decodes the http.Response Body into an
-// int64 pointed to by i.
-func ByUnmarshallingInt64(i *int64) RespondDecorator {
-	return func(r Responder) Responder {
-		return ResponderFunc(func(resp *http.Response) error {
-			err := r.Respond(resp)
-			if err == nil {
-				*i, err = readInt64(resp.Body)
-			}
-			return err
-		})
-	}
-}
-
-// ByUnmarshallingString returns a RespondDecorator that decodes the http.Response Body into a
-// string pointed to by s.
-func ByUnmarshallingString(s *string) RespondDecorator {
-	return func(r Responder) Responder {
-		return ResponderFunc(func(resp *http.Response) error {
-			err := r.Respond(resp)
-			if err == nil {
-				*s, err = readString(resp.Body)
+				if err := resp.Body.Close(); err != nil {
+					return fmt.Errorf("Error closing the response body: %v", err)
+				}
 			}
 			return err
 		})
@@ -184,29 +123,45 @@ func ByUnmarshallingString(s *string) RespondDecorator {
 // ByUnmarshallingJSON returns a RespondDecorator that decodes a JSON document returned in the
 // response Body into the value pointed to by v.
 func ByUnmarshallingJSON(v interface{}) RespondDecorator {
-	return byUnmarshallingAs(EncodedAsJSON, v)
-}
-
-// ByUnmarshallingXML returns a RespondDecorator that decodes a XML document returned in the
-// response Body into the value pointed to by v.
-func ByUnmarshallingXML(v interface{}) RespondDecorator {
-	return byUnmarshallingAs(EncodedAsXML, v)
-}
-
-func byUnmarshallingAs(encodedAs EncodedAs, v interface{}) RespondDecorator {
 	return func(r Responder) Responder {
 		return ResponderFunc(func(resp *http.Response) error {
 			err := r.Respond(resp)
 			if err == nil {
-				b, errDecode := CopyAndDecode(encodedAs, resp.Body, v)
-				if errDecode != nil {
-					err = fmt.Errorf("Error (%v) occurred decoding %s (\"%s\")", errDecode, encodedAs, b.String())
+				b, errInner := ioutil.ReadAll(resp.Body)
+				if errInner != nil {
+					err = fmt.Errorf("Error occurred reading http.Response#Body - Error = '%v'", errInner)
+				} else if len(strings.Trim(string(b), " ")) > 0 {
+					errInner = json.Unmarshal(b, v)
+					if errInner != nil {
+						err = fmt.Errorf("Error occurred unmarshalling JSON - Error = '%v' JSON = '%s'", errInner, string(b))
+					}
 				}
 			}
 			return err
 		})
 	}
+}
 
+// ByUnmarshallingXML returns a RespondDecorator that decodes a XML document returned in the
+// response Body into the value pointed to by v.
+func ByUnmarshallingXML(v interface{}) RespondDecorator {
+	return func(r Responder) Responder {
+		return ResponderFunc(func(resp *http.Response) error {
+			err := r.Respond(resp)
+			if err == nil {
+				b, errInner := ioutil.ReadAll(resp.Body)
+				if errInner != nil {
+					err = fmt.Errorf("Error occurred reading http.Response#Body - Error = '%v'", errInner)
+				} else {
+					errInner = xml.Unmarshal(b, v)
+					if errInner != nil {
+						err = fmt.Errorf("Error occurred unmarshalling Xml - Error = '%v' Xml = '%s'", errInner, string(b))
+					}
+				}
+			}
+			return err
+		})
+	}
 }
 
 // WithErrorUnlessStatusCode returns a RespondDecorator that emits an error unless the response
