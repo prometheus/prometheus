@@ -427,21 +427,11 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 			}
 
 			samples, err := sl.scraper.scrape(scrapeCtx, start)
-			if err == nil {
-				// Collect samples post-relabelling and label handling in a buffer.
-				buf := &bufferAppender{buffer: make(model.Samples, 0, len(samples))}
-				app := sl.mutator(buf)
-				for _, sample := range samples {
-					app.Append(sample)
-				}
-
-				// Send samples to storage.
-				sl.append(buf.buffer)
-			} else if errc != nil {
+			err = sl.processScrapeResult(samples, err, start)
+			if err != nil && errc != nil {
 				errc <- err
 			}
 
-			sl.report(start, time.Since(start), len(samples), err)
 			last = start
 		} else {
 			targetSkippedScrapes.WithLabelValues(interval.String()).Inc()
@@ -458,6 +448,23 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 func (sl *scrapeLoop) stop() {
 	sl.cancel()
 	<-sl.done
+}
+
+func (sl *scrapeLoop) processScrapeResult(samples model.Samples, scrapeErr error, start time.Time) error {
+	if scrapeErr == nil {
+		// Collect samples post-relabelling and label handling in a buffer.
+		buf := &bufferAppender{buffer: make(model.Samples, 0, len(samples))}
+		app := sl.mutator(buf)
+		for _, sample := range samples {
+			app.Append(sample)
+		}
+
+		// Send samples to storage.
+		sl.append(buf.buffer)
+	}
+
+	sl.report(start, time.Since(start), len(samples), scrapeErr)
+	return scrapeErr
 }
 
 func (sl *scrapeLoop) append(samples model.Samples) {

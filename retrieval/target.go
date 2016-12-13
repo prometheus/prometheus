@@ -284,7 +284,7 @@ type bufferAppender struct {
 	buffer model.Samples
 }
 
-func (app bufferAppender) Append(s *model.Sample) error {
+func (app *bufferAppender) Append(s *model.Sample) error {
 	app.buffer = append(app.buffer, s)
 	return nil
 }
