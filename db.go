@@ -89,11 +89,6 @@ func (db *DB) Close() error {
 	return nil
 }
 
-// Querier returns a new querier over the database.
-func (db *DB) Querier(start, end int64) Querier {
-	return nil
-}
-
 // Appender adds a batch of samples.
 type Appender interface {
 	// Add adds a sample pair to the appended batch.
@@ -199,7 +194,7 @@ type SeriesShard struct {
 	logger    log.Logger
 
 	mtx    sync.RWMutex
-	blocks *Block
+	blocks []*Block
 	head   *HeadBlock
 }
 
@@ -254,6 +249,12 @@ func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
 		}
 	}
 
+	return nil
+}
+
+// blocksForRange returns all blocks within the shard that may contain
+// data for the given time range.
+func (s *SeriesShard) blocksForRange(mint, maxt int64) (bs []Block) {
 	return nil
 }
 

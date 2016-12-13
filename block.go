@@ -1,10 +1,6 @@
 package tsdb
 
-import (
-	"io"
-	"sort"
-	"unsafe"
-)
+import "sort"
 
 const (
 	magicIndex  = 0xCAFECAFE
@@ -12,7 +8,9 @@ const (
 )
 
 // Block handles reads against a block of time series data within a time window.
-type Block interface{}
+type Block interface {
+	Querier(mint, maxt int64) Querier
+}
 
 const (
 	flagNone = 0
@@ -22,9 +20,6 @@ const (
 // A skiplist maps offsets to values. The values found in the data at an
 // offset are strictly greater than the indexed value.
 type skiplist interface {
-	// A skiplist can serialize itself into a writer.
-	io.WriterTo
-
 	// offset returns the offset to data containing values of x and lower.
 	offset(x int64) (uint32, bool)
 }
@@ -47,17 +42,4 @@ func (sl simpleSkiplist) offset(x int64) (uint32, bool) {
 		return 0, false
 	}
 	return sl[i-1].offset, true
-}
-
-func (sl simpleSkiplist) WriteTo(w io.Writer) (n int64, err error) {
-	for _, s := range sl {
-		b := ((*[unsafe.Sizeof(skiplistPair{})]byte)(unsafe.Pointer(&s)))[:]
-
-		m, err := w.Write(b)
-		if err != nil {
-			return n + int64(m), err
-		}
-		n += int64(m)
-	}
-	return n, err
 }

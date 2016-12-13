@@ -83,15 +83,29 @@ func (p *memPostings) add(id uint32, terms ...term) {
 
 // Iterator provides iterative access over a postings list.
 type Iterator interface {
-	// Next advances the iterator and returns true if another
-	// value was found.
+	// Next advances the iterator and returns true if another value was found.
 	Next() bool
+
 	// Seek advances the iterator to value v or greater and returns
 	// true if a value was found.
 	Seek(v uint32) bool
+
 	// Value returns the value at the current iterator position.
 	Value() uint32
+
+	// Err returns the last error of the iterator.
+	Err() error
 }
+
+// errIterator is an empty iterator that always errors.
+type errIterator struct {
+	err error
+}
+
+func (e errIterator) Next() bool       { return false }
+func (e errIterator) Seek(uint32) bool { return false }
+func (e errIterator) Value() uint32    { return 0 }
+func (e errIterator) Err() error       { return e.err }
 
 // Intersect returns a new iterator over the intersection of the
 // input iterators.
@@ -123,6 +137,10 @@ func (it *intersectIterator) Seek(id uint32) bool {
 	return false
 }
 
+func (it *intersectIterator) Err() error {
+	return nil
+}
+
 // Merge returns a new iterator over the union of the input iterators.
 func Merge(its ...Iterator) Iterator {
 	if len(its) == 0 {
@@ -152,6 +170,10 @@ func (it *mergeIterator) Seek(id uint32) bool {
 	return false
 }
 
+func (it *mergeIterator) Err() error {
+	return nil
+}
+
 // listIterator implements the Iterator interface over a plain list.
 type listIterator struct {
 	list []uint32
@@ -173,6 +195,10 @@ func (it *listIterator) Seek(x uint32) bool {
 		return it.list[i+it.idx] >= x
 	})
 	return it.idx < len(it.list)
+}
+
+func (it *listIterator) Err() error {
+	return nil
 }
 
 type stringset map[string]struct{}

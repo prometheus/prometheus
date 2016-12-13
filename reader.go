@@ -292,13 +292,14 @@ type series struct {
 	chunk   func(ref uint32) (chunks.Chunk, error)
 }
 
-func (s *series) Labels() (Labels, error) {
-	return s.labels, nil
+func (s *series) Labels() Labels {
+	return s.labels
 }
 
-func (s *series) Iterator() (SeriesIterator, error) {
-	// dereference skiplist and construct from chunk iterators.
-	return nil, nil
+func (s *series) Iterator() SeriesIterator {
+	var cs []chunks.Chunk
+
+	return newChunkSeriesIterator(cs)
 }
 
 type stringTuples struct {
