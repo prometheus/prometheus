@@ -33,9 +33,10 @@ import (
 )
 
 const (
-	scrapeHealthMetricName   = "up"
-	scrapeDurationMetricName = "scrape_duration_seconds"
-	scrapeSamplesMetricName  = "scrape_samples_scraped"
+	scrapeHealthMetricName       = "up"
+	scrapeDurationMetricName     = "scrape_duration_seconds"
+	scrapeSamplesMetricName      = "scrape_samples_scraped"
+	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling"
 )
 
 var (
@@ -451,9 +452,9 @@ func (sl *scrapeLoop) stop() {
 }
 
 func (sl *scrapeLoop) processScrapeResult(samples model.Samples, scrapeErr error, start time.Time) error {
+	// Collect samples post-relabelling and label handling in a buffer.
+	buf := &bufferAppender{buffer: make(model.Samples, 0, len(samples))}
 	if scrapeErr == nil {
-		// Collect samples post-relabelling and label handling in a buffer.
-		buf := &bufferAppender{buffer: make(model.Samples, 0, len(samples))}
 		app := sl.mutator(buf)
 		for _, sample := range samples {
 			app.Append(sample)
@@ -463,7 +464,7 @@ func (sl *scrapeLoop) processScrapeResult(samples model.Samples, scrapeErr error
 		sl.append(buf.buffer)
 	}
 
-	sl.report(start, time.Since(start), len(samples), scrapeErr)
+	sl.report(start, time.Since(start), len(samples), len(buf.buffer), scrapeErr)
 	return scrapeErr
 }
 
@@ -495,7 +496,7 @@ func (sl *scrapeLoop) append(samples model.Samples) {
 	}
 }
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples int, err error) {
+func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples, postRelabelSamples int, err error) {
 	sl.scraper.report(start, duration, err)
 
 	ts := model.TimeFromUnixNano(start.UnixNano())
@@ -526,6 +527,13 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 		Timestamp: ts,
 		Value:     model.SampleValue(scrapedSamples),
 	}
+	postRelabelSample := &model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: samplesPostRelabelMetricName,
+		},
+		Timestamp: ts,
+		Value:     model.SampleValue(postRelabelSamples),
+	}
 
 	if err := sl.reportAppender.Append(healthSample); err != nil {
 		log.With("sample", healthSample).With("error", err).Warn("Scrape health sample discarded")
@@ -535,5 +543,8 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 	}
 	if err := sl.reportAppender.Append(countSample); err != nil {
 		log.With("sample", durationSample).With("error", err).Warn("Scrape sample count sample discarded")
+	}
+	if err := sl.reportAppender.Append(postRelabelSample); err != nil {
+		log.With("sample", durationSample).With("error", err).Warn("Scrape sample count post-relabelling sample discarded")
 	}
 }
