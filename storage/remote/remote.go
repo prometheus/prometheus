@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
+	"github.com/prometheus/prometheus/storage/remote/warp10"
 )
 
 // Storage collects multiple remote storage queues.
