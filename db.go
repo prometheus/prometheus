@@ -362,13 +362,6 @@ func (cd *chunkDesc) append(ts int64, v float64) (err error) {
 	return nil
 }
 
-// LabelRefs contains a reference to a label set that can be resolved
-// against a Querier.
-type LabelRefs struct {
-	block   uint64
-	offsets []uint32
-}
-
 // Label is a key/value pair of strings.
 type Label struct {
 	Name, Value string
