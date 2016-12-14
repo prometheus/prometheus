@@ -1100,6 +1100,10 @@ const (
 	RelabelHashMod RelabelAction = "hashmod"
 	// RelabelLabelMap copies labels to other labelnames based on a regex.
 	RelabelLabelMap RelabelAction = "labelmap"
+	// RelabelLabelDrop drops any label matching the regex.
+	RelabelLabelDrop RelabelAction = "labeldrop"
+	// RelabelLabelKeep drops any label not matching the regex.
+	RelabelLabelKeep RelabelAction = "labelkeep"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1109,7 +1113,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := RelabelAction(strings.ToLower(s)); act {
-	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod, RelabelLabelMap:
+	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod, RelabelLabelMap, RelabelLabelDrop, RelabelLabelKeep:
 		*a = act
 		return nil
 	}
