@@ -95,6 +95,10 @@ scrape_configs:
     action:        keep
   - action:        labelmap
     regex:         1
+  - action:        labeldrop
+    regex:         d
+  - action:        labelkeep
+    regex:         k
 
   metric_relabel_configs:
   - source_labels: [__name__]

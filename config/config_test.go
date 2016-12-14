@@ -193,6 +193,18 @@ var expectedConf = &Config{
 					Replacement: DefaultRelabelConfig.Replacement,
 					Action:      RelabelLabelMap,
 				},
+				{
+					Regex:       MustNewRegexp("d"),
+					Separator:   ";",
+					Replacement: DefaultRelabelConfig.Replacement,
+					Action:      RelabelLabelDrop,
+				},
+				{
+					Regex:       MustNewRegexp("k"),
+					Separator:   ";",
+					Replacement: DefaultRelabelConfig.Replacement,
+					Action:      RelabelLabelKeep,
+				},
 			},
 			MetricRelabelConfigs: []*RelabelConfig{
 				{
