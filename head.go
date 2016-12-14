@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/fabxc/tsdb/chunks"
@@ -25,6 +26,66 @@ func NewHeadBlock(baseTime int64) *HeadBlock {
 		index:         newMemIndex(),
 		baseTimestamp: baseTime,
 	}
+}
+
+// Querier returns a new querier over the head block.
+func (h *HeadBlock) Querier(mint, maxt int64) Querier {
+	return newBlockQuerier(h, h, mint, maxt)
+}
+
+func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
+	c, ok := h.index.forward[ref]
+	if !ok {
+		return nil, errNotFound
+	}
+	return c.chunk, nil
+}
+
+// Stats returns statisitics about the indexed data.
+func (h *HeadBlock) Stats() (*BlockStats, error) {
+	return nil, nil
+}
+
+// LabelValues returns the possible label values
+func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
+	if len(names) != 1 {
+		return nil, errInvalidSize
+	}
+	var sl []string
+
+	for s := range h.index.values[names[0]] {
+		sl = append(sl, s)
+	}
+	sort.Strings(sl)
+
+	t := &stringTuples{
+		l: len(names),
+		s: sl,
+	}
+	return t, nil
+}
+
+// Postings returns the postings list iterator for the label pair.
+func (h *HeadBlock) Postings(name, value string) (Iterator, error) {
+	return h.index.Postings(term{name, value}), nil
+}
+
+// Series returns the series for the given reference.
+func (h *HeadBlock) Series(ref uint32) (Series, error) {
+	cd, ok := h.index.forward[ref]
+	if !ok {
+		return nil, errNotFound
+	}
+	s := &series{
+		labels: cd.lset,
+		offsets: []ChunkOffset{
+			{Value: h.baseTimestamp, Offset: 0},
+		},
+		chunk: func(ref uint32) (chunks.Chunk, error) {
+			return cd.chunk, nil
+		},
+	}
+	return s, nil
 }
 
 // get retrieves the chunk with the hash and label set and creates

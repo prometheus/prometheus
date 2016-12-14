@@ -5,11 +5,6 @@ import (
 	"strings"
 )
 
-// Index provides read access to an inverted index.
-type Index interface {
-	Postings(ref uint32) Iterator
-}
-
 type memIndex struct {
 	lastID uint32
 
@@ -111,7 +106,7 @@ func (e errIterator) Err() error       { return e.err }
 // input iterators.
 func Intersect(its ...Iterator) Iterator {
 	if len(its) == 0 {
-		return nil
+		return errIterator{err: nil}
 	}
 	a := its[0]
 

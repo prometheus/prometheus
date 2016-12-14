@@ -12,7 +12,7 @@ import (
 
 	"github.com/cespare/xxhash"
 	"github.com/fabxc/tsdb/chunks"
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
 )
 
 // DefaultOptions used for the DB. They are sane for setups using
@@ -37,7 +37,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	seriesShardShift = 3
+	seriesShardShift = 2
 	numSeriesShards  = 1 << seriesShardShift
 	maxChunkSize     = 1024
 )
@@ -49,6 +49,10 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	}
 	if err := os.MkdirAll(path, 0777); err != nil {
 		return nil, err
+	}
+	if l == nil {
+		l = log.NewLogfmtLogger(os.Stdout)
+		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	}
 
 	c := &DB{
@@ -62,7 +66,8 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	// for the bitshift-modulo when finding the right shard.
 	for i := 0; i < numSeriesShards; i++ {
 		path := filepath.Join(path, fmt.Sprintf("%d", i))
-		c.shards = append(c.shards, NewSeriesShard(path, l.With("shard", i)))
+		l := log.NewContext(l).With("shard", i)
+		c.shards = append(c.shards, NewSeriesShard(path, l))
 	}
 
 	// TODO(fabxc): run background compaction + GC.
@@ -170,7 +175,8 @@ func (db *DB) AppendVector(ts int64, v *Vector) error {
 	return nil
 }
 
-func (db *DB) appendSingle(lset Labels, ts int64, v float64) error {
+func (db *DB) AppendSingle(lset Labels, ts int64, v float64) error {
+	sort.Sort(lset)
 	h := lset.Hash()
 	s := uint16(h >> (64 - seriesShardShift))
 
@@ -190,7 +196,6 @@ const sep = '\xff'
 type SeriesShard struct {
 	path      string
 	persistCh chan struct{}
-	done      chan struct{}
 	logger    log.Logger
 
 	mtx    sync.RWMutex
@@ -203,7 +208,6 @@ func NewSeriesShard(path string, logger log.Logger) *SeriesShard {
 	s := &SeriesShard{
 		path:      path,
 		persistCh: make(chan struct{}, 1),
-		done:      make(chan struct{}),
 		logger:    logger,
 		// TODO(fabxc): restore from checkpoint.
 		// TODO(fabxc): provide access to persisted blocks.
@@ -218,7 +222,6 @@ func NewSeriesShard(path string, logger log.Logger) *SeriesShard {
 
 // Close the series shard.
 func (s *SeriesShard) Close() error {
-	close(s.done)
 	return nil
 }
 
@@ -255,7 +258,7 @@ func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
 // blocksForRange returns all blocks within the shard that may contain
 // data for the given time range.
 func (s *SeriesShard) blocksForRange(mint, maxt int64) (bs []Block) {
-	return nil
+	return []Block{s.head}
 }
 
 // TODO(fabxc): make configurable.
@@ -325,10 +328,7 @@ func (s *SeriesShard) persist() error {
 
 	sz := fmt.Sprintf("%.2fMiB", float64(sw.Size()+iw.Size())/1024/1024)
 
-	s.logger.With("size", sz).
-		With("samples", head.samples).
-		With("chunks", head.stats().chunks).
-		Debug("persisted head")
+	s.logger.Log("size", sz, "samples", head.samples, "chunks", head.stats().chunks, "msg", "persisted head")
 
 	return nil
 }

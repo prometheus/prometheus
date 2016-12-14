@@ -54,7 +54,7 @@ type IndexReader interface {
 	// LabelValues returns the possible label values
 	LabelValues(names ...string) (StringTuples, error)
 
-	// Postings returns the postings list iteartor for the label pair.
+	// Postings returns the postings list iterator for the label pair.
 	Postings(name, value string) (Iterator, error)
 
 	// Series returns the series for the given reference.
@@ -83,6 +83,7 @@ type indexReader struct {
 var (
 	errInvalidSize = fmt.Errorf("invalid size")
 	errInvalidFlag = fmt.Errorf("invalid flag")
+	errNotFound    = fmt.Errorf("not found")
 )
 
 func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
@@ -298,6 +299,14 @@ func (s *series) Labels() Labels {
 
 func (s *series) Iterator() SeriesIterator {
 	var cs []chunks.Chunk
+
+	for _, co := range s.offsets {
+		c, err := s.chunk(co.Offset)
+		if err != nil {
+			panic(err) // TODO(fabxc): add error series iterator.
+		}
+		cs = append(cs, c)
+	}
 
 	return newChunkSeriesIterator(cs)
 }

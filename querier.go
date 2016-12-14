@@ -76,13 +76,6 @@ func (db *DB) Querier(mint, maxt int64) Querier {
 	return q
 }
 
-// SeriesSet contains a set of series.
-type SeriesSet interface {
-	Next() bool
-	Series() Series
-	Err() error
-}
-
 func (q *querier) Select(ms ...Matcher) SeriesSet {
 	// We gather the non-overlapping series from every shard and simply
 	// return their union.
@@ -90,6 +83,9 @@ func (q *querier) Select(ms ...Matcher) SeriesSet {
 
 	for _, s := range q.shards {
 		r.sets = append(r.sets, s.Select(ms...))
+	}
+	if len(r.sets) == 0 {
+		return nopSeriesSet{}
 	}
 	return r
 }
@@ -127,6 +123,123 @@ func (s *SeriesShard) Querier(mint, maxt int64) Querier {
 	return sq
 }
 
+func (q *shardQuerier) LabelValues(string) ([]string, error) {
+	return nil, nil
+}
+
+func (q *shardQuerier) LabelValuesFor(string, Label) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (q *shardQuerier) Close() error {
+	return nil
+}
+
+// blockQuerier provides querying access to a single block database.
+type blockQuerier struct {
+	index  IndexReader
+	series SeriesReader
+
+	mint, maxt int64
+}
+
+func newBlockQuerier(ix IndexReader, s SeriesReader, mint, maxt int64) *blockQuerier {
+	return &blockQuerier{
+		mint:   mint,
+		maxt:   maxt,
+		index:  ix,
+		series: s,
+	}
+}
+
+func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
+	var its []Iterator
+	for _, m := range ms {
+		its = append(its, q.selectSingle(m))
+	}
+
+	// TODO(fabxc): pass down time range so the series iterator
+	// can be instantiated with it?
+	return &blockSeriesSet{
+		index: q.index,
+		it:    Intersect(its...),
+	}
+}
+
+func (q *blockQuerier) selectSingle(m Matcher) Iterator {
+	tpls, err := q.index.LabelValues(m.Name())
+	if err != nil {
+		return errIterator{err: err}
+	}
+	// TODO(fabxc): use interface upgrading to provide fast solution
+	// for equality and prefix matches. Tuples are lexicographically sorted.
+	var res []string
+
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
+		if err != nil {
+			return errIterator{err: err}
+		}
+		if m.Match(vals[0]) {
+			res = append(res, vals[0])
+		}
+	}
+
+	if len(res) == 0 {
+		return errIterator{err: nil}
+	}
+
+	var rit []Iterator
+
+	for _, v := range res {
+		it, err := q.index.Postings(m.Name(), v)
+		if err != nil {
+			return errIterator{err: err}
+		}
+		rit = append(rit, it)
+	}
+
+	return Intersect(rit...)
+}
+
+func (q *blockQuerier) LabelValues(name string) ([]string, error) {
+	tpls, err := q.index.LabelValues(name)
+	if err != nil {
+		return nil, err
+	}
+	res := make([]string, 0, tpls.Len())
+
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, vals[0])
+	}
+	return nil, nil
+}
+
+func (q *blockQuerier) LabelValuesFor(string, Label) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (q *blockQuerier) Close() error {
+	return nil
+}
+
+// SeriesSet contains a set of series.
+type SeriesSet interface {
+	Next() bool
+	Series() Series
+	Err() error
+}
+
+type nopSeriesSet struct{}
+
+func (nopSeriesSet) Next() bool     { return false }
+func (nopSeriesSet) Series() Series { return nil }
+func (nopSeriesSet) Err() error     { return nil }
+
 type mergedSeriesSet struct {
 	sets []SeriesSet
 
@@ -143,12 +256,30 @@ func (s *mergedSeriesSet) Next() bool {
 	if s.sets[s.cur].Next() {
 		return true
 	}
-	s.cur++
 
-	if s.cur == len(s.sets) {
+	if s.cur == len(s.sets)-1 {
 		return false
 	}
+	s.cur++
+
 	return s.Next()
+}
+
+func (q *shardQuerier) Select(ms ...Matcher) SeriesSet {
+	// Sets from different blocks have no time overlap. The reference numbers
+	// they emit point to series sorted in lexicographic order.
+	// We can fully connect partial series by simply comparing with the previous
+	// label set.
+	if len(q.blocks) == 0 {
+		return nopSeriesSet{}
+	}
+	r := q.blocks[0].Select(ms...)
+
+	for _, s := range q.blocks[1:] {
+		r = &shardSeriesSet{a: r, b: s.Select(ms...)}
+	}
+
+	return r
 }
 
 type shardSeriesSet struct {
@@ -243,123 +374,6 @@ func (s *shardSeriesSet) Next() bool {
 		s.advanceB()
 	}
 	return true
-}
-
-func (q *shardQuerier) Select(ms ...Matcher) SeriesSet {
-	// Sets from different blocks have no time overlap. The reference numbers
-	// they emit point to series sorted in lexicographic order.
-	// We can fully connect partial series by simply comparing with the previous
-	// label set.
-	if len(q.blocks) == 0 {
-		return nil
-	}
-	r := q.blocks[0].Select(ms...)
-
-	for _, s := range q.blocks[1:] {
-		r = &shardSeriesSet{a: r, b: s.Select(ms...)}
-	}
-
-	return r
-}
-
-func (q *shardQuerier) LabelValues(string) ([]string, error) {
-	return nil, nil
-}
-
-func (q *shardQuerier) LabelValuesFor(string, Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (q *shardQuerier) Close() error {
-	return nil
-}
-
-// blockQuerier provides querying access to a single block database.
-type blockQuerier struct {
-	index  IndexReader
-	series SeriesReader
-
-	mint, maxt int64
-}
-
-func newBlockQuerier(ix IndexReader, s SeriesReader, mint, maxt int64) *blockQuerier {
-	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  ix,
-		series: s,
-	}
-}
-
-func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
-	var its []Iterator
-	for _, m := range ms {
-		its = append(its, q.selectSingle(m))
-	}
-
-	// TODO(fabxc): pass down time range so the series iterator
-	// can be instantiated with it?
-	return &blockSeriesSet{
-		index: q.index,
-		it:    Intersect(its...),
-	}
-}
-
-func (q *blockQuerier) selectSingle(m Matcher) Iterator {
-	tpls, err := q.index.LabelValues(m.Name())
-	if err != nil {
-		return errIterator{err: err}
-	}
-	// TODO(fabxc): use interface upgrading to provide fast solution
-	// for equality and prefix matches. Tuples are lexicographically sorted.
-	var res []string
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return errIterator{err: err}
-		}
-		if m.Match(vals[0]) {
-			res = append(res, vals[0])
-		}
-	}
-
-	var rit Iterator
-
-	for _, v := range res {
-		it, err := q.index.Postings(m.Name(), v)
-		if err != nil {
-			return errIterator{err: err}
-		}
-		rit = Intersect(rit, it)
-	}
-
-	return rit
-}
-
-func (q *blockQuerier) LabelValues(name string) ([]string, error) {
-	tpls, err := q.index.LabelValues(name)
-	if err != nil {
-		return nil, err
-	}
-	res := make([]string, 0, tpls.Len())
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, vals[0])
-	}
-	return nil, nil
-}
-
-func (q *blockQuerier) LabelValuesFor(string, Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (q *blockQuerier) Close() error {
-	return nil
 }
 
 // blockSeriesSet is a set of series from an inverted index query.
@@ -500,7 +514,7 @@ func (it *chunkSeriesIterator) Err() error {
 	return it.cur.Err()
 }
 
-type bufferedSeriesIterator struct {
+type BufferedSeriesIterator struct {
 	// TODO(fabxc): time-based look back buffer for time-aggregating
 	// queries such as rate. It should allow us to re-use an iterator
 	// within a range query while calculating time-aggregates at any point.
@@ -509,10 +523,11 @@ type bufferedSeriesIterator struct {
 	// the simpler interface.
 	//
 	// Consider making this the main external interface.
-	SeriesIterator
+	it SeriesIterator
+	n  int
 
-	buf []sample // lookback buffer
-	i   int      // current head
+	buf  []sample // lookback buffer
+	last sample
 }
 
 type sample struct {
@@ -520,6 +535,44 @@ type sample struct {
 	v float64
 }
 
-func (b *bufferedSeriesIterator) PeekBack(i int) (t int64, v float64, ok bool) {
-	return 0, 0, false
+func NewBufferedSeriesIterator(it SeriesIterator) *BufferedSeriesIterator {
+	return &BufferedSeriesIterator{
+		it: it,
+	}
+}
+
+func (b *BufferedSeriesIterator) PeekBack() (t int64, v float64, ok bool) {
+	return b.last.t, b.last.v, true
+}
+
+func (b *BufferedSeriesIterator) Seek(t int64) bool {
+	t0 := t - 20000 // TODO(fabxc): hard-coded 20s lookback, make configurable.
+
+	ok := b.it.Seek(t0)
+	if !ok {
+		return false
+	}
+	b.last.t, b.last.v = b.it.Values()
+
+	// TODO(fabxc): skip to relevant chunk.
+	for b.Next() {
+		if ts, _ := b.Values(); ts >= t {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *BufferedSeriesIterator) Next() bool {
+	b.last.t, b.last.v = b.it.Values()
+
+	return b.it.Next()
+}
+
+func (b *BufferedSeriesIterator) Values() (int64, float64) {
+	return b.it.Values()
+}
+
+func (b *BufferedSeriesIterator) Err() error {
+	return b.it.Err()
 }
