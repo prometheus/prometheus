@@ -55,7 +55,7 @@ type IndexReader interface {
 	LabelValues(names ...string) (StringTuples, error)
 
 	// Postings returns the postings list iterator for the label pair.
-	Postings(name, value string) (Iterator, error)
+	Postings(name, value string) (Postings, error)
 
 	// Series returns the series for the given reference.
 	Series(ref uint32) (Series, error)

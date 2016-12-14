@@ -27,7 +27,7 @@ func (ix *memIndex) numSeries() int {
 	return len(ix.forward)
 }
 
-func (ix *memIndex) Postings(t term) Iterator {
+func (ix *memIndex) Postings(t term) Postings {
 	return ix.postings.get(t)
 }
 
@@ -64,7 +64,7 @@ type memPostings struct {
 }
 
 // Postings returns an iterator over the postings list for s.
-func (p *memPostings) get(t term) Iterator {
+func (p *memPostings) get(t term) Postings {
 	return &listIterator{list: p.m[t], idx: -1}
 }
 
@@ -76,8 +76,8 @@ func (p *memPostings) add(id uint32, terms ...term) {
 	}
 }
 
-// Iterator provides iterative access over a postings list.
-type Iterator interface {
+// Postings provides iterative access over a postings list.
+type Postings interface {
 	// Next advances the iterator and returns true if another value was found.
 	Next() bool
 
@@ -92,80 +92,80 @@ type Iterator interface {
 	Err() error
 }
 
-// errIterator is an empty iterator that always errors.
-type errIterator struct {
+// errPostings is an empty iterator that always errors.
+type errPostings struct {
 	err error
 }
 
-func (e errIterator) Next() bool       { return false }
-func (e errIterator) Seek(uint32) bool { return false }
-func (e errIterator) Value() uint32    { return 0 }
-func (e errIterator) Err() error       { return e.err }
+func (e errPostings) Next() bool       { return false }
+func (e errPostings) Seek(uint32) bool { return false }
+func (e errPostings) Value() uint32    { return 0 }
+func (e errPostings) Err() error       { return e.err }
 
-// Intersect returns a new iterator over the intersection of the
-// input iterators.
-func Intersect(its ...Iterator) Iterator {
+// Intersect returns a new postings list over the intersection of the
+// input postings.
+func Intersect(its ...Postings) Postings {
 	if len(its) == 0 {
-		return errIterator{err: nil}
+		return errPostings{err: nil}
 	}
 	a := its[0]
 
 	for _, b := range its[1:] {
-		a = &intersectIterator{a: a, b: b}
+		a = &intersectPostings{a: a, b: b}
 	}
 	return a
 }
 
-type intersectIterator struct {
-	a, b Iterator
+type intersectPostings struct {
+	a, b Postings
 }
 
-func (it *intersectIterator) Value() uint32 {
+func (it *intersectPostings) Value() uint32 {
 	return 0
 }
 
-func (it *intersectIterator) Next() bool {
+func (it *intersectPostings) Next() bool {
 	return false
 }
 
-func (it *intersectIterator) Seek(id uint32) bool {
+func (it *intersectPostings) Seek(id uint32) bool {
 	return false
 }
 
-func (it *intersectIterator) Err() error {
+func (it *intersectPostings) Err() error {
 	return nil
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(its ...Iterator) Iterator {
+func Merge(its ...Postings) Postings {
 	if len(its) == 0 {
 		return nil
 	}
 	a := its[0]
 
 	for _, b := range its[1:] {
-		a = &mergeIterator{a: a, b: b}
+		a = &mergePostings{a: a, b: b}
 	}
 	return a
 }
 
-type mergeIterator struct {
-	a, b Iterator
+type mergePostings struct {
+	a, b Postings
 }
 
-func (it *mergeIterator) Value() uint32 {
+func (it *mergePostings) Value() uint32 {
 	return 0
 }
 
-func (it *mergeIterator) Next() bool {
+func (it *mergePostings) Next() bool {
 	return false
 }
 
-func (it *mergeIterator) Seek(id uint32) bool {
+func (it *mergePostings) Seek(id uint32) bool {
 	return false
 }
 
-func (it *mergeIterator) Err() error {
+func (it *mergePostings) Err() error {
 	return nil
 }
 

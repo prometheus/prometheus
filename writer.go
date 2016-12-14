@@ -165,7 +165,7 @@ type IndexWriter interface {
 	WriteLabelIndex(names []string, values []string) error
 
 	// WritePostings writes a postings list for a single label pair.
-	WritePostings(name, value string, it Iterator) error
+	WritePostings(name, value string, it Postings) error
 
 	// Size returns the size of the data written so far.
 	Size() int64
@@ -365,7 +365,7 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	})
 }
 
-func (w *indexWriter) WritePostings(name, value string, it Iterator) error {
+func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	key := name + string(sep) + value
 
 	w.postings = append(w.postings, hashEntry{

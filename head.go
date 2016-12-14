@@ -66,7 +66,7 @@ func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
 }
 
 // Postings returns the postings list iterator for the label pair.
-func (h *HeadBlock) Postings(name, value string) (Iterator, error) {
+func (h *HeadBlock) Postings(name, value string) (Postings, error) {
 	return h.index.Postings(term{name, value}), nil
 }
 

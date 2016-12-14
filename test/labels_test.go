@@ -25,6 +25,8 @@ func BenchmarkLabelMapAccess(b *testing.B) {
 			}
 		})
 	}
+
+	_ = v
 }
 
 func BenchmarkLabelSetAccess(b *testing.B) {
@@ -47,4 +49,6 @@ func BenchmarkLabelSetAccess(b *testing.B) {
 			}
 		})
 	}
+
+	_ = v
 }

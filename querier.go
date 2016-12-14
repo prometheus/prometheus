@@ -153,7 +153,7 @@ func newBlockQuerier(ix IndexReader, s SeriesReader, mint, maxt int64) *blockQue
 }
 
 func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
-	var its []Iterator
+	var its []Postings
 	for _, m := range ms {
 		its = append(its, q.selectSingle(m))
 	}
@@ -166,10 +166,10 @@ func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
 	}
 }
 
-func (q *blockQuerier) selectSingle(m Matcher) Iterator {
+func (q *blockQuerier) selectSingle(m Matcher) Postings {
 	tpls, err := q.index.LabelValues(m.Name())
 	if err != nil {
-		return errIterator{err: err}
+		return errPostings{err: err}
 	}
 	// TODO(fabxc): use interface upgrading to provide fast solution
 	// for equality and prefix matches. Tuples are lexicographically sorted.
@@ -178,7 +178,7 @@ func (q *blockQuerier) selectSingle(m Matcher) Iterator {
 	for i := 0; i < tpls.Len(); i++ {
 		vals, err := tpls.At(i)
 		if err != nil {
-			return errIterator{err: err}
+			return errPostings{err: err}
 		}
 		if m.Match(vals[0]) {
 			res = append(res, vals[0])
@@ -186,15 +186,15 @@ func (q *blockQuerier) selectSingle(m Matcher) Iterator {
 	}
 
 	if len(res) == 0 {
-		return errIterator{err: nil}
+		return errPostings{err: nil}
 	}
 
-	var rit []Iterator
+	var rit []Postings
 
 	for _, v := range res {
 		it, err := q.index.Postings(m.Name(), v)
 		if err != nil {
-			return errIterator{err: err}
+			return errPostings{err: err}
 		}
 		rit = append(rit, it)
 	}
@@ -379,7 +379,7 @@ func (s *shardSeriesSet) Next() bool {
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
 	index IndexReader
-	it    Iterator
+	it    Postings
 
 	err error
 	cur Series
@@ -655,7 +655,7 @@ func (r *sampleRing) last() (int64, float64, bool) {
 }
 
 func (r *sampleRing) samples() []sample {
-	res := make([]sample, 0, r.l)
+	res := make([]sample, r.l)
 
 	var k = r.f + r.l
 	var j int
@@ -664,12 +664,8 @@ func (r *sampleRing) samples() []sample {
 		j = r.l - k + r.f
 	}
 
-	for _, s := range r.buf[r.f:k] {
-		res = append(res, s)
-	}
-	for _, s := range r.buf[:j] {
-		res = append(res, s)
-	}
+	n := copy(res, r.buf[r.f:k])
+	copy(res[n:], r.buf[:j])
 
 	return res
 }
