@@ -182,7 +182,7 @@ func compareLabels(a, b Labels) int {
 		}
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(b) - len(a)
+	return len(a) - len(b)
 }
 
 func (s *shardSeriesSet) Series() Series {
