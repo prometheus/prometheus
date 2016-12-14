@@ -938,6 +938,9 @@ func (s *MemorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 			// while (which is confusing as it makes the series
 			// appear as archived or purged).
 			cds, err = s.loadChunkDescs(fp, 0)
+			if err == nil && len(cds) == 0 {
+				err = fmt.Errorf("unarchived fingerprint %v (metric %v) has no chunks on disk", fp, m)
+			}
 			if err != nil {
 				s.quarantineSeries(fp, m, err)
 				return nil, err
