@@ -541,9 +541,14 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 
 	t0 := t - b.buf.delta
 	// If the delta would cause us to seek backwards, preserve the buffer
-	// and just continue regular advancment.
+	// and just continue regular advancment while filling the buffer on the way.
 	if t0 <= tcur {
-		return b.Next()
+		for b.Next() {
+			if tcur, _ = b.it.Values(); tcur >= t {
+				return true
+			}
+		}
+		return false
 	}
 
 	b.buf.reset()
