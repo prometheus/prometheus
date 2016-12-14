@@ -514,47 +514,46 @@ func (it *chunkSeriesIterator) Err() error {
 	return it.cur.Err()
 }
 
+// BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
-	// TODO(fabxc): time-based look back buffer for time-aggregating
-	// queries such as rate. It should allow us to re-use an iterator
-	// within a range query while calculating time-aggregates at any point.
-	//
-	// It also allows looking up/seeking at-or-before without modifying
-	// the simpler interface.
-	//
-	// Consider making this the main external interface.
-	it SeriesIterator
-	n  int
-
-	buf  []sample // lookback buffer
-	last sample
+	it  SeriesIterator
+	buf *sampleRing
 }
 
-type sample struct {
-	t int64
-	v float64
-}
-
-func NewBufferedSeriesIterator(it SeriesIterator) *BufferedSeriesIterator {
+// NewBuffer returns a new iterator that buffers the values within the time range
+// of the current element and the duration of delta before.
+func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	return &BufferedSeriesIterator{
-		it: it,
+		it:  it,
+		buf: newSampleRing(delta, 16),
 	}
 }
 
+// PeekBack returns the previous element of the iterator. If there is none buffered,
+// ok is false.
 func (b *BufferedSeriesIterator) PeekBack() (t int64, v float64, ok bool) {
-	return b.last.t, b.last.v, true
+	return b.buf.last()
 }
 
+// Seek advances the iterator to the element at time t or greater.
 func (b *BufferedSeriesIterator) Seek(t int64) bool {
-	t0 := t - 20000 // TODO(fabxc): hard-coded 20s lookback, make configurable.
+	tcur, _ := b.it.Values()
+
+	t0 := t - b.buf.delta
+	// If the delta would cause us to seek backwards, preserve the buffer
+	// and just continue regular advancment.
+	if t0 <= tcur {
+		return b.Next()
+	}
+
+	b.buf.reset()
 
 	ok := b.it.Seek(t0)
 	if !ok {
 		return false
 	}
-	b.last.t, b.last.v = b.it.Values()
+	b.buf.add(b.it.Values())
 
-	// TODO(fabxc): skip to relevant chunk.
 	for b.Next() {
 		if ts, _ := b.Values(); ts >= t {
 			return true
@@ -563,16 +562,109 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	return false
 }
 
+// Next advances the iterator to the next element.
 func (b *BufferedSeriesIterator) Next() bool {
-	b.last.t, b.last.v = b.it.Values()
+	// Add current element to buffer before advancing.
+	b.buf.add(b.it.Values())
 
 	return b.it.Next()
 }
 
+// Values returns the current element of the iterator.
 func (b *BufferedSeriesIterator) Values() (int64, float64) {
 	return b.it.Values()
 }
 
+// Err returns the last encountered error.
 func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
+}
+
+type sample struct {
+	t int64
+	v float64
+}
+
+type sampleRing struct {
+	delta int64
+
+	buf []sample // lookback buffer
+	i   int      // position of most recent element in ring buffer
+	f   int      // position of first element in ring buffer
+	l   int      // number of elements in buffer
+}
+
+func newSampleRing(delta int64, sz int) *sampleRing {
+	r := &sampleRing{delta: delta, buf: make([]sample, sz)}
+	r.reset()
+
+	return r
+}
+
+func (r *sampleRing) reset() {
+	r.l = 0
+	r.i = -1
+	r.f = 0
+}
+
+// add adds a sample to the ring buffer and frees all samples that fall
+// out of the delta range.
+func (r *sampleRing) add(t int64, v float64) {
+	l := len(r.buf)
+	// Grow the ring buffer if it fits no more elements.
+	if l == r.l {
+		buf := make([]sample, 2*l)
+		copy(buf[l+r.f:], r.buf[r.f:])
+		copy(buf, r.buf[:r.f])
+
+		r.buf = buf
+		r.i = r.f
+		r.f += l
+	} else {
+		r.i++
+		if r.i >= l {
+			r.i -= l
+		}
+	}
+
+	r.buf[r.i] = sample{t: t, v: v}
+	r.l++
+
+	// Free head of the buffer of samples that just fell out of the range.
+	for r.buf[r.f].t < t-r.delta {
+		r.f++
+		if r.f >= l {
+			r.f -= l
+		}
+		r.l--
+	}
+}
+
+// last returns the most recent element added to the ring.
+func (r *sampleRing) last() (int64, float64, bool) {
+	if r.l == 0 {
+		return 0, 0, false
+	}
+	s := r.buf[r.i]
+	return s.t, s.v, true
+}
+
+func (r *sampleRing) samples() []sample {
+	res := make([]sample, 0, r.l)
+
+	var k = r.f + r.l
+	var j int
+	if k > len(r.buf) {
+		k = len(r.buf)
+		j = r.l - k + r.f
+	}
+
+	for _, s := range r.buf[r.f:k] {
+		res = append(res, s)
+	}
+	for _, s := range r.buf[:j] {
+		res = append(res, s)
+	}
+
+	return res
 }

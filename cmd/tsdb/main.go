@@ -16,7 +16,6 @@ import (
 	"github.com/fabxc/tsdb"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/spf13/cobra"
@@ -228,7 +227,7 @@ func (c *tsdbStorage) ingestScrape(ts int64, s *tsdb.Vector) error {
 }
 
 func newTSDBStorage(path string) (*tsdbStorage, error) {
-	c, err := tsdb.Open(path, log.Base(), nil)
+	c, err := tsdb.Open(path, nil, nil)
 	if err != nil {
 		return nil, err
 	}
