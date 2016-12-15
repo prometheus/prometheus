@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sync/errgroup"
 
@@ -490,15 +492,36 @@ func (es MultiError) Error() string {
 	return buf.String()
 }
 
+// Add adds the error to the error list if it is not nil.
 func (es MultiError) Add(err error) {
 	if err != nil {
 		es = append(es, err)
 	}
 }
 
+// Err returns the error list as an error or nil if it is empty.
 func (es MultiError) Err() error {
 	if len(es) == 0 {
 		return nil
 	}
 	return es
+}
+
+func yoloString(b []byte) string {
+	h := reflect.StringHeader{
+		Data: uintptr(unsafe.Pointer(&b[0])),
+		Len:  len(b),
+	}
+	return *((*string)(unsafe.Pointer(&h)))
+}
+
+func yoloBytes(s string) []byte {
+	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
+
+	h := reflect.SliceHeader{
+		Cap:  sh.Len,
+		Len:  sh.Len,
+		Data: sh.Data,
+	}
+	return *((*[]byte)(unsafe.Pointer(&h)))
 }
