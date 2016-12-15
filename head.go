@@ -14,18 +14,18 @@ type HeadBlock struct {
 	descs map[uint64][]*chunkDesc // labels hash to possible chunks descs
 	index *memIndex
 
-	samples       uint64 // total samples in the block
-	highTimestamp int64  // highest timestamp of any sample
-	baseTimestamp int64  // all samples are strictly later
+	stats BlockStats
 }
 
 // NewHeadBlock creates a new empty head block.
 func NewHeadBlock(baseTime int64) *HeadBlock {
-	return &HeadBlock{
-		descs:         make(map[uint64][]*chunkDesc, 2048),
-		index:         newMemIndex(),
-		baseTimestamp: baseTime,
+	b := &HeadBlock{
+		descs: make(map[uint64][]*chunkDesc, 2048),
+		index: newMemIndex(),
 	}
+	b.stats.MinTime = baseTime
+
+	return b
 }
 
 // Querier returns a new querier over the head block.
@@ -33,6 +33,7 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	return newBlockQuerier(h, h, mint, maxt)
 }
 
+// Chunk returns the chunk for the reference number.
 func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
 	c, ok := h.index.forward[ref]
 	if !ok {
@@ -41,9 +42,13 @@ func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
 	return c.chunk, nil
 }
 
+func (h *HeadBlock) interval() (int64, int64) {
+	return h.stats.MinTime, h.stats.MaxTime
+}
+
 // Stats returns statisitics about the indexed data.
-func (h *HeadBlock) Stats() (*BlockStats, error) {
-	return nil, nil
+func (h *HeadBlock) Stats() (BlockStats, error) {
+	return h.stats, nil
 }
 
 // LabelValues returns the possible label values
@@ -79,7 +84,7 @@ func (h *HeadBlock) Series(ref uint32) (Series, error) {
 	s := &series{
 		labels: cd.lset,
 		offsets: []ChunkOffset{
-			{Value: h.baseTimestamp, Offset: 0},
+			{Value: h.stats.MinTime, Offset: 0},
 		},
 		chunk: func(ref uint32) (chunks.Chunk, error) {
 			return cd.chunk, nil
@@ -104,6 +109,10 @@ func (h *HeadBlock) get(hash uint64, lset Labels) *chunkDesc {
 	}
 	h.index.add(cd)
 
+	// For the head block there's exactly one chunk per series.
+	h.stats.ChunkCount++
+	h.stats.SeriesCount++
+
 	h.descs[hash] = append(cds, cd)
 	return cd
 }
@@ -113,18 +122,12 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 	if err := h.get(hash, lset).append(ts, v); err != nil {
 		return err
 	}
-	h.samples++
-	return nil
-}
 
-type blockStats struct {
-	chunks  uint32
-	samples uint64
-}
+	h.stats.SampleCount++
 
-func (h *HeadBlock) stats() *blockStats {
-	return &blockStats{
-		chunks:  uint32(h.index.numSeries()),
-		samples: h.samples,
+	if ts > h.stats.MaxTime {
+		h.stats.MaxTime = ts
 	}
+
+	return nil
 }

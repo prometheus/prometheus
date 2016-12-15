@@ -6,12 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 )
 
 // Block handles reads against a block of time series data within a time window.
-type Block interface {
+type block interface {
 	Querier(mint, maxt int64) Querier
+
+	interval() (int64, int64)
 }
 
 const (
@@ -25,15 +26,12 @@ type persistedBlock struct {
 	chunks *seriesReader
 	index  *indexReader
 
-	baseTime int64
+	stats BlockStats
 }
 
 func newPersistedBlock(path string) (*persistedBlock, error) {
 	// The directory must be named after the base timestamp for the block.
-	baset, err := strconv.ParseInt(filepath.Base(path), 10, 0)
-	if err != nil {
-		return nil, fmt.Errorf("unexpected directory name %q: %s", path, err)
-	}
+	// TODO(fabxc): validate match of name and stats time, validate magic.
 
 	// mmap files belonging to the block.
 	chunksf, err := openMmapFile(chunksFileName(path))
@@ -54,12 +52,17 @@ func newPersistedBlock(path string) (*persistedBlock, error) {
 		return nil, err
 	}
 
+	stats, err := ir.Stats()
+	if err != nil {
+		return nil, err
+	}
+
 	pb := &persistedBlock{
-		chunksf:  chunksf,
-		indexf:   indexf,
-		chunks:   sr,
-		index:    ir,
-		baseTime: baset,
+		chunksf: chunksf,
+		indexf:  indexf,
+		chunks:  sr,
+		index:   ir,
+		stats:   stats,
 	}
 	return pb, nil
 }
@@ -74,11 +77,24 @@ func (pb *persistedBlock) Close() error {
 	return err1
 }
 
+func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
+	return &blockQuerier{
+		mint:   mint,
+		maxt:   maxt,
+		index:  pb.index,
+		series: pb.chunks,
+	}
+}
+
+func (pb *persistedBlock) interval() (int64, int64) {
+	return pb.stats.MinTime, pb.stats.MaxTime
+}
+
 type persistedBlocks []*persistedBlock
 
 func (p persistedBlocks) Len() int           { return len(p) }
 func (p persistedBlocks) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-func (p persistedBlocks) Less(i, j int) bool { return p[i].baseTime < p[j].baseTime }
+func (p persistedBlocks) Less(i, j int) bool { return p[i].stats.MinTime < p[j].stats.MinTime }
 
 // findBlocks finds time-ordered persisted blocks within a directory.
 func findPersistedBlocks(path string) ([]*persistedBlock, error) {

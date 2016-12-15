@@ -267,12 +267,12 @@ func (s *Shard) appendBatch(ts int64, samples []Sample) error {
 		}
 	}
 
-	if ts > s.head.highTimestamp {
-		s.head.highTimestamp = ts
+	if ts > s.head.stats.MaxTime {
+		s.head.stats.MaxTime = ts
 	}
 
 	// TODO(fabxc): randomize over time
-	if s.head.stats().samples/uint64(s.head.stats().chunks) > 400 {
+	if s.head.stats.SampleCount/uint64(s.head.stats.ChunkCount) > 400 {
 		select {
 		case s.persistCh <- struct{}{}:
 			go s.persist()
@@ -283,10 +283,36 @@ func (s *Shard) appendBatch(ts int64, samples []Sample) error {
 	return nil
 }
 
+func intervalOverlap(amin, amax, bmin, bmax int64) bool {
+	if bmin >= amin && bmin <= amax {
+		return true
+	}
+	if amin >= bmin && amin <= bmax {
+		return true
+	}
+	return false
+}
+
 // blocksForRange returns all blocks within the shard that may contain
 // data for the given time range.
-func (s *Shard) blocksForRange(mint, maxt int64) (bs []Block) {
-	return []Block{s.head}
+func (s *Shard) blocksForInterval(mint, maxt int64) []block {
+	var bs []block
+
+	for _, b := range s.persisted {
+		bmin, bmax := b.interval()
+
+		if intervalOverlap(mint, maxt, bmin, bmax) {
+			bs = append(bs, b)
+		}
+	}
+
+	hmin, hmax := s.head.interval()
+
+	if intervalOverlap(mint, maxt, hmin, hmax) {
+		bs = append(bs, s.head)
+	}
+
+	return bs
 }
 
 // TODO(fabxc): make configurable.
@@ -297,7 +323,7 @@ func (s *Shard) persist() error {
 
 	// Set new head block.
 	head := s.head
-	s.head = NewHeadBlock(head.highTimestamp)
+	s.head = NewHeadBlock(head.stats.MaxTime)
 
 	s.mtx.Unlock()
 
@@ -307,7 +333,7 @@ func (s *Shard) persist() error {
 
 	// TODO(fabxc): add grace period where we can still append to old head shard
 	// before actually persisting it.
-	p := filepath.Join(s.path, fmt.Sprintf("%d", head.baseTimestamp))
+	p := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
 
 	if err := os.MkdirAll(p, 0777); err != nil {
 		return err
@@ -323,7 +349,7 @@ func (s *Shard) persist() error {
 	}
 
 	iw := newIndexWriter(xf)
-	sw := newSeriesWriter(sf, iw, s.head.baseTimestamp)
+	sw := newSeriesWriter(sf, iw, s.head.stats.MinTime)
 
 	defer sw.Close()
 	defer iw.Close()
@@ -334,7 +360,7 @@ func (s *Shard) persist() error {
 		}
 	}
 
-	if err := iw.WriteStats(nil); err != nil {
+	if err := iw.WriteStats(s.head.stats); err != nil {
 		return err
 	}
 	for n, v := range head.index.values {
@@ -356,7 +382,7 @@ func (s *Shard) persist() error {
 
 	sz := fmt.Sprintf("%.2fMiB", float64(sw.Size()+iw.Size())/1024/1024)
 
-	s.logger.Log("size", sz, "samples", head.samples, "chunks", head.stats().chunks, "msg", "persisted head")
+	s.logger.Log("size", sz, "samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
 
 	return nil
 }

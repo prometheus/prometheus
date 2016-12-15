@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
@@ -146,6 +147,11 @@ type ChunkOffset struct {
 }
 
 type BlockStats struct {
+	MinTime     int64
+	MaxTime     int64
+	SampleCount uint64
+	SeriesCount uint32
+	ChunkCount  uint32
 }
 
 // IndexWriter serialized the index for a block of series data.
@@ -158,7 +164,7 @@ type IndexWriter interface {
 	AddSeries(ref uint32, l Labels, o ...ChunkOffset)
 
 	// WriteStats writes final stats for the indexed block.
-	WriteStats(*BlockStats) error
+	WriteStats(BlockStats) error
 
 	// WriteLabelIndex serializes an index from label names to values.
 	// The passed in values chained tuples of strings of the length of names.
@@ -249,17 +255,35 @@ func (w *indexWriter) AddSeries(ref uint32, lset Labels, offsets ...ChunkOffset)
 	}
 }
 
-func (w *indexWriter) WriteStats(*BlockStats) error {
-	if w.n == 0 {
-		if err := w.writeMeta(); err != nil {
-			return err
-		}
-		if err := w.writeSymbols(); err != nil {
-			return err
-		}
-		if err := w.writeSeries(); err != nil {
-			return err
-		}
+func (w *indexWriter) WriteStats(stats BlockStats) error {
+	if w.n != 0 {
+		return fmt.Errorf("WriteStats must be called first")
+	}
+
+	if err := w.writeMeta(); err != nil {
+		return err
+	}
+
+	b := [64]byte{}
+
+	binary.BigEndian.PutUint64(b[0:], uint64(stats.MinTime))
+	binary.BigEndian.PutUint64(b[8:], uint64(stats.MaxTime))
+	binary.BigEndian.PutUint32(b[16:], stats.SeriesCount)
+	binary.BigEndian.PutUint32(b[20:], stats.ChunkCount)
+	binary.BigEndian.PutUint64(b[24:], stats.SampleCount)
+
+	err := w.section(64, flagStd, func(wr io.Writer) error {
+		return w.write(wr, b[:])
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := w.writeSymbols(); err != nil {
+		return err
+	}
+	if err := w.writeSeries(); err != nil {
+		return err
 	}
 	return nil
 }

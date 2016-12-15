@@ -112,7 +112,7 @@ type shardQuerier struct {
 // Querier returns a new querier over the data shard for the given
 // time range.
 func (s *Shard) Querier(mint, maxt int64) Querier {
-	blocks := s.blocksForRange(mint, maxt)
+	blocks := s.blocksForInterval(mint, maxt)
 
 	sq := &shardQuerier{
 		blocks: make([]Querier, 0, len(blocks)),

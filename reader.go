@@ -49,7 +49,7 @@ func (s *seriesReader) Chunk(offset uint32) (chunks.Chunk, error) {
 // IndexReader provides reading access of serialized index data.
 type IndexReader interface {
 	// Stats returns statisitics about the indexed data.
-	Stats() (*BlockStats, error)
+	Stats() (BlockStats, error)
 
 	// LabelValues returns the possible label values
 	LabelValues(names ...string) (StringTuples, error)
@@ -182,8 +182,26 @@ func (r *indexReader) lookupSymbol(o uint32) ([]byte, error) {
 	return r.b[int(o)+n : end], nil
 }
 
-func (r *indexReader) Stats() (*BlockStats, error) {
-	return nil, nil
+func (r *indexReader) Stats() (BlockStats, error) {
+	flag, b, err := r.section(8)
+	if err != nil {
+		return BlockStats{}, err
+	}
+	if flag != flagStd {
+		return BlockStats{}, errInvalidFlag
+	}
+
+	if len(b) != 64 {
+		return BlockStats{}, errInvalidSize
+	}
+
+	return BlockStats{
+		MinTime:     int64(binary.BigEndian.Uint64(b)),
+		MaxTime:     int64(binary.BigEndian.Uint64(b[8:])),
+		SeriesCount: binary.BigEndian.Uint32(b[16:]),
+		ChunkCount:  binary.BigEndian.Uint32(b[20:]),
+		SampleCount: binary.BigEndian.Uint64(b[24:]),
+	}, nil
 }
 
 func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
@@ -291,6 +309,39 @@ func (r *indexReader) Series(ref uint32) (Series, error) {
 		chunk:   r.series.Chunk,
 	}
 	return s, nil
+}
+
+func (r *indexReader) Postings(name, value string) (Postings, error) {
+	key := name + string(sep) + value
+
+	off, ok := r.postings[key]
+	if !ok {
+		return nil, errNotFound
+	}
+
+	flag, b, err := r.section(off)
+	if err != nil {
+		return nil, err
+	}
+
+	if flag != flagStd {
+		return nil, errInvalidFlag
+	}
+
+	// TODO(fabxc): just read into memory as an intermediate solution.
+	// Add iterator over serialized data.
+	var l []uint32
+
+	for len(b) > 0 {
+		if len(b) < 4 {
+			return nil, errInvalidSize
+		}
+		l = append(l, binary.BigEndian.Uint32(b[:4]))
+
+		b = b[4:]
+	}
+
+	return &listIterator{list: l, idx: -1}, nil
 }
 
 type series struct {
