@@ -163,7 +163,16 @@ func newPersistence(
 		if err != nil {
 			return nil, err
 		}
-		if len(fis) > 0 && !(len(fis) == 1 && fis[0].Name() == "lost+found" && fis[0].IsDir()) {
+		filesPresent := len(fis)
+		for i := range fis {
+			switch {
+			case fis[i].Name() == "lost+found" && fis[i].IsDir():
+				filesPresent--
+			case strings.HasPrefix(fis[i].Name(), "."):
+				filesPresent--
+			}
+		}
+		if filesPresent > 0 {
 			return nil, fmt.Errorf("found existing files in storage path that do not look like storage files compatible with this version of Prometheus; please delete the files in the storage path or choose a different storage path")
 		}
 		// Finally we can write our own version into a new version file.
