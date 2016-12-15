@@ -129,8 +129,13 @@ func readHashmap(flag byte, b []byte, err error) (map[string]uint32, error) {
 		if n < 1 {
 			return nil, errInvalidSize
 		}
-		s := string(b[n : n+int(l)])
-		b = b[n+int(l):]
+		b = b[n:]
+
+		if len(b) < int(l) {
+			return nil, errInvalidSize
+		}
+		s := string(b[:l])
+		b = b[l:]
 
 		o, n := binary.Uvarint(b)
 		if n < 1 {
@@ -151,15 +156,16 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 		return 0, nil, errInvalidSize
 	}
 
-	flag := r.b[0]
+	flag := b[0]
 	l := binary.BigEndian.Uint32(b[1:5])
 
 	b = b[5:]
 
-	if len(b) < int(l) {
+	// b must have the given length plus 4 bytes for the CRC32 checksum.
+	if len(b) < int(l)+4 {
 		return 0, nil, errInvalidSize
 	}
-	return flag, b, nil
+	return flag, b[:l], nil
 }
 
 func (r *indexReader) lookupSymbol(o uint32) ([]byte, error) {

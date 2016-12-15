@@ -196,11 +196,10 @@ type indexWriter struct {
 
 func newIndexWriter(w io.Writer) *indexWriter {
 	return &indexWriter{
-		w:            w,
-		n:            0,
-		symbols:      make(map[string]uint32, 4096),
-		series:       make(map[uint32]*indexWriterSeries, 4096),
-		labelIndexes: make([]hashEntry, 10),
+		w:       w,
+		n:       0,
+		symbols: make(map[string]uint32, 4096),
+		series:  make(map[uint32]*indexWriterSeries, 4096),
 	}
 }
 
@@ -212,12 +211,10 @@ func (w *indexWriter) write(wr io.Writer, b []byte) error {
 
 // section writes a CRC32 checksummed section of length l and guarded by flag.
 func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) error {
-	l++ // account for flag byte
-
 	h := crc32.NewIEEE()
 	wr := io.MultiWriter(h, w.w)
 
-	b := [5]byte{flagStd, 0, 0, 0, 0}
+	b := [5]byte{flag, 0, 0, 0, 0}
 	binary.BigEndian.PutUint32(b[1:], l)
 
 	if err := w.write(wr, b[:]); err != nil {
@@ -357,7 +354,7 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 		for _, v := range valt.s {
 			binary.BigEndian.PutUint32(buf, w.symbols[v])
 
-			if err := w.write(wr, buf); err != nil {
+			if err := w.write(wr, buf[:4]); err != nil {
 				return err
 			}
 		}
@@ -410,7 +407,7 @@ func (w *indexWriter) writeHashmap(h []hashEntry) error {
 		b = append(b, buf[:n]...)
 	}
 
-	return w.section(uint32(len(buf)), flagStd, func(wr io.Writer) error {
+	return w.section(uint32(len(b)), flagStd, func(wr io.Writer) error {
 		return w.write(wr, b)
 	})
 }

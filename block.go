@@ -90,9 +90,11 @@ func findPersistedBlocks(path string) ([]*persistedBlock, error) {
 	}
 
 	for _, fi := range files {
-		pb, err := newPersistedBlock(fi.Name())
+		p := filepath.Join(path, fi.Name())
+
+		pb, err := newPersistedBlock(p)
 		if err != nil {
-			return nil, fmt.Errorf("error initializing block %q: %s", fi.Name(), err)
+			return nil, fmt.Errorf("error initializing block %q: %s", p, err)
 		}
 		pbs = append(pbs, pb)
 	}
