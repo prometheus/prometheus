@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/cespare/xxhash"
 	"github.com/fabxc/tsdb/chunks"
@@ -65,9 +68,15 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	// TODO(fabxc): validate shard number to be power of 2, which is required
 	// for the bitshift-modulo when finding the right shard.
 	for i := 0; i < numSeriesShards; i++ {
-		path := filepath.Join(path, fmt.Sprintf("%d", i))
 		l := log.NewContext(l).With("shard", i)
-		c.shards = append(c.shards, NewSeriesShard(path, l))
+		d := shardDir(path, i)
+
+		s, err := NewSeriesShard(d, l)
+		if err != nil {
+			return nil, fmt.Errorf("initializing shard %q failed: %s", d, err)
+		}
+
+		c.shards = append(c.shards, s)
 	}
 
 	// TODO(fabxc): run background compaction + GC.
@@ -75,23 +84,21 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 	return c, nil
 }
 
+func shardDir(base string, i int) string {
+	return filepath.Join(base, strconv.Itoa(i))
+}
+
 // Close the database.
 func (db *DB) Close() error {
-	var wg sync.WaitGroup
+	var g errgroup.Group
 
-	for i, shard := range db.shards {
-		wg.Add(1)
-		go func(i int, shard *SeriesShard) {
-			if err := shard.Close(); err != nil {
-				// TODO(fabxc): handle with multi error.
-				panic(err)
-			}
-			wg.Done()
-		}(i, shard)
+	for _, shard := range db.shards {
+		// Fix closure argument to goroutine.
+		shard := shard
+		g.Go(shard.Close)
 	}
-	wg.Wait()
 
-	return nil
+	return g.Wait()
 }
 
 // Appender adds a batch of samples.
@@ -198,31 +205,50 @@ type SeriesShard struct {
 	persistCh chan struct{}
 	logger    log.Logger
 
-	mtx    sync.RWMutex
-	blocks []*Block
-	head   *HeadBlock
+	mtx       sync.RWMutex
+	persisted persistedBlocks
+	head      *HeadBlock
 }
 
 // NewSeriesShard returns a new SeriesShard.
-func NewSeriesShard(path string, logger log.Logger) *SeriesShard {
+func NewSeriesShard(path string, logger log.Logger) (*SeriesShard, error) {
+	// Create directory if shard is new.
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.MkdirAll(path, 0777); err != nil {
+			return nil, err
+		}
+	}
+
+	// Initialize previously persisted blocks.
+	pbs, err := findPersistedBlocks(path)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &SeriesShard{
 		path:      path,
 		persistCh: make(chan struct{}, 1),
 		logger:    logger,
+		persisted: pbs,
 		// TODO(fabxc): restore from checkpoint.
-		// TODO(fabxc): provide access to persisted blocks.
 	}
 	// TODO(fabxc): get base time from pre-existing blocks. Otherwise
 	// it should come from a user defined start timestamp.
 	// Use actual time for now.
 	s.head = NewHeadBlock(time.Now().UnixNano() / int64(time.Millisecond))
 
-	return s
+	return s, nil
 }
 
 // Close the series shard.
 func (s *SeriesShard) Close() error {
-	return nil
+	var e MultiError
+
+	for _, pb := range s.persisted {
+		e.Add(pb.Close())
+	}
+
+	return e.Err()
 }
 
 func (s *SeriesShard) appendBatch(ts int64, samples []Sample) error {
@@ -462,4 +488,17 @@ func (es MultiError) Error() string {
 	}
 
 	return buf.String()
+}
+
+func (es MultiError) Add(err error) {
+	if err != nil {
+		es = append(es, err)
+	}
+}
+
+func (es MultiError) Err() error {
+	if len(es) == 0 {
+		return nil
+	}
+	return es
 }
