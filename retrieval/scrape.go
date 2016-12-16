@@ -47,12 +47,11 @@ var (
 		},
 		[]string{"interval"},
 	)
-	targetSkippedScrapes = prometheus.NewCounterVec(
+	targetSkippedScrapes = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_skipped_scrapes_total",
 			Help: "Total number of scrapes that were skipped because the metric storage was throttled.",
 		},
-		[]string{"interval"},
 	)
 	targetReloadIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -430,7 +429,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 			sl.report(start, time.Since(start), len(samples), err)
 			last = start
 		} else {
-			targetSkippedScrapes.WithLabelValues(interval.String()).Inc()
+			targetSkippedScrapes.Inc()
 		}
 
 		select {
