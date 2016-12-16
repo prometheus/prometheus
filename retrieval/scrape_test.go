@@ -139,7 +139,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app storage.SampleAppender, mut func(storage.SampleAppender) storage.SampleAppender, reportApp storage.SampleAppender) loop {
+	newLoop := func(ctx context.Context, s scraper, app storage.SampleAppender, mut func(storage.SampleAppender) storage.SampleAppender, reportApp storage.SampleAppender, sampleLimit uint) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -312,14 +312,13 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 	testCases := []struct {
 		scrapedSamples               model.Samples
 		scrapeError                  error
-		metricRelabelConfigs         []*config.RelabelConfig
+		scrapeConfig                 config.ScrapeConfig
 		expectedReportedSamples      model.Samples
 		expectedIngestedSamplesCount int
 	}{
 		{
-			scrapedSamples:       readSamples,
-			scrapeError:          nil,
-			metricRelabelConfigs: []*config.RelabelConfig{},
+			scrapedSamples: readSamples,
+			scrapeError:    nil,
 			expectedReportedSamples: model.Samples{
 				{
 					Metric: model.Metric{"__name__": "up"},
@@ -342,11 +341,13 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 		{
 			scrapedSamples: readSamples,
 			scrapeError:    nil,
-			metricRelabelConfigs: []*config.RelabelConfig{
-				{
-					Action:       config.RelabelDrop,
-					SourceLabels: model.LabelNames{"__name__"},
-					Regex:        config.MustNewRegexp("a.*"),
+			scrapeConfig: config.ScrapeConfig{
+				MetricRelabelConfigs: []*config.RelabelConfig{
+					{
+						Action:       config.RelabelDrop,
+						SourceLabels: model.LabelNames{"__name__"},
+						Regex:        config.MustNewRegexp("a.*"),
+					},
 				},
 			},
 			expectedReportedSamples: model.Samples{
@@ -369,9 +370,65 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 			expectedIngestedSamplesCount: 1,
 		},
 		{
-			scrapedSamples:       model.Samples{},
-			scrapeError:          fmt.Errorf("error"),
-			metricRelabelConfigs: []*config.RelabelConfig{},
+			scrapedSamples: readSamples,
+			scrapeError:    nil,
+			scrapeConfig: config.ScrapeConfig{
+				SampleLimit: 1,
+				MetricRelabelConfigs: []*config.RelabelConfig{
+					{
+						Action:       config.RelabelDrop,
+						SourceLabels: model.LabelNames{"__name__"},
+						Regex:        config.MustNewRegexp("a.*"),
+					},
+				},
+			},
+			expectedReportedSamples: model.Samples{
+				{
+					Metric: model.Metric{"__name__": "up"},
+					Value:  1,
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_duration_seconds"},
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_scraped"},
+					Value:  2,
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_post_metric_relabeling"},
+					Value:  1,
+				},
+			},
+			expectedIngestedSamplesCount: 1,
+		},
+		{
+			scrapedSamples: readSamples,
+			scrapeError:    nil,
+			scrapeConfig: config.ScrapeConfig{
+				SampleLimit: 1,
+			},
+			expectedReportedSamples: model.Samples{
+				{
+					Metric: model.Metric{"__name__": "up"},
+					Value:  0,
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_duration_seconds"},
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_scraped"},
+					Value:  2,
+				},
+				{
+					Metric: model.Metric{"__name__": "scrape_samples_post_metric_relabeling"},
+					Value:  2,
+				},
+			},
+			expectedIngestedSamplesCount: 0,
+		},
+		{
+			scrapedSamples: model.Samples{},
+			scrapeError:    fmt.Errorf("error"),
 			expectedReportedSamples: model.Samples{
 				{
 					Metric: model.Metric{"__name__": "up"},
@@ -393,26 +450,22 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 		},
 	}
 
-	for _, test := range testCases {
+	for i, test := range testCases {
 		ingestedSamples := &bufferAppender{buffer: model.Samples{}}
 		reportedSamples := &bufferAppender{buffer: model.Samples{}}
 
 		target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
-		cfg := &config.ScrapeConfig{
-			MetricRelabelConfigs: test.metricRelabelConfigs,
-		}
-
-		sp := newScrapePool(context.Background(), cfg, ingestedSamples)
+		sp := newScrapePool(context.Background(), &test.scrapeConfig, ingestedSamples)
 
 		scraper := &testScraper{}
-		sl := newScrapeLoop(context.Background(), scraper, ingestedSamples, sp.sampleMutator(target), reportedSamples).(*scrapeLoop)
+		sl := newScrapeLoop(context.Background(), scraper, ingestedSamples, sp.sampleMutator(target), reportedSamples, test.scrapeConfig.SampleLimit).(*scrapeLoop)
 		sl.processScrapeResult(test.scrapedSamples, test.scrapeError, time.Unix(0, 0))
 
 		// Ignore value of scrape_duration_seconds, as it's time dependant.
 		reportedSamples.buffer[1].Value = 0
 
 		if !reflect.DeepEqual(reportedSamples.buffer, test.expectedReportedSamples) {
-			t.Errorf("Reported samples did not match expected metrics")
+			t.Errorf("Reported samples did not match expected metrics for case %d", i)
 			t.Errorf("Expected: %v", test.expectedReportedSamples)
 			t.Fatalf("Got: %v", reportedSamples.buffer)
 		}
@@ -425,7 +478,7 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 
 func TestScrapeLoopStop(t *testing.T) {
 	scraper := &testScraper{}
-	sl := newScrapeLoop(context.Background(), scraper, nil, nil, nil)
+	sl := newScrapeLoop(context.Background(), scraper, nil, nil, nil, 0)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
 	// loops are syarted asynchronously. Thus it's possible, that a loop is stopped
@@ -483,7 +536,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, mut, reportApp)
+	sl := newScrapeLoop(ctx, scraper, app, mut, reportApp, 0)
 
 	// The loop must terminate during the initial offset if the context
 	// is canceled.
@@ -521,7 +574,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
-	sl = newScrapeLoop(ctx, scraper, app, mut, reportApp)
+	sl = newScrapeLoop(ctx, scraper, app, mut, reportApp, 0)
 
 	go func() {
 		sl.run(time.Second, 100*time.Millisecond, errc)

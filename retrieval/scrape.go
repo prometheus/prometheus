@@ -78,6 +78,12 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
+	targetScrapeSampleLimit = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
+			Help: "Total number of scrapes that hit the sample limit and were rejected.",
+		},
+	)
 )
 
 func init() {
@@ -86,6 +92,7 @@ func init() {
 	prometheus.MustRegister(targetReloadIntervalLength)
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
+	prometheus.MustRegister(targetScrapeSampleLimit)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -103,7 +110,7 @@ type scrapePool struct {
 	loops   map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
-	newLoop func(context.Context, scraper, storage.SampleAppender, func(storage.SampleAppender) storage.SampleAppender, storage.SampleAppender) loop
+	newLoop func(context.Context, scraper, storage.SampleAppender, func(storage.SampleAppender) storage.SampleAppender, storage.SampleAppender, uint) loop
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
@@ -172,7 +179,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		var (
 			t       = sp.targets[fp]
 			s       = &targetScraper{Target: t, client: sp.client}
-			newLoop = sp.newLoop(sp.ctx, s, sp.appender, sp.sampleMutator(t), sp.reportAppender(t))
+			newLoop = sp.newLoop(sp.ctx, s, sp.appender, sp.sampleMutator(t), sp.reportAppender(t), sp.config.SampleLimit)
 		)
 		wg.Add(1)
 
@@ -233,7 +240,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 		if _, ok := sp.targets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client}
-			l := sp.newLoop(sp.ctx, s, sp.appender, sp.sampleMutator(t), sp.reportAppender(t))
+			l := sp.newLoop(sp.ctx, s, sp.appender, sp.sampleMutator(t), sp.reportAppender(t), sp.config.SampleLimit)
 
 			sp.targets[hash] = t
 			sp.loops[hash] = l
@@ -373,18 +380,21 @@ type scrapeLoop struct {
 	mutator func(storage.SampleAppender) storage.SampleAppender
 	// For sending up and scrape_*.
 	reportAppender storage.SampleAppender
+	// Limit on number of samples that will be accepted.
+	sampleLimit uint
 
 	done   chan struct{}
 	ctx    context.Context
 	cancel func()
 }
 
-func newScrapeLoop(ctx context.Context, sc scraper, app storage.SampleAppender, mut func(storage.SampleAppender) storage.SampleAppender, reportApp storage.SampleAppender) loop {
+func newScrapeLoop(ctx context.Context, sc scraper, app storage.SampleAppender, mut func(storage.SampleAppender) storage.SampleAppender, reportApp storage.SampleAppender, sampleLimit uint) loop {
 	sl := &scrapeLoop{
 		scraper:        sc,
 		appender:       app,
 		mutator:        mut,
 		reportAppender: reportApp,
+		sampleLimit:    sampleLimit,
 		done:           make(chan struct{}),
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
@@ -460,8 +470,13 @@ func (sl *scrapeLoop) processScrapeResult(samples model.Samples, scrapeErr error
 			app.Append(sample)
 		}
 
-		// Send samples to storage.
-		sl.append(buf.buffer)
+		if sl.sampleLimit > 0 && uint(len(buf.buffer)) > sl.sampleLimit {
+			scrapeErr = fmt.Errorf("%d samples exceeded limit of %d", len(buf.buffer), sl.sampleLimit)
+			targetScrapeSampleLimit.Inc()
+		} else {
+			// Send samples to storage.
+			sl.append(buf.buffer)
+		}
 	}
 
 	sl.report(start, time.Since(start), len(samples), len(buf.buffer), scrapeErr)

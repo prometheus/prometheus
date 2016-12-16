@@ -133,6 +133,7 @@ var expectedConf = &Config{
 
 			ScrapeInterval: model.Duration(50 * time.Second),
 			ScrapeTimeout:  model.Duration(5 * time.Second),
+			SampleLimit:    1000,
 
 			HTTPClientConfig: HTTPClientConfig{
 				BasicAuth: &BasicAuth{
