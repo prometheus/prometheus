@@ -76,15 +76,18 @@ func (h *HeadBlock) Postings(name, value string) (Postings, error) {
 }
 
 // Series returns the series for the given reference.
-func (h *HeadBlock) Series(ref uint32) (Series, error) {
+func (h *HeadBlock) Series(ref uint32, mint, maxt int64) (Series, error) {
 	cd, ok := h.index.forward[ref]
 	if !ok {
 		return nil, errNotFound
 	}
+	if !intervalOverlap(cd.firsTimestamp, cd.lastTimestamp, mint, maxt) {
+		return nil, nil
+	}
 	s := &series{
 		labels: cd.lset,
-		offsets: []ChunkOffset{
-			{Value: h.stats.MinTime, Offset: 0},
+		chunks: []ChunkMeta{
+			{MinTime: h.stats.MinTime, Ref: 0},
 		},
 		chunk: func(ref uint32) (chunks.Chunk, error) {
 			return cd.chunk, nil

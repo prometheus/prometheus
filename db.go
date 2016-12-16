@@ -293,6 +293,10 @@ func intervalOverlap(amin, amax, bmin, bmax int64) bool {
 	return false
 }
 
+func intervalContains(min, max, t int64) bool {
+	return t >= min && t <= max
+}
+
 // blocksForRange returns all blocks within the shard that may contain
 // data for the given time range.
 func (s *Shard) blocksForInterval(mint, maxt int64) []block {
@@ -311,6 +315,8 @@ func (s *Shard) blocksForInterval(mint, maxt int64) []block {
 	if intervalOverlap(mint, maxt, hmin, hmax) {
 		bs = append(bs, s.head)
 	}
+
+	fmt.Println("blocks for interval", bs)
 
 	return bs
 }
@@ -393,6 +399,7 @@ type chunkDesc struct {
 	chunk chunks.Chunk
 
 	// Caching fields.
+	firsTimestamp int64
 	lastTimestamp int64
 	lastValue     float64
 
@@ -405,6 +412,7 @@ func (cd *chunkDesc) append(ts int64, v float64) (err error) {
 		if err != nil {
 			return err
 		}
+		cd.firsTimestamp = ts
 	}
 	if err := cd.app.Append(ts, v); err != nil {
 		return err

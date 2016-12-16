@@ -47,14 +47,11 @@ type Querier interface {
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
 	Labels() Labels
+
 	// Iterator returns a new iterator of the data of the series.
 	Iterator() SeriesIterator
 
 	// Ref() uint32
-}
-
-func inRange(x, mint, maxt int64) bool {
-	return x >= mint && x <= maxt
 }
 
 // querier merges query results from a set of shard querieres.
@@ -164,6 +161,8 @@ func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
 	return &blockSeriesSet{
 		index: q.index,
 		it:    Intersect(its...),
+		mint:  q.mint,
+		maxt:  q.maxt,
 	}
 }
 
@@ -379,33 +378,66 @@ func (s *shardSeriesSet) Next() bool {
 
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
-	index IndexReader
-	it    Postings
+	index      IndexReader
+	it         Postings
+	mint, maxt int64
 
 	err error
 	cur Series
 }
 
 func (s *blockSeriesSet) Next() bool {
-	// Get next reference from postings iterator.
-	if !s.it.Next() {
+	// Step through the postings iterator to find potential series.
+	// Resolving series may return nil if no applicable data for the
+	// time range exists and we can skip to the next series.
+	for s.it.Next() {
+		series, err := s.index.Series(s.it.Value(), s.mint, s.maxt)
+		if err != nil {
+			s.err = err
+			return false
+		}
+		if series != nil {
+			s.cur = series
+			return true
+		}
+	}
+	if s.it.Err() != nil {
 		s.err = s.it.Err()
-		return false
 	}
-
-	// Resolve reference to series.
-	series, err := s.index.Series(s.it.Value())
-	if err != nil {
-		s.err = err
-		return false
-	}
-
-	s.cur = series
-	return true
+	return false
 }
 
 func (s *blockSeriesSet) Series() Series { return s.cur }
 func (s *blockSeriesSet) Err() error     { return s.err }
+
+type series struct {
+	labels Labels
+	chunks []ChunkMeta // in-order chunk refs
+
+	chunk func(ref uint32) (chunks.Chunk, error)
+}
+
+func (s *series) Labels() Labels {
+	return s.labels
+}
+
+func (s *series) Iterator() SeriesIterator {
+	var cs []chunks.Chunk
+	var mints []int64
+
+	for _, co := range s.chunks {
+		c, err := s.chunk(co.Ref)
+		if err != nil {
+			panic(err) // TODO(fabxc): add error series iterator.
+		}
+		cs = append(cs, c)
+		mints = append(mints, co.MinTime)
+	}
+
+	// TODO(fabxc): consider pushing chunk retrieval further down. In practice, we
+	// probably have to touch all chunks anyway and it doesn't matter.
+	return newChunkSeriesIterator(mints, cs)
+}
 
 // SeriesIterator iterates over the data of a time series.
 type SeriesIterator interface {
@@ -421,6 +453,7 @@ type SeriesIterator interface {
 	Err() error
 }
 
+// chainedSeries implements a series for a list of time-sorted series.
 type chainedSeries struct {
 	series []Series
 }
@@ -430,46 +463,29 @@ func (s *chainedSeries) Labels() Labels {
 }
 
 func (s *chainedSeries) Iterator() SeriesIterator {
-	it := &chainedSeriesIterator{
-		series: make([]SeriesIterator, 0, len(s.series)),
-	}
-	for _, series := range s.series {
-		it.series = append(it.series, series.Iterator())
-	}
-	return it
+	return &chainedSeriesIterator{series: s.series}
 }
 
 // chainedSeriesIterator implements a series iterater over a list
 // of time-sorted, non-overlapping iterators.
 type chainedSeriesIterator struct {
-	mints  []int64          // minimum timestamps for each iterator
-	series []SeriesIterator // iterators in time order
+	series []Series // series in time order
 
 	i   int
 	cur SeriesIterator
 }
 
 func (it *chainedSeriesIterator) Seek(t int64) bool {
-	x := sort.Search(len(it.mints), func(i int) bool { return it.mints[i] >= t })
-
-	if x == len(it.mints) {
-		return false
-	}
-	if it.mints[x] == t {
-		if x == 0 {
-			return false
+	// We just scan the chained series sequentially as they are already
+	// pre-selected by relevant time and should be accessed sequentially anyway.
+	for i, s := range it.series[it.i:] {
+		cur := s.Iterator()
+		if !cur.Seek(t) {
+			continue
 		}
-		x--
-	}
-
-	it.i = x
-	it.cur = it.series[x]
-
-	for it.cur.Next() {
-		t0, _ := it.cur.Values()
-		if t0 >= t {
-			break
-		}
+		it.cur = cur
+		it.i += i
+		return true
 	}
 	return false
 }
@@ -486,7 +502,7 @@ func (it *chainedSeriesIterator) Next() bool {
 	}
 
 	it.i++
-	it.cur = it.series[it.i]
+	it.cur = it.series[it.i].Iterator()
 
 	return it.Next()
 }
@@ -509,8 +525,12 @@ type chunkSeriesIterator struct {
 	cur chunks.Iterator
 }
 
-func newChunkSeriesIterator(cs []chunks.Chunk) *chunkSeriesIterator {
+func newChunkSeriesIterator(mints []int64, cs []chunks.Chunk) *chunkSeriesIterator {
+	if len(mints) != len(cs) {
+		panic("chunk references and chunks length don't match")
+	}
 	return &chunkSeriesIterator{
+		mints:  mints,
 		chunks: cs,
 		i:      0,
 		cur:    cs[0].Iterator(),
@@ -536,7 +556,7 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	for it.cur.Next() {
 		t0, _ := it.cur.Values()
 		if t0 >= t {
-			break
+			return true
 		}
 	}
 	return false

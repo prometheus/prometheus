@@ -2,6 +2,7 @@ package test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"testing"
 
 	"github.com/fabxc/tsdb"
@@ -55,40 +56,64 @@ func BenchmarkLabelSetAccess(b *testing.B) {
 }
 
 func BenchmarkStringBytesEquals(b *testing.B) {
+	randBytes := func(n int) ([]byte, []byte) {
+		buf1 := make([]byte, n)
+		if _, err := rand.Read(buf1); err != nil {
+			b.Fatal(err)
+		}
+		buf2 := make([]byte, n)
+		copy(buf1, buf2)
+
+		return buf1, buf2
+	}
+
 	cases := []struct {
 		name string
-		a, b string
+		f    func() ([]byte, []byte)
 	}{
 		{
 			name: "equal",
-			a:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
-			b:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
+			f: func() ([]byte, []byte) {
+				return randBytes(60)
+			},
 		},
 		{
 			name: "1-flip-end",
-			a:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
-			b:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,353",
+			f: func() ([]byte, []byte) {
+				b1, b2 := randBytes(60)
+				b2[59] ^= b2[59]
+				return b1, b2
+			},
 		},
 		{
 			name: "1-flip-middle",
-			a:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
-			b:    "sdfn492cn9xwm0ws8r,4932x98f,uj504cxf594802h875hgzz0h3586x8xz,359",
+			f: func() ([]byte, []byte) {
+				b1, b2 := randBytes(60)
+				b2[29] ^= b2[29]
+				return b1, b2
+			},
 		},
 		{
 			name: "1-flip-start",
-			a:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
-			b:    "adfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
+			f: func() ([]byte, []byte) {
+				b1, b2 := randBytes(60)
+				b2[0] ^= b2[0]
+				return b1, b2
+			},
 		},
 		{
 			name: "different-length",
-			a:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,359",
-			b:    "sdfn492cn9xwm0ws8r,4932x98f,uj594cxf594802h875hgzz0h3586x8xz,35",
+			f: func() ([]byte, []byte) {
+				b1, b2 := randBytes(60)
+				return b1, b2[:59]
+			},
 		},
 	}
 
 	for _, c := range cases {
 		b.Run(c.name+"-strings", func(b *testing.B) {
-			as, bs := c.a, c.b
+			ab, bb := c.f()
+			as, bs := string(ab), string(bb)
 			b.SetBytes(int64(len(as)))
 
 			var r bool
@@ -100,7 +125,7 @@ func BenchmarkStringBytesEquals(b *testing.B) {
 		})
 
 		b.Run(c.name+"-bytes", func(b *testing.B) {
-			ab, bb := []byte(c.a), []byte(c.b)
+			ab, bb := c.f()
 			b.SetBytes(int64(len(ab)))
 
 			var r bool
@@ -112,7 +137,7 @@ func BenchmarkStringBytesEquals(b *testing.B) {
 		})
 
 		b.Run(c.name+"-bytes-length-check", func(b *testing.B) {
-			ab, bb := []byte(c.a), []byte(c.b)
+			ab, bb := c.f()
 			b.SetBytes(int64(len(ab)))
 
 			var r bool

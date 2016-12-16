@@ -58,7 +58,7 @@ type IndexReader interface {
 	Postings(name, value string) (Postings, error)
 
 	// Series returns the series for the given reference.
-	Series(ref uint32) (Series, error)
+	Series(ref uint32, mint, maxt int64) (Series, error)
 }
 
 // StringTuples provides access to a sorted list of string tuples.
@@ -231,7 +231,7 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	return st, nil
 }
 
-func (r *indexReader) Series(ref uint32) (Series, error) {
+func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	k, n := binary.Uvarint(r.b[ref:])
 	if n < 1 {
 		return nil, errInvalidSize
@@ -249,13 +249,15 @@ func (r *indexReader) Series(ref uint32) (Series, error) {
 
 		b = b[n:]
 	}
-	// Offests must occur in pairs representing name and value.
+	// Symbol offests must occur in pairs representing name and value.
 	if len(offsets)&1 != 0 {
 		return nil, errInvalidSize
 	}
 
-	// TODO(fabxc): Fully materialize series for now. Figure out later if it
+	// TODO(fabxc): Fully materialize series symbols for now. Figure out later if it
 	// makes sense to decode those lazily.
+	// If we use unsafe strings the there'll be no copy overhead.
+	//
 	// The references are expected to be sorted and match the order of
 	// the underlying strings.
 	labels := make(Labels, 0, k)
@@ -275,17 +277,28 @@ func (r *indexReader) Series(ref uint32) (Series, error) {
 		})
 	}
 
-	// Read the chunk offsets.
-	k, n = binary.Uvarint(r.b[ref:])
+	// Read the chunks meta data.
+	k, n = binary.Uvarint(b)
 	if n < 1 {
 		return nil, errInvalidSize
 	}
 
 	b = b[n:]
-	coffsets := make([]ChunkOffset, 0, k)
+	chunks := make([]ChunkMeta, 0, k)
 
 	for i := 0; i < int(k); i++ {
-		v, n := binary.Varint(b)
+		firstTime, n := binary.Varint(b)
+		if n < 1 {
+			return nil, errInvalidSize
+		}
+		b = b[n:]
+
+		// Terminate early if we exceeded the queried time range.
+		if firstTime > maxt {
+			break
+		}
+
+		lastTime, n := binary.Varint(b)
 		if n < 1 {
 			return nil, errInvalidSize
 		}
@@ -297,18 +310,28 @@ func (r *indexReader) Series(ref uint32) (Series, error) {
 		}
 		b = b[n:]
 
-		coffsets = append(coffsets, ChunkOffset{
-			Offset: uint32(o),
-			Value:  v,
+		// Skip the chunk if it is before the queried time range.
+		if lastTime < mint {
+			continue
+		}
+
+		chunks = append(chunks, ChunkMeta{
+			Ref:     uint32(o),
+			MinTime: firstTime,
+			MaxTime: lastTime,
 		})
 	}
-
-	s := &series{
-		labels:  labels,
-		offsets: coffsets,
-		chunk:   r.series.Chunk,
+	// If no chunks applicable to the time range were found, the series
+	// can be skipped.
+	if len(chunks) == 0 {
+		return nil, nil
 	}
-	return s, nil
+
+	return &series{
+		labels: labels,
+		chunks: chunks,
+		chunk:  r.series.Chunk,
+	}, nil
 }
 
 func (r *indexReader) Postings(name, value string) (Postings, error) {
@@ -342,30 +365,6 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 	}
 
 	return &listIterator{list: l, idx: -1}, nil
-}
-
-type series struct {
-	labels  Labels
-	offsets []ChunkOffset // in-order chunk refs
-	chunk   func(ref uint32) (chunks.Chunk, error)
-}
-
-func (s *series) Labels() Labels {
-	return s.labels
-}
-
-func (s *series) Iterator() SeriesIterator {
-	var cs []chunks.Chunk
-
-	for _, co := range s.offsets {
-		c, err := s.chunk(co.Offset)
-		if err != nil {
-			panic(err) // TODO(fabxc): add error series iterator.
-		}
-		cs = append(cs, c)
-	}
-
-	return newChunkSeriesIterator(cs)
 }
 
 type stringTuples struct {

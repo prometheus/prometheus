@@ -92,13 +92,13 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) e
 		return err
 	}
 
-	offsets := make([]ChunkOffset, 0, len(chks))
-	lastTimestamp := w.baseTimestamp
+	metas := make([]ChunkMeta, 0, len(chks))
 
 	for _, cd := range chks {
-		offsets = append(offsets, ChunkOffset{
-			Value:  lastTimestamp,
-			Offset: uint32(w.n),
+		metas = append(metas, ChunkMeta{
+			MinTime: cd.firsTimestamp,
+			MaxTime: cd.lastTimestamp,
+			Ref:     uint32(w.n),
 		})
 		n = binary.PutUvarint(b[:], uint64(len(cd.chunk.Bytes())))
 
@@ -111,7 +111,6 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) e
 		if err := w.write(wr, cd.chunk.Bytes()); err != nil {
 			return err
 		}
-		lastTimestamp = cd.lastTimestamp
 	}
 
 	if err := w.write(w.w, h.Sum(nil)); err != nil {
@@ -119,7 +118,7 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) e
 	}
 
 	if w.index != nil {
-		w.index.AddSeries(ref, lset, offsets...)
+		w.index.AddSeries(ref, lset, metas...)
 	}
 	return nil
 }
@@ -141,9 +140,10 @@ func (w *seriesWriter) Close() error {
 	return nil
 }
 
-type ChunkOffset struct {
-	Value  int64
-	Offset uint32
+type ChunkMeta struct {
+	Ref     uint32
+	MinTime int64
+	MaxTime int64
 }
 
 type BlockStats struct {
@@ -161,7 +161,7 @@ type IndexWriter interface {
 	// of chunks that the index can reference.
 	// The reference number is used to resolve a series against the postings
 	// list iterator. It only has to be available during the write processing.
-	AddSeries(ref uint32, l Labels, o ...ChunkOffset)
+	AddSeries(ref uint32, l Labels, chunks ...ChunkMeta)
 
 	// WriteStats writes final stats for the indexed block.
 	WriteStats(BlockStats) error
@@ -183,8 +183,8 @@ type IndexWriter interface {
 
 type indexWriterSeries struct {
 	labels Labels
-	chunks []ChunkOffset // series file offset of chunks
-	offset uint32        // index file offset of series reference
+	chunks []ChunkMeta // series file offset of chunks
+	offset uint32      // index file offset of series reference
 }
 
 // indexWriter implements the IndexWriter interface for the standard
@@ -242,7 +242,7 @@ func (w *indexWriter) writeMeta() error {
 	return w.write(w.w, b[:])
 }
 
-func (w *indexWriter) AddSeries(ref uint32, lset Labels, offsets ...ChunkOffset) {
+func (w *indexWriter) AddSeries(ref uint32, lset Labels, chunks ...ChunkMeta) {
 	// Populate the symbol table from all label sets we have to reference.
 	for _, l := range lset {
 		w.symbols[l.Name] = 0
@@ -251,7 +251,7 @@ func (w *indexWriter) AddSeries(ref uint32, lset Labels, offsets ...ChunkOffset)
 
 	w.series[ref] = &indexWriterSeries{
 		labels: lset,
-		chunks: offsets,
+		chunks: chunks,
 	}
 }
 
@@ -332,15 +332,17 @@ func (w *indexWriter) writeSeries() error {
 			b = append(b, buf[:n]...)
 		}
 
-		// Write skiplist to chunk offsets.
+		// Write chunks meta data including reference into chunk file.
 		n = binary.PutUvarint(buf, uint64(len(s.chunks)))
 		b = append(b, buf[:n]...)
 
 		for _, c := range s.chunks {
-			n = binary.PutVarint(buf, c.Value)
+			n = binary.PutVarint(buf, c.MinTime)
+			b = append(b, buf[:n]...)
+			n = binary.PutVarint(buf, c.MaxTime)
 			b = append(b, buf[:n]...)
 
-			n = binary.PutUvarint(buf, uint64(c.Offset))
+			n = binary.PutUvarint(buf, uint64(c.Ref))
 			b = append(b, buf[:n]...)
 		}
 	}
