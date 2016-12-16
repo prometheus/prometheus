@@ -109,7 +109,7 @@ PromConsole.TimeControl = function() {
 
   this.durationElement.value = PromConsole.TimeControl.prototype.getHumanDuration(
     PromConsole.TimeControl._initialValues.duration);
-  if (PromConsole.TimeControl._initialValues.endTimeNow === undefined) {
+  if (!PromConsole.TimeControl._initialValues.endTimeNow) {
     this.endElement.value = PromConsole.TimeControl.prototype.getHumanDate(
       new Date(PromConsole.TimeControl._initialValues.endTime * 1000));
   }
@@ -138,10 +138,17 @@ PromConsole.TimeControl.prototype._setHash = function() {
 
 PromConsole.TimeControl._initialValues = function() {
   var hash = window.location.hash;
+  var values;
   if (hash.indexOf('#pctc') === 0) {
-    return JSON.parse(decodeURIComponent(hash.substring(5)));
+    values = JSON.parse(decodeURIComponent(hash.substring(5)));
+  } else {
+    values = {duration: 3600, endTime: 0};
   }
-  return {duration: 3600, endTime: new Date().getTime() / 1000, endTimeNow: true};
+  if (values.endTime == 0) {
+    values.endTime = new Date().getTime() / 1000;
+    values.endTimeNow = true;
+  }
+  return values;
 }();
 
 PromConsole.TimeControl.prototype.parseDuration = function(durationText) {
