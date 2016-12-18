@@ -333,6 +333,8 @@ func (s *Shard) persist() error {
 
 	s.mtx.Unlock()
 
+	// Only allow another persistence to be triggered after the current one
+	// has completed (successful or not.)
 	defer func() {
 		<-s.persistCh
 	}()
@@ -345,11 +347,11 @@ func (s *Shard) persist() error {
 		return err
 	}
 
-	sf, err := os.Create(filepath.Join(p, "series"))
+	sf, err := os.Create(chunksFileName(p))
 	if err != nil {
 		return err
 	}
-	xf, err := os.Create(filepath.Join(p, "index"))
+	xf, err := os.Create(indexFileName(p))
 	if err != nil {
 		return err
 	}
@@ -360,35 +362,23 @@ func (s *Shard) persist() error {
 	defer sw.Close()
 	defer iw.Close()
 
-	for ref, cd := range head.index.forward {
-		if err := sw.WriteSeries(ref, cd.lset, []*chunkDesc{cd}); err != nil {
-			return err
-		}
-	}
-
-	if err := iw.WriteStats(s.head.stats); err != nil {
+	if err := head.persist(sw, iw); err != nil {
 		return err
-	}
-	for n, v := range head.index.values {
-		s := make([]string, 0, len(v))
-		for x := range v {
-			s = append(s, x)
-		}
-
-		if err := iw.WriteLabelIndex([]string{n}, s); err != nil {
-			return err
-		}
-	}
-
-	for t := range head.index.postings.m {
-		if err := iw.WritePostings(t.name, t.value, head.index.postings.get(t)); err != nil {
-			return err
-		}
 	}
 
 	sz := fmt.Sprintf("%.2fMiB", float64(sw.Size()+iw.Size())/1024/1024)
 
 	s.logger.Log("size", sz, "samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
+
+	// Reopen block as persisted block for querying.
+	pb, err := newPersistedBlock(p)
+	if err != nil {
+		return err
+	}
+
+	s.mtx.Lock()
+	s.persisted = append(s.persisted, pb)
+	s.mtx.Unlock()
 
 	return nil
 }

@@ -134,3 +134,33 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 
 	return nil
 }
+
+func (h *HeadBlock) persist(sw SeriesWriter, iw IndexWriter) error {
+	for ref, cd := range h.index.forward {
+		if err := sw.WriteSeries(ref, cd.lset, []*chunkDesc{cd}); err != nil {
+			return err
+		}
+	}
+
+	if err := iw.WriteStats(h.stats); err != nil {
+		return err
+	}
+	for n, v := range h.index.values {
+		s := make([]string, 0, len(v))
+		for x := range v {
+			s = append(s, x)
+		}
+
+		if err := iw.WriteLabelIndex([]string{n}, s); err != nil {
+			return err
+		}
+	}
+
+	for t := range h.index.postings.m {
+		if err := iw.WritePostings(t.name, t.value, h.index.postings.get(t)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
