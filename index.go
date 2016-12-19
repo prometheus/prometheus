@@ -65,7 +65,7 @@ type memPostings struct {
 
 // Postings returns an iterator over the postings list for s.
 func (p *memPostings) get(t term) Postings {
-	return &listIterator{list: p.m[t], idx: -1}
+	return &listPostings{list: p.m[t], idx: -1}
 }
 
 // add adds a document to the index. The caller has to ensure that no
@@ -169,22 +169,22 @@ func (it *mergePostings) Err() error {
 	return nil
 }
 
-// listIterator implements the Iterator interface over a plain list.
-type listIterator struct {
+// listPostings implements the Postings interface over a plain list.
+type listPostings struct {
 	list []uint32
 	idx  int
 }
 
-func (it *listIterator) Value() uint32 {
+func (it *listPostings) Value() uint32 {
 	return it.list[it.idx]
 }
 
-func (it *listIterator) Next() bool {
+func (it *listPostings) Next() bool {
 	it.idx++
 	return it.idx < len(it.list)
 }
 
-func (it *listIterator) Seek(x uint32) bool {
+func (it *listPostings) Seek(x uint32) bool {
 	// Do binary search between current position and end.
 	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
 		return it.list[i+it.idx] >= x
@@ -192,7 +192,7 @@ func (it *listIterator) Seek(x uint32) bool {
 	return it.idx < len(it.list)
 }
 
-func (it *listIterator) Err() error {
+func (it *listPostings) Err() error {
 	return nil
 }
 

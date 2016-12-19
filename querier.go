@@ -491,6 +491,9 @@ func (it *chainedSeriesIterator) Seek(t int64) bool {
 }
 
 func (it *chainedSeriesIterator) Next() bool {
+	if it.cur == nil {
+		it.cur = it.series[it.i].Iterator()
+	}
 	if it.cur.Next() {
 		return true
 	}

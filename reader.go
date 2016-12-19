@@ -364,7 +364,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 		b = b[4:]
 	}
 
-	return &listIterator{list: l, idx: -1}, nil
+	return &listPostings{list: l, idx: -1}, nil
 }
 
 type stringTuples struct {
