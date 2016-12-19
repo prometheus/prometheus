@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fabxc/tsdb/chunks"
+	"github.com/pkg/errors"
 )
 
 // SeriesReader provides reading access of serialized time series data.
@@ -88,7 +89,7 @@ var (
 
 func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
 	if len(b) < 16 {
-		return nil, errInvalidSize
+		return nil, errors.Wrap(errInvalidSize, "index header")
 	}
 	r := &indexReader{
 		series: s,
@@ -105,20 +106,25 @@ func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
 	loff := binary.BigEndian.Uint32(b[len(b)-8 : len(b)-4])
 	poff := binary.BigEndian.Uint32(b[len(b)-4:])
 
-	if r.labels, err = readHashmap(r.section(loff)); err != nil {
-		return nil, err
+	f, b, err := r.section(loff)
+	if err != nil {
+		return nil, errors.Wrapf(err, "label index hashmap section at %d", loff)
 	}
-	if r.postings, err = readHashmap(r.section(poff)); err != nil {
-		return nil, err
+	if r.labels, err = readHashmap(f, b); err != nil {
+		return nil, errors.Wrap(err, "read label index hashmap")
+	}
+	f, b, err = r.section(poff)
+	if err != nil {
+		return nil, errors.Wrapf(err, "postings hashmap section at %d", loff)
+	}
+	if r.postings, err = readHashmap(f, b); err != nil {
+		return nil, errors.Wrap(err, "read postings hashmap")
 	}
 
 	return r, nil
 }
 
-func readHashmap(flag byte, b []byte, err error) (map[string]uint32, error) {
-	if err != nil {
-		return nil, err
-	}
+func readHashmap(flag byte, b []byte) (map[string]uint32, error) {
 	if flag != flagStd {
 		return nil, errInvalidFlag
 	}
@@ -127,19 +133,19 @@ func readHashmap(flag byte, b []byte, err error) (map[string]uint32, error) {
 	for len(b) > 0 {
 		l, n := binary.Uvarint(b)
 		if n < 1 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "read key length")
 		}
 		b = b[n:]
 
 		if len(b) < int(l) {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "read key")
 		}
 		s := string(b[:l])
 		b = b[l:]
 
 		o, n := binary.Uvarint(b)
 		if n < 1 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "read offset value")
 		}
 		b = b[n:]
 
@@ -153,7 +159,7 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 	b := r.b[o:]
 
 	if len(b) < 5 {
-		return 0, nil, errInvalidSize
+		return 0, nil, errors.Wrap(errInvalidSize, "read header")
 	}
 
 	flag := b[0]
@@ -163,7 +169,7 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 
 	// b must have the given length plus 4 bytes for the CRC32 checksum.
 	if len(b) < int(l)+4 {
-		return 0, nil, errInvalidSize
+		return 0, nil, errors.Wrap(errInvalidSize, "section content")
 	}
 	return flag, b[:l], nil
 }
@@ -213,14 +219,14 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 
 	flag, b, err := r.section(off)
 	if err != nil {
-		return nil, fmt.Errorf("section: %s", err)
+		return nil, errors.Wrapf(err, "section at %d", off)
 	}
 	if flag != flagStd {
 		return nil, errInvalidFlag
 	}
 	l, n := binary.Uvarint(b)
 	if n < 1 {
-		return nil, errInvalidSize
+		return nil, errors.Wrap(errInvalidSize, "read label index size")
 	}
 
 	st := &serializedStringTuples{
@@ -234,7 +240,7 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	k, n := binary.Uvarint(r.b[ref:])
 	if n < 1 {
-		return nil, errInvalidSize
+		return nil, errors.Wrap(errInvalidSize, "number of labels")
 	}
 
 	b := r.b[int(ref)+n:]
@@ -243,7 +249,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	for i := 0; i < int(k); i++ {
 		o, n := binary.Uvarint(b)
 		if n < 1 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "symbol offset")
 		}
 		offsets = append(offsets, uint32(o))
 
@@ -251,7 +257,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	}
 	// Symbol offests must occur in pairs representing name and value.
 	if len(offsets)&1 != 0 {
-		return nil, errInvalidSize
+		return nil, errors.New("odd number of symbol references")
 	}
 
 	// TODO(fabxc): Fully materialize series symbols for now. Figure out later if it
@@ -265,11 +271,11 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	for i := 0; i < int(k); i += 2 {
 		n, err := r.lookupSymbol(offsets[i])
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "symbol lookup")
 		}
 		v, err := r.lookupSymbol(offsets[i+1])
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "symbol lookup")
 		}
 		labels = append(labels, Label{
 			Name:  string(n),
@@ -280,7 +286,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	// Read the chunks meta data.
 	k, n = binary.Uvarint(b)
 	if n < 1 {
-		return nil, errInvalidSize
+		return nil, errors.Wrap(errInvalidSize, "number of chunks")
 	}
 
 	b = b[n:]
@@ -289,7 +295,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	for i := 0; i < int(k); i++ {
 		firstTime, n := binary.Varint(b)
 		if n < 1 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "first time")
 		}
 		b = b[n:]
 
@@ -300,13 +306,13 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 
 		lastTime, n := binary.Varint(b)
 		if n < 1 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "last time")
 		}
 		b = b[n:]
 
 		o, n := binary.Uvarint(b)
 		if n < 1 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "chunk offset")
 		}
 		b = b[n:]
 
@@ -344,11 +350,11 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 
 	flag, b, err := r.section(off)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "section at %d", off)
 	}
 
 	if flag != flagStd {
-		return nil, errInvalidFlag
+		return nil, errors.Wrapf(errInvalidFlag, "section at %d", off)
 	}
 
 	// TODO(fabxc): just read into memory as an intermediate solution.
@@ -357,7 +363,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 
 	for len(b) > 0 {
 		if len(b) < 4 {
-			return nil, errInvalidSize
+			return nil, errors.Wrap(errInvalidSize, "plain postings entry")
 		}
 		l = append(l, binary.BigEndian.Uint32(b[:4]))
 
@@ -374,7 +380,7 @@ type stringTuples struct {
 
 func newStringTuples(s []string, l int) (*stringTuples, error) {
 	if len(s)%l != 0 {
-		return nil, errInvalidSize
+		return nil, errors.Wrap(errInvalidSize, "string tuple list")
 	}
 	return &stringTuples{s: s, l: l}, nil
 }

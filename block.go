@@ -15,6 +15,14 @@ type block interface {
 	interval() (int64, int64)
 }
 
+type BlockStats struct {
+	MinTime     int64
+	MaxTime     int64
+	SampleCount uint64
+	SeriesCount uint32
+	ChunkCount  uint32
+}
+
 const (
 	flagNone = 0
 	flagStd  = 1
@@ -33,6 +41,7 @@ func newPersistedBlock(path string) (*persistedBlock, error) {
 	// The directory must be named after the base timestamp for the block.
 	// TODO(fabxc): validate match of name and stats time, validate magic.
 
+	fmt.Println("new persisted block", path)
 	// mmap files belonging to the block.
 	chunksf, err := openMmapFile(chunksFileName(path))
 	if err != nil {
@@ -56,6 +65,7 @@ func newPersistedBlock(path string) (*persistedBlock, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("initialized new persisted block with", stats)
 
 	pb := &persistedBlock{
 		chunksf: chunksf,

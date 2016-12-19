@@ -146,14 +146,6 @@ type ChunkMeta struct {
 	MaxTime int64
 }
 
-type BlockStats struct {
-	MinTime     int64
-	MaxTime     int64
-	SampleCount uint64
-	SeriesCount uint32
-	ChunkCount  uint32
-}
-
 // IndexWriter serialized the index for a block of series data.
 // The methods must generally be called in order they are specified.
 type IndexWriter interface {

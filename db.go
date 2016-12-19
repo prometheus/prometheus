@@ -275,7 +275,11 @@ func (s *Shard) appendBatch(ts int64, samples []Sample) error {
 	if s.head.stats.SampleCount/uint64(s.head.stats.ChunkCount) > 400 {
 		select {
 		case s.persistCh <- struct{}{}:
-			go s.persist()
+			go func() {
+				if err := s.persist(); err != nil {
+					s.logger.Log("msg", "persistance error", "err", err)
+				}
+			}()
 		default:
 		}
 	}
