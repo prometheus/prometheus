@@ -84,7 +84,7 @@ func (h *HeadBlock) Series(ref uint32, mint, maxt int64) (Series, error) {
 	if !intervalOverlap(cd.firsTimestamp, cd.lastTimestamp, mint, maxt) {
 		return nil, nil
 	}
-	s := &series{
+	s := &chunkSeries{
 		labels: cd.lset,
 		chunks: []ChunkMeta{
 			{MinTime: h.stats.MinTime, Ref: 0},

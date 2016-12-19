@@ -327,7 +327,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 		return nil, nil
 	}
 
-	return &series{
+	return &chunkSeries{
 		labels: labels,
 		chunks: chunks,
 		chunk:  r.series.Chunk,

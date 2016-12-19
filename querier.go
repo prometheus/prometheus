@@ -88,8 +88,49 @@ func (q *querier) Select(ms ...Matcher) SeriesSet {
 	return r
 }
 
-func (q *querier) LabelValues(string) ([]string, error) {
-	return nil, nil
+func (q *querier) LabelValues(n string) ([]string, error) {
+	// TODO(fabxc): return returned merged result.
+	res, err := q.shards[0].LabelValues(n)
+	if err != nil {
+		return nil, err
+	}
+	for _, sq := range q.shards[1:] {
+		pr, err := sq.LabelValues(n)
+		if err != nil {
+			return nil, err
+		}
+		// Merge new values into deduplicated result.
+		res = mergeStrings(res, pr)
+	}
+	return res, nil
+}
+
+func mergeStrings(a, b []string) []string {
+	maxl := len(a)
+	if len(b) > len(a) {
+		maxl = len(b)
+	}
+	res := make([]string, 0, maxl*10/9)
+
+	for len(a) > 0 && len(b) > 0 {
+		d := strings.Compare(a[0], b[0])
+
+		if d == 0 {
+			res = append(res, a[0])
+			a, b = a[1:], b[1:]
+		} else if d < 0 {
+			res = append(res, a[0])
+			a = a[1:]
+		} else if d > 0 {
+			res = append(res, b[0])
+			b = b[1:]
+		}
+	}
+
+	// Append all remaining elements.
+	res = append(res, a...)
+	res = append(res, b...)
+	return res
 }
 
 func (q *querier) LabelValuesFor(string, Label) ([]string, error) {
@@ -121,8 +162,21 @@ func (s *Shard) Querier(mint, maxt int64) Querier {
 	return sq
 }
 
-func (q *shardQuerier) LabelValues(string) ([]string, error) {
-	return nil, nil
+func (q *shardQuerier) LabelValues(n string) ([]string, error) {
+	// TODO(fabxc): return returned merged result.
+	res, err := q.blocks[0].LabelValues(n)
+	if err != nil {
+		return nil, err
+	}
+	for _, bq := range q.blocks[1:] {
+		pr, err := bq.LabelValues(n)
+		if err != nil {
+			return nil, err
+		}
+		// Merge new values into deduplicated result.
+		res = mergeStrings(res, pr)
+	}
+	return res, nil
 }
 
 func (q *shardQuerier) LabelValuesFor(string, Label) ([]string, error) {
@@ -216,7 +270,7 @@ func (q *blockQuerier) LabelValues(name string) ([]string, error) {
 		}
 		res = append(res, vals[0])
 	}
-	return nil, nil
+	return res, nil
 }
 
 func (q *blockQuerier) LabelValuesFor(string, Label) ([]string, error) {
@@ -410,18 +464,22 @@ func (s *blockSeriesSet) Next() bool {
 func (s *blockSeriesSet) Series() Series { return s.cur }
 func (s *blockSeriesSet) Err() error     { return s.err }
 
-type series struct {
+// chunkSeries is a series that is backed by a sequence of chunks holding
+// time series data.
+type chunkSeries struct {
 	labels Labels
 	chunks []ChunkMeta // in-order chunk refs
 
+	// chunk is a function that retrieves chunks based on a reference
+	// number contained in the chunk meta information.
 	chunk func(ref uint32) (chunks.Chunk, error)
 }
 
-func (s *series) Labels() Labels {
+func (s *chunkSeries) Labels() Labels {
 	return s.labels
 }
 
-func (s *series) Iterator() SeriesIterator {
+func (s *chunkSeries) Iterator() SeriesIterator {
 	var cs []chunks.Chunk
 	var mints []int64
 
@@ -454,6 +512,7 @@ type SeriesIterator interface {
 }
 
 // chainedSeries implements a series for a list of time-sorted series.
+// They all must have the same labels.
 type chainedSeries struct {
 	series []Series
 }
