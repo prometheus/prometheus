@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"math"
+	"os"
 	"sort"
 	"sync"
 
@@ -135,15 +136,30 @@ func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error 
 	return nil
 }
 
-func (h *HeadBlock) persist(sw SeriesWriter, iw IndexWriter) error {
+func (h *HeadBlock) persist(p string) (int64, error) {
+	sf, err := os.Create(chunksFileName(p))
+	if err != nil {
+		return 0, err
+	}
+	xf, err := os.Create(indexFileName(p))
+	if err != nil {
+		return 0, err
+	}
+
+	iw := newIndexWriter(xf)
+	sw := newSeriesWriter(sf, iw, h.stats.MinTime)
+
+	defer sw.Close()
+	defer iw.Close()
+
 	for ref, cd := range h.index.forward {
 		if err := sw.WriteSeries(ref, cd.lset, []*chunkDesc{cd}); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
 	if err := iw.WriteStats(h.stats); err != nil {
-		return err
+		return 0, err
 	}
 	for n, v := range h.index.values {
 		s := make([]string, 0, len(v))
@@ -152,15 +168,15 @@ func (h *HeadBlock) persist(sw SeriesWriter, iw IndexWriter) error {
 		}
 
 		if err := iw.WriteLabelIndex([]string{n}, s); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
 	for t := range h.index.postings.m {
 		if err := iw.WritePostings(t.name, t.value, h.index.postings.get(t)); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
-	return nil
+	return iw.Size() + sw.Size(), nil
 }

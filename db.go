@@ -351,27 +351,11 @@ func (s *Shard) persist() error {
 		return err
 	}
 
-	sf, err := os.Create(chunksFileName(p))
+	n, err := head.persist(p)
 	if err != nil {
 		return err
 	}
-	xf, err := os.Create(indexFileName(p))
-	if err != nil {
-		return err
-	}
-
-	iw := newIndexWriter(xf)
-	sw := newSeriesWriter(sf, iw, s.head.stats.MinTime)
-
-	defer sw.Close()
-	defer iw.Close()
-
-	if err := head.persist(sw, iw); err != nil {
-		return err
-	}
-
-	sz := fmt.Sprintf("%.2fMiB", float64(sw.Size()+iw.Size())/1024/1024)
-
+	sz := fmt.Sprintf("%.2fMiB", float64(n)/1024/1024)
 	s.logger.Log("size", sz, "samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
 
 	// Reopen block as persisted block for querying.
