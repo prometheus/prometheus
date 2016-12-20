@@ -42,7 +42,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 0
+	shardShift   = 3
 	numShards    = 1 << shardShift
 	maxChunkSize = 1024
 )
@@ -103,99 +103,70 @@ func (db *DB) Close() error {
 	return g.Wait()
 }
 
-// Appender adds a batch of samples.
+// Appender allows committing batches of samples to a database.
+// The data held by the appender is reset after Commit returns.
 type Appender interface {
-	// Add adds a sample pair to the appended batch.
-	Add(l Labels, t int64, v float64)
+	// AddSeries registers a new known series label set with the appender
+	// and returns a reference number used to add samples to it over the
+	// life time of the Appender.
+	// AddSeries(Labels) uint64
 
-	// Commit submits the collected samples.
+	// Add adds a sample pair for the referenced series.
+	Add(lset Labels, t int64, v float64)
+
+	// Commit submits the collected samples and purges the batch.
 	Commit() error
 }
 
-// Vector is a set of LabelSet associated with one value each.
-// Label sets and values must have equal length.
-type Vector struct {
-	Buckets map[uint16][]Sample
-	reused  int
-}
-
-type Sample struct {
-	Hash   uint64
-	Labels Labels
-	Value  float64
-}
-
-// Reset the vector but keep resources allocated.
-func (v *Vector) Reset() {
-	// Do a full reset every n-th reusage to avoid memory leaks.
-	if v.Buckets == nil || v.reused > 100 {
-		v.Buckets = make(map[uint16][]Sample, 0)
-		return
+// Appender returns a new appender against the database.
+func (db *DB) Appender() Appender {
+	return &bucketAppender{
+		db:      db,
+		buckets: make([][]hashedSample, numShards),
 	}
-	for x, bkt := range v.Buckets {
-		v.Buckets[x] = bkt[:0]
-	}
-	v.reused++
 }
 
-// Add a sample to the vector.
-func (v *Vector) Add(lset Labels, val float64) {
+type bucketAppender struct {
+	db      *DB
+	buckets [][]hashedSample
+}
+
+func (ba *bucketAppender) Add(lset Labels, t int64, v float64) {
 	h := lset.Hash()
-	s := uint16(h >> (64 - shardShift))
+	s := h >> (64 - shardShift)
 
-	v.Buckets[s] = append(v.Buckets[s], Sample{
-		Hash:   h,
-		Labels: lset,
-		Value:  val,
+	ba.buckets[s] = append(ba.buckets[s], hashedSample{
+		hash:   h,
+		labels: lset,
+		t:      t,
+		v:      v,
 	})
 }
 
-// func (db *DB) Appender() Appender {
-// 	return &bucketAppender{
-// 		samples: make([]Sample, 1024),
-// 	}
-// }
-
-// type bucketAppender struct {
-// 	db *DB
-// 	// buckets []Sam
-// }
-
-// func (a *bucketAppender) Add(l Labels, t int64, v float64) {
-
-// }
-
-// func (a *bucketAppender) Commit() error {
-// 	// f
-// }
-
-// AppendVector adds values for a list of label sets for the given timestamp
-// in milliseconds.
-func (db *DB) AppendVector(ts int64, v *Vector) error {
-	// Sequentially add samples to shards.
-	for s, bkt := range v.Buckets {
-		shard := db.shards[s]
-		if err := shard.appendBatch(ts, bkt); err != nil {
-			// TODO(fabxc): handle gracefully and collect multi-error.
-			return err
-		}
+func (ba *bucketAppender) reset() {
+	for i := range ba.buckets {
+		ba.buckets[i] = ba.buckets[i][:0]
 	}
-
-	return nil
 }
 
-func (db *DB) AppendSingle(lset Labels, ts int64, v float64) error {
-	sort.Sort(lset)
-	h := lset.Hash()
-	s := uint16(h >> (64 - shardShift))
+func (ba *bucketAppender) Commit() error {
+	defer ba.reset()
 
-	return db.shards[s].appendBatch(ts, []Sample{
-		{
-			Hash:   h,
-			Labels: lset,
-			Value:  v,
-		},
-	})
+	var merr MultiError
+
+	// Spill buckets into shards.
+	for s, b := range ba.buckets {
+		merr.Add(ba.db.shards[s].appendBatch(b))
+	}
+	return merr.Err()
+}
+
+type hashedSample struct {
+	hash   uint64
+	labels Labels
+
+	t int64
+	v float64
 }
 
 const sep = '\xff'
@@ -253,22 +224,14 @@ func (s *Shard) Close() error {
 	return e.Err()
 }
 
-func (s *Shard) appendBatch(ts int64, samples []Sample) error {
-	// TODO(fabxc): make configurable.
-	const persistenceTimeThreshold = 1000 * 60 * 60 // 1 hour if timestamp in ms
-
+func (s *Shard) appendBatch(samples []hashedSample) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	for _, smpl := range samples {
-		if err := s.head.append(smpl.Hash, smpl.Labels, ts, smpl.Value); err != nil {
-			// TODO(fabxc): handle gracefully and collect multi-error.
-			return err
-		}
-	}
+	var merr MultiError
 
-	if ts > s.head.stats.MaxTime {
-		s.head.stats.MaxTime = ts
+	for _, sm := range samples {
+		merr.Add(s.head.append(sm.hash, sm.labels, sm.t, sm.v))
 	}
 
 	// TODO(fabxc): randomize over time
@@ -284,7 +247,7 @@ func (s *Shard) appendBatch(ts int64, samples []Sample) error {
 		}
 	}
 
-	return nil
+	return merr.Err()
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
@@ -319,8 +282,6 @@ func (s *Shard) blocksForInterval(mint, maxt int64) []block {
 	if intervalOverlap(mint, maxt, hmin, hmax) {
 		bs = append(bs, s.head)
 	}
-
-	fmt.Println("blocks for interval", bs)
 
 	return bs
 }

@@ -17,7 +17,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/local"
 	"github.com/spf13/cobra"
 )
 
@@ -49,10 +48,9 @@ func NewBenchCommand() *cobra.Command {
 type writeBenchmark struct {
 	outPath    string
 	cleanup    bool
-	engine     string
 	numMetrics int
 
-	storage benchmarkStorage
+	storage *tsdb.DB
 
 	cpuprof   *os.File
 	memprof   *os.File
@@ -66,7 +64,6 @@ func NewBenchWriteCommand() *cobra.Command {
 		Short: "run a write performance benchmark",
 		Run:   wb.run,
 	}
-	c.PersistentFlags().StringVar(&wb.engine, "engine", "tsdb", "the storage engine to use")
 	c.PersistentFlags().StringVar(&wb.outPath, "out", "benchout/", "set the output path")
 	c.PersistentFlags().IntVar(&wb.numMetrics, "metrics", 10000, "number of metrics to read")
 	return c
@@ -93,22 +90,12 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	switch b.engine {
-	case "tsdb":
-		st, err := newTSDBStorage(dir)
-		if err != nil {
-			exitWithError(err)
-		}
-		b.storage = st
-	case "default":
-		st, err := newDefaultStorage(dir)
-		if err != nil {
-			exitWithError(err)
-		}
-		b.storage = st
-	default:
-		exitWithError(fmt.Errorf("unknown storage engine %q", b.engine))
+	st, err := tsdb.Open(dir, nil, nil)
+	if err != nil {
+		exitWithError(err)
 	}
+	b.storage = st
+
 	var metrics []model.Metric
 
 	measureTime("readData", func() {
@@ -138,7 +125,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 		}
 	})
 	measureTime("stopStorage", func() {
-		if err := b.storage.stop(); err != nil {
+		if err := b.storage.Close(); err != nil {
 			exitWithError(err)
 		}
 		b.stopProfiling()
@@ -171,7 +158,7 @@ func (b *writeBenchmark) ingestScrapes(metrics []model.Metric, scrapeCount int) 
 }
 
 func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount int) error {
-	var sc tsdb.Vector
+	app := b.storage.Appender()
 	ts := int64(model.Now())
 
 	type sample struct {
@@ -196,80 +183,16 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 
 	for i := 0; i < scrapeCount; i++ {
 		ts += int64(30000)
-		sc.Reset()
 
 		for _, s := range scrape {
 			s.value += 1000
-			sc.Add(s.labels, float64(s.value))
+			app.Add(s.labels, ts, float64(s.value))
 		}
-		if err := b.storage.ingestScrape(ts, &sc); err != nil {
+		if err := app.Commit(); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-type benchmarkStorage interface {
-	ingestScrape(int64, *tsdb.Vector) error
-	stop() error
-}
-
-type tsdbStorage struct {
-	c *tsdb.DB
-}
-
-func (c *tsdbStorage) stop() error {
-	return c.c.Close()
-}
-
-func (c *tsdbStorage) ingestScrape(ts int64, s *tsdb.Vector) error {
-	return c.c.AppendVector(ts, s)
-}
-
-func newTSDBStorage(path string) (*tsdbStorage, error) {
-	c, err := tsdb.Open(path, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &tsdbStorage{
-		c: c,
-	}, nil
-}
-
-type defaultStorage struct {
-	s local.Storage
-}
-
-func (s *defaultStorage) ingestScrape(ts int64, scrape *tsdb.Vector) error {
-	for _, samples := range scrape.Buckets {
-		for _, smpl := range samples {
-			met := make(model.Metric, len(smpl.Labels))
-			for _, l := range smpl.Labels {
-				met[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-			}
-			if err := s.s.Append(&model.Sample{
-				Metric:    met,
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(smpl.Value),
-			}); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (s *defaultStorage) stop() error {
-	return s.s.Stop()
-}
-
-func newDefaultStorage(path string) (*defaultStorage, error) {
-	s := local.NewMemorySeriesStorage(&local.MemorySeriesStorageOptions{
-		PersistenceStoragePath: path,
-		SyncStrategy:           local.Adaptive,
-		CheckpointInterval:     5 * time.Minute,
-	})
-	return &defaultStorage{s: s}, s.Start()
 }
 
 func (b *writeBenchmark) startProfiling() {
