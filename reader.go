@@ -271,7 +271,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	// the underlying strings.
 	labels := make(Labels, 0, k)
 
-	for i := 0; i < int(k); i += 2 {
+	for i := 0; i < len(offsets); i += 2 {
 		n, err := r.lookupSymbol(offsets[i])
 		if err != nil {
 			return nil, errors.Wrap(err, "symbol lookup")

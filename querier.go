@@ -370,6 +370,9 @@ func compareLabels(a, b Labels) int {
 		if d := strings.Compare(a[i].Name, b[i].Name); d != 0 {
 			return d
 		}
+		if d := strings.Compare(a[i].Value, b[i].Value); d != 0 {
+			return d
+		}
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.
 	return len(a) - len(b)

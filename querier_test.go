@@ -211,6 +211,19 @@ func TestCompareLabels(t *testing.T) {
 			b:   []Label{{"aa", ""}, {"ab", ""}},
 			res: 1,
 		},
+		{
+			a: []Label{
+				{"__name__", "go_gc_duration_seconds"},
+				{"job", "prometheus"},
+				{"quantile", "0.75"},
+			},
+			b: []Label{
+				{"__name__", "go_gc_duration_seconds"},
+				{"job", "prometheus"},
+				{"quantile", "1"},
+			},
+			res: -1,
+		},
 	}
 	for _, c := range cases {
 		// Use constructor to ensure sortedness.
