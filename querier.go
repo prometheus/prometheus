@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -657,14 +658,17 @@ func (it *chunkSeriesIterator) Err() error {
 type BufferedSeriesIterator struct {
 	it  SeriesIterator
 	buf *sampleRing
+
+	lastTime int64
 }
 
 // NewBuffer returns a new iterator that buffers the values within the time range
 // of the current element and the duration of delta before.
 func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	return &BufferedSeriesIterator{
-		it:  it,
-		buf: newSampleRing(delta, 16),
+		it:       it,
+		buf:      newSampleRing(delta, 16),
+		lastTime: math.MinInt64,
 	}
 }
 
@@ -676,14 +680,13 @@ func (b *BufferedSeriesIterator) PeekBack() (t int64, v float64, ok bool) {
 
 // Seek advances the iterator to the element at time t or greater.
 func (b *BufferedSeriesIterator) Seek(t int64) bool {
-	tcur, _ := b.it.Values()
-
 	t0 := t - b.buf.delta
+
 	// If the delta would cause us to seek backwards, preserve the buffer
 	// and just continue regular advancment while filling the buffer on the way.
-	if t0 <= tcur {
+	if t0 <= b.lastTime {
 		for b.Next() {
-			if tcur, _ = b.it.Values(); tcur >= t {
+			if tcur, _ := b.it.Values(); tcur >= t {
 				return true
 			}
 		}
@@ -711,7 +714,9 @@ func (b *BufferedSeriesIterator) Next() bool {
 	// Add current element to buffer before advancing.
 	b.buf.add(b.it.Values())
 
-	return b.it.Next()
+	ok := b.it.Next()
+	b.lastTime, _ = b.Values()
+	return ok
 }
 
 // Values returns the current element of the iterator.

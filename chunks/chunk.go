@@ -44,7 +44,7 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return &XORChunk{
-			b:   &bstream{count: 8},
+			b:   &bstream{count: 0, stream: d},
 			num: binary.BigEndian.Uint16(d),
 		}, nil
 	}

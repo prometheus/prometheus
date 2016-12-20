@@ -247,9 +247,9 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	}
 
 	b := r.b[int(ref)+n:]
-	offsets := make([]uint32, 0, k)
+	offsets := make([]uint32, 0, 2*k)
 
-	for i := 0; i < int(k); i++ {
+	for i := 0; i < 2*int(k); i++ {
 		o, n := binary.Uvarint(b)
 		if n < 1 {
 			return nil, errors.Wrap(errInvalidSize, "symbol offset")
