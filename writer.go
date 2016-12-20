@@ -8,6 +8,9 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/bradfitz/slice"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -216,13 +219,16 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 	binary.BigEndian.PutUint32(b[1:], l)
 
 	if err := w.write(wr, b[:]); err != nil {
-		return err
+		return errors.Wrap(err, "writing header")
 	}
 
 	if err := f(wr); err != nil {
-		return err
+		return errors.Wrap(err, "contents write func")
 	}
-	return w.write(w.w, h.Sum(nil))
+	if err := w.write(w.w, h.Sum(nil)); err != nil {
+		return errors.Wrap(err, "writing checksum")
+	}
+	return nil
 }
 
 func (w *indexWriter) writeMeta() error {
@@ -288,11 +294,15 @@ func (w *indexWriter) writeSymbols() error {
 	}
 	sort.Strings(symbols)
 
+	// The start of the section plus a 5 byte section header are our base.
+	// TODO(fabxc): switch to relative offsets and hold sections in a TOC.
+	base := uint32(w.n) + 5
+
 	buf := [binary.MaxVarintLen32]byte{}
 	b := append(make([]byte, 0, 4096), flagStd)
 
 	for _, s := range symbols {
-		w.symbols[s] = uint32(w.n) + uint32(len(b))
+		w.symbols[s] = base + uint32(len(b))
 
 		n := binary.PutUvarint(buf[:], uint64(len(s)))
 		b = append(b, buf[:n]...)
@@ -307,12 +317,26 @@ func (w *indexWriter) writeSymbols() error {
 }
 
 func (w *indexWriter) writeSeries() error {
-	b := make([]byte, 0, 4096)
-	buf := make([]byte, binary.MaxVarintLen64)
+	// Series must be stored sorted along their labels.
+	series := make([]*indexWriterSeries, 0, len(w.series))
 
 	for _, s := range w.series {
+		series = append(series, s)
+	}
+	slice.Sort(series, func(i, j int) bool {
+		return compareLabels(series[i].labels, series[j].labels) < 0
+	})
+
+	// Current end of file plus 5 bytes for section header.
+	// TODO(fabxc): switch to relative offsets.
+	base := uint32(w.n) + 5
+
+	b := make([]byte, 0, 1<<20) // 1MiB
+	buf := make([]byte, binary.MaxVarintLen64)
+
+	for _, s := range series {
 		// Write label set symbol references.
-		s.offset = uint32(w.n) + uint32(len(b))
+		s.offset = base + uint32(len(b))
 
 		n := binary.PutUvarint(buf, uint64(len(s.labels)))
 		b = append(b, buf[:n]...)
@@ -391,10 +415,22 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	b := make([]byte, 0, 4096)
 	buf := [4]byte{}
 
-	for it.Next() {
-		v := w.series[it.Value()].offset
-		binary.BigEndian.PutUint32(buf[:], v)
+	// Order of the references in the postings list does not imply order
+	// of the series references within the persisted block they are mapped to.
+	// We have to sort the new references again.
+	var refs []uint32
 
+	for it.Next() {
+		refs = append(refs, w.series[it.Value()].offset)
+	}
+	if err := it.Err(); err != nil {
+		return err
+	}
+
+	slice.Sort(refs, func(i, j int) bool { return refs[i] < refs[j] })
+
+	for _, r := range refs {
+		binary.BigEndian.PutUint32(buf[:], r)
 		b = append(b, buf[:]...)
 	}
 

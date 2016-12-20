@@ -31,6 +31,9 @@ func newSeriesReader(b []byte) (*seriesReader, error) {
 }
 
 func (s *seriesReader) Chunk(offset uint32) (chunks.Chunk, error) {
+	if int(offset) > len(s.b) {
+		return nil, errors.Errorf("offset %d beyond data size %d", offset, len(s.b))
+	}
 	b := s.b[offset:]
 
 	l, n := binary.Uvarint(b)
@@ -427,14 +430,14 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 	if len(t.b) < (i+t.l)*4 {
 		return nil, errInvalidSize
 	}
-	res := make([]string, t.l)
+	res := make([]string, 0, t.l)
 
 	for k := 0; k < t.l; k++ {
-		offset := binary.BigEndian.Uint32(t.b[i*4:])
+		offset := binary.BigEndian.Uint32(t.b[(i+k)*4:])
 
 		b, err := t.lookup(offset)
 		if err != nil {
-			return nil, fmt.Errorf("lookup: %s", err)
+			return nil, errors.Wrap(err, "symbol lookup")
 		}
 		res = append(res, string(b))
 	}

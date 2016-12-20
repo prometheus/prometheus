@@ -183,6 +183,22 @@ func (q *shardQuerier) LabelValuesFor(string, Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (q *shardQuerier) Select(ms ...Matcher) SeriesSet {
+	// Sets from different blocks have no time overlap. The reference numbers
+	// they emit point to series sorted in lexicographic order.
+	// We can fully connect partial series by simply comparing with the previous
+	// label set.
+	if len(q.blocks) == 0 {
+		return nopSeriesSet{}
+	}
+	r := q.blocks[0].Select(ms...)
+
+	for _, s := range q.blocks[1:] {
+		r = newShardSeriesSet(r, s.Select(ms...))
+	}
+	return r
+}
+
 func (q *shardQuerier) Close() error {
 	return nil
 }
@@ -210,8 +226,6 @@ func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
 		its = append(its, q.selectSingle(m))
 	}
 
-	// TODO(fabxc): pass down time range so the series iterator
-	// can be instantiated with it?
 	return &blockSeriesSet{
 		index: q.index,
 		it:    Intersect(its...),
@@ -254,6 +268,13 @@ func (q *blockQuerier) selectSingle(m Matcher) Postings {
 	}
 
 	return Intersect(rit...)
+}
+
+func expandPostings(p Postings) (res []uint32, err error) {
+	for p.Next() {
+		res = append(res, p.Value())
+	}
+	return res, p.Err()
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
@@ -317,23 +338,6 @@ func (s *mergedSeriesSet) Next() bool {
 	s.cur++
 
 	return s.Next()
-}
-
-func (q *shardQuerier) Select(ms ...Matcher) SeriesSet {
-	// Sets from different blocks have no time overlap. The reference numbers
-	// they emit point to series sorted in lexicographic order.
-	// We can fully connect partial series by simply comparing with the previous
-	// label set.
-	if len(q.blocks) == 0 {
-		return nopSeriesSet{}
-	}
-	r := q.blocks[0].Select(ms...)
-
-	for _, s := range q.blocks[1:] {
-		r = &shardSeriesSet{a: r, b: s.Select(ms...)}
-	}
-
-	return r
 }
 
 type shardSeriesSet struct {
@@ -408,7 +412,7 @@ func (s *shardSeriesSet) advanceB() {
 }
 
 func (s *shardSeriesSet) Next() bool {
-	if s.as == nil && s.bs == nil {
+	if s.as == nil && s.bs == nil || s.Err() != nil {
 		return false
 	}
 

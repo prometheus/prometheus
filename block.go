@@ -38,10 +38,8 @@ type persistedBlock struct {
 }
 
 func newPersistedBlock(path string) (*persistedBlock, error) {
-	// The directory must be named after the base timestamp for the block.
 	// TODO(fabxc): validate match of name and stats time, validate magic.
 
-	fmt.Println("new persisted block", path)
 	// mmap files belonging to the block.
 	chunksf, err := openMmapFile(chunksFileName(path))
 	if err != nil {
@@ -65,7 +63,6 @@ func newPersistedBlock(path string) (*persistedBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("initialized new persisted block with", stats)
 
 	pb := &persistedBlock{
 		chunksf: chunksf,
