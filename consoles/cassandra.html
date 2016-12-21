@@ -8,11 +8,11 @@
 </tr>
 <tr>
   <td>Timeout Ratio</td>
-  <td>{{ template "prom_query_drilldown" (args "sum by (job)(irate(cassandra_clientrequest_timeouts{job='cassandra'}[5m])) / sum by (job)(rate(cassandra_clientrequest_latency{job='cassandra'}[5m]))" "" "humanizeNoSmallPrefix") }}</td>
+  <td>{{ template "prom_query_drilldown" (args "sum by (job)(irate(cassandra_clientrequest_timeouts{job='cassandra'}[5m])) / sum by (job)(irate(cassandra_clientrequest_latency{job='cassandra'}[5m]))" "" "humanizeNoSmallPrefix") }}</td>
 </tr>
 <tr>
   <td>Unavailable Ratio</td>
-  <td>{{ template "prom_query_drilldown" (args "sum by (job)(irate(cassandra_clientrequest_unavailables{job='cassandra'}[5m])) / sum by (job)(rate(cassandra_clientrequest_latency{job='cassandra'}[5m]))" "" "humanizeNoSmallPrefix") }}</td>
+  <td>{{ template "prom_query_drilldown" (args "sum by (job)(irate(cassandra_clientrequest_unavailables{job='cassandra'}[5m])) / sum by (job)(irate(cassandra_clientrequest_latency{job='cassandra'}[5m]))" "" "humanizeNoSmallPrefix") }}</td>
 </tr>
 <tr><th colspan="2">Internals</th></tr>
 <tr>
@@ -64,7 +64,7 @@ new PromConsole.Graph({
 <script>
 new PromConsole.Graph({
   node: document.querySelector("#latencyGraph"),
-  expr: "sum by (job, clientrequest)(irate(cassandra_clientrequest_totallatency{job='cassandra'}[5m])) / sum by (job, clientrequest)(rate(cassandra_clientrequest_latency{job='cassandra'}[5m])) / 1000000",
+  expr: "sum by (job, clientrequest)(irate(cassandra_clientrequest_totallatency{job='cassandra'}[5m])) / sum by (job, clientrequest)(irate(cassandra_clientrequest_latency{job='cassandra'}[5m])) / 1000000",
   name: "[[clientrequest]]",
   yAxisFormatter: PromConsole.NumberFormatter.humanize,
   yHoverFormatter: PromConsole.NumberFormatter.humanize,
