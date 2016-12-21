@@ -77,6 +77,10 @@ func (s *ReloadableStorage) Append(smpl *model.Sample) error {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
+	if s.queue == nil {
+		return nil
+	}
+
 	var snew model.Sample
 	snew = *smpl
 	snew.Metric = smpl.Metric.Clone()
@@ -92,9 +96,7 @@ func (s *ReloadableStorage) Append(smpl *model.Sample) error {
 	if snew.Metric == nil {
 		return nil
 	}
-	if s.queue != nil {
-		s.queue.Append(&snew)
-	}
+	s.queue.Append(&snew)
 	return nil
 }
 
