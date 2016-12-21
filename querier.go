@@ -663,6 +663,11 @@ func (b *BufferedSeriesIterator) PeekBack() (t int64, v float64, ok bool) {
 	return b.buf.last()
 }
 
+// Buffer returns an iterator over the buffered data.
+func (b *BufferedSeriesIterator) Buffer() SeriesIterator {
+	return b.buf.iterator()
+}
+
 // Seek advances the iterator to the element at time t or greater.
 func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	t0 := t - b.buf.delta
@@ -739,6 +744,38 @@ func (r *sampleRing) reset() {
 	r.l = 0
 	r.i = -1
 	r.f = 0
+}
+
+func (r *sampleRing) iterator() SeriesIterator {
+	return &sampleRingIterator{r: r, i: -1}
+}
+
+type sampleRingIterator struct {
+	r *sampleRing
+	i int
+}
+
+func (it *sampleRingIterator) Next() bool {
+	it.i++
+	return it.i < it.r.l
+}
+
+func (it *sampleRingIterator) Seek(int64) bool {
+	return false
+}
+
+func (it *sampleRingIterator) Err() error {
+	return nil
+}
+
+func (it *sampleRingIterator) Values() (int64, float64) {
+	return it.r.at(it.i)
+}
+
+func (r *sampleRing) at(i int) (int64, float64) {
+	j := (r.f + i) % len(r.buf)
+	s := r.buf[j]
+	return s.t, s.v
 }
 
 // add adds a sample to the ring buffer and frees all samples that fall
