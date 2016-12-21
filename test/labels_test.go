@@ -5,8 +5,51 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/fabxc/tsdb"
+	"github.com/fabxc/tsdb/labels"
 )
+
+func BenchmarkMapClone(b *testing.B) {
+	m := map[string]string{
+		"job":        "node",
+		"instance":   "123.123.1.211:9090",
+		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":     "GET",
+		"namespace":  "system",
+		"status":     "500",
+		"prometheus": "prometheus-core-1",
+		"datacenter": "eu-west-1",
+		"pod_name":   "abcdef-99999-defee",
+	}
+
+	for i := 0; i < b.N; i++ {
+		res := make(map[string]string, len(m))
+		for k, v := range m {
+			res[k] = v
+		}
+		m = res
+	}
+}
+
+func BenchmarkLabelsClone(b *testing.B) {
+	m := map[string]string{
+		"job":        "node",
+		"instance":   "123.123.1.211:9090",
+		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":     "GET",
+		"namespace":  "system",
+		"status":     "500",
+		"prometheus": "prometheus-core-1",
+		"datacenter": "eu-west-1",
+		"pod_name":   "abcdef-99999-defee",
+	}
+	l := labels.LabelsFromMap(m)
+
+	for i := 0; i < b.N; i++ {
+		res := make(labels.Labels, len(l))
+		copy(res, l)
+		l = res
+	}
+}
 
 func BenchmarkLabelMapAccess(b *testing.B) {
 	m := map[string]string{
@@ -46,7 +89,7 @@ func BenchmarkLabelSetAccess(b *testing.B) {
 		"datacenter": "eu-west-1",
 		"pod_name":   "abcdef-99999-defee",
 	}
-	ls := tsdb.LabelsFromMap(m)
+	ls := labels.LabelsFromMap(m)
 
 	var v string
 
