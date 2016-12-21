@@ -7,38 +7,20 @@ import (
 	"strings"
 
 	"github.com/fabxc/tsdb/chunks"
+	"github.com/fabxc/tsdb/labels"
 )
-
-// Matcher matches a string.
-type Matcher interface {
-	Name() string
-	// Match returns true if the matcher applies to the string value.
-	Match(v string) bool
-}
-
-type equalMatcher struct {
-	name  string
-	value string
-}
-
-func MatchEquals(n, v string) Matcher {
-	return &equalMatcher{name: n, value: v}
-}
-
-func (m *equalMatcher) Name() string        { return m.name }
-func (m *equalMatcher) Match(v string) bool { return v == m.value }
 
 // Querier provides querying access over time series data of a fixed
 // time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...Matcher) SeriesSet
+	Select(...labels.Matcher) SeriesSet
 
 	// LabelValues returns all potential values for a label name.
 	LabelValues(string) ([]string, error)
 	// LabelValuesFor returns all potential values for a label name.
 	// under the constraint of another label.
-	LabelValuesFor(string, Label) ([]string, error)
+	LabelValuesFor(string, labels.Label) ([]string, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
@@ -47,7 +29,7 @@ type Querier interface {
 // Series represents a single time series.
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
-	Labels() Labels
+	Labels() labels.Labels
 
 	// Iterator returns a new iterator of the data of the series.
 	Iterator() SeriesIterator
@@ -75,7 +57,7 @@ func (db *DB) Querier(mint, maxt int64) Querier {
 	return q
 }
 
-func (q *querier) Select(ms ...Matcher) SeriesSet {
+func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
 	// We gather the non-overlapping series from every shard and simply
 	// return their union.
 	r := &mergedSeriesSet{}
@@ -134,7 +116,7 @@ func mergeStrings(a, b []string) []string {
 	return res
 }
 
-func (q *querier) LabelValuesFor(string, Label) ([]string, error) {
+func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -180,11 +162,11 @@ func (q *shardQuerier) LabelValues(n string) ([]string, error) {
 	return res, nil
 }
 
-func (q *shardQuerier) LabelValuesFor(string, Label) ([]string, error) {
+func (q *shardQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (q *shardQuerier) Select(ms ...Matcher) SeriesSet {
+func (q *shardQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	// Sets from different blocks have no time overlap. The reference numbers
 	// they emit point to series sorted in lexicographic order.
 	// We can fully connect partial series by simply comparing with the previous
@@ -221,7 +203,7 @@ func newBlockQuerier(ix IndexReader, s SeriesReader, mint, maxt int64) *blockQue
 	}
 }
 
-func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
+func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	var its []Postings
 	for _, m := range ms {
 		its = append(its, q.selectSingle(m))
@@ -235,7 +217,7 @@ func (q *blockQuerier) Select(ms ...Matcher) SeriesSet {
 	}
 }
 
-func (q *blockQuerier) selectSingle(m Matcher) Postings {
+func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
 	tpls, err := q.index.LabelValues(m.Name())
 	if err != nil {
 		return errPostings{err: err}
@@ -249,7 +231,7 @@ func (q *blockQuerier) selectSingle(m Matcher) Postings {
 		if err != nil {
 			return errPostings{err: err}
 		}
-		if m.Match(vals[0]) {
+		if m.Matches(vals[0]) {
 			res = append(res, vals[0])
 		}
 	}
@@ -295,7 +277,7 @@ func (q *blockQuerier) LabelValues(name string) ([]string, error) {
 	return res, nil
 }
 
-func (q *blockQuerier) LabelValuesFor(string, Label) ([]string, error) {
+func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -360,7 +342,7 @@ func newShardSeriesSet(a, b SeriesSet) *shardSeriesSet {
 
 // compareLabels compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
-func compareLabels(a, b Labels) int {
+func compareLabels(a, b labels.Labels) int {
 	l := len(a)
 	if len(b) < l {
 		l = len(b)
@@ -475,7 +457,7 @@ func (s *blockSeriesSet) Err() error     { return s.err }
 // chunkSeries is a series that is backed by a sequence of chunks holding
 // time series data.
 type chunkSeries struct {
-	labels Labels
+	labels labels.Labels
 	chunks []ChunkMeta // in-order chunk refs
 
 	// chunk is a function that retrieves chunks based on a reference
@@ -483,7 +465,7 @@ type chunkSeries struct {
 	chunk func(ref uint32) (chunks.Chunk, error)
 }
 
-func (s *chunkSeries) Labels() Labels {
+func (s *chunkSeries) Labels() labels.Labels {
 	return s.labels
 }
 
@@ -525,7 +507,7 @@ type chainedSeries struct {
 	series []Series
 }
 
-func (s *chainedSeries) Labels() Labels {
+func (s *chainedSeries) Labels() labels.Labels {
 	return s.series[0].Labels()
 }
 

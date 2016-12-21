@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bradfitz/slice"
+	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
 )
 
@@ -26,7 +27,7 @@ type SeriesWriter interface {
 	// WriteSeries writes the time series data chunks for a single series.
 	// The reference is used to resolve the correct series in the written index.
 	// It only has to be valid for the duration of the write.
-	WriteSeries(ref uint32, l Labels, cds []*chunkDesc) error
+	WriteSeries(ref uint32, l labels.Labels, cds []*chunkDesc) error
 
 	// Size returns the size of the data written so far.
 	Size() int64
@@ -71,7 +72,7 @@ func (w *seriesWriter) writeMeta() error {
 	return w.write(w.w, b[:])
 }
 
-func (w *seriesWriter) WriteSeries(ref uint32, lset Labels, chks []*chunkDesc) error {
+func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []*chunkDesc) error {
 	// Initialize with meta data.
 	if w.n == 0 {
 		if err := w.writeMeta(); err != nil {
@@ -156,7 +157,7 @@ type IndexWriter interface {
 	// of chunks that the index can reference.
 	// The reference number is used to resolve a series against the postings
 	// list iterator. It only has to be available during the write processing.
-	AddSeries(ref uint32, l Labels, chunks ...ChunkMeta)
+	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta)
 
 	// WriteStats writes final stats for the indexed block.
 	WriteStats(BlockStats) error
@@ -177,7 +178,7 @@ type IndexWriter interface {
 }
 
 type indexWriterSeries struct {
-	labels Labels
+	labels labels.Labels
 	chunks []ChunkMeta // series file offset of chunks
 	offset uint32      // index file offset of series reference
 }
@@ -240,7 +241,7 @@ func (w *indexWriter) writeMeta() error {
 	return w.write(w.w, b[:])
 }
 
-func (w *indexWriter) AddSeries(ref uint32, lset Labels, chunks ...ChunkMeta) {
+func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkMeta) {
 	// Populate the symbol table from all label sets we have to reference.
 	for _, l := range lset {
 		w.symbols[l.Name] = 0

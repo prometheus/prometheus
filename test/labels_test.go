@@ -10,12 +10,15 @@ import (
 
 func BenchmarkLabelMapAccess(b *testing.B) {
 	m := map[string]string{
-		"job":       "node",
-		"instance":  "123.123.1.211:9090",
-		"path":      "/api/v1/namespaces/<namespace>/deployments/<name>",
-		"method":    "GET",
-		"namespace": "system",
-		"status":    "500",
+		"job":        "node",
+		"instance":   "123.123.1.211:9090",
+		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":     "GET",
+		"namespace":  "system",
+		"status":     "500",
+		"prometheus": "prometheus-core-1",
+		"datacenter": "eu-west-1",
+		"pod_name":   "abcdef-99999-defee",
 	}
 
 	var v string
@@ -33,12 +36,15 @@ func BenchmarkLabelMapAccess(b *testing.B) {
 
 func BenchmarkLabelSetAccess(b *testing.B) {
 	m := map[string]string{
-		"job":       "node",
-		"instance":  "123.123.1.211:9090",
-		"path":      "/api/v1/namespaces/<namespace>/deployments/<name>",
-		"method":    "GET",
-		"namespace": "system",
-		"status":    "500",
+		"job":        "node",
+		"instance":   "123.123.1.211:9090",
+		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":     "GET",
+		"namespace":  "system",
+		"status":     "500",
+		"prometheus": "prometheus-core-1",
+		"datacenter": "eu-west-1",
+		"pod_name":   "abcdef-99999-defee",
 	}
 	ls := tsdb.LabelsFromMap(m)
 

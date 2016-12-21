@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/fabxc/tsdb/chunks"
+	"github.com/fabxc/tsdb/labels"
 )
 
 // HeadBlock handles reads and writes of time series data within a time window.
@@ -99,7 +100,7 @@ func (h *HeadBlock) Series(ref uint32, mint, maxt int64) (Series, error) {
 
 // get retrieves the chunk with the hash and label set and creates
 // a new one if it doesn't exist yet.
-func (h *HeadBlock) get(hash uint64, lset Labels) *chunkDesc {
+func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
 	cds := h.descs[hash]
 	for _, cd := range cds {
 		if cd.lset.Equals(lset) {
@@ -122,7 +123,7 @@ func (h *HeadBlock) get(hash uint64, lset Labels) *chunkDesc {
 }
 
 // append adds the sample to the headblock.
-func (h *HeadBlock) append(hash uint64, lset Labels, ts int64, v float64) error {
+func (h *HeadBlock) append(hash uint64, lset labels.Labels, ts int64, v float64) error {
 	if err := h.get(hash, lset).append(ts, v); err != nil {
 		return err
 	}

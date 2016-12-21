@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fabxc/tsdb"
+	"github.com/fabxc/tsdb/labels"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -162,16 +163,16 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 	ts := int64(model.Now())
 
 	type sample struct {
-		labels tsdb.Labels
+		labels labels.Labels
 		value  int64
 	}
 
 	scrape := make(map[uint64]*sample, len(metrics))
 
 	for _, m := range metrics {
-		lset := make(tsdb.Labels, 0, len(m))
+		lset := make(labels.Labels, 0, len(m))
 		for k, v := range m {
-			lset = append(lset, tsdb.Label{Name: string(k), Value: string(v)})
+			lset = append(lset, labels.Label{Name: string(k), Value: string(v)})
 		}
 		sort.Sort(lset)
 

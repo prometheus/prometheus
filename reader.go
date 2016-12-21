@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fabxc/tsdb/chunks"
+	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
 )
 
@@ -269,7 +270,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	//
 	// The references are expected to be sorted and match the order of
 	// the underlying strings.
-	labels := make(Labels, 0, k)
+	lbls := make(labels.Labels, 0, k)
 
 	for i := 0; i < len(offsets); i += 2 {
 		n, err := r.lookupSymbol(offsets[i])
@@ -280,7 +281,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "symbol lookup")
 		}
-		labels = append(labels, Label{
+		lbls = append(lbls, labels.Label{
 			Name:  string(n),
 			Value: string(v),
 		})
@@ -337,7 +338,7 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	}
 
 	return &chunkSeries{
-		labels: labels,
+		labels: lbls,
 		chunks: chunks,
 		chunk:  r.series.Chunk,
 	}, nil
