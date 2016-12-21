@@ -440,7 +440,7 @@ func webUiStaticJsProm_consoleJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/js/prom_console.js", size: 21323, mode: os.FileMode(436), modTime: time.Unix(1481905759, 0)}
+	info := bindataFileInfo{name: "web/ui/static/js/prom_console.js", size: 21323, mode: os.FileMode(436), modTime: time.Unix(1482248767, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }

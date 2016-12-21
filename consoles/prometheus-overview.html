@@ -54,11 +54,11 @@
   </tr>
   <tr>
     <td>Evaluation Duration</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_evaluator_duration_seconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_evaluator_duration_seconds_count{job='prometheus',instance='%s'}[5m])" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_evaluator_duration_seconds_sum{job='prometheus',instance='%s'}[5m]) / irate(prometheus_evaluator_duration_seconds_count{job='prometheus',instance='%s'}[5m])" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
   </tr>
   <tr>
     <td>Notification Latency</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_notifications_latency_seconds_sum{job='prometheus',instance='%s'}[5m]) / rate(prometheus_notifications_latency_seconds_count{job='prometheus',instance='%s'}[5m])" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(prometheus_notifications_latency_seconds_sum{job='prometheus',instance='%s'}[5m]) / irate(prometheus_notifications_latency_seconds_count{job='prometheus',instance='%s'}[5m])" .Params.instance .Params.instance) "" "humanizeDuration") }}</td>
   </tr>
   <tr>
     <td>Notification Queue</td>
