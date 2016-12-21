@@ -26,17 +26,15 @@ import (
 // Process returns a relabeled copy of the given label set. The relabel configurations
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
+// May return the input labelSet modified.
 func Process(labels model.LabelSet, cfgs ...*config.RelabelConfig) model.LabelSet {
-	out := model.LabelSet{}
-	for ln, lv := range labels {
-		out[ln] = lv
-	}
 	for _, cfg := range cfgs {
-		if out = relabel(out, cfg); out == nil {
+		labels = relabel(labels, cfg)
+		if labels == nil {
 			return nil
 		}
 	}
-	return out
+	return labels
 }
 
 func relabel(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
@@ -89,21 +87,17 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
 		}
 		labels = out
 	case config.RelabelLabelDrop:
-		out := make(model.LabelSet, len(labels))
-		for ln, lv := range labels {
-			if !cfg.Regex.MatchString(string(ln)) {
-				out[ln] = lv
-			}
-		}
-		labels = out
-	case config.RelabelLabelKeep:
-		out := make(model.LabelSet, len(labels))
-		for ln, lv := range labels {
+		for ln, _ := range labels {
 			if cfg.Regex.MatchString(string(ln)) {
-				out[ln] = lv
+				delete(labels, ln)
 			}
 		}
-		labels = out
+	case config.RelabelLabelKeep:
+		for ln, _ := range labels {
+			if !cfg.Regex.MatchString(string(ln)) {
+				delete(labels, ln)
+			}
+		}
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}
