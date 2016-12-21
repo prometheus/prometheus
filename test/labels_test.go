@@ -42,7 +42,7 @@ func BenchmarkLabelsClone(b *testing.B) {
 		"datacenter": "eu-west-1",
 		"pod_name":   "abcdef-99999-defee",
 	}
-	l := labels.LabelsFromMap(m)
+	l := labels.FromMap(m)
 
 	for i := 0; i < b.N; i++ {
 		res := make(labels.Labels, len(l))
@@ -89,7 +89,7 @@ func BenchmarkLabelSetAccess(b *testing.B) {
 		"datacenter": "eu-west-1",
 		"pod_name":   "abcdef-99999-defee",
 	}
-	ls := labels.LabelsFromMap(m)
+	ls := labels.FromMap(m)
 
 	var v string
 

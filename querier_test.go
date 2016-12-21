@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/fabxc/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,11 +22,11 @@ func (m *mockSeriesIterator) Next() bool               { return m.next() }
 func (m *mockSeriesIterator) Err() error               { return m.err() }
 
 type mockSeries struct {
-	labels   func() Labels
+	labels   func() labels.Labels
 	iterator func() SeriesIterator
 }
 
-func (m *mockSeries) Labels() Labels           { return m.labels() }
+func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
 func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
 
 type listSeriesIterator struct {
@@ -60,17 +61,6 @@ func (it *listSeriesIterator) Err() error {
 	return nil
 }
 
-// func TestChainedSeriesIterator(t *testing.T) {
-
-// 	cases := []struct {
-// 		series []Series
-// 	}{}
-
-// 	for _, c := range cases {
-
-// 	}
-// }
-
 type mockSeriesSet struct {
 	next   func() bool
 	series func() Series
@@ -98,7 +88,7 @@ func newListSeriesSet(list []Series) *mockSeriesSet {
 func TestShardSeriesSet(t *testing.T) {
 	newSeries := func(l map[string]string, s []sample) Series {
 		return &mockSeries{
-			labels:   func() Labels { return LabelsFromMap(l) },
+			labels:   func() labels.Labels { return labels.FromMap(l) },
 			iterator: func() SeriesIterator { return newListSeriesIterator(s) },
 		}
 	}
@@ -183,41 +173,41 @@ func expandSeriesIterator(it SeriesIterator) (r []sample, err error) {
 
 func TestCompareLabels(t *testing.T) {
 	cases := []struct {
-		a, b []Label
+		a, b []labels.Label
 		res  int
 	}{
 		{
-			a:   []Label{},
-			b:   []Label{},
+			a:   []labels.Label{},
+			b:   []labels.Label{},
 			res: 0,
 		},
 		{
-			a:   []Label{{"a", ""}},
-			b:   []Label{{"a", ""}, {"b", ""}},
+			a:   []labels.Label{{"a", ""}},
+			b:   []labels.Label{{"a", ""}, {"b", ""}},
 			res: -1,
 		},
 		{
-			a:   []Label{{"a", ""}},
-			b:   []Label{{"a", ""}},
+			a:   []labels.Label{{"a", ""}},
+			b:   []labels.Label{{"a", ""}},
 			res: 0,
 		},
 		{
-			a:   []Label{{"aa", ""}, {"aa", ""}},
-			b:   []Label{{"aa", ""}, {"ab", ""}},
+			a:   []labels.Label{{"aa", ""}, {"aa", ""}},
+			b:   []labels.Label{{"aa", ""}, {"ab", ""}},
 			res: -1,
 		},
 		{
-			a:   []Label{{"aa", ""}, {"abb", ""}},
-			b:   []Label{{"aa", ""}, {"ab", ""}},
+			a:   []labels.Label{{"aa", ""}, {"abb", ""}},
+			b:   []labels.Label{{"aa", ""}, {"ab", ""}},
 			res: 1,
 		},
 		{
-			a: []Label{
+			a: []labels.Label{
 				{"__name__", "go_gc_duration_seconds"},
 				{"job", "prometheus"},
 				{"quantile", "0.75"},
 			},
-			b: []Label{
+			b: []labels.Label{
 				{"__name__", "go_gc_duration_seconds"},
 				{"job", "prometheus"},
 				{"quantile", "1"},
@@ -227,7 +217,7 @@ func TestCompareLabels(t *testing.T) {
 	}
 	for _, c := range cases {
 		// Use constructor to ensure sortedness.
-		a, b := NewLabels(c.a...), NewLabels(c.b...)
+		a, b := labels.New(c.a...), labels.New(c.b...)
 
 		require.Equal(t, c.res, compareLabels(a, b))
 	}

@@ -67,9 +67,9 @@ func (ls Labels) Map() map[string]string {
 	return m
 }
 
-// NewLabels returns a sorted Labels from the given labels.
+// New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
-func NewLabels(ls ...Label) Labels {
+func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
 	for _, l := range ls {
 		set = append(set, l)
@@ -79,11 +79,11 @@ func NewLabels(ls ...Label) Labels {
 	return set
 }
 
-// LabelsFromMap returns new sorted Labels from the given map.
-func LabelsFromMap(m map[string]string) Labels {
+// FromMap returns new sorted Labels from the given map.
+func FromMap(m map[string]string) Labels {
 	l := make([]Label, 0, len(m))
 	for k, v := range m {
 		l = append(l, Label{Name: k, Value: v})
 	}
-	return NewLabels(l...)
+	return New(l...)
 }

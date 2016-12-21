@@ -1,6 +1,10 @@
 package tsdb
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/fabxc/tsdb/labels"
+)
 
 func BenchmarkLabelSetFromMap(b *testing.B) {
 	m := map[string]string{
@@ -11,11 +15,11 @@ func BenchmarkLabelSetFromMap(b *testing.B) {
 		"namespace": "system",
 		"status":    "500",
 	}
-	var ls Labels
+	var ls labels.Labels
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		ls = LabelsFromMap(m)
+		ls = labels.FromMap(m)
 	}
 	_ = ls
 }
@@ -29,7 +33,7 @@ func BenchmarkMapFromLabels(b *testing.B) {
 		"namespace": "system",
 		"status":    "500",
 	}
-	ls := LabelsFromMap(m)
+	ls := labels.FromMap(m)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -49,7 +53,7 @@ func BenchmarkLabelSetEquals(b *testing.B) {
 		"namespace": "system",
 		"status":    "500",
 	}
-	ls := LabelsFromMap(m)
+	ls := labels.FromMap(m)
 	var res bool
 
 	b.ResetTimer()

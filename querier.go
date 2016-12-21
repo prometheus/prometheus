@@ -689,7 +689,6 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	if !ok {
 		return false
 	}
-	b.buf.add(b.it.Values())
 
 	for b.Next() {
 		if ts, _ := b.Values(); ts >= t {
