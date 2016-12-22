@@ -29,8 +29,8 @@ type HeadBlock struct {
 	stats BlockStats
 }
 
-// NewHeadBlock creates a new empty head block.
-func NewHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
+// OpenHeadBlock creates a new empty head block.
+func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 	wal, err := OpenWAL(dir)
 	if err != nil {
 		return nil, err

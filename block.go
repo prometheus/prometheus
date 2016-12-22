@@ -128,7 +128,7 @@ func findBlocks(path string) ([]*persistedBlock, *HeadBlock, error) {
 			if err != nil {
 				return nil, nil, errors.Errorf("invalid directory name")
 			}
-			head, err = NewHeadBlock(p, int64(ts))
+			head, err = OpenHeadBlock(p, int64(ts))
 			if err != nil {
 				return nil, nil, err
 			}

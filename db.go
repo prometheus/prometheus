@@ -206,7 +206,7 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 	if head == nil {
 		fmt.Println("creating new head", baset)
 
-		head, err = NewHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
+		head, err = OpenHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +304,7 @@ func (s *Shard) persist() error {
 
 	// Set new head block.
 	head := s.head
-	newHead, err := NewHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MaxTime)), head.stats.MaxTime)
+	newHead, err := OpenHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MaxTime)), head.stats.MaxTime)
 	if err != nil {
 		s.mtx.Unlock()
 		return err

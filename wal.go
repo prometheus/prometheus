@@ -122,11 +122,14 @@ type walEncoder struct {
 	buf []byte
 }
 
-// walPageBytes is the alignment for flushing records to the backing Writer.
-// It should be a multiple of the minimum sector size so that WAL can safely
-// distinguish between torn writes and ordinary data corruption.
-const minSectorSize = 512
-const walPageBytes = 8 * minSectorSize
+const (
+	minSectorSize = 512
+
+	// walPageBytes is the alignment for flushing records to the backing Writer.
+	// It should be a multiple of the minimum sector size so that WAL can safely
+	// distinguish between torn writes and ordinary data corruption.
+	walPageBytes = 8 * minSectorSize
+)
 
 func newWALEncoder(f *os.File) (*walEncoder, error) {
 	offset, err := f.Seek(0, os.SEEK_CUR)
