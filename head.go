@@ -31,7 +31,7 @@ type HeadBlock struct {
 
 // NewHeadBlock creates a new empty head block.
 func NewHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
-	wal, err := CreateWAL(dir)
+	wal, err := OpenWAL(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +44,21 @@ func NewHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 		wal:      wal,
 	}
 	b.stats.MinTime = baseTime
+
+	err = wal.ReadAll(&walHandler{
+		series: func(lset labels.Labels) {
+			b.create(lset.Hash(), lset)
+		},
+		sample: func(s hashedSample) {
+			if err := b.descs[s.ref].append(s.t, s.v); err != nil {
+				panic(err) // TODO(fabxc): cannot actually error
+			}
+			b.stats.SampleCount++
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	return b, nil
 }

@@ -41,7 +41,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 3
+	shardShift   = 4
 	numShards    = 1 << shardShift
 	maxChunkSize = 1024
 )
