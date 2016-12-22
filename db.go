@@ -356,6 +356,7 @@ type chunkDesc struct {
 	firsTimestamp int64
 	lastTimestamp int64
 	lastValue     float64
+	numSamples    int
 
 	app chunks.Appender // Current appender for the chunks.
 }
@@ -374,6 +375,7 @@ func (cd *chunkDesc) append(ts int64, v float64) (err error) {
 
 	cd.lastTimestamp = ts
 	cd.lastValue = v
+	cd.numSamples++
 
 	return nil
 }

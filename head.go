@@ -190,7 +190,9 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 		newHashes []uint64
 	)
 
-	for _, s := range samples {
+	for i := range samples {
+		s := &samples[i]
+
 		cd, ref := h.get(s.hash, s.labels)
 		if cd != nil {
 			// TODO(fabxc): sample refs are only scoped within a block for
@@ -198,8 +200,8 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 			s.ref = ref
 			continue
 		}
-
 		s.ref = uint32(len(h.descs) + len(newSeries))
+
 		newSeries = append(newSeries, s.labels)
 		newHashes = append(newHashes, s.hash)
 	}
