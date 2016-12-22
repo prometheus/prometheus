@@ -94,17 +94,7 @@ func Main() int {
 		return 1
 	}
 
-	remoteStorage, err := remote.New(&cfg.remote)
-	if err != nil {
-		log.Errorf("Error initializing remote storage: %s", err)
-		return 1
-	}
-	if remoteStorage != nil {
-		sampleAppender = append(sampleAppender, remoteStorage)
-		reloadables = append(reloadables, remoteStorage)
-	}
-
-	reloadableRemoteStorage := remote.NewConfigurable()
+	reloadableRemoteStorage := remote.New()
 	sampleAppender = append(sampleAppender, reloadableRemoteStorage)
 	reloadables = append(reloadables, reloadableRemoteStorage)
 
@@ -189,11 +179,6 @@ func Main() int {
 			log.Errorln("Error stopping storage:", err)
 		}
 	}()
-
-	if remoteStorage != nil {
-		remoteStorage.Start()
-		defer remoteStorage.Stop()
-	}
 
 	defer reloadableRemoteStorage.Stop()
 

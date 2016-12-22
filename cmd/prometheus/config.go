@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/index"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -50,7 +49,6 @@ var cfg = struct {
 	notifierTimeout    time.Duration
 	queryEngine        promql.EngineOptions
 	web                web.Options
-	remote             remote.Options
 
 	alertmanagerURLs stringset
 	prometheusURL    string
@@ -188,45 +186,6 @@ func init() {
 		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
 	)
 
-	// Remote storage.
-	cfg.fs.StringVar(
-		&cfg.remote.GraphiteAddress, "storage.remote.graphite-address", "",
-		"The host:port of the remote Graphite server to send samples to. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.GraphiteTransport, "storage.remote.graphite-transport", "tcp",
-		"Transport protocol to use to communicate with Graphite. 'tcp', if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.GraphitePrefix, "storage.remote.graphite-prefix", "",
-		"The prefix to prepend to all metrics exported to Graphite. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.OpentsdbURL, "storage.remote.opentsdb-url", "",
-		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.influxdbURL, "storage.remote.influxdb-url", "",
-		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbRetentionPolicy, "storage.remote.influxdb.retention-policy", "default",
-		"The InfluxDB retention policy to use.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbUsername, "storage.remote.influxdb.username", "",
-		"The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
-		"The name of the database to use for storing samples in InfluxDB.",
-	)
-
-	cfg.fs.DurationVar(
-		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
-		"The timeout to use when sending samples to the remote storage.",
-	)
-
 	// Alertmanager.
 	cfg.fs.Var(
 		&cfg.alertmanagerURLs, "alertmanager.url",
@@ -285,16 +244,11 @@ func parse(args []string) error {
 	// RoutePrefix must always be at least '/'.
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
-	if err := parseInfluxdbURL(); err != nil {
-		return err
-	}
 	for u := range cfg.alertmanagerURLs {
 		if err := validateAlertmanagerURL(u); err != nil {
 			return err
 		}
 	}
-
-	cfg.remote.InfluxdbPassword = os.Getenv("INFLUXDB_PW")
 
 	return nil
 }
@@ -327,24 +281,6 @@ func parsePrometheusURL() error {
 		ppref = "/" + ppref
 	}
 	cfg.web.ExternalURL.Path = ppref
-	return nil
-}
-
-func parseInfluxdbURL() error {
-	if cfg.influxdbURL == "" {
-		return nil
-	}
-
-	if ok := govalidator.IsURL(cfg.influxdbURL); !ok {
-		return fmt.Errorf("invalid InfluxDB URL: %s", cfg.influxdbURL)
-	}
-
-	url, err := url.Parse(cfg.influxdbURL)
-	if err != nil {
-		return err
-	}
-
-	cfg.remote.InfluxdbURL = url
 	return nil
 }
 
