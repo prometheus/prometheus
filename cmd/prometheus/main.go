@@ -83,16 +83,6 @@ func Main() int {
 	)
 
 	var localStorage local.Storage
-	switch cfg.localStorageEngine {
-	case "persisted":
-		localStorage = local.NewMemorySeriesStorage(&cfg.storage)
-		sampleAppender = storage.Fanout{localStorage}
-	case "none":
-		localStorage = &local.NoopStorage{}
-	default:
-		log.Errorf("Invalid local storage engine %q", cfg.localStorageEngine)
-		return 1
-	}
 
 	reloadableRemoteStorage := remote.New()
 	sampleAppender = append(sampleAppender, reloadableRemoteStorage)

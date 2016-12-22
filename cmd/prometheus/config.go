@@ -29,9 +29,6 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/local/chunk"
-	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -43,7 +40,7 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
-	storage            local.MemorySeriesStorageOptions
+	localStoragePath   string
 	localStorageEngine string
 	notifier           notifier.Options
 	notifierTimeout    time.Duration
@@ -60,9 +57,6 @@ var cfg = struct {
 func init() {
 	cfg.fs = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	cfg.fs.Usage = usage
-
-	// Set additional defaults.
-	cfg.storage.SyncStrategy = local.Adaptive
 
 	cfg.fs.BoolVar(
 		&cfg.printVersion, "version", false,
@@ -117,73 +111,8 @@ func init() {
 
 	// Storage.
 	cfg.fs.StringVar(
-		&cfg.storage.PersistenceStoragePath, "storage.local.path", "data",
+		&cfg.localStoragePath, "storage.local.path", "data",
 		"Base path for metrics storage.",
-	)
-	cfg.fs.IntVar(
-		&cfg.storage.MemoryChunks, "storage.local.memory-chunks", 1024*1024,
-		"How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily. Sample ingestion will be throttled if the configured value is exceeded by more than 10%.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.storage.PersistenceRetentionPeriod, "storage.local.retention", 15*24*time.Hour,
-		"How long to retain samples in the local storage.",
-	)
-	cfg.fs.IntVar(
-		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 512*1024,
-		"How many chunks can be waiting for persistence before sample ingestion will be throttled. Many chunks waiting to be persisted will increase the checkpoint size.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.storage.CheckpointInterval, "storage.local.checkpoint-interval", 5*time.Minute,
-		"The period at which the in-memory metrics and the chunks not yet persisted to series files are checkpointed.",
-	)
-	cfg.fs.IntVar(
-		&cfg.storage.CheckpointDirtySeriesLimit, "storage.local.checkpoint-dirty-series-limit", 5000,
-		"If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints.",
-	)
-	cfg.fs.Var(
-		&cfg.storage.SyncStrategy, "storage.local.series-sync-strategy",
-		"When to sync series files after modification. Possible values: 'never', 'always', 'adaptive'. Sync'ing slows down storage performance but reduces the risk of data loss in case of an OS crash. With the 'adaptive' strategy, series files are sync'd for as long as the storage is not too much behind on chunk persistence.",
-	)
-	cfg.fs.Float64Var(
-		&cfg.storage.MinShrinkRatio, "storage.local.series-file-shrink-ratio", 0.1,
-		"A series file is only truncated (to delete samples that have exceeded the retention period) if it shrinks by at least the provided ratio. This saves I/O operations while causing only a limited storage space overhead. If 0 or smaller, truncation will be performed even for a single dropped chunk, while 1 or larger will effectively prevent any truncation.",
-	)
-	cfg.fs.BoolVar(
-		&cfg.storage.Dirty, "storage.local.dirty", false,
-		"If set, the local storage layer will perform crash recovery even if the last shutdown appears to be clean.",
-	)
-	cfg.fs.BoolVar(
-		&cfg.storage.PedanticChecks, "storage.local.pedantic-checks", false,
-		"If set, a crash recovery will perform checks on each series file. This might take a very long time.",
-	)
-	cfg.fs.Var(
-		&chunk.DefaultEncoding, "storage.local.chunk-encoding-version",
-		"Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding), 1 (double-delta encoding), and 2 (double-delta encoding with variable bit-width).",
-	)
-	// Index cache sizes.
-	cfg.fs.IntVar(
-		&index.FingerprintMetricCacheSize, "storage.local.index-cache-size.fingerprint-to-metric", index.FingerprintMetricCacheSize,
-		"The size in bytes for the fingerprint to metric index cache.",
-	)
-	cfg.fs.IntVar(
-		&index.FingerprintTimeRangeCacheSize, "storage.local.index-cache-size.fingerprint-to-timerange", index.FingerprintTimeRangeCacheSize,
-		"The size in bytes for the metric time range index cache.",
-	)
-	cfg.fs.IntVar(
-		&index.LabelNameLabelValuesCacheSize, "storage.local.index-cache-size.label-name-to-label-values", index.LabelNameLabelValuesCacheSize,
-		"The size in bytes for the label name to label values index cache.",
-	)
-	cfg.fs.IntVar(
-		&index.LabelPairFingerprintsCacheSize, "storage.local.index-cache-size.label-pair-to-fingerprints", index.LabelPairFingerprintsCacheSize,
-		"The size in bytes for the label pair to fingerprints index cache.",
-	)
-	cfg.fs.IntVar(
-		&cfg.storage.NumMutexes, "storage.local.num-fingerprint-mutexes", 4096,
-		"The number of mutexes used for fingerprint locking.",
-	)
-	cfg.fs.StringVar(
-		&cfg.localStorageEngine, "storage.local.engine", "persisted",
-		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
 	)
 
 	// Alertmanager.
