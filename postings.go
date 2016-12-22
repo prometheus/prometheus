@@ -5,62 +5,12 @@ import (
 	"strings"
 )
 
-type memIndex struct {
-	lastID uint32
-
-	forward  map[uint32]*chunkDesc // chunk ID to chunk desc
-	values   map[string]stringset  // label names to possible values
-	postings *memPostings          // postings lists for terms
-}
-
-// newMemIndex returns a new in-memory  index.
-func newMemIndex() *memIndex {
-	return &memIndex{
-		lastID:   0,
-		forward:  make(map[uint32]*chunkDesc),
-		values:   make(map[string]stringset),
-		postings: &memPostings{m: make(map[term][]uint32)},
-	}
-}
-
-func (ix *memIndex) numSeries() int {
-	return len(ix.forward)
-}
-
-func (ix *memIndex) Postings(t term) Postings {
-	return ix.postings.get(t)
+type memPostings struct {
+	m map[term][]uint32
 }
 
 type term struct {
 	name, value string
-}
-
-func (ix *memIndex) add(chkd *chunkDesc) {
-	// Add each label pair as a term to the inverted index.
-	terms := make([]term, 0, len(chkd.lset))
-
-	for _, l := range chkd.lset {
-		terms = append(terms, term{name: l.Name, value: l.Value})
-
-		// Add to label name to values index.
-		valset, ok := ix.values[l.Name]
-		if !ok {
-			valset = stringset{}
-			ix.values[l.Name] = valset
-		}
-		valset.set(l.Value)
-	}
-	ix.lastID++
-	id := ix.lastID
-
-	ix.postings.add(id, terms...)
-
-	// Store forward index for the returned ID.
-	ix.forward[id] = chkd
-}
-
-type memPostings struct {
-	m map[term][]uint32
 }
 
 // Postings returns an iterator over the postings list for s.

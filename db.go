@@ -227,13 +227,12 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	var merr MultiError
+	// TODO(fabxc): distinguish samples between concurrent heads for
+	// different time blocks. Those may occurr during transition to still
+	// allow late samples to arrive for a previous block.
+	err := s.head.appendBatch(samples)
 
-	for _, sm := range samples {
-		merr.Add(s.head.append(sm.hash, sm.labels, sm.t, sm.v))
-	}
-
-	// TODO(fabxc): randomize over time
+	// TODO(fabxc): randomize over time and use better scoring function.
 	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 400 {
 		select {
 		case s.persistCh <- struct{}{}:
@@ -246,7 +245,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 		}
 	}
 
-	return merr.Err()
+	return err
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
