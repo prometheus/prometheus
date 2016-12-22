@@ -137,7 +137,7 @@ var (
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
 	DefaultKubernetesSDConfig = KubernetesSDConfig{}
 
-	// DefaultGCESDConfig is the default EC2 SD configuration.
+	// DefaultGCESDConfig is the default GC SD configuration.
 	DefaultGCESDConfig = GCESDConfig{
 		Port:            80,
 		TagSeparator:    ",",
@@ -154,6 +154,11 @@ var (
 	DefaultAzureSDConfig = AzureSDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(5 * time.Minute),
+	}
+
+	// DefaultECSSDConfig is the default ECS SD configuration.
+	DefaultECSSDConfig = ECSSDConfig{
+		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
@@ -437,6 +442,8 @@ type ServiceDiscoveryConfig struct {
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of ECS service discovery configurations.
+	ECSSDConfigs []*ECSSDConfig `yaml:"ecs_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1084,6 +1091,35 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	return checkOverflow(c.XXX, "azure_sd_config")
+}
+
+// ECSSConfig is the configuration for ECS based service discovery.
+type ECSSDConfig struct {
+	Region          string         `yaml:"region"`
+	AccessKey       string         `yaml:"access_key,omitempty"`
+	SecretKey       string         `yaml:"secret_key,omitempty"`
+	Profile         string         `yaml:"profile,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultECSSDConfig
+	type plain ECSSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "ecs_sd_config"); err != nil {
+		return err
+	}
+	if c.Region == "" {
+		return fmt.Errorf("ECS SD configuration requires a region")
+	}
+	return nil
 }
 
 // RelabelAction is the action to be performed on relabeling.

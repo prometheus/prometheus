@@ -160,6 +160,13 @@ scrape_configs:
       client_secret: nAdvAK2oBuVym4IXix
       port: 9100
 
+- job_name: service-ecs
+  ecs_sd_configs:
+    - region: us-west-2
+      access_key: access
+      secret_key: secret
+      profile: profile
+
 - job_name: service-nerve
   nerve_sd_configs:
     - servers:
