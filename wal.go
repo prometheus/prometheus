@@ -41,13 +41,13 @@ func OpenWAL(dir string) (*WAL, error) {
 
 	p := filepath.Join(dir, "wal")
 
-	f, err := fileutil.TryLockFile(p, os.O_RDWR, fileutil.PrivateFileMode)
+	f, err := fileutil.TryLockFile(p, os.O_RDWR, 0666)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
 
-		f, err = fileutil.LockFile(p, os.O_WRONLY|os.O_CREATE, fileutil.PrivateFileMode)
+		f, err = fileutil.LockFile(p, os.O_RDWR|os.O_CREATE, 0666)
 		if err != nil {
 			return nil, err
 		}

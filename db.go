@@ -41,7 +41,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 4
+	shardShift   = 3
 	numShards    = 1 << shardShift
 	maxChunkSize = 1024
 )
@@ -193,7 +193,7 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 	}
 
 	// Initialize previously persisted blocks.
-	pbs, err := findPersistedBlocks(path)
+	pbs, head, err := findBlocks(path)
 	if err != nil {
 		return nil, err
 	}
@@ -201,12 +201,15 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 	// TODO(fabxc): get time from client-defined `now` function.
 	baset := time.Now().UnixNano() / int64(time.Millisecond)
 	if len(pbs) > 0 {
-		baset = pbs[0].stats.MaxTime
+		baset = pbs[len(pbs)-1].stats.MaxTime
 	}
+	if head == nil {
+		fmt.Println("creating new head", baset)
 
-	head, err := NewHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
-	if err != nil {
-		return nil, err
+		head, err = NewHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s := &Shard{

@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+
+	"github.com/pkg/errors"
 )
 
 // Block handles reads against a block of time series data within a time window.
@@ -104,20 +107,37 @@ func (p persistedBlocks) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 func (p persistedBlocks) Less(i, j int) bool { return p[i].stats.MinTime < p[j].stats.MinTime }
 
 // findBlocks finds time-ordered persisted blocks within a directory.
-func findPersistedBlocks(path string) ([]*persistedBlock, error) {
+func findBlocks(path string) ([]*persistedBlock, *HeadBlock, error) {
 	var pbs persistedBlocks
 
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	var head *HeadBlock
 
 	for _, fi := range files {
 		p := filepath.Join(path, fi.Name())
 
+		if _, err := os.Stat(chunksFileName(p)); os.IsNotExist(err) {
+			fmt.Println("found head dir", p)
+			if head != nil {
+				return nil, nil, errors.Errorf("found two head blocks")
+			}
+			ts, err := strconv.Atoi(filepath.Base(p))
+			if err != nil {
+				return nil, nil, errors.Errorf("invalid directory name")
+			}
+			head, err = NewHeadBlock(p, int64(ts))
+			if err != nil {
+				return nil, nil, err
+			}
+			continue
+		}
+
 		pb, err := newPersistedBlock(p)
 		if err != nil {
-			return nil, fmt.Errorf("error initializing block %q: %s", p, err)
+			return nil, nil, fmt.Errorf("error initializing block %q: %s", p, err)
 		}
 		pbs = append(pbs, pb)
 	}
@@ -126,7 +146,7 @@ func findPersistedBlocks(path string) ([]*persistedBlock, error) {
 	// range of time.
 	sort.Sort(pbs)
 
-	return pbs, nil
+	return pbs, head, nil
 }
 
 func chunksFileName(path string) string {
