@@ -163,6 +163,7 @@ func (ba *bucketAppender) Commit() error {
 type hashedSample struct {
 	hash   uint64
 	labels labels.Labels
+	ref    uint32
 
 	t int64
 	v float64
@@ -197,18 +198,25 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 		return nil, err
 	}
 
+	// TODO(fabxc): get time from client-defined `now` function.
+	baset := time.Now().UnixNano() / int64(time.Millisecond)
+	if len(pbs) > 0 {
+		baset = pbs[0].stats.MaxTime
+	}
+
+	head, err := NewHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Shard{
 		path:      path,
 		persistCh: make(chan struct{}, 1),
 		logger:    logger,
+		head:      head,
 		persisted: pbs,
 		// TODO(fabxc): restore from checkpoint.
 	}
-	// TODO(fabxc): get base time from pre-existing blocks. Otherwise
-	// it should come from a user defined start timestamp.
-	// Use actual time for now.
-	s.head = NewHeadBlock(time.Now().UnixNano() / int64(time.Millisecond))
-
 	return s, nil
 }
 
@@ -219,6 +227,7 @@ func (s *Shard) Close() error {
 	for _, pb := range s.persisted {
 		e.Add(pb.Close())
 	}
+	e.Add(s.head.Close())
 
 	return e.Err()
 }
@@ -292,7 +301,12 @@ func (s *Shard) persist() error {
 
 	// Set new head block.
 	head := s.head
-	s.head = NewHeadBlock(head.stats.MaxTime)
+	newHead, err := NewHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MaxTime)), head.stats.MaxTime)
+	if err != nil {
+		s.mtx.Unlock()
+		return err
+	}
+	s.head = newHead
 
 	s.mtx.Unlock()
 

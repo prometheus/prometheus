@@ -21,24 +21,36 @@ type HeadBlock struct {
 	// to their position in the chunk desc slice.
 	hashes map[uint64][]int
 
-	symbols  []string             // all seen strings
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
+
+	wal *WAL
 
 	stats BlockStats
 }
 
 // NewHeadBlock creates a new empty head block.
-func NewHeadBlock(baseTime int64) *HeadBlock {
+func NewHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
+	wal, err := CreateWAL(dir)
+	if err != nil {
+		return nil, err
+	}
+
 	b := &HeadBlock{
 		descs:    []*chunkDesc{},
 		hashes:   map[uint64][]int{},
 		values:   map[string]stringset{},
 		postings: &memPostings{m: make(map[term][]uint32)},
+		wal:      wal,
 	}
 	b.stats.MinTime = baseTime
 
-	return b
+	return b, nil
+}
+
+// Close syncs all data and closes underlying resources of the head block.
+func (h *HeadBlock) Close() error {
+	return h.wal.Close()
 }
 
 // Querier returns a new querier over the head block.
@@ -111,15 +123,18 @@ func (h *HeadBlock) Series(ref uint32, mint, maxt int64) (Series, error) {
 
 // get retrieves the chunk with the hash and label set and creates
 // a new one if it doesn't exist yet.
-func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
+func (h *HeadBlock) get(hash uint64, lset labels.Labels) (*chunkDesc, uint32) {
 	refs := h.hashes[hash]
 
 	for _, ref := range refs {
 		if cd := h.descs[ref]; cd.lset.Equals(lset) {
-			return cd
+			return cd, uint32(ref)
 		}
 	}
-	// None of the given chunks was for the series, create a new one.
+	return nil, 0
+}
+
+func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 	cd := &chunkDesc{
 		lset:  lset,
 		chunk: chunks.NewXORChunk(int(math.MaxInt64)),
@@ -128,7 +143,7 @@ func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
 	ref := len(h.descs)
 
 	h.descs = append(h.descs, cd)
-	h.hashes[hash] = append(refs, ref)
+	h.hashes[hash] = append(h.hashes[hash], ref)
 
 	// Add each label pair as a term to the inverted index.
 	terms := make([]term, 0, len(lset))
@@ -153,28 +168,53 @@ func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
 }
 
 func (h *HeadBlock) appendBatch(samples []hashedSample) error {
-	var merr MultiError
+	// Find head chunks for all samples and allocate new IDs/refs for
+	// ones we haven't seen before.
+	var (
+		newSeries []labels.Labels
+		newHashes []uint64
+	)
 
 	for _, s := range samples {
-		merr.Add(h.append(s.hash, s.labels, s.t, s.v))
+		cd, ref := h.get(s.hash, s.labels)
+		if cd != nil {
+			// TODO(fabxc): sample refs are only scoped within a block for
+			// now and we ignore any previously set value
+			s.ref = ref
+			continue
+		}
+
+		s.ref = uint32(len(h.descs) + len(newSeries))
+		newSeries = append(newSeries, s.labels)
+		newHashes = append(newHashes, s.hash)
 	}
 
-	return merr.Err()
-}
-
-// append adds the sample to the headblock.
-func (h *HeadBlock) append(hash uint64, lset labels.Labels, ts int64, v float64) error {
-	if err := h.get(hash, lset).append(ts, v); err != nil {
+	// Write all new series and samples to the WAL and add it to the
+	// in-mem database on success.
+	if err := h.wal.Log(newSeries, samples); err != nil {
 		return err
 	}
 
-	h.stats.SampleCount++
-
-	if ts > h.stats.MaxTime {
-		h.stats.MaxTime = ts
+	for i, s := range newSeries {
+		h.create(newHashes[i], s)
 	}
 
-	return nil
+	var merr MultiError
+	for _, s := range samples {
+		// TODO(fabxc): ensure that this won't be able to actually error in practice.
+		if err := h.descs[s.ref].append(s.t, s.v); err != nil {
+			merr.Add(err)
+			continue
+		}
+
+		h.stats.SampleCount++
+
+		if s.t > h.stats.MaxTime {
+			h.stats.MaxTime = s.t
+		}
+	}
+
+	return merr.Err()
 }
 
 func (h *HeadBlock) persist(p string) (int64, error) {
