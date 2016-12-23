@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
 )
@@ -70,10 +70,16 @@ func unmarshalBody(r *request.Request, v reflect.Value) {
 						}
 					default:
 						switch payload.Type().String() {
-						case "io.ReadSeeker":
-							payload.Set(reflect.ValueOf(aws.ReadSeekCloser(r.HTTPResponse.Body)))
-						case "aws.ReadSeekCloser", "io.ReadCloser":
+						case "io.ReadCloser":
 							payload.Set(reflect.ValueOf(r.HTTPResponse.Body))
+						case "io.ReadSeeker":
+							b, err := ioutil.ReadAll(r.HTTPResponse.Body)
+							if err != nil {
+								r.Error = awserr.New("SerializationError",
+									"failed to read response body", err)
+								return
+							}
+							payload.Set(reflect.ValueOf(ioutil.NopCloser(bytes.NewReader(b))))
 						default:
 							io.Copy(ioutil.Discard, r.HTTPResponse.Body)
 							defer r.HTTPResponse.Body.Close()

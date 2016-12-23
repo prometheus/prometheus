@@ -71,7 +71,7 @@ var reStatusCode = regexp.MustCompile(`^(\d{3})`)
 
 // ValidateReqSigHandler is a request handler to ensure that the request's
 // signature doesn't expire before it is sent. This can happen when a request
-// is built and signed signficantly before it is sent. Or signficant delays
+// is built and signed signficantly before it is sent. Or significant delays
 // occur whne retrying requests that would cause the signature to expire.
 var ValidateReqSigHandler = request.NamedHandler{
 	Name: "core.ValidateReqSigHandler",
