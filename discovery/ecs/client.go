@@ -2,6 +2,7 @@ package ecs
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	awsecs "github.com/aws/aws-sdk-go/service/ecs"
@@ -52,6 +53,14 @@ func (c *mockRetriever) retrieve() ([]*serviceInstance, error) {
 	return c.instances, nil
 }
 
+// awsSrvInstance is a helper that has all the objects required to create a final service instance
+type awsSrvInstance struct {
+	cluster           *awsecs.Cluster
+	task              *awsecs.Task
+	containerInstance *awsecs.ContainerInstance
+	container         *awsecs.Container
+}
+
 // awsRetriever is the wrapper around AWS client
 type awsRetriever struct {
 	client ecsiface.ECSAPI
@@ -64,7 +73,7 @@ func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
 		MaxResults: aws.Int64(maxAPIRes),
 	}
 	log.Debugf("Getting clusters")
-	// Start liting clusters
+	// Start listing clusters
 	for {
 		resp, err := c.client.ListClusters(params)
 		if err != nil {
@@ -99,6 +108,99 @@ func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
 	return clusters, nil
 }
 
+func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs.ContainerInstance, error) {
+	contInsts := []*awsecs.ContainerInstance{}
+
+	params := &awsecs.ListContainerInstancesInput{
+		Cluster:    cluster.ClusterArn,
+		MaxResults: aws.Int64(maxAPIRes),
+	}
+	log.Debugf("Getting cluster %s container instances", aws.StringValue(cluster.ClusterName))
+	// Start listing container instances
+	for {
+		resp, err := c.client.ListContainerInstances(params)
+		if err != nil {
+			return nil, err
+		}
+
+		ciArns := []*string{}
+		for _, ci := range resp.ContainerInstanceArns {
+			ciArns = append(ciArns, ci)
+		}
+
+		// Describe container instances
+		params2 := &awsecs.DescribeContainerInstancesInput{
+			Cluster:            cluster.ClusterArn,
+			ContainerInstances: ciArns,
+		}
+
+		resp2, err := c.client.DescribeContainerInstances(params2)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ci := range resp2.ContainerInstances {
+			contInsts = append(contInsts, ci)
+		}
+
+		if resp.NextToken == nil || aws.StringValue(resp.NextToken) == "" {
+			break
+		}
+		params.NextToken = resp.NextToken
+
+	}
+	log.Debugf("Retrieved %d container instances on cluster %s", len(contInsts), aws.StringValue(cluster.ClusterName))
+	return contInsts, nil
+}
+
 func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
+	// First get the clusters and map them
+	clusters, err := c.getClusters()
+	if err != nil {
+		return nil, err
+	}
+	clsIndex := map[string]*awsecs.Cluster{}
+	for _, cl := range clusters {
+		clsIndex[aws.StringValue(cl.ClusterArn)] = cl
+	}
+
+	// Get all the container instances and tasks on the cluster and map them
+	wg := &sync.WaitGroup{}
+	cisIndex := map[string]*awsecs.ContainerInstance{}
+	ciMutex := sync.Mutex{}
+	var getterErr error
+
+	// For each cluster get its container instances and tasks
+	for _, v := range clsIndex {
+		// use argument by value
+		go func(cluster awsecs.Cluster) {
+			wg.Add(1)
+			defer wg.Done()
+
+			// Get cluster container instance
+			cInstances, err := c.getContainerInstances(&cluster)
+			if err != nil {
+				getterErr = err
+				return
+			}
+
+			ciMutex.Lock()
+			for _, ci := range cInstances {
+				cisIndex[aws.StringValue(ci.ContainerInstanceArn)] = ci
+			}
+			ciMutex.Unlock()
+
+			// Check if someone errored before continuing
+			if getterErr != nil {
+				return
+			}
+
+			// Get cluster tasks
+
+		}(*v)
+	}
+
+	wg.Wait()
+
 	return nil, nil
 }
