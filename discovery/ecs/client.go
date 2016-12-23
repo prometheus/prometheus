@@ -153,6 +153,52 @@ func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs
 	return contInsts, nil
 }
 
+func (c *awsRetriever) getTasks(cluster *awsecs.Cluster) ([]*awsecs.Task, error) {
+	tasks := []*awsecs.Task{}
+
+	params := &awsecs.ListTasksInput{
+		Cluster:    cluster.ClusterArn,
+		MaxResults: aws.Int64(maxAPIRes),
+	}
+	log.Debugf("Getting cluster %s tasks", aws.StringValue(cluster.ClusterName))
+
+	// Start listing tasks
+	for {
+		resp, err := c.client.ListTasks(params)
+		if err != nil {
+			return nil, err
+		}
+
+		tArns := []*string{}
+		for _, t := range resp.TaskArns {
+			tArns = append(tArns, t)
+		}
+
+		// Describe tasks
+		params2 := &awsecs.DescribeTasksInput{
+			Cluster: cluster.ClusterArn,
+			Tasks:   tArns,
+		}
+
+		resp2, err := c.client.DescribeTasks(params2)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, t := range resp2.Tasks {
+			tasks = append(tasks, t)
+		}
+
+		if resp.NextToken == nil || aws.StringValue(resp.NextToken) == "" {
+			break
+		}
+		params.NextToken = resp.NextToken
+
+	}
+	log.Debugf("Retrieved %d tasks on cluster %s", len(tasks), aws.StringValue(cluster.ClusterName))
+	return tasks, nil
+}
+
 func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 	// First get the clusters and map them
 	clusters, err := c.getClusters()
@@ -165,9 +211,11 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 	}
 
 	// Get all the container instances and tasks on the cluster and map them
-	wg := &sync.WaitGroup{}
 	cisIndex := map[string]*awsecs.ContainerInstance{}
 	ciMutex := sync.Mutex{}
+	tsIndex := map[string]*awsecs.Task{}
+	tMutex := sync.Mutex{}
+	wg := &sync.WaitGroup{}
 	var getterErr error
 
 	// For each cluster get its container instances and tasks
@@ -196,7 +244,17 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 			}
 
 			// Get cluster tasks
+			ts, err := c.getTasks(&cluster)
+			if err != nil {
+				getterErr = err
+				return
+			}
 
+			tMutex.Lock()
+			for _, t := range ts {
+				tsIndex[aws.StringValue(t.TaskArn)] = t
+			}
+			ciMutex.Unlock()
 		}(*v)
 	}
 

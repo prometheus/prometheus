@@ -165,3 +165,82 @@ func TestGetContainerInstances(t *testing.T) {
 		}
 	}
 }
+
+func TestGetTasks(t *testing.T) {
+	tests := []struct {
+		tasks     []*awsecs.Task
+		errorList bool
+		errorDesc bool
+		wantError bool
+	}{
+		{
+			tasks: []*awsecs.Task{
+				&awsecs.Task{TaskArn: aws.String("t1")},
+			},
+		},
+		{
+			tasks: []*awsecs.Task{
+				&awsecs.Task{TaskArn: aws.String("t1")},
+			},
+			errorList: true,
+			wantError: true,
+		},
+		{
+			tasks: []*awsecs.Task{
+				&awsecs.Task{TaskArn: aws.String("t1")},
+			},
+			errorDesc: true,
+			wantError: true,
+		},
+		{
+			tasks: []*awsecs.Task{
+				&awsecs.Task{TaskArn: aws.String("t1")},
+				&awsecs.Task{TaskArn: aws.String("t2")},
+				&awsecs.Task{TaskArn: aws.String("t3")},
+				&awsecs.Task{TaskArn: aws.String("t4")},
+				&awsecs.Task{TaskArn: aws.String("t5")},
+				&awsecs.Task{TaskArn: aws.String("t6")},
+				&awsecs.Task{TaskArn: aws.String("t7")},
+			},
+		},
+	}
+
+	for _, test := range tests {
+
+		tIDs := make([]string, len(test.tasks))
+		for i, t := range test.tasks {
+			tIDs[i] = aws.StringValue(t.TaskArn)
+		}
+
+		// Mock
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockECS := sdk.NewMockECSAPI(ctrl)
+		awsmock.MockECSListTasks(t, mockECS, test.errorList, tIDs...)
+		awsmock.MockECSDescribeTasks(t, mockECS, test.errorDesc, test.tasks...)
+
+		r := &awsRetriever{
+			client: mockECS,
+		}
+
+		res, err := r.getTasks(&awsecs.Cluster{ClusterArn: aws.String("c1")})
+
+		if !test.wantError {
+			if len(res) != len(test.tasks) {
+				t.Errorf("- %+v\n -The length of the retrieved tasks differ, want: %d; got: %d", test, len(test.tasks), len(res))
+			}
+
+			for i, got := range res {
+				want := test.tasks[i]
+				if !reflect.DeepEqual(want, got) {
+					t.Errorf("\n- %v\n-  Received tasks from API is wrong, want: %v; got: %v", test, want, got)
+				}
+			}
+
+		} else {
+			if err == nil {
+				t.Errorf("- %+v\n -Getting tasks shoud error, it didn't", test)
+			}
+		}
+	}
+}

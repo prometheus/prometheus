@@ -87,3 +87,47 @@ func MockECSDescribeContainerInstances(t *testing.T, mockMatcher *sdk.MockECSAPI
 		}
 	}).AnyTimes().Return(result, err)
 }
+
+// MockECSListTasks mocks listing tasks ECS API call
+func MockECSListTasks(t *testing.T, mockMatcher *sdk.MockECSAPI, wantError bool, ids ...string) {
+	log.Warnf("Mocking AWS iface: ListTasks")
+	var err error
+	if wantError {
+		err = errors.New("ListTasks wrong!")
+	}
+	tIds := []*string{}
+	for _, id := range ids {
+		tID := id
+		tIds = append(tIds, &tID)
+	}
+	result := &ecs.ListTasksOutput{
+		TaskArns: tIds,
+	}
+	mockMatcher.EXPECT().ListTasks(gomock.Any()).Do(func(input interface{}) {
+		i := input.(*ecs.ListTasksInput)
+		if i.Cluster == nil || aws.StringValue(i.Cluster) == "" {
+			t.Errorf("Wrong api call, needs cluster ARN")
+		}
+	}).AnyTimes().Return(result, err)
+}
+
+// MockECSDescribeTasks mocks the description of tasks ECS API call
+func MockECSDescribeTasks(t *testing.T, mockMatcher *sdk.MockECSAPI, wantError bool, ts ...*ecs.Task) {
+	log.Warnf("Mocking AWS iface: DescribeTasks")
+	var err error
+	if wantError {
+		err = errors.New("DescribeTasks wrong!")
+	}
+	result := &ecs.DescribeTasksOutput{
+		Tasks: ts,
+	}
+	mockMatcher.EXPECT().DescribeTasks(gomock.Any()).Do(func(input interface{}) {
+		i := input.(*ecs.DescribeTasksInput)
+		if i.Cluster == nil || aws.StringValue(i.Cluster) == "" {
+			t.Errorf("Wrong api call, needs cluster ARN")
+		}
+		if len(i.Tasks) == 0 {
+			t.Errorf("Wrong api call, needs at least 1 task ARN")
+		}
+	}).AnyTimes().Return(result, err)
+}
