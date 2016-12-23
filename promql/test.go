@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -39,9 +40,10 @@ var (
 )
 
 const (
-	testStartTime = model.Time(0)
-	epsilon       = 0.000001 // Relative error allowed for sample values.
+	epsilon = 0.000001 // Relative error allowed for sample values.
 )
+
+var testStartTime = time.Time{}
 
 // Test is a sequence of read and write commands that are run
 // against a test storage.
@@ -170,7 +172,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, sequenceValue{value: model.SampleValue(f)})
+			cmd.expect(0, nil, sequenceValue{value: f})
 			break
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
@@ -243,15 +245,15 @@ func (*evalCmd) testCmd()  {}
 // metrics into the storage.
 type loadCmd struct {
 	gap     time.Duration
-	metrics map[model.Fingerprint]model.Metric
-	defs    map[model.Fingerprint][]model.SamplePair
+	metrics map[uint64]labels.Labels
+	defs    map[uint64][]samplePair
 }
 
 func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:     gap,
-		metrics: map[model.Fingerprint]model.Metric{},
-		defs:    map[model.Fingerprint][]model.SamplePair{},
+		metrics: map[uint64]labels.Labels{},
+		defs:    map[uint64][]samplePair{},
 	}
 }
 
@@ -260,51 +262,52 @@ func (cmd loadCmd) String() string {
 }
 
 // set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m model.Metric, vals ...sequenceValue) {
-	fp := m.Fingerprint()
+func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
+	h := m.Hash()
 
-	samples := make([]model.SamplePair, 0, len(vals))
+	samples := make([]samplePair, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.omitted {
-			samples = append(samples, model.SamplePair{
-				Timestamp: ts,
-				Value:     v.value,
+			samples = append(samples, samplePair{
+				t: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
+				v: v.value,
 			})
 		}
 		ts = ts.Add(cmd.gap)
 	}
-	cmd.defs[fp] = samples
-	cmd.metrics[fp] = m
+	cmd.defs[h] = samples
+	cmd.metrics[h] = m
 }
 
 // append the defined time series to the storage.
 func (cmd *loadCmd) append(a storage.SampleAppender) {
-	for fp, samples := range cmd.defs {
-		met := cmd.metrics[fp]
-		for _, smpl := range samples {
-			s := &model.Sample{
-				Metric:    met,
-				Value:     smpl.Value,
-				Timestamp: smpl.Timestamp,
-			}
-			a.Append(s)
-		}
-	}
+	// TODO(fabxc): commented out until Appender refactoring.
+	// for fp, samples := range cmd.defs {
+	// 	met := cmd.metrics[fp]
+	// 	for _, smpl := range samples {
+	// 		s := &model.Sample{
+	// 			Metric:    met,
+	// 			Value:     smpl.Value,
+	// 			Timestamp: smpl.Timestamp,
+	// 		}
+	// 		a.Append(s)
+	// 	}
+	// }
 }
 
 // evalCmd is a command that evaluates an expression for the given time (range)
 // and expects a specific result.
 type evalCmd struct {
 	expr       Expr
-	start, end model.Time
+	start, end time.Time
 	interval   time.Duration
 
 	instant       bool
 	fail, ordered bool
 
-	metrics  map[model.Fingerprint]model.Metric
-	expected map[model.Fingerprint]entry
+	metrics  map[uint64]labels.Labels
+	expected map[uint64]entry
 }
 
 type entry struct {
@@ -316,7 +319,7 @@ func (e entry) String() string {
 	return fmt.Sprintf("%d: %s", e.pos, e.vals)
 }
 
-func newEvalCmd(expr Expr, start, end model.Time, interval time.Duration) *evalCmd {
+func newEvalCmd(expr Expr, start, end time.Time, interval time.Duration) *evalCmd {
 	return &evalCmd{
 		expr:     expr,
 		start:    start,
@@ -324,8 +327,8 @@ func newEvalCmd(expr Expr, start, end model.Time, interval time.Duration) *evalC
 		interval: interval,
 		instant:  start == end && interval == 0,
 
-		metrics:  map[model.Fingerprint]model.Metric{},
-		expected: map[model.Fingerprint]entry{},
+		metrics:  map[uint64]labels.Labels{},
+		expected: map[uint64]entry{},
 	}
 }
 
@@ -335,26 +338,26 @@ func (ev *evalCmd) String() string {
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m model.Metric, vals ...sequenceValue) {
+func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 	if m == nil {
 		ev.expected[0] = entry{pos: pos, vals: vals}
 		return
 	}
-	fp := m.Fingerprint()
-	ev.metrics[fp] = m
-	ev.expected[fp] = entry{pos: pos, vals: vals}
+	h := m.Hash()
+	ev.metrics[h] = m
+	ev.expected[h] = entry{pos: pos, vals: vals}
 }
 
 // compareResult compares the result value with the defined expectation.
-func (ev *evalCmd) compareResult(result model.Value) error {
+func (ev *evalCmd) compareResult(result Value) error {
 	switch val := result.(type) {
-	case model.Matrix:
+	case matrix:
 		if ev.instant {
 			return fmt.Errorf("received range result on instant evaluation")
 		}
-		seen := map[model.Fingerprint]bool{}
+		seen := map[uint64]bool{}
 		for pos, v := range val {
-			fp := v.Metric.Fingerprint()
+			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
 				return fmt.Errorf("unexpected metric %s in result", v.Metric)
 			}
@@ -363,7 +366,7 @@ func (ev *evalCmd) compareResult(result model.Value) error {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			for i, expVal := range exp.vals {
-				if !almostEqual(float64(expVal.value), float64(v.Values[i].Value)) {
+				if !almostEqual(expVal.value, v.Values[i].v) {
 					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric, v.Values)
 				}
 			}
@@ -375,13 +378,13 @@ func (ev *evalCmd) compareResult(result model.Value) error {
 			}
 		}
 
-	case model.Vector:
+	case vector:
 		if !ev.instant {
 			return fmt.Errorf("received instant result on range evaluation")
 		}
-		seen := map[model.Fingerprint]bool{}
+		seen := map[uint64]bool{}
 		for pos, v := range val {
-			fp := v.Metric.Fingerprint()
+			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
 				return fmt.Errorf("unexpected metric %s in result", v.Metric)
 			}
@@ -401,9 +404,9 @@ func (ev *evalCmd) compareResult(result model.Value) error {
 			}
 		}
 
-	case *model.Scalar:
-		if !almostEqual(float64(ev.expected[0].vals[0].value), float64(val.Value)) {
-			return fmt.Errorf("expected scalar %v but got %v", val.Value, ev.expected[0].vals[0].value)
+	case scalar:
+		if !almostEqual(ev.expected[0].vals[0].value, val.v) {
+			return fmt.Errorf("expected scalar %v but got %v", val.v, ev.expected[0].vals[0].value)
 		}
 
 	default:
@@ -506,7 +509,8 @@ func (t *Test) clear() {
 	t.storage, closer = local.NewTestStorage(t, 2)
 
 	t.closeStorage = closer.Close
-	t.queryEngine = NewEngine(t.storage, nil)
+	// TODO(fabxc): add back
+	// t.queryEngine = NewEngine(t.storage, nil)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

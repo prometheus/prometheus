@@ -15,12 +15,11 @@ package promql
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
-	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/fabxc/tsdb"
+	"github.com/fabxc/tsdb/labels"
 )
 
 // Node is a generic interface for all nodes in an AST.
@@ -58,8 +57,8 @@ type AlertStmt struct {
 	Name        string
 	Expr        Expr
 	Duration    time.Duration
-	Labels      model.LabelSet
-	Annotations model.LabelSet
+	Labels      labels.Labels
+	Annotations labels.Labels
 }
 
 // EvalStmt holds an expression and information on the range it should
@@ -69,7 +68,7 @@ type EvalStmt struct {
 
 	// The time boundaries for the evaluation. If Start equals End an instant
 	// is evaluated.
-	Start, End model.Time
+	Start, End time.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
 }
@@ -78,7 +77,7 @@ type EvalStmt struct {
 type RecordStmt struct {
 	Name   string
 	Expr   Expr
-	Labels model.LabelSet
+	Labels labels.Labels
 }
 
 func (*AlertStmt) stmt()  {}
@@ -91,7 +90,7 @@ type Expr interface {
 
 	// Type returns the type the expression evaluates to. It does not perform
 	// in-depth checks as this is done at parsing-time.
-	Type() model.ValueType
+	Type() ValueType
 	// expr ensures that no other types accidentally implement the interface.
 	expr()
 }
@@ -101,12 +100,12 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a vector.
 type AggregateExpr struct {
-	Op               itemType         // The used aggregation operation.
-	Expr             Expr             // The vector expression over which is aggregated.
-	Param            Expr             // Parameter used by some aggregators.
-	Grouping         model.LabelNames // The labels by which to group the vector.
-	Without          bool             // Whether to drop the given labels rather than keep them.
-	KeepCommonLabels bool             // Whether to keep common labels among result elements.
+	Op               itemType // The used aggregation operation.
+	Expr             Expr     // The vector expression over which is aggregated.
+	Param            Expr     // Parameter used by some aggregators.
+	Grouping         []string // The labels by which to group the vector.
+	Without          bool     // Whether to drop the given labels rather than keep them.
+	KeepCommonLabels bool     // Whether to keep common labels among result elements.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -133,15 +132,16 @@ type MatrixSelector struct {
 	Name          string
 	Range         time.Duration
 	Offset        time.Duration
-	LabelMatchers metric.LabelMatchers
+	LabelMatchers []*LabelMatcher
 
 	// The series iterators are populated at query preparation time.
-	iterators []local.SeriesIterator
+	series    []tsdb.Series
+	iterators []*tsdb.BufferedSeriesIterator
 }
 
 // NumberLiteral represents a number.
 type NumberLiteral struct {
-	Val model.SampleValue
+	Val float64
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
@@ -166,25 +166,26 @@ type UnaryExpr struct {
 type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
-	LabelMatchers metric.LabelMatchers
+	LabelMatchers []*LabelMatcher
 
 	// The series iterators are populated at query preparation time.
-	iterators []local.SeriesIterator
+	series    []tsdb.Series
+	iterators []*tsdb.BufferedSeriesIterator
 }
 
-func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
-func (e *Call) Type() model.ValueType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() model.ValueType { return model.ValMatrix }
-func (e *NumberLiteral) Type() model.ValueType  { return model.ValScalar }
-func (e *ParenExpr) Type() model.ValueType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() model.ValueType  { return model.ValString }
-func (e *UnaryExpr) Type() model.ValueType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() model.ValueType { return model.ValVector }
-func (e *BinaryExpr) Type() model.ValueType {
-	if e.LHS.Type() == model.ValScalar && e.RHS.Type() == model.ValScalar {
-		return model.ValScalar
+func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
+func (e *Call) Type() ValueType           { return e.Func.ReturnType }
+func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
+func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
+func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
+func (e *BinaryExpr) Type() ValueType {
+	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
+		return ValueTypeScalar
 	}
-	return model.ValVector
+	return ValueTypeScalar
 }
 
 func (*AggregateExpr) expr()  {}
@@ -229,13 +230,13 @@ type VectorMatching struct {
 	Card VectorMatchCardinality
 	// MatchingLabels contains the labels which define equality of a pair of
 	// elements from the vectors.
-	MatchingLabels model.LabelNames
+	MatchingLabels []string
 	// On includes the given label names from matching,
 	// rather than excluding them.
 	On bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
-	Include model.LabelNames
+	Include []string
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is
@@ -314,4 +315,84 @@ func (f inspector) Visit(node Node) Visitor {
 // for all the non-nil children of node, recursively.
 func Inspect(node Node, f func(Node) bool) {
 	Walk(inspector(f), node)
+}
+
+// MatchType is an enum for label matching types.
+type MatchType int
+
+// Possible MatchTypes.
+const (
+	MatchEqual MatchType = iota
+	MatchNotEqual
+	MatchRegexp
+	MatchNotRegexp
+)
+
+func (m MatchType) String() string {
+	typeToStr := map[MatchType]string{
+		MatchEqual:     "=",
+		MatchNotEqual:  "!=",
+		MatchRegexp:    "=~",
+		MatchNotRegexp: "!~",
+	}
+	if str, ok := typeToStr[m]; ok {
+		return str
+	}
+	panic("unknown match type")
+}
+
+// LabelMatcher models the matching of a label.
+type LabelMatcher struct {
+	Type  MatchType
+	Name  string
+	Value string
+
+	re *regexp.Regexp
+}
+
+// NewLabelMatcher returns a LabelMatcher object ready to use.
+func NewLabelMatcher(t MatchType, n, v string) (*LabelMatcher, error) {
+	m := &LabelMatcher{
+		Type:  t,
+		Name:  n,
+		Value: v,
+	}
+	if t == MatchRegexp || t == MatchNotRegexp {
+		m.Value = "^(?:" + v + ")$"
+		re, err := regexp.Compile(m.Value)
+		if err != nil {
+			return nil, err
+		}
+		m.re = re
+	}
+	return m, nil
+}
+
+func (m *LabelMatcher) String() string {
+	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
+}
+
+func (m *LabelMatcher) matcher() labels.Matcher {
+	switch m.Type {
+	case MatchEqual:
+		return labels.NewEqualMatcher(m.Name, m.Value)
+
+	case MatchNotEqual:
+		return labels.Not(labels.NewEqualMatcher(m.Name, m.Value))
+
+	case MatchRegexp:
+		res, err := labels.NewRegexpMatcher(m.Name, m.Value)
+		if err != nil {
+			panic(err)
+		}
+		return res
+
+	case MatchNotRegexp:
+		res, err := labels.NewRegexpMatcher(m.Name, m.Value)
+		if err != nil {
+			panic(err)
+		}
+		return labels.Not(res)
+	}
+	panic("promql.LabelMatcher.matcher: invalid matcher type")
 }
