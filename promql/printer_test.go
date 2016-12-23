@@ -17,8 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/fabxc/tsdb/labels"
 )
 
 func TestStatementString(t *testing.T) {
@@ -28,17 +27,15 @@ func TestStatementString(t *testing.T) {
 			Op: itemGTR,
 			LHS: &VectorSelector{
 				Name: "foo",
-				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				LabelMatchers: []*LabelMatcher{
+					{Type: MatchEqual, Name: MetricNameLabel, Value: "bar"},
 				},
 			},
 			RHS: &NumberLiteral{10},
 		},
-		Duration: 5 * time.Minute,
-		Labels:   model.LabelSet{"foo": "bar"},
-		Annotations: model.LabelSet{
-			"notify": "team-a",
-		},
+		Duration:    5 * time.Minute,
+		Labels:      labels.FromStrings("foo", "bar"),
+		Annotations: labels.FromStrings("notify", "team-a"),
 	}
 
 	expected := `ALERT FooAlert

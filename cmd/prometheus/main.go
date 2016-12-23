@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fabxc/tsdb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -82,6 +83,10 @@ func Main() int {
 		reloadables    []Reloadable
 	)
 
+	_, err := tsdb.Open(cfg.localStoragePath, nil, nil)
+	if err != nil {
+		log.Errorf("Opening storage failed: %s", err)
+	}
 	var localStorage local.Storage
 
 	reloadableRemoteStorage := remote.New()
