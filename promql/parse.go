@@ -531,7 +531,7 @@ func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMat
 
 // unaryExpr parses a unary expression.
 //
-//		<Vector_selector> | <matrix_selector> | (+|-) <number_literal> | '(' <expr> ')'
+//		<Vector_selector> | <Matrix_selector> | (+|-) <number_literal> | '(' <expr> ')'
 //
 func (p *parser) unaryExpr() Expr {
 	switch t := p.peek(); t.typ {
@@ -583,7 +583,7 @@ func (p *parser) unaryExpr() Expr {
 	return e
 }
 
-// rangeSelector parses a matrix (a.k.a. range) selector based on a given
+// rangeSelector parses a Matrix (a.k.a. range) selector based on a given
 // Vector selector.
 //
 //		<Vector_selector> '[' <duration> ']'

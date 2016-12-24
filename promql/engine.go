@@ -50,7 +50,7 @@ type Value interface {
 	String() string
 }
 
-func (matrix) Type() ValueType    { return ValueTypeMatrix }
+func (Matrix) Type() ValueType    { return ValueTypeMatrix }
 func (Vector) Type() ValueType    { return ValueTypeVector }
 func (scalar) Type() ValueType    { return ValueTypeScalar }
 func (stringVal) Type() ValueType { return ValueTypeString }
@@ -63,7 +63,7 @@ const (
 	ValueTypeNone   = "none"
 	ValueTypeVector = "Vector"
 	ValueTypeScalar = "scalar"
-	ValueTypeMatrix = "matrix"
+	ValueTypeMatrix = "Matrix"
 	ValueTypeString = "string"
 )
 
@@ -127,11 +127,11 @@ func (vec Vector) String() string {
 	return strings.Join(entries, "\n")
 }
 
-// matrix is a slice of SampleStreams that implements sort.Interface and
+// Matrix is a slice of SampleStreams that implements sort.Interface and
 // has a String method.
-type matrix []sampleStream
+type Matrix []sampleStream
 
-func (m matrix) String() string {
+func (m Matrix) String() string {
 	// TODO(fabxc): sort, or can we rely on order from the querier?
 	strs := make([]string, len(m))
 
@@ -162,13 +162,13 @@ func (r *Result) Vector() (Vector, error) {
 	return v, nil
 }
 
-// Matrix returns a matrix. An error is returned if
-// the result was an error or the result value is not a matrix.
-func (r *Result) Matrix() (matrix, error) {
+// Matrix returns a Matrix. An error is returned if
+// the result was an error or the result value is not a Matrix.
+func (r *Result) Matrix() (Matrix, error) {
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	v, ok := r.Value.(matrix)
+	v, ok := r.Value.(Matrix)
 	if !ok {
 		return nil, fmt.Errorf("query result is not a range Vector")
 	}
@@ -509,7 +509,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 
 	appendTimer := query.stats.GetTimer(stats.ResultAppendTime).Start()
-	mat := matrix{}
+	mat := Matrix{}
 	for _, ss := range sampleStreams {
 		mat = append(mat, ss)
 	}
@@ -519,7 +519,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		return nil, err
 	}
 
-	// Turn matrix type with protected metric into model.Matrix.
+	// Turn Matrix type with protected metric into model.Matrix.
 	resMatrix := mat
 
 	// TODO(fabxc): order ensured by storage?
@@ -668,12 +668,12 @@ func (ev *evaluator) evalFloat(e Expr) float64 {
 	return float64(sc.v)
 }
 
-// evalMatrix attempts to evaluate e into a matrix and errors otherwise.
+// evalMatrix attempts to evaluate e into a Matrix and errors otherwise.
 // The error message uses the term "range Vector" to match the user facing
 // documentation.
-func (ev *evaluator) evalMatrix(e Expr) matrix {
+func (ev *evaluator) evalMatrix(e Expr) Matrix {
 	val := ev.eval(e)
-	mat, ok := val.(matrix)
+	mat, ok := val.(Matrix)
 	if !ok {
 		ev.errorf("expected range Vector but got %s", documentedType(val.Type()))
 	}
@@ -750,7 +750,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return e.Func.Call(ev, e.Args)
 
 	case *MatrixSelector:
-		return ev.matrixSelector(e)
+		return ev.MatrixSelector(e)
 
 	case *NumberLiteral:
 		return scalar{v: e.Val, t: ev.Timestamp}
@@ -815,13 +815,13 @@ func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 	return vec
 }
 
-// matrixSelector evaluates a *MatrixSelector expression.
-func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
+// MatrixSelector evaluates a *MatrixSelector expression.
+func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 	var (
 		offset = durationMilliseconds(node.Offset)
 		maxt   = ev.Timestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = make(matrix, 0, len(node.series))
+		Matrix = make(Matrix, 0, len(node.series))
 	)
 
 	for i, it := range node.iterators {
@@ -851,9 +851,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 			ss.Values = append(ss.Values, samplePair{t: t + offset, v: v})
 		}
 
-		matrix = append(matrix, ss)
+		Matrix = append(Matrix, ss)
 	}
-	return matrix
+	return Matrix
 }
 
 func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching) Vector {
@@ -1496,7 +1496,7 @@ func documentedType(t ValueType) string {
 	switch t {
 	case "Vector":
 		return "instant Vector"
-	case "matrix":
+	case "Matrix":
 		return "range Vector"
 	default:
 		return string(t)

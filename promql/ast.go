@@ -98,12 +98,12 @@ type Expr interface {
 // Expressions is a list of expression nodes that implements Node.
 type Expressions []Expr
 
-// AggregateExpr represents an aggregation operation on a vector.
+// AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
 	Op               itemType // The used aggregation operation.
-	Expr             Expr     // The vector expression over which is aggregated.
+	Expr             Expr     // The Vector expression over which is aggregated.
 	Param            Expr     // Parameter used by some aggregators.
-	Grouping         []string // The labels by which to group the vector.
+	Grouping         []string // The labels by which to group the Vector.
 	Without          bool     // Whether to drop the given labels rather than keep them.
 	KeepCommonLabels bool     // Whether to keep common labels among result elements.
 }
@@ -113,7 +113,7 @@ type BinaryExpr struct {
 	Op       itemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 
-	// The matching behavior for the operation if both operands are vectors.
+	// The matching behavior for the operation if both operands are Vectors.
 	// If they are not this field is nil.
 	VectorMatching *VectorMatching
 
@@ -127,7 +127,7 @@ type Call struct {
 	Args Expressions // Arguments used in the call.
 }
 
-// MatrixSelector represents a matrix selection.
+// MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
 	Name          string
 	Range         time.Duration
@@ -162,7 +162,7 @@ type UnaryExpr struct {
 	Expr Expr
 }
 
-// VectorSelector represents a vector selection.
+// VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
@@ -199,7 +199,7 @@ func (*UnaryExpr) expr()      {}
 func (*VectorSelector) expr() {}
 
 // VectorMatchCardinality describes the cardinality relationship
-// of two vectors in a binary operation.
+// of two Vectors in a binary operation.
 type VectorMatchCardinality int
 
 const (
@@ -223,13 +223,13 @@ func (vmc VectorMatchCardinality) String() string {
 	panic("promql.VectorMatchCardinality.String: unknown match cardinality")
 }
 
-// VectorMatching describes how elements from two vectors in a binary
+// VectorMatching describes how elements from two Vectors in a binary
 // operation are supposed to be matched.
 type VectorMatching struct {
-	// The cardinality of the two vectors.
+	// The cardinality of the two Vectors.
 	Card VectorMatchCardinality
 	// MatchingLabels contains the labels which define equality of a pair of
-	// elements from the vectors.
+	// elements from the Vectors.
 	MatchingLabels []string
 	// On includes the given label names from matching,
 	// rather than excluding them.
