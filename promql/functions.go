@@ -58,29 +58,29 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 	for _, samples := range MatrixValue {
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
-		if len(samples.Values) < 2 {
+		if len(samples.Points) < 2 {
 			continue
 		}
 		var (
 			counterCorrection float64
 			lastValue         float64
 		)
-		for _, sample := range samples.Values {
+		for _, sample := range samples.Points {
 			if isCounter && sample.V < lastValue {
 				counterCorrection += lastValue
 			}
 			lastValue = sample.V
 		}
-		resultValue := lastValue - samples.Values[0].V + counterCorrection
+		resultValue := lastValue - samples.Points[0].V + counterCorrection
 
 		// Duration between first/last samples and boundary of range.
-		durationToStart := float64(samples.Values[0].T - rangeStart)
-		durationToEnd := float64(rangeEnd - samples.Values[len(samples.Values)-1].T)
+		durationToStart := float64(samples.Points[0].T - rangeStart)
+		durationToEnd := float64(rangeEnd - samples.Points[len(samples.Points)-1].T)
 
-		sampledInterval := float64(samples.Values[len(samples.Values)-1].T - samples.Values[0].T)
-		averageDurationBetweenSamples := float64(sampledInterval) / float64(len(samples.Values)-1)
+		sampledInterval := float64(samples.Points[len(samples.Points)-1].T - samples.Points[0].T)
+		averageDurationBetweenSamples := float64(sampledInterval) / float64(len(samples.Points)-1)
 
-		if isCounter && resultValue > 0 && samples.Values[0].V >= 0 {
+		if isCounter && resultValue > 0 && samples.Points[0].V >= 0 {
 			// Counters cannot be negative. If we have any slope at
 			// all (i.e. resultValue went up), we can extrapolate
 			// the zero point of the counter. If the duration to the
@@ -88,7 +88,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 			// take the zero point as the start of the series,
 			// thereby avoiding extrapolation to negative counter
 			// values.
-			durationToZero := float64(sampledInterval) * float64(samples.Values[0].V/resultValue)
+			durationToZero := float64(sampledInterval) * float64(samples.Points[0].V/resultValue)
 			if durationToZero < durationToStart {
 				durationToStart = durationToZero
 			}
@@ -154,12 +154,12 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 	for _, samples := range ev.evalMatrix(arg) {
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
-		if len(samples.Values) < 2 {
+		if len(samples.Points) < 2 {
 			continue
 		}
 
-		lastSample := samples.Values[len(samples.Values)-1]
-		previousSample := samples.Values[len(samples.Values)-2]
+		lastSample := samples.Points[len(samples.Points)-1]
+		previousSample := samples.Points[len(samples.Points)-2]
 
 		var resultValue float64
 		if isRate && lastSample.V < previousSample.V {
@@ -236,7 +236,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 
 	var l int
 	for _, samples := range mat {
-		l = len(samples.Values)
+		l = len(samples.Points)
 
 		// Can't do the smoothing operation with less than two points.
 		if l < 2 {
@@ -251,7 +251,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 		}
 
 		// Fill in the d values with the raw values from the input.
-		for i, v := range samples.Values {
+		for i, v := range samples.Points {
 			d[i] = v.V
 		}
 
@@ -409,13 +409,13 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]Point) float64)
 	resultVector := Vector{}
 
 	for _, el := range mat {
-		if len(el.Values) == 0 {
+		if len(el.Points) == 0 {
 			continue
 		}
 
 		resultVector = append(resultVector, sample{
 			Metric: copyLabels(el.Metric, false),
-			Point:  Point{V: aggrFn(el.Values), T: ev.Timestamp},
+			Point:  Point{V: aggrFn(el.Points), T: ev.Timestamp},
 		})
 	}
 	return resultVector
@@ -489,13 +489,13 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 	resultVector := Vector{}
 
 	for _, el := range mat {
-		if len(el.Values) == 0 {
+		if len(el.Points) == 0 {
 			continue
 		}
 
 		el.Metric = copyLabels(el.Metric, false)
-		values := make(VectorByValueHeap, 0, len(el.Values))
-		for _, v := range el.Values {
+		values := make(VectorByValueHeap, 0, len(el.Points))
+		for _, v := range el.Points {
 			values = append(values, sample{Point: Point{V: v.V}})
 		}
 		resultVector = append(resultVector, sample{
@@ -659,10 +659,10 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 	for _, samples := range mat {
 		// No sense in trying to compute a derivative without at least two points.
 		// Drop this Vector element.
-		if len(samples.Values) < 2 {
+		if len(samples.Points) < 2 {
 			continue
 		}
-		slope, _ := linearRegression(samples.Values, 0)
+		slope, _ := linearRegression(samples.Points, 0)
 		resultSample := sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: slope, T: ev.Timestamp},
@@ -682,10 +682,10 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 	for _, samples := range mat {
 		// No sense in trying to predict anything without at least two points.
 		// Drop this Vector element.
-		if len(samples.Values) < 2 {
+		if len(samples.Points) < 2 {
 			continue
 		}
-		slope, intercept := linearRegression(samples.Values, ev.Timestamp)
+		slope, intercept := linearRegression(samples.Points, ev.Timestamp)
 
 		resultVector = append(resultVector, sample{
 			Metric: copyLabels(samples.Metric, false),
@@ -743,8 +743,8 @@ func funcResets(ev *evaluator, args Expressions) Value {
 
 	for _, samples := range in {
 		resets := 0
-		prev := samples.Values[0].V
-		for _, sample := range samples.Values[1:] {
+		prev := samples.Points[0].V
+		for _, sample := range samples.Points[1:] {
 			current := sample.V
 			if current < prev {
 				resets++
@@ -767,8 +767,8 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 
 	for _, samples := range in {
 		changes := 0
-		prev := samples.Values[0].V
-		for _, sample := range samples.Values[1:] {
+		prev := samples.Points[0].V
+		for _, sample := range samples.Points[1:] {
 			current := sample.V
 			if current != prev && !(math.IsNaN(float64(current)) && math.IsNaN(float64(prev))) {
 				changes++
