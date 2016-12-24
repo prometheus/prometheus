@@ -34,6 +34,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/retrieval"
 )
@@ -50,10 +51,57 @@ const (
 	alertmanagerLabel = "alertmanager"
 )
 
+// Alert is a generic representation of an alert in the Prometheus eco-system.
+type Alert struct {
+	// Label value pairs for purpose of aggregation, matching, and disposition
+	// dispatching. This must minimally include an "alertname" label.
+	Labels labels.Labels `json:"labels"`
+
+	// Extra key/value information which does not define alert identity.
+	Annotations labels.Labels `json:"annotations"`
+
+	// The known time range for this alert. Both ends are optional.
+	StartsAt     time.Time `json:"startsAt,omitempty"`
+	EndsAt       time.Time `json:"endsAt,omitempty"`
+	GeneratorURL string    `json:"generatorURL,omitempty"`
+}
+
+// Name returns the name of the alert. It is equivalent to the "alertname" label.
+func (a *Alert) Name() string {
+	return a.Labels.Get(labels.AlertName)
+}
+
+// Hash returns a hash over the alert. It is equivalent to the alert labels hash.
+func (a *Alert) Hash() uint64 {
+	return a.Labels.Hash()
+}
+
+func (a *Alert) String() string {
+	s := fmt.Sprintf("%s[%s]", a.Name(), fmt.Sprintf("%016x", a.Hash())[:7])
+	if a.Resolved() {
+		return s + "[resolved]"
+	}
+	return s + "[active]"
+}
+
+// Resolved returns true iff the activity interval ended in the past.
+func (a *Alert) Resolved() bool {
+	return a.ResolvedAt(time.Now())
+}
+
+// ResolvedAt returns true off the activity interval ended before
+// the given timestamp.
+func (a *Alert) ResolvedAt(ts time.Time) bool {
+	if a.EndsAt.IsZero() {
+		return false
+	}
+	return !a.EndsAt.After(ts)
+}
+
 // Notifier is responsible for dispatching alert notifications to an
 // alert manager service.
 type Notifier struct {
-	queue model.Alerts
+	queue []*Alert
 	opts  *Options
 
 	more   chan struct{}
@@ -84,7 +132,7 @@ func New(o *Options) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Notifier{
-		queue:  make(model.Alerts, 0, o.QueueCapacity),
+		queue:  make([]*Alert, 0, o.QueueCapacity),
 		ctx:    ctx,
 		cancel: cancel,
 		more:   make(chan struct{}, 1),
@@ -182,17 +230,17 @@ func (n *Notifier) queueLen() int {
 	return len(n.queue)
 }
 
-func (n *Notifier) nextBatch() []*model.Alert {
+func (n *Notifier) nextBatch() []*Alert {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	var alerts model.Alerts
+	var alerts []*Alert
 
 	if len(n.queue) > maxBatchSize {
-		alerts = append(make(model.Alerts, 0, maxBatchSize), n.queue[:maxBatchSize]...)
+		alerts = append(make([]*Alert, 0, maxBatchSize), n.queue[:maxBatchSize]...)
 		n.queue = n.queue[maxBatchSize:]
 	} else {
-		alerts = append(make(model.Alerts, 0, len(n.queue)), n.queue...)
+		alerts = append(make([]*Alert, 0, len(n.queue)), n.queue...)
 		n.queue = n.queue[:0]
 	}
 
@@ -221,15 +269,17 @@ func (n *Notifier) Run() {
 
 // Send queues the given notification requests for processing.
 // Panics if called on a handler that is not running.
-func (n *Notifier) Send(alerts ...*model.Alert) {
+func (n *Notifier) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	// Attach external labels before relabelling and sending.
 	for _, a := range alerts {
+		lb := labels.NewBuilder(a.Labels)
+
 		for ln, lv := range n.opts.ExternalLabels {
-			if _, ok := a.Labels[ln]; !ok {
-				a.Labels[ln] = lv
+			if a.Labels.Get(string(ln)) == "" {
+				lb.Set(string(ln), string(lv))
 			}
 		}
 	}
@@ -259,16 +309,19 @@ func (n *Notifier) Send(alerts ...*model.Alert) {
 	n.setMore()
 }
 
-func (n *Notifier) relabelAlerts(alerts []*model.Alert) []*model.Alert {
-	var relabeledAlerts []*model.Alert
-	for _, alert := range alerts {
-		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-		if labels != nil {
-			alert.Labels = labels
-			relabeledAlerts = append(relabeledAlerts, alert)
-		}
-	}
-	return relabeledAlerts
+func (n *Notifier) relabelAlerts(alerts []*Alert) []*Alert {
+	// TODO(fabxc): temporarily disabled.
+	return alerts
+
+	// var relabeledAlerts []*Alert
+	// for _, alert := range alerts {
+	// 	labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
+	// 	if labels != nil {
+	// 		alert.Labels = labels
+	// 		relabeledAlerts = append(relabeledAlerts, alert)
+	// 	}
+	// }
+	// return relabeledAlerts
 }
 
 // setMore signals that the alert queue has items.
@@ -302,7 +355,7 @@ func (n *Notifier) Alertmanagers() []string {
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
-func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
+func (n *Notifier) sendAll(alerts ...*Alert) bool {
 	begin := time.Now()
 
 	b, err := json.Marshal(alerts)

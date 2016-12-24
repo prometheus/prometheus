@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -30,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -96,7 +96,7 @@ type API struct {
 	targetRetriever targetRetriever
 
 	context func(r *http.Request) context.Context
-	now     func() model.Time
+	now     func() time.Time
 }
 
 // NewAPI returns an initialized API type.
@@ -106,7 +106,7 @@ func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever) *API {
 		Storage:         st,
 		targetRetriever: tr,
 		context:         route.Context,
-		now:             model.Now,
+		now:             time.Now,
 	}
 }
 
@@ -142,8 +142,8 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType model.ValueType `json:"resultType"`
-	Result     model.Value     `json:"result"`
+	ResultType promql.ValueType `json:"resultType"`
+	Result     promql.Value     `json:"result"`
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError) {
@@ -151,7 +151,7 @@ func (api *API) options(r *http.Request) (interface{}, *apiError) {
 }
 
 func (api *API) query(r *http.Request) (interface{}, *apiError) {
-	var ts model.Time
+	var ts time.Time
 	if t := r.FormValue("time"); t != "" {
 		var err error
 		ts, err = parseTime(t)
@@ -262,7 +262,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
 
-	var start model.Time
+	var start time.Time
 	if t := r.FormValue("start"); t != "" {
 		var err error
 		start, err = parseTime(t)
@@ -270,10 +270,10 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 			return nil, &apiError{errorBadData, err}
 		}
 	} else {
-		start = model.Earliest
+		start = time.Unix(math.MinInt64, 0)
 	}
 
-	var end model.Time
+	var end time.Time
 	if t := r.FormValue("end"); t != "" {
 		var err error
 		end, err = parseTime(t)
@@ -281,10 +281,10 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 			return nil, &apiError{errorBadData, err}
 		}
 	} else {
-		end = model.Latest
+		end = time.Unix(math.MaxInt64, 0)
 	}
 
-	var matcherSets []metric.LabelMatchers
+	var matcherSets [][]*promql.LabelMatcher
 	for _, s := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
@@ -293,22 +293,26 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Storage.Querier()
-	if err != nil {
-		return nil, &apiError{errorExec, err}
-	}
-	defer q.Close()
+	// TODO(fabxc): temporarily disbaled.
+	_, _ = start, end
+	panic("disabled")
 
-	res, err := q.MetricsForLabelMatchers(api.context(r), start, end, matcherSets...)
-	if err != nil {
-		return nil, &apiError{errorExec, err}
-	}
+	// q, err := api.Storage.Querier()
+	// if err != nil {
+	// 	return nil, &apiError{errorExec, err}
+	// }
+	// defer q.Close()
 
-	metrics := make([]model.Metric, 0, len(res))
-	for _, met := range res {
-		metrics = append(metrics, met.Metric)
-	}
-	return metrics, nil
+	// res, err := q.MetricsForLabelMatchers(api.context(r), start, end, matcherSets...)
+	// if err != nil {
+	// 	return nil, &apiError{errorExec, err}
+	// }
+
+	// metrics := make([]model.Metric, 0, len(res))
+	// for _, met := range res {
+	// 	metrics = append(metrics, met.Metric)
+	// }
+	// return metrics, nil
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
@@ -317,25 +321,28 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
 	}
 
-	numDeleted := 0
-	for _, s := range r.Form["match[]"] {
-		matchers, err := promql.ParseMetricSelector(s)
-		if err != nil {
-			return nil, &apiError{errorBadData, err}
-		}
-		n, err := api.Storage.DropMetricsForLabelMatchers(context.TODO(), matchers...)
-		if err != nil {
-			return nil, &apiError{errorExec, err}
-		}
-		numDeleted += n
-	}
+	// TODO(fabxc): temporarily disabled
+	panic("disabled")
 
-	res := struct {
-		NumDeleted int `json:"numDeleted"`
-	}{
-		NumDeleted: numDeleted,
-	}
-	return res, nil
+	// numDeleted := 0
+	// for _, s := range r.Form["match[]"] {
+	// 	matchers, err := promql.ParseMetricSelector(s)
+	// 	if err != nil {
+	// 		return nil, &apiError{errorBadData, err}
+	// 	}
+	// 	n, err := api.Storage.DropMetricsForLabelMatchers(context.TODO(), matchers...)
+	// 	if err != nil {
+	// 		return nil, &apiError{errorExec, err}
+	// 	}
+	// 	numDeleted += n
+	// }
+
+	// res := struct {
+	// 	NumDeleted int `json:"numDeleted"`
+	// }{
+	// 	NumDeleted: numDeleted,
+	// }
+	// return res, nil
 }
 
 type Target struct {
@@ -417,15 +424,15 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	w.Write(b)
 }
 
-func parseTime(s string) (model.Time, error) {
+func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		ts := int64(t * float64(time.Second))
-		return model.TimeFromUnixNano(ts), nil
+		s, ns := math.Modf(t)
+		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return model.TimeFromUnixNano(t.UnixNano()), nil
+		return t, nil
 	}
-	return 0, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
 func parseDuration(s string) (time.Duration, error) {

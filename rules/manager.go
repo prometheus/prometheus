@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unsafe"
 
 	html_template "html/template"
 
@@ -106,7 +107,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, model.Time, *promql.Engine, string) (model.Vector, error)
+	Eval(context.Context, model.Time, *promql.Engine, string) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -278,8 +279,16 @@ func (g *Group) Eval() {
 				numOutOfOrder = 0
 				numDuplicates = 0
 			)
+
 			for _, s := range vector {
-				if err := g.opts.SampleAppender.Append(s); err != nil {
+				// TODO(fabxc): adjust after reworking appending.
+				var ms model.Sample
+				lbls := s.Metric.Map()
+				ms.Metric = *(*model.Metric)(unsafe.Pointer(&lbls))
+				ms.Timestamp = model.Time(s.T)
+				ms.Value = model.SampleValue(s.V)
+
+				if err := g.opts.SampleAppender.Append(&ms); err != nil {
 					switch err {
 					case local.ErrOutOfOrderSample:
 						numOutOfOrder++
@@ -305,7 +314,7 @@ func (g *Group) Eval() {
 
 // sendAlerts sends alert notifications for the given rule.
 func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
-	var alerts model.Alerts
+	var alerts []*notifier.Alert
 
 	for _, alert := range rule.currentAlerts() {
 		// Only send actually firing alerts.
@@ -313,7 +322,7 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 			continue
 		}
 
-		a := &model.Alert{
+		a := &notifier.Alert{
 			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
 			Labels:       alert.Labels,
 			Annotations:  alert.Annotations,

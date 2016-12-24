@@ -61,6 +61,13 @@ func (ls Labels) Hash() uint64 {
 	return xxhash.Sum64(b)
 }
 
+// Copy returns a copy of the labels.
+func (ls Labels) Copy() Labels {
+	res := make(Labels, len(ls))
+	copy(res, ls)
+	return res
+}
+
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
@@ -72,8 +79,8 @@ func (ls Labels) Get(name string) string {
 	return ""
 }
 
-// Equals returns whether the two label sets are equal.
-func (ls Labels) Equals(o Labels) bool {
+// Equal returns whether the two label sets are equal.
+func Equal(ls, o Labels) bool {
 	if len(ls) != len(o) {
 		return false
 	}

@@ -27,6 +27,7 @@ import (
 	text_template "text/template"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
@@ -66,22 +67,21 @@ func query(ctx context.Context, q string, ts time.Time, queryEngine *promql.Engi
 	if res.Err != nil {
 		return nil, res.Err
 	}
-	var vector model.Vector
+	var vector promql.Vector
 
 	switch v := res.Value.(type) {
-	case model.Matrix:
+	case promql.Matrix:
 		return nil, errors.New("matrix return values not supported")
-	case model.Vector:
+	case promql.Vector:
 		vector = v
-	case *model.Scalar:
-		vector = model.Vector{&model.Sample{
-			Value:     v.Value,
-			Timestamp: v.Timestamp,
+	case promql.Scalar:
+		vector = promql.Vector{promql.Sample{
+			Point: promql.Point(v),
 		}}
-	case *model.String:
-		vector = model.Vector{&model.Sample{
-			Metric:    model.Metric{"__value__": model.LabelValue(v.Value)},
-			Timestamp: v.Timestamp,
+	case promql.String:
+		vector = promql.Vector{promql.Sample{
+			Metric: labels.FromStrings("__value__", v.V),
+			Point:  promql.Point{T: v.T},
 		}}
 	default:
 		panic("template.query: unhandled result value type")
@@ -89,14 +89,12 @@ func query(ctx context.Context, q string, ts time.Time, queryEngine *promql.Engi
 
 	// promql.Vector is hard to work with in templates, so convert to
 	// base data types.
+	// TODO(fabxc): probably not true anymore after type rework.
 	var result = make(queryResult, len(vector))
 	for n, v := range vector {
 		s := sample{
-			Value:  float64(v.Value),
-			Labels: make(map[string]string),
-		}
-		for label, value := range v.Metric {
-			s.Labels[string(label)] = string(value)
+			Value:  v.V,
+			Labels: v.Metric.Map(),
 		}
 		result[n] = &s
 	}
@@ -119,7 +117,7 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 		data: data,
 		funcMap: text_template.FuncMap{
 			"query": func(q string) (queryResult, error) {
-				return query(ctx, q, timestamp, queryEngine)
+				return query(ctx, q, timestamp.Time(), queryEngine)
 			},
 			"first": func(v queryResult) (*sample, error) {
 				if len(v) > 0 {
