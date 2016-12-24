@@ -88,13 +88,13 @@ func (s Scalar) String() string {
 	return ""
 }
 
-// SampleStream is a stream of data points belonging to a metric.
-type SampleStream struct {
+// Series is a stream of data points belonging to a metric.
+type Series struct {
 	Metric labels.Labels
 	Points []Point
 }
 
-func (s SampleStream) String() string {
+func (s Series) String() string {
 	return ""
 }
 
@@ -131,9 +131,9 @@ func (vec Vector) String() string {
 	return strings.Join(entries, "\n")
 }
 
-// Matrix is a slice of SampleStreams that implements sort.Interface and
+// Matrix is a slice of Seriess that implements sort.Interface and
 // has a String method.
-type Matrix []SampleStream
+type Matrix []Series
 
 func (m Matrix) String() string {
 	// TODO(fabxc): sort, or can we rely on order from the querier?
@@ -457,7 +457,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	numSteps := int(s.End.Sub(s.Start) / s.Interval)
 
 	// Range evaluation.
-	SampleStreams := map[uint64]SampleStream{}
+	Seriess := map[uint64]Series{}
 	for ts := s.Start; !ts.After(s.End); ts = ts.Add(s.Interval) {
 
 		if err := contextDone(ctx, "range evaluation"); err != nil {
@@ -477,22 +477,22 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		case Scalar:
 			// As the expression type does not change we can safely default to 0
 			// as the fingerprint for Scalar expressions.
-			ss, ok := SampleStreams[0]
+			ss, ok := Seriess[0]
 			if !ok {
-				ss = SampleStream{Points: make([]Point, 0, numSteps)}
-				SampleStreams[0] = ss
+				ss = Series{Points: make([]Point, 0, numSteps)}
+				Seriess[0] = ss
 			}
 			ss.Points = append(ss.Points, Point(v))
 		case Vector:
 			for _, sample := range v {
 				h := sample.Metric.Hash()
-				ss, ok := SampleStreams[h]
+				ss, ok := Seriess[h]
 				if !ok {
-					ss = SampleStream{
+					ss = Series{
 						Metric: sample.Metric,
 						Points: make([]Point, 0, numSteps),
 					}
-					SampleStreams[h] = ss
+					Seriess[h] = ss
 				}
 				ss.Points = append(ss.Points, sample.Point)
 			}
@@ -508,7 +508,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	appendTimer := query.stats.GetTimer(stats.ResultAppendTime).Start()
 	mat := Matrix{}
-	for _, ss := range SampleStreams {
+	for _, ss := range Seriess {
 		mat = append(mat, ss)
 	}
 	appendTimer.Stop()
@@ -822,7 +822,7 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 	)
 
 	for i, it := range node.iterators {
-		ss := SampleStream{
+		ss := Series{
 			Metric: node.series[i].Labels(),
 			Points: make([]Point, 0, 16),
 		}
