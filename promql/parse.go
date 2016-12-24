@@ -911,7 +911,7 @@ func (p *parser) metric() labels.Labels {
 		m = p.labelSet()
 	}
 	if name != "" {
-		m = append(m, labels.Label{Name: MetricNameLabel, Value: name})
+		m = append(m, labels.Label{Name: labels.MetricName, Value: name})
 		sort.Sort(m)
 	}
 	return m
@@ -949,12 +949,12 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
 		for _, m := range matchers {
-			if m.Name == MetricNameLabel {
+			if m.Name == labels.MetricName {
 				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
 			}
 		}
 		// Set name label matching.
-		m, err := NewLabelMatcher(MatchEqual, MetricNameLabel, name)
+		m, err := NewLabelMatcher(MatchEqual, labels.MetricName, name)
 		if err != nil {
 			panic(err) // Must not happen with metric.Equal.
 		}

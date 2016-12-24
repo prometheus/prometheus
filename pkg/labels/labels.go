@@ -13,8 +13,9 @@ const sep = '\xff'
 
 // Well-known label names used by Prometheus components.
 const (
-	MetricName = "__name__"
-	AlertName  = "alertname"
+	MetricName  = "__name__"
+	AlertName   = "alertname"
+	BucketLabel = "le"
 )
 
 // Label is a key/value pair of strings.
@@ -148,6 +149,72 @@ func Compare(a, b Labels) int {
 	return len(a) - len(b)
 }
 
-type LabelsBuilder struct {
+// LabelsBuilder allows modifiying Labels.
+type Builder struct {
 	base Labels
+	del  []string
+	add  []Label
+}
+
+// NewBuilder returns a new LabelsBuilder
+func NewBuilder(base Labels) *Builder {
+	return &Builder{
+		base: base,
+		del:  make([]string, 0, 5),
+		add:  make([]Label, 0, 5),
+	}
+}
+
+// Del deletes the label of the given name.
+func (b *Builder) Del(ns ...string) *Builder {
+	for _, n := range ns {
+		for i, a := range b.add {
+			if a.Name == n {
+				b.add = append(b.add[:i], b.add[i+1:]...)
+			}
+		}
+		b.del = append(b.del, n)
+	}
+	return b
+}
+
+// Set the name/value pair as a label.
+func (b *Builder) Set(n, v string) *Builder {
+	for i, a := range b.add {
+		if a.Name == n {
+			b.add[i].Value = v
+			return b
+		}
+	}
+	b.add = append(b.add, Label{Name: n, Value: v})
+
+	return b
+}
+
+// Labels returns the labels from the builder. If no modifications
+// were made, the originl labels are returned.
+func (b *Builder) Labels() Labels {
+	if len(b.del) == 0 && len(b.add) == 0 {
+		return b.base
+	}
+
+	res := make(Labels, 0, len(b.base)+len(b.add)-len(b.del))
+Outer:
+	for _, l := range b.base {
+		for _, n := range b.del {
+			if l.Name == n {
+				continue Outer
+			}
+		}
+		for _, la := range b.add {
+			if l.Name == la.Name {
+				continue Outer
+			}
+		}
+		res = append(res, l)
+	}
+	res = append(res, b.add...)
+	sort.Sort(res)
+
+	return res
 }

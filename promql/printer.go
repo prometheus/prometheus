@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 // Tree returns a string of the tree structure of the given node.
@@ -216,7 +217,7 @@ func (node *VectorSelector) String() string {
 	labelStrings := make([]string, 0, len(node.LabelMatchers)-1)
 	for _, matcher := range node.LabelMatchers {
 		// Only include the __name__ label if its no equality matching.
-		if matcher.Name == MetricNameLabel && matcher.Type == MatchEqual {
+		if matcher.Name == labels.MetricName && matcher.Type == MatchEqual {
 			continue
 		}
 		labelStrings = append(labelStrings, matcher.String())

@@ -117,7 +117,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 		}
 
 		resultVector = append(resultVector, Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: resultValue, T: ev.Timestamp},
 		})
 	}
@@ -180,7 +180,7 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 		}
 
 		resultVector = append(resultVector, Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: resultValue, T: ev.Timestamp},
 		})
 	}
@@ -273,7 +273,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 		}
 
 		resultVector = append(resultVector, Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: s[len(s)-1], T: ev.Timestamp}, // The last value in the Vector is the smoothed result.
 		})
 	}
@@ -304,7 +304,7 @@ func funcClampMax(ev *evaluator, args Expressions) Value {
 	vec := ev.evalVector(args[0])
 	max := ev.evalFloat(args[1])
 	for _, el := range vec {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Min(max, float64(el.V))
 	}
 	return vec
@@ -315,7 +315,7 @@ func funcClampMin(ev *evaluator, args Expressions) Value {
 	vec := ev.evalVector(args[0])
 	min := ev.evalFloat(args[1])
 	for _, el := range vec {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Max(min, float64(el.V))
 	}
 	return vec
@@ -331,7 +331,7 @@ func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
 
 	for _, l := range vec[0].Metric {
 		// TODO(julius): Should we also drop common metric names?
-		if l.Name == MetricNameLabel {
+		if l.Name == labels.MetricName {
 			continue
 		}
 		common[l.Name] = l.Value
@@ -357,7 +357,7 @@ func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
 	}
 
 	for _, el := range vec {
-		el.Metric = modifiedLabels(el.Metric, cnames, nil)
+		el.Metric = labels.NewBuilder(el.Metric).Del(cnames...).Labels()
 	}
 	return vec
 }
@@ -375,7 +375,7 @@ func funcRound(ev *evaluator, args Expressions) Value {
 
 	vec := ev.evalVector(args[0])
 	for _, el := range vec {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
 	}
 	return vec
@@ -414,7 +414,7 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]Point) float64)
 		}
 
 		resultVector = append(resultVector, Sample{
-			Metric: copyLabels(el.Metric, false),
+			Metric: dropMetricName(el.Metric),
 			Point:  Point{V: aggrFn(el.Points), T: ev.Timestamp},
 		})
 	}
@@ -443,7 +443,7 @@ func funcCountOverTime(ev *evaluator, args Expressions) Value {
 func funcFloor(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Floor(float64(el.V))
 	}
 	return Vector
@@ -493,7 +493,7 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 			continue
 		}
 
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		values := make(vectorByValueHeap, 0, len(el.Points))
 		for _, v := range el.Points {
 			values = append(values, Sample{Point: Point{V: v.V}})
@@ -538,7 +538,7 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
 func funcAbs(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Abs(float64(el.V))
 	}
 	return Vector
@@ -553,7 +553,7 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 
 	if vs, ok := args[0].(*VectorSelector); ok {
 		for _, ma := range vs.LabelMatchers {
-			if ma.Type == MatchEqual && ma.Name != MetricNameLabel {
+			if ma.Type == MatchEqual && ma.Name != labels.MetricName {
 				m = append(m, labels.Label{Name: ma.Name, Value: ma.Value})
 			}
 		}
@@ -570,7 +570,7 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 func funcCeil(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Ceil(float64(el.V))
 	}
 	return Vector
@@ -580,7 +580,7 @@ func funcCeil(ev *evaluator, args Expressions) Value {
 func funcExp(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Exp(float64(el.V))
 	}
 	return Vector
@@ -590,7 +590,7 @@ func funcExp(ev *evaluator, args Expressions) Value {
 func funcSqrt(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Sqrt(float64(el.V))
 	}
 	return Vector
@@ -600,7 +600,7 @@ func funcSqrt(ev *evaluator, args Expressions) Value {
 func funcLn(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Log(float64(el.V))
 	}
 	return Vector
@@ -610,7 +610,7 @@ func funcLn(ev *evaluator, args Expressions) Value {
 func funcLog2(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Log2(float64(el.V))
 	}
 	return Vector
@@ -620,7 +620,7 @@ func funcLog2(ev *evaluator, args Expressions) Value {
 func funcLog10(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		el.V = math.Log10(float64(el.V))
 	}
 	return Vector
@@ -664,7 +664,7 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 		}
 		slope, _ := linearRegression(samples.Points, 0)
 		resultSample := Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: slope, T: ev.Timestamp},
 		}
 
@@ -688,7 +688,7 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 		slope, intercept := linearRegression(samples.Points, ev.Timestamp)
 
 		resultVector = append(resultVector, Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: slope*duration + intercept, T: ev.Timestamp},
 		})
 	}
@@ -715,10 +715,9 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 
 		mb, ok := signatureToMetricWithBuckets[hash]
 		if !ok {
-			el.Metric = modifiedLabels(el.Metric, []string{
-				string(model.BucketLabel),
-				MetricNameLabel,
-			}, nil)
+			el.Metric = labels.NewBuilder(el.Metric).
+				Del(labels.BucketLabel, labels.MetricName).
+				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}
 			signatureToMetricWithBuckets[hash] = mb
@@ -753,7 +752,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 		}
 
 		out = append(out, Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: float64(resets), T: ev.Timestamp},
 		})
 	}
@@ -777,7 +776,7 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 		}
 
 		out = append(out, Sample{
-			Metric: copyLabels(samples.Metric, false),
+			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: float64(changes), T: ev.Timestamp},
 		})
 	}
@@ -811,12 +810,12 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 			continue
 		}
 		res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
-		del := []string{dst}
-		add := []labels.Label{}
+
+		lb := labels.NewBuilder(el.Metric).Del(dst)
 		if len(res) > 0 {
-			add = append(add, labels.Label{Name: dst, Value: string(res)})
+			lb.Set(dst, string(res))
 		}
-		el.Metric = modifiedLabels(el.Metric, del, add)
+		el.Metric = lb.Labels()
 
 		h := el.Metric.Hash()
 		if _, ok := outSet[h]; ok {
@@ -853,7 +852,7 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 		v = ev.evalVector(args[0])
 	}
 	for _, el := range v {
-		el.Metric = copyLabels(el.Metric, false)
+		el.Metric = dropMetricName(el.Metric)
 		t := time.Unix(int64(el.V), 0).UTC()
 		el.V = f(t)
 	}

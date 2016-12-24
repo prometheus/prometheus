@@ -17,7 +17,6 @@ import (
 	"math"
 	"sort"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -26,8 +25,8 @@ import (
 // excludedLabels are the labels to exclude from signature calculation for
 // quantiles.
 var excludedLabels = []string{
-	model.MetricNameLabel,
-	model.BucketLabel,
+	labels.MetricName,
+	labels.BucketLabel,
 }
 
 type bucket struct {
