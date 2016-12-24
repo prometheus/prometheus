@@ -116,10 +116,6 @@ func init() {
 	)
 
 	// Alertmanager.
-	cfg.fs.Var(
-		&cfg.alertmanagerURLs, "alertmanager.url",
-		"Comma-separated list of Alertmanager URLs to send notifications to.",
-	)
 	cfg.fs.IntVar(
 		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
 		"The capacity of the queue for pending alert manager notifications.",
