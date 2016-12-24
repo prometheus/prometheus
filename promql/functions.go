@@ -37,8 +37,8 @@ type Function struct {
 // === time() float64 ===
 func funcTime(ev *evaluator, args Expressions) Value {
 	return Scalar{
-		v: float64(ev.Timestamp / 1000),
-		t: ev.Timestamp,
+		V: float64(ev.Timestamp / 1000),
+		T: ev.Timestamp,
 	}
 }
 
@@ -66,21 +66,21 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 			lastValue         float64
 		)
 		for _, sample := range samples.Values {
-			if isCounter && sample.v < lastValue {
+			if isCounter && sample.V < lastValue {
 				counterCorrection += lastValue
 			}
-			lastValue = sample.v
+			lastValue = sample.V
 		}
-		resultValue := lastValue - samples.Values[0].v + counterCorrection
+		resultValue := lastValue - samples.Values[0].V + counterCorrection
 
 		// Duration between first/last samples and boundary of range.
-		durationToStart := float64(samples.Values[0].t - rangeStart)
-		durationToEnd := float64(rangeEnd - samples.Values[len(samples.Values)-1].t)
+		durationToStart := float64(samples.Values[0].T - rangeStart)
+		durationToEnd := float64(rangeEnd - samples.Values[len(samples.Values)-1].T)
 
-		sampledInterval := float64(samples.Values[len(samples.Values)-1].t - samples.Values[0].t)
+		sampledInterval := float64(samples.Values[len(samples.Values)-1].T - samples.Values[0].T)
 		averageDurationBetweenSamples := float64(sampledInterval) / float64(len(samples.Values)-1)
 
-		if isCounter && resultValue > 0 && samples.Values[0].v >= 0 {
+		if isCounter && resultValue > 0 && samples.Values[0].V >= 0 {
 			// Counters cannot be negative. If we have any slope at
 			// all (i.e. resultValue went up), we can extrapolate
 			// the zero point of the counter. If the duration to the
@@ -88,7 +88,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 			// take the zero point as the start of the series,
 			// thereby avoiding extrapolation to negative counter
 			// values.
-			durationToZero := float64(sampledInterval) * float64(samples.Values[0].v/resultValue)
+			durationToZero := float64(sampledInterval) * float64(samples.Values[0].V/resultValue)
 			if durationToZero < durationToStart {
 				durationToStart = durationToZero
 			}
@@ -117,9 +117,8 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 		}
 
 		resultVector = append(resultVector, sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     resultValue,
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: resultValue, T: ev.Timestamp},
 		})
 	}
 	return resultVector
@@ -163,14 +162,14 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 		previousSample := samples.Values[len(samples.Values)-2]
 
 		var resultValue float64
-		if isRate && lastSample.v < previousSample.v {
+		if isRate && lastSample.V < previousSample.V {
 			// Counter reset.
-			resultValue = lastSample.v
+			resultValue = lastSample.V
 		} else {
-			resultValue = lastSample.v - previousSample.v
+			resultValue = lastSample.V - previousSample.V
 		}
 
-		sampledInterval := lastSample.t - previousSample.t
+		sampledInterval := lastSample.T - previousSample.T
 		if sampledInterval == 0 {
 			// Avoid dividing by 0.float64
 		}
@@ -181,9 +180,8 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 		}
 
 		resultVector = append(resultVector, sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     resultValue,
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: resultValue, T: ev.Timestamp},
 		})
 	}
 	return resultVector
@@ -224,10 +222,10 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
-		ev.errorf("invalid smoothing factor. Expected: 0 < sf < 1 got: %f", sf)
+		ev.errorf("invalid smoothing factor. Expected: 0 < sf < 1 goT: %f", sf)
 	}
 	if tf <= 0 || tf >= 1 {
-		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
+		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 goT: %f", sf)
 	}
 
 	// Make an output Vector large enough to hold the entire result.
@@ -254,7 +252,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 
 		// Fill in the d values with the raw values from the input.
 		for i, v := range samples.Values {
-			d[i] = v.v
+			d[i] = v.V
 		}
 
 		// Set initial values.
@@ -275,9 +273,8 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 		}
 
 		resultVector = append(resultVector, sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     s[len(s)-1], // The last value in the Vector is the smoothed result.
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: s[len(s)-1], T: ev.Timestamp}, // The last value in the Vector is the smoothed result.
 		})
 	}
 
@@ -308,7 +305,7 @@ func funcClampMax(ev *evaluator, args Expressions) Value {
 	max := ev.evalFloat(args[1])
 	for _, el := range vec {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Min(max, float64(el.Value))
+		el.V = math.Min(max, float64(el.V))
 	}
 	return vec
 }
@@ -319,7 +316,7 @@ func funcClampMin(ev *evaluator, args Expressions) Value {
 	min := ev.evalFloat(args[1])
 	for _, el := range vec {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Max(min, float64(el.Value))
+		el.V = math.Max(min, float64(el.V))
 	}
 	return vec
 }
@@ -379,7 +376,7 @@ func funcRound(ev *evaluator, args Expressions) Value {
 	vec := ev.evalVector(args[0])
 	for _, el := range vec {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Floor(float64(el.Value)*toNearestInverse+0.5) / toNearestInverse
+		el.V = math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
 	}
 	return vec
 }
@@ -389,25 +386,25 @@ func funcScalar(ev *evaluator, args Expressions) Value {
 	v := ev.evalVector(args[0])
 	if len(v) != 1 {
 		return Scalar{
-			v: math.NaN(),
-			t: ev.Timestamp,
+			V: math.NaN(),
+			T: ev.Timestamp,
 		}
 	}
 	return Scalar{
-		v: v[0].Value,
-		t: ev.Timestamp,
+		V: v[0].V,
+		T: ev.Timestamp,
 	}
 }
 
 // === count_Scalar(Vector ValueTypeVector) float64 ===
 func funcCountScalar(ev *evaluator, args Expressions) Value {
 	return Scalar{
-		v: float64(len(ev.evalVector(args[0]))),
-		t: ev.Timestamp,
+		V: float64(len(ev.evalVector(args[0]))),
+		T: ev.Timestamp,
 	}
 }
 
-func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]samplePair) float64) Value {
+func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]Point) float64) Value {
 	mat := ev.evalMatrix(args[0])
 	resultVector := Vector{}
 
@@ -417,9 +414,8 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]samplePair) flo
 		}
 
 		resultVector = append(resultVector, sample{
-			Metric:    copyLabels(el.Metric, false),
-			Value:     aggrFn(el.Values),
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(el.Metric, false),
+			Point:  Point{V: aggrFn(el.Values), T: ev.Timestamp},
 		})
 	}
 	return resultVector
@@ -427,10 +423,10 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]samplePair) flo
 
 // === avg_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcAvgOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
-			sum += v.v
+			sum += v.V
 		}
 		return sum / float64(len(values))
 	})
@@ -438,7 +434,7 @@ func funcAvgOverTime(ev *evaluator, args Expressions) Value {
 
 // === count_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcCountOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		return float64(len(values))
 	})
 }
@@ -448,17 +444,17 @@ func funcFloor(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Floor(float64(el.Value))
+		el.V = math.Floor(float64(el.V))
 	}
 	return Vector
 }
 
 // === max_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMaxOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		max := math.Inf(-1)
 		for _, v := range values {
-			max = math.Max(max, float64(v.v))
+			max = math.Max(max, float64(v.V))
 		}
 		return max
 	})
@@ -466,10 +462,10 @@ func funcMaxOverTime(ev *evaluator, args Expressions) Value {
 
 // === min_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMinOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		min := math.Inf(1)
 		for _, v := range values {
-			min = math.Min(min, float64(v.v))
+			min = math.Min(min, float64(v.V))
 		}
 		return min
 	})
@@ -477,10 +473,10 @@ func funcMinOverTime(ev *evaluator, args Expressions) Value {
 
 // === sum_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcSumOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
-			sum += v.v
+			sum += v.V
 		}
 		return sum
 	})
@@ -500,12 +496,11 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 		el.Metric = copyLabels(el.Metric, false)
 		values := make(VectorByValueHeap, 0, len(el.Values))
 		for _, v := range el.Values {
-			values = append(values, sample{Value: v.v})
+			values = append(values, sample{Point: Point{V: v.V}})
 		}
 		resultVector = append(resultVector, sample{
-			Metric:    el.Metric,
-			Value:     quantile(q, values),
-			Timestamp: ev.Timestamp,
+			Metric: el.Metric,
+			Point:  Point{V: quantile(q, values), T: ev.Timestamp},
 		})
 	}
 	return resultVector
@@ -513,11 +508,11 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 
 // === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcStddevOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
-			sum += v.v
-			squaredSum += v.v * v.v
+			sum += v.V
+			squaredSum += v.V * v.V
 			count++
 		}
 		avg := sum / count
@@ -527,11 +522,11 @@ func funcStddevOverTime(ev *evaluator, args Expressions) Value {
 
 // === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []samplePair) float64 {
+	return aggrOverTime(ev, args, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
-			sum += v.v
-			squaredSum += v.v * v.v
+			sum += v.V
+			squaredSum += v.V * v.V
 			count++
 		}
 		avg := sum / count
@@ -544,7 +539,7 @@ func funcAbs(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Abs(float64(el.Value))
+		el.V = math.Abs(float64(el.V))
 	}
 	return Vector
 }
@@ -565,9 +560,8 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 	}
 	return Vector{
 		sample{
-			Metric:    labels.New(m...),
-			Value:     1,
-			Timestamp: ev.Timestamp,
+			Metric: labels.New(m...),
+			Point:  Point{V: 1, T: ev.Timestamp},
 		},
 	}
 }
@@ -577,7 +571,7 @@ func funcCeil(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Ceil(float64(el.Value))
+		el.V = math.Ceil(float64(el.V))
 	}
 	return Vector
 }
@@ -587,7 +581,7 @@ func funcExp(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Exp(float64(el.Value))
+		el.V = math.Exp(float64(el.V))
 	}
 	return Vector
 }
@@ -597,7 +591,7 @@ func funcSqrt(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Sqrt(float64(el.Value))
+		el.V = math.Sqrt(float64(el.V))
 	}
 	return Vector
 }
@@ -607,7 +601,7 @@ func funcLn(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Log(float64(el.Value))
+		el.V = math.Log(float64(el.V))
 	}
 	return Vector
 }
@@ -617,7 +611,7 @@ func funcLog2(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Log2(float64(el.Value))
+		el.V = math.Log2(float64(el.V))
 	}
 	return Vector
 }
@@ -627,7 +621,7 @@ func funcLog10(ev *evaluator, args Expressions) Value {
 	Vector := ev.evalVector(args[0])
 	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
-		el.Value = math.Log10(float64(el.Value))
+		el.V = math.Log10(float64(el.V))
 	}
 	return Vector
 }
@@ -635,18 +629,18 @@ func funcLog10(ev *evaluator, args Expressions) Value {
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
-func linearRegression(samples []samplePair, interceptTime int64) (slope, intercept float64) {
+func linearRegression(samples []Point, interceptTime int64) (slope, intercept float64) {
 	var (
 		n            float64
 		sumX, sumY   float64
 		sumXY, sumX2 float64
 	)
 	for _, sample := range samples {
-		x := float64(sample.t-interceptTime) / 1e6
+		x := float64(sample.T-interceptTime) / 1e6
 		n += 1.0
-		sumY += sample.v
+		sumY += sample.V
 		sumX += x
-		sumXY += x * sample.v
+		sumXY += x * sample.V
 		sumX2 += x * x
 	}
 	covXY := sumXY - sumX*sumY/n
@@ -670,9 +664,8 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 		}
 		slope, _ := linearRegression(samples.Values, 0)
 		resultSample := sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     slope,
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: slope, T: ev.Timestamp},
 		}
 
 		resultVector = append(resultVector, resultSample)
@@ -695,9 +688,8 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 		slope, intercept := linearRegression(samples.Values, ev.Timestamp)
 
 		resultVector = append(resultVector, sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     slope*duration + intercept,
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: slope*duration + intercept, T: ev.Timestamp},
 		})
 	}
 	return resultVector
@@ -731,14 +723,13 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 			mb = &metricWithBuckets{el.Metric, nil}
 			signatureToMetricWithBuckets[hash] = mb
 		}
-		mb.buckets = append(mb.buckets, bucket{upperBound, el.Value})
+		mb.buckets = append(mb.buckets, bucket{upperBound, el.V})
 	}
 
 	for _, mb := range signatureToMetricWithBuckets {
 		outVec = append(outVec, sample{
-			Metric:    mb.metric,
-			Value:     bucketQuantile(q, mb.buckets),
-			Timestamp: ev.Timestamp,
+			Metric: mb.metric,
+			Point:  Point{V: bucketQuantile(q, mb.buckets), T: ev.Timestamp},
 		})
 	}
 
@@ -752,9 +743,9 @@ func funcResets(ev *evaluator, args Expressions) Value {
 
 	for _, samples := range in {
 		resets := 0
-		prev := samples.Values[0].v
+		prev := samples.Values[0].V
 		for _, sample := range samples.Values[1:] {
-			current := sample.v
+			current := sample.V
 			if current < prev {
 				resets++
 			}
@@ -762,9 +753,8 @@ func funcResets(ev *evaluator, args Expressions) Value {
 		}
 
 		out = append(out, sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     float64(resets),
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: float64(resets), T: ev.Timestamp},
 		})
 	}
 	return out
@@ -777,9 +767,9 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 
 	for _, samples := range in {
 		changes := 0
-		prev := samples.Values[0].v
+		prev := samples.Values[0].V
 		for _, sample := range samples.Values[1:] {
-			current := sample.v
+			current := sample.V
 			if current != prev && !(math.IsNaN(float64(current)) && math.IsNaN(float64(prev))) {
 				changes++
 			}
@@ -787,9 +777,8 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 		}
 
 		out = append(out, sample{
-			Metric:    copyLabels(samples.Metric, false),
-			Value:     float64(changes),
-			Timestamp: ev.Timestamp,
+			Metric: copyLabels(samples.Metric, false),
+			Point:  Point{V: float64(changes), T: ev.Timestamp},
 		})
 	}
 	return out
@@ -844,9 +833,8 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 func funcVector(ev *evaluator, args Expressions) Value {
 	return Vector{
 		sample{
-			Metric:    labels.Labels{},
-			Value:     ev.evalFloat(args[0]),
-			Timestamp: ev.Timestamp,
+			Metric: labels.Labels{},
+			Point:  Point{V: ev.evalFloat(args[0]), T: ev.Timestamp},
 		},
 	}
 }
@@ -858,7 +846,7 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 		v = Vector{
 			sample{
 				Metric: labels.Labels{},
-				Value:  float64(ev.Timestamp) / 1000,
+				Point:  Point{V: float64(ev.Timestamp) / 1000},
 			},
 		}
 	} else {
@@ -866,8 +854,8 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 	}
 	for _, el := range v {
 		el.Metric = copyLabels(el.Metric, false)
-		t := time.Unix(int64(el.Value), 0).UTC()
-		el.Value = f(t)
+		t := time.Unix(int64(el.V), 0).UTC()
+		el.V = f(t)
 	}
 	return v
 }
@@ -1221,10 +1209,10 @@ func (s VectorByValueHeap) Len() int {
 }
 
 func (s VectorByValueHeap) Less(i, j int) bool {
-	if math.IsNaN(float64(s[i].Value)) {
+	if math.IsNaN(float64(s[i].V)) {
 		return true
 	}
-	return s[i].Value < s[j].Value
+	return s[i].V < s[j].V
 }
 
 func (s VectorByValueHeap) Swap(i, j int) {
@@ -1250,10 +1238,10 @@ func (s VectorByReverseValueHeap) Len() int {
 }
 
 func (s VectorByReverseValueHeap) Less(i, j int) bool {
-	if math.IsNaN(float64(s[i].Value)) {
+	if math.IsNaN(float64(s[i].V)) {
 		return true
 	}
-	return s[i].Value > s[j].Value
+	return s[i].V > s[j].V
 }
 
 func (s VectorByReverseValueHeap) Swap(i, j int) {

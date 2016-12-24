@@ -36,6 +36,7 @@ const (
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 = -9223372036854775808
 
+	// MetricNameLabel is the name of the label containing the metric name.
 	MetricNameLabel = "__name__"
 )
 
@@ -76,9 +77,10 @@ func (s stringVal) String() string {
 	return s.s
 }
 
+// Scalar is a data point that's explicitly not associated with a metric.
 type Scalar struct {
-	t int64
-	v float64
+	T int64
+	V float64
 }
 
 func (s Scalar) String() string {
@@ -88,27 +90,28 @@ func (s Scalar) String() string {
 // sampleStream is a stream of Values belonging to an attached COWMetric.
 type sampleStream struct {
 	Metric labels.Labels
-	Values []samplePair
+	Values []Point
 }
 
 func (s sampleStream) String() string {
 	return ""
 }
 
-type samplePair struct {
-	t int64
-	v float64
+// Point represents a single data point for a given timestamp.
+type Point struct {
+	T int64
+	V float64
 }
 
-func (s samplePair) String() string {
+func (s Point) String() string {
 	return ""
 }
 
 // sample is a single sample belonging to a COWMetric.
 type sample struct {
-	Metric    labels.Labels
-	Value     float64
-	Timestamp int64
+	Point
+
+	Metric labels.Labels
 }
 
 func (s sample) String() string {
@@ -475,13 +478,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			// as the fingerprint for Scalar expressions.
 			ss, ok := sampleStreams[0]
 			if !ok {
-				ss = sampleStream{Values: make([]samplePair, 0, numSteps)}
+				ss = sampleStream{Values: make([]Point, 0, numSteps)}
 				sampleStreams[0] = ss
 			}
-			ss.Values = append(ss.Values, samplePair{
-				v: v.v,
-				t: v.t,
-			})
+			ss.Values = append(ss.Values, Point(v))
 		case Vector:
 			for _, sample := range v {
 				h := sample.Metric.Hash()
@@ -489,14 +489,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				if !ok {
 					ss = sampleStream{
 						Metric: sample.Metric,
-						Values: make([]samplePair, 0, numSteps),
+						Values: make([]Point, 0, numSteps),
 					}
 					sampleStreams[h] = ss
 				}
-				ss.Values = append(ss.Values, samplePair{
-					v: sample.Value,
-					t: sample.Timestamp,
-				})
+				ss.Values = append(ss.Values, sample.Point)
 			}
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
@@ -656,16 +653,16 @@ func (ev *evaluator) evalVector(e Expr) Vector {
 // evalInt attempts to evaluate e into an integer and errors otherwise.
 func (ev *evaluator) evalInt(e Expr) int64 {
 	sc := ev.evalScalar(e)
-	if !convertibleToInt64(sc.v) {
-		ev.errorf("Scalar value %v overflows int64", sc.v)
+	if !convertibleToInt64(sc.V) {
+		ev.errorf("Scalar value %v overflows int64", sc.V)
 	}
-	return int64(sc.v)
+	return int64(sc.V)
 }
 
 // evalFloat attempts to evaluate e into a float and errors otherwise.
 func (ev *evaluator) evalFloat(e Expr) float64 {
 	sc := ev.evalScalar(e)
-	return float64(sc.v)
+	return float64(sc.V)
 }
 
 // evalMatrix attempts to evaluate e into a Matrix and errors otherwise.
@@ -724,8 +721,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 		switch lt, rt := lhs.Type(), rhs.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
 			return Scalar{
-				v: ScalarBinop(e.Op, lhs.(Scalar).v, rhs.(Scalar).v),
-				t: ev.Timestamp,
+				V: ScalarBinop(e.Op, lhs.(Scalar).V, rhs.(Scalar).V),
+				T: ev.Timestamp,
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeVector:
@@ -753,7 +750,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.MatrixSelector(e)
 
 	case *NumberLiteral:
-		return Scalar{v: e.Val, t: ev.Timestamp}
+		return Scalar{V: e.Val, T: ev.Timestamp}
 
 	case *ParenExpr:
 		return ev.eval(e.Expr)
@@ -767,10 +764,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		if e.Op == itemSUB {
 			switch v := se.(type) {
 			case Scalar:
-				v.v = -v.v
+				v.V = -v.V
 			case Vector:
 				for i, sv := range v {
-					v[i].Value = -sv.Value
+					v[i].V = -sv.V
 				}
 			}
 		}
@@ -807,9 +804,8 @@ func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 		}
 
 		vec = append(vec, sample{
-			Metric:    node.series[i].Labels(),
-			Value:     v,
-			Timestamp: int64(ev.Timestamp),
+			Metric: node.series[i].Labels(),
+			Point:  Point{V: v, T: ev.Timestamp},
 		})
 	}
 	return vec
@@ -827,7 +823,7 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 	for i, it := range node.iterators {
 		ss := sampleStream{
 			Metric: node.series[i].Labels(),
-			Values: make([]samplePair, 0, 16),
+			Values: make([]Point, 0, 16),
 		}
 
 		if !it.Seek(maxt) {
@@ -842,13 +838,13 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 			t, v := buf.Values()
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				ss.Values = append(ss.Values, samplePair{t: t + offset, v: v})
+				ss.Values = append(ss.Values, Point{T: t + offset, V: v})
 			}
 		}
 		// The seeked sample might also be in the range.
 		t, v := it.Values()
 		if t == maxt {
-			ss.Values = append(ss.Values, samplePair{t: t + offset, v: v})
+			ss.Values = append(ss.Values, Point{T: t + offset, V: v})
 		}
 
 		Matrix = append(Matrix, ss)
@@ -968,7 +964,7 @@ func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 		}
 
 		// Account for potentially swapped sidedness.
-		vl, vr := ls.Value, rs.Value
+		vl, vr := ls.V, rs.V
 		if matching.Card == CardOneToMany {
 			vl, vr = vr, vl
 		}
@@ -1006,9 +1002,8 @@ func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 		}
 
 		result = append(result, sample{
-			Metric:    metric,
-			Value:     value,
-			Timestamp: ev.Timestamp,
+			Metric: metric,
+			Point:  Point{V: value, T: ev.Timestamp},
 		})
 	}
 	return result
@@ -1121,7 +1116,7 @@ func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs Scalar, swap
 	vec := make(Vector, 0, len(lhs))
 
 	for _, lhsSample := range lhs {
-		lv, rv := lhsSample.Value, rhs.v
+		lv, rv := lhsSample.V, rhs.V
 		// lhs always contains the Vector. If the original position was different
 		// swap for calculating the value.
 		if swap {
@@ -1137,7 +1132,7 @@ func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs Scalar, swap
 			keep = true
 		}
 		if keep {
-			lhsSample.Value = value
+			lhsSample.V = value
 			lhsSample.Metric = copyLabels(lhsSample.Metric, shouldDropMetricName(op))
 
 			vec = append(vec, lhsSample)
@@ -1280,7 +1275,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 		}
 		if op == itemCountValues {
 			del = append(del, valueLabel)
-			add = append(add, labels.Label{Name: valueLabel, Value: fmt.Sprintf("%f", s.Value)})
+			add = append(add, labels.Label{Name: valueLabel, Value: fmt.Sprintf("%f", s.V)})
 		}
 
 		var (
@@ -1308,16 +1303,22 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:           m,
-				value:            s.Value,
-				valuesSquaredSum: s.Value * s.Value,
+				value:            s.V,
+				valuesSquaredSum: s.V * s.V,
 				groupCount:       1,
 			}
 			if op == itemTopK || op == itemQuantile {
 				result[groupingKey].heap = make(VectorByValueHeap, 0, k)
-				heap.Push(&result[groupingKey].heap, &sample{Value: s.Value, Metric: s.Metric})
+				heap.Push(&result[groupingKey].heap, &sample{
+					Point:  Point{V: s.V},
+					Metric: s.Metric,
+				})
 			} else if op == itemBottomK {
 				result[groupingKey].reverseHeap = make(VectorByReverseValueHeap, 0, k)
-				heap.Push(&result[groupingKey].reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
+				heap.Push(&result[groupingKey].reverseHeap, &sample{
+					Point:  Point{V: s.V},
+					Metric: s.Metric,
+				})
 			}
 			continue
 		}
@@ -1328,44 +1329,50 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 
 		switch op {
 		case itemSum:
-			group.value += s.Value
+			group.value += s.V
 
 		case itemAvg:
-			group.value += s.Value
+			group.value += s.V
 			group.groupCount++
 
 		case itemMax:
-			if group.value < s.Value || math.IsNaN(float64(group.value)) {
-				group.value = s.Value
+			if group.value < s.V || math.IsNaN(float64(group.value)) {
+				group.value = s.V
 			}
 
 		case itemMin:
-			if group.value > s.Value || math.IsNaN(float64(group.value)) {
-				group.value = s.Value
+			if group.value > s.V || math.IsNaN(float64(group.value)) {
+				group.value = s.V
 			}
 
 		case itemCount, itemCountValues:
 			group.groupCount++
 
 		case itemStdvar, itemStddev:
-			group.value += s.Value
-			group.valuesSquaredSum += s.Value * s.Value
+			group.value += s.V
+			group.valuesSquaredSum += s.V * s.V
 			group.groupCount++
 
 		case itemTopK:
-			if int64(len(group.heap)) < k || group.heap[0].Value < s.Value || math.IsNaN(float64(group.heap[0].Value)) {
+			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(float64(group.heap[0].V)) {
 				if int64(len(group.heap)) == k {
 					heap.Pop(&group.heap)
 				}
-				heap.Push(&group.heap, &sample{Value: s.Value, Metric: s.Metric})
+				heap.Push(&group.heap, &sample{
+					Point:  Point{V: s.V},
+					Metric: s.Metric,
+				})
 			}
 
 		case itemBottomK:
-			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].Value > s.Value || math.IsNaN(float64(group.reverseHeap[0].Value)) {
+			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(float64(group.reverseHeap[0].V)) {
 				if int64(len(group.reverseHeap)) == k {
 					heap.Pop(&group.reverseHeap)
 				}
-				heap.Push(&group.reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
+				heap.Push(&group.reverseHeap, &sample{
+					Point:  Point{V: s.V},
+					Metric: s.Metric,
+				})
 			}
 
 		case itemQuantile:
@@ -1400,9 +1407,8 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
 				resultVector = append(resultVector, sample{
-					Metric:    v.Metric,
-					Value:     v.Value,
-					Timestamp: ev.Timestamp,
+					Metric: v.Metric,
+					Point:  Point{V: v.V, T: ev.Timestamp},
 				})
 			}
 			continue // Bypass default append.
@@ -1412,9 +1418,8 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
 				resultVector = append(resultVector, sample{
-					Metric:    v.Metric,
-					Value:     v.Value,
-					Timestamp: ev.Timestamp,
+					Metric: v.Metric,
+					Point:  Point{V: v.V, T: ev.Timestamp},
 				})
 			}
 			continue // Bypass default append.
@@ -1427,9 +1432,8 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 		}
 
 		resultVector = append(resultVector, sample{
-			Metric:    aggr.labels,
-			Value:     aggr.value,
-			Timestamp: ev.Timestamp,
+			Metric: aggr.labels,
+			Point:  Point{V: aggr.value, T: ev.Timestamp},
 		})
 	}
 	return resultVector

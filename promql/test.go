@@ -246,14 +246,14 @@ func (*evalCmd) testCmd()  {}
 type loadCmd struct {
 	gap     time.Duration
 	metrics map[uint64]labels.Labels
-	defs    map[uint64][]samplePair
+	defs    map[uint64][]Point
 }
 
 func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:     gap,
 		metrics: map[uint64]labels.Labels{},
-		defs:    map[uint64][]samplePair{},
+		defs:    map[uint64][]Point{},
 	}
 }
 
@@ -265,13 +265,13 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
 	h := m.Hash()
 
-	samples := make([]samplePair, 0, len(vals))
+	samples := make([]Point, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.omitted {
-			samples = append(samples, samplePair{
-				t: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				v: v.value,
+			samples = append(samples, Point{
+				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
+				V: v.value,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -366,7 +366,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			for i, expVal := range exp.vals {
-				if !almostEqual(expVal.value, v.Values[i].v) {
+				if !almostEqual(expVal.value, v.Values[i].V) {
 					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric, v.Values)
 				}
 			}
@@ -392,8 +392,8 @@ func (ev *evalCmd) compareResult(result Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(float64(exp.vals[0].value), float64(v.Value)) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.Value)
+			if !almostEqual(float64(exp.vals[0].value), float64(v.V)) {
+				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.V)
 			}
 
 			seen[fp] = true
@@ -405,8 +405,8 @@ func (ev *evalCmd) compareResult(result Value) error {
 		}
 
 	case Scalar:
-		if !almostEqual(ev.expected[0].vals[0].value, val.v) {
-			return fmt.Errorf("expected Scalar %v but got %v", val.v, ev.expected[0].vals[0].value)
+		if !almostEqual(ev.expected[0].vals[0].value, val.V) {
+			return fmt.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].value)
 		}
 
 	default:
