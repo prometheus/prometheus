@@ -51,10 +51,10 @@ type Value interface {
 	String() string
 }
 
-func (Matrix) Type() ValueType    { return ValueTypeMatrix }
-func (Vector) Type() ValueType    { return ValueTypeVector }
-func (Scalar) Type() ValueType    { return ValueTypeScalar }
-func (stringVal) Type() ValueType { return ValueTypeString }
+func (Matrix) Type() ValueType { return ValueTypeMatrix }
+func (Vector) Type() ValueType { return ValueTypeVector }
+func (Scalar) Type() ValueType { return ValueTypeScalar }
+func (String) Type() ValueType { return ValueTypeString }
 
 // ValueType describes a type of a value.
 type ValueType string
@@ -68,13 +68,13 @@ const (
 	ValueTypeString = "string"
 )
 
-type stringVal struct {
-	s string
-	t int64
+type String struct {
+	V string
+	T int64
 }
 
-func (s stringVal) String() string {
-	return s.s
+func (s String) String() string {
+	return s.V
 }
 
 // Scalar is a data point that's explicitly not associated with a metric.
@@ -678,9 +678,9 @@ func (ev *evaluator) evalMatrix(e Expr) Matrix {
 }
 
 // evalString attempts to evaluate e to a string value and errors otherwise.
-func (ev *evaluator) evalString(e Expr) stringVal {
+func (ev *evaluator) evalString(e Expr) String {
 	val := ev.eval(e)
-	sv, ok := val.(stringVal)
+	sv, ok := val.(String)
 	if !ok {
 		ev.errorf("expected string but got %s", documentedType(val.Type()))
 	}
@@ -756,7 +756,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.eval(e.Expr)
 
 	case *StringLiteral:
-		return stringVal{s: e.Val, t: ev.Timestamp}
+		return String{V: e.Val, T: ev.Timestamp}
 
 	case *UnaryExpr:
 		se := ev.evalOneOf(e.Expr, ValueTypeScalar, ValueTypeVector)
@@ -1259,7 +1259,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 	}
 	var valueLabel string
 	if op == itemCountValues {
-		valueLabel = ev.evalString(param).s
+		valueLabel = ev.evalString(param).V
 		if !without {
 			grouping = append(grouping, valueLabel)
 		}

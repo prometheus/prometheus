@@ -788,10 +788,10 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	var (
 		Vector   = ev.evalVector(args[0])
-		dst      = ev.evalString(args[1]).s
-		repl     = ev.evalString(args[2]).s
-		src      = ev.evalString(args[3]).s
-		regexStr = ev.evalString(args[4]).s
+		dst      = ev.evalString(args[1]).V
+		repl     = ev.evalString(args[2]).V
+		src      = ev.evalString(args[3]).V
+		regexStr = ev.evalString(args[4]).V
 	)
 
 	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
