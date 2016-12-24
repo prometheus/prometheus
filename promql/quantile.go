@@ -112,7 +112,7 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 // If 'values' has zero elements, NaN is returned.
 // If q<0, -Inf is returned.
 // If q>1, +Inf is returned.
-func quantile(q float64, values VectorByValueHeap) float64 {
+func quantile(q float64, values vectorByValueHeap) float64 {
 	if len(values) == 0 {
 		return math.NaN()
 	}
