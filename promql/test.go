@@ -404,9 +404,9 @@ func (ev *evalCmd) compareResult(result Value) error {
 			}
 		}
 
-	case scalar:
+	case Scalar:
 		if !almostEqual(ev.expected[0].vals[0].value, val.v) {
-			return fmt.Errorf("expected scalar %v but got %v", val.v, ev.expected[0].vals[0].value)
+			return fmt.Errorf("expected Scalar %v but got %v", val.v, ev.expected[0].vals[0].value)
 		}
 
 	default:

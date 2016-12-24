@@ -156,7 +156,7 @@ type StringLiteral struct {
 }
 
 // UnaryExpr represents a unary operation on another expression.
-// Currently unary operations are only supported for scalars.
+// Currently unary operations are only supported for Scalars.
 type UnaryExpr struct {
 	Op   itemType
 	Expr Expr

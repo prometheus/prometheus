@@ -52,7 +52,7 @@ type Value interface {
 
 func (Matrix) Type() ValueType    { return ValueTypeMatrix }
 func (Vector) Type() ValueType    { return ValueTypeVector }
-func (scalar) Type() ValueType    { return ValueTypeScalar }
+func (Scalar) Type() ValueType    { return ValueTypeScalar }
 func (stringVal) Type() ValueType { return ValueTypeString }
 
 // ValueType describes a type of a value.
@@ -62,7 +62,7 @@ type ValueType string
 const (
 	ValueTypeNone   = "none"
 	ValueTypeVector = "Vector"
-	ValueTypeScalar = "scalar"
+	ValueTypeScalar = "Scalar"
 	ValueTypeMatrix = "Matrix"
 	ValueTypeString = "string"
 )
@@ -76,12 +76,12 @@ func (s stringVal) String() string {
 	return s.s
 }
 
-type scalar struct {
+type Scalar struct {
 	t int64
 	v float64
 }
 
-func (s scalar) String() string {
+func (s Scalar) String() string {
 	return ""
 }
 
@@ -175,15 +175,15 @@ func (r *Result) Matrix() (Matrix, error) {
 	return v, nil
 }
 
-// Scalar returns a scalar value. An error is returned if
-// the result was an error or the result value is not a scalar.
-func (r *Result) Scalar() (scalar, error) {
+// Scalar returns a Scalar value. An error is returned if
+// the result was an error or the result value is not a Scalar.
+func (r *Result) Scalar() (Scalar, error) {
 	if r.Err != nil {
-		return scalar{}, r.Err
+		return Scalar{}, r.Err
 	}
-	v, ok := r.Value.(scalar)
+	v, ok := r.Value.(Scalar)
 	if !ok {
-		return scalar{}, fmt.Errorf("query result is not a scalar")
+		return Scalar{}, fmt.Errorf("query result is not a Scalar")
 	}
 	return v, nil
 }
@@ -336,7 +336,7 @@ func (ng *Engine) NewRangeQuery(qs string, start, end time.Time, interval time.D
 		return nil, err
 	}
 	if expr.Type() != ValueTypeVector && expr.Type() != ValueTypeScalar {
-		return nil, fmt.Errorf("invalid expression type %q for range query, must be scalar or instant Vector", documentedType(expr.Type()))
+		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
 	}
 	qry := ng.newQuery(expr, start, end, interval)
 	qry.q = qs
@@ -470,9 +470,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 
 		switch v := val.(type) {
-		case scalar:
+		case Scalar:
 			// As the expression type does not change we can safely default to 0
-			// as the fingerprint for scalar expressions.
+			// as the fingerprint for Scalar expressions.
 			ss, ok := sampleStreams[0]
 			if !ok {
 				ss = sampleStream{Values: make([]samplePair, 0, numSteps)}
@@ -633,12 +633,12 @@ func (ev *evaluator) recover(errp *error) {
 	}
 }
 
-// evalScalar attempts to evaluate e to a scalar value and errors otherwise.
-func (ev *evaluator) evalScalar(e Expr) scalar {
+// evalScalar attempts to evaluate e to a Scalar value and errors otherwise.
+func (ev *evaluator) evalScalar(e Expr) Scalar {
 	val := ev.eval(e)
-	sv, ok := val.(scalar)
+	sv, ok := val.(Scalar)
 	if !ok {
-		ev.errorf("expected scalar but got %s", documentedType(val.Type()))
+		ev.errorf("expected Scalar but got %s", documentedType(val.Type()))
 	}
 	return sv
 }
@@ -657,7 +657,7 @@ func (ev *evaluator) evalVector(e Expr) Vector {
 func (ev *evaluator) evalInt(e Expr) int64 {
 	sc := ev.evalScalar(e)
 	if !convertibleToInt64(sc.v) {
-		ev.errorf("scalar value %v overflows int64", sc.v)
+		ev.errorf("Scalar value %v overflows int64", sc.v)
 	}
 	return int64(sc.v)
 }
@@ -723,8 +723,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 		switch lt, rt := lhs.Type(), rhs.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return scalar{
-				v: scalarBinop(e.Op, lhs.(scalar).v, rhs.(scalar).v),
+			return Scalar{
+				v: ScalarBinop(e.Op, lhs.(Scalar).v, rhs.(Scalar).v),
 				t: ev.Timestamp,
 			}
 
@@ -740,10 +740,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 				return ev.VectorBinop(e.Op, lhs.(Vector), rhs.(Vector), e.VectorMatching, e.ReturnBool)
 			}
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.VectorScalarBinop(e.Op, lhs.(Vector), rhs.(scalar), false, e.ReturnBool)
+			return ev.VectorScalarBinop(e.Op, lhs.(Vector), rhs.(Scalar), false, e.ReturnBool)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.VectorScalarBinop(e.Op, rhs.(Vector), lhs.(scalar), true, e.ReturnBool)
+			return ev.VectorScalarBinop(e.Op, rhs.(Vector), lhs.(Scalar), true, e.ReturnBool)
 		}
 
 	case *Call:
@@ -753,7 +753,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.MatrixSelector(e)
 
 	case *NumberLiteral:
-		return scalar{v: e.Val, t: ev.Timestamp}
+		return Scalar{v: e.Val, t: ev.Timestamp}
 
 	case *ParenExpr:
 		return ev.eval(e.Expr)
@@ -766,7 +766,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		// Only + and - are possible operators.
 		if e.Op == itemSUB {
 			switch v := se.(type) {
-			case scalar:
+			case Scalar:
 				v.v = -v.v
 			case Vector:
 				for i, sv := range v {
@@ -1116,8 +1116,8 @@ Outer:
 	return res
 }
 
-// VectorScalarBinop evaluates a binary operation between a Vector and a scalar.
-func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs scalar, swap, returnBool bool) Vector {
+// VectorScalarBinop evaluates a binary operation between a Vector and a Scalar.
+func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs Scalar, swap, returnBool bool) Vector {
 	vec := make(Vector, 0, len(lhs))
 
 	for _, lhsSample := range lhs {
@@ -1161,8 +1161,8 @@ func copyLabels(metric labels.Labels, withName bool) labels.Labels {
 	return cm
 }
 
-// scalarBinop evaluates a binary operation between two scalars.
-func scalarBinop(op itemType, lhs, rhs float64) float64 {
+// ScalarBinop evaluates a binary operation between two Scalars.
+func ScalarBinop(op itemType, lhs, rhs float64) float64 {
 	switch op {
 	case itemADD:
 		return lhs + rhs
@@ -1189,7 +1189,7 @@ func scalarBinop(op itemType, lhs, rhs float64) float64 {
 	case itemLTE:
 		return btos(lhs <= rhs)
 	}
-	panic(fmt.Errorf("operator %q not allowed for scalar operations", op))
+	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
 // VectorElemBinop evaluates a binary operation between two Vector elements.
