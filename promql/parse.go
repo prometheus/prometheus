@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 
 	"github.com/prometheus/prometheus/util/strutil"
 )

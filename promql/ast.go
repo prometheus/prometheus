@@ -17,9 +17,11 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+	"unsafe"
 
 	"github.com/fabxc/tsdb"
-	"github.com/fabxc/tsdb/labels"
+	tsdbLabels "github.com/fabxc/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 // Node is a generic interface for all nodes in an AST.
@@ -368,31 +370,39 @@ func NewLabelMatcher(t MatchType, n, v string) (*LabelMatcher, error) {
 	return m, nil
 }
 
+func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
+	return *(*tsdbLabels.Labels)(unsafe.Pointer(&l))
+}
+
+func toLabels(l tsdbLabels.Labels) labels.Labels {
+	return *(*labels.Labels)(unsafe.Pointer(&l))
+}
+
 func (m *LabelMatcher) String() string {
 	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
 }
 
-func (m *LabelMatcher) matcher() labels.Matcher {
+func (m *LabelMatcher) matcher() tsdbLabels.Matcher {
 	switch m.Type {
 	case MatchEqual:
-		return labels.NewEqualMatcher(m.Name, m.Value)
+		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
 
 	case MatchNotEqual:
-		return labels.Not(labels.NewEqualMatcher(m.Name, m.Value))
+		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
 
 	case MatchRegexp:
-		res, err := labels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
 		if err != nil {
 			panic(err)
 		}
 		return res
 
 	case MatchNotRegexp:
-		res, err := labels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
 		if err != nil {
 			panic(err)
 		}
-		return labels.Not(res)
+		return tsdbLabels.Not(res)
 	}
 	panic("promql.LabelMatcher.matcher: invalid matcher type")
 }

@@ -20,8 +20,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 // Function represents a function of the expression language and is

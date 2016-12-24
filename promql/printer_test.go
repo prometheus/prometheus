@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fabxc/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 func TestStatementString(t *testing.T) {

@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/storage"
