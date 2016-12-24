@@ -340,26 +340,6 @@ func newShardSeriesSet(a, b SeriesSet) *shardSeriesSet {
 	return s
 }
 
-// compareLabels compares the two label sets.
-// The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
-func compareLabels(a, b labels.Labels) int {
-	l := len(a)
-	if len(b) < l {
-		l = len(b)
-	}
-
-	for i := 0; i < l; i++ {
-		if d := strings.Compare(a[i].Name, b[i].Name); d != 0 {
-			return d
-		}
-		if d := strings.Compare(a[i].Value, b[i].Value); d != 0 {
-			return d
-		}
-	}
-	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a) - len(b)
-}
-
 func (s *shardSeriesSet) Series() Series {
 	return s.cur
 }
@@ -378,7 +358,7 @@ func (s *shardSeriesSet) compare() int {
 	if s.bs == nil {
 		return -1
 	}
-	return compareLabels(s.as.Labels(), s.bs.Labels())
+	return labels.Compare(s.as.Labels(), s.bs.Labels())
 }
 
 func (s *shardSeriesSet) advanceA() {

@@ -325,7 +325,7 @@ func (w *indexWriter) writeSeries() error {
 		series = append(series, s)
 	}
 	slice.Sort(series, func(i, j int) bool {
-		return compareLabels(series[i].labels, series[j].labels) < 0
+		return labels.Compare(series[i].labels, series[j].labels) < 0
 	})
 
 	// Current end of file plus 5 bytes for section header.

@@ -1,7 +1,10 @@
 package labels
 
 import (
+	"bytes"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/cespare/xxhash"
 )
@@ -20,6 +23,23 @@ type Labels []Label
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
+
+func (ls Labels) String() string {
+	var b bytes.Buffer
+
+	b.WriteByte('{')
+	for i, l := range ls {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.WriteString(strconv.Quote(l.Value))
+	}
+	b.WriteByte('}')
+
+	return b.String()
+}
 
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
@@ -100,4 +120,24 @@ func FromStrings(ss ...string) Labels {
 
 	sort.Sort(res)
 	return res
+}
+
+// Compare compares the two label sets.
+// The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
+func Compare(a, b Labels) int {
+	l := len(a)
+	if len(b) < l {
+		l = len(b)
+	}
+
+	for i := 0; i < l; i++ {
+		if d := strings.Compare(a[i].Name, b[i].Name); d != 0 {
+			return d
+		}
+		if d := strings.Compare(a[i].Value, b[i].Value); d != 0 {
+			return d
+		}
+	}
+	// If all labels so far were in common, the set with fewer labels comes first.
+	return len(a) - len(b)
 }

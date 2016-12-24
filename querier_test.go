@@ -175,58 +175,6 @@ func expandSeriesIterator(it SeriesIterator) (r []sample, err error) {
 	return r, it.Err()
 }
 
-func TestCompareLabels(t *testing.T) {
-	cases := []struct {
-		a, b []labels.Label
-		res  int
-	}{
-		{
-			a:   []labels.Label{},
-			b:   []labels.Label{},
-			res: 0,
-		},
-		{
-			a:   []labels.Label{{"a", ""}},
-			b:   []labels.Label{{"a", ""}, {"b", ""}},
-			res: -1,
-		},
-		{
-			a:   []labels.Label{{"a", ""}},
-			b:   []labels.Label{{"a", ""}},
-			res: 0,
-		},
-		{
-			a:   []labels.Label{{"aa", ""}, {"aa", ""}},
-			b:   []labels.Label{{"aa", ""}, {"ab", ""}},
-			res: -1,
-		},
-		{
-			a:   []labels.Label{{"aa", ""}, {"abb", ""}},
-			b:   []labels.Label{{"aa", ""}, {"ab", ""}},
-			res: 1,
-		},
-		{
-			a: []labels.Label{
-				{"__name__", "go_gc_duration_seconds"},
-				{"job", "prometheus"},
-				{"quantile", "0.75"},
-			},
-			b: []labels.Label{
-				{"__name__", "go_gc_duration_seconds"},
-				{"job", "prometheus"},
-				{"quantile", "1"},
-			},
-			res: -1,
-		},
-	}
-	for _, c := range cases {
-		// Use constructor to ensure sortedness.
-		a, b := labels.New(c.a...), labels.New(c.b...)
-
-		require.Equal(t, c.res, compareLabels(a, b))
-	}
-}
-
 func TestSampleRing(t *testing.T) {
 	cases := []struct {
 		input []int64
