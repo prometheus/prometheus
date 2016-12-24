@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	html_template "html/template"
 	text_template "text/template"
@@ -56,8 +57,8 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(ctx context.Context, q string, timestamp model.Time, queryEngine *promql.Engine) (queryResult, error) {
-	query, err := queryEngine.NewInstantQuery(q, timestamp)
+func query(ctx context.Context, q string, ts time.Time, queryEngine *promql.Engine) (queryResult, error) {
+	query, err := queryEngine.NewInstantQuery(q, ts)
 	if err != nil {
 		return nil, err
 	}

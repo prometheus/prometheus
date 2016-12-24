@@ -36,7 +36,7 @@ type Function struct {
 
 // === time() float64 ===
 func funcTime(ev *evaluator, args Expressions) Value {
-	return scalar{
+	return Scalar{
 		v: float64(ev.Timestamp / 1000),
 		t: ev.Timestamp,
 	}
@@ -384,24 +384,24 @@ func funcRound(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
-// === scalar(node ValueTypeVector) Scalar ===
+// === Scalar(node ValueTypeVector) Scalar ===
 func funcScalar(ev *evaluator, args Expressions) Value {
 	v := ev.evalVector(args[0])
 	if len(v) != 1 {
-		return scalar{
+		return Scalar{
 			v: math.NaN(),
 			t: ev.Timestamp,
 		}
 	}
-	return scalar{
+	return Scalar{
 		v: v[0].Value,
 		t: ev.Timestamp,
 	}
 }
 
-// === count_scalar(Vector ValueTypeVector) float64 ===
+// === count_Scalar(Vector ValueTypeVector) float64 ===
 func funcCountScalar(ev *evaluator, args Expressions) Value {
-	return scalar{
+	return Scalar{
 		v: float64(len(ev.evalVector(args[0]))),
 		t: ev.Timestamp,
 	}
@@ -840,7 +840,7 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	return Vector
 }
 
-// === Vector(s scalar) Vector ===
+// === Vector(s Scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) Value {
 	return Vector{
 		sample{
@@ -872,49 +872,49 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 	return v
 }
 
-// === days_in_month(v Vector) scalar ===
+// === days_in_month(v Vector) Scalar ===
 func funcDaysInMonth(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	})
 }
 
-// === day_of_month(v Vector) scalar ===
+// === day_of_month(v Vector) Scalar ===
 func funcDayOfMonth(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Day())
 	})
 }
 
-// === day_of_week(v Vector) scalar ===
+// === day_of_week(v Vector) Scalar ===
 func funcDayOfWeek(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	})
 }
 
-// === hour(v Vector) scalar ===
+// === hour(v Vector) Scalar ===
 func funcHour(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Hour())
 	})
 }
 
-// === minute(v Vector) scalar ===
+// === minute(v Vector) Scalar ===
 func funcMinute(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Minute())
 	})
 }
 
-// === month(v Vector) scalar ===
+// === month(v Vector) Scalar ===
 func funcMonth(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Month())
 	})
 }
 
-// === year(v Vector) scalar ===
+// === year(v Vector) Scalar ===
 func funcYear(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Year())
@@ -970,8 +970,8 @@ var functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 		Call:       funcCountOverTime,
 	},
-	"count_scalar": {
-		Name:       "count_scalar",
+	"count_Scalar": {
+		Name:       "count_Scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
 		Call:       funcCountScalar,
@@ -1145,8 +1145,8 @@ var functions = map[string]*Function{
 		ReturnType:   ValueTypeVector,
 		Call:         funcRound,
 	},
-	"scalar": {
-		Name:       "scalar",
+	"Scalar": {
+		Name:       "Scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
 		Call:       funcScalar,
