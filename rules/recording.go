@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -28,15 +29,15 @@ import (
 type RecordingRule struct {
 	name   string
 	vector promql.Expr
-	labels model.LabelSet
+	labels labels.Labels
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector promql.Expr, labels model.LabelSet) *RecordingRule {
+func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
 		name:   name,
 		vector: vector,
-		labels: labels,
+		labels: lset,
 	}
 }
 
@@ -46,35 +47,27 @@ func (rule RecordingRule) Name() string {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ string) (model.Vector, error) {
-	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
+func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ string) (promql.Vector, error) {
+	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp.Time())
 	if err != nil {
 		return nil, err
 	}
 
 	var (
 		result = query.Exec(ctx)
-		vector model.Vector
+		vector promql.Vector
 	)
 	if result.Err != nil {
 		return nil, err
 	}
 
-	switch result.Value.(type) {
-	case model.Vector:
-		vector, err = result.Vector()
-		if err != nil {
-			return nil, err
-		}
-	case *model.Scalar:
-		scalar, err := result.Scalar()
-		if err != nil {
-			return nil, err
-		}
-		vector = model.Vector{&model.Sample{
-			Value:     scalar.Value,
-			Timestamp: scalar.Timestamp,
-			Metric:    model.Metric{},
+	switch v := result.Value.(type) {
+	case promql.Vector:
+		vector = v
+	case promql.Scalar:
+		vector = promql.Vector{promql.Sample{
+			Point:  promql.Point(v),
+			Metric: labels.Labels{},
 		}}
 	default:
 		return nil, fmt.Errorf("rule result is not a vector or scalar")
@@ -82,15 +75,19 @@ func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine
 
 	// Override the metric name and labels.
 	for _, sample := range vector {
-		sample.Metric[model.MetricNameLabel] = model.LabelValue(rule.name)
+		lb := labels.NewBuilder(sample.Metric)
 
-		for label, value := range rule.labels {
-			if value == "" {
-				delete(sample.Metric, label)
+		lb.Set(labels.MetricName, rule.name)
+
+		for _, l := range rule.labels {
+			if l.Value == "" {
+				lb.Del(l.Name)
 			} else {
-				sample.Metric[label] = value
+				lb.Set(l.Name, l.Value)
 			}
 		}
+
+		sample.Metric = lb.Labels()
 	}
 
 	return vector, nil

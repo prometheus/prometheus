@@ -15,17 +15,13 @@ package web
 
 import (
 	"net/http"
-	"sort"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/metric"
 )
 
 var (
@@ -41,7 +37,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	req.ParseForm()
 
-	var matcherSets []metric.LabelMatchers
+	var matcherSets [][]*promql.LabelMatcher
 	for _, s := range req.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
@@ -52,102 +48,114 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var (
-		minTimestamp = h.now().Add(-promql.StalenessDelta)
-		format       = expfmt.Negotiate(req.Header)
-		enc          = expfmt.NewEncoder(w, format)
+		// minTimestamp = h.now().Add(-promql.StalenessDelta)
+		format = expfmt.Negotiate(req.Header)
+		// enc          = expfmt.NewEncoder(w, format)
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.storage.Querier()
-	if err != nil {
-		federationErrors.Inc()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer q.Close()
+	federationErrors.Inc()
+	http.Error(w, errors.Errorf("federation disabled").Error(), http.StatusInternalServerError)
+	return
 
-	vector, err := q.LastSampleForLabelMatchers(h.context, minTimestamp, matcherSets...)
-	if err != nil {
-		federationErrors.Inc()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	sort.Sort(byName(vector))
+	// q, err := h.storage.Querier()
+	// if err != nil {
+	// 	federationErrors.Inc()
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
+	// defer q.Close()
 
-	var (
-		lastMetricName model.LabelValue
-		protMetricFam  *dto.MetricFamily
-	)
-	for _, s := range vector {
-		nameSeen := false
-		globalUsed := map[model.LabelName]struct{}{}
-		protMetric := &dto.Metric{
-			Untyped: &dto.Untyped{},
-		}
+	// TODO(fabxc): support via TSDB storage.
 
-		for ln, lv := range s.Metric {
-			if lv == "" {
-				// No value means unset. Never consider those labels.
-				// This is also important to protect against nameless metrics.
-				continue
-			}
-			if ln == model.MetricNameLabel {
-				nameSeen = true
-				if lv == lastMetricName {
-					// We already have the name in the current MetricFamily,
-					// and we ignore nameless metrics.
-					continue
-				}
-				// Need to start a new MetricFamily. Ship off the old one (if any) before
-				// creating the new one.
-				if protMetricFam != nil {
-					if err := enc.Encode(protMetricFam); err != nil {
-						federationErrors.Inc()
-						log.With("err", err).Error("federation failed")
-						return
-					}
-				}
-				protMetricFam = &dto.MetricFamily{
-					Type: dto.MetricType_UNTYPED.Enum(),
-					Name: proto.String(string(lv)),
-				}
-				lastMetricName = lv
-				continue
-			}
-			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-				Name:  proto.String(string(ln)),
-				Value: proto.String(string(lv)),
-			})
-			if _, ok := h.externalLabels[ln]; ok {
-				globalUsed[ln] = struct{}{}
-			}
-		}
-		if !nameSeen {
-			log.With("metric", s.Metric).Warn("Ignoring nameless metric during federation.")
-			continue
-		}
-		// Attach global labels if they do not exist yet.
-		for ln, lv := range h.externalLabels {
-			if _, ok := globalUsed[ln]; !ok {
-				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-					Name:  proto.String(string(ln)),
-					Value: proto.String(string(lv)),
-				})
-			}
-		}
+	// var sets []tsdb.SeriesSet
+	// for _, matchers := range matcherSets {
+	// 	set, err := q.Select(matchers)
+	// 	sets = append(sets, set)
+	// }
 
-		protMetric.TimestampMs = proto.Int64(int64(s.Timestamp))
-		protMetric.Untyped.Value = proto.Float64(float64(s.Value))
+	// vector, err := q.LastSampleForLabelMatchers(h.context, minTimestamp, matcherSets...)
+	// if err != nil {
+	// 	federationErrors.Inc()
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
+	// sort.Sort(byName(vector))
 
-		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
-	}
-	// Still have to ship off the last MetricFamily, if any.
-	if protMetricFam != nil {
-		if err := enc.Encode(protMetricFam); err != nil {
-			federationErrors.Inc()
-			log.With("err", err).Error("federation failed")
-		}
-	}
+	// var (
+	// 	lastMetricName model.LabelValue
+	// 	protMetricFam  *dto.MetricFamily
+	// )
+	// for _, s := range vector {
+	// 	nameSeen := false
+	// 	globalUsed := map[model.LabelName]struct{}{}
+	// 	protMetric := &dto.Metric{
+	// 		Untyped: &dto.Untyped{},
+	// 	}
+
+	// 	for ln, lv := range s.Metric {
+	// 		if lv == "" {
+	// 			// No value means unset. Never consider those labels.
+	// 			// This is also important to protect against nameless metrics.
+	// 			continue
+	// 		}
+	// 		if ln == model.MetricNameLabel {
+	// 			nameSeen = true
+	// 			if lv == lastMetricName {
+	// 				// We already have the name in the current MetricFamily,
+	// 				// and we ignore nameless metrics.
+	// 				continue
+	// 			}
+	// 			// Need to start a new MetricFamily. Ship off the old one (if any) before
+	// 			// creating the new one.
+	// 			if protMetricFam != nil {
+	// 				if err := enc.Encode(protMetricFam); err != nil {
+	// 					federationErrors.Inc()
+	// 					log.With("err", err).Error("federation failed")
+	// 					return
+	// 				}
+	// 			}
+	// 			protMetricFam = &dto.MetricFamily{
+	// 				Type: dto.MetricType_UNTYPED.Enum(),
+	// 				Name: proto.String(string(lv)),
+	// 			}
+	// 			lastMetricName = lv
+	// 			continue
+	// 		}
+	// 		protMetric.Label = append(protMetric.Label, &dto.LabelPair{
+	// 			Name:  proto.String(string(ln)),
+	// 			Value: proto.String(string(lv)),
+	// 		})
+	// 		if _, ok := h.externalLabels[ln]; ok {
+	// 			globalUsed[ln] = struct{}{}
+	// 		}
+	// 	}
+	// 	if !nameSeen {
+	// 		log.With("metric", s.Metric).Warn("Ignoring nameless metric during federation.")
+	// 		continue
+	// 	}
+	// 	// Attach global labels if they do not exist yet.
+	// 	for ln, lv := range h.externalLabels {
+	// 		if _, ok := globalUsed[ln]; !ok {
+	// 			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
+	// 				Name:  proto.String(string(ln)),
+	// 				Value: proto.String(string(lv)),
+	// 			})
+	// 		}
+	// 	}
+
+	// 	protMetric.TimestampMs = proto.Int64(int64(s.Timestamp))
+	// 	protMetric.Untyped.Value = proto.Float64(float64(s.Value))
+
+	// 	protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
+	// }
+	// // Still have to ship off the last MetricFamily, if any.
+	// if protMetricFam != nil {
+	// 	if err := enc.Encode(protMetricFam); err != nil {
+	// 		federationErrors.Inc()
+	// 		log.With("err", err).Error("federation failed")
+	// 	}
+	// }
 }
 
 // byName makes a model.Vector sortable by metric name.
