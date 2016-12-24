@@ -108,20 +108,20 @@ func (s Point) String() string {
 	return ""
 }
 
-// sample is a single sample belonging to a COWMetric.
-type sample struct {
+// Sample is a single sample belonging to a metric.
+type Sample struct {
 	Point
 
 	Metric labels.Labels
 }
 
-func (s sample) String() string {
+func (s Sample) String() string {
 	return ""
 }
 
 // Vector is basically only an alias for model.Samples, but the
 // contract is that in a Vector, all Samples have the same timestamp.
-type Vector []sample
+type Vector []Sample
 
 func (vec Vector) String() string {
 	entries := make([]string, len(vec))
@@ -804,7 +804,7 @@ func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 			}
 		}
 
-		vec = append(vec, sample{
+		vec = append(vec, Sample{
 			Metric: node.series[i].Labels(),
 			Point:  Point{V: v, T: ev.Timestamp},
 		})
@@ -936,7 +936,7 @@ func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 	}
 
 	// All samples from the rhs hashed by the matching label/values.
-	rightSigs := map[uint64]sample{}
+	rightSigs := map[uint64]Sample{}
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
@@ -1002,7 +1002,7 @@ func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 			insertedSigs[insertSig] = struct{}{}
 		}
 
-		result = append(result, sample{
+		result = append(result, Sample{
 			Metric: metric,
 			Point:  Point{V: value, T: ev.Timestamp},
 		})
@@ -1310,13 +1310,13 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			}
 			if op == itemTopK || op == itemQuantile {
 				result[groupingKey].heap = make(VectorByValueHeap, 0, k)
-				heap.Push(&result[groupingKey].heap, &sample{
+				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			} else if op == itemBottomK {
 				result[groupingKey].reverseHeap = make(VectorByReverseValueHeap, 0, k)
-				heap.Push(&result[groupingKey].reverseHeap, &sample{
+				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
@@ -1359,7 +1359,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 				if int64(len(group.heap)) == k {
 					heap.Pop(&group.heap)
 				}
-				heap.Push(&group.heap, &sample{
+				heap.Push(&group.heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
@@ -1370,7 +1370,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 				if int64(len(group.reverseHeap)) == k {
 					heap.Pop(&group.reverseHeap)
 				}
-				heap.Push(&group.reverseHeap, &sample{
+				heap.Push(&group.reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
@@ -1407,7 +1407,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
-				resultVector = append(resultVector, sample{
+				resultVector = append(resultVector, Sample{
 					Metric: v.Metric,
 					Point:  Point{V: v.V, T: ev.Timestamp},
 				})
@@ -1418,7 +1418,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
-				resultVector = append(resultVector, sample{
+				resultVector = append(resultVector, Sample{
 					Metric: v.Metric,
 					Point:  Point{V: v.V, T: ev.Timestamp},
 				})
@@ -1432,7 +1432,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 			// For other aggregations, we already have the right value.
 		}
 
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: aggr.labels,
 			Point:  Point{V: aggr.value, T: ev.Timestamp},
 		})

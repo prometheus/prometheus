@@ -116,7 +116,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 			resultValue = resultValue / 1000 / ms.Range.Seconds()
 		}
 
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: resultValue, T: ev.Timestamp},
 		})
@@ -179,7 +179,7 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 			resultValue /= float64(sampledInterval) / 1000
 		}
 
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: resultValue, T: ev.Timestamp},
 		})
@@ -272,7 +272,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 			s[i] = x + y
 		}
 
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: s[len(s)-1], T: ev.Timestamp}, // The last value in the Vector is the smoothed result.
 		})
@@ -413,7 +413,7 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]Point) float64)
 			continue
 		}
 
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: copyLabels(el.Metric, false),
 			Point:  Point{V: aggrFn(el.Points), T: ev.Timestamp},
 		})
@@ -496,9 +496,9 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 		el.Metric = copyLabels(el.Metric, false)
 		values := make(VectorByValueHeap, 0, len(el.Points))
 		for _, v := range el.Points {
-			values = append(values, sample{Point: Point{V: v.V}})
+			values = append(values, Sample{Point: Point{V: v.V}})
 		}
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: el.Metric,
 			Point:  Point{V: quantile(q, values), T: ev.Timestamp},
 		})
@@ -559,7 +559,7 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 		}
 	}
 	return Vector{
-		sample{
+		Sample{
 			Metric: labels.New(m...),
 			Point:  Point{V: 1, T: ev.Timestamp},
 		},
@@ -663,7 +663,7 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 			continue
 		}
 		slope, _ := linearRegression(samples.Points, 0)
-		resultSample := sample{
+		resultSample := Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: slope, T: ev.Timestamp},
 		}
@@ -687,7 +687,7 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 		}
 		slope, intercept := linearRegression(samples.Points, ev.Timestamp)
 
-		resultVector = append(resultVector, sample{
+		resultVector = append(resultVector, Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: slope*duration + intercept, T: ev.Timestamp},
 		})
@@ -727,7 +727,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	}
 
 	for _, mb := range signatureToMetricWithBuckets {
-		outVec = append(outVec, sample{
+		outVec = append(outVec, Sample{
 			Metric: mb.metric,
 			Point:  Point{V: bucketQuantile(q, mb.buckets), T: ev.Timestamp},
 		})
@@ -752,7 +752,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 			prev = current
 		}
 
-		out = append(out, sample{
+		out = append(out, Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: float64(resets), T: ev.Timestamp},
 		})
@@ -776,7 +776,7 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 			prev = current
 		}
 
-		out = append(out, sample{
+		out = append(out, Sample{
 			Metric: copyLabels(samples.Metric, false),
 			Point:  Point{V: float64(changes), T: ev.Timestamp},
 		})
@@ -832,7 +832,7 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 // === Vector(s Scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) Value {
 	return Vector{
-		sample{
+		Sample{
 			Metric: labels.Labels{},
 			Point:  Point{V: ev.evalFloat(args[0]), T: ev.Timestamp},
 		},
@@ -844,7 +844,7 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 	var v Vector
 	if len(args) == 0 {
 		v = Vector{
-			sample{
+			Sample{
 				Metric: labels.Labels{},
 				Point:  Point{V: float64(ev.Timestamp) / 1000},
 			},
@@ -1220,7 +1220,7 @@ func (s VectorByValueHeap) Swap(i, j int) {
 }
 
 func (s *VectorByValueHeap) Push(x interface{}) {
-	*s = append(*s, x.(sample))
+	*s = append(*s, x.(Sample))
 }
 
 func (s *VectorByValueHeap) Pop() interface{} {
@@ -1249,7 +1249,7 @@ func (s VectorByReverseValueHeap) Swap(i, j int) {
 }
 
 func (s *VectorByReverseValueHeap) Push(x interface{}) {
-	*s = append(*s, x.(sample))
+	*s = append(*s, x.(Sample))
 }
 
 func (s *VectorByReverseValueHeap) Pop() interface{} {
