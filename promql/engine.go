@@ -23,8 +23,9 @@ import (
 	"time"
 
 	"github.com/fabxc/tsdb"
-	"github.com/fabxc/tsdb/labels"
+	tsdbLabels "github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/util/stats"
@@ -555,7 +556,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (tsdb.Quer
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			sel := make(labels.Selector, 0, len(n.LabelMatchers))
+			sel := make(tsdbLabels.Selector, 0, len(n.LabelMatchers))
 			for _, m := range n.LabelMatchers {
 				sel = append(sel, m.matcher())
 			}
@@ -569,7 +570,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (tsdb.Quer
 				n.iterators = append(n.iterators, it)
 			}
 		case *MatrixSelector:
-			sel := make(labels.Selector, 0, len(n.LabelMatchers))
+			sel := make(tsdbLabels.Selector, 0, len(n.LabelMatchers))
 			for _, m := range n.LabelMatchers {
 				sel = append(sel, m.matcher())
 			}
@@ -805,7 +806,7 @@ func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 		}
 
 		vec = append(vec, Sample{
-			Metric: node.series[i].Labels(),
+			Metric: toLabels(node.series[i].Labels()),
 			Point:  Point{V: v, T: ev.Timestamp},
 		})
 	}
@@ -823,7 +824,7 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 
 	for i, it := range node.iterators {
 		ss := Series{
-			Metric: node.series[i].Labels(),
+			Metric: toLabels(node.series[i].Labels()),
 			Points: make([]Point, 0, 16),
 		}
 

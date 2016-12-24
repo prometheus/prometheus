@@ -17,8 +17,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 // Helpers to calculate quantiles.
