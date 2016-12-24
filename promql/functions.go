@@ -285,7 +285,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 func funcSort(ev *evaluator, args Expressions) Value {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
-	byValueSorter := VectorByReverseValueHeap(ev.evalVector(args[0]))
+	byValueSorter := vectorByReverseValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter)
 }
@@ -294,7 +294,7 @@ func funcSort(ev *evaluator, args Expressions) Value {
 func funcSortDesc(ev *evaluator, args Expressions) Value {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
-	byValueSorter := VectorByValueHeap(ev.evalVector(args[0]))
+	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter)
 }
@@ -494,7 +494,7 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 		}
 
 		el.Metric = copyLabels(el.Metric, false)
-		values := make(VectorByValueHeap, 0, len(el.Points))
+		values := make(vectorByValueHeap, 0, len(el.Points))
 		for _, v := range el.Points {
 			values = append(values, Sample{Point: Point{V: v.V}})
 		}
@@ -1202,28 +1202,28 @@ func getFunction(name string) (*Function, bool) {
 	return function, ok
 }
 
-type VectorByValueHeap Vector
+type vectorByValueHeap Vector
 
-func (s VectorByValueHeap) Len() int {
+func (s vectorByValueHeap) Len() int {
 	return len(s)
 }
 
-func (s VectorByValueHeap) Less(i, j int) bool {
+func (s vectorByValueHeap) Less(i, j int) bool {
 	if math.IsNaN(float64(s[i].V)) {
 		return true
 	}
 	return s[i].V < s[j].V
 }
 
-func (s VectorByValueHeap) Swap(i, j int) {
+func (s vectorByValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *VectorByValueHeap) Push(x interface{}) {
+func (s *vectorByValueHeap) Push(x interface{}) {
 	*s = append(*s, x.(Sample))
 }
 
-func (s *VectorByValueHeap) Pop() interface{} {
+func (s *vectorByValueHeap) Pop() interface{} {
 	old := *s
 	n := len(old)
 	el := old[n-1]
@@ -1231,28 +1231,28 @@ func (s *VectorByValueHeap) Pop() interface{} {
 	return el
 }
 
-type VectorByReverseValueHeap Vector
+type vectorByReverseValueHeap Vector
 
-func (s VectorByReverseValueHeap) Len() int {
+func (s vectorByReverseValueHeap) Len() int {
 	return len(s)
 }
 
-func (s VectorByReverseValueHeap) Less(i, j int) bool {
+func (s vectorByReverseValueHeap) Less(i, j int) bool {
 	if math.IsNaN(float64(s[i].V)) {
 		return true
 	}
 	return s[i].V > s[j].V
 }
 
-func (s VectorByReverseValueHeap) Swap(i, j int) {
+func (s vectorByReverseValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *VectorByReverseValueHeap) Push(x interface{}) {
+func (s *vectorByReverseValueHeap) Push(x interface{}) {
 	*s = append(*s, x.(Sample))
 }
 
-func (s *VectorByReverseValueHeap) Pop() interface{} {
+func (s *vectorByReverseValueHeap) Pop() interface{} {
 	old := *s
 	n := len(old)
 	el := old[n-1]

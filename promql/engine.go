@@ -722,7 +722,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		switch lt, rt := lhs.Type(), rhs.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
 			return Scalar{
-				V: ScalarBinop(e.Op, lhs.(Scalar).V, rhs.(Scalar).V),
+				V: scalarBinop(e.Op, lhs.(Scalar).V, rhs.(Scalar).V),
 				T: ev.Timestamp,
 			}
 
@@ -738,10 +738,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 				return ev.VectorBinop(e.Op, lhs.(Vector), rhs.(Vector), e.VectorMatching, e.ReturnBool)
 			}
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.VectorScalarBinop(e.Op, lhs.(Vector), rhs.(Scalar), false, e.ReturnBool)
+			return ev.VectorscalarBinop(e.Op, lhs.(Vector), rhs.(Scalar), false, e.ReturnBool)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.VectorScalarBinop(e.Op, rhs.(Vector), lhs.(Scalar), true, e.ReturnBool)
+			return ev.VectorscalarBinop(e.Op, rhs.(Vector), lhs.(Scalar), true, e.ReturnBool)
 		}
 
 	case *Call:
@@ -969,7 +969,7 @@ func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 		if matching.Card == CardOneToMany {
 			vl, vr = vr, vl
 		}
-		value, keep := VectorElemBinop(op, vl, vr)
+		value, keep := vectorElemBinop(op, vl, vr)
 		if returnBool {
 			if keep {
 				value = 1.0
@@ -1112,8 +1112,8 @@ Outer:
 	return res
 }
 
-// VectorScalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs Scalar, swap, returnBool bool) Vector {
+// VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
+func (ev *evaluator) VectorscalarBinop(op itemType, lhs Vector, rhs Scalar, swap, returnBool bool) Vector {
 	vec := make(Vector, 0, len(lhs))
 
 	for _, lhsSample := range lhs {
@@ -1123,7 +1123,7 @@ func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs Scalar, swap
 		if swap {
 			lv, rv = rv, lv
 		}
-		value, keep := VectorElemBinop(op, lv, rv)
+		value, keep := vectorElemBinop(op, lv, rv)
 		if returnBool {
 			if keep {
 				value = 1.0
@@ -1157,8 +1157,8 @@ func copyLabels(metric labels.Labels, withName bool) labels.Labels {
 	return cm
 }
 
-// ScalarBinop evaluates a binary operation between two Scalars.
-func ScalarBinop(op itemType, lhs, rhs float64) float64 {
+// scalarBinop evaluates a binary operation between two Scalars.
+func scalarBinop(op itemType, lhs, rhs float64) float64 {
 	switch op {
 	case itemADD:
 		return lhs + rhs
@@ -1188,8 +1188,8 @@ func ScalarBinop(op itemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
-// VectorElemBinop evaluates a binary operation between two Vector elements.
-func VectorElemBinop(op itemType, lhs, rhs float64) (float64, bool) {
+// vectorElemBinop evaluates a binary operation between two Vector elements.
+func vectorElemBinop(op itemType, lhs, rhs float64) (float64, bool) {
 	switch op {
 	case itemADD:
 		return lhs + rhs, true
@@ -1239,8 +1239,8 @@ type groupedAggregation struct {
 	value            float64
 	valuesSquaredSum float64
 	groupCount       int
-	heap             VectorByValueHeap
-	reverseHeap      VectorByReverseValueHeap
+	heap             vectorByValueHeap
+	reverseHeap      vectorByReverseValueHeap
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
@@ -1309,13 +1309,13 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 				groupCount:       1,
 			}
 			if op == itemTopK || op == itemQuantile {
-				result[groupingKey].heap = make(VectorByValueHeap, 0, k)
+				result[groupingKey].heap = make(vectorByValueHeap, 0, k)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			} else if op == itemBottomK {
-				result[groupingKey].reverseHeap = make(VectorByReverseValueHeap, 0, k)
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, k)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
