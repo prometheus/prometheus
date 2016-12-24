@@ -23,16 +23,16 @@ type Matcher interface {
 	Matches(v string) bool
 }
 
-type equalMatcher struct {
-	name, value string
+type EqualMatcher struct {
+	LabelName, Value string
 }
 
-func (m *equalMatcher) Name() string          { return m.name }
-func (m *equalMatcher) Matches(v string) bool { return v == m.value }
+func (m *EqualMatcher) Name() string          { return m.LabelName }
+func (m *EqualMatcher) Matches(v string) bool { return v == m.Value }
 
 // NewEqualMatcher returns a new matcher matching an exact label value.
 func NewEqualMatcher(name, value string) Matcher {
-	return &equalMatcher{name: name, value: value}
+	return &EqualMatcher{LabelName: name, Value: value}
 }
 
 type regexpMatcher struct {

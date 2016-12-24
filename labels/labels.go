@@ -87,3 +87,17 @@ func FromMap(m map[string]string) Labels {
 	}
 	return New(l...)
 }
+
+// FromStrings creates new labels from pairs of strings.
+func FromStrings(ss ...string) Labels {
+	if len(ss)%2 != 0 {
+		panic("invalid number of strings")
+	}
+	var res Labels
+	for i := 0; i < len(ss); i += 2 {
+		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+	}
+
+	sort.Sort(res)
+	return res
+}
