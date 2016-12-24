@@ -31,7 +31,7 @@ var testExpr = []struct {
 	fail     bool   // Whether parsing is supposed to fail.
 	errMsg   string // If not empty the parsing error has to contain this string.
 }{
-	// Scalars and scalar-to-scalar operations.
+	// Scalars and Scalar-to-Scalar operations.
 	{
 		input:    "1",
 		expected: &NumberLiteral{1},
@@ -212,19 +212,19 @@ var testExpr = []struct {
 	}, {
 		input:  "1 and 1",
 		fail:   true,
-		errMsg: "set operator \"and\" not allowed in binary scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 == 1",
 		fail:   true,
-		errMsg: "parse error at char 7: comparisons between scalars must use BOOL modifier",
+		errMsg: "parse error at char 7: comparisons between Scalars must use BOOL modifier",
 	}, {
 		input:  "1 or 1",
 		fail:   true,
-		errMsg: "set operator \"or\" not allowed in binary scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 unless 1",
 		fail:   true,
-		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
+		errMsg: "set operator \"unless\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 !~ 1",
 		fail:   true,
@@ -236,11 +236,11 @@ var testExpr = []struct {
 	}, {
 		input:  `-"string"`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or instant Vector, got "string"`,
+		errMsg: `unary expression only allowed on expressions of type Scalar or instant Vector, got "string"`,
 	}, {
 		input:  `-test[5m]`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or instant Vector, got "range Vector"`,
+		errMsg: `unary expression only allowed on expressions of type Scalar or instant Vector, got "range Vector"`,
 	}, {
 		input:  `*test`,
 		fail:   true,
@@ -747,27 +747,27 @@ var testExpr = []struct {
 	}, {
 		input:  "foo and 1",
 		fail:   true,
-		errMsg: "set operator \"and\" not allowed in binary scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 and foo",
 		fail:   true,
-		errMsg: "set operator \"and\" not allowed in binary scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary Scalar expression",
 	}, {
 		input:  "foo or 1",
 		fail:   true,
-		errMsg: "set operator \"or\" not allowed in binary scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 or foo",
 		fail:   true,
-		errMsg: "set operator \"or\" not allowed in binary scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary Scalar expression",
 	}, {
 		input:  "foo unless 1",
 		fail:   true,
-		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
+		errMsg: "set operator \"unless\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 unless foo",
 		fail:   true,
-		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
+		errMsg: "set operator \"unless\" not allowed in binary Scalar expression",
 	}, {
 		input:  "1 or on(bar) foo",
 		fail:   true,
@@ -1285,11 +1285,11 @@ var testExpr = []struct {
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant Vector",
+		errMsg: "parse error at char 32: expected type Scalar in aggregation parameter, got instant Vector",
 	}, {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 30: expected type string in aggregation parameter, got scalar",
+		errMsg: "parse error at char 30: expected type string in aggregation parameter, got Scalar",
 	},
 	// Test function calls.
 	{
@@ -1363,7 +1363,7 @@ var testExpr = []struct {
 	}, {
 		input:  "floor(1)",
 		fail:   true,
-		errMsg: "expected type instant Vector in call to function \"floor\", got scalar",
+		errMsg: "expected type instant Vector in call to function \"floor\", got Scalar",
 	}, {
 		input:  "non_existent_function_far_bar()",
 		fail:   true,
