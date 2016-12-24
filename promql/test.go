@@ -351,7 +351,7 @@ func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 // compareResult compares the result value with the defined expectation.
 func (ev *evalCmd) compareResult(result Value) error {
 	switch val := result.(type) {
-	case matrix:
+	case Matrix:
 		if ev.instant {
 			return fmt.Errorf("received range result on instant evaluation")
 		}

@@ -54,8 +54,8 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 
 	resultVector := Vector{}
 
-	matrixValue := ev.evalMatrix(ms)
-	for _, samples := range matrixValue {
+	MatrixValue := ev.evalMatrix(ms)
+	for _, samples := range MatrixValue {
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
 		if len(samples.Values) < 2 {
@@ -125,7 +125,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 	return resultVector
 }
 
-// === delta(matrix ValueTypeMatrix) Vector ===
+// === delta(Matrix ValueTypeMatrix) Vector ===
 func funcDelta(ev *evaluator, args Expressions) Value {
 	return extrapolatedRate(ev, args[0], false, false)
 }
@@ -425,7 +425,7 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]samplePair) flo
 	return resultVector
 }
 
-// === avg_over_time(matrix ValueTypeMatrix) Vector ===
+// === avg_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcAvgOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		var sum float64
@@ -436,7 +436,7 @@ func funcAvgOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === count_over_time(matrix ValueTypeMatrix) Vector ===
+// === count_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcCountOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		return float64(len(values))
@@ -453,7 +453,7 @@ func funcFloor(ev *evaluator, args Expressions) Value {
 	return Vector
 }
 
-// === max_over_time(matrix ValueTypeMatrix) Vector ===
+// === max_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMaxOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		max := math.Inf(-1)
@@ -464,7 +464,7 @@ func funcMaxOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === min_over_time(matrix ValueTypeMatrix) Vector ===
+// === min_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMinOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		min := math.Inf(1)
@@ -475,7 +475,7 @@ func funcMinOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === sum_over_time(matrix ValueTypeMatrix) Vector ===
+// === sum_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcSumOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		var sum float64
@@ -486,7 +486,7 @@ func funcSumOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === quantile_over_time(matrix ValueTypeMatrix) Vector ===
+// === quantile_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 	q := ev.evalFloat(args[0])
 	mat := ev.evalMatrix(args[1])
@@ -511,7 +511,7 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 	return resultVector
 }
 
-// === stddev_over_time(matrix ValueTypeMatrix) Vector ===
+// === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcStddevOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		var sum, squaredSum, count float64
@@ -525,7 +525,7 @@ func funcStddevOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === stdvar_over_time(matrix ValueTypeMatrix) Vector ===
+// === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
 	return aggrOverTime(ev, args, func(values []samplePair) float64 {
 		var sum, squaredSum, count float64
@@ -745,7 +745,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	return outVec
 }
 
-// === resets(matrix ValueTypeMatrix) Vector ===
+// === resets(Matrix ValueTypeMatrix) Vector ===
 func funcResets(ev *evaluator, args Expressions) Value {
 	in := ev.evalMatrix(args[0])
 	out := make(Vector, 0, len(in))
@@ -770,7 +770,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 	return out
 }
 
-// === changes(matrix ValueTypeMatrix) Vector ===
+// === changes(Matrix ValueTypeMatrix) Vector ===
 func funcChanges(ev *evaluator, args Expressions) Value {
 	in := ev.evalMatrix(args[0])
 	out := make(Vector, 0, len(in))
