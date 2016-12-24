@@ -36,9 +36,6 @@ const (
 	maxInt64 = 9223372036854774784
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 = -9223372036854775808
-
-	// MetricNameLabel is the name of the label containing the metric name.
-	MetricNameLabel = "__name__"
 )
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -1021,7 +1018,7 @@ Outer:
 				continue Outer
 			}
 		}
-		if l.Name == MetricNameLabel {
+		if l.Name == labels.MetricName {
 			continue
 		}
 		cm = append(cm, l)
@@ -1059,13 +1056,10 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op itemType, matching *VectorMatching) labels.Labels {
-	// del and add hold modifications to the LHS input metric.
-	// Deletions are applied first.
-	del := make([]string, 0, 16)
-	add := make([]labels.Label, 0, 16)
+	lb := labels.NewBuilder(lhs)
 
 	if shouldDropMetricName(op) {
-		del = append(del, MetricNameLabel)
+		lb.Del(labels.MetricName)
 	}
 
 	if matching.Card == CardOneToOne {
@@ -1077,40 +1071,22 @@ func resultMetric(lhs, rhs labels.Labels, op itemType, matching *VectorMatching)
 						continue Outer
 					}
 				}
-				del = append(del, l.Name)
+				lb.Del(l.Name)
 			}
 		} else {
-			del = append(del, matching.MatchingLabels...)
+			lb.Del(matching.MatchingLabels...)
 		}
 	}
 	for _, ln := range matching.Include {
-		// We always want to delete the include label on the LHS
-		// before adding an included one or not.
-		del = append(del, ln)
 		// Included labels from the `group_x` modifier are taken from the "one"-side.
 		if v := rhs.Get(ln); v != "" {
-			add = append(add, labels.Label{Name: ln, Value: v})
+			lb.Set(ln, v)
+		} else {
+			lb.Del(ln)
 		}
 	}
 
-	return modifiedLabels(lhs, del, add)
-}
-
-func modifiedLabels(lhs labels.Labels, del []string, add []labels.Label) labels.Labels {
-	res := make(labels.Labels, 0, len(lhs)+len(add)-len(del))
-Outer:
-	for _, l := range lhs {
-		for _, n := range del {
-			if l.Name == n {
-				continue Outer
-			}
-		}
-		res = append(res, l)
-	}
-	res = append(res, add...)
-	sort.Sort(res)
-
-	return res
+	return lb.Labels()
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
@@ -1135,27 +1111,17 @@ func (ev *evaluator) VectorscalarBinop(op itemType, lhs Vector, rhs Scalar, swap
 		}
 		if keep {
 			lhsSample.V = value
-			lhsSample.Metric = copyLabels(lhsSample.Metric, shouldDropMetricName(op))
-
+			if shouldDropMetricName(op) {
+				lhsSample.Metric = dropMetricName(lhsSample.Metric)
+			}
 			vec = append(vec, lhsSample)
 		}
 	}
 	return vec
 }
 
-func copyLabels(metric labels.Labels, withName bool) labels.Labels {
-	if withName {
-		cm := make(labels.Labels, len(metric))
-		copy(cm, metric)
-		return cm
-	}
-	cm := make(labels.Labels, 0, len(metric)-1)
-	for _, l := range metric {
-		if l.Name != MetricNameLabel {
-			cm = append(cm, l)
-		}
-	}
-	return cm
+func dropMetricName(l labels.Labels) labels.Labels {
+	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
@@ -1268,29 +1234,24 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 	}
 
 	for _, s := range vec {
-		var (
-			del []string
-			add []labels.Label
-		)
-		if without {
-			del = append(grouping, MetricNameLabel)
+		lb := labels.NewBuilder(s.Metric)
+
+		if without || keepCommon {
+			lb.Del(labels.MetricName)
 		}
 		if op == itemCountValues {
-			del = append(del, valueLabel)
-			add = append(add, labels.Label{Name: valueLabel, Value: fmt.Sprintf("%f", s.V)})
+			lb.Set(valueLabel, fmt.Sprintf("%f", s.V)) // TODO(fabxc): use correct printing.
 		}
 
 		var (
-			metric      = modifiedLabels(s.Metric, del, add)
+			metric      = lb.Labels()
 			groupingKey = metric.Hash()
 		)
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
 			var m labels.Labels
-			if keepCommon {
-				m = copyLabels(metric, false)
-			} else if without {
+			if keepCommon || without {
 				m = metric
 			} else {
 				m = make(labels.Labels, 0, len(grouping))
