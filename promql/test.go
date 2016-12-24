@@ -378,7 +378,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 			}
 		}
 
-	case vector:
+	case Vector:
 		if !ev.instant {
 			return fmt.Errorf("received instant result on range evaluation")
 		}

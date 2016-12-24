@@ -51,7 +51,7 @@ type Value interface {
 }
 
 func (matrix) Type() ValueType    { return ValueTypeMatrix }
-func (vector) Type() ValueType    { return ValueTypeVector }
+func (Vector) Type() ValueType    { return ValueTypeVector }
 func (scalar) Type() ValueType    { return ValueTypeScalar }
 func (stringVal) Type() ValueType { return ValueTypeString }
 
@@ -61,7 +61,7 @@ type ValueType string
 // The valid value types.
 const (
 	ValueTypeNone   = "none"
-	ValueTypeVector = "vector"
+	ValueTypeVector = "Vector"
 	ValueTypeScalar = "scalar"
 	ValueTypeMatrix = "matrix"
 	ValueTypeString = "string"
@@ -115,11 +115,11 @@ func (s sample) String() string {
 	return ""
 }
 
-// vector is basically only an alias for model.Samples, but the
+// Vector is basically only an alias for model.Samples, but the
 // contract is that in a Vector, all Samples have the same timestamp.
-type vector []sample
+type Vector []sample
 
-func (vec vector) String() string {
+func (vec Vector) String() string {
 	entries := make([]string, len(vec))
 	for i, s := range vec {
 		entries[i] = s.String()
@@ -149,15 +149,15 @@ type Result struct {
 	Value Value
 }
 
-// Vector returns a vector if the result value is one. An error is returned if
-// the result was an error or the result value is not a vector.
-func (r *Result) Vector() (vector, error) {
+// Vector returns a Vector if the result value is one. An error is returned if
+// the result was an error or the result value is not a Vector.
+func (r *Result) Vector() (Vector, error) {
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	v, ok := r.Value.(vector)
+	v, ok := r.Value.(Vector)
 	if !ok {
-		return nil, fmt.Errorf("query result is not a vector")
+		return nil, fmt.Errorf("query result is not a Vector")
 	}
 	return v, nil
 }
@@ -170,7 +170,7 @@ func (r *Result) Matrix() (matrix, error) {
 	}
 	v, ok := r.Value.(matrix)
 	if !ok {
-		return nil, fmt.Errorf("query result is not a range vector")
+		return nil, fmt.Errorf("query result is not a range Vector")
 	}
 	return v, nil
 }
@@ -336,7 +336,7 @@ func (ng *Engine) NewRangeQuery(qs string, start, end time.Time, interval time.D
 		return nil, err
 	}
 	if expr.Type() != ValueTypeVector && expr.Type() != ValueTypeScalar {
-		return nil, fmt.Errorf("invalid expression type %q for range query, must be scalar or instant vector", documentedType(expr.Type()))
+		return nil, fmt.Errorf("invalid expression type %q for range query, must be scalar or instant Vector", documentedType(expr.Type()))
 	}
 	qry := ng.newQuery(expr, start, end, interval)
 	qry.q = qs
@@ -482,7 +482,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				v: v.v,
 				t: v.t,
 			})
-		case vector:
+		case Vector:
 			for _, sample := range v {
 				h := sample.Metric.Hash()
 				ss, ok := sampleStreams[h]
@@ -643,12 +643,12 @@ func (ev *evaluator) evalScalar(e Expr) scalar {
 	return sv
 }
 
-// evalVector attempts to evaluate e to a vector value and errors otherwise.
-func (ev *evaluator) evalVector(e Expr) vector {
+// evalVector attempts to evaluate e to a Vector value and errors otherwise.
+func (ev *evaluator) evalVector(e Expr) Vector {
 	val := ev.eval(e)
-	vec, ok := val.(vector)
+	vec, ok := val.(Vector)
 	if !ok {
-		ev.errorf("expected instant vector but got %s", documentedType(val.Type()))
+		ev.errorf("expected instant Vector but got %s", documentedType(val.Type()))
 	}
 	return vec
 }
@@ -669,13 +669,13 @@ func (ev *evaluator) evalFloat(e Expr) float64 {
 }
 
 // evalMatrix attempts to evaluate e into a matrix and errors otherwise.
-// The error message uses the term "range vector" to match the user facing
+// The error message uses the term "range Vector" to match the user facing
 // documentation.
 func (ev *evaluator) evalMatrix(e Expr) matrix {
 	val := ev.eval(e)
 	mat, ok := val.(matrix)
 	if !ok {
-		ev.errorf("expected range vector but got %s", documentedType(val.Type()))
+		ev.errorf("expected range Vector but got %s", documentedType(val.Type()))
 	}
 	return mat
 }
@@ -714,8 +714,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, e.Param, vector)
+		Vector := ev.evalVector(e.Expr)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, e.Param, Vector)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, ValueTypeScalar, ValueTypeVector)
@@ -731,19 +731,19 @@ func (ev *evaluator) eval(expr Expr) Value {
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case itemLAND:
-				return ev.vectorAnd(lhs.(vector), rhs.(vector), e.VectorMatching)
+				return ev.VectorAnd(lhs.(Vector), rhs.(Vector), e.VectorMatching)
 			case itemLOR:
-				return ev.vectorOr(lhs.(vector), rhs.(vector), e.VectorMatching)
+				return ev.VectorOr(lhs.(Vector), rhs.(Vector), e.VectorMatching)
 			case itemLUnless:
-				return ev.vectorUnless(lhs.(vector), rhs.(vector), e.VectorMatching)
+				return ev.VectorUnless(lhs.(Vector), rhs.(Vector), e.VectorMatching)
 			default:
-				return ev.vectorBinop(e.Op, lhs.(vector), rhs.(vector), e.VectorMatching, e.ReturnBool)
+				return ev.VectorBinop(e.Op, lhs.(Vector), rhs.(Vector), e.VectorMatching, e.ReturnBool)
 			}
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.vectorScalarBinop(e.Op, lhs.(vector), rhs.(scalar), false, e.ReturnBool)
+			return ev.VectorScalarBinop(e.Op, lhs.(Vector), rhs.(scalar), false, e.ReturnBool)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.vectorScalarBinop(e.Op, rhs.(vector), lhs.(scalar), true, e.ReturnBool)
+			return ev.VectorScalarBinop(e.Op, rhs.(Vector), lhs.(scalar), true, e.ReturnBool)
 		}
 
 	case *Call:
@@ -768,7 +768,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			switch v := se.(type) {
 			case scalar:
 				v.v = -v.v
-			case vector:
+			case Vector:
 				for i, sv := range v {
 					v[i].Value = -sv.Value
 				}
@@ -777,16 +777,16 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return se
 
 	case *VectorSelector:
-		return ev.vectorSelector(e)
+		return ev.VectorSelector(e)
 	}
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
-// vectorSelector evaluates a *VectorSelector expression.
-func (ev *evaluator) vectorSelector(node *VectorSelector) vector {
+// VectorSelector evaluates a *VectorSelector expression.
+func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 	var (
 		ok      bool
-		vec     = make(vector, 0, len(node.series))
+		vec     = make(Vector, 0, len(node.series))
 		refTime = ev.Timestamp - durationMilliseconds(node.Offset)
 	)
 
@@ -856,14 +856,14 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) matrix {
 	return matrix
 }
 
-func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector {
+func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
 	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
-	var result vector
-	// The set of signatures for the right-hand side vector.
+	var result Vector
+	// The set of signatures for the right-hand side Vector.
 	rightSigs := map[uint64]struct{}{}
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
@@ -871,7 +871,7 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	}
 
 	for _, ls := range lhs {
-		// If there's a matching entry in the right-hand side vector, add the sample.
+		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if _, ok := rightSigs[sigf(ls.Metric)]; ok {
 			result = append(result, ls)
 		}
@@ -879,15 +879,15 @@ func (ev *evaluator) vectorAnd(lhs, rhs vector, matching *VectorMatching) vector
 	return result
 }
 
-func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector {
+func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
 	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
-	var result vector
+	var result Vector
 	leftSigs := map[uint64]struct{}{}
-	// Add everything from the left-hand-side vector.
+	// Add everything from the left-hand-side Vector.
 	for _, ls := range lhs {
 		leftSigs[sigf(ls.Metric)] = struct{}{}
 		result = append(result, ls)
@@ -901,7 +901,7 @@ func (ev *evaluator) vectorOr(lhs, rhs vector, matching *VectorMatching) vector 
 	return result
 }
 
-func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vector {
+func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -912,7 +912,7 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 		rightSigs[sigf(rs.Metric)] = struct{}{}
 	}
 
-	var result vector
+	var result Vector
 	for _, ls := range lhs {
 		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
 			result = append(result, ls)
@@ -921,13 +921,13 @@ func (ev *evaluator) vectorUnless(lhs, rhs vector, matching *VectorMatching) vec
 	return result
 }
 
-// vectorBinop evaluates a binary operation between two vectors, excluding set operators.
-func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorMatching, returnBool bool) vector {
+// VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
+func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool) Vector {
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
 	var (
-		result = vector{}
+		result = Vector{}
 		sigf   = signatureFunc(matching.On, matching.MatchingLabels...)
 	)
 
@@ -962,7 +962,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 	for _, ls := range lhs {
 		sig := sigf(ls.Metric)
 
-		rs, found := rightSigs[sig] // Look for a match in the rhs vector.
+		rs, found := rightSigs[sig] // Look for a match in the rhs Vector.
 		if !found {
 			continue
 		}
@@ -972,7 +972,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 		if matching.Card == CardOneToMany {
 			vl, vr = vr, vl
 		}
-		value, keep := vectorElemBinop(op, vl, vr)
+		value, keep := VectorElemBinop(op, vl, vr)
 		if returnBool {
 			if keep {
 				value = 1.0
@@ -992,7 +992,7 @@ func (ev *evaluator) vectorBinop(op itemType, lhs, rhs vector, matching *VectorM
 			matchedSigs[sig] = nil // Set existence to true.
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
-			// for the result vector. Check whether those labels have already been added for
+			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
 			insertSig := metric.Hash()
 
@@ -1059,7 +1059,7 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	return func(lset labels.Labels) uint64 { return hashWithoutLabels(lset, names...) }
 }
 
-// resultMetric returns the metric for the given sample(s) based on the vector
+// resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op itemType, matching *VectorMatching) labels.Labels {
 	// del and add hold modifications to the LHS input metric.
@@ -1116,18 +1116,18 @@ Outer:
 	return res
 }
 
-// vectorScalarBinop evaluates a binary operation between a vector and a scalar.
-func (ev *evaluator) vectorScalarBinop(op itemType, lhs vector, rhs scalar, swap, returnBool bool) vector {
-	vec := make(vector, 0, len(lhs))
+// VectorScalarBinop evaluates a binary operation between a Vector and a scalar.
+func (ev *evaluator) VectorScalarBinop(op itemType, lhs Vector, rhs scalar, swap, returnBool bool) Vector {
+	vec := make(Vector, 0, len(lhs))
 
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.Value, rhs.v
-		// lhs always contains the vector. If the original position was different
+		// lhs always contains the Vector. If the original position was different
 		// swap for calculating the value.
 		if swap {
 			lv, rv = rv, lv
 		}
-		value, keep := vectorElemBinop(op, lv, rv)
+		value, keep := VectorElemBinop(op, lv, rv)
 		if returnBool {
 			if keep {
 				value = 1.0
@@ -1192,8 +1192,8 @@ func scalarBinop(op itemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for scalar operations", op))
 }
 
-// vectorElemBinop evaluates a binary operation between two vector elements.
-func vectorElemBinop(op itemType, lhs, rhs float64) (float64, bool) {
+// VectorElemBinop evaluates a binary operation between two Vector elements.
+func VectorElemBinop(op itemType, lhs, rhs float64) (float64, bool) {
 	switch op {
 	case itemADD:
 		return lhs + rhs, true
@@ -1220,7 +1220,7 @@ func vectorElemBinop(op itemType, lhs, rhs float64) (float64, bool) {
 	case itemLTE:
 		return lhs, lhs <= rhs
 	}
-	panic(fmt.Errorf("operator %q not allowed for operations between vectors", op))
+	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
 // intersection returns the metric of common label/value pairs of two input metrics.
@@ -1243,19 +1243,19 @@ type groupedAggregation struct {
 	value            float64
 	valuesSquaredSum float64
 	groupCount       int
-	heap             vectorByValueHeap
-	reverseHeap      vectorByReverseValueHeap
+	heap             VectorByValueHeap
+	reverseHeap      VectorByReverseValueHeap
 }
 
-// aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, keepCommon bool, param Expr, vec vector) vector {
+// aggregation evaluates an aggregation operation on a Vector.
+func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, keepCommon bool, param Expr, vec Vector) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
 	if op == itemTopK || op == itemBottomK {
 		k = ev.evalInt(param)
 		if k < 1 {
-			return vector{}
+			return Vector{}
 		}
 	}
 	var q float64
@@ -1313,10 +1313,10 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 				groupCount:       1,
 			}
 			if op == itemTopK || op == itemQuantile {
-				result[groupingKey].heap = make(vectorByValueHeap, 0, k)
+				result[groupingKey].heap = make(VectorByValueHeap, 0, k)
 				heap.Push(&result[groupingKey].heap, &sample{Value: s.Value, Metric: s.Metric})
 			} else if op == itemBottomK {
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, k)
+				result[groupingKey].reverseHeap = make(VectorByReverseValueHeap, 0, k)
 				heap.Push(&result[groupingKey].reverseHeap, &sample{Value: s.Value, Metric: s.Metric})
 			}
 			continue
@@ -1376,8 +1376,8 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 		}
 	}
 
-	// Construct the result vector from the aggregated groups.
-	resultVector := make(vector, 0, len(result))
+	// Construct the result Vector from the aggregated groups.
+	resultVector := make(Vector, 0, len(result))
 
 	for _, aggr := range result {
 		switch op {
@@ -1494,10 +1494,10 @@ func (g *queryGate) Done() {
 // user facing terminology as defined in the documentation.
 func documentedType(t ValueType) string {
 	switch t {
-	case "vector":
-		return "instant vector"
+	case "Vector":
+		return "instant Vector"
 	case "matrix":
-		return "range vector"
+		return "range Vector"
 	default:
 		return string(t)
 	}

@@ -236,11 +236,11 @@ var testExpr = []struct {
 	}, {
 		input:  `-"string"`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "string"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant Vector, got "string"`,
 	}, {
 		input:  `-test[5m]`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "range vector"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant Vector, got "range Vector"`,
 	}, {
 		input:  `*test`,
 		fail:   true,
@@ -771,11 +771,11 @@ var testExpr = []struct {
 	}, {
 		input:  "1 or on(bar) foo",
 		fail:   true,
-		errMsg: "vector matching only allowed between instant vectors",
+		errMsg: "Vector matching only allowed between instant Vectors",
 	}, {
 		input:  "foo == on(bar) 10",
 		fail:   true,
-		errMsg: "vector matching only allowed between instant vectors",
+		errMsg: "Vector matching only allowed between instant Vectors",
 	}, {
 		input:  "foo and on(bar) group_left(baz) bar",
 		fail:   true,
@@ -817,7 +817,7 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "bool modifier can only be used on comparison operators",
 	},
-	// Test vector selector.
+	// Test Vector selector.
 	{
 		input: "foo",
 		expected: &VectorSelector{
@@ -914,23 +914,23 @@ var testExpr = []struct {
 	}, {
 		input:  `{}`,
 		fail:   true,
-		errMsg: "vector selector must contain label matchers or metric name",
+		errMsg: "Vector selector must contain label matchers or metric name",
 	}, {
 		input:  `{x=""}`,
 		fail:   true,
-		errMsg: "vector selector must contain at least one non-empty matcher",
+		errMsg: "Vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x=~".*"}`,
 		fail:   true,
-		errMsg: "vector selector must contain at least one non-empty matcher",
+		errMsg: "Vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x!~".+"}`,
 		fail:   true,
-		errMsg: "vector selector must contain at least one non-empty matcher",
+		errMsg: "Vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x!="a"}`,
 		fail:   true,
-		errMsg: "vector selector must contain at least one non-empty matcher",
+		errMsg: "Vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
@@ -1285,7 +1285,7 @@ var testExpr = []struct {
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant vector",
+		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant Vector",
 	}, {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
@@ -1363,7 +1363,7 @@ var testExpr = []struct {
 	}, {
 		input:  "floor(1)",
 		fail:   true,
-		errMsg: "expected type instant vector in call to function \"floor\", got scalar",
+		errMsg: "expected type instant Vector in call to function \"floor\", got scalar",
 	}, {
 		input:  "non_existent_function_far_bar()",
 		fail:   true,
@@ -1371,7 +1371,7 @@ var testExpr = []struct {
 	}, {
 		input:  "rate(some_metric)",
 		fail:   true,
-		errMsg: "expected type range vector in call to function \"rate\", got instant vector",
+		errMsg: "expected type range Vector in call to function \"rate\", got instant Vector",
 	},
 	// Fuzzing regression tests.
 	{

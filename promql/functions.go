@@ -52,12 +52,12 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 	rangeStart := ev.Timestamp - durationMilliseconds(ms.Range+ms.Offset)
 	rangeEnd := ev.Timestamp - durationMilliseconds(ms.Offset)
 
-	resultVector := vector{}
+	resultVector := Vector{}
 
 	matrixValue := ev.evalMatrix(ms)
 	for _, samples := range matrixValue {
 		// No sense in trying to compute a rate without at least two points. Drop
-		// this vector element.
+		// this Vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
@@ -151,10 +151,10 @@ func funcIdelta(ev *evaluator, args Expressions) Value {
 }
 
 func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
-	resultVector := vector{}
+	resultVector := Vector{}
 	for _, samples := range ev.evalMatrix(arg) {
 		// No sense in trying to compute a rate without at least two points. Drop
-		// this vector element.
+		// this Vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
@@ -230,8 +230,8 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 got: %f", sf)
 	}
 
-	// Make an output vector large enough to hold the entire result.
-	resultVector := make(vector, 0, len(mat))
+	// Make an output Vector large enough to hold the entire result.
+	resultVector := make(Vector, 0, len(mat))
 
 	// Create scratch values.
 	var s, b, d []float64
@@ -276,7 +276,7 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 
 		resultVector = append(resultVector, sample{
 			Metric:    copyLabels(samples.Metric, false),
-			Value:     s[len(s)-1], // The last value in the vector is the smoothed result.
+			Value:     s[len(s)-1], // The last value in the Vector is the smoothed result.
 			Timestamp: ev.Timestamp,
 		})
 	}
@@ -288,21 +288,21 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 func funcSort(ev *evaluator, args Expressions) Value {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByReverseValueHeap(ev.evalVector(args[0]))
+	byValueSorter := VectorByReverseValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
-	return vector(byValueSorter)
+	return Vector(byValueSorter)
 }
 
 // === sortDesc(node ValueTypeVector) Vector ===
 func funcSortDesc(ev *evaluator, args Expressions) Value {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
+	byValueSorter := VectorByValueHeap(ev.evalVector(args[0]))
 	sort.Sort(sort.Reverse(byValueSorter))
-	return vector(byValueSorter)
+	return Vector(byValueSorter)
 }
 
-// === clamp_max(vector ValueTypeVector, max Scalar) Vector ===
+// === clamp_max(Vector ValueTypeVector, max Scalar) Vector ===
 func funcClampMax(ev *evaluator, args Expressions) Value {
 	vec := ev.evalVector(args[0])
 	max := ev.evalFloat(args[1])
@@ -313,7 +313,7 @@ func funcClampMax(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
-// === clamp_min(vector ValueTypeVector, min Scalar) Vector ===
+// === clamp_min(Vector ValueTypeVector, min Scalar) Vector ===
 func funcClampMin(ev *evaluator, args Expressions) Value {
 	vec := ev.evalVector(args[0])
 	min := ev.evalFloat(args[1])
@@ -328,7 +328,7 @@ func funcClampMin(ev *evaluator, args Expressions) Value {
 func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
 	vec := ev.evalVector(args[0])
 	if len(vec) < 1 {
-		return vector{}
+		return Vector{}
 	}
 	common := map[string]string{}
 
@@ -365,7 +365,7 @@ func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
-// === round(vector ValueTypeVector, toNearest=1 Scalar) Vector ===
+// === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
 func funcRound(ev *evaluator, args Expressions) Value {
 	// round returns a number rounded to toNearest.
 	// Ties are solved by rounding up.
@@ -399,7 +399,7 @@ func funcScalar(ev *evaluator, args Expressions) Value {
 	}
 }
 
-// === count_scalar(vector ValueTypeVector) float64 ===
+// === count_scalar(Vector ValueTypeVector) float64 ===
 func funcCountScalar(ev *evaluator, args Expressions) Value {
 	return scalar{
 		v: float64(len(ev.evalVector(args[0]))),
@@ -409,7 +409,7 @@ func funcCountScalar(ev *evaluator, args Expressions) Value {
 
 func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]samplePair) float64) Value {
 	mat := ev.evalMatrix(args[0])
-	resultVector := vector{}
+	resultVector := Vector{}
 
 	for _, el := range mat {
 		if len(el.Values) == 0 {
@@ -443,14 +443,14 @@ func funcCountOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === floor(vector ValueTypeVector) Vector ===
+// === floor(Vector ValueTypeVector) Vector ===
 func funcFloor(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Floor(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
 // === max_over_time(matrix ValueTypeMatrix) Vector ===
@@ -490,7 +490,7 @@ func funcSumOverTime(ev *evaluator, args Expressions) Value {
 func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 	q := ev.evalFloat(args[0])
 	mat := ev.evalMatrix(args[1])
-	resultVector := vector{}
+	resultVector := Vector{}
 
 	for _, el := range mat {
 		if len(el.Values) == 0 {
@@ -498,7 +498,7 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 		}
 
 		el.Metric = copyLabels(el.Metric, false)
-		values := make(vectorByValueHeap, 0, len(el.Values))
+		values := make(VectorByValueHeap, 0, len(el.Values))
 		for _, v := range el.Values {
 			values = append(values, sample{Value: v.v})
 		}
@@ -539,20 +539,20 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
 	})
 }
 
-// === abs(vector ValueTypeVector) Vector ===
+// === abs(Vector ValueTypeVector) Vector ===
 func funcAbs(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Abs(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
-// === absent(vector ValueTypeVector) Vector ===
+// === absent(Vector ValueTypeVector) Vector ===
 func funcAbsent(ev *evaluator, args Expressions) Value {
 	if len(ev.evalVector(args[0])) > 0 {
-		return vector{}
+		return Vector{}
 	}
 	m := []labels.Label{}
 
@@ -563,7 +563,7 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 			}
 		}
 	}
-	return vector{
+	return Vector{
 		sample{
 			Metric:    labels.New(m...),
 			Value:     1,
@@ -572,64 +572,64 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 	}
 }
 
-// === ceil(vector ValueTypeVector) Vector ===
+// === ceil(Vector ValueTypeVector) Vector ===
 func funcCeil(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Ceil(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
-// === exp(vector ValueTypeVector) Vector ===
+// === exp(Vector ValueTypeVector) Vector ===
 func funcExp(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Exp(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
-// === sqrt(vector VectorNode) Vector ===
+// === sqrt(Vector VectorNode) Vector ===
 func funcSqrt(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Sqrt(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
-// === ln(vector ValueTypeVector) Vector ===
+// === ln(Vector ValueTypeVector) Vector ===
 func funcLn(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Log(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
-// === log2(vector ValueTypeVector) Vector ===
+// === log2(Vector ValueTypeVector) Vector ===
 func funcLog2(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Log2(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
-// === log10(vector ValueTypeVector) Vector ===
+// === log10(Vector ValueTypeVector) Vector ===
 func funcLog10(ev *evaluator, args Expressions) Value {
-	vector := ev.evalVector(args[0])
-	for _, el := range vector {
+	Vector := ev.evalVector(args[0])
+	for _, el := range Vector {
 		el.Metric = copyLabels(el.Metric, false)
 		el.Value = math.Log10(float64(el.Value))
 	}
-	return vector
+	return Vector
 }
 
 // linearRegression performs a least-square linear regression analysis on the
@@ -660,11 +660,11 @@ func linearRegression(samples []samplePair, interceptTime int64) (slope, interce
 // === deriv(node ValueTypeMatrix) Vector ===
 func funcDeriv(ev *evaluator, args Expressions) Value {
 	mat := ev.evalMatrix(args[0])
-	resultVector := make(vector, 0, len(mat))
+	resultVector := make(Vector, 0, len(mat))
 
 	for _, samples := range mat {
 		// No sense in trying to compute a derivative without at least two points.
-		// Drop this vector element.
+		// Drop this Vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
@@ -683,12 +683,12 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 // === predict_linear(node ValueTypeMatrix, k ValueTypeScalar) Vector ===
 func funcPredictLinear(ev *evaluator, args Expressions) Value {
 	mat := ev.evalMatrix(args[0])
-	resultVector := make(vector, 0, len(mat))
+	resultVector := make(Vector, 0, len(mat))
 	duration := ev.evalFloat(args[1])
 
 	for _, samples := range mat {
 		// No sense in trying to predict anything without at least two points.
-		// Drop this vector element.
+		// Drop this Vector element.
 		if len(samples.Values) < 2 {
 			continue
 		}
@@ -703,12 +703,12 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 	return resultVector
 }
 
-// === histogram_quantile(k ValueTypeScalar, vector ValueTypeVector) Vector ===
+// === histogram_quantile(k ValueTypeScalar, Vector ValueTypeVector) Vector ===
 func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	q := ev.evalFloat(args[0])
 	inVec := ev.evalVector(args[1])
 
-	outVec := vector{}
+	outVec := Vector{}
 	signatureToMetricWithBuckets := map[uint64]*metricWithBuckets{}
 	for _, el := range inVec {
 		upperBound, err := strconv.ParseFloat(
@@ -748,7 +748,7 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 // === resets(matrix ValueTypeMatrix) Vector ===
 func funcResets(ev *evaluator, args Expressions) Value {
 	in := ev.evalMatrix(args[0])
-	out := make(vector, 0, len(in))
+	out := make(Vector, 0, len(in))
 
 	for _, samples := range in {
 		resets := 0
@@ -773,7 +773,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 // === changes(matrix ValueTypeMatrix) Vector ===
 func funcChanges(ev *evaluator, args Expressions) Value {
 	in := ev.evalMatrix(args[0])
-	out := make(vector, 0, len(in))
+	out := make(Vector, 0, len(in))
 
 	for _, samples := range in {
 		changes := 0
@@ -795,10 +795,10 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 	return out
 }
 
-// === label_replace(vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
+// === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
 func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	var (
-		vector   = ev.evalVector(args[0])
+		Vector   = ev.evalVector(args[0])
 		dst      = ev.evalString(args[1]).s
 		repl     = ev.evalString(args[2]).s
 		src      = ev.evalString(args[3]).s
@@ -813,8 +813,8 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 		ev.errorf("invalid destination label name in label_replace(): %s", dst)
 	}
 
-	outSet := make(map[uint64]struct{}, len(vector))
-	for _, el := range vector {
+	outSet := make(map[uint64]struct{}, len(Vector))
+	for _, el := range Vector {
 		srcVal := el.Metric.Get(src)
 		indexes := regex.FindStringSubmatchIndex(srcVal)
 		// If there is no match, no replacement should take place.
@@ -837,12 +837,12 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 		}
 	}
 
-	return vector
+	return Vector
 }
 
-// === vector(s scalar) Vector ===
+// === Vector(s scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) Value {
-	return vector{
+	return Vector{
 		sample{
 			Metric:    labels.Labels{},
 			Value:     ev.evalFloat(args[0]),
@@ -853,9 +853,9 @@ func funcVector(ev *evaluator, args Expressions) Value {
 
 // Common code for date related functions.
 func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Value {
-	var v vector
+	var v Vector
 	if len(args) == 0 {
-		v = vector{
+		v = Vector{
 			sample{
 				Metric: labels.Labels{},
 				Value:  float64(ev.Timestamp) / 1000,
@@ -872,49 +872,49 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 	return v
 }
 
-// === days_in_month(v vector) scalar ===
+// === days_in_month(v Vector) scalar ===
 func funcDaysInMonth(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	})
 }
 
-// === day_of_month(v vector) scalar ===
+// === day_of_month(v Vector) scalar ===
 func funcDayOfMonth(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Day())
 	})
 }
 
-// === day_of_week(v vector) scalar ===
+// === day_of_week(v Vector) scalar ===
 func funcDayOfWeek(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	})
 }
 
-// === hour(v vector) scalar ===
+// === hour(v Vector) scalar ===
 func funcHour(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Hour())
 	})
 }
 
-// === minute(v vector) scalar ===
+// === minute(v Vector) scalar ===
 func funcMinute(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Minute())
 	})
 }
 
-// === month(v vector) scalar ===
+// === month(v Vector) scalar ===
 func funcMonth(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Month())
 	})
 }
 
-// === year(v vector) scalar ===
+// === year(v Vector) scalar ===
 func funcYear(ev *evaluator, args Expressions) Value {
 	return dateWrapper(ev, args, func(t time.Time) float64 {
 		return float64(t.Year())
@@ -1193,8 +1193,8 @@ var functions = map[string]*Function{
 		ReturnType: ValueTypeScalar,
 		Call:       funcTime,
 	},
-	"vector": {
-		Name:       "vector",
+	"Vector": {
+		Name:       "Vector",
 		ArgTypes:   []ValueType{ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 		Call:       funcVector,
@@ -1214,28 +1214,28 @@ func getFunction(name string) (*Function, bool) {
 	return function, ok
 }
 
-type vectorByValueHeap vector
+type VectorByValueHeap Vector
 
-func (s vectorByValueHeap) Len() int {
+func (s VectorByValueHeap) Len() int {
 	return len(s)
 }
 
-func (s vectorByValueHeap) Less(i, j int) bool {
+func (s VectorByValueHeap) Less(i, j int) bool {
 	if math.IsNaN(float64(s[i].Value)) {
 		return true
 	}
 	return s[i].Value < s[j].Value
 }
 
-func (s vectorByValueHeap) Swap(i, j int) {
+func (s VectorByValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *vectorByValueHeap) Push(x interface{}) {
+func (s *VectorByValueHeap) Push(x interface{}) {
 	*s = append(*s, x.(sample))
 }
 
-func (s *vectorByValueHeap) Pop() interface{} {
+func (s *VectorByValueHeap) Pop() interface{} {
 	old := *s
 	n := len(old)
 	el := old[n-1]
@@ -1243,28 +1243,28 @@ func (s *vectorByValueHeap) Pop() interface{} {
 	return el
 }
 
-type vectorByReverseValueHeap vector
+type VectorByReverseValueHeap Vector
 
-func (s vectorByReverseValueHeap) Len() int {
+func (s VectorByReverseValueHeap) Len() int {
 	return len(s)
 }
 
-func (s vectorByReverseValueHeap) Less(i, j int) bool {
+func (s VectorByReverseValueHeap) Less(i, j int) bool {
 	if math.IsNaN(float64(s[i].Value)) {
 		return true
 	}
 	return s[i].Value > s[j].Value
 }
 
-func (s vectorByReverseValueHeap) Swap(i, j int) {
+func (s VectorByReverseValueHeap) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s *vectorByReverseValueHeap) Push(x interface{}) {
+func (s *VectorByReverseValueHeap) Push(x interface{}) {
 	*s = append(*s, x.(sample))
 }
 
-func (s *vectorByReverseValueHeap) Pop() interface{} {
+func (s *VectorByReverseValueHeap) Pop() interface{} {
 	old := *s
 	n := len(old)
 	el := old[n-1]
