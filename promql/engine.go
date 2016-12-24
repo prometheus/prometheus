@@ -62,12 +62,13 @@ type ValueType string
 // The valid value types.
 const (
 	ValueTypeNone   = "none"
-	ValueTypeVector = "Vector"
-	ValueTypeScalar = "Scalar"
-	ValueTypeMatrix = "Matrix"
+	ValueTypeVector = "vector"
+	ValueTypeScalar = "scalar"
+	ValueTypeMatrix = "matrix"
 	ValueTypeString = "string"
 )
 
+// String represents a string value.
 type String struct {
 	V string
 	T int64
@@ -87,13 +88,13 @@ func (s Scalar) String() string {
 	return ""
 }
 
-// sampleStream is a stream of Values belonging to an attached COWMetric.
-type sampleStream struct {
+// SampleStream is a stream of data points belonging to a metric.
+type SampleStream struct {
 	Metric labels.Labels
-	Values []Point
+	Points []Point
 }
 
-func (s sampleStream) String() string {
+func (s SampleStream) String() string {
 	return ""
 }
 
@@ -132,7 +133,7 @@ func (vec Vector) String() string {
 
 // Matrix is a slice of SampleStreams that implements sort.Interface and
 // has a String method.
-type Matrix []sampleStream
+type Matrix []SampleStream
 
 func (m Matrix) String() string {
 	// TODO(fabxc): sort, or can we rely on order from the querier?
@@ -456,7 +457,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	numSteps := int(s.End.Sub(s.Start) / s.Interval)
 
 	// Range evaluation.
-	sampleStreams := map[uint64]sampleStream{}
+	SampleStreams := map[uint64]SampleStream{}
 	for ts := s.Start; !ts.After(s.End); ts = ts.Add(s.Interval) {
 
 		if err := contextDone(ctx, "range evaluation"); err != nil {
@@ -476,24 +477,24 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		case Scalar:
 			// As the expression type does not change we can safely default to 0
 			// as the fingerprint for Scalar expressions.
-			ss, ok := sampleStreams[0]
+			ss, ok := SampleStreams[0]
 			if !ok {
-				ss = sampleStream{Values: make([]Point, 0, numSteps)}
-				sampleStreams[0] = ss
+				ss = SampleStream{Points: make([]Point, 0, numSteps)}
+				SampleStreams[0] = ss
 			}
-			ss.Values = append(ss.Values, Point(v))
+			ss.Points = append(ss.Points, Point(v))
 		case Vector:
 			for _, sample := range v {
 				h := sample.Metric.Hash()
-				ss, ok := sampleStreams[h]
+				ss, ok := SampleStreams[h]
 				if !ok {
-					ss = sampleStream{
+					ss = SampleStream{
 						Metric: sample.Metric,
-						Values: make([]Point, 0, numSteps),
+						Points: make([]Point, 0, numSteps),
 					}
-					sampleStreams[h] = ss
+					SampleStreams[h] = ss
 				}
-				ss.Values = append(ss.Values, sample.Point)
+				ss.Points = append(ss.Points, sample.Point)
 			}
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
@@ -507,7 +508,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	appendTimer := query.stats.GetTimer(stats.ResultAppendTime).Start()
 	mat := Matrix{}
-	for _, ss := range sampleStreams {
+	for _, ss := range SampleStreams {
 		mat = append(mat, ss)
 	}
 	appendTimer.Stop()
@@ -821,9 +822,9 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 	)
 
 	for i, it := range node.iterators {
-		ss := sampleStream{
+		ss := SampleStream{
 			Metric: node.series[i].Labels(),
-			Values: make([]Point, 0, 16),
+			Points: make([]Point, 0, 16),
 		}
 
 		if !it.Seek(maxt) {
@@ -838,13 +839,13 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 			t, v := buf.Values()
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				ss.Values = append(ss.Values, Point{T: t + offset, V: v})
+				ss.Points = append(ss.Points, Point{T: t + offset, V: v})
 			}
 		}
 		// The seeked sample might also be in the range.
 		t, v := it.Values()
 		if t == maxt {
-			ss.Values = append(ss.Values, Point{T: t + offset, V: v})
+			ss.Points = append(ss.Points, Point{T: t + offset, V: v})
 		}
 
 		Matrix = append(Matrix, ss)

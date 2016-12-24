@@ -366,8 +366,8 @@ func (ev *evalCmd) compareResult(result Value) error {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
 			for i, expVal := range exp.vals {
-				if !almostEqual(expVal.value, v.Values[i].V) {
-					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric, v.Values)
+				if !almostEqual(expVal.value, v.Points[i].V) {
+					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric, v.Points)
 				}
 			}
 			seen[fp] = true
