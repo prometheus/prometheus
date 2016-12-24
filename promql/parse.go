@@ -95,7 +95,7 @@ func ParseMetricSelector(input string) (m []*LabelMatcher, err error) {
 	if t := p.peek().typ; t == itemMetricIdentifier || t == itemIdentifier {
 		name = p.next().val
 	}
-	vs := p.vectorSelector(name)
+	vs := p.VectorSelector(name)
 	if p.peek().typ != itemEOF {
 		p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 	}
@@ -367,7 +367,7 @@ func (p *parser) alertStmt() *AlertStmt {
 
 	p.expect(itemAlert, ctx)
 	name := p.expect(itemIdentifier, ctx)
-	// Alerts require a vector typed expression.
+	// Alerts require a Vector typed expression.
 	p.expect(itemIf, ctx)
 	expr := p.expr()
 
@@ -531,7 +531,7 @@ func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMat
 
 // unaryExpr parses a unary expression.
 //
-//		<vector_selector> | <matrix_selector> | (+|-) <number_literal> | '(' <expr> ')'
+//		<Vector_selector> | <matrix_selector> | (+|-) <number_literal> | '(' <expr> ')'
 //
 func (p *parser) unaryExpr() Expr {
 	switch t := p.peek(); t.typ {
@@ -584,9 +584,9 @@ func (p *parser) unaryExpr() Expr {
 }
 
 // rangeSelector parses a matrix (a.k.a. range) selector based on a given
-// vector selector.
+// Vector selector.
 //
-//		<vector_selector> '[' <duration> ']'
+//		<Vector_selector> '[' <duration> ']'
 //
 func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 	const ctx = "range selector"
@@ -626,7 +626,7 @@ func (p *parser) number(val string) float64 {
 
 // primaryExpr parses a primary expression.
 //
-//		<metric_name> | <function_call> | <vector_aggregation> | <literal>
+//		<metric_name> | <function_call> | <Vector_aggregation> | <literal>
 //
 func (p *parser) primaryExpr() Expr {
 	switch t := p.next(); {
@@ -640,7 +640,7 @@ func (p *parser) primaryExpr() Expr {
 	case t.typ == itemLeftBrace:
 		// Metric selector without metric name.
 		p.backup()
-		return p.vectorSelector("")
+		return p.VectorSelector("")
 
 	case t.typ == itemIdentifier:
 		// Check for function call.
@@ -650,7 +650,7 @@ func (p *parser) primaryExpr() Expr {
 		fallthrough // Else metric selector.
 
 	case t.typ == itemMetricIdentifier:
-		return p.vectorSelector(t.val)
+		return p.VectorSelector(t.val)
 
 	case t.typ.isAggregator():
 		p.backup()
@@ -693,8 +693,8 @@ func (p *parser) labels() []string {
 
 // aggrExpr parses an aggregation expression.
 //
-//		<aggr_op> (<vector_expr>) [by <labels>] [keep_common]
-//		<aggr_op> [by <labels>] [keep_common] (<vector_expr>)
+//		<aggr_op> (<Vector_expr>) [by <labels>] [keep_common]
+//		<aggr_op> [by <labels>] [keep_common] (<Vector_expr>)
 //
 func (p *parser) aggrExpr() *AggregateExpr {
 	const ctx = "aggregation"
@@ -935,12 +935,12 @@ func (p *parser) offset() time.Duration {
 	return offset
 }
 
-// vectorSelector parses a new (instant) vector selector.
+// VectorSelector parses a new (instant) Vector selector.
 //
 //		<metric_identifier> [<label_matchers>]
 //		[<metric_identifier>] <label_matchers>
 //
-func (p *parser) vectorSelector(name string) *VectorSelector {
+func (p *parser) VectorSelector(name string) *VectorSelector {
 	var matchers []*LabelMatcher
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == itemLeftBrace {
@@ -949,7 +949,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
 		for _, m := range matchers {
-			if m.Name == model.MetricNameLabel {
+			if m.Name == MetricNameLabel {
 				p.errorf("metric name must not be set twice: %q or %q", name, m.Value)
 			}
 		}
@@ -962,9 +962,9 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	}
 
 	if len(matchers) == 0 {
-		p.errorf("vector selector must contain label matchers or metric name")
+		p.errorf("Vector selector must contain label matchers or metric name")
 	}
-	// A vector selector must contain at least one non-empty matcher to prevent
+	// A Vector selector must contain at least one non-empty matcher to prevent
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
 	for _, lm := range matchers {
@@ -974,7 +974,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 		}
 	}
 	if !notEmpty {
-		p.errorf("vector selector must contain at least one non-empty matcher")
+		p.errorf("Vector selector must contain at least one non-empty matcher")
 	}
 
 	return &VectorSelector{
@@ -1028,7 +1028,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	case *RecordStmt:
 		ty := p.checkType(n.Expr)
 		if ty != ValueTypeVector && ty != ValueTypeScalar {
-			p.errorf("record statement must have a valid expression of type instant vector or scalar but got %s", documentedType(ty))
+			p.errorf("record statement must have a valid expression of type instant Vector or scalar but got %s", documentedType(ty))
 		}
 
 	case Expressions:
@@ -1058,16 +1058,16 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 			p.errorf("binary expression does not support operator %q", n.Op)
 		}
 		if (lt != ValueTypeScalar && lt != ValueTypeVector) || (rt != ValueTypeScalar && rt != ValueTypeVector) {
-			p.errorf("binary expression must contain only scalar and instant vector types")
+			p.errorf("binary expression must contain only scalar and instant Vector types")
 		}
 
 		if (lt != ValueTypeVector || rt != ValueTypeVector) && n.VectorMatching != nil {
 			if len(n.VectorMatching.MatchingLabels) > 0 {
-				p.errorf("vector matching only allowed between instant vectors")
+				p.errorf("Vector matching only allowed between instant Vectors")
 			}
 			n.VectorMatching = nil
 		} else {
-			// Both operands are vectors.
+			// Both operands are Vectors.
 			if n.Op.isSetOperator() {
 				if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
 					p.errorf("no grouping allowed for %q operation", n.Op)
@@ -1102,7 +1102,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 			p.errorf("only + and - operators allowed for unary expressions")
 		}
 		if t := p.checkType(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
-			p.errorf("unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
+			p.errorf("unary expression only allowed on expressions of type scalar or instant Vector, got %q", documentedType(t))
 		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:
