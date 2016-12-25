@@ -17,17 +17,12 @@ import (
 	"errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
 	ErrOutOfOrderSample            = errors.New("out of order sample")
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 )
-
-func NewTestStorage(t testutil.T) Storage {
-	return nil, nil
-}
 
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.

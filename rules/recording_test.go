@@ -20,12 +20,13 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
 )
 
 func TestRuleEval(t *testing.T) {
-	storage, closer := local.NewTestStorage(t, 2)
+	storage, closer := local.NewTestStorage(t)
 	defer closer.Close()
 	engine := promql.NewEngine(storage, nil)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -36,27 +37,27 @@ func TestRuleEval(t *testing.T) {
 	suite := []struct {
 		name   string
 		expr   promql.Expr
-		labels model.LabelSet
-		result model.Vector
+		labels labels.Labels
+		result promql.Vector
 	}{
 		{
 			name:   "nolabels",
 			expr:   &promql.NumberLiteral{Val: 1},
-			labels: model.LabelSet{},
-			result: model.Vector{&model.Sample{
+			labels: labels.Labels{},
+			result: promql.Vector{promql.Sample{
 				Value:     1,
 				Timestamp: now,
-				Metric:    model.Metric{"__name__": "nolabels"},
+				Metric:    labels.FromStrings("__name__", "nolabels"),
 			}},
 		},
 		{
 			name:   "labels",
 			expr:   &promql.NumberLiteral{Val: 1},
-			labels: model.LabelSet{"foo": "bar"},
-			result: model.Vector{&model.Sample{
+			labels: labels.FromStrings("foo", "bar"),
+			result: promql.Vector{promql.Sample{
 				Value:     1,
 				Timestamp: now,
-				Metric:    model.Metric{"__name__": "labels", "foo": "bar"},
+				Metric:    labels.FromStrings("__name__", "labels", "foo", "bar"),
 			}},
 		},
 	}
@@ -78,7 +79,7 @@ func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rule := NewRecordingRule("testrule", expr, model.LabelSet{"html": "<b>BOLD</b>"})
+	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
 
 	const want = `<a href="/test/prefix/graph?g0.expr=testrule&g0.tab=0">testrule</a>{html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;} = <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>`
 
