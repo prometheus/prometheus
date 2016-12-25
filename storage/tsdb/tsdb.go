@@ -6,10 +6,11 @@ import (
 	"github.com/fabxc/tsdb"
 	tsdbLabels "github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
 )
 
-type storage struct {
+// db implements a storage.Storage around TSDB.
+type db struct {
 	db *tsdb.DB
 }
 
@@ -22,7 +23,7 @@ func Open(path string) (storage.Storage, error) {
 	return &storage{db: db}
 }
 
-func (db *storage) Querier(mint, maxt int64) (storage.Querier, error) {
+func (db *db) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := db.db.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
@@ -31,7 +32,7 @@ func (db *storage) Querier(mint, maxt int64) (storage.Querier, error) {
 }
 
 // Appender returns a new appender against the storage.
-func (db *storage) Appender() (Appender, error) {
+func (db *db) Appender() (storage.Appender, error) {
 	a, err := db.db.Appender()
 	if err != nil {
 		return nil, err
@@ -40,7 +41,7 @@ func (db *storage) Appender() (Appender, error) {
 }
 
 // Close closes the storage and all its underlying resources.
-func (db *storage) Close() error {
+func (db *db) Close() error {
 	return db.Close()
 }
 
@@ -48,7 +49,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q *querier) Select(oms ...*promql.LabelMatcher) (storage.SeriesSet, error) {
+func (q *querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {
@@ -85,7 +86,7 @@ type appender struct {
 func (a *appender) Add(lset labels.Labels, t int64, v float64) { a.Add(toTSDBLabels(lset), t, v) }
 func (a *appender) Commit() error                              { a.a.Commit() }
 
-func convertMatcher(m *promql.LabelMatcher) tsdbLabels.Matcher {
+func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 	switch m.Type {
 	case MatchEqual:
 		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
@@ -107,7 +108,7 @@ func convertMatcher(m *promql.LabelMatcher) tsdbLabels.Matcher {
 		}
 		return tsdbLabels.Not(res)
 	}
-	panic("promql.LabelMatcher.matcher: invalid matcher type")
+	panic("storage.convertMatcher: invalid matcher type")
 }
 
 func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
