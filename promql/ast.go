@@ -15,13 +15,10 @@ package promql
 
 import (
 	"fmt"
-	"regexp"
 	"time"
-	"unsafe"
 
-	"github.com/fabxc/tsdb"
-	tsdbLabels "github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Node is a generic interface for all nodes in an AST.
@@ -134,11 +131,11 @@ type MatrixSelector struct {
 	Name          string
 	Range         time.Duration
 	Offset        time.Duration
-	LabelMatchers []*LabelMatcher
+	LabelMatchers []*labels.Matcher
 
 	// The series iterators are populated at query preparation time.
-	series    []tsdb.Series
-	iterators []*tsdb.BufferedSeriesIterator
+	series    []storage.Series
+	iterators []*storage.BufferedSeriesIterator
 }
 
 // NumberLiteral represents a number.
@@ -168,11 +165,11 @@ type UnaryExpr struct {
 type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
-	LabelMatchers []*LabelMatcher
+	LabelMatchers []*labels.Matcher
 
 	// The series iterators are populated at query preparation time.
-	series    []tsdb.Series
-	iterators []*tsdb.BufferedSeriesIterator
+	series    []storage.Series
+	iterators []*storage.BufferedSeriesIterator
 }
 
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
@@ -317,92 +314,4 @@ func (f inspector) Visit(node Node) Visitor {
 // for all the non-nil children of node, recursively.
 func Inspect(node Node, f func(Node) bool) {
 	Walk(inspector(f), node)
-}
-
-// MatchType is an enum for label matching types.
-type MatchType int
-
-// Possible MatchTypes.
-const (
-	MatchEqual MatchType = iota
-	MatchNotEqual
-	MatchRegexp
-	MatchNotRegexp
-)
-
-func (m MatchType) String() string {
-	typeToStr := map[MatchType]string{
-		MatchEqual:     "=",
-		MatchNotEqual:  "!=",
-		MatchRegexp:    "=~",
-		MatchNotRegexp: "!~",
-	}
-	if str, ok := typeToStr[m]; ok {
-		return str
-	}
-	panic("unknown match type")
-}
-
-// LabelMatcher models the matching of a label.
-type LabelMatcher struct {
-	Type  MatchType
-	Name  string
-	Value string
-
-	re *regexp.Regexp
-}
-
-// NewLabelMatcher returns a LabelMatcher object ready to use.
-func NewLabelMatcher(t MatchType, n, v string) (*LabelMatcher, error) {
-	m := &LabelMatcher{
-		Type:  t,
-		Name:  n,
-		Value: v,
-	}
-	if t == MatchRegexp || t == MatchNotRegexp {
-		m.Value = "^(?:" + v + ")$"
-		re, err := regexp.Compile(m.Value)
-		if err != nil {
-			return nil, err
-		}
-		m.re = re
-	}
-	return m, nil
-}
-
-func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
-	return *(*tsdbLabels.Labels)(unsafe.Pointer(&l))
-}
-
-func toLabels(l tsdbLabels.Labels) labels.Labels {
-	return *(*labels.Labels)(unsafe.Pointer(&l))
-}
-
-func (m *LabelMatcher) String() string {
-	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
-}
-
-func (m *LabelMatcher) matcher() tsdbLabels.Matcher {
-	switch m.Type {
-	case MatchEqual:
-		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
-
-	case MatchNotEqual:
-		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
-
-	case MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
-		if err != nil {
-			panic(err)
-		}
-		return res
-
-	case MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
-		if err != nil {
-			panic(err)
-		}
-		return tsdbLabels.Not(res)
-	}
-	panic("promql.LabelMatcher.matcher: invalid matcher type")
 }

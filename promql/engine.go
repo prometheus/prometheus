@@ -22,10 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fabxc/tsdb"
-	tsdbLabels "github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/util/stats"
@@ -291,7 +290,7 @@ type Engine struct {
 
 // Queryable allows opening a storage querier.
 type Queryable interface {
-	Querier(mint, maxt int64) (tsdb.Querier, error)
+	Querier(mint, maxt int64) (storage.Querier, error)
 }
 
 // NewEngine returns a new engine.
@@ -526,7 +525,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return resMatrix, nil
 }
 
-func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (tsdb.Querier, error) {
+func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
 
 	Inspect(s.Expr, func(node Node) bool {
@@ -553,31 +552,22 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (tsdb.Quer
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			sel := make(tsdbLabels.Selector, 0, len(n.LabelMatchers))
-			for _, m := range n.LabelMatchers {
-				sel = append(sel, m.matcher())
-			}
-
-			n.series, err = expandSeriesSet(querier.Select(sel...))
+			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
 				return false
 			}
 			for _, s := range n.series {
-				it := tsdb.NewBuffer(s.Iterator(), durationMilliseconds(StalenessDelta))
+				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(StalenessDelta))
 				n.iterators = append(n.iterators, it)
 			}
-		case *MatrixSelector:
-			sel := make(tsdbLabels.Selector, 0, len(n.LabelMatchers))
-			for _, m := range n.LabelMatchers {
-				sel = append(sel, m.matcher())
-			}
 
-			n.series, err = expandSeriesSet(querier.Select(sel...))
+		case *MatrixSelector:
+			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
 				return false
 			}
 			for _, s := range n.series {
-				it := tsdb.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
+				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
 				n.iterators = append(n.iterators, it)
 			}
 		}
@@ -586,7 +576,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (tsdb.Quer
 	return querier, err
 }
 
-func expandSeriesSet(it tsdb.SeriesSet) (res []tsdb.Series, err error) {
+func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 	for it.Next() {
 		res = append(res, it.Series())
 	}
