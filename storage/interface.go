@@ -40,7 +40,7 @@ type Storage interface {
 // Querier provides reading access to time series data.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...*labels.Matcher) (SeriesSet, error)
+	Select(...*labels.Matcher) SeriesSet
 
 	// LabelValues returns all potential values for a label name.
 	LabelValues(name string) ([]string, error)

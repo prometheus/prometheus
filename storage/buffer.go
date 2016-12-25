@@ -1,5 +1,14 @@
 package storage
 
+import "math"
+
+// BufferedSeriesIterator wraps an iterator with a look-back buffer.
+type BufferedSeriesIterator struct {
+	it  SeriesIterator
+	buf *sampleRing
+
+	lastTime int64
+}
 
 // NewBuffer returns a new iterator that buffers the values within the time range
 // of the current element and the duration of delta before.

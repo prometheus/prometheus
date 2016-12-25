@@ -553,7 +553,7 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 
 	if vs, ok := args[0].(*VectorSelector); ok {
 		for _, ma := range vs.LabelMatchers {
-			if ma.Type == MatchEqual && ma.Name != labels.MetricName {
+			if ma.Type == labels.MatchEqual && ma.Name != labels.MetricName {
 				m = append(m, labels.Label{Name: ma.Name, Value: ma.Value})
 			}
 		}

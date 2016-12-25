@@ -87,7 +87,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
 // label matchers.
-func ParseMetricSelector(input string) (m []*LabelMatcher, err error) {
+func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
 	defer p.recover(&err)
 
@@ -815,10 +815,10 @@ func (p *parser) labelSet() labels.Labels {
 //
 //		'{' [ <labelname> <match_op> <match_string>, ... ] '}'
 //
-func (p *parser) labelMatchers(operators ...itemType) []*LabelMatcher {
+func (p *parser) labelMatchers(operators ...itemType) []*labels.Matcher {
 	const ctx = "label matching"
 
-	matchers := []*LabelMatcher{}
+	matchers := []*labels.Matcher{}
 
 	p.expect(itemLeftBrace, ctx)
 
@@ -848,21 +848,21 @@ func (p *parser) labelMatchers(operators ...itemType) []*LabelMatcher {
 		val := p.unquoteString(p.expect(itemString, ctx).val)
 
 		// Map the item to the respective match type.
-		var matchType MatchType
+		var matchType labels.MatchType
 		switch op {
 		case itemEQL:
-			matchType = MatchEqual
+			matchType = labels.MatchEqual
 		case itemNEQ:
-			matchType = MatchNotEqual
+			matchType = labels.MatchNotEqual
 		case itemEQLRegex:
-			matchType = MatchRegexp
+			matchType = labels.MatchRegexp
 		case itemNEQRegex:
-			matchType = MatchNotRegexp
+			matchType = labels.MatchNotRegexp
 		default:
 			p.errorf("item %q is not a metric match type", op)
 		}
 
-		m, err := NewLabelMatcher(matchType, label.val, val)
+		m, err := labels.NewMatcher(matchType, label.val, val)
 		if err != nil {
 			p.error(err)
 		}
@@ -941,7 +941,7 @@ func (p *parser) offset() time.Duration {
 //		[<metric_identifier>] <label_matchers>
 //
 func (p *parser) VectorSelector(name string) *VectorSelector {
-	var matchers []*LabelMatcher
+	var matchers []*labels.Matcher
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == itemLeftBrace {
 		matchers = p.labelMatchers(itemEQL, itemNEQ, itemEQLRegex, itemNEQRegex)
@@ -954,7 +954,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 			}
 		}
 		// Set name label matching.
-		m, err := NewLabelMatcher(MatchEqual, labels.MetricName, name)
+		m, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, name)
 		if err != nil {
 			panic(err) // Must not happen with metric.Equal.
 		}
@@ -968,7 +968,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 	// implicit selection of all metrics (e.g. by a typo).
 	notEmpty := false
 	for _, lm := range matchers {
-		if !lm.matcher().Matches("") {
+		if !lm.Matches("") {
 			notEmpty = true
 			break
 		}
