@@ -22,12 +22,13 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRuleEval(t *testing.T) {
-	storage, closer := local.NewTestStorage(t)
+	storage := testutil.NewStorage(t)
 	defer closer.Close()
+
 	engine := promql.NewEngine(storage, nil)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()

@@ -59,3 +59,18 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 func (m *Matcher) String() string {
 	return fmt.Sprintf("%s%s%q", m.Name, m.Type, m.Value)
 }
+
+// Matches returns whether the matcher matches the given string value.
+func (m *Matcher) Matches(s string) bool {
+	switch m.Type {
+	case MatchEqual:
+		return s == m.Value
+	case MatchNotEqual:
+		return s != m.Value
+	case MatchRegexp:
+		return m.re.MatchString(s)
+	case MatchNotRegexp:
+		return !m.re.MatchString(s)
+	}
+	panic("labels.Matcher.Matches: invalid match type")
+}

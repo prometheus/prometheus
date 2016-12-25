@@ -23,11 +23,10 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -52,11 +51,11 @@ type Test struct {
 
 	cmds []testCommand
 
-	storage      local.Storage
-	closeStorage func()
-	queryEngine  *Engine
-	context      context.Context
-	cancelCtx    context.CancelFunc
+	storage storage.Storage
+
+	queryEngine *Engine
+	context     context.Context
+	cancelCtx   context.CancelFunc
 }
 
 // NewTest returns an initialized empty Test.
@@ -90,7 +89,7 @@ func (t *Test) Context() context.Context {
 }
 
 // Storage returns the test's storage.
-func (t *Test) Storage() local.Storage {
+func (t *Test) Storage() storage.Storage {
 	return t.storage
 }
 
@@ -281,7 +280,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.SampleAppender) {
+func (cmd *loadCmd) append(a storage.Appender) {
 	// TODO(fabxc): commented out until Appender refactoring.
 	// for fp, samples := range cmd.defs {
 	// 	met := cmd.metrics[fp]
@@ -469,8 +468,15 @@ func (t *Test) exec(tc testCommand) error {
 		t.clear()
 
 	case *loadCmd:
-		cmd.append(t.storage)
-		t.storage.WaitForIndexing()
+		app, err := t.storage.Appender()
+		if err != nil {
+			return err
+		}
+		cmd.append(app)
+
+		if err := app.Commit(); err != nil {
+			return err
+		}
 
 	case *evalCmd:
 		q := t.queryEngine.newQuery(cmd.expr, cmd.start, cmd.end, cmd.interval)
@@ -498,17 +504,16 @@ func (t *Test) exec(tc testCommand) error {
 
 // clear the current test storage of all inserted samples.
 func (t *Test) clear() {
-	if t.closeStorage != nil {
-		t.closeStorage()
+	if t.storage != nil {
+		if err := t.storage.Close(); err != nil {
+			t.T.Fatalf("closing test storage: %s", err)
+		}
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
+	t.storage = testutil.NewStorage(t)
 
-	var closer testutil.Closer
-	t.storage, closer = local.NewTestStorage(t, 2)
-
-	t.closeStorage = closer.Close
 	// TODO(fabxc): add back
 	// t.queryEngine = NewEngine(t.storage, nil)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
@@ -517,7 +522,10 @@ func (t *Test) clear() {
 // Close closes resources associated with the Test.
 func (t *Test) Close() {
 	t.cancelCtx()
-	t.closeStorage()
+
+	if err := t.storage.Close(); err != nil {
+		t.T.Fatalf("closing test storage: %s", err)
+	}
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a

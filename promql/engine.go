@@ -793,7 +793,7 @@ func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 		}
 
 		vec = append(vec, Sample{
-			Metric: toLabels(node.series[i].Labels()),
+			Metric: node.series[i].Labels(),
 			Point:  Point{V: v, T: ev.Timestamp},
 		})
 	}
@@ -811,7 +811,7 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 
 	for i, it := range node.iterators {
 		ss := Series{
-			Metric: toLabels(node.series[i].Labels()),
+			Metric: node.series[i].Labels(),
 			Points: make([]Point, 0, 16),
 		}
 

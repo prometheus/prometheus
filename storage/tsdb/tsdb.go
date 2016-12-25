@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// db implements a storage.Storage around TSDB.
-type db struct {
+// adapter implements a storage.Storage around TSDB.
+type adapter struct {
 	db *tsdb.DB
 }
 
@@ -20,36 +20,28 @@ func Open(path string) (storage.Storage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &storage{db: db}
+	return adapter{db: db}, nil
 }
 
-func (db *db) Querier(mint, maxt int64) (storage.Querier, error) {
-	q, err := db.db.Querier(mint, maxt)
-	if err != nil {
-		return nil, err
-	}
-	return querier{q: q}, nil
+func (a adapter) Querier(mint, maxt int64) (storage.Querier, error) {
+	return querier{q: a.db.Querier(mint, maxt)}, nil
 }
 
 // Appender returns a new appender against the storage.
-func (db *db) Appender() (storage.Appender, error) {
-	a, err := db.db.Appender()
-	if err != nil {
-		return nil, err
-	}
-	return appender{a: a}, nil
+func (a adapter) Appender() (storage.Appender, error) {
+	return appender{a: a.db.Appender()}, nil
 }
 
 // Close closes the storage and all its underlying resources.
-func (db *db) Close() error {
-	return db.Close()
+func (a adapter) Close() error {
+	return a.db.Close()
 }
 
 type querier struct {
 	q tsdb.Querier
 }
 
-func (q *querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q querier) Select(oms ...*labels.Matcher) storage.SeriesSet {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {
@@ -61,47 +53,47 @@ func (q *querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
 	return seriesSet{set: set}
 }
 
-func (q *querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
-func (q *querier) Close() error                              { return q.q.Close() }
+func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
+func (q querier) Close() error                              { return q.q.Close() }
 
 type seriesSet struct {
 	set tsdb.SeriesSet
 }
 
-func (s *seriesSet) Next() bool             { return s.set.Next() }
-func (s *seriesSet) Err() error             { return s.set.Err() }
-func (s *seriesSet) Series() storage.Series { return series{s: s.set.Series()} }
+func (s seriesSet) Next() bool             { return s.set.Next() }
+func (s seriesSet) Err() error             { return s.set.Err() }
+func (s seriesSet) Series() storage.Series { return series{s: s.set.Series()} }
 
 type series struct {
 	s tsdb.Series
 }
 
-func (s *series) Labels() labels.Labels            { return toLabels(s.s.Labels()) }
-func (s *series) Iterator() storage.SeriesIterator { return storage.SeriesIterator(s.s.Iterator()) }
+func (s series) Labels() labels.Labels            { return toLabels(s.s.Labels()) }
+func (s series) Iterator() storage.SeriesIterator { return storage.SeriesIterator(s.s.Iterator()) }
 
 type appender struct {
 	a tsdb.Appender
 }
 
-func (a *appender) Add(lset labels.Labels, t int64, v float64) { a.Add(toTSDBLabels(lset), t, v) }
-func (a *appender) Commit() error                              { a.a.Commit() }
+func (a appender) Add(lset labels.Labels, t int64, v float64) { a.a.Add(toTSDBLabels(lset), t, v) }
+func (a appender) Commit() error                              { return a.a.Commit() }
 
 func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 	switch m.Type {
-	case MatchEqual:
+	case labels.MatchEqual:
 		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
 
-	case MatchNotEqual:
+	case labels.MatchNotEqual:
 		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
 
-	case MatchRegexp:
+	case labels.MatchRegexp:
 		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
 		if err != nil {
 			panic(err)
 		}
 		return res
 
-	case MatchNotRegexp:
+	case labels.MatchNotRegexp:
 		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
 		if err != nil {
 			panic(err)

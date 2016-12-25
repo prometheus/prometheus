@@ -4,31 +4,31 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/fabxc/tsdb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/tsdb"
 )
 
-// NewTestStorage returns a new storage for testing purposes
+// NewStorage returns a new storage for testing purposes
 // that removes all associated files on closing.
-func NewTestStorage(t T) storage.Storage {
+func NewStorage(t T) storage.Storage {
 	dir, err := ioutil.TempDir("", "test_storage")
 	if err != nil {
-		t.Fatalf("Opening test dir failed: %s", errs)
+		t.Fatalf("Opening test dir failed: %s", err)
 	}
 	db, err := tsdb.Open(dir)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
-	return testStorage{DB: db, dir: dir}
+	return testStorage{Storage: db, dir: dir}
 }
 
 type testStorage struct {
-	*tsdb.DB
+	storage.Storage
 	dir string
 }
 
 func (s testStorage) Close() error {
-	if err := s.db.Close(); err != nil {
+	if err := s.Storage.Close(); err != nil {
 		return err
 	}
 	return os.RemoveAll(s.dir)

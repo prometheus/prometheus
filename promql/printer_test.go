@@ -27,8 +27,8 @@ func TestStatementString(t *testing.T) {
 			Op: itemGTR,
 			LHS: &VectorSelector{
 				Name: "foo",
-				LabelMatchers: []*LabelMatcher{
-					{Type: MatchEqual, Name: MetricNameLabel, Value: "bar"},
+				LabelMatchers: []*labels.Matcher{
+					{Type: labels.MatchEqual, Name: labels.MetricName, Value: "bar"},
 				},
 			},
 			RHS: &NumberLiteral{10},

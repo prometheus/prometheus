@@ -20,8 +20,9 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTemplatesScenario struct {
@@ -200,21 +201,20 @@ func TestTemplateExpansion(t *testing.T) {
 
 	time := model.Time(0)
 
-	storage, closer := local.NewTestStorage(t, 2)
-	defer closer.Close()
-	storage.Append(&model.Sample{
-		Metric: model.Metric{
-			model.MetricNameLabel: "metric",
-			"instance":            "a"},
-		Value: 11,
-	})
-	storage.Append(&model.Sample{
-		Metric: model.Metric{
-			model.MetricNameLabel: "metric",
-			"instance":            "b"},
-		Value: 21,
-	})
-	storage.WaitForIndexing()
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+
+	app, err := storage.Appender()
+	if err != nil {
+		t.Fatalf("get appender: %s", err)
+	}
+
+	app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 0, 11)
+	app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 0, 21)
+
+	if err := app.Commit(); err != nil {
+		t.Fatalf("commit samples: %s", err)
+	}
 
 	engine := promql.NewEngine(storage, nil)
 
