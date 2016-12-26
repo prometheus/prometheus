@@ -1,4 +1,4 @@
-package ecs
+package client
 
 import (
 	"fmt"
@@ -9,9 +9,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	awsecs "github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/aws/aws-sdk-go/service/ecs/ecsiface"
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/prometheus/discovery/ecs/types"
 )
 
 // Generate ECS API mocks running go generate
@@ -22,60 +23,25 @@ const (
 	maxAPIRes = 100
 )
 
-// client interface will be the way of retrieving the stuff wanted
-type retriever interface {
-	// retrieve will retrieve all the service instances
-	retrieve() ([]*serviceInstance, error)
-}
-
-// mockRetriever is a Mocked client
-type mockRetriever struct {
-	instances   []*serviceInstance
-	shouldError bool
-}
-
-func newMultipleMockRetriever(quantity int) *mockRetriever {
-	sis := []*serviceInstance{}
-
-	for i := 0; i < quantity; i++ {
-		s := &serviceInstance{
-			addr:    fmt.Sprintf("127.0.0.0:%d", 8000+i),
-			cluster: fmt.Sprintf("cluster%d", i%3),
-			service: fmt.Sprintf("service%d", i%10),
-		}
-		sis = append(sis, s)
-	}
-	return &mockRetriever{
-		instances: sis,
-	}
-}
-
-func (c *mockRetriever) retrieve() ([]*serviceInstance, error) {
-	if c.shouldError {
-		return nil, fmt.Errorf("Error wanted")
-	}
-	return c.instances, nil
-}
-
 // awsSrvTask is a helper that has all the objects required to create a final service instances
 type awsSrvTask struct {
-	cluster           *awsecs.Cluster
-	task              *awsecs.Task
-	containerInstance *awsecs.ContainerInstance
+	cluster           *ecs.Cluster
+	task              *ecs.Task
+	containerInstance *ecs.ContainerInstance
 	instance          *ec2.Instance
 }
 
-func (a *awsSrvTask) createServiceInstances() []*serviceInstance {
-	sis := []*serviceInstance{}
+func (a *awsSrvTask) createServiceInstances() []*types.ServiceInstance {
+	sis := []*types.ServiceInstance{}
 	for _, c := range a.task.Containers {
 		for _, n := range c.NetworkBindings {
 			if n.HostPort != nil {
 				addr := fmt.Sprintf("%s:%d", aws.StringValue(a.instance.PrivateIpAddress), aws.Int64Value(n.HostPort))
-				s := &serviceInstance{
-					cluster:   aws.StringValue(a.cluster.ClusterName),
-					addr:      addr,
-					service:   "test",
-					container: aws.StringValue(c.Name),
+				s := &types.ServiceInstance{
+					Cluster:   aws.StringValue(a.cluster.ClusterName),
+					Addr:      addr,
+					Service:   "test",
+					Container: aws.StringValue(c.Name),
 				}
 				sis = append(sis, s)
 			}
@@ -90,7 +56,8 @@ type awsRetriever struct {
 	ec2Cli ec2iface.EC2API
 }
 
-func newAWSRetriever(accessKey, secretKey, region, profile string) (*awsRetriever, error) {
+// NewAWSRetriever will create a new AWS API retriever
+func NewAWSRetriever(accessKey, secretKey, region, profile string) (*awsRetriever, error) {
 	creds := credentials.NewStaticCredentials(accessKey, secretKey, "")
 	if accessKey == "" && secretKey == "" {
 		creds = nil
@@ -110,16 +77,16 @@ func newAWSRetriever(accessKey, secretKey, region, profile string) (*awsRetrieve
 	}
 
 	return &awsRetriever{
-		ecsCli: awsecs.New(sess),
+		ecsCli: ecs.New(sess),
 		ec2Cli: ec2.New(sess),
 	}, nil
 
 }
 
-func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
-	clusters := []*awsecs.Cluster{}
+func (c *awsRetriever) getClusters() ([]*ecs.Cluster, error) {
+	clusters := []*ecs.Cluster{}
 
-	params := &awsecs.ListClustersInput{
+	params := &ecs.ListClustersInput{
 		MaxResults: aws.Int64(maxAPIRes),
 	}
 	log.Debugf("Getting clusters")
@@ -136,7 +103,7 @@ func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
 		}
 
 		// Describe clusters
-		params2 := &awsecs.DescribeClustersInput{
+		params2 := &ecs.DescribeClustersInput{
 			Clusters: cArns,
 		}
 
@@ -158,10 +125,10 @@ func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
 	return clusters, nil
 }
 
-func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs.ContainerInstance, error) {
-	contInsts := []*awsecs.ContainerInstance{}
+func (c *awsRetriever) getContainerInstances(cluster *ecs.Cluster) ([]*ecs.ContainerInstance, error) {
+	contInsts := []*ecs.ContainerInstance{}
 
-	params := &awsecs.ListContainerInstancesInput{
+	params := &ecs.ListContainerInstancesInput{
 		Cluster:    cluster.ClusterArn,
 		MaxResults: aws.Int64(maxAPIRes),
 	}
@@ -179,7 +146,7 @@ func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs
 		}
 
 		// Describe container instances
-		params2 := &awsecs.DescribeContainerInstancesInput{
+		params2 := &ecs.DescribeContainerInstancesInput{
 			Cluster:            cluster.ClusterArn,
 			ContainerInstances: ciArns,
 		}
@@ -203,10 +170,10 @@ func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs
 	return contInsts, nil
 }
 
-func (c *awsRetriever) getTasks(cluster *awsecs.Cluster) ([]*awsecs.Task, error) {
-	tasks := []*awsecs.Task{}
+func (c *awsRetriever) getTasks(cluster *ecs.Cluster) ([]*ecs.Task, error) {
+	tasks := []*ecs.Task{}
 
-	params := &awsecs.ListTasksInput{
+	params := &ecs.ListTasksInput{
 		Cluster:    cluster.ClusterArn,
 		MaxResults: aws.Int64(maxAPIRes),
 	}
@@ -225,7 +192,7 @@ func (c *awsRetriever) getTasks(cluster *awsecs.Cluster) ([]*awsecs.Task, error)
 		}
 
 		// Describe tasks
-		params2 := &awsecs.DescribeTasksInput{
+		params2 := &ecs.DescribeTasksInput{
 			Cluster: cluster.ClusterArn,
 			Tasks:   tArns,
 		}
@@ -283,21 +250,22 @@ func (c *awsRetriever) getInstances(ec2Ids []*string) ([]*ec2.Instance, error) {
 	return instances, nil
 }
 
-func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
+// Retrieve will get all the service instance calling multiple AWS APIs
+func (c *awsRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	// First get the clusters and map them
 	clusters, err := c.getClusters()
 	if err != nil {
 		return nil, err
 	}
-	clsIndex := map[string]*awsecs.Cluster{}
+	clsIndex := map[string]*ecs.Cluster{}
 	for _, cl := range clusters {
 		clsIndex[aws.StringValue(cl.ClusterArn)] = cl
 	}
 
 	// Get all the container instances and tasks on the cluster and map them
-	cisIndex := map[string]*awsecs.ContainerInstance{} // container instance cache
+	cisIndex := map[string]*ecs.ContainerInstance{} // container instance cache
 	ciMutex := sync.Mutex{}
-	tsIndex := map[string]*awsecs.Task{} // task cache
+	tsIndex := map[string]*ecs.Task{} // task cache
 	tMutex := sync.Mutex{}
 	iIndex := map[string]*ec2.Instance{} // instance cache
 	iMutex := sync.Mutex{}
@@ -308,7 +276,7 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 	wg.Add(len(clsIndex))
 	for _, v := range clsIndex {
 		// use argument by value
-		go func(cluster awsecs.Cluster) {
+		go func(cluster ecs.Cluster) {
 			defer wg.Done()
 
 			// Get cluster container instance
@@ -368,7 +336,7 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 
 	wg.Wait()
 
-	sInstances := []*serviceInstance{}
+	sInstances := []*types.ServiceInstance{}
 	for _, v := range tsIndex {
 		clID := aws.StringValue(v.ClusterArn)
 		cl, ok := clsIndex[clID]
