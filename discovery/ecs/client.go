@@ -5,6 +5,10 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	awsecs "github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/aws/aws-sdk-go/service/ecs/ecsiface"
 	"github.com/prometheus/common/log"
@@ -12,6 +16,7 @@ import (
 
 // Generate ECS API mocks running go generate
 //go:generate mockgen -source ../../vendor/github.com/aws/aws-sdk-go/service/ecs/ecsiface/interface.go -package sdk -destination ./mock/aws/sdk/ecsiface_mock.go
+//go:generate mockgen -source ../../vendor/github.com/aws/aws-sdk-go/service/ec2/ec2iface/interface.go -package sdk -destination ./mock/aws/sdk/ec2iface_mock.go
 
 const (
 	maxAPIRes = 100
@@ -49,21 +54,66 @@ func (c *mockRetriever) retrieve() ([]*serviceInstance, error) {
 	if c.shouldError {
 		return nil, fmt.Errorf("Error wanted")
 	}
-
 	return c.instances, nil
 }
 
-// awsSrvInstance is a helper that has all the objects required to create a final service instance
-type awsSrvInstance struct {
+// awsSrvTask is a helper that has all the objects required to create a final service instances
+type awsSrvTask struct {
 	cluster           *awsecs.Cluster
 	task              *awsecs.Task
 	containerInstance *awsecs.ContainerInstance
-	container         *awsecs.Container
+	instance          *ec2.Instance
+}
+
+func (a *awsSrvTask) createServiceInstances() []*serviceInstance {
+	sis := []*serviceInstance{}
+	for _, c := range a.task.Containers {
+		for _, n := range c.NetworkBindings {
+			if n.HostPort != nil {
+				addr := fmt.Sprintf("%s:%d", aws.StringValue(a.instance.PrivateIpAddress), aws.Int64Value(n.HostPort))
+				s := &serviceInstance{
+					cluster:   aws.StringValue(a.cluster.ClusterName),
+					addr:      addr,
+					service:   "test",
+					container: aws.StringValue(c.Name),
+				}
+				sis = append(sis, s)
+			}
+		}
+	}
+	return sis
 }
 
 // awsRetriever is the wrapper around AWS client
 type awsRetriever struct {
-	client ecsiface.ECSAPI
+	ecsCli ecsiface.ECSAPI
+	ec2Cli ec2iface.EC2API
+}
+
+func newAWSRetriever(accessKey, secretKey, region, profile string) (*awsRetriever, error) {
+	creds := credentials.NewStaticCredentials(accessKey, secretKey, "")
+	if accessKey == "" && secretKey == "" {
+		creds = nil
+	}
+	cfg := aws.Config{
+		Region:      aws.String(region),
+		Credentials: creds,
+	}
+
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Config:  cfg,
+		Profile: profile,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &awsRetriever{
+		ecsCli: awsecs.New(sess),
+		ec2Cli: ec2.New(sess),
+	}, nil
+
 }
 
 func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
@@ -75,7 +125,7 @@ func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
 	log.Debugf("Getting clusters")
 	// Start listing clusters
 	for {
-		resp, err := c.client.ListClusters(params)
+		resp, err := c.ecsCli.ListClusters(params)
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +140,7 @@ func (c *awsRetriever) getClusters() ([]*awsecs.Cluster, error) {
 			Clusters: cArns,
 		}
 
-		resp2, err := c.client.DescribeClusters(params2)
+		resp2, err := c.ecsCli.DescribeClusters(params2)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +168,7 @@ func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs
 	log.Debugf("Getting cluster %s container instances", aws.StringValue(cluster.ClusterName))
 	// Start listing container instances
 	for {
-		resp, err := c.client.ListContainerInstances(params)
+		resp, err := c.ecsCli.ListContainerInstances(params)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +184,7 @@ func (c *awsRetriever) getContainerInstances(cluster *awsecs.Cluster) ([]*awsecs
 			ContainerInstances: ciArns,
 		}
 
-		resp2, err := c.client.DescribeContainerInstances(params2)
+		resp2, err := c.ecsCli.DescribeContainerInstances(params2)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +214,7 @@ func (c *awsRetriever) getTasks(cluster *awsecs.Cluster) ([]*awsecs.Task, error)
 
 	// Start listing tasks
 	for {
-		resp, err := c.client.ListTasks(params)
+		resp, err := c.ecsCli.ListTasks(params)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +230,7 @@ func (c *awsRetriever) getTasks(cluster *awsecs.Cluster) ([]*awsecs.Task, error)
 			Tasks:   tArns,
 		}
 
-		resp2, err := c.client.DescribeTasks(params2)
+		resp2, err := c.ecsCli.DescribeTasks(params2)
 		if err != nil {
 			return nil, err
 		}
@@ -199,6 +249,40 @@ func (c *awsRetriever) getTasks(cluster *awsecs.Cluster) ([]*awsecs.Task, error)
 	return tasks, nil
 }
 
+func (c *awsRetriever) getInstances(ec2Ids []*string) ([]*ec2.Instance, error) {
+
+	instances := []*ec2.Instance{}
+	log.Debugf("Getting ec2 instances")
+
+	params := &ec2.DescribeInstancesInput{
+		InstanceIds: ec2Ids,
+	}
+
+	// Start listing tasks
+	for {
+
+		resp, err := c.ec2Cli.DescribeInstances(params)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, r := range resp.Reservations {
+			for _, i := range r.Instances {
+				instances = append(instances, i)
+			}
+		}
+
+		if resp.NextToken == nil || aws.StringValue(resp.NextToken) == "" {
+			break
+		}
+		params.NextToken = resp.NextToken
+
+	}
+
+	log.Debugf("Retrieved %d ec2 instances", len(instances))
+	return instances, nil
+}
+
 func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 	// First get the clusters and map them
 	clusters, err := c.getClusters()
@@ -211,18 +295,20 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 	}
 
 	// Get all the container instances and tasks on the cluster and map them
-	cisIndex := map[string]*awsecs.ContainerInstance{}
+	cisIndex := map[string]*awsecs.ContainerInstance{} // container instance cache
 	ciMutex := sync.Mutex{}
-	tsIndex := map[string]*awsecs.Task{}
+	tsIndex := map[string]*awsecs.Task{} // task cache
 	tMutex := sync.Mutex{}
-	wg := &sync.WaitGroup{}
+	iIndex := map[string]*ec2.Instance{} // instance cache
+	iMutex := sync.Mutex{}
+	var wg sync.WaitGroup
 	var getterErr error
 
 	// For each cluster get its container instances and tasks
+	wg.Add(len(clsIndex))
 	for _, v := range clsIndex {
 		// use argument by value
 		go func(cluster awsecs.Cluster) {
-			wg.Add(1)
 			defer wg.Done()
 
 			// Get cluster container instance
@@ -233,13 +319,35 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 			}
 
 			ciMutex.Lock()
+			ec2Ids := []*string{}
 			for _, ci := range cInstances {
 				cisIndex[aws.StringValue(ci.ContainerInstanceArn)] = ci
+				ec2Ids = append(ec2Ids, ci.Ec2InstanceId)
 			}
 			ciMutex.Unlock()
 
 			// Check if someone errored before continuing
 			if getterErr != nil {
+				log.Debugf("Error from other goroutine, stopping gathering: %s", getterErr)
+				return
+			}
+
+			// Get cluster ec2 instances
+			instances, err := c.getInstances(ec2Ids)
+			if err != nil {
+				getterErr = err
+				return
+			}
+
+			iMutex.Lock()
+			for _, i := range instances {
+				iIndex[aws.StringValue(i.InstanceId)] = i
+			}
+			iMutex.Unlock()
+
+			// Check if someone errored before continuing
+			if getterErr != nil {
+				log.Debugf("Error from other goroutine, stopping gathering: %s", getterErr)
 				return
 			}
 
@@ -254,11 +362,44 @@ func (c *awsRetriever) retrieve() ([]*serviceInstance, error) {
 			for _, t := range ts {
 				tsIndex[aws.StringValue(t.TaskArn)] = t
 			}
-			ciMutex.Unlock()
+			tMutex.Unlock()
 		}(*v)
 	}
 
 	wg.Wait()
 
-	return nil, nil
+	sInstances := []*serviceInstance{}
+	for _, v := range tsIndex {
+		clID := aws.StringValue(v.ClusterArn)
+		cl, ok := clsIndex[clID]
+		if !ok {
+			return nil, fmt.Errorf("cluster not available: %s", clID)
+		}
+
+		ciID := aws.StringValue(v.ContainerInstanceArn)
+		ci, ok := cisIndex[ciID]
+		if !ok {
+			return nil, fmt.Errorf("container not available: %s", ciID)
+		}
+
+		iID := aws.StringValue(ci.Ec2InstanceId)
+		ec2I, ok := iIndex[iID]
+		if !ok {
+			return nil, fmt.Errorf("EC2 instance not available: %s", iID)
+		}
+
+		t := &awsSrvTask{
+			cluster:           cl,
+			containerInstance: ci,
+			task:              v,
+			instance:          ec2I,
+		}
+
+		sis := t.createServiceInstances()
+		for _, i := range sis {
+			sInstances = append(sInstances, i)
+		}
+	}
+
+	return sInstances, getterErr
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	awsecs "github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/golang/mock/gomock"
 
@@ -63,7 +64,7 @@ func TestGetClusters(t *testing.T) {
 		awsmock.MockECSDescribeClusters(t, mockECS, test.errorDesc, test.clusters...)
 
 		r := &awsRetriever{
-			client: mockECS,
+			ecsCli: mockECS,
 		}
 
 		res, err := r.getClusters()
@@ -82,7 +83,7 @@ func TestGetClusters(t *testing.T) {
 
 		} else {
 			if err == nil {
-				t.Errorf("- %+v\n -Getting clusters shoud error, it didn't", test)
+				t.Errorf("- %+v\n -Getting clusters should error, it didn't", test)
 			}
 		}
 	}
@@ -141,7 +142,7 @@ func TestGetContainerInstances(t *testing.T) {
 		awsmock.MockECSDescribeContainerInstances(t, mockECS, test.errorDesc, test.cInstances...)
 
 		r := &awsRetriever{
-			client: mockECS,
+			ecsCli: mockECS,
 		}
 
 		res, err := r.getContainerInstances(&awsecs.Cluster{ClusterArn: aws.String("c1")})
@@ -160,7 +161,7 @@ func TestGetContainerInstances(t *testing.T) {
 
 		} else {
 			if err == nil {
-				t.Errorf("- %+v\n -Getting Container instances shoud error, it didn't", test)
+				t.Errorf("- %+v\n -Getting Container instances should error, it didn't", test)
 			}
 		}
 	}
@@ -220,7 +221,7 @@ func TestGetTasks(t *testing.T) {
 		awsmock.MockECSDescribeTasks(t, mockECS, test.errorDesc, test.tasks...)
 
 		r := &awsRetriever{
-			client: mockECS,
+			ecsCli: mockECS,
 		}
 
 		res, err := r.getTasks(&awsecs.Cluster{ClusterArn: aws.String("c1")})
@@ -239,7 +240,75 @@ func TestGetTasks(t *testing.T) {
 
 		} else {
 			if err == nil {
-				t.Errorf("- %+v\n -Getting tasks shoud error, it didn't", test)
+				t.Errorf("- %+v\n -Getting tasks should error, it didn't", test)
+			}
+		}
+	}
+}
+
+func TestGetInstances(t *testing.T) {
+	tests := []struct {
+		instances []*ec2.Instance
+		errorDesc bool
+		wantError bool
+	}{
+		{
+			instances: []*ec2.Instance{
+				&ec2.Instance{InstanceId: aws.String("i1")},
+			},
+		},
+		{
+			instances: []*ec2.Instance{
+				&ec2.Instance{InstanceId: aws.String("i1")},
+			},
+			errorDesc: true,
+			wantError: true,
+		},
+		{
+			instances: []*ec2.Instance{
+				&ec2.Instance{InstanceId: aws.String("i1")},
+				&ec2.Instance{InstanceId: aws.String("i2")},
+				&ec2.Instance{InstanceId: aws.String("i3")},
+				&ec2.Instance{InstanceId: aws.String("i4")},
+				&ec2.Instance{InstanceId: aws.String("i5")},
+			},
+		},
+	}
+
+	for _, test := range tests {
+
+		iIDs := make([]*string, len(test.instances))
+		for i, it := range test.instances {
+			iIDs[i] = it.InstanceId
+		}
+
+		// Mock
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockEC2 := sdk.NewMockEC2API(ctrl)
+		awsmock.MockEC2DescribeInstances(t, mockEC2, test.errorDesc, test.instances...)
+
+		r := &awsRetriever{
+			ec2Cli: mockEC2,
+		}
+
+		res, err := r.getInstances(iIDs)
+
+		if !test.wantError {
+			if len(res) != len(test.instances) {
+				t.Errorf("- %+v\n -The length of the retrieved instances differ, want: %d; got: %d", test, len(test.instances), len(res))
+			}
+
+			for i, got := range res {
+				want := test.instances[i]
+				if !reflect.DeepEqual(want, got) {
+					t.Errorf("\n- %v\n-  Received instance from API is wrong, want: %v; got: %v", test, want, got)
+				}
+			}
+
+		} else {
+			if err == nil {
+				t.Errorf("- %+v\n -Getting instances should error, it didn't", test)
 			}
 		}
 	}

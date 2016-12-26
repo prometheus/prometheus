@@ -241,6 +241,12 @@
 			"revisionTime": "2016-12-22T01:49:52Z"
 		},
 		{
+			"checksumSHA1": "YZxK11Gtbe+BqB8KoH0LCbWfVqY=",
+			"path": "github.com/aws/aws-sdk-go/service/ec2/ec2iface",
+			"revision": "9a0c8a57d9bb717d481bc91f995df80d9bb9238c",
+			"revisionTime": "2016-12-22T21:31:12Z"
+		},
+		{
 			"checksumSHA1": "4PVqgos03ItgmDy/nHP6amnprzc=",
 			"path": "github.com/aws/aws-sdk-go/service/ecs",
 			"revision": "26d628b8c698506c615dbc23edde34ea22295f7a",
