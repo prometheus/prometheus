@@ -186,8 +186,9 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	// Find head chunks for all samples and allocate new IDs/refs for
 	// ones we haven't seen before.
 	var (
-		newSeries []labels.Labels
-		newHashes []uint64
+		newSeries    []labels.Labels
+		newHashes    []uint64
+		uniqueHashes = map[uint64]uint32{}
 	)
 
 	for i := range samples {
@@ -200,7 +201,15 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 			s.ref = ref
 			continue
 		}
+
+		// There may be several samples for a new series in a batch.
+		// We don't want to reserve a new space for each.
+		if ref, ok := uniqueHashes[s.hash]; ok {
+			s.ref = ref
+			continue
+		}
 		s.ref = uint32(len(h.descs) + len(newSeries))
+		uniqueHashes[s.hash] = s.ref
 
 		newSeries = append(newSeries, s.labels)
 		newHashes = append(newHashes, s.hash)
