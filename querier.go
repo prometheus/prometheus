@@ -72,7 +72,6 @@ func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
 }
 
 func (q *querier) LabelValues(n string) ([]string, error) {
-	// TODO(fabxc): return returned merged result.
 	res, err := q.shards[0].LabelValues(n)
 	if err != nil {
 		return nil, err
@@ -570,15 +569,18 @@ func newChunkSeriesIterator(mints []int64, cs []chunks.Chunk) *chunkSeriesIterat
 }
 
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
-	x := sort.Search(len(it.mints), func(i int) bool { return it.mints[i] >= t })
+	// Only do binary search forward to stay in line with other iterators
+	// that can only move forward.
+	x := sort.Search(len(it.mints[it.i:]), func(i int) bool { return it.mints[i] >= t })
+	x += it.i
 
+	// If the timestamp was not found, it might be in the last chunk.
 	if x == len(it.mints) {
-		return false
+		x--
 	}
-	if it.mints[x] == t {
-		if x == 0 {
-			return false
-		}
+	// Go to previous chunk if the chunk doesn't exactly start with t.
+	// If we are already at the first chunk, we use it as it's the best we have.
+	if x > 0 && it.mints[x] > t {
 		x--
 	}
 

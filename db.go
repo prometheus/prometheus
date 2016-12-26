@@ -22,12 +22,14 @@ import (
 // DefaultOptions used for the DB. They are sane for setups using
 // millisecond precision timestamps.
 var DefaultOptions = &Options{
-	Retention: 15 * 24 * 3600 * 1000, // 15 days
+	Retention:  15 * 24 * 3600 * 1000, // 15 days
+	DisableWAL: false,
 }
 
 // Options of the DB storage.
 type Options struct {
-	Retention int64
+	Retention  int64
+	DisableWAL bool
 }
 
 // DB is a time series storage.
@@ -41,7 +43,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 3
+	shardShift   = 0
 	numShards    = 1 << shardShift
 	maxChunkSize = 1024
 )
