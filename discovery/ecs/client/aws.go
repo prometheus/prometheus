@@ -23,25 +23,49 @@ const (
 	maxAPIRes = 100
 )
 
-// awsSrvTask is a helper that has all the objects required to create a final service instances
-type awsSrvTask struct {
-	cluster           *ecs.Cluster
-	task              *ecs.Task
-	containerInstance *ecs.ContainerInstance
-	instance          *ec2.Instance
+// ecsTargetTask is a helper that has all the objects required to create a final service instances
+type ecsTargetTask struct {
+	cluster  *ecs.Cluster
+	task     *ecs.Task
+	instance *ec2.Instance
+	taskDef  *ecs.TaskDefinition
+	service  *ecs.Service
 }
 
-func (a *awsSrvTask) createServiceInstances() []*types.ServiceInstance {
+func (a *ecsTargetTask) createServiceInstances() []*types.ServiceInstance {
+	// Create ec2 tags
+	tags := map[string]string{}
+	for _, t := range a.instance.Tags {
+		tags[aws.StringValue(t.Key)] = aws.StringValue(t.Value)
+	}
+
+	// create container definition index
+	cDefIdx := map[string]*ecs.ContainerDefinition{}
+	for _, c := range a.taskDef.ContainerDefinitions {
+		cDefIdx[aws.StringValue(c.Name)] = c
+	}
+
 	sis := []*types.ServiceInstance{}
 	for _, c := range a.task.Containers {
+		cDef := cDefIdx[aws.StringValue(c.Name)]
+
+		// Create container labels
+		labels := map[string]string{}
+		for k, v := range cDef.DockerLabels {
+			labels[k] = aws.StringValue(v)
+		}
+
 		for _, n := range c.NetworkBindings {
 			if n.HostPort != nil {
 				addr := fmt.Sprintf("%s:%d", aws.StringValue(a.instance.PrivateIpAddress), aws.Int64Value(n.HostPort))
 				s := &types.ServiceInstance{
 					Cluster:   aws.StringValue(a.cluster.ClusterName),
 					Addr:      addr,
-					Service:   "test",
+					Service:   aws.StringValue(a.service.ServiceName),
 					Container: aws.StringValue(c.Name),
+					Tags:      tags,
+					Labels:    labels,
+					Image:     aws.StringValue(cDef.Image),
 				}
 				sis = append(sis, s)
 			}
@@ -50,14 +74,14 @@ func (a *awsSrvTask) createServiceInstances() []*types.ServiceInstance {
 	return sis
 }
 
-// awsRetriever is the wrapper around AWS client
-type awsRetriever struct {
+// AWSRetriever is the wrapper around AWS client
+type AWSRetriever struct {
 	ecsCli ecsiface.ECSAPI
 	ec2Cli ec2iface.EC2API
 }
 
 // NewAWSRetriever will create a new AWS API retriever
-func NewAWSRetriever(accessKey, secretKey, region, profile string) (*awsRetriever, error) {
+func NewAWSRetriever(accessKey, secretKey, region, profile string) (*AWSRetriever, error) {
 	creds := credentials.NewStaticCredentials(accessKey, secretKey, "")
 	if accessKey == "" && secretKey == "" {
 		creds = nil
@@ -76,14 +100,14 @@ func NewAWSRetriever(accessKey, secretKey, region, profile string) (*awsRetrieve
 		return nil, err
 	}
 
-	return &awsRetriever{
+	return &AWSRetriever{
 		ecsCli: ecs.New(sess),
 		ec2Cli: ec2.New(sess),
 	}, nil
 
 }
 
-func (c *awsRetriever) getClusters() ([]*ecs.Cluster, error) {
+func (c *AWSRetriever) getClusters() ([]*ecs.Cluster, error) {
 	clusters := []*ecs.Cluster{}
 
 	params := &ecs.ListClustersInput{
@@ -125,7 +149,7 @@ func (c *awsRetriever) getClusters() ([]*ecs.Cluster, error) {
 	return clusters, nil
 }
 
-func (c *awsRetriever) getContainerInstances(cluster *ecs.Cluster) ([]*ecs.ContainerInstance, error) {
+func (c *AWSRetriever) getContainerInstances(cluster *ecs.Cluster) ([]*ecs.ContainerInstance, error) {
 	contInsts := []*ecs.ContainerInstance{}
 
 	params := &ecs.ListContainerInstancesInput{
@@ -170,7 +194,7 @@ func (c *awsRetriever) getContainerInstances(cluster *ecs.Cluster) ([]*ecs.Conta
 	return contInsts, nil
 }
 
-func (c *awsRetriever) getTasks(cluster *ecs.Cluster) ([]*ecs.Task, error) {
+func (c *AWSRetriever) getTasks(cluster *ecs.Cluster) ([]*ecs.Task, error) {
 	tasks := []*ecs.Task{}
 
 	params := &ecs.ListTasksInput{
@@ -216,7 +240,7 @@ func (c *awsRetriever) getTasks(cluster *ecs.Cluster) ([]*ecs.Task, error) {
 	return tasks, nil
 }
 
-func (c *awsRetriever) getInstances(ec2Ids []*string) ([]*ec2.Instance, error) {
+func (c *AWSRetriever) getInstances(ec2Ids []*string) ([]*ec2.Instance, error) {
 
 	instances := []*ec2.Instance{}
 	log.Debugf("Getting ec2 instances")
@@ -251,7 +275,7 @@ func (c *awsRetriever) getInstances(ec2Ids []*string) ([]*ec2.Instance, error) {
 }
 
 // Retrieve will get all the service instance calling multiple AWS APIs
-func (c *awsRetriever) Retrieve() ([]*types.ServiceInstance, error) {
+func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	// First get the clusters and map them
 	clusters, err := c.getClusters()
 	if err != nil {
@@ -356,11 +380,10 @@ func (c *awsRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			return nil, fmt.Errorf("EC2 instance not available: %s", iID)
 		}
 
-		t := &awsSrvTask{
-			cluster:           cl,
-			containerInstance: ci,
-			task:              v,
-			instance:          ec2I,
+		t := &ecsTargetTask{
+			cluster:  cl,
+			task:     v,
+			instance: ec2I,
 		}
 
 		sis := t.createServiceInstances()

@@ -29,6 +29,7 @@ func NewMultipleMockRetriever(quantity int) *MockRetriever {
 	}
 }
 
+// Retrieve will return the mocked service instances
 func (c *MockRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	if c.ShouldError {
 		return nil, fmt.Errorf("Error wanted")

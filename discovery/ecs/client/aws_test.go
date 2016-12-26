@@ -6,45 +6,155 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	awsecs "github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/golang/mock/gomock"
 
 	awsmock "github.com/prometheus/prometheus/discovery/ecs/mock/aws"
 	"github.com/prometheus/prometheus/discovery/ecs/mock/aws/sdk"
+	"github.com/prometheus/prometheus/discovery/ecs/types"
 )
+
+func TestCreateServiceInstances(t *testing.T) {
+	// Cluster
+	cls := &ecs.Cluster{ClusterName: aws.String("prod-cluster-infra")}
+
+	// Task
+	tsk := &ecs.Task{
+		Containers: []*ecs.Container{
+			&ecs.Container{
+				Name:            aws.String("myService"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{HostPort: aws.Int64(36112)}},
+			},
+			&ecs.Container{
+				Name:            aws.String("nginx"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{HostPort: aws.Int64(30987)}},
+			},
+			&ecs.Container{
+				Name:            aws.String("worker"),
+				NetworkBindings: []*ecs.NetworkBinding{},
+			},
+		},
+	}
+
+	// Task definition
+	tDef := &ecs.TaskDefinition{
+		ContainerDefinitions: []*ecs.ContainerDefinition{
+			&ecs.ContainerDefinition{
+				Name:  aws.String("myService"),
+				Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+				DockerLabels: map[string]*string{
+					"monitor": aws.String("true"),
+					"kind":    aws.String("main"),
+				},
+			},
+			&ecs.ContainerDefinition{
+				Name:  aws.String("nginx"),
+				Image: aws.String("nginx:latest"),
+				DockerLabels: map[string]*string{
+					"kind": aws.String("front-http"),
+				},
+			},
+			&ecs.ContainerDefinition{
+				Name:  aws.String("worker"),
+				Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+				DockerLabels: map[string]*string{
+					"kind": aws.String("worker"),
+				},
+			},
+		},
+	}
+
+	// EC2 instance
+	intc := &ec2.Instance{
+		InstanceId:       aws.String("i-0ef582cb6c1bbbdd3"),
+		PrivateIpAddress: aws.String("10.0.250.65"),
+		Tags: []*ec2.Tag{
+			&ec2.Tag{Key: aws.String("env"), Value: aws.String("prod")},
+			&ec2.Tag{Key: aws.String("kind"), Value: aws.String("ecs")},
+			&ec2.Tag{Key: aws.String("cluster"), Value: aws.String("infra")},
+		},
+	}
+
+	// Service
+	srv := &ecs.Service{ServiceName: aws.String("myService")}
+
+	want := []*types.ServiceInstance{
+		&types.ServiceInstance{
+			Cluster:   "prod-cluster-infra",
+			Service:   "myService",
+			Addr:      "10.0.250.65:36112",
+			Container: "myService",
+			Image:     "000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e",
+			Labels:    map[string]string{"monitor": "true", "kind": "main"},
+			Tags:      map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
+		},
+		&types.ServiceInstance{
+			Cluster:   "prod-cluster-infra",
+			Service:   "myService",
+			Addr:      "10.0.250.65:30987",
+			Container: "nginx",
+			Image:     "nginx:latest",
+			Labels:    map[string]string{"kind": "front-http"},
+			Tags:      map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
+		},
+	}
+
+	// Create our object and test
+	eTT := &ecsTargetTask{
+		cluster:  cls,
+		task:     tsk,
+		instance: intc,
+		taskDef:  tDef,
+		service:  srv,
+	}
+
+	res := eTT.createServiceInstances()
+
+	if len(res) != len(want) {
+		t.Errorf("The length of the result service instances is wrong, want: %d; got: %d", len(want), len(res))
+	}
+
+	for i, got := range res {
+		w := want[i]
+		if !reflect.DeepEqual(w, got) {
+			t.Errorf("- Received service instance taget is wrong want: %+v; got: %+v", w, got)
+		}
+	}
+
+}
 
 func TestGetClusters(t *testing.T) {
 	tests := []struct {
-		clusters  []*awsecs.Cluster
+		clusters  []*ecs.Cluster
 		errorList bool
 		errorDesc bool
 		wantError bool
 	}{
 		{
-			clusters: []*awsecs.Cluster{
-				&awsecs.Cluster{ClusterArn: aws.String("c1")},
+			clusters: []*ecs.Cluster{
+				&ecs.Cluster{ClusterArn: aws.String("c1")},
 			},
 		},
 		{
-			clusters: []*awsecs.Cluster{
-				&awsecs.Cluster{ClusterArn: aws.String("c1")},
+			clusters: []*ecs.Cluster{
+				&ecs.Cluster{ClusterArn: aws.String("c1")},
 			},
 			errorList: true,
 			wantError: true,
 		},
 		{
-			clusters: []*awsecs.Cluster{
-				&awsecs.Cluster{ClusterArn: aws.String("c1")},
+			clusters: []*ecs.Cluster{
+				&ecs.Cluster{ClusterArn: aws.String("c1")},
 			},
 			errorDesc: true,
 			wantError: true,
 		},
 		{
-			clusters: []*awsecs.Cluster{
-				&awsecs.Cluster{ClusterArn: aws.String("c1")},
-				&awsecs.Cluster{ClusterArn: aws.String("c2")},
-				&awsecs.Cluster{ClusterArn: aws.String("c3")},
-				&awsecs.Cluster{ClusterArn: aws.String("c4")},
+			clusters: []*ecs.Cluster{
+				&ecs.Cluster{ClusterArn: aws.String("c1")},
+				&ecs.Cluster{ClusterArn: aws.String("c2")},
+				&ecs.Cluster{ClusterArn: aws.String("c3")},
+				&ecs.Cluster{ClusterArn: aws.String("c4")},
 			},
 		},
 	}
@@ -63,7 +173,7 @@ func TestGetClusters(t *testing.T) {
 		awsmock.MockECSListClusters(t, mockECS, test.errorList, cIDs...)
 		awsmock.MockECSDescribeClusters(t, mockECS, test.errorDesc, test.clusters...)
 
-		r := &awsRetriever{
+		r := &AWSRetriever{
 			ecsCli: mockECS,
 		}
 
@@ -91,38 +201,38 @@ func TestGetClusters(t *testing.T) {
 
 func TestGetContainerInstances(t *testing.T) {
 	tests := []struct {
-		cInstances []*awsecs.ContainerInstance
+		cInstances []*ecs.ContainerInstance
 		errorList  bool
 		errorDesc  bool
 		wantError  bool
 	}{
 		{
-			cInstances: []*awsecs.ContainerInstance{
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
+			cInstances: []*ecs.ContainerInstance{
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
 			},
 		},
 		{
-			cInstances: []*awsecs.ContainerInstance{
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
+			cInstances: []*ecs.ContainerInstance{
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
 			},
 			errorList: true,
 			wantError: true,
 		},
 		{
-			cInstances: []*awsecs.ContainerInstance{
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
+			cInstances: []*ecs.ContainerInstance{
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
 			},
 			errorDesc: true,
 			wantError: true,
 		},
 		{
-			cInstances: []*awsecs.ContainerInstance{
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci2")},
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci3")},
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci4")},
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci5")},
-				&awsecs.ContainerInstance{ContainerInstanceArn: aws.String("ci6")},
+			cInstances: []*ecs.ContainerInstance{
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci1")},
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci2")},
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci3")},
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci4")},
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci5")},
+				&ecs.ContainerInstance{ContainerInstanceArn: aws.String("ci6")},
 			},
 		},
 	}
@@ -141,11 +251,11 @@ func TestGetContainerInstances(t *testing.T) {
 		awsmock.MockECSListContainerInstances(t, mockECS, test.errorList, ciIDs...)
 		awsmock.MockECSDescribeContainerInstances(t, mockECS, test.errorDesc, test.cInstances...)
 
-		r := &awsRetriever{
+		r := &AWSRetriever{
 			ecsCli: mockECS,
 		}
 
-		res, err := r.getContainerInstances(&awsecs.Cluster{ClusterArn: aws.String("c1")})
+		res, err := r.getContainerInstances(&ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
 			if len(res) != len(test.cInstances) {
@@ -169,39 +279,39 @@ func TestGetContainerInstances(t *testing.T) {
 
 func TestGetTasks(t *testing.T) {
 	tests := []struct {
-		tasks     []*awsecs.Task
+		tasks     []*ecs.Task
 		errorList bool
 		errorDesc bool
 		wantError bool
 	}{
 		{
-			tasks: []*awsecs.Task{
-				&awsecs.Task{TaskArn: aws.String("t1")},
+			tasks: []*ecs.Task{
+				&ecs.Task{TaskArn: aws.String("t1")},
 			},
 		},
 		{
-			tasks: []*awsecs.Task{
-				&awsecs.Task{TaskArn: aws.String("t1")},
+			tasks: []*ecs.Task{
+				&ecs.Task{TaskArn: aws.String("t1")},
 			},
 			errorList: true,
 			wantError: true,
 		},
 		{
-			tasks: []*awsecs.Task{
-				&awsecs.Task{TaskArn: aws.String("t1")},
+			tasks: []*ecs.Task{
+				&ecs.Task{TaskArn: aws.String("t1")},
 			},
 			errorDesc: true,
 			wantError: true,
 		},
 		{
-			tasks: []*awsecs.Task{
-				&awsecs.Task{TaskArn: aws.String("t1")},
-				&awsecs.Task{TaskArn: aws.String("t2")},
-				&awsecs.Task{TaskArn: aws.String("t3")},
-				&awsecs.Task{TaskArn: aws.String("t4")},
-				&awsecs.Task{TaskArn: aws.String("t5")},
-				&awsecs.Task{TaskArn: aws.String("t6")},
-				&awsecs.Task{TaskArn: aws.String("t7")},
+			tasks: []*ecs.Task{
+				&ecs.Task{TaskArn: aws.String("t1")},
+				&ecs.Task{TaskArn: aws.String("t2")},
+				&ecs.Task{TaskArn: aws.String("t3")},
+				&ecs.Task{TaskArn: aws.String("t4")},
+				&ecs.Task{TaskArn: aws.String("t5")},
+				&ecs.Task{TaskArn: aws.String("t6")},
+				&ecs.Task{TaskArn: aws.String("t7")},
 			},
 		},
 	}
@@ -220,11 +330,11 @@ func TestGetTasks(t *testing.T) {
 		awsmock.MockECSListTasks(t, mockECS, test.errorList, tIDs...)
 		awsmock.MockECSDescribeTasks(t, mockECS, test.errorDesc, test.tasks...)
 
-		r := &awsRetriever{
+		r := &AWSRetriever{
 			ecsCli: mockECS,
 		}
 
-		res, err := r.getTasks(&awsecs.Cluster{ClusterArn: aws.String("c1")})
+		res, err := r.getTasks(&ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
 			if len(res) != len(test.tasks) {
@@ -288,7 +398,7 @@ func TestGetInstances(t *testing.T) {
 		mockEC2 := sdk.NewMockEC2API(ctrl)
 		awsmock.MockEC2DescribeInstances(t, mockEC2, test.errorDesc, test.instances...)
 
-		r := &awsRetriever{
+		r := &AWSRetriever{
 			ec2Cli: mockEC2,
 		}
 
