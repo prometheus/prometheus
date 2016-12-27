@@ -87,6 +87,11 @@ var (
 		"The maximum number of chunks that can be waiting for persistence before sample ingestion will stop.",
 		nil, nil,
 	)
+	maxMemChunksDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, subsystem, "max_memory_chunks"),
+		"The configured maximum number of chunks that can be held in memory",
+		nil, nil,
+	)
 )
 
 type quarantineRequest struct {
@@ -1763,6 +1768,11 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	ch <- s.ingestedSamplesCount
 	s.discardedSamplesCount.Collect(ch)
 	ch <- s.nonExistentSeriesMatchesCount
+	ch <- prometheus.MustNewConstMetric(
+		maxMemChunksDesc,
+		prometheus.GaugeValue,
+		float64(s.maxMemoryChunks),
+	)
 	ch <- prometheus.MustNewConstMetric(
 		chunk.NumMemChunksDesc,
 		prometheus.GaugeValue,
