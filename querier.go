@@ -252,13 +252,6 @@ func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
 	return Intersect(rit...)
 }
 
-func expandPostings(p Postings) (res []uint32, err error) {
-	for p.Next() {
-		res = append(res, p.Value())
-	}
-	return res, p.Err()
-}
-
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
 	tpls, err := q.index.LabelValues(name)
 	if err != nil {

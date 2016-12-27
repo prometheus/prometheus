@@ -52,6 +52,13 @@ func (e errPostings) Seek(uint32) bool { return false }
 func (e errPostings) Value() uint32    { return 0 }
 func (e errPostings) Err() error       { return e.err }
 
+func expandPostings(p Postings) (res []uint32, err error) {
+	for p.Next() {
+		res = append(res, p.Value())
+	}
+	return res, p.Err()
+}
+
 // Intersect returns a new postings list over the intersection of the
 // input postings.
 func Intersect(its ...Postings) Postings {
@@ -61,29 +68,61 @@ func Intersect(its ...Postings) Postings {
 	a := its[0]
 
 	for _, b := range its[1:] {
-		a = &intersectPostings{a: a, b: b}
+		a = newIntersectPostings(a, b)
 	}
 	return a
 }
 
 type intersectPostings struct {
-	a, b Postings
+	a, b     Postings
+	av, bc   uint32
+	aok, bok bool
+	cur      uint32
+}
+
+func newIntersectPostings(a, b Postings) *intersectPostings {
+	it := &intersectPostings{a: a, b: b}
+	it.aok = it.a.Next()
+	it.bok = it.b.Next()
+
+	return it
 }
 
 func (it *intersectPostings) Value() uint32 {
-	return 0
+	return it.cur
 }
 
 func (it *intersectPostings) Next() bool {
-	return false
+	for {
+		if !it.aok || !it.bok {
+			return false
+		}
+		av, bv := it.a.Value(), it.b.Value()
+
+		if av < bv {
+			it.aok = it.a.Seek(bv)
+		} else if bv < av {
+			it.bok = it.b.Seek(av)
+		} else {
+			it.cur = av
+			it.aok = it.a.Next()
+			it.bok = it.b.Next()
+			return true
+		}
+	}
 }
 
 func (it *intersectPostings) Seek(id uint32) bool {
-	return false
+	it.aok = it.a.Seek(id)
+	it.bok = it.b.Seek(id)
+	return it.Next()
 }
 
 func (it *intersectPostings) Err() error {
-	return nil
+	if it.a.Err() != nil {
+		return it.a.Err()
+	}
+	return it.b.Err()
 }
 
 // Merge returns a new iterator over the union of the input iterators.
