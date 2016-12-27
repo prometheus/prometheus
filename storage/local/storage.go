@@ -89,7 +89,7 @@ var (
 	)
 	maxMemChunksDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, subsystem, "max_memory_chunks"),
-		"The maximum number of chunks that can be holding in the memory",
+		"The configured maximum number of chunks that can be held in memory",
 		nil, nil,
 	)
 )
