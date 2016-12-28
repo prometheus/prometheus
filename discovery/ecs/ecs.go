@@ -16,6 +16,7 @@ package ecs
 import (
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -23,6 +24,24 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/ecs/client"
 	"github.com/prometheus/prometheus/util/strutil"
+)
+
+var (
+	ecsSDRefreshFailuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_ecs_refresh_failures_total",
+			Help: "The number of ECS-SD scrape failures.",
+		})
+	ecsSDRefreshDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "prometheus_sd_ecs_refresh_duration_seconds",
+			Help: "The duration of a ECS-SD refresh in seconds.",
+		})
+	ecsSDRetrievedTargets = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "prometheus_sd_ecs_retrieved_targets",
+			Help: "The number of retrieved ECS-SD targets.",
+		})
 )
 
 const (
@@ -37,7 +56,11 @@ const (
 	ecsLabelNodeTag            = ecsLabel + "node_tag_"
 )
 
-func init() {}
+func init() {
+	prometheus.MustRegister(ecsSDRefreshFailuresCount)
+	prometheus.MustRegister(ecsSDRefreshDuration)
+	prometheus.MustRegister(ecsSDRetrievedTargets)
+}
 
 // Discovery periodically performs ECS-SD requests. It implements
 // the TargetProvider interface.
@@ -103,6 +126,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	log.Debugf("Start discovery of new targets")
+	tStart := time.Now()
+	defer func() {
+		ecsSDRefreshDuration.Observe(time.Since(tStart).Seconds())
+		if tg != nil {
+			ecsSDRetrievedTargets.Set(float64(len(tg.Targets)))
+		} else {
+			ecsSDRetrievedTargets.Set(0)
+		}
+		if err != nil {
+			ecsSDRefreshFailuresCount.Inc()
+		}
+	}()
 
 	tg = &config.TargetGroup{
 		Source: d.source,
