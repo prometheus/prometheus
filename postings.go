@@ -164,6 +164,10 @@ type listPostings struct {
 	idx  int
 }
 
+func newListPostings(list []uint32) *listPostings {
+	return &listPostings{list: list, idx: -1}
+}
+
 func (it *listPostings) Value() uint32 {
 	return it.list[it.idx]
 }
@@ -175,7 +179,7 @@ func (it *listPostings) Next() bool {
 
 func (it *listPostings) Seek(x uint32) bool {
 	// Do binary search between current position and end.
-	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
+	it.idx += sort.Search(len(it.list)-it.idx, func(i int) bool {
 		return it.list[i+it.idx] >= x
 	})
 	return it.idx < len(it.list)

@@ -201,13 +201,12 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 	}
 
 	// TODO(fabxc): get time from client-defined `now` function.
-	baset := time.Now().UnixNano() / int64(time.Millisecond)
+	// baset := time.Now().UnixNano() / int64(time.Millisecond)
+	baset := time.Unix(0, 0).UnixNano() / int64(time.Millisecond)
 	if len(pbs) > 0 {
 		baset = pbs[len(pbs)-1].stats.MaxTime
 	}
 	if head == nil {
-		fmt.Println("creating new head", baset)
-
 		head, err = OpenHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
 		if err != nil {
 			return nil, err

@@ -17,27 +17,6 @@ func (m *mockPostings) Seek(v uint32) bool { return m.seek(v) }
 func (m *mockPostings) Value() uint32      { return m.value() }
 func (m *mockPostings) Err() error         { return m.err() }
 
-func newListPostings(list []uint32) *mockPostings {
-	i := -1
-	return &mockPostings{
-		next: func() bool {
-			i++
-			return i < len(list)
-		},
-		seek: func(v uint32) bool {
-			for ; i < len(list); i++ {
-				if list[i] >= v {
-					return true
-				}
-			}
-			return false
-		},
-		value: func() uint32 {
-			return list[i]
-		},
-		err: func() error { return nil },
-	}
-}
 func TestIntersectIterator(t *testing.T) {
 	var cases = []struct {
 		a, b []uint32
