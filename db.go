@@ -226,6 +226,9 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 
 // Close the shard.
 func (s *Shard) Close() error {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	var e MultiError
 
 	for _, pb := range s.persisted {
