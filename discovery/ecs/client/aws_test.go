@@ -23,11 +23,18 @@ func TestCreateServiceInstances(t *testing.T) {
 		Containers: []*ecs.Container{
 			&ecs.Container{
 				Name: aws.String("myService"),
-				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
-					HostPort:      aws.Int64(36112),
-					ContainerPort: aws.Int64(8080),
-					Protocol:      aws.String("tcp"),
-				}},
+				NetworkBindings: []*ecs.NetworkBinding{
+					&ecs.NetworkBinding{
+						HostPort:      aws.Int64(36112),
+						ContainerPort: aws.Int64(8080),
+						Protocol:      aws.String("tcp"),
+					},
+					&ecs.NetworkBinding{
+						HostPort:      aws.Int64(24567),
+						ContainerPort: aws.Int64(1568),
+						Protocol:      aws.String("udp"),
+					},
+				},
 			},
 			&ecs.Container{
 				Name: aws.String("nginx"),
@@ -94,6 +101,17 @@ func TestCreateServiceInstances(t *testing.T) {
 			Container:          "myService",
 			ContainerPort:      "8080",
 			ContainerPortProto: "tcp",
+			Image:              "000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e",
+			Labels:             map[string]string{"monitor": "true", "kind": "main"},
+			Tags:               map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
+		},
+		&types.ServiceInstance{
+			Cluster:            "prod-cluster-infra",
+			Service:            "myService",
+			Addr:               "10.0.250.65:24567",
+			Container:          "myService",
+			ContainerPort:      "1568",
+			ContainerPortProto: "udp",
 			Image:              "000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e",
 			Labels:             map[string]string{"monitor": "true", "kind": "main"},
 			Tags:               map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
