@@ -24,3 +24,22 @@ func BenchmarkMapConversion(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkListIter(b *testing.B) {
+	var list []uint32
+	for i := 0; i < 1e4; i++ {
+		list = append(list, uint32(i))
+	}
+
+	b.ResetTimer()
+
+	total := uint32(0)
+
+	for j := 0; j < b.N; j++ {
+		sum := uint32(0)
+		for _, k := range list {
+			sum += k
+		}
+		total += sum
+	}
+}

@@ -17,7 +17,7 @@ func (m *mockPostings) Seek(v uint32) bool { return m.seek(v) }
 func (m *mockPostings) Value() uint32      { return m.value() }
 func (m *mockPostings) Err() error         { return m.err() }
 
-func TestIntersectIterator(t *testing.T) {
+func TestIntersect(t *testing.T) {
 	var cases = []struct {
 		a, b []uint32
 		res  []uint32
@@ -114,6 +114,70 @@ func BenchmarkIntersect(t *testing.B) {
 	for i := 0; i < t.N; i++ {
 		if _, err := expandPostings(Intersect(i1, i2, i3, i4)); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestMultiMerge(t *testing.T) {
+	var cases = []struct {
+		a, b, c []uint32
+		res     []uint32
+	}{
+		{
+			a:   []uint32{1, 2, 3, 4, 5, 6, 1000, 1001},
+			b:   []uint32{2, 4, 5, 6, 7, 8, 999, 1001},
+			c:   []uint32{1, 2, 5, 6, 7, 8, 1001, 1200},
+			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200},
+		},
+	}
+
+	for _, c := range cases {
+		i1 := newListPostings(c.a)
+		i2 := newListPostings(c.b)
+		i3 := newListPostings(c.c)
+
+		res, err := expandPostings(Merge(i1, i2, i3))
+		if err != nil {
+			t.Fatalf("Unexpected error: %s", err)
+		}
+		if !reflect.DeepEqual(res, c.res) {
+			t.Fatalf("Expected %v but got %v", c.res, res)
+		}
+	}
+}
+
+func TestMerge(t *testing.T) {
+	var cases = []struct {
+		a, b []uint32
+		res  []uint32
+	}{
+		{
+			a:   []uint32{1, 2, 3, 4, 5},
+			b:   []uint32{6, 7, 8, 9, 10},
+			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		},
+		{
+			a:   []uint32{1, 2, 3, 4, 5},
+			b:   []uint32{4, 5, 6, 7, 8},
+			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8},
+		},
+		{
+			a:   []uint32{1, 2, 3, 4, 9, 10},
+			b:   []uint32{1, 4, 5, 6, 7, 8, 10, 11},
+			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+		},
+	}
+
+	for _, c := range cases {
+		a := newListPostings(c.a)
+		b := newListPostings(c.b)
+
+		res, err := expandPostings(newMergePostings(a, b))
+		if err != nil {
+			t.Fatalf("Unexpected error: %s", err)
+		}
+		if !reflect.DeepEqual(res, c.res) {
+			t.Fatalf("Expected %v but got %v", c.res, res)
 		}
 	}
 }

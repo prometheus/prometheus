@@ -236,7 +236,7 @@ func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
 	}
 
 	if len(res) == 0 {
-		return errPostings{err: nil}
+		return emptyPostings
 	}
 
 	var rit []Postings
@@ -249,7 +249,7 @@ func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
 		rit = append(rit, it)
 	}
 
-	return Intersect(rit...)
+	return Merge(rit...)
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {

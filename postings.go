@@ -73,9 +73,10 @@ func Intersect(its ...Postings) Postings {
 	return a
 }
 
+var emptyPostings = errPostings{}
+
 type intersectPostings struct {
 	a, b     Postings
-	av, bc   uint32
 	aok, bok bool
 	cur      uint32
 }
@@ -133,29 +134,75 @@ func Merge(its ...Postings) Postings {
 	a := its[0]
 
 	for _, b := range its[1:] {
-		a = &mergePostings{a: a, b: b}
+		a = newMergePostings(a, b)
 	}
 	return a
 }
 
 type mergePostings struct {
-	a, b Postings
+	a, b     Postings
+	aok, bok bool
+	cur      uint32
+}
+
+func newMergePostings(a, b Postings) *mergePostings {
+	it := &mergePostings{a: a, b: b}
+	it.aok = it.a.Next()
+	it.bok = it.b.Next()
+
+	return it
 }
 
 func (it *mergePostings) Value() uint32 {
-	return 0
+	return it.cur
 }
 
 func (it *mergePostings) Next() bool {
-	return false
+	if !it.aok && !it.bok {
+		return false
+	}
+
+	if !it.aok {
+		it.cur = it.b.Value()
+		it.bok = it.b.Next()
+		return true
+	}
+	if !it.bok {
+		it.cur = it.a.Value()
+		it.aok = it.a.Next()
+		return true
+	}
+
+	acur, bcur := it.a.Value(), it.b.Value()
+
+	if acur < bcur {
+		it.cur = acur
+		it.aok = it.a.Next()
+		return true
+	}
+	if bcur < acur {
+		it.cur = bcur
+		it.bok = it.b.Next()
+		return true
+	}
+	it.cur = acur
+	it.aok = it.a.Next()
+	it.bok = it.b.Next()
+
+	return true
 }
 
 func (it *mergePostings) Seek(id uint32) bool {
-	return false
+	it.aok = it.a.Seek(id)
+	it.bok = it.b.Seek(id)
+	return it.Next()
 }
 
 func (it *mergePostings) Err() error {
-	return nil
+	if it.a.Err() != nil {
+		return it.a.Err()
+	}
+	return it.b.Err()
 }
 
 // listPostings implements the Postings interface over a plain list.

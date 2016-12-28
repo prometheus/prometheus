@@ -24,15 +24,15 @@ type Matcher interface {
 }
 
 type EqualMatcher struct {
-	LabelName, Value string
+	name, value string
 }
 
-func (m *EqualMatcher) Name() string          { return m.LabelName }
-func (m *EqualMatcher) Matches(v string) bool { return v == m.Value }
+func (m *EqualMatcher) Name() string          { return m.name }
+func (m *EqualMatcher) Matches(v string) bool { return v == m.value }
 
 // NewEqualMatcher returns a new matcher matching an exact label value.
 func NewEqualMatcher(name, value string) Matcher {
-	return &EqualMatcher{LabelName: name, Value: value}
+	return &EqualMatcher{name: name, value: value}
 }
 
 type regexpMatcher struct {
@@ -58,9 +58,7 @@ type notMatcher struct {
 	Matcher
 }
 
-func (m *notMatcher) Matches(v string) bool {
-	return !m.Matcher.Matches(v)
-}
+func (m *notMatcher) Matches(v string) bool { return !m.Matcher.Matches(v) }
 
 // Not inverts the matcher's matching result.
 func Not(m Matcher) Matcher {
