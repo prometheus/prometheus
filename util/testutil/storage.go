@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/tsdb"
 )
@@ -15,6 +16,9 @@ func NewStorage(t T) storage.Storage {
 	if err != nil {
 		t.Fatalf("Opening test dir failed: %s", err)
 	}
+
+	log.With("dir", dir).Debugln("opening test storage")
+
 	db, err := tsdb.Open(dir)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
@@ -28,6 +32,8 @@ type testStorage struct {
 }
 
 func (s testStorage) Close() error {
+	log.With("dir", s.dir).Debugln("closing test storage")
+
 	if err := s.Storage.Close(); err != nil {
 		return err
 	}

@@ -42,7 +42,7 @@ const (
 	epsilon = 0.000001 // Relative error allowed for sample values.
 )
 
-var testStartTime = time.Time{}
+var testStartTime = time.Unix(0, 0)
 
 // Test is a sequence of read and write commands that are run
 // against a test storage.
@@ -281,18 +281,13 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
 
 // append the defined time series to the storage.
 func (cmd *loadCmd) append(a storage.Appender) {
-	// TODO(fabxc): commented out until Appender refactoring.
-	// for fp, samples := range cmd.defs {
-	// 	met := cmd.metrics[fp]
-	// 	for _, smpl := range samples {
-	// 		s := &model.Sample{
-	// 			Metric:    met,
-	// 			Value:     smpl.Value,
-	// 			Timestamp: smpl.Timestamp,
-	// 		}
-	// 		a.Append(s)
-	// 	}
-	// }
+	for h, smpls := range cmd.defs {
+		m := cmd.metrics[h]
+
+		for _, s := range smpls {
+			a.Add(m, s.T, s.V)
+		}
+	}
 }
 
 // evalCmd is a command that evaluates an expression for the given time (range)
@@ -381,6 +376,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 		if !ev.instant {
 			return fmt.Errorf("received instant result on range evaluation")
 		}
+
 		seen := map[uint64]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Hash()
@@ -391,7 +387,7 @@ func (ev *evalCmd) compareResult(result Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(float64(exp.vals[0].value), float64(v.V)) {
+			if !almostEqual(exp.vals[0].value, v.V) {
 				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].value, v.Metric, v.V)
 			}
 
@@ -485,7 +481,7 @@ func (t *Test) exec(tc testCommand) error {
 			if cmd.fail {
 				return nil
 			}
-			return fmt.Errorf("error evaluating query: %s", res.Err)
+			return fmt.Errorf("error evaluating query %q: %s", cmd.expr, res.Err)
 		}
 		if res.Err == nil && cmd.fail {
 			return fmt.Errorf("expected error evaluating query but got none")
@@ -514,8 +510,7 @@ func (t *Test) clear() {
 	}
 	t.storage = testutil.NewStorage(t)
 
-	// TODO(fabxc): add back
-	// t.queryEngine = NewEngine(t.storage, nil)
+	t.queryEngine = NewEngine(t.storage, nil)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

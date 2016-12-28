@@ -19,11 +19,12 @@ import (
 	"math"
 	"runtime"
 	"sort"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/net/context"
 
@@ -40,163 +41,6 @@ const (
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
 func convertibleToInt64(v float64) bool {
 	return v <= maxInt64 && v >= minInt64
-}
-
-// Value is a generic interface for values resulting from a query evaluation.
-type Value interface {
-	Type() ValueType
-	String() string
-}
-
-func (Matrix) Type() ValueType { return ValueTypeMatrix }
-func (Vector) Type() ValueType { return ValueTypeVector }
-func (Scalar) Type() ValueType { return ValueTypeScalar }
-func (String) Type() ValueType { return ValueTypeString }
-
-// ValueType describes a type of a value.
-type ValueType string
-
-// The valid value types.
-const (
-	ValueTypeNone   = "none"
-	ValueTypeVector = "vector"
-	ValueTypeScalar = "scalar"
-	ValueTypeMatrix = "matrix"
-	ValueTypeString = "string"
-)
-
-// String represents a string value.
-type String struct {
-	V string
-	T int64
-}
-
-func (s String) String() string {
-	return s.V
-}
-
-// Scalar is a data point that's explicitly not associated with a metric.
-type Scalar struct {
-	T int64
-	V float64
-}
-
-func (s Scalar) String() string {
-	return ""
-}
-
-// Series is a stream of data points belonging to a metric.
-type Series struct {
-	Metric labels.Labels
-	Points []Point
-}
-
-func (s Series) String() string {
-	return ""
-}
-
-// Point represents a single data point for a given timestamp.
-type Point struct {
-	T int64
-	V float64
-}
-
-func (s Point) String() string {
-	return ""
-}
-
-// Sample is a single sample belonging to a metric.
-type Sample struct {
-	Point
-
-	Metric labels.Labels
-}
-
-func (s Sample) String() string {
-	return ""
-}
-
-// Vector is basically only an alias for model.Samples, but the
-// contract is that in a Vector, all Samples have the same timestamp.
-type Vector []Sample
-
-func (vec Vector) String() string {
-	entries := make([]string, len(vec))
-	for i, s := range vec {
-		entries[i] = s.String()
-	}
-	return strings.Join(entries, "\n")
-}
-
-// Matrix is a slice of Seriess that implements sort.Interface and
-// has a String method.
-type Matrix []Series
-
-func (m Matrix) String() string {
-	// TODO(fabxc): sort, or can we rely on order from the querier?
-	strs := make([]string, len(m))
-
-	for i, ss := range m {
-		strs[i] = ss.String()
-	}
-
-	return strings.Join(strs, "\n")
-}
-
-// Result holds the resulting value of an execution or an error
-// if any occurred.
-type Result struct {
-	Err   error
-	Value Value
-}
-
-// Vector returns a Vector if the result value is one. An error is returned if
-// the result was an error or the result value is not a Vector.
-func (r *Result) Vector() (Vector, error) {
-	if r.Err != nil {
-		return nil, r.Err
-	}
-	v, ok := r.Value.(Vector)
-	if !ok {
-		return nil, fmt.Errorf("query result is not a Vector")
-	}
-	return v, nil
-}
-
-// Matrix returns a Matrix. An error is returned if
-// the result was an error or the result value is not a Matrix.
-func (r *Result) Matrix() (Matrix, error) {
-	if r.Err != nil {
-		return nil, r.Err
-	}
-	v, ok := r.Value.(Matrix)
-	if !ok {
-		return nil, fmt.Errorf("query result is not a range Vector")
-	}
-	return v, nil
-}
-
-// Scalar returns a Scalar value. An error is returned if
-// the result was an error or the result value is not a Scalar.
-func (r *Result) Scalar() (Scalar, error) {
-	if r.Err != nil {
-		return Scalar{}, r.Err
-	}
-	v, ok := r.Value.(Scalar)
-	if !ok {
-		return Scalar{}, fmt.Errorf("query result is not a Scalar")
-	}
-	return v, nil
-}
-
-func (r *Result) String() string {
-	if r.Err != nil {
-		return r.Err.Error()
-	}
-	if r.Value == nil {
-		return ""
-	}
-	return r.Value.String()
 }
 
 type (
@@ -531,11 +375,17 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			if n.Offset > maxOffset {
+			if maxOffset < StalenessDelta {
+				maxOffset = StalenessDelta
+			}
+			if n.Offset+StalenessDelta > maxOffset {
 				maxOffset = n.Offset + StalenessDelta
 			}
 		case *MatrixSelector:
-			if n.Offset > maxOffset {
+			if maxOffset < n.Range {
+				maxOffset = n.Range
+			}
+			if n.Offset+n.Range > maxOffset {
 				maxOffset = n.Offset + n.Range
 			}
 		}
@@ -544,7 +394,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 
 	mint := s.Start.Add(-maxOffset)
 
-	querier, err := ng.queryable.Querier(timeMilliseconds(mint), timeMilliseconds(s.End))
+	querier, err := ng.queryable.Querier(timestamp.FromTime(mint), timestamp.FromTime(s.End))
 	if err != nil {
 		return nil, err
 	}
@@ -554,6 +404,8 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 		case *VectorSelector:
 			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
+				// TODO(fabxc): use multi-error.
+				log.Errorln("expand series set:", err)
 				return false
 			}
 			for _, s := range n.series {
@@ -564,6 +416,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 		case *MatrixSelector:
 			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
+				log.Errorln("expand series set:", err)
 				return false
 			}
 			for _, s := range n.series {
@@ -736,7 +589,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return e.Func.Call(ev, e.Args)
 
 	case *MatrixSelector:
-		return ev.MatrixSelector(e)
+		return ev.matrixSelector(e)
 
 	case *NumberLiteral:
 		return Scalar{V: e.Val, T: ev.Timestamp}
@@ -763,35 +616,33 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return se
 
 	case *VectorSelector:
-		return ev.VectorSelector(e)
+		return ev.vectorSelector(e)
 	}
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
-// VectorSelector evaluates a *VectorSelector expression.
-func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
+// vectorSelector evaluates a *VectorSelector expression.
+func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 	var (
-		ok      bool
 		vec     = make(Vector, 0, len(node.series))
 		refTime = ev.Timestamp - durationMilliseconds(node.Offset)
 	)
 
 	for i, it := range node.iterators {
-		if !it.Seek(refTime) {
+		ok := it.Seek(refTime)
+		if !ok {
 			if it.Err() != nil {
 				ev.error(it.Err())
 			}
-			continue
 		}
 		t, v := it.Values()
 
-		if t > refTime {
+		if !ok || t > refTime {
 			t, v, ok = it.PeekBack()
 			if !ok || t < refTime-durationMilliseconds(StalenessDelta) {
 				continue
 			}
 		}
-
 		vec = append(vec, Sample{
 			Metric: node.series[i].Labels(),
 			Point:  Point{V: v, T: ev.Timestamp},
@@ -800,8 +651,8 @@ func (ev *evaluator) VectorSelector(node *VectorSelector) Vector {
 	return vec
 }
 
-// MatrixSelector evaluates a *MatrixSelector expression.
-func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
+// matrixSelector evaluates a *MatrixSelector expression.
+func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	var (
 		offset = durationMilliseconds(node.Offset)
 		maxt   = ev.Timestamp - offset
@@ -815,28 +666,30 @@ func (ev *evaluator) MatrixSelector(node *MatrixSelector) Matrix {
 			Points: make([]Point, 0, 16),
 		}
 
-		if !it.Seek(maxt) {
+		ok := it.Seek(maxt)
+		if !ok {
 			if it.Err() != nil {
 				ev.error(it.Err())
 			}
-			continue
 		}
+		t, v := it.Values()
 
 		buf := it.Buffer()
 		for buf.Next() {
 			t, v := buf.Values()
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				ss.Points = append(ss.Points, Point{T: t + offset, V: v})
+				ss.Points = append(ss.Points, Point{T: t, V: v})
 			}
 		}
 		// The seeked sample might also be in the range.
-		t, v := it.Values()
+		t, v = it.Values()
 		if t == maxt {
-			ss.Points = append(ss.Points, Point{T: t + offset, V: v})
+			ss.Points = append(ss.Points, Point{T: t, V: v})
 		}
-
-		Matrix = append(Matrix, ss)
+		if len(ss.Points) > 0 {
+			Matrix = append(Matrix, ss)
+		}
 	}
 	return Matrix
 }
@@ -999,7 +852,7 @@ func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorM
 }
 
 func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(lset)-len(names)-1)
+	cm := make(labels.Labels, 0, len(lset))
 
 Outer:
 	for _, l := range lset {
@@ -1226,26 +1079,36 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 	for _, s := range vec {
 		lb := labels.NewBuilder(s.Metric)
 
-		if without || keepCommon {
+		if without {
+			lb.Del(grouping...)
 			lb.Del(labels.MetricName)
 		}
 		if op == itemCountValues {
-			lb.Set(valueLabel, fmt.Sprintf("%f", s.V)) // TODO(fabxc): use correct printing.
+			lb.Set(valueLabel, strconv.FormatFloat(float64(s.V), 'f', -1, 64))
 		}
 
 		var (
+			groupingKey uint64
 			metric      = lb.Labels()
-			groupingKey = metric.Hash()
 		)
+		if without {
+			groupingKey = metric.Hash()
+		} else {
+			groupingKey = hashForLabels(metric, grouping...)
+		}
+
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
 			var m labels.Labels
-			if keepCommon || without {
+
+			if keepCommon {
+				m = lb.Del(labels.MetricName).Labels()
+			} else if without {
 				m = metric
 			} else {
 				m = make(labels.Labels, 0, len(grouping))
-				for _, l := range s.Metric {
+				for _, l := range metric {
 					for _, n := range grouping {
 						if l.Name == n {
 							m = append(m, labels.Label{Name: n, Value: l.Value})
@@ -1253,6 +1116,7 @@ func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, k
 						}
 					}
 				}
+				sort.Sort(m)
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:           m,
@@ -1451,10 +1315,10 @@ func (g *queryGate) Done() {
 // user facing terminology as defined in the documentation.
 func documentedType(t ValueType) string {
 	switch t {
-	case "Vector":
-		return "instant Vector"
-	case "Matrix":
-		return "range Vector"
+	case "vector":
+		return "instant vector"
+	case "matrix":
+		return "range vector"
 	default:
 		return string(t)
 	}
