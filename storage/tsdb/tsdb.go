@@ -24,6 +24,7 @@ func Open(path string) (storage.Storage, error) {
 }
 
 func (a adapter) Querier(mint, maxt int64) (storage.Querier, error) {
+	// fmt.Println("new querier at", timestamp.Time(mint), timestamp.Time(maxt), maxt-mint)
 	return querier{q: a.db.Querier(mint, maxt)}, nil
 }
 
@@ -48,9 +49,7 @@ func (q querier) Select(oms ...*labels.Matcher) storage.SeriesSet {
 		ms = append(ms, convertMatcher(om))
 	}
 
-	set := q.q.Select(ms...)
-
-	return seriesSet{set: set}
+	return seriesSet{set: q.q.Select(ms...)}
 }
 
 func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
@@ -75,8 +74,11 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) Add(lset labels.Labels, t int64, v float64) { a.a.Add(toTSDBLabels(lset), t, v) }
-func (a appender) Commit() error                              { return a.a.Commit() }
+func (a appender) Add(lset labels.Labels, t int64, v float64) {
+	// fmt.Println("add", lset, timestamp.Time(t), v)
+	a.a.Add(toTSDBLabels(lset), t, v)
+}
+func (a appender) Commit() error { return a.a.Commit() }
 
 func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 	switch m.Type {

@@ -184,7 +184,7 @@ func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
 	}
-	return ValueTypeScalar
+	return ValueTypeVector
 }
 
 func (*AggregateExpr) expr()  {}

@@ -506,7 +506,7 @@ func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMat
 		if (precd < 0) || (precd == 0 && op.isRightAssociative()) {
 			balanced := p.balance(lhsBE.RHS, op, rhs, vecMatching, returnBool)
 			if lhsBE.Op.isComparisonOperator() && !lhsBE.ReturnBool && balanced.Type() == ValueTypeScalar && lhsBE.LHS.Type() == ValueTypeScalar {
-				p.errorf("comparisons between Scalars must use BOOL modifier")
+				p.errorf("comparisons between scalars must use BOOL modifier")
 			}
 			return &BinaryExpr{
 				Op:             lhsBE.Op,
@@ -518,7 +518,7 @@ func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMat
 		}
 	}
 	if op.isComparisonOperator() && !returnBool && rhs.Type() == ValueTypeScalar && lhs.Type() == ValueTypeScalar {
-		p.errorf("comparisons between Scalars must use BOOL modifier")
+		p.errorf("comparisons between scalars must use BOOL modifier")
 	}
 	return &BinaryExpr{
 		Op:             op,
@@ -935,7 +935,7 @@ func (p *parser) offset() time.Duration {
 	return offset
 }
 
-// VectorSelector parses a new (instant) Vector selector.
+// VectorSelector parses a new (instant) vector selector.
 //
 //		<metric_identifier> [<label_matchers>]
 //		[<metric_identifier>] <label_matchers>
@@ -962,7 +962,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 	}
 
 	if len(matchers) == 0 {
-		p.errorf("Vector selector must contain label matchers or metric name")
+		p.errorf("vector selector must contain label matchers or metric name")
 	}
 	// A Vector selector must contain at least one non-empty matcher to prevent
 	// implicit selection of all metrics (e.g. by a typo).
@@ -974,7 +974,7 @@ func (p *parser) VectorSelector(name string) *VectorSelector {
 		}
 	}
 	if !notEmpty {
-		p.errorf("Vector selector must contain at least one non-empty matcher")
+		p.errorf("vector selector must contain at least one non-empty matcher")
 	}
 
 	return &VectorSelector{
@@ -1028,7 +1028,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 	case *RecordStmt:
 		ty := p.checkType(n.Expr)
 		if ty != ValueTypeVector && ty != ValueTypeScalar {
-			p.errorf("record statement must have a valid expression of type instant Vector or Scalar but got %s", documentedType(ty))
+			p.errorf("record statement must have a valid expression of type instant vector or scalar but got %s", documentedType(ty))
 		}
 
 	case Expressions:
@@ -1058,12 +1058,12 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 			p.errorf("binary expression does not support operator %q", n.Op)
 		}
 		if (lt != ValueTypeScalar && lt != ValueTypeVector) || (rt != ValueTypeScalar && rt != ValueTypeVector) {
-			p.errorf("binary expression must contain only Scalar and instant Vector types")
+			p.errorf("binary expression must contain only scalar and instant vector types")
 		}
 
 		if (lt != ValueTypeVector || rt != ValueTypeVector) && n.VectorMatching != nil {
 			if len(n.VectorMatching.MatchingLabels) > 0 {
-				p.errorf("Vector matching only allowed between instant Vectors")
+				p.errorf("vector matching only allowed between instant vectors")
 			}
 			n.VectorMatching = nil
 		} else {
@@ -1079,7 +1079,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 		}
 
 		if (lt == ValueTypeScalar || rt == ValueTypeScalar) && n.Op.isSetOperator() {
-			p.errorf("set operator %q not allowed in binary Scalar expression", n.Op)
+			p.errorf("set operator %q not allowed in binary scalar expression", n.Op)
 		}
 
 	case *Call:
@@ -1102,7 +1102,7 @@ func (p *parser) checkType(node Node) (typ ValueType) {
 			p.errorf("only + and - operators allowed for unary expressions")
 		}
 		if t := p.checkType(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
-			p.errorf("unary expression only allowed on expressions of type Scalar or instant Vector, got %q", documentedType(t))
+			p.errorf("unary expression only allowed on expressions of type scalar or instant vector, got %q", documentedType(t))
 		}
 
 	case *NumberLiteral, *MatrixSelector, *StringLiteral, *VectorSelector:

@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/stretchr/testify/require"
 )
 
 var testExpr = []struct {
@@ -31,7 +32,7 @@ var testExpr = []struct {
 	fail     bool   // Whether parsing is supposed to fail.
 	errMsg   string // If not empty the parsing error has to contain this string.
 }{
-	// Scalars and Scalar-to-Scalar operations.
+	// Scalars and scalar-to-scalar operations.
 	{
 		input:    "1",
 		expected: &NumberLiteral{1},
@@ -212,19 +213,19 @@ var testExpr = []struct {
 	}, {
 		input:  "1 and 1",
 		fail:   true,
-		errMsg: "set operator \"and\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 == 1",
 		fail:   true,
-		errMsg: "parse error at char 7: comparisons between Scalars must use BOOL modifier",
+		errMsg: "parse error at char 7: comparisons between scalars must use BOOL modifier",
 	}, {
 		input:  "1 or 1",
 		fail:   true,
-		errMsg: "set operator \"or\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 unless 1",
 		fail:   true,
-		errMsg: "set operator \"unless\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 !~ 1",
 		fail:   true,
@@ -236,11 +237,11 @@ var testExpr = []struct {
 	}, {
 		input:  `-"string"`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type Scalar or instant Vector, got "string"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "string"`,
 	}, {
 		input:  `-test[5m]`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type Scalar or instant Vector, got "range Vector"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "range vector"`,
 	}, {
 		input:  `*test`,
 		fail:   true,
@@ -747,35 +748,35 @@ var testExpr = []struct {
 	}, {
 		input:  "foo and 1",
 		fail:   true,
-		errMsg: "set operator \"and\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 and foo",
 		fail:   true,
-		errMsg: "set operator \"and\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"and\" not allowed in binary scalar expression",
 	}, {
 		input:  "foo or 1",
 		fail:   true,
-		errMsg: "set operator \"or\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 or foo",
 		fail:   true,
-		errMsg: "set operator \"or\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"or\" not allowed in binary scalar expression",
 	}, {
 		input:  "foo unless 1",
 		fail:   true,
-		errMsg: "set operator \"unless\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 unless foo",
 		fail:   true,
-		errMsg: "set operator \"unless\" not allowed in binary Scalar expression",
+		errMsg: "set operator \"unless\" not allowed in binary scalar expression",
 	}, {
 		input:  "1 or on(bar) foo",
 		fail:   true,
-		errMsg: "Vector matching only allowed between instant Vectors",
+		errMsg: "vector matching only allowed between instant vectors",
 	}, {
 		input:  "foo == on(bar) 10",
 		fail:   true,
-		errMsg: "Vector matching only allowed between instant Vectors",
+		errMsg: "vector matching only allowed between instant vectors",
 	}, {
 		input:  "foo and on(bar) group_left(baz) bar",
 		fail:   true,
@@ -914,23 +915,23 @@ var testExpr = []struct {
 	}, {
 		input:  `{}`,
 		fail:   true,
-		errMsg: "Vector selector must contain label matchers or metric name",
+		errMsg: "vector selector must contain label matchers or metric name",
 	}, {
 		input:  `{x=""}`,
 		fail:   true,
-		errMsg: "Vector selector must contain at least one non-empty matcher",
+		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x=~".*"}`,
 		fail:   true,
-		errMsg: "Vector selector must contain at least one non-empty matcher",
+		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x!~".+"}`,
 		fail:   true,
-		errMsg: "Vector selector must contain at least one non-empty matcher",
+		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `{x!="a"}`,
 		fail:   true,
-		errMsg: "Vector selector must contain at least one non-empty matcher",
+		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `foo{__name__="bar"}`,
 		fail:   true,
@@ -1285,11 +1286,11 @@ var testExpr = []struct {
 	}, {
 		input:  `topk(some_metric, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 32: expected type Scalar in aggregation parameter, got instant Vector",
+		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant vector",
 	}, {
 		input:  `count_values(5, other_metric)`,
 		fail:   true,
-		errMsg: "parse error at char 30: expected type string in aggregation parameter, got Scalar",
+		errMsg: "parse error at char 30: expected type string in aggregation parameter, got scalar",
 	},
 	// Test function calls.
 	{
@@ -1363,7 +1364,7 @@ var testExpr = []struct {
 	}, {
 		input:  "floor(1)",
 		fail:   true,
-		errMsg: "expected type instant Vector in call to function \"floor\", got Scalar",
+		errMsg: "expected type instant vector in call to function \"floor\", got scalar",
 	}, {
 		input:  "non_existent_function_far_bar()",
 		fail:   true,
@@ -1371,7 +1372,7 @@ var testExpr = []struct {
 	}, {
 		input:  "rate(some_metric)",
 		fail:   true,
-		errMsg: "expected type range Vector in call to function \"rate\", got instant Vector",
+		errMsg: "expected type range vector in call to function \"rate\", got instant vector",
 	},
 	// Fuzzing regression tests.
 	{
@@ -1532,7 +1533,7 @@ var testStatement = []struct {
 			    summary     = "Global request rate low",
 			    description = "The global request rate is low"
 			  }
-
+			  
 			foo = bar{label1="value1"}
 
 			ALERT BazAlert IF foo > 10
@@ -1591,7 +1592,6 @@ var testStatement = []struct {
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar"),
 					},
 				},
-				Labels: nil,
 			},
 			&AlertStmt{
 				Name: "BazAlert",
@@ -1605,7 +1605,6 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{10},
 				},
-				Labels: labels.Labels{},
 				Annotations: labels.FromStrings(
 					"summary", "Baz",
 					"description", "BazAlert",
@@ -1782,59 +1781,41 @@ func mustGetFunction(name string) *Function {
 
 var testSeries = []struct {
 	input          string
-	expectedMetric model.Metric
+	expectedMetric labels.Labels
 	expectedValues []sequenceValue
 	fail           bool
 }{
 	{
 		input:          `{} 1 2 3`,
-		expectedMetric: model.Metric{},
+		expectedMetric: labels.Labels{},
 		expectedValues: newSeq(1, 2, 3),
 	}, {
-		input: `{a="b"} -1 2 3`,
-		expectedMetric: model.Metric{
-			"a": "b",
-		},
+		input:          `{a="b"} -1 2 3`,
+		expectedMetric: labels.FromStrings("a", "b"),
 		expectedValues: newSeq(-1, 2, 3),
 	}, {
-		input: `my_metric 1 2 3`,
-		expectedMetric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-		},
+		input:          `my_metric 1 2 3`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
-		input: `my_metric{} 1 2 3`,
-		expectedMetric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-		},
+		input:          `my_metric{} 1 2 3`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
-		input: `my_metric{a="b"} 1 2 3`,
-		expectedMetric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"a": "b",
-		},
+		input:          `my_metric{a="b"} 1 2 3`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
-		input: `my_metric{a="b"} 1 2 3-10x4`,
-		expectedMetric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"a": "b",
-		},
+		input:          `my_metric{a="b"} 1 2 3-10x4`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3, -7, -17, -27, -37),
 	}, {
-		input: `my_metric{a="b"} 1 2 3-0x4`,
-		expectedMetric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"a": "b",
-		},
+		input:          `my_metric{a="b"} 1 2 3-0x4`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
 	}, {
-		input: `my_metric{a="b"} 1 3 _ 5 _x4`,
-		expectedMetric: model.Metric{
-			model.MetricNameLabel: "my_metric",
-			"a": "b",
-		},
+		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
 	}, {
 		input: `my_metric{a="b"} 1 3 _ 5 _a4`,
@@ -1883,6 +1864,9 @@ func TestParseSeries(t *testing.T) {
 			t.Errorf("error in input: \n\n%s\n", test.input)
 			t.Fatalf("failure expected, but passed")
 		}
+
+		require.Equal(t, test.expectedMetric, metric)
+		require.Equal(t, test.expectedValues, vals)
 
 		if !reflect.DeepEqual(vals, test.expectedValues) || !reflect.DeepEqual(metric, test.expectedMetric) {
 			t.Errorf("error in input: \n\n%s\n", test.input)

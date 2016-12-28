@@ -146,7 +146,7 @@ func (node *AggregateExpr) String() string {
 		} else {
 			format = "%s BY (%s)"
 		}
-		aggrString = fmt.Sprintf(format, aggrString, node.Grouping)
+		aggrString = fmt.Sprintf(format, aggrString, strings.Join(node.Grouping, ", "))
 	}
 	if node.KeepCommonLabels {
 		aggrString += " KEEP_COMMON"
@@ -164,9 +164,9 @@ func (node *BinaryExpr) String() string {
 	vm := node.VectorMatching
 	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
 		if vm.On {
-			matching = fmt.Sprintf(" ON(%s)", vm.MatchingLabels)
+			matching = fmt.Sprintf(" ON(%s)", strings.Join(vm.MatchingLabels, ", "))
 		} else {
-			matching = fmt.Sprintf(" IGNORING(%s)", vm.MatchingLabels)
+			matching = fmt.Sprintf(" IGNORING(%s)", strings.Join(vm.MatchingLabels, ", "))
 		}
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			matching += " GROUP_"
@@ -175,7 +175,7 @@ func (node *BinaryExpr) String() string {
 			} else {
 				matching += "RIGHT"
 			}
-			matching += fmt.Sprintf("(%s)", vm.Include)
+			matching += fmt.Sprintf("(%s)", strings.Join(vm.Include, ", "))
 		}
 	}
 	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
