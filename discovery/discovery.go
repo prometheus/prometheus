@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/ecs"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
@@ -106,6 +107,15 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]TargetPro
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, azure.NewDiscovery(c))
 	}
+
+	for i, c := range cfg.ECSSDConfigs {
+		d, err := ecs.NewDiscovery(c)
+		if err != nil {
+			log.Errorf("Cannot create ECS discovery: %s", err)
+		}
+		app("ecs", i, d)
+	}
+
 	if len(cfg.StaticConfigs) > 0 {
 		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
 	}
