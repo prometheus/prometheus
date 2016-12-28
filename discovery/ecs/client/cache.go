@@ -22,16 +22,13 @@ type awsCache struct {
 	services   map[string]*ecs.Service           // service cache
 	taskDefs   map[string]*ecs.TaskDefinition    // task definition cache
 
-	// channels
+	// mutexes
 	clustersMutex   sync.Mutex
 	cInstancesMutex sync.Mutex
 	tasksMutex      sync.Mutex
 	instancesMutex  sync.Mutex
 	servicesMutex   sync.Mutex
 	taskDefsMutex   sync.Mutex
-
-	// stopGather
-	stopChan chan struct{}
 }
 
 func newAWSCache() *awsCache {
