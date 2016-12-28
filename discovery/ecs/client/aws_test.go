@@ -22,12 +22,20 @@ func TestCreateServiceInstances(t *testing.T) {
 	tsk := &ecs.Task{
 		Containers: []*ecs.Container{
 			&ecs.Container{
-				Name:            aws.String("myService"),
-				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{HostPort: aws.Int64(36112)}},
+				Name: aws.String("myService"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
+					HostPort:      aws.Int64(36112),
+					ContainerPort: aws.Int64(8080),
+					Protocol:      aws.String("tcp"),
+				}},
 			},
 			&ecs.Container{
-				Name:            aws.String("nginx"),
-				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{HostPort: aws.Int64(30987)}},
+				Name: aws.String("nginx"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
+					HostPort:      aws.Int64(30987),
+					ContainerPort: aws.Int64(8081),
+					Protocol:      aws.String("tcp"),
+				}},
 			},
 			&ecs.Container{
 				Name:            aws.String("worker"),
@@ -80,22 +88,26 @@ func TestCreateServiceInstances(t *testing.T) {
 
 	want := []*types.ServiceInstance{
 		&types.ServiceInstance{
-			Cluster:   "prod-cluster-infra",
-			Service:   "myService",
-			Addr:      "10.0.250.65:36112",
-			Container: "myService",
-			Image:     "000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e",
-			Labels:    map[string]string{"monitor": "true", "kind": "main"},
-			Tags:      map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
+			Cluster:            "prod-cluster-infra",
+			Service:            "myService",
+			Addr:               "10.0.250.65:36112",
+			Container:          "myService",
+			ContainerPort:      "8080",
+			ContainerPortProto: "tcp",
+			Image:              "000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e",
+			Labels:             map[string]string{"monitor": "true", "kind": "main"},
+			Tags:               map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
 		},
 		&types.ServiceInstance{
-			Cluster:   "prod-cluster-infra",
-			Service:   "myService",
-			Addr:      "10.0.250.65:30987",
-			Container: "nginx",
-			Image:     "nginx:latest",
-			Labels:    map[string]string{"kind": "front-http"},
-			Tags:      map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
+			Cluster:            "prod-cluster-infra",
+			Service:            "myService",
+			Addr:               "10.0.250.65:30987",
+			Container:          "nginx",
+			ContainerPort:      "8081",
+			ContainerPortProto: "tcp",
+			Image:              "nginx:latest",
+			Labels:             map[string]string{"kind": "front-http"},
+			Tags:               map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
 		},
 	}
 

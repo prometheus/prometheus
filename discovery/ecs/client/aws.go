@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -60,13 +61,15 @@ func (a *ecsTargetTask) createServiceInstances() []*types.ServiceInstance {
 			if n.HostPort != nil {
 				addr := fmt.Sprintf("%s:%d", aws.StringValue(a.instance.PrivateIpAddress), aws.Int64Value(n.HostPort))
 				s := &types.ServiceInstance{
-					Cluster:   aws.StringValue(a.cluster.ClusterName),
-					Addr:      addr,
-					Service:   aws.StringValue(a.service.ServiceName),
-					Container: aws.StringValue(c.Name),
-					Tags:      tags,
-					Labels:    labels,
-					Image:     aws.StringValue(cDef.Image),
+					Cluster:            aws.StringValue(a.cluster.ClusterName),
+					Addr:               addr,
+					Service:            aws.StringValue(a.service.ServiceName),
+					Tags:               tags,
+					Image:              aws.StringValue(cDef.Image),
+					Container:          aws.StringValue(c.Name),
+					ContainerPort:      strconv.FormatInt(aws.Int64Value(n.ContainerPort), 10),
+					ContainerPortProto: aws.StringValue(n.Protocol),
+					Labels:             labels,
 				}
 				sis = append(sis, s)
 			}

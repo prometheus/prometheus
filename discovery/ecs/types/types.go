@@ -16,4 +16,8 @@ type ServiceInstance struct {
 	Labels map[string]string
 	// Image is the docker image that has been used to run the container
 	Image string
+	// ContainerPort is the port exposed inside the container
+	ContainerPort string
+	// ContainerPortProto is the port protocol exposed inside the container
+	ContainerPortProto string
 }
