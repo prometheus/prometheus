@@ -21,8 +21,7 @@ import (
 //go:generate mockgen -source ../../vendor/github.com/aws/aws-sdk-go/service/ec2/ec2iface/interface.go -package sdk -destination ./mock/aws/sdk/ec2iface_mock.go
 
 const (
-	serviceTaskStatusInactive = "INACTIVE"
-	maxAPIRes                 = 100
+	maxAPIRes = 100
 )
 
 // ecsTargetTask is a helper that has all the objects required to create a final service instances
@@ -82,6 +81,8 @@ func (a *ecsTargetTask) createServiceInstances() []*types.ServiceInstance {
 type AWSRetriever struct {
 	ecsCli ecsiface.ECSAPI
 	ec2Cli ec2iface.EC2API
+
+	cache *awsCache // cache will store all the retrieved objects in order to compose the targets at the final stage
 }
 
 // NewAWSRetriever will create a new AWS API retriever
@@ -107,6 +108,7 @@ func NewAWSRetriever(accessKey, secretKey, region, profile string) (*AWSRetrieve
 	return &AWSRetriever{
 		ecsCli: ecs.New(sess),
 		ec2Cli: ec2.New(sess),
+		cache:  newAWSCache(),
 	}, nil
 
 }
@@ -358,33 +360,23 @@ func (c *AWSRetriever) getInstances(ec2IDs []*string) ([]*ec2.Instance, error) {
 
 // Retrieve will get all the service instance calling multiple AWS APIs
 func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
+
 	// First get the clusters and map them
 	clusters, err := c.getClusters()
 	if err != nil {
 		return nil, err
 	}
-	clsIndex := map[string]*ecs.Cluster{}
+
 	for _, cl := range clusters {
-		clsIndex[aws.StringValue(cl.ClusterArn)] = cl
+		c.cache.SetCluster(cl)
 	}
 
-	// Get all the container instances and tasks on the cluster and map them
-	cisIndex := map[string]*ecs.ContainerInstance{} // container instance cache
-	ciMutex := sync.Mutex{}
-	tsIndex := map[string]*ecs.Task{} // task cache
-	tMutex := sync.Mutex{}
-	iIndex := map[string]*ec2.Instance{} // instance cache
-	iMutex := sync.Mutex{}
-	srvIndex := map[string]*ecs.Service{} // service cache
-	srvMutex := sync.Mutex{}
-	tdsIndex := map[string]*ecs.TaskDefinition{} // task definition cache
-	tdsMutex := sync.Mutex{}
 	var wg sync.WaitGroup
 	var getterErr error
 
 	// For each cluster get its container instances and tasks
-	wg.Add(len(clsIndex))
-	for _, v := range clsIndex {
+	wg.Add(len(clusters))
+	for _, cluster := range clusters {
 		// use argument by value
 		go func(cluster ecs.Cluster) {
 			defer wg.Done()
@@ -396,13 +388,11 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return
 			}
 
-			ciMutex.Lock()
 			ec2Ids := []*string{}
 			for _, ci := range cInstances {
-				cisIndex[aws.StringValue(ci.ContainerInstanceArn)] = ci
+				c.cache.setContainerInstance(ci)
 				ec2Ids = append(ec2Ids, ci.Ec2InstanceId)
 			}
-			ciMutex.Unlock()
 
 			// Check if someone errored before continuing
 			if getterErr != nil {
@@ -417,11 +407,9 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return
 			}
 
-			iMutex.Lock()
 			for _, i := range instances {
-				iIndex[aws.StringValue(i.InstanceId)] = i
+				c.cache.setInstance(i)
 			}
-			iMutex.Unlock()
 
 			// Check if someone errored before continuing
 			if getterErr != nil {
@@ -436,13 +424,11 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return
 			}
 
-			tMutex.Lock()
 			tDefIDs := []*string{}
 			for _, t := range ts {
-				tsIndex[aws.StringValue(t.TaskArn)] = t
+				c.cache.setTask(t)
 				tDefIDs = append(tDefIDs, t.TaskDefinitionArn)
 			}
-			tMutex.Unlock()
 
 			// Get cluster services
 			srvs, err := c.getServices(&cluster)
@@ -451,17 +437,9 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return
 			}
 
-			srvMutex.Lock()
-
 			for _, s := range srvs {
-				// Insert one entry per running deployment task
-				for _, d := range s.Deployments {
-					if aws.StringValue(d.Status) != serviceTaskStatusInactive {
-						srvIndex[aws.StringValue(d.TaskDefinition)] = s
-					}
-				}
+				c.cache.setService(s)
 			}
-			srvMutex.Unlock()
 
 			// Get task definitions
 			tds, err := c.getTaskDefinitions(tDefIDs)
@@ -470,44 +448,43 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return
 			}
 
-			tdsMutex.Lock()
 			for _, t := range tds {
-				tdsIndex[aws.StringValue(t.TaskDefinitionArn)] = t
+				c.cache.setTaskDefinition(t)
 			}
-			tdsMutex.Unlock()
 
-		}(*v)
+		}(*cluster)
 	}
 
 	wg.Wait()
 
+	// Create the targets
 	sInstances := []*types.ServiceInstance{}
-	for _, v := range tsIndex {
+	for _, v := range c.cache.tasks {
 		clID := aws.StringValue(v.ClusterArn)
-		cl, ok := clsIndex[clID]
+		cl, ok := c.cache.getCluster(clID)
 		if !ok {
 			return nil, fmt.Errorf("cluster not available: %s", clID)
 		}
 
 		ciID := aws.StringValue(v.ContainerInstanceArn)
-		ci, ok := cisIndex[ciID]
+		ci, ok := c.cache.getContainerInstance(ciID)
 		if !ok {
 			return nil, fmt.Errorf("container not available: %s", ciID)
 		}
 
 		iID := aws.StringValue(ci.Ec2InstanceId)
-		ec2I, ok := iIndex[iID]
+		ec2I, ok := c.cache.getIntance(iID)
 		if !ok {
 			return nil, fmt.Errorf("EC2 instance not available: %s", iID)
 		}
 
 		tdID := aws.StringValue(v.TaskDefinitionArn)
-		srv, ok := srvIndex[tdID]
+		srv, ok := c.cache.getService(tdID)
 		if !ok {
 			return nil, fmt.Errorf("Service not available: %s", tdID)
 		}
 
-		td, ok := tdsIndex[tdID]
+		td, ok := c.cache.getTaskDefinition(tdID)
 		if !ok {
 			return nil, fmt.Errorf("Task definition not available: %s", tdID)
 		}
