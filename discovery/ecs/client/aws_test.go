@@ -692,9 +692,10 @@ func TestGetTaskDefinitions(t *testing.T) {
 
 		r := &AWSRetriever{
 			ecsCli: mockECS,
+			cache:  newAWSCache(),
 		}
 
-		res, err := r.getTaskDefinitions(tIDs)
+		res, err := r.getTaskDefinitions(tIDs, false)
 
 		if !test.wantError {
 			if len(res) != len(test.taskDefs) {
@@ -704,6 +705,107 @@ func TestGetTaskDefinitions(t *testing.T) {
 			if err == nil {
 				t.Errorf("- %+v\n -Getting task definitions should error, it didn't", test)
 			}
+		}
+	}
+}
+
+func TestGetTaskDefinitionsCached(t *testing.T) {
+	tests := []struct {
+		cachedTaskDefs []*ecs.TaskDefinition
+		newTaskDefs    []*ecs.TaskDefinition
+		wantRetrieved  int
+		wantCached     bool
+	}{
+		{
+			cachedTaskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("ct1")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("ct2")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("ct3")},
+			},
+			newTaskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t1")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t2")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
+			},
+			wantRetrieved: 6,
+			wantCached:    false,
+		},
+		{
+			cachedTaskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("ct1")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("ct2")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("ct3")},
+			},
+			newTaskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t1")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t2")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
+			},
+			wantRetrieved: 3,
+			wantCached:    true,
+		},
+		{
+			cachedTaskDefs: []*ecs.TaskDefinition{},
+			newTaskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t1")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t2")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
+			},
+			wantRetrieved: 3,
+			wantCached:    false,
+		},
+		{
+			cachedTaskDefs: []*ecs.TaskDefinition{},
+			newTaskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t1")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t2")},
+				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
+			},
+			wantRetrieved: 3,
+			wantCached:    true,
+		},
+	}
+
+	for _, test := range tests {
+
+		tIDs := []*string{}
+		allTaskDefs := []*ecs.TaskDefinition{}
+		for _, td := range test.cachedTaskDefs {
+			tIDs = append(tIDs, td.TaskDefinitionArn)
+			allTaskDefs = append(allTaskDefs, td)
+		}
+		for _, td := range test.newTaskDefs {
+			tIDs = append(tIDs, td.TaskDefinitionArn)
+			allTaskDefs = append(allTaskDefs, td)
+		}
+
+		// Mock
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockECS := sdk.NewMockECSAPI(ctrl)
+		if test.wantCached {
+			awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, test.newTaskDefs...)
+		} else {
+
+			awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, allTaskDefs...)
+		}
+
+		r := &AWSRetriever{
+			ecsCli: mockECS,
+			cache:  newAWSCache(),
+		}
+
+		// Fill cache
+		for _, t := range test.cachedTaskDefs {
+			r.cache.setTaskDefinition(t)
+		}
+
+		res, err := r.getTaskDefinitions(tIDs, test.wantCached)
+		if err != nil {
+			t.Errorf("- %+v\n -Getting task definitions shouldn't error: %s", test, err)
+		}
+		if len(res) != test.wantRetrieved {
+			t.Errorf("- %+v\n -The length of the retrieved task definitions differ, want: %d; got: %d", test, test.wantRetrieved, len(res))
 		}
 	}
 }

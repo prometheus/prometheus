@@ -294,13 +294,18 @@ func (c *AWSRetriever) getServices(cluster *ecs.Cluster) ([]*ecs.Service, error)
 	return srvs, nil
 }
 
-func (c *AWSRetriever) getTaskDefinitions(tDIDs []*string) ([]*ecs.TaskDefinition, error) {
+func (c *AWSRetriever) getTaskDefinitions(tDIDs []*string, useChache bool) ([]*ecs.TaskDefinition, error) {
 	tDefs := []*ecs.TaskDefinition{}
 	var mErr error
 	var wg sync.WaitGroup
-
-	wg.Add(len(tDIDs))
+	cached := 0
 	for _, tID := range tDIDs {
+		// If we want cache then check if already present
+		if _, ok := c.cache.getTaskDefinition(aws.StringValue(tID)); useChache && ok {
+			cached++
+			continue
+		}
+		wg.Add(1)
 		go func(tID string) {
 			defer wg.Done()
 			params := &ecs.DescribeTaskDefinitionInput{
@@ -320,7 +325,7 @@ func (c *AWSRetriever) getTaskDefinitions(tDIDs []*string) ([]*ecs.TaskDefinitio
 	}
 	wg.Wait()
 
-	log.Debugf("Retrieved %d task definitions", len(tDefs))
+	log.Debugf("Retrieved %d new task definitions, cached %d", len(tDefs), cached)
 	return tDefs, mErr
 }
 
@@ -372,7 +377,8 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	}
 
 	var wg sync.WaitGroup
-	var getterErr error
+	var globErr error
+	globErrMsg := "Error from other goroutine, stopping gathering: %s"
 
 	// For each cluster get its container instances and tasks
 	wg.Add(len(clusters))
@@ -384,7 +390,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			// Get cluster container instance
 			cInstances, err := c.getContainerInstances(&cluster)
 			if err != nil {
-				getterErr = err
+				globErr = err
 				return
 			}
 
@@ -395,15 +401,15 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			}
 
 			// Check if someone errored before continuing
-			if getterErr != nil {
-				log.Debugf("Error from other goroutine, stopping gathering: %s", getterErr)
+			if globErr != nil {
+				log.Debugf(globErrMsg, globErr)
 				return
 			}
 
 			// Get cluster ec2 instances
 			instances, err := c.getInstances(ec2Ids)
 			if err != nil {
-				getterErr = err
+				globErr = err
 				return
 			}
 
@@ -412,15 +418,15 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			}
 
 			// Check if someone errored before continuing
-			if getterErr != nil {
-				log.Debugf("Error from other goroutine, stopping gathering: %s", getterErr)
+			if globErr != nil {
+				log.Debugf(globErrMsg, globErr)
 				return
 			}
 
 			// Get cluster tasks
 			ts, err := c.getTasks(&cluster)
 			if err != nil {
-				getterErr = err
+				globErr = err
 				return
 			}
 
@@ -430,10 +436,16 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				tDefIDs = append(tDefIDs, t.TaskDefinitionArn)
 			}
 
+			// Check if someone errored before continuing
+			if globErr != nil {
+				log.Debugf(globErrMsg, globErr)
+				return
+			}
+
 			// Get cluster services
 			srvs, err := c.getServices(&cluster)
 			if err != nil {
-				getterErr = err
+				globErr = err
 				return
 			}
 
@@ -441,10 +453,16 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				c.cache.setService(s)
 			}
 
+			// Check if someone errored before continuing
+			if globErr != nil {
+				log.Debugf(globErrMsg, globErr)
+				return
+			}
+
 			// Get task definitions
-			tds, err := c.getTaskDefinitions(tDefIDs)
+			tds, err := c.getTaskDefinitions(tDefIDs, true)
 			if err != nil {
-				getterErr = err
+				globErr = err
 				return
 			}
 
@@ -456,6 +474,12 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	}
 
 	wg.Wait()
+
+	// Check if we errored before
+	if globErr != nil {
+		log.Debugf(globErrMsg, globErr)
+		return nil, globErr
+	}
 
 	// Create the targets
 	sInstances := []*types.ServiceInstance{}
@@ -503,5 +527,5 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 		}
 	}
 
-	return sInstances, getterErr
+	return sInstances, globErr
 }
