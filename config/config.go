@@ -156,6 +156,13 @@ var (
 		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
+	// DefaultTritonSDConfig is the default Triton SD configuration.
+	DefaultTritonSDConfig = TritonSDConfig{
+		Port:            9163,
+		RefreshInterval: model.Duration(60 * time.Second),
+		Version:         1,
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout: model.Duration(30 * time.Second),
@@ -437,6 +444,8 @@ type ServiceDiscoveryConfig struct {
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of Triton service discovery configurations.
+	TritonSDConfigs []*TritonSDConfig `yaml:"triton_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1084,6 +1093,42 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	return checkOverflow(c.XXX, "azure_sd_config")
+}
+
+// TritonSDConfig is the configuration for Triton based service discovery.
+type TritonSDConfig struct {
+	Account         string         `yaml:"account"`
+	DNSSuffix       string         `yaml:"dns_suffix"`
+	Endpoint        string         `yaml:"endpoint"`
+	Port            int            `yaml:"port"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	Version         int            `yaml:"version"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *TritonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultTritonSDConfig
+	type plain TritonSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if c.Account == "" {
+		return fmt.Errorf("Triton SD configuration requires an account")
+	}
+	if c.DNSSuffix == "" {
+		return fmt.Errorf("Triton SD configuration requires a dns_suffix")
+	}
+	if c.Endpoint == "" {
+		return fmt.Errorf("Triton SD configuration requires an endpoint")
+	}
+	if c.RefreshInterval <= 0 {
+		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
+	}
+	return checkOverflow(c.XXX, "triton_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.

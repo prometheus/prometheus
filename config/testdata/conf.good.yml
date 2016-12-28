@@ -179,6 +179,18 @@ scrape_configs:
     - targets:
       - localhost:9090
 
+- job_name: service-triton
+  triton_sd_configs:
+  - account: 'testAccount'
+    dns_suffix: 'triton.example.com'
+    endpoint: 'triton.example.com'
+    port: 9163
+    refresh_interval: 1m
+    version: 1
+    tls_config:
+      cert_file: testdata/valid_cert_file
+      key_file: testdata/valid_key_file
+
 alerting:
   alertmanagers:
   - scheme: https
