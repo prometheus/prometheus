@@ -423,3 +423,275 @@ func TestGetInstances(t *testing.T) {
 		}
 	}
 }
+
+func TestGetServices(t *testing.T) {
+	tests := []struct {
+		services  []*ecs.Service
+		errorList bool
+		errorDesc bool
+		wantError bool
+	}{
+		{
+			services: []*ecs.Service{
+				&ecs.Service{
+					ServiceName: aws.String("Service1"),
+					Deployments: []*ecs.Deployment{
+						&ecs.Deployment{
+							Status:         aws.String("PRIMARY"),
+							TaskDefinition: aws.String("td2"),
+						},
+						&ecs.Deployment{
+							Status:         aws.String("ACTIVE"),
+							TaskDefinition: aws.String("td1"),
+						},
+					},
+				},
+			},
+		},
+		{
+			services: []*ecs.Service{
+				&ecs.Service{
+					ServiceName: aws.String("Service1"),
+					Deployments: []*ecs.Deployment{
+						&ecs.Deployment{
+							Status:         aws.String("PRIMARY"),
+							TaskDefinition: aws.String("td2"),
+						},
+						&ecs.Deployment{
+							Status:         aws.String("ACTIVE"),
+							TaskDefinition: aws.String("td1"),
+						},
+					},
+				},
+			},
+			errorList: true,
+			wantError: true,
+		},
+		{
+			services: []*ecs.Service{
+				&ecs.Service{
+					ServiceName: aws.String("Service1"),
+					Deployments: []*ecs.Deployment{
+						&ecs.Deployment{
+							Status:         aws.String("PRIMARY"),
+							TaskDefinition: aws.String("td2"),
+						},
+						&ecs.Deployment{
+							Status:         aws.String("ACTIVE"),
+							TaskDefinition: aws.String("td1"),
+						},
+					},
+				},
+			},
+			errorDesc: true,
+			wantError: true,
+		},
+		{
+			services: []*ecs.Service{
+				&ecs.Service{
+					ServiceName: aws.String("Service1"),
+					Deployments: []*ecs.Deployment{
+						&ecs.Deployment{
+							Status:         aws.String("PRIMARY"),
+							TaskDefinition: aws.String("td2"),
+						},
+						&ecs.Deployment{
+							Status:         aws.String("ACTIVE"),
+							TaskDefinition: aws.String("td1"),
+						},
+					},
+				},
+				&ecs.Service{
+					ServiceName: aws.String("Service2"),
+					Deployments: []*ecs.Deployment{
+						&ecs.Deployment{
+							Status:         aws.String("PRIMARY"),
+							TaskDefinition: aws.String("td1"),
+						},
+					},
+				},
+				&ecs.Service{
+					ServiceName: aws.String("Service3"),
+					Deployments: []*ecs.Deployment{
+						&ecs.Deployment{
+							Status:         aws.String("PRIMARY"),
+							TaskDefinition: aws.String("td1"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+
+		sIDs := make([]string, len(test.services))
+		for i, s := range test.services {
+			sIDs[i] = aws.StringValue(s.ServiceArn)
+		}
+
+		// Mock
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockECS := sdk.NewMockECSAPI(ctrl)
+		awsmock.MockECSListServices(t, mockECS, test.errorList, sIDs...)
+		awsmock.MockECSDescribeServices(t, mockECS, test.errorDesc, test.services...)
+
+		r := &AWSRetriever{
+			ecsCli: mockECS,
+		}
+
+		res, err := r.getServices(&ecs.Cluster{ClusterArn: aws.String("c1")})
+
+		if !test.wantError {
+			if len(res) != len(test.services) {
+				t.Errorf("- %+v\n -The length of the retrieved services differ, want: %d; got: %d", test, len(test.services), len(res))
+			}
+
+			for i, got := range res {
+				want := test.services[i]
+				if !reflect.DeepEqual(want, got) {
+					t.Errorf("\n- %v\n-  Received service from API is wrong, want: %v; got: %v", test, want, got)
+				}
+			}
+
+		} else {
+			if err == nil {
+				t.Errorf("- %+v\n -Getting services should error, it didn't", test)
+			}
+		}
+	}
+}
+
+func TestGetTaskDefinitions(t *testing.T) {
+	tests := []struct {
+		taskDefs  []*ecs.TaskDefinition
+		errorWhen int
+		wantError bool
+	}{
+		{
+			taskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{
+					TaskDefinitionArn: aws.String("t1"),
+					ContainerDefinitions: []*ecs.ContainerDefinition{
+						&ecs.ContainerDefinition{
+							Name:  aws.String("myService"),
+							Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+							DockerLabels: map[string]*string{
+								"monitor": aws.String("true"),
+								"kind":    aws.String("main"),
+							},
+						},
+						&ecs.ContainerDefinition{
+							Name:  aws.String("nginx"),
+							Image: aws.String("nginx:latest"),
+							DockerLabels: map[string]*string{
+								"kind": aws.String("front-http"),
+							},
+						},
+						&ecs.ContainerDefinition{
+							Name:  aws.String("worker"),
+							Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+							DockerLabels: map[string]*string{
+								"kind": aws.String("worker"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			taskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{
+					TaskDefinitionArn: aws.String("t1"),
+					ContainerDefinitions: []*ecs.ContainerDefinition{
+						&ecs.ContainerDefinition{
+							Name:  aws.String("myService"),
+							Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+							DockerLabels: map[string]*string{
+								"monitor": aws.String("true"),
+								"kind":    aws.String("main"),
+							},
+						},
+						&ecs.ContainerDefinition{
+							Name:  aws.String("nginx"),
+							Image: aws.String("nginx:latest"),
+							DockerLabels: map[string]*string{
+								"kind": aws.String("front-http"),
+							},
+						},
+						&ecs.ContainerDefinition{
+							Name:  aws.String("worker"),
+							Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+							DockerLabels: map[string]*string{
+								"kind": aws.String("worker"),
+							},
+						},
+					},
+				},
+			},
+			errorWhen: 1,
+			wantError: true,
+		},
+		{
+			taskDefs: []*ecs.TaskDefinition{
+				&ecs.TaskDefinition{
+					TaskDefinitionArn: aws.String("t1"),
+					ContainerDefinitions: []*ecs.ContainerDefinition{
+						&ecs.ContainerDefinition{
+							Name:  aws.String("myService"),
+							Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+							DockerLabels: map[string]*string{
+								"monitor": aws.String("true"),
+								"kind":    aws.String("main"),
+							},
+						},
+					},
+				},
+				&ecs.TaskDefinition{
+					TaskDefinitionArn: aws.String("t2"),
+					ContainerDefinitions: []*ecs.ContainerDefinition{
+						&ecs.ContainerDefinition{
+							Name:  aws.String("myService2"),
+							Image: aws.String("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService2:29f323e"),
+							DockerLabels: map[string]*string{
+								"monitor": aws.String("true"),
+								"kind":    aws.String("main2"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+
+		tIDs := make([]*string, len(test.taskDefs))
+		for i, td := range test.taskDefs {
+			tIDs[i] = td.TaskDefinitionArn
+		}
+
+		// Mock
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockECS := sdk.NewMockECSAPI(ctrl)
+		awsmock.MockECSDescribeTaskDefinition(t, mockECS, test.errorWhen, test.taskDefs...)
+
+		r := &AWSRetriever{
+			ecsCli: mockECS,
+		}
+
+		res, err := r.getTaskDefinitions(tIDs)
+
+		if !test.wantError {
+			if len(res) != len(test.taskDefs) {
+				t.Errorf("- %+v\n -The length of the retrieved task definitions differ, want: %d; got: %d", test, len(test.taskDefs), len(res))
+			}
+		} else {
+			if err == nil {
+				t.Errorf("- %+v\n -Getting task definitions should error, it didn't", test)
+			}
+		}
+	}
+}

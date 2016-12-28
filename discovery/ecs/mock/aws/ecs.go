@@ -2,6 +2,7 @@ package aws
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -130,4 +131,77 @@ func MockECSDescribeTasks(t *testing.T, mockMatcher *sdk.MockECSAPI, wantError b
 			t.Errorf("Wrong api call, needs at least 1 task ARN")
 		}
 	}).AnyTimes().Return(result, err)
+}
+
+// MockECSListServices mocks listing services ECS API call
+func MockECSListServices(t *testing.T, mockMatcher *sdk.MockECSAPI, wantError bool, ids ...string) {
+	log.Warnf("Mocking AWS iface: ListServices")
+	var err error
+	if wantError {
+		err = errors.New("ListServices wrong!")
+	}
+	sIds := []*string{}
+	for _, id := range ids {
+		sID := id
+		sIds = append(sIds, &sID)
+	}
+	result := &ecs.ListServicesOutput{
+		ServiceArns: sIds,
+	}
+	mockMatcher.EXPECT().ListServices(gomock.Any()).Do(func(input interface{}) {
+		i := input.(*ecs.ListServicesInput)
+		if i.Cluster == nil || aws.StringValue(i.Cluster) == "" {
+			t.Errorf("Wrong api call, needs cluster ARN")
+		}
+	}).AnyTimes().Return(result, err)
+}
+
+// MockECSDescribeServices mocks the description of services ECS API call
+func MockECSDescribeServices(t *testing.T, mockMatcher *sdk.MockECSAPI, wantError bool, ss ...*ecs.Service) {
+	log.Warnf("Mocking AWS iface: DescribeServices")
+	var err error
+	if wantError {
+		err = errors.New("DescribeServices wrong!")
+	}
+	result := &ecs.DescribeServicesOutput{
+		Services: ss,
+	}
+	mockMatcher.EXPECT().DescribeServices(gomock.Any()).Do(func(input interface{}) {
+		i := input.(*ecs.DescribeServicesInput)
+		if i.Cluster == nil || aws.StringValue(i.Cluster) == "" {
+			t.Errorf("Wrong api call, needs cluster ARN")
+		}
+		if len(i.Services) == 0 {
+			t.Errorf("Wrong api call, needs at least 1 service ARN")
+		}
+	}).AnyTimes().Return(result, err)
+}
+
+// MockECSDescribeTaskDefinition mocks the description of task definition ECS API call
+func MockECSDescribeTaskDefinition(t *testing.T, mockMatcher *sdk.MockECSAPI, wantErrorOn int, tds ...*ecs.TaskDefinition) {
+	log.Warnf("Mocking AWS iface: DescribeTaskDefinition")
+
+	calls := make([]*gomock.Call, len(tds))
+	for i, td := range tds {
+		var err error
+		// if want error is 0 then means disabled
+		if wantErrorOn-1 == i {
+			err = fmt.Errorf("DescribeTaskDefinition on call %d wrong!", i)
+		}
+
+		cpyTd := *td
+		result := &ecs.DescribeTaskDefinitionOutput{
+			TaskDefinition: &cpyTd,
+		}
+		call := mockMatcher.EXPECT().DescribeTaskDefinition(gomock.Any()).Do(func(input interface{}) {
+			i := input.(*ecs.DescribeTaskDefinitionInput)
+			if i.TaskDefinition == nil {
+				t.Errorf("Wrong api call, task definition ARN is required")
+			}
+		}).Return(result, err)
+
+		calls[i] = call
+	}
+
+	gomock.InOrder(calls...)
 }

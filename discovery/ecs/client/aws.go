@@ -20,7 +20,8 @@ import (
 //go:generate mockgen -source ../../vendor/github.com/aws/aws-sdk-go/service/ec2/ec2iface/interface.go -package sdk -destination ./mock/aws/sdk/ec2iface_mock.go
 
 const (
-	maxAPIRes = 100
+	serviceTaskStatusInactive = "INACTIVE"
+	maxAPIRes                 = 100
 )
 
 // ecsTargetTask is a helper that has all the objects required to create a final service instances
@@ -227,7 +228,10 @@ func (c *AWSRetriever) getTasks(cluster *ecs.Cluster) ([]*ecs.Task, error) {
 		}
 
 		for _, t := range resp2.Tasks {
-			tasks = append(tasks, t)
+			// We don't want stopped tasks
+			if t.StoppedAt == nil {
+				tasks = append(tasks, t)
+			}
 		}
 
 		if resp.NextToken == nil || aws.StringValue(resp.NextToken) == "" {
@@ -240,16 +244,91 @@ func (c *AWSRetriever) getTasks(cluster *ecs.Cluster) ([]*ecs.Task, error) {
 	return tasks, nil
 }
 
-func (c *AWSRetriever) getInstances(ec2Ids []*string) ([]*ec2.Instance, error) {
+func (c *AWSRetriever) getServices(cluster *ecs.Cluster) ([]*ecs.Service, error) {
+	srvs := []*ecs.Service{}
+
+	params := &ecs.ListServicesInput{
+		Cluster:    cluster.ClusterArn,
+		MaxResults: aws.Int64(maxAPIRes),
+	}
+	log.Debugf("Getting cluster %s services", aws.StringValue(cluster.ClusterName))
+	// Start listing services
+	for {
+		resp, err := c.ecsCli.ListServices(params)
+		if err != nil {
+			return nil, err
+		}
+
+		srvArns := []*string{}
+		for _, srv := range resp.ServiceArns {
+			srvArns = append(srvArns, srv)
+		}
+
+		// Describe container instances
+		params2 := &ecs.DescribeServicesInput{
+			Cluster:  cluster.ClusterArn,
+			Services: srvArns,
+		}
+
+		resp2, err := c.ecsCli.DescribeServices(params2)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, srv := range resp2.Services {
+			srvs = append(srvs, srv)
+		}
+
+		if resp.NextToken == nil || aws.StringValue(resp.NextToken) == "" {
+			break
+		}
+		params.NextToken = resp.NextToken
+
+	}
+	log.Debugf("Retrieved %d services on cluster %s", len(srvs), aws.StringValue(cluster.ClusterName))
+	return srvs, nil
+}
+
+func (c *AWSRetriever) getTaskDefinitions(tDIDs []*string) ([]*ecs.TaskDefinition, error) {
+	tDefs := []*ecs.TaskDefinition{}
+	var mErr error
+	var wg sync.WaitGroup
+
+	wg.Add(len(tDIDs))
+	for _, tID := range tDIDs {
+		go func(tID string) {
+			defer wg.Done()
+			params := &ecs.DescribeTaskDefinitionInput{
+				TaskDefinition: aws.String(tID),
+			}
+			if mErr != nil {
+				return
+			}
+			resp, err := c.ecsCli.DescribeTaskDefinition(params)
+			if err != nil {
+				mErr = err
+				return
+			}
+
+			tDefs = append(tDefs, resp.TaskDefinition)
+		}(*tID)
+	}
+	wg.Wait()
+
+	log.Debugf("Retrieved %d task definitions", len(tDefs))
+	return tDefs, mErr
+}
+
+func (c *AWSRetriever) getInstances(ec2IDs []*string) ([]*ec2.Instance, error) {
 
 	instances := []*ec2.Instance{}
 	log.Debugf("Getting ec2 instances")
 
 	params := &ec2.DescribeInstancesInput{
-		InstanceIds: ec2Ids,
+		InstanceIds: ec2IDs,
 	}
 
-	// Start listing tasks
+	// Start describing instances
 	for {
 
 		resp, err := c.ec2Cli.DescribeInstances(params)
@@ -293,6 +372,10 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	tMutex := sync.Mutex{}
 	iIndex := map[string]*ec2.Instance{} // instance cache
 	iMutex := sync.Mutex{}
+	srvIndex := map[string]*ecs.Service{} // service cache
+	srvMutex := sync.Mutex{}
+	tdsIndex := map[string]*ecs.TaskDefinition{} // task definition cache
+	tdsMutex := sync.Mutex{}
 	var wg sync.WaitGroup
 	var getterErr error
 
@@ -351,10 +434,45 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			}
 
 			tMutex.Lock()
+			tDefIDs := []*string{}
 			for _, t := range ts {
 				tsIndex[aws.StringValue(t.TaskArn)] = t
+				tDefIDs = append(tDefIDs, t.TaskDefinitionArn)
 			}
 			tMutex.Unlock()
+
+			// Get cluster services
+			srvs, err := c.getServices(&cluster)
+			if err != nil {
+				getterErr = err
+				return
+			}
+
+			srvMutex.Lock()
+
+			for _, s := range srvs {
+				// Insert one entry per running deployment task
+				for _, d := range s.Deployments {
+					if aws.StringValue(d.Status) != serviceTaskStatusInactive {
+						srvIndex[aws.StringValue(d.TaskDefinition)] = s
+					}
+				}
+			}
+			srvMutex.Unlock()
+
+			// Get task definitions
+			tds, err := c.getTaskDefinitions(tDefIDs)
+			if err != nil {
+				getterErr = err
+				return
+			}
+
+			tdsMutex.Lock()
+			for _, t := range tds {
+				tdsIndex[aws.StringValue(t.TaskDefinitionArn)] = t
+			}
+			tdsMutex.Unlock()
+
 		}(*v)
 	}
 
@@ -380,10 +498,23 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			return nil, fmt.Errorf("EC2 instance not available: %s", iID)
 		}
 
+		tdID := aws.StringValue(v.TaskDefinitionArn)
+		srv, ok := srvIndex[tdID]
+		if !ok {
+			return nil, fmt.Errorf("Service not available: %s", tdID)
+		}
+
+		td, ok := tdsIndex[tdID]
+		if !ok {
+			return nil, fmt.Errorf("Task definition not available: %s", tdID)
+		}
+
 		t := &ecsTargetTask{
 			cluster:  cl,
 			task:     v,
 			instance: ec2I,
+			service:  srv,
+			taskDef:  td,
 		}
 
 		sis := t.createServiceInstances()
