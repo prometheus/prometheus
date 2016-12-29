@@ -113,7 +113,7 @@ type Appender interface {
 	// AddSeries(Labels) uint64
 
 	// Add adds a sample pair for the referenced series.
-	Add(lset labels.Labels, t int64, v float64)
+	Add(lset labels.Labels, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
@@ -132,7 +132,7 @@ type bucketAppender struct {
 	buckets [][]hashedSample
 }
 
-func (ba *bucketAppender) Add(lset labels.Labels, t int64, v float64) {
+func (ba *bucketAppender) Add(lset labels.Labels, t int64, v float64) error {
 	h := lset.Hash()
 	s := h >> (64 - shardShift)
 
@@ -142,6 +142,8 @@ func (ba *bucketAppender) Add(lset labels.Labels, t int64, v float64) {
 		t:      t,
 		v:      v,
 	})
+
+	return nil
 }
 
 func (ba *bucketAppender) reset() {
