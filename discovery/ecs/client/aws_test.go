@@ -828,8 +828,243 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 	}
 }
 
-func TestRetrieve(t *testing.T) {
+func mockFullAPI(t *testing.T, mockECS *sdk.MockECSAPI, mockEC2 *sdk.MockEC2API,
+	errLClusters, errDClusters, errLCInstances, errDCInstances, errDInstances,
+	errLTasks, errDTasks, errLServices, errDServices bool) {
 
+	// Mock our cluster
+	cluster := &ecs.Cluster{
+		ClusterArn:  aws.String("c1"),
+		ClusterName: aws.String("cluster1"),
+	}
+	awsmock.MockECSListClusters(t, mockECS, errLClusters, "c1")
+	if errLClusters {
+		return
+	}
+
+	awsmock.MockECSDescribeClusters(t, mockECS, errDClusters, cluster)
+	if errDClusters {
+		return
+	}
+
+	// Mock container instances
+	cInstance1 := &ecs.ContainerInstance{
+		ContainerInstanceArn: aws.String("ci1"),
+		Ec2InstanceId:        aws.String("ec2i1"),
+	}
+	cInstance2 := &ecs.ContainerInstance{
+		ContainerInstanceArn: aws.String("ci2"),
+		Ec2InstanceId:        aws.String("ec2i2"),
+	}
+	awsmock.MockECSListContainerInstances(t, mockECS, errLCInstances, "ci1", "ci2")
+	if errLCInstances {
+		return
+	}
+	awsmock.MockECSDescribeContainerInstances(t, mockECS, errDCInstances, cInstance1, cInstance2)
+	if errDCInstances {
+		return
+	}
+
+	// Mock ec2 instances
+	ec2Instance1 := &ec2.Instance{
+		InstanceId:       aws.String("ec2i1"),
+		PrivateIpAddress: aws.String("10.0.250.65"),
+		Tags: []*ec2.Tag{
+			&ec2.Tag{Key: aws.String("env"), Value: aws.String("prod")},
+			&ec2.Tag{Key: aws.String("number"), Value: aws.String("1")},
+			&ec2.Tag{Key: aws.String("cluster"), Value: aws.String("c1")},
+		},
+	}
+	ec2Instance2 := &ec2.Instance{
+		InstanceId:       aws.String("ec2i2"),
+		PrivateIpAddress: aws.String("10.0.056.17"),
+		Tags: []*ec2.Tag{
+			&ec2.Tag{Key: aws.String("env"), Value: aws.String("prod")},
+			&ec2.Tag{Key: aws.String("number"), Value: aws.String("2")},
+			&ec2.Tag{Key: aws.String("cluster"), Value: aws.String("c1")},
+		},
+	}
+	awsmock.MockEC2DescribeInstances(t, mockEC2, errDInstances, ec2Instance1, ec2Instance2)
+	if errDInstances {
+		return
+	}
+	// Mock tasks
+	task1 := &ecs.Task{
+		TaskArn:              aws.String("task1"),
+		TaskDefinitionArn:    aws.String("taskdef1"),
+		ClusterArn:           aws.String("c1"),
+		ContainerInstanceArn: aws.String("ci1"),
+		Containers: []*ecs.Container{
+			&ecs.Container{
+				Name: aws.String("service1"),
+				NetworkBindings: []*ecs.NetworkBinding{
+					&ecs.NetworkBinding{
+						HostPort:      aws.Int64(20001),
+						ContainerPort: aws.Int64(8000),
+						Protocol:      aws.String("tcp"),
+					},
+					&ecs.NetworkBinding{
+						HostPort:      aws.Int64(33000),
+						ContainerPort: aws.Int64(9782),
+						Protocol:      aws.String("udp"),
+					},
+				},
+			},
+			&ecs.Container{
+				Name: aws.String("nginx"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
+					HostPort:      aws.Int64(30987),
+					ContainerPort: aws.Int64(8081),
+					Protocol:      aws.String("tcp"),
+				}},
+			},
+			&ecs.Container{
+				Name:            aws.String("worker"),
+				NetworkBindings: []*ecs.NetworkBinding{},
+			},
+		},
+	}
+
+	task2 := &ecs.Task{
+		TaskArn:              aws.String("task2"),
+		TaskDefinitionArn:    aws.String("taskdef2"),
+		ClusterArn:           aws.String("c1"),
+		ContainerInstanceArn: aws.String("ci2"),
+		Containers: []*ecs.Container{
+			&ecs.Container{
+				Name: aws.String("service20"),
+				NetworkBindings: []*ecs.NetworkBinding{
+					&ecs.NetworkBinding{
+						HostPort:      aws.Int64(35000),
+						ContainerPort: aws.Int64(8080),
+						Protocol:      aws.String("tcp"),
+					},
+				},
+			},
+			&ecs.Container{
+				Name: aws.String("service21"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
+					HostPort:      aws.Int64(36000),
+					ContainerPort: aws.Int64(8080),
+					Protocol:      aws.String("tcp"),
+				}},
+			},
+			&ecs.Container{
+				Name: aws.String("service22"),
+				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
+					HostPort:      aws.Int64(35057),
+					ContainerPort: aws.Int64(8080),
+					Protocol:      aws.String("tcp"),
+				}},
+			},
+		},
+	}
+
+	awsmock.MockECSListTasks(t, mockECS, errLTasks, "task1", "task2")
+	if errLTasks {
+		return
+	}
+	awsmock.MockECSDescribeTasks(t, mockECS, errDTasks, task1, task2)
+	if errDTasks {
+		return
+	}
+
+	// Mock services
+	service1 := &ecs.Service{
+		ServiceName: aws.String("service1"),
+		Deployments: []*ecs.Deployment{
+			&ecs.Deployment{
+				Status:         aws.String("PRIMARY"),
+				TaskDefinition: aws.String("taskdef1"),
+			},
+			&ecs.Deployment{
+				Status:         aws.String("INACTIVE"),
+				TaskDefinition: aws.String("taskdef3"),
+			},
+		},
+	}
+
+	service2 := &ecs.Service{
+		ServiceName: aws.String("service2"),
+		Deployments: []*ecs.Deployment{
+			&ecs.Deployment{
+				Status:         aws.String("PRIMARY"),
+				TaskDefinition: aws.String("taskdef2"),
+			},
+		},
+	}
+
+	awsmock.MockECSListServices(t, mockECS, errLServices, "service1", "service2")
+	if errLServices {
+		return
+	}
+	awsmock.MockECSDescribeServices(t, mockECS, errDServices, service1, service2)
+	if errDServices {
+		return
+	}
+
+	// Mock task definitions
+	taskdef1 := &ecs.TaskDefinition{
+		TaskDefinitionArn: aws.String("taskdef1"),
+		ContainerDefinitions: []*ecs.ContainerDefinition{
+			&ecs.ContainerDefinition{
+				Name:  aws.String("service1"),
+				Image: aws.String("myCompany/service1:29f323e"),
+				DockerLabels: map[string]*string{
+					"monitor": aws.String("true"),
+					"kind":    aws.String("main"),
+				},
+			},
+			&ecs.ContainerDefinition{
+				Name:  aws.String("nginx"),
+				Image: aws.String("nginx:latest"),
+				DockerLabels: map[string]*string{
+					"kind": aws.String("front-http"),
+				},
+			},
+			&ecs.ContainerDefinition{
+				Name:  aws.String("worker"),
+				Image: aws.String("myCompany/service1:29f323e"),
+				DockerLabels: map[string]*string{
+					"kind": aws.String("worker"),
+				},
+			},
+		},
+	}
+
+	taskdef2 := &ecs.TaskDefinition{
+		TaskDefinitionArn: aws.String("taskdef2"),
+		ContainerDefinitions: []*ecs.ContainerDefinition{
+			&ecs.ContainerDefinition{
+				Name:  aws.String("service20"),
+				Image: aws.String("myCompany/service20:b7bb21f"),
+				DockerLabels: map[string]*string{
+					"monitor": aws.String("true"),
+					"kind":    aws.String("service2"),
+				},
+			},
+			&ecs.ContainerDefinition{
+				Name:  aws.String("service21"),
+				Image: aws.String("myCompany/service21:b7bb21f"),
+				DockerLabels: map[string]*string{
+					"kind":   aws.String("service2"),
+					"backup": aws.String("true"),
+				},
+			},
+			&ecs.ContainerDefinition{
+				Name:  aws.String("service22"),
+				Image: aws.String("myCompany/service22:5f4d97f"),
+				DockerLabels: map[string]*string{
+					"kind":   aws.String("service2"),
+					"backup": aws.String("true"),
+				},
+			},
+		},
+	}
+	awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, taskdef1, taskdef2)
+}
+
+func TestRetrieveOk(t *testing.T) {
 	want := []*types.ServiceInstance{
 		&types.ServiceInstance{
 			Cluster:            "cluster1",
@@ -905,216 +1140,14 @@ func TestRetrieve(t *testing.T) {
 	mockECS := sdk.NewMockECSAPI(ctrl)
 	mockEC2 := sdk.NewMockEC2API(ctrl)
 
+	// Mock all the API
+	mockFullAPI(t, mockECS, mockEC2, false, false, false, false, false, false, false, false, false)
+
 	r := &AWSRetriever{
 		ecsCli: mockECS,
 		ec2Cli: mockEC2,
 		cache:  newAWSCache(),
 	}
-
-	// Mock our cluster
-	cluster := &ecs.Cluster{
-		ClusterArn:  aws.String("c1"),
-		ClusterName: aws.String("cluster1"),
-	}
-	awsmock.MockECSListClusters(t, mockECS, false, "c1")
-	awsmock.MockECSDescribeClusters(t, mockECS, false, cluster)
-
-	// Mock container instances
-	cInstance1 := &ecs.ContainerInstance{
-		ContainerInstanceArn: aws.String("ci1"),
-		Ec2InstanceId:        aws.String("ec2i1"),
-	}
-	cInstance2 := &ecs.ContainerInstance{
-		ContainerInstanceArn: aws.String("ci2"),
-		Ec2InstanceId:        aws.String("ec2i2"),
-	}
-	awsmock.MockECSListContainerInstances(t, mockECS, false, "ci1", "ci2")
-	awsmock.MockECSDescribeContainerInstances(t, mockECS, false, cInstance1, cInstance2)
-
-	// Mock ec2 instances
-	ec2Instance1 := &ec2.Instance{
-		InstanceId:       aws.String("ec2i1"),
-		PrivateIpAddress: aws.String("10.0.250.65"),
-		Tags: []*ec2.Tag{
-			&ec2.Tag{Key: aws.String("env"), Value: aws.String("prod")},
-			&ec2.Tag{Key: aws.String("number"), Value: aws.String("1")},
-			&ec2.Tag{Key: aws.String("cluster"), Value: aws.String("c1")},
-		},
-	}
-	ec2Instance2 := &ec2.Instance{
-		InstanceId:       aws.String("ec2i2"),
-		PrivateIpAddress: aws.String("10.0.056.17"),
-		Tags: []*ec2.Tag{
-			&ec2.Tag{Key: aws.String("env"), Value: aws.String("prod")},
-			&ec2.Tag{Key: aws.String("number"), Value: aws.String("2")},
-			&ec2.Tag{Key: aws.String("cluster"), Value: aws.String("c1")},
-		},
-	}
-	awsmock.MockEC2DescribeInstances(t, mockEC2, false, ec2Instance1, ec2Instance2)
-
-	// Mock tasks
-	task1 := &ecs.Task{
-		TaskArn:              aws.String("task1"),
-		TaskDefinitionArn:    aws.String("taskdef1"),
-		ClusterArn:           aws.String("c1"),
-		ContainerInstanceArn: aws.String("ci1"),
-		Containers: []*ecs.Container{
-			&ecs.Container{
-				Name: aws.String("service1"),
-				NetworkBindings: []*ecs.NetworkBinding{
-					&ecs.NetworkBinding{
-						HostPort:      aws.Int64(20001),
-						ContainerPort: aws.Int64(8000),
-						Protocol:      aws.String("tcp"),
-					},
-					&ecs.NetworkBinding{
-						HostPort:      aws.Int64(33000),
-						ContainerPort: aws.Int64(9782),
-						Protocol:      aws.String("udp"),
-					},
-				},
-			},
-			&ecs.Container{
-				Name: aws.String("nginx"),
-				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
-					HostPort:      aws.Int64(30987),
-					ContainerPort: aws.Int64(8081),
-					Protocol:      aws.String("tcp"),
-				}},
-			},
-			&ecs.Container{
-				Name:            aws.String("worker"),
-				NetworkBindings: []*ecs.NetworkBinding{},
-			},
-		},
-	}
-
-	task2 := &ecs.Task{
-		TaskArn:              aws.String("task2"),
-		TaskDefinitionArn:    aws.String("taskdef2"),
-		ClusterArn:           aws.String("c1"),
-		ContainerInstanceArn: aws.String("ci2"),
-		Containers: []*ecs.Container{
-			&ecs.Container{
-				Name: aws.String("service20"),
-				NetworkBindings: []*ecs.NetworkBinding{
-					&ecs.NetworkBinding{
-						HostPort:      aws.Int64(35000),
-						ContainerPort: aws.Int64(8080),
-						Protocol:      aws.String("tcp"),
-					},
-				},
-			},
-			&ecs.Container{
-				Name: aws.String("service21"),
-				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
-					HostPort:      aws.Int64(36000),
-					ContainerPort: aws.Int64(8080),
-					Protocol:      aws.String("tcp"),
-				}},
-			},
-			&ecs.Container{
-				Name: aws.String("service22"),
-				NetworkBindings: []*ecs.NetworkBinding{&ecs.NetworkBinding{
-					HostPort:      aws.Int64(35057),
-					ContainerPort: aws.Int64(8080),
-					Protocol:      aws.String("tcp"),
-				}},
-			},
-		},
-	}
-
-	awsmock.MockECSListTasks(t, mockECS, false, "task1", "task2")
-	awsmock.MockECSDescribeTasks(t, mockECS, false, task1, task2)
-
-	// Mock services
-	service1 := &ecs.Service{
-		ServiceName: aws.String("service1"),
-		Deployments: []*ecs.Deployment{
-			&ecs.Deployment{
-				Status:         aws.String("PRIMARY"),
-				TaskDefinition: aws.String("taskdef1"),
-			},
-			&ecs.Deployment{
-				Status:         aws.String("INACTIVE"),
-				TaskDefinition: aws.String("taskdef3"),
-			},
-		},
-	}
-
-	service2 := &ecs.Service{
-		ServiceName: aws.String("service2"),
-		Deployments: []*ecs.Deployment{
-			&ecs.Deployment{
-				Status:         aws.String("PRIMARY"),
-				TaskDefinition: aws.String("taskdef2"),
-			},
-		},
-	}
-
-	awsmock.MockECSListServices(t, mockECS, false, "service1", "service2")
-	awsmock.MockECSDescribeServices(t, mockECS, false, service1, service2)
-
-	// Mock task definitions
-	taskdef1 := &ecs.TaskDefinition{
-		TaskDefinitionArn: aws.String("taskdef1"),
-		ContainerDefinitions: []*ecs.ContainerDefinition{
-			&ecs.ContainerDefinition{
-				Name:  aws.String("service1"),
-				Image: aws.String("myCompany/service1:29f323e"),
-				DockerLabels: map[string]*string{
-					"monitor": aws.String("true"),
-					"kind":    aws.String("main"),
-				},
-			},
-			&ecs.ContainerDefinition{
-				Name:  aws.String("nginx"),
-				Image: aws.String("nginx:latest"),
-				DockerLabels: map[string]*string{
-					"kind": aws.String("front-http"),
-				},
-			},
-			&ecs.ContainerDefinition{
-				Name:  aws.String("worker"),
-				Image: aws.String("myCompany/service1:29f323e"),
-				DockerLabels: map[string]*string{
-					"kind": aws.String("worker"),
-				},
-			},
-		},
-	}
-
-	taskdef2 := &ecs.TaskDefinition{
-		TaskDefinitionArn: aws.String("taskdef2"),
-		ContainerDefinitions: []*ecs.ContainerDefinition{
-			&ecs.ContainerDefinition{
-				Name:  aws.String("service20"),
-				Image: aws.String("myCompany/service20:b7bb21f"),
-				DockerLabels: map[string]*string{
-					"monitor": aws.String("true"),
-					"kind":    aws.String("service2"),
-				},
-			},
-			&ecs.ContainerDefinition{
-				Name:  aws.String("service21"),
-				Image: aws.String("myCompany/service21:b7bb21f"),
-				DockerLabels: map[string]*string{
-					"kind":   aws.String("service2"),
-					"backup": aws.String("true"),
-				},
-			},
-			&ecs.ContainerDefinition{
-				Name:  aws.String("service22"),
-				Image: aws.String("myCompany/service22:5f4d97f"),
-				DockerLabels: map[string]*string{
-					"kind":   aws.String("service2"),
-					"backup": aws.String("true"),
-				},
-			},
-		},
-	}
-
-	awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, taskdef1, taskdef2)
 
 	// Retrieve the information
 	got, err := r.Retrieve()
@@ -1133,4 +1166,53 @@ func TestRetrieve(t *testing.T) {
 			t.Errorf("- Received service instance taget is wrong want: %+v; got: %+v", w, gotT)
 		}
 	}
+}
+
+func TestRetrieveError(t *testing.T) {
+	tests := []struct {
+		errLClusters   bool
+		errDClusters   bool
+		errLCInstances bool
+		errDCInstances bool
+		errDInstances  bool
+		errLTasks      bool
+		errDTasks      bool
+		errLServices   bool
+		errDServices   bool
+	}{
+		{errLClusters: true, errDClusters: false, errLCInstances: false, errDCInstances: false, errDInstances: false, errLTasks: false, errDTasks: false, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: true, errLCInstances: false, errDCInstances: false, errDInstances: false, errLTasks: false, errDTasks: false, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: true, errDCInstances: false, errDInstances: false, errLTasks: false, errDTasks: false, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: false, errDCInstances: true, errDInstances: false, errLTasks: false, errDTasks: false, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: false, errDCInstances: false, errDInstances: true, errLTasks: false, errDTasks: false, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: false, errDCInstances: false, errDInstances: false, errLTasks: true, errDTasks: false, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: false, errDCInstances: false, errDInstances: false, errLTasks: false, errDTasks: true, errLServices: false, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: false, errDCInstances: false, errDInstances: false, errLTasks: false, errDTasks: false, errLServices: true, errDServices: false},
+		{errLClusters: false, errDClusters: false, errLCInstances: false, errDCInstances: false, errDInstances: false, errLTasks: false, errDTasks: false, errLServices: false, errDServices: true},
+	}
+
+	for _, test := range tests {
+		// Mock
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockEC2 := sdk.NewMockEC2API(ctrl)
+
+		// Mock all the API
+		mockFullAPI(t, mockECS, mockEC2, test.errLClusters, test.errDClusters, test.errLCInstances, test.errDCInstances, test.errDInstances, test.errLTasks, test.errDTasks, test.errLServices, test.errDServices)
+
+		r := &AWSRetriever{
+			ecsCli: mockECS,
+			ec2Cli: mockEC2,
+			cache:  newAWSCache(),
+		}
+
+		// Retrieve the information
+		_, err := r.Retrieve()
+
+		if err == nil {
+			t.Errorf("Retrieval should error, it didn't")
+		}
+	}
+
 }

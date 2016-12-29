@@ -181,7 +181,7 @@ func MockECSDescribeServices(t *testing.T, mockMatcher *sdk.MockECSAPI, wantErro
 func MockECSDescribeTaskDefinition(t *testing.T, mockMatcher *sdk.MockECSAPI, wantErrorOn int, tds ...*ecs.TaskDefinition) {
 	log.Warnf("Mocking AWS iface: DescribeTaskDefinition")
 
-	calls := make([]*gomock.Call, len(tds))
+	calls := []*gomock.Call{}
 	for i, td := range tds {
 		var err error
 		// if want error is 0 then means disabled
@@ -200,7 +200,12 @@ func MockECSDescribeTaskDefinition(t *testing.T, mockMatcher *sdk.MockECSAPI, wa
 			}
 		}).Return(result, err)
 
-		calls[i] = call
+		calls = append(calls, call)
+
+		// If we arrored then there no more calls are being made
+		if err != nil {
+			break
+		}
 	}
 
 	gomock.InOrder(calls...)
