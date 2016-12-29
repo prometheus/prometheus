@@ -36,34 +36,6 @@ func TestParse(t *testing.T) {
 			input: []string{"-web.external-url", "'https://url/prometheus'"},
 			valid: false,
 		},
-		{
-			input: []string{"-storage.remote.influxdb-url", ""},
-			valid: true,
-		},
-		{
-			input: []string{"-storage.remote.influxdb-url", "http://localhost:8086/"},
-			valid: true,
-		},
-		{
-			input: []string{"-storage.remote.influxdb-url", "'https://some-url/'"},
-			valid: false,
-		},
-		{
-			input: []string{"-alertmanager.url", ""},
-			valid: true,
-		},
-		{
-			input: []string{"-alertmanager.url", "http://alertmanager.company.com"},
-			valid: true,
-		},
-		{
-			input: []string{"-alertmanager.url", "alertmanager.company.com"},
-			valid: false,
-		},
-		{
-			input: []string{"-alertmanager.url", "https://double--dash.de"},
-			valid: true,
-		},
 	}
 
 	for i, test := range tests {
