@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/relabel"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/retrieval"
 )
 
@@ -282,6 +282,8 @@ func (n *Notifier) Send(alerts ...*Alert) {
 				lb.Set(string(ln), string(lv))
 			}
 		}
+
+		a.Labels = lb.Labels()
 	}
 
 	alerts = n.relabelAlerts(alerts)
@@ -310,18 +312,16 @@ func (n *Notifier) Send(alerts ...*Alert) {
 }
 
 func (n *Notifier) relabelAlerts(alerts []*Alert) []*Alert {
-	// TODO(fabxc): temporarily disabled.
-	return alerts
+	var relabeledAlerts []*Alert
 
-	// var relabeledAlerts []*Alert
-	// for _, alert := range alerts {
-	// 	labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-	// 	if labels != nil {
-	// 		alert.Labels = labels
-	// 		relabeledAlerts = append(relabeledAlerts, alert)
-	// 	}
-	// }
-	// return relabeledAlerts
+	for _, alert := range alerts {
+		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
+		if labels != nil {
+			alert.Labels = labels
+			relabeledAlerts = append(relabeledAlerts, alert)
+		}
+	}
+	return relabeledAlerts
 }
 
 // setMore signals that the alert queue has items.
@@ -452,15 +452,15 @@ type alertmanager interface {
 	url() string
 }
 
-type alertmanagerLabels model.LabelSet
+type alertmanagerLabels struct{ labels.Labels }
 
 const pathLabel = "__alerts_path__"
 
 func (a alertmanagerLabels) url() string {
 	u := &url.URL{
-		Scheme: string(a[model.SchemeLabel]),
-		Host:   string(a[model.AddressLabel]),
-		Path:   string(a[pathLabel]),
+		Scheme: a.Get(model.SchemeLabel),
+		Host:   a.Get(model.AddressLabel),
+		Path:   a.Get(pathLabel),
 	}
 	return u.String()
 }
@@ -530,21 +530,29 @@ func postPath(pre string) string {
 func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfig) ([]alertmanager, error) {
 	var res []alertmanager
 
-	for _, lset := range tg.Targets {
+	for _, tlset := range tg.Targets {
+		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
+
+		for ln, lv := range tlset {
+			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+		}
 		// Set configured scheme as the initial scheme label for overwrite.
-		lset[model.SchemeLabel] = model.LabelValue(cfg.Scheme)
-		lset[pathLabel] = model.LabelValue(postPath(cfg.PathPrefix))
+		lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
+		lbls = append(lbls, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix)})
 
 		// Combine target labels with target group labels.
 		for ln, lv := range tg.Labels {
-			if _, ok := lset[ln]; !ok {
-				lset[ln] = lv
+			if _, ok := tlset[ln]; !ok {
+				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
 			}
 		}
-		lset := relabel.Process(lset, cfg.RelabelConfigs...)
+
+		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
 		if lset == nil {
 			continue
 		}
+
+		lb := labels.NewBuilder(lset)
 
 		// addPort checks whether we should add a default port to the address.
 		// If the address is not valid, we don't append a port either.
@@ -558,10 +566,11 @@ func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfi
 			_, _, err := net.SplitHostPort(s + ":1234")
 			return err == nil
 		}
+		addr := lset.Get(model.AddressLabel)
 		// If it's an address with no trailing port, infer it based on the used scheme.
-		if addr := string(lset[model.AddressLabel]); addPort(addr) {
+		if addPort(addr) {
 			// Addresses reaching this point are already wrapped in [] if necessary.
-			switch lset[model.SchemeLabel] {
+			switch lset.Get(model.SchemeLabel) {
 			case "http", "":
 				addr = addr + ":80"
 			case "https":
@@ -569,21 +578,22 @@ func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfi
 			default:
 				return nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 			}
-			lset[model.AddressLabel] = model.LabelValue(addr)
+			lb.Set(model.AddressLabel, addr)
 		}
-		if err := config.CheckTargetAddress(lset[model.AddressLabel]); err != nil {
+
+		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 			return nil, err
 		}
 
 		// Meta labels are deleted after relabelling. Other internal labels propagate to
 		// the target which decides whether they will be part of their label set.
-		for ln := range lset {
-			if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
-				delete(lset, ln)
+		for _, l := range lset {
+			if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
+				lb.Del(l.Name)
 			}
 		}
 
-		res = append(res, alertmanagerLabels(lset))
+		res = append(res, alertmanagerLabels{lset})
 	}
 	return res, nil
 }
