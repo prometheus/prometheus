@@ -19,6 +19,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 func mustNewRegexp(s string) config.Regexp {
@@ -31,98 +32,98 @@ func mustNewRegexp(s string) config.Regexp {
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
-		in      model.LabelSet
+		in      labels.Labels
 		cfg     *config.ScrapeConfig
-		res     model.LabelSet
-		resOrig model.LabelSet
+		res     labels.Labels
+		resOrig labels.Labels
 	}{
 		// Regular population of scrape config options.
 		{
-			in: model.LabelSet{
+			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "value",
-			},
+			}),
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
 			},
-			res: model.LabelSet{
+			res: labels.FromMap(map[string]string{
 				model.AddressLabel:     "1.2.3.4:1000",
 				model.InstanceLabel:    "1.2.3.4:1000",
 				model.SchemeLabel:      "https",
 				model.MetricsPathLabel: "/metrics",
 				model.JobLabel:         "job",
 				"custom":               "value",
-			},
-			resOrig: model.LabelSet{
+			}),
+			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:     "1.2.3.4:1000",
 				model.SchemeLabel:      "https",
 				model.MetricsPathLabel: "/metrics",
 				model.JobLabel:         "job",
 				"custom":               "value",
-			},
+			}),
 		},
 		// Pre-define/overwrite scrape config labels.
 		// Leave out port and expect it to be defaulted to scheme.
 		{
-			in: model.LabelSet{
+			in: labels.FromMap(map[string]string{
 				model.AddressLabel:     "1.2.3.4",
 				model.SchemeLabel:      "http",
 				model.MetricsPathLabel: "/custom",
 				model.JobLabel:         "custom-job",
-			},
+			}),
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
 			},
-			res: model.LabelSet{
+			res: labels.FromMap(map[string]string{
 				model.AddressLabel:     "1.2.3.4:80",
 				model.InstanceLabel:    "1.2.3.4:80",
 				model.SchemeLabel:      "http",
 				model.MetricsPathLabel: "/custom",
 				model.JobLabel:         "custom-job",
-			},
-			resOrig: model.LabelSet{
+			}),
+			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:     "1.2.3.4",
 				model.SchemeLabel:      "http",
 				model.MetricsPathLabel: "/custom",
 				model.JobLabel:         "custom-job",
-			},
+			}),
 		},
 		// Provide instance label. HTTPS port default for IPv6.
 		{
-			in: model.LabelSet{
+			in: labels.FromMap(map[string]string{
 				model.AddressLabel:  "[::1]",
 				model.InstanceLabel: "custom-instance",
-			},
+			}),
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
 			},
-			res: model.LabelSet{
+			res: labels.FromMap(map[string]string{
 				model.AddressLabel:     "[::1]:443",
 				model.InstanceLabel:    "custom-instance",
 				model.SchemeLabel:      "https",
 				model.MetricsPathLabel: "/metrics",
 				model.JobLabel:         "job",
-			},
-			resOrig: model.LabelSet{
+			}),
+			resOrig: labels.FromMap(map[string]string{
 				model.AddressLabel:     "[::1]",
 				model.InstanceLabel:    "custom-instance",
 				model.SchemeLabel:      "https",
 				model.MetricsPathLabel: "/metrics",
 				model.JobLabel:         "job",
-			},
+			}),
 		},
 		// Apply relabeling.
 		{
-			in: model.LabelSet{
+			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "value",
-			},
+			}),
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",

@@ -1,7 +1,9 @@
 package promql
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -40,6 +42,10 @@ func (s String) String() string {
 	return s.V
 }
 
+func (s String) MarshalJSON() ([]byte, error) {
+	return json.Marshal([...]interface{}{float64(s.T) / 1000, s.V})
+}
+
 // Scalar is a data point that's explicitly not associated with a metric.
 type Scalar struct {
 	T int64
@@ -50,10 +56,15 @@ func (s Scalar) String() string {
 	return fmt.Sprintf("scalar: %v @[%v]", s.V, s.T)
 }
 
+func (s Scalar) MarshalJSON() ([]byte, error) {
+	v := strconv.FormatFloat(s.V, 'f', -1, 64)
+	return json.Marshal([...]interface{}{float64(s.T) / 1000, v})
+}
+
 // Series is a stream of data points belonging to a metric.
 type Series struct {
-	Metric labels.Labels
-	Points []Point
+	Metric labels.Labels `json:"metric"`
+	Points []Point       `json:"values"`
 }
 
 func (s Series) String() string {
@@ -74,6 +85,12 @@ func (p Point) String() string {
 	return fmt.Sprintf("%f @[%d]", p.V, p.T)
 }
 
+// MarshalJSON implements json.Marshaler.
+func (p Point) MarshalJSON() ([]byte, error) {
+	v := strconv.FormatFloat(p.V, 'f', -1, 64)
+	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
+}
+
 // Sample is a single sample belonging to a metric.
 type Sample struct {
 	Point
@@ -83,6 +100,17 @@ type Sample struct {
 
 func (s Sample) String() string {
 	return fmt.Sprintf("%s => %s", s.Metric, s.Point)
+}
+
+func (s Sample) MarshalJSON() ([]byte, error) {
+	v := struct {
+		M labels.Labels `json:"metric"`
+		V Point         `json:"value"`
+	}{
+		M: s.Metric,
+		V: s.Point,
+	}
+	return json.Marshal(v)
 }
 
 // Vector is basically only an alias for model.Samples, but the
@@ -111,6 +139,10 @@ func (m Matrix) String() string {
 
 	return strings.Join(strs, "\n")
 }
+
+func (m Matrix) Len() int           { return len(m) }
+func (m Matrix) Less(i, j int) bool { return labels.Compare(m[i].Metric, m[j].Metric) < 0 }
+func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 // Result holds the resulting value of an execution or an error
 // if any occurred.

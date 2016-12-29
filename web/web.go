@@ -44,7 +44,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -59,7 +59,7 @@ type Handler struct {
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
 	context       context.Context
-	storage       local.Storage
+	storage       storage.Storage
 	notifier      *notifier.Notifier
 
 	apiV1 *api_v1.API
@@ -104,7 +104,7 @@ type PrometheusVersion struct {
 // Options for the web Handler.
 type Options struct {
 	Context       context.Context
-	Storage       local.Storage
+	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	TargetManager *retrieval.TargetManager
 	RuleManager   *rules.Manager
@@ -375,7 +375,7 @@ func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	// Bucket targets by job label
 	tps := map[string][]retrieval.Target{}
 	for _, t := range h.targetManager.Targets() {
-		job := string(t.Labels()[model.JobLabel])
+		job := t.Labels().Get(model.JobLabel)
 		tps[job] = append(tps[job], t)
 	}
 

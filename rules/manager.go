@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-	"unsafe"
 
 	html_template "html/template"
 
@@ -33,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -150,10 +148,7 @@ func (g *Group) run() {
 
 	iter := func() {
 		iterationsScheduled.Inc()
-		if g.opts.SampleAppender.NeedsThrottling() {
-			iterationsSkipped.Inc()
-			return
-		}
+
 		start := time.Now()
 		g.Eval()
 
@@ -281,19 +276,12 @@ func (g *Group) Eval() {
 			)
 
 			for _, s := range vector {
-				// TODO(fabxc): adjust after reworking appending.
-				var ms model.Sample
-				lbls := s.Metric.Map()
-				ms.Metric = *(*model.Metric)(unsafe.Pointer(&lbls))
-				ms.Timestamp = model.Time(s.T)
-				ms.Value = model.SampleValue(s.V)
-
-				if err := g.opts.SampleAppender.Append(&ms); err != nil {
+				if err := g.opts.SampleAppender.Add(s.Metric, s.T, s.V); err != nil {
 					switch err {
-					case local.ErrOutOfOrderSample:
+					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
 						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
-					case local.ErrDuplicateSampleForTimestamp:
+					case storage.ErrDuplicateSampleForTimestamp:
 						numDuplicates++
 						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
 					default:
@@ -306,6 +294,9 @@ func (g *Group) Eval() {
 			}
 			if numDuplicates > 0 {
 				log.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
+			}
+			if err := g.opts.SampleAppender.Commit(); err != nil {
+				log.With("err", err).Warn("rule sample appending failed")
 			}
 		}(rule)
 	}
@@ -356,7 +347,7 @@ type ManagerOptions struct {
 	QueryEngine    *promql.Engine
 	Context        context.Context
 	Notifier       *notifier.Notifier
-	SampleAppender storage.SampleAppender
+	SampleAppender storage.Appender
 }
 
 // NewManager returns an implementation of Manager, ready to be started

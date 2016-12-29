@@ -23,7 +23,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fabxc/tsdb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
@@ -34,9 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -77,19 +74,25 @@ func Main() int {
 	log.Infoln("Build context", version.BuildContext())
 
 	var (
-		sampleAppender = storage.Fanout{}
-		reloadables    []Reloadable
+		// sampleAppender = storage.Fanout{}
+		reloadables []Reloadable
 	)
 
-	_, err := tsdb.Open(cfg.localStoragePath, nil, nil)
+	localStorage, err := tsdb.Open(cfg.localStoragePath)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
+		return 1
 	}
-	var localStorage local.Storage
 
-	reloadableRemoteStorage := remote.New()
-	sampleAppender = append(sampleAppender, reloadableRemoteStorage)
-	reloadables = append(reloadables, reloadableRemoteStorage)
+	sampleAppender, err := localStorage.Appender()
+	if err != nil {
+		log.Errorf("Creating sample appender failed: %s", err)
+		return 1
+	}
+
+	// reloadableRemoteStorage := remote.New()
+	// sampleAppender = append(sampleAppender, reloadableRemoteStorage)
+	// reloadables = append(reloadables, reloadableRemoteStorage)
 
 	var (
 		notifier       = notifier.New(&cfg.notifier)
@@ -162,18 +165,13 @@ func Main() int {
 	}()
 
 	// Start all components. The order is NOT arbitrary.
-
-	if err := localStorage.Start(); err != nil {
-		log.Errorln("Error opening memory series storage:", err)
-		return 1
-	}
 	defer func() {
-		if err := localStorage.Stop(); err != nil {
+		if err := localStorage.Close(); err != nil {
 			log.Errorln("Error stopping storage:", err)
 		}
 	}()
 
-	defer reloadableRemoteStorage.Stop()
+	// defer reloadableRemoteStorage.Stop()
 
 	// The storage has to be fully initialized before registering.
 	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {

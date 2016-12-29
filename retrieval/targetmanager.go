@@ -28,7 +28,7 @@ import (
 // creates the new targets based on the target groups it receives from various
 // target providers.
 type TargetManager struct {
-	appender      storage.SampleAppender
+	appender      storage.Appender
 	scrapeConfigs []*config.ScrapeConfig
 
 	mtx    sync.RWMutex
@@ -49,7 +49,7 @@ type targetSet struct {
 }
 
 // NewTargetManager creates a new TargetManager.
-func NewTargetManager(app storage.SampleAppender) *TargetManager {
+func NewTargetManager(app storage.Appender) *TargetManager {
 	return &TargetManager{
 		appender:   app,
 		targetSets: map[string]*targetSet{},

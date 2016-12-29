@@ -27,7 +27,8 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/relabel"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -45,9 +46,9 @@ const (
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
 	// Labels before any processing.
-	discoveredLabels model.LabelSet
+	discoveredLabels labels.Labels
 	// Any labels that are added to this target and its metrics.
-	labels model.LabelSet
+	labels labels.Labels
 	// Additional URL parmeters that are part of the target URL.
 	params url.Values
 
@@ -58,7 +59,7 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels, discoveredLabels model.LabelSet, params url.Values) *Target {
+func NewTarget(labels, discoveredLabels labels.Labels, params url.Values) *Target {
 	return &Target{
 		labels:           labels,
 		discoveredLabels: discoveredLabels,
@@ -111,7 +112,7 @@ func (t *Target) String() string {
 // hash returns an identifying hash for the target.
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
-	h.Write([]byte(t.labels.Fingerprint().String()))
+	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
@@ -134,19 +135,21 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 }
 
 // Labels returns a copy of the set of all public labels of the target.
-func (t *Target) Labels() model.LabelSet {
-	lset := make(model.LabelSet, len(t.labels))
-	for ln, lv := range t.labels {
-		if !strings.HasPrefix(string(ln), model.ReservedLabelPrefix) {
-			lset[ln] = lv
+func (t *Target) Labels() labels.Labels {
+	lset := make(labels.Labels, 0, len(t.labels))
+	for _, l := range t.labels {
+		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+			lset = append(lset, l)
 		}
 	}
 	return lset
 }
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
-func (t *Target) DiscoveredLabels() model.LabelSet {
-	return t.discoveredLabels.Clone()
+func (t *Target) DiscoveredLabels() labels.Labels {
+	lset := make(labels.Labels, len(t.discoveredLabels))
+	copy(lset, t.discoveredLabels)
+	return lset
 }
 
 // URL returns a copy of the target's URL.
@@ -157,23 +160,23 @@ func (t *Target) URL() *url.URL {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
-	for k, v := range t.labels {
-		if !strings.HasPrefix(string(k), model.ParamLabelPrefix) {
+	for _, l := range t.labels {
+		if !strings.HasPrefix(l.Name, model.ParamLabelPrefix) {
 			continue
 		}
-		ks := string(k[len(model.ParamLabelPrefix):])
+		ks := l.Name[len(model.ParamLabelPrefix):]
 
 		if len(params[ks]) > 0 {
-			params[ks][0] = string(v)
+			params[ks][0] = string(l.Value)
 		} else {
-			params[ks] = []string{string(v)}
+			params[ks] = []string{l.Value}
 		}
 	}
 
 	return &url.URL{
-		Scheme:   string(t.labels[model.SchemeLabel]),
-		Host:     string(t.labels[model.AddressLabel]),
-		Path:     string(t.labels[model.MetricsPathLabel]),
+		Scheme:   string(t.labels.Get(model.SchemeLabel)),
+		Host:     string(t.labels.Get(model.AddressLabel)),
+		Path:     string(t.labels.Get(model.MetricsPathLabel)),
 		RawQuery: params.Encode(),
 	}
 }
@@ -226,91 +229,97 @@ func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 // Merges the ingested sample's metric with the label set. On a collision the
 // value of the ingested label is stored in a label prefixed with 'exported_'.
 type ruleLabelsAppender struct {
-	storage.SampleAppender
-	labels model.LabelSet
+	storage.Appender
+	labels labels.Labels
 }
 
-func (app ruleLabelsAppender) Append(s *model.Sample) error {
-	for ln, lv := range app.labels {
-		if v, ok := s.Metric[ln]; ok && v != "" {
-			s.Metric[model.ExportedLabelPrefix+ln] = v
+func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) error {
+	lb := labels.NewBuilder(lset)
+
+	for _, l := range app.labels {
+		lv := lset.Get(l.Name)
+		if lv != "" {
+			lb.Set(model.ExportedLabelPrefix+l.Name, lv)
 		}
-		s.Metric[ln] = lv
+		lb.Set(l.Name, l.Value)
 	}
 
-	return app.SampleAppender.Append(s)
+	return app.Appender.Add(lb.Labels(), t, v)
 }
 
 type honorLabelsAppender struct {
-	storage.SampleAppender
-	labels model.LabelSet
+	storage.Appender
+	labels labels.Labels
 }
 
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Append(s *model.Sample) error {
-	for ln, lv := range app.labels {
-		if _, ok := s.Metric[ln]; !ok {
-			s.Metric[ln] = lv
+func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) error {
+	lb := labels.NewBuilder(lset)
+
+	for _, l := range app.labels {
+		if lv := lset.Get(l.Name); lv == "" {
+			lb.Set(l.Name, l.Value)
 		}
 	}
 
-	return app.SampleAppender.Append(s)
+	return app.Appender.Add(lb.Labels(), t, v)
 }
 
 // Applies a set of relabel configurations to the sample's metric
 // before actually appending it.
 type relabelAppender struct {
-	storage.SampleAppender
+	storage.Appender
 	relabelings []*config.RelabelConfig
 }
 
-func (app relabelAppender) Append(s *model.Sample) error {
-	labels := relabel.Process(model.LabelSet(s.Metric), app.relabelings...)
+func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) error {
+	lset = relabel.Process(lset, app.relabelings...)
 
 	// Check if the timeseries was dropped.
-	if labels == nil {
+	if lset == nil {
 		return nil
 	}
-	s.Metric = model.Metric(labels)
-
-	return app.SampleAppender.Append(s)
+	return app.Appender.Add(lset, t, v)
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns a nil label set if the target is dropped during relabeling.
-func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig model.LabelSet, err error) {
-	if _, ok := lset[model.AddressLabel]; !ok {
+func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
+	if v := lset.Get(model.AddressLabel); v == "" {
 		return nil, nil, fmt.Errorf("no address")
 	}
-	// Copy labels into the labelset for the target if they are not
-	// set already. Apply the labelsets in order of decreasing precedence.
-	scrapeLabels := model.LabelSet{
-		model.SchemeLabel:      model.LabelValue(cfg.Scheme),
-		model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
-		model.JobLabel:         model.LabelValue(cfg.JobName),
+	// Copy labels into the labelset for the target if they are not set already.
+	scrapeLabels := []labels.Label{
+		{Name: model.JobLabel, Value: cfg.JobName},
+		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
+		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
-	for ln, lv := range scrapeLabels {
-		if _, ok := lset[ln]; !ok {
-			lset[ln] = lv
+	lb := labels.NewBuilder(lset)
+
+	for _, l := range scrapeLabels {
+		if lv := lset.Get(l.Name); lv == "" {
+			lb.Set(l.Name, l.Value)
 		}
 	}
 	// Encode scrape query parameters as labels.
 	for k, v := range cfg.Params {
 		if len(v) > 0 {
-			lset[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
+			lb.Set(model.ParamLabelPrefix+k, v[0])
 		}
 	}
 
-	preRelabelLabels := lset.Clone()
-	lset = relabel.Process(lset, cfg.RelabelConfigs...)
+	preRelabelLabels := lb.Labels()
+	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if lset == nil {
 		return nil, nil, nil
 	}
+
+	lb = labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
@@ -324,10 +333,11 @@ func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig mo
 		_, _, err := net.SplitHostPort(s + ":1234")
 		return err == nil
 	}
+	addr := lset.Get(model.AddressLabel)
 	// If it's an address with no trailing port, infer it based on the used scheme.
-	if addr := string(lset[model.AddressLabel]); addPort(addr) {
+	if addPort(addr) {
 		// Addresses reaching this point are already wrapped in [] if necessary.
-		switch lset[model.SchemeLabel] {
+		switch lset.Get(model.SchemeLabel) {
 		case "http", "":
 			addr = addr + ":80"
 		case "https":
@@ -335,44 +345,52 @@ func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig mo
 		default:
 			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
-		lset[model.AddressLabel] = model.LabelValue(addr)
+		lb.Set(model.AddressLabel, addr)
 	}
-	if err := config.CheckTargetAddress(lset[model.AddressLabel]); err != nil {
+
+	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 		return nil, nil, err
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
-	for ln := range lset {
-		if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
-			delete(lset, ln)
+	for _, l := range lset {
+		if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
+			lb.Del(l.Name)
 		}
 	}
 
 	// Default the instance label to the target address.
-	if _, ok := lset[model.InstanceLabel]; !ok {
-		lset[model.InstanceLabel] = lset[model.AddressLabel]
+	if v := lset.Get(model.InstanceLabel); v == "" {
+		lb.Set(model.InstanceLabel, addr)
 	}
-	return lset, preRelabelLabels, nil
+	return lb.Labels(), preRelabelLabels, nil
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
 func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 
-	for i, lset := range tg.Targets {
-		// Combine target labels with target group labels.
+	for i, tlset := range tg.Targets {
+		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
+
+		for ln, lv := range tlset {
+			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+		}
 		for ln, lv := range tg.Labels {
-			if _, ok := lset[ln]; !ok {
-				lset[ln] = lv
+			if _, ok := tlset[ln]; !ok {
+				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
 			}
 		}
-		labels, origLabels, err := populateLabels(lset, cfg)
+
+		lset := labels.New(lbls...)
+
+		lbls, origLabels, err := populateLabels(lset, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
 		}
-		if labels != nil {
-			targets = append(targets, NewTarget(labels, origLabels, cfg.Params))
+		if lbls != nil {
+			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
 		}
 	}
 	return targets, nil

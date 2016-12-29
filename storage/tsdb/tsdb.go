@@ -24,7 +24,6 @@ func Open(path string) (storage.Storage, error) {
 }
 
 func (a adapter) Querier(mint, maxt int64) (storage.Querier, error) {
-	// fmt.Println("new querier at", timestamp.Time(mint), timestamp.Time(maxt), maxt-mint)
 	return querier{q: a.db.Querier(mint, maxt)}, nil
 }
 
@@ -74,9 +73,8 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) Add(lset labels.Labels, t int64, v float64) {
-	// fmt.Println("add", lset, timestamp.Time(t), v)
-	a.a.Add(toTSDBLabels(lset), t, v)
+func (a appender) Add(lset labels.Labels, t int64, v float64) error {
+	return a.a.Add(toTSDBLabels(lset), t, v)
 }
 func (a appender) Commit() error { return a.a.Commit() }
 

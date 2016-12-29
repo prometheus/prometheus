@@ -336,6 +336,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 					Seriess[h] = ss
 				}
 				ss.Points = append(ss.Points, sample.Point)
+				Seriess[h] = ss
 			}
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
@@ -358,15 +359,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		return nil, err
 	}
 
-	// Turn Matrix type with protected metric into model.Matrix.
-	resMatrix := mat
-
 	// TODO(fabxc): order ensured by storage?
-	// sortTimer := query.stats.GetTimer(stats.ResultSortTime).Start()
-	// sort.Sort(resMatrix)
-	// sortTimer.Stop()
+	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
+	sortTimer := query.stats.GetTimer(stats.ResultSortTime).Start()
+	sort.Sort(mat)
+	sortTimer.Stop()
 
-	return resMatrix, nil
+	return mat, nil
 }
 
 func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Querier, error) {
