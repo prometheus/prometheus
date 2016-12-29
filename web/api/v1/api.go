@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"sort"
 	"strconv"
 	"time"
 
@@ -28,9 +27,10 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -90,7 +90,7 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Storage     local.Storage
+	Storage     storage.Storage
 	QueryEngine *promql.Engine
 
 	targetRetriever targetRetriever
@@ -100,7 +100,7 @@ type API struct {
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever) *API {
+func NewAPI(qe *promql.Engine, st storage.Storage, tr targetRetriever) *API {
 	return &API{
 		QueryEngine:     qe,
 		Storage:         st,
@@ -229,6 +229,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		}
 		return nil, &apiError{errorExec, res.Err}
 	}
+
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
@@ -241,17 +242,17 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
 	}
-	q, err := api.Storage.Querier()
+	q, err := api.Storage.Querier(math.MinInt64, math.MaxInt64)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
 	defer q.Close()
 
-	vals, err := q.LabelValuesForLabelName(api.context(r), model.LabelName(name))
+	// TODO(fabxc): add back request context.
+	vals, err := q.LabelValues(name)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
-	sort.Sort(vals)
 
 	return vals, nil
 }
@@ -284,7 +285,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		end = time.Unix(math.MaxInt64, 0)
 	}
 
-	var matcherSets [][]*promql.LabelMatcher
+	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
@@ -347,9 +348,9 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 
 type Target struct {
 	// Labels before any processing.
-	DiscoveredLabels model.LabelSet `json:"discoveredLabels"`
+	DiscoveredLabels map[string]string `json:"discoveredLabels"`
 	// Any labels that are added to this target and its metrics.
-	Labels model.LabelSet `json:"labels"`
+	Labels map[string]string `json:"labels"`
 
 	ScrapeUrl string `json:"scrapeUrl"`
 
@@ -370,8 +371,8 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 		}
 
 		res[i] = &Target{
-			DiscoveredLabels: t.DiscoveredLabels(),
-			Labels:           t.Labels(),
+			DiscoveredLabels: t.DiscoveredLabels().Map(),
+			Labels:           t.Labels().Map(),
 			ScrapeUrl:        t.URL().String(),
 			LastError:        lastErrStr,
 			LastScrape:       t.LastScrape(),

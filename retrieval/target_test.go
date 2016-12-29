@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 const (
@@ -36,11 +37,8 @@ const (
 )
 
 func TestTargetLabels(t *testing.T) {
-	target := newTestTarget("example.com:80", 0, model.LabelSet{"job": "some_job", "foo": "bar"})
-	want := model.LabelSet{
-		model.JobLabel: "some_job",
-		"foo":          "bar",
-	}
+	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
+	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("want base labels %v, got %v", want, got)
@@ -54,9 +52,9 @@ func TestTargetOffset(t *testing.T) {
 
 	// Calculate offsets for 10000 different targets.
 	for i := range offsets {
-		target := newTestTarget("example.com:80", 0, model.LabelSet{
-			"label": model.LabelValue(fmt.Sprintf("%d", i)),
-		})
+		target := newTestTarget("example.com:80", 0, labels.FromStrings(
+			"label", fmt.Sprintf("%d", i),
+		))
 		offsets[i] = target.offset(interval)
 	}
 
@@ -98,13 +96,13 @@ func TestTargetURL(t *testing.T) {
 		"abc": []string{"foo", "bar", "baz"},
 		"xyz": []string{"hoo"},
 	}
-	labels := model.LabelSet{
+	labels := labels.FromMap(map[string]string{
 		model.AddressLabel:     "example.com:1234",
 		model.SchemeLabel:      "https",
 		model.MetricsPathLabel: "/metricz",
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
-	}
+	})
 	target := NewTarget(labels, labels, params)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
@@ -126,15 +124,13 @@ func TestTargetURL(t *testing.T) {
 	}
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelSet) *Target {
-	labels = labels.Clone()
-	labels[model.SchemeLabel] = "http"
-	labels[model.AddressLabel] = model.LabelValue(strings.TrimLeft(targetURL, "http://"))
-	labels[model.MetricsPathLabel] = "/metrics"
+func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
+	lb := labels.NewBuilder(lbls)
+	lb.Set(model.SchemeLabel, "http")
+	lb.Set(model.AddressLabel, strings.TrimLeft(targetURL, "http://"))
+	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{
-		labels: labels,
-	}
+	return &Target{labels: lb.Labels()}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {

@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -37,7 +38,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	req.ParseForm()
 
-	var matcherSets [][]*promql.LabelMatcher
+	var matcherSets [][]*labels.Matcher
 	for _, s := range req.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {

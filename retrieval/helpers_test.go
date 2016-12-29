@@ -14,38 +14,36 @@
 package retrieval
 
 import (
-	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 type nopAppender struct{}
 
-func (a nopAppender) Append(*model.Sample) error {
-	return nil
-}
-
-func (a nopAppender) NeedsThrottling() bool {
-	return false
-}
+func (a nopAppender) Add(l labels.Labels, t int64, v float64) error { return nil }
+func (a nopAppender) Commit() error                                 { return nil }
 
 type collectResultAppender struct {
-	result    model.Samples
+	result    []sample
 	throttled bool
 }
 
-func (a *collectResultAppender) Append(s *model.Sample) error {
-	for ln, lv := range s.Metric {
-		if len(lv) == 0 {
-			delete(s.Metric, ln)
-		}
-	}
-	a.result = append(a.result, s)
+func (a *collectResultAppender) Add(l labels.Labels, t int64, v float64) error {
+	// for ln, lv := range s.Metric {
+	// 	if len(lv) == 0 {
+	// 		delete(s.Metric, ln)
+	// 	}
+	// }
+	a.result = append(a.result, sample{
+		metric: l,
+		t:      t,
+		v:      v,
+	})
 	return nil
 }
 
-func (a *collectResultAppender) NeedsThrottling() bool {
-	return a.throttled
+func (a *collectResultAppender) Commit() error {
+	return nil
 }
 
 // fakeTargetProvider implements a TargetProvider and allows manual injection

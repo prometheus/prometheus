@@ -2,6 +2,7 @@ package labels
 
 import (
 	"bytes"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,10 @@ func (ls Labels) String() string {
 	b.WriteByte('}')
 
 	return b.String()
+}
+
+func (ls Labels) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ls.Map())
 }
 
 // Hash returns a hash value for the label set.

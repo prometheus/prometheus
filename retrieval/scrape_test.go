@@ -29,6 +29,8 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -78,9 +80,7 @@ func TestScrapePoolStop(t *testing.T) {
 
 	for i := 0; i < numTargets; i++ {
 		t := &Target{
-			labels: model.LabelSet{
-				model.AddressLabel: model.LabelValue(fmt.Sprintf("example.com:%d", i)),
-			},
+			labels: labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
 		}
 		l := &testLoop{}
 		l.stopFunc = func() {
@@ -139,7 +139,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app, reportApp storage.SampleAppender) loop {
+	newLoop := func(ctx context.Context, s scraper, app, reportApp storage.Appender) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -168,9 +168,7 @@ func TestScrapePoolReload(t *testing.T) {
 
 	for i := 0; i < numTargets; i++ {
 		t := &Target{
-			labels: model.LabelSet{
-				model.AddressLabel: model.LabelValue(fmt.Sprintf("example.com:%d", i)),
-			},
+			labels: labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
 		}
 		l := &testLoop{}
 		l.stopFunc = func() {
@@ -240,8 +238,8 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
 	}
-	if rl.SampleAppender != app {
-		t.Fatalf("Expected base appender but got %T", rl.SampleAppender)
+	if rl.Appender != app {
+		t.Fatalf("Expected base appender but got %T", rl.Appender)
 	}
 
 	cfg.HonorLabels = true
@@ -251,8 +249,8 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
 	}
-	if hl.SampleAppender != app {
-		t.Fatalf("Expected base appender but got %T", hl.SampleAppender)
+	if hl.Appender != app {
+		t.Fatalf("Expected base appender but got %T", hl.Appender)
 	}
 }
 
@@ -275,12 +273,12 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
 	}
-	re, ok := rl.SampleAppender.(relabelAppender)
+	re, ok := rl.Appender.(relabelAppender)
 	if !ok {
-		t.Fatalf("Expected relabelAppender but got %T", rl.SampleAppender)
+		t.Fatalf("Expected relabelAppender but got %T", rl.Appender)
 	}
-	if re.SampleAppender != app {
-		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	if re.Appender != app {
+		t.Fatalf("Expected base appender but got %T", re.Appender)
 	}
 
 	cfg.HonorLabels = true
@@ -290,12 +288,12 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
 	}
-	re, ok = hl.SampleAppender.(relabelAppender)
+	re, ok = hl.Appender.(relabelAppender)
 	if !ok {
-		t.Fatalf("Expected relabelAppender but got %T", hl.SampleAppender)
+		t.Fatalf("Expected relabelAppender but got %T", hl.Appender)
 	}
-	if re.SampleAppender != app {
-		t.Fatalf("Expected base appender but got %T", re.SampleAppender)
+	if re.Appender != app {
+		t.Fatalf("Expected base appender but got %T", re.Appender)
 	}
 }
 
@@ -322,7 +320,7 @@ func TestScrapeLoopStop(t *testing.T) {
 	}
 
 	// Running the scrape loop must exit before calling the scraper even once.
-	scraper.scrapeFunc = func(context.Context, time.Time) (model.Samples, error) {
+	scraper.scrapeFunc = func(context.Context, time.Time) (samples, error) {
 		t.Fatalf("scraper was called for terminated scrape loop")
 		return nil, nil
 	}
@@ -386,7 +384,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	scraper.offsetDur = 0
 
 	block := make(chan struct{})
-	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (model.Samples, error) {
+	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (samples, error) {
 		select {
 		case <-block:
 		case <-ctx.Done():
@@ -444,39 +442,39 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	ts := &targetScraper{
 		Target: &Target{
-			labels: model.LabelSet{
-				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-				model.AddressLabel: model.LabelValue(serverURL.Host),
-			},
+			labels: labels.FromStrings(
+				model.SchemeLabel, serverURL.Scheme,
+				model.AddressLabel, serverURL.Host,
+			),
 		},
 		client: http.DefaultClient,
 	}
 	now := time.Now()
 
-	samples, err := ts.scrape(context.Background(), now)
+	smpls, err := ts.scrape(context.Background(), now)
 	if err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
 
-	expectedSamples := model.Samples{
-		{
-			Metric:    model.Metric{"__name__": "metric_a"},
-			Timestamp: model.TimeFromUnixNano(now.UnixNano()),
-			Value:     1,
+	expectedSamples := samples{
+		sample{
+			metric: labels.FromStrings(labels.MetricName, "metric_a"),
+			t:      timestamp.FromTime(now),
+			v:      1,
 		},
-		{
-			Metric:    model.Metric{"__name__": "metric_b"},
-			Timestamp: model.TimeFromUnixNano(now.UnixNano()),
-			Value:     2,
+		sample{
+			metric: labels.FromStrings(labels.MetricName, "metric_b"),
+			t:      timestamp.FromTime(now),
+			v:      2,
 		},
 	}
 	sort.Sort(expectedSamples)
-	sort.Sort(samples)
+	sort.Sort(smpls)
 
-	if !reflect.DeepEqual(samples, expectedSamples) {
+	if !reflect.DeepEqual(smpls, expectedSamples) {
 		t.Errorf("Scraped samples did not match served metrics")
 		t.Errorf("Expected: %v", expectedSamples)
-		t.Fatalf("Got: %v", samples)
+		t.Fatalf("Got: %v", smpls)
 	}
 }
 
@@ -497,10 +495,10 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 
 	ts := &targetScraper{
 		Target: &Target{
-			labels: model.LabelSet{
-				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-				model.AddressLabel: model.LabelValue(serverURL.Host),
-			},
+			labels: labels.FromStrings(
+				model.SchemeLabel, serverURL.Scheme,
+				model.AddressLabel, serverURL.Host,
+			),
 		},
 		client: http.DefaultClient,
 	}
@@ -548,10 +546,10 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 
 	ts := &targetScraper{
 		Target: &Target{
-			labels: model.LabelSet{
-				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-				model.AddressLabel: model.LabelValue(serverURL.Host),
-			},
+			labels: labels.FromStrings(
+				model.SchemeLabel, serverURL.Scheme,
+				model.AddressLabel, serverURL.Host,
+			),
 		},
 		client: http.DefaultClient,
 	}
@@ -570,9 +568,9 @@ type testScraper struct {
 	lastDuration time.Duration
 	lastError    error
 
-	samples    model.Samples
+	samples    samples
 	scrapeErr  error
-	scrapeFunc func(context.Context, time.Time) (model.Samples, error)
+	scrapeFunc func(context.Context, time.Time) (samples, error)
 }
 
 func (ts *testScraper) offset(interval time.Duration) time.Duration {
@@ -585,7 +583,7 @@ func (ts *testScraper) report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(ctx context.Context, t time.Time) (model.Samples, error) {
+func (ts *testScraper) scrape(ctx context.Context, t time.Time) (samples, error) {
 	if ts.scrapeFunc != nil {
 		return ts.scrapeFunc(ctx, t)
 	}
