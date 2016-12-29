@@ -12,23 +12,6 @@ type MockRetriever struct {
 	ShouldError bool
 }
 
-// NewMultipleMockRetriever creates a mock client object with the desired number of service intances
-func NewMultipleMockRetriever(quantity int) *MockRetriever {
-	sis := []*types.ServiceInstance{}
-
-	for i := 0; i < quantity; i++ {
-		s := &types.ServiceInstance{
-			Addr:    fmt.Sprintf("127.0.0.0:%d", 8000+i),
-			Cluster: fmt.Sprintf("cluster%d", i%3),
-			Service: fmt.Sprintf("service%d", i%10),
-		}
-		sis = append(sis, s)
-	}
-	return &MockRetriever{
-		Instances: sis,
-	}
-}
-
 // Retrieve will return the mocked service instances
 func (c *MockRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	if c.ShouldError {

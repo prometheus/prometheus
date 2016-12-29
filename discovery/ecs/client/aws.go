@@ -269,7 +269,7 @@ func (c *AWSRetriever) getServices(cluster *ecs.Cluster) ([]*ecs.Service, error)
 			srvArns = append(srvArns, srv)
 		}
 
-		// Describe container instances
+		// Describe services
 		params2 := &ecs.DescribeServicesInput{
 			Cluster:  cluster.ClusterArn,
 			Services: srvArns,
@@ -340,7 +340,6 @@ func (c *AWSRetriever) getInstances(ec2IDs []*string) ([]*ec2.Instance, error) {
 
 	// Start describing instances
 	for {
-
 		resp, err := c.ec2Cli.DescribeInstances(params)
 		if err != nil {
 			return nil, err
@@ -356,7 +355,6 @@ func (c *AWSRetriever) getInstances(ec2IDs []*string) ([]*ec2.Instance, error) {
 			break
 		}
 		params.NextToken = resp.NextToken
-
 	}
 
 	log.Debugf("Retrieved %d ec2 instances", len(instances))
@@ -378,16 +376,15 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 
 	var wg sync.WaitGroup
 	var globErr error
-	globErrMsg := "Error from other goroutine, stopping gathering: %s"
+	globErrMsg := "rrror from other goroutine, stopping AWS SD objects gathering: %s"
 
-	// For each cluster get its container instances and tasks
+	// For each cluster get all the required objects from AWS
 	wg.Add(len(clusters))
 	for _, cluster := range clusters {
-		// use argument by value
 		go func(cluster ecs.Cluster) {
 			defer wg.Done()
 
-			// Get cluster container instance
+			// Get cluster container instances
 			cInstances, err := c.getContainerInstances(&cluster)
 			if err != nil {
 				globErr = err
@@ -499,18 +496,18 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 		iID := aws.StringValue(ci.Ec2InstanceId)
 		ec2I, ok := c.cache.getIntance(iID)
 		if !ok {
-			return nil, fmt.Errorf("EC2 instance not available: %s", iID)
+			return nil, fmt.Errorf("ec2 instance not available: %s", iID)
 		}
 
 		tdID := aws.StringValue(v.TaskDefinitionArn)
 		srv, ok := c.cache.getService(tdID)
 		if !ok {
-			return nil, fmt.Errorf("Service not available: %s", tdID)
+			return nil, fmt.Errorf("zervice not available: %s", tdID)
 		}
 
 		td, ok := c.cache.getTaskDefinition(tdID)
 		if !ok {
-			return nil, fmt.Errorf("Task definition not available: %s", tdID)
+			return nil, fmt.Errorf("task definition not available: %s", tdID)
 		}
 
 		t := &ecsTargetTask{
