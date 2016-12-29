@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -78,7 +79,7 @@ type Alert struct {
 	Value float64
 	// The interval during which the condition of this alert held true.
 	// ResolvedAt will be 0 to indicate a still active alert.
-	ActiveAt, ResolvedAt model.Time
+	ActiveAt, ResolvedAt time.Time
 }
 
 // An AlertingRule generates alerts from its vector expression.
@@ -123,7 +124,7 @@ func (r *AlertingRule) equal(o *AlertingRule) bool {
 	return r.name == o.name && labels.Equal(r.labels, o.labels)
 }
 
-func (r *AlertingRule) sample(alert *Alert, ts model.Time, set bool) promql.Sample {
+func (r *AlertingRule) sample(alert *Alert, ts time.Time, set bool) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
 	for _, l := range alert.Labels {
@@ -136,7 +137,7 @@ func (r *AlertingRule) sample(alert *Alert, ts model.Time, set bool) promql.Samp
 
 	s := promql.Sample{
 		Metric: lb.Labels(),
-		Point:  promql.Point{T: int64(ts), V: 0},
+		Point:  promql.Point{T: timestamp.FromTime(ts), V: 0},
 	}
 	if set {
 		s.V = 1
@@ -150,8 +151,8 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts model.Time, engine *promql.Engine, externalURLPath string) (promql.Vector, error) {
-	query, err := engine.NewInstantQuery(r.vector.String(), ts.Time())
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, externalURLPath string) (promql.Vector, error) {
+	query, err := engine.NewInstantQuery(r.vector.String(), ts)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts model.Time, engine *promql.E
 				defs+string(text),
 				"__alert_"+r.Name(),
 				tmplData,
-				ts,
+				model.Time(timestamp.FromTime(ts)),
 				engine,
 				externalURLPath,
 			)
@@ -244,7 +245,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts model.Time, engine *promql.E
 			}
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
-			if a.State == StatePending || (a.ResolvedAt != 0 && ts.Sub(a.ResolvedAt) > resolvedRetention) {
+			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
 			}
 			if a.State != StateInactive {
@@ -284,7 +285,7 @@ func (r *AlertingRule) State() AlertState {
 func (r *AlertingRule) ActiveAlerts() []*Alert {
 	var res []*Alert
 	for _, a := range r.currentAlerts() {
-		if a.ResolvedAt == 0 {
+		if a.ResolvedAt.IsZero() {
 			res = append(res, a)
 		}
 	}

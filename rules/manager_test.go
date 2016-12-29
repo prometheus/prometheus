@@ -21,6 +21,8 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -48,9 +50,11 @@ func TestAlertingRule(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
-		model.LabelSet{"severity": "{{\"c\"}}ritical"},
-		model.LabelSet{},
+		labels.FromStrings("severity", "{{\"c\"}}ritical"),
+		nil,
 	)
+
+	baseTime := time.Unix(0, 0)
 
 	var tests = []struct {
 		time   time.Duration
@@ -59,28 +63,28 @@ func TestAlertingRule(t *testing.T) {
 		{
 			time: 0,
 			result: []string{
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
 			},
 		}, {
 			time: 5 * time.Minute,
 			result: []string{
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
 			},
 		}, {
 			time: 10 * time.Minute,
 			result: []string{
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
 			},
 		},
 		{
 			time: 15 * time.Minute,
 			result: []string{
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
 			},
 		},
 		{
@@ -90,20 +94,20 @@ func TestAlertingRule(t *testing.T) {
 		{
 			time: 25 * time.Minute,
 			result: []string{
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
 			},
 		},
 		{
 			time: 30 * time.Minute,
 			result: []string{
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
-				`ALERTS{alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
+				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
 			},
 		},
 	}
 
 	for i, test := range tests {
-		evalTime := model.Time(0).Add(test.time)
+		evalTime := baseTime.Add(test.time)
 
 		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), "")
 		if err != nil {
@@ -138,17 +142,17 @@ func TestAlertingRule(t *testing.T) {
 		}
 
 		for _, aa := range rule.ActiveAlerts() {
-			if _, ok := aa.Labels[model.MetricNameLabel]; ok {
+			if v := aa.Labels.Get(model.MetricNameLabel); v != "" {
 				t.Fatalf("%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 			}
 		}
 	}
 }
 
-func annotateWithTime(lines []string, timestamp model.Time) []string {
+func annotateWithTime(lines []string, ts time.Time) []string {
 	annotatedLines := []string{}
 	for _, line := range lines {
-		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp))
+		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp.FromTime(ts)))
 	}
 	return annotatedLines
 }

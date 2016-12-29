@@ -39,6 +39,7 @@ func (ls Labels) String() string {
 	for i, l := range ls {
 		if i > 0 {
 			b.WriteByte(',')
+			b.WriteByte(' ')
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')

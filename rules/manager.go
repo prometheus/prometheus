@@ -105,7 +105,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, model.Time, *promql.Engine, string) (promql.Vector, error)
+	Eval(context.Context, time.Time, *promql.Engine, string) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -238,7 +238,7 @@ func typeForRule(r Rule) ruleType {
 // rule dependency.
 func (g *Group) Eval() {
 	var (
-		now = model.Now()
+		now = time.Now()
 		wg  sync.WaitGroup
 	)
 
@@ -268,7 +268,7 @@ func (g *Group) Eval() {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
-				g.sendAlerts(ar, now)
+				g.sendAlerts(ar)
 			}
 			var (
 				numOutOfOrder = 0
@@ -304,7 +304,7 @@ func (g *Group) Eval() {
 }
 
 // sendAlerts sends alert notifications for the given rule.
-func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
+func (g *Group) sendAlerts(rule *AlertingRule) error {
 	var alerts []*notifier.Alert
 
 	for _, alert := range rule.currentAlerts() {
@@ -314,13 +314,13 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 		}
 
 		a := &notifier.Alert{
-			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
+			StartsAt:     alert.ActiveAt.Add(rule.holdDuration),
 			Labels:       alert.Labels,
 			Annotations:  alert.Annotations,
 			GeneratorURL: g.opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		}
-		if alert.ResolvedAt != 0 {
-			a.EndsAt = alert.ResolvedAt.Time()
+		if !alert.ResolvedAt.IsZero() {
+			a.EndsAt = alert.ResolvedAt
 		}
 
 		alerts = append(alerts, a)
