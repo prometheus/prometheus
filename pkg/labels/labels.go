@@ -53,6 +53,17 @@ func (ls Labels) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ls.Map())
 }
 
+func (ls *Labels) UnmarshalJSON(b []byte) error {
+	var m map[string]string
+
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+
+	*ls = FromMap(m)
+	return nil
+}
+
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
 	b := make([]byte, 0, 1024)

@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 func TestPostPath(t *testing.T) {
@@ -62,21 +62,19 @@ func TestHandlerNextBatch(t *testing.T) {
 	h := New(&Options{})
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
-		h.queue = append(h.queue, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		h.queue = append(h.queue, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
-	expected := append(model.Alerts{}, h.queue...)
+	expected := append([]*Alert{}, h.queue...)
 
 	b := h.nextBatch()
 
 	if len(b) != maxBatchSize {
 		t.Fatalf("Expected first batch of length %d, but got %d", maxBatchSize, len(b))
 	}
-	if reflect.DeepEqual(expected[0:maxBatchSize], b) {
+	if !alertsEqual(expected[0:maxBatchSize], b) {
 		t.Fatalf("First batch did not match")
 	}
 
@@ -85,7 +83,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	if len(b) != maxBatchSize {
 		t.Fatalf("Expected second batch of length %d, but got %d", maxBatchSize, len(b))
 	}
-	if reflect.DeepEqual(expected[maxBatchSize:2*maxBatchSize], b) {
+	if !alertsEqual(expected[maxBatchSize:2*maxBatchSize], b) {
 		t.Fatalf("Second batch did not match")
 	}
 
@@ -94,7 +92,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	if len(b) != 1 {
 		t.Fatalf("Expected third batch of length %d, but got %d", 1, len(b))
 	}
-	if reflect.DeepEqual(expected[2*maxBatchSize:], b) {
+	if !alertsEqual(expected[2*maxBatchSize:], b) {
 		t.Fatalf("Third batch did not match")
 	}
 
@@ -103,12 +101,14 @@ func TestHandlerNextBatch(t *testing.T) {
 	}
 }
 
-func alertsEqual(a, b model.Alerts) bool {
+func alertsEqual(a, b []*Alert) bool {
 	if len(a) != len(b) {
+		fmt.Println("len mismatch")
 		return false
 	}
 	for i, alert := range a {
-		if !alert.Labels.Equal(b[i].Labels) {
+		if !labels.Equal(alert.Labels, b[i].Labels) {
+			fmt.Println("mismatch", alert.Labels, b[i].Labels)
 			return false
 		}
 	}
@@ -117,14 +117,14 @@ func alertsEqual(a, b model.Alerts) bool {
 
 func TestHandlerSendAll(t *testing.T) {
 	var (
-		expected         model.Alerts
+		expected         []*Alert
 		status1, status2 int
 	)
 
 	f := func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		var alerts model.Alerts
+		var alerts []*Alert
 		if err := json.NewDecoder(r.Body).Decode(&alerts); err != nil {
 			t.Fatalf("Unexpected error on input decoding: %s", err)
 		}
@@ -162,15 +162,11 @@ func TestHandlerSendAll(t *testing.T) {
 	})
 
 	for i := range make([]struct{}, maxBatchSize) {
-		h.queue = append(h.queue, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		h.queue = append(h.queue, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
-		expected = append(expected, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		expected = append(expected, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
@@ -207,33 +203,19 @@ func TestExternalLabels(t *testing.T) {
 	})
 
 	// This alert should get the external label attached.
-	h.Send(&model.Alert{
-		Labels: model.LabelSet{
-			"alertname": "test",
-		},
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "test"),
 	})
 
 	// This alert should get the external label attached, but then set to "c"
 	// through relabelling.
-	h.Send(&model.Alert{
-		Labels: model.LabelSet{
-			"alertname": "externalrelabelthis",
-		},
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "externalrelabelthis"),
 	})
 
-	expected := []*model.Alert{
-		{
-			Labels: model.LabelSet{
-				"alertname": "test",
-				"a":         "b",
-			},
-		},
-		{
-			Labels: model.LabelSet{
-				"alertname": "externalrelabelthis",
-				"a":         "c",
-			},
-		},
+	expected := []*Alert{
+		{Labels: labels.FromStrings("alertname", "test", "a", "b")},
+		{Labels: labels.FromStrings("alertname", "externalrelabelthis", "a", "c")},
 	}
 
 	if !alertsEqual(expected, h.queue) {
@@ -261,25 +243,17 @@ func TestHandlerRelabel(t *testing.T) {
 	})
 
 	// This alert should be dropped due to the configuration
-	h.Send(&model.Alert{
-		Labels: model.LabelSet{
-			"alertname": "drop",
-		},
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "drop"),
 	})
 
 	// This alert should be replaced due to the configuration
-	h.Send(&model.Alert{
-		Labels: model.LabelSet{
-			"alertname": "rename",
-		},
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "rename"),
 	})
 
-	expected := []*model.Alert{
-		{
-			Labels: model.LabelSet{
-				"alertname": "renamed",
-			},
-		},
+	expected := []*Alert{
+		{Labels: labels.FromStrings("alertname", "renamed")},
 	}
 
 	if !alertsEqual(expected, h.queue) {
@@ -291,7 +265,7 @@ func TestHandlerQueueing(t *testing.T) {
 	var (
 		unblock  = make(chan struct{})
 		called   = make(chan struct{})
-		expected model.Alerts
+		expected []*Alert
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +274,7 @@ func TestHandlerQueueing(t *testing.T) {
 
 		defer r.Body.Close()
 
-		var alerts model.Alerts
+		var alerts []*Alert
 		if err := json.NewDecoder(r.Body).Decode(&alerts); err != nil {
 			t.Fatalf("Unexpected error on input decoding: %s", err)
 		}
@@ -324,12 +298,11 @@ func TestHandlerQueueing(t *testing.T) {
 		},
 	})
 
-	var alerts model.Alerts
+	var alerts []*Alert
+
 	for i := range make([]struct{}, 20*maxBatchSize) {
-		alerts = append(alerts, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		alerts = append(alerts, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
