@@ -16,7 +16,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -25,7 +25,7 @@ func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rule := NewAlertingRule("testrule", expr, 0, model.LabelSet{"html": "<b>BOLD</b>"}, model.LabelSet{"html": "<b>BOLD</b>"})
+	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"))
 
 	const want = `ALERT <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=0">testrule</a>
   IF <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>

@@ -16,8 +16,8 @@ package rules
 import (
 	"fmt"
 	"html/template"
+	"time"
 
-	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -47,8 +47,8 @@ func (rule RecordingRule) Name() string {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ string) (promql.Vector, error) {
-	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp.Time())
+func (rule RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, _ string) (promql.Vector, error) {
+	query, err := engine.NewInstantQuery(rule.vector.String(), ts)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,9 @@ func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine
 	}
 
 	// Override the metric name and labels.
-	for _, sample := range vector {
+	for i := range vector {
+		sample := &vector[i]
+
 		lb := labels.NewBuilder(sample.Metric)
 
 		lb.Set(labels.MetricName, rule.name)

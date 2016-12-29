@@ -16,24 +16,25 @@ package rules
 import (
 	"reflect"
 	"testing"
+	"time"
 
-	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRuleEval(t *testing.T) {
 	storage := testutil.NewStorage(t)
-	defer closer.Close()
+	defer storage.Close()
 
 	engine := promql.NewEngine(storage, nil)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
-	now := model.Now()
+	now := time.Now()
 
 	suite := []struct {
 		name   string
@@ -46,9 +47,8 @@ func TestRuleEval(t *testing.T) {
 			expr:   &promql.NumberLiteral{Val: 1},
 			labels: labels.Labels{},
 			result: promql.Vector{promql.Sample{
-				Value:     1,
-				Timestamp: now,
-				Metric:    labels.FromStrings("__name__", "nolabels"),
+				Metric: labels.FromStrings("__name__", "nolabels"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
 		{
@@ -56,9 +56,8 @@ func TestRuleEval(t *testing.T) {
 			expr:   &promql.NumberLiteral{Val: 1},
 			labels: labels.FromStrings("foo", "bar"),
 			result: promql.Vector{promql.Sample{
-				Value:     1,
-				Timestamp: now,
-				Metric:    labels.FromStrings("__name__", "labels", "foo", "bar"),
+				Metric: labels.FromStrings("__name__", "labels", "foo", "bar"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
 	}

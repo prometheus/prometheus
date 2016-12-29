@@ -53,7 +53,8 @@ type Scalar struct {
 }
 
 func (s Scalar) String() string {
-	return fmt.Sprintf("scalar: %v @[%v]", s.V, s.T)
+	v := strconv.FormatFloat(s.V, 'f', -1, 64)
+	return fmt.Sprintf("scalar: %v @[%v]", v, s.T)
 }
 
 func (s Scalar) MarshalJSON() ([]byte, error) {
@@ -82,7 +83,8 @@ type Point struct {
 }
 
 func (p Point) String() string {
-	return fmt.Sprintf("%f @[%d]", p.V, p.T)
+	v := strconv.FormatFloat(p.V, 'f', -1, 64)
+	return fmt.Sprintf("%v @[%v]", v, p.T)
 }
 
 // MarshalJSON implements json.Marshaler.
