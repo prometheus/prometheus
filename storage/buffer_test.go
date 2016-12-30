@@ -2,8 +2,10 @@ package storage
 
 import (
 	"math/rand"
+	"sort"
 	"testing"
 
+	"github.com/fabxc/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -120,4 +122,60 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
 	require.False(t, it.Next(), "next succeeded unexpectedly")
+}
+
+type mockSeriesIterator struct {
+	seek   func(int64) bool
+	values func() (int64, float64)
+	next   func() bool
+	err    func() error
+}
+
+func (m *mockSeriesIterator) Seek(t int64) bool        { return m.seek(t) }
+func (m *mockSeriesIterator) Values() (int64, float64) { return m.values() }
+func (m *mockSeriesIterator) Next() bool               { return m.next() }
+func (m *mockSeriesIterator) Err() error               { return m.err() }
+
+type mockSeries struct {
+	labels   func() labels.Labels
+	iterator func() SeriesIterator
+}
+
+func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
+func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
+
+type listSeriesIterator struct {
+	list []sample
+	idx  int
+}
+
+func newListSeriesIterator(list []sample) *listSeriesIterator {
+	return &listSeriesIterator{list: list, idx: -1}
+}
+
+func (it *listSeriesIterator) Values() (int64, float64) {
+	s := it.list[it.idx]
+	return s.t, s.v
+}
+
+func (it *listSeriesIterator) Next() bool {
+	it.idx++
+	return it.idx < len(it.list)
+}
+
+func (it *listSeriesIterator) Seek(t int64) bool {
+	if it.idx == -1 {
+		it.idx = 0
+	}
+	// Do binary search between current position and end.
+	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
+		s := it.list[i+it.idx]
+		return s.t >= t
+	})
+
+	return it.idx < len(it.list)
+}
+
+func (it *listSeriesIterator) Err() error {
+	return nil
 }
