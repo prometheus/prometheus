@@ -28,6 +28,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage"
@@ -294,26 +295,28 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	// TODO(fabxc): temporarily disbaled.
-	_, _ = start, end
-	panic("disabled")
+	q, err := api.Storage.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
+	if err != nil {
+		return nil, &apiError{errorExec, err}
+	}
+	defer q.Close()
 
-	// q, err := api.Storage.Querier()
-	// if err != nil {
-	// 	return nil, &apiError{errorExec, err}
-	// }
-	// defer q.Close()
+	// TODO(fabxc): expose merge functionality in storage interface.
+	// We just concatenate results for all sets of matchers, which may produce
+	// duplicated results.
+	metrics := []labels.Labels{}
 
-	// res, err := q.MetricsForLabelMatchers(api.context(r), start, end, matcherSets...)
-	// if err != nil {
-	// 	return nil, &apiError{errorExec, err}
-	// }
+	for _, mset := range matcherSets {
+		series := q.Select(mset...)
+		for series.Next() {
+			metrics = append(metrics, series.Series().Labels())
+		}
+		if series.Err() != nil {
+			return nil, &apiError{errorExec, series.Err()}
+		}
+	}
 
-	// metrics := make([]model.Metric, 0, len(res))
-	// for _, met := range res {
-	// 	metrics = append(metrics, met.Metric)
-	// }
-	// return metrics, nil
+	return metrics, nil
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {

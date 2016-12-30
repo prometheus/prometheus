@@ -324,6 +324,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				Seriess[0] = ss
 			}
 			ss.Points = append(ss.Points, Point(v))
+			Seriess[0] = ss
 		case Vector:
 			for _, sample := range v {
 				h := sample.Metric.Hash()
