@@ -220,16 +220,26 @@ func newBlockQuerier(ix IndexReader, s SeriesReader, mint, maxt int64) *blockQue
 }
 
 func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
-	var its []Postings
+	var (
+		its    []Postings
+		absent []string
+	)
 	for _, m := range ms {
+		// If the matcher checks absence of a label, don't select them
+		// but propagate the check into the series set.
+		if _, ok := m.(*labels.EqualMatcher); ok && m.Matches("") {
+			absent = append(absent, m.Name())
+			continue
+		}
 		its = append(its, q.selectSingle(m))
 	}
 
 	return &blockSeriesSet{
-		index: q.index,
-		it:    Intersect(its...),
-		mint:  q.mint,
-		maxt:  q.maxt,
+		index:  q.index,
+		it:     Intersect(its...),
+		absent: absent,
+		mint:   q.mint,
+		maxt:   q.maxt,
 	}
 }
 
@@ -412,8 +422,9 @@ func (s *shardSeriesSet) Next() bool {
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
 	index      IndexReader
-	it         Postings
-	mint, maxt int64
+	it         Postings // postings list referencing series
+	absent     []string // labels that must not be set for result series
+	mint, maxt int64    // considered time range
 
 	err error
 	cur Series
@@ -421,18 +432,27 @@ type blockSeriesSet struct {
 
 func (s *blockSeriesSet) Next() bool {
 	// Step through the postings iterator to find potential series.
-	// Resolving series may return nil if no applicable data for the
-	// time range exists and we can skip to the next series.
+outer:
 	for s.it.Next() {
 		series, err := s.index.Series(s.it.Value(), s.mint, s.maxt)
 		if err != nil {
 			s.err = err
 			return false
 		}
-		if series != nil {
-			s.cur = series
-			return true
+		// Resolving series may return nil if no applicable data for the
+		// time range exists and we can skip to the next series.
+		if series == nil {
+			continue
 		}
+		// If a series contains a label that must be absent, it is skipped as well.
+		for _, abs := range s.absent {
+			if series.Labels().Get(abs) != "" {
+				continue outer
+			}
+		}
+
+		s.cur = series
+		return true
 	}
 	if s.it.Err() != nil {
 		s.err = s.it.Err()

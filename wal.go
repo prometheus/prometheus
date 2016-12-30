@@ -188,7 +188,14 @@ func (e *walEncoder) encodeSeries(series []labels.Labels) error {
 		e.buf = append(e.buf, b[:n]...)
 
 		for _, l := range lset {
+			// func() {
+			// 	defer func() {
+			// 		if recover() != nil {
+			// 			fmt.Println(l)
+			// 		}
+			// 	}()
 			n = binary.PutUvarint(b, uint64(len(l.Name)))
+			// }()
 			e.buf = append(e.buf, b[:n]...)
 			e.buf = append(e.buf, l.Name...)
 

@@ -251,7 +251,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	err := s.head.appendBatch(samples)
 
 	// TODO(fabxc): randomize over time and use better scoring function.
-	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 400 {
+	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 24000 {
 		select {
 		case s.persistCh <- struct{}{}:
 			go func() {
