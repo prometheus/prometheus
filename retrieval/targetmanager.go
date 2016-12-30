@@ -28,7 +28,7 @@ import (
 // creates the new targets based on the target groups it receives from various
 // target providers.
 type TargetManager struct {
-	appender      storage.Appender
+	append        Appendable
 	scrapeConfigs []*config.ScrapeConfig
 
 	mtx    sync.RWMutex
@@ -48,10 +48,14 @@ type targetSet struct {
 	sp *scrapePool
 }
 
+type Appendable interface {
+	Appender() (storage.Appender, error)
+}
+
 // NewTargetManager creates a new TargetManager.
-func NewTargetManager(app storage.Appender) *TargetManager {
+func NewTargetManager(app Appendable) *TargetManager {
 	return &TargetManager{
-		appender:   app,
+		append:     app,
 		targetSets: map[string]*targetSet{},
 	}
 }
@@ -100,7 +104,7 @@ func (tm *TargetManager) reload() {
 			ts = &targetSet{
 				ctx:    ctx,
 				cancel: cancel,
-				sp:     newScrapePool(ctx, scfg, tm.appender),
+				sp:     newScrapePool(ctx, scfg, tm.append),
 			}
 			ts.ts = discovery.NewTargetSet(ts.sp)
 
