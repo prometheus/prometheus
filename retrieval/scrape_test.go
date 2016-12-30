@@ -36,12 +36,12 @@ import (
 
 func TestNewScrapePool(t *testing.T) {
 	var (
-		app = &nopAppender{}
+		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{}
 		sp  = newScrapePool(context.Background(), cfg, app)
 	)
 
-	if a, ok := sp.appender.(*nopAppender); !ok || a != app {
+	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
 		t.Fatalf("Wrong sample appender")
 	}
 	if sp.config != cfg {
@@ -157,9 +157,10 @@ func TestScrapePoolReload(t *testing.T) {
 		return l
 	}
 	sp := &scrapePool{
-		targets: map[uint64]*Target{},
-		loops:   map[uint64]loop{},
-		newLoop: newLoop,
+		appendable: &nopAppendable{},
+		targets:    map[uint64]*Target{},
+		loops:      map[uint64]loop{},
+		newLoop:    newLoop,
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -227,7 +228,7 @@ func TestScrapePoolReportAppender(t *testing.T) {
 		},
 	}
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
-	app := &nopAppender{}
+	app := &nopAppendable{}
 
 	sp := newScrapePool(context.Background(), cfg, app)
 
@@ -238,7 +239,7 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
 	}
-	if rl.Appender != app {
+	if _, ok := rl.Appender.(nopAppender); !ok {
 		t.Fatalf("Expected base appender but got %T", rl.Appender)
 	}
 
@@ -249,7 +250,7 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
 	}
-	if hl.Appender != app {
+	if _, ok := rl.Appender.(nopAppender); !ok {
 		t.Fatalf("Expected base appender but got %T", hl.Appender)
 	}
 }
@@ -262,7 +263,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	}
 
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
-	app := &nopAppender{}
+	app := &nopAppendable{}
 
 	sp := newScrapePool(context.Background(), cfg, app)
 
@@ -277,7 +278,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected relabelAppender but got %T", rl.Appender)
 	}
-	if re.Appender != app {
+	if _, ok := re.Appender.(nopAppender); !ok {
 		t.Fatalf("Expected base appender but got %T", re.Appender)
 	}
 
@@ -292,7 +293,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected relabelAppender but got %T", hl.Appender)
 	}
-	if re.Appender != app {
+	if _, ok := re.Appender.(nopAppender); !ok {
 		t.Fatalf("Expected base appender but got %T", re.Appender)
 	}
 }

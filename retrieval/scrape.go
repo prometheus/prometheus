@@ -89,7 +89,7 @@ func init() {
 
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
-	appender storage.Appender
+	appendable Appendable
 
 	ctx context.Context
 
@@ -105,20 +105,20 @@ type scrapePool struct {
 	newLoop func(context.Context, scraper, storage.Appender, storage.Appender) loop
 }
 
-func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app storage.Appender) *scrapePool {
+func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable) *scrapePool {
 	client, err := NewHTTPClient(cfg.HTTPClientConfig)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
 		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
 	}
 	return &scrapePool{
-		appender: app,
-		config:   cfg,
-		ctx:      ctx,
-		client:   client,
-		targets:  map[uint64]*Target{},
-		loops:    map[uint64]loop{},
-		newLoop:  newScrapeLoop,
+		appendable: app,
+		config:     cfg,
+		ctx:        ctx,
+		client:     client,
+		targets:    map[uint64]*Target{},
+		loops:      map[uint64]loop{},
+		newLoop:    newScrapeLoop,
 	}
 }
 
@@ -266,7 +266,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 // sampleAppender returns an appender for ingested samples from the target.
 func (sp *scrapePool) sampleAppender(target *Target) storage.Appender {
-	app := sp.appender
+	app, err := sp.appendable.Appender()
+	if err != nil {
+		panic(err)
+	}
 	// The relabelAppender has to be inside the label-modifying appenders
 	// so the relabeling rules are applied to the correct label set.
 	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
@@ -292,8 +295,12 @@ func (sp *scrapePool) sampleAppender(target *Target) storage.Appender {
 
 // reportAppender returns an appender for reporting samples for the target.
 func (sp *scrapePool) reportAppender(target *Target) storage.Appender {
+	app, err := sp.appendable.Appender()
+	if err != nil {
+		panic(err)
+	}
 	return ruleLabelsAppender{
-		Appender: sp.appender,
+		Appender: app,
 		labels:   target.Labels(),
 	}
 }
@@ -524,12 +531,16 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 	)
 
 	if err := sl.reportAppender.Add(healthMet, ts, health); err != nil {
-		log.With("error", err).Warn("Scrape health sample discarded")
+		log.With("err", err).Warn("Scrape health sample discarded")
 	}
 	if err := sl.reportAppender.Add(durationMet, ts, duration.Seconds()); err != nil {
-		log.With("error", err).Warn("Scrape duration sample discarded")
+		log.With("err", err).Warn("Scrape duration sample discarded")
 	}
 	if err := sl.reportAppender.Add(countMet, ts, float64(scrapedSamples)); err != nil {
-		log.With("error", err).Warn("Scrape sample count sample discarded")
+		log.With("err", err).Warn("Scrape sample count sample discarded")
+	}
+
+	if err := sl.reportAppender.Commit(); err != nil {
+		log.With("err", err).Warn("Commiting report samples failed")
 	}
 }

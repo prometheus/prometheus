@@ -16,7 +16,14 @@ package retrieval
 import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
+
+type nopAppendable struct{}
+
+func (a nopAppendable) Appender() (storage.Appender, error) {
+	return nopAppender{}, nil
+}
 
 type nopAppender struct{}
 
