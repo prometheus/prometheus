@@ -1,7 +1,6 @@
 package tsdb
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -28,7 +27,7 @@ func BenchmarkWALWrite(b *testing.B) {
 	f, err := os.Open("cmd/tsdb/testdata.1m")
 	require.NoError(b, err)
 
-	series, err := readPrometheusLabels(f, b.N)
+	series, err := readPrometheusLabels(f, b.N/300)
 	require.NoError(b, err)
 
 	var (
@@ -70,7 +69,7 @@ func BenchmarkWALRead(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("test", func(b *testing.B) {
-		bseries := series[:b.N]
+		bseries := series[:b.N/300]
 
 		d, err := ioutil.TempDir("", "wal_read_test")
 		require.NoError(b, err)
@@ -123,8 +122,8 @@ func BenchmarkWALRead(b *testing.B) {
 		})
 		require.NoError(b, err)
 
-		stat, _ := wal.f.Stat()
-		fmt.Println("read series", numSeries, "read samples", numSamples, "wal size", fmt.Sprintf("%.2fMiB", float64(stat.Size())/1024/1024))
+		// stat, _ := wal.f.Stat()
+		// fmt.Println("read series", numSeries, "read samples", numSamples, "wal size", fmt.Sprintf("%.2fMiB", float64(stat.Size())/1024/1024))
 	})
 }
 
@@ -136,7 +135,7 @@ func BenchmarkWALReadIntoHead(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("test", func(b *testing.B) {
-		bseries := series[:b.N]
+		bseries := series[:b.N/300]
 
 		d, err := ioutil.TempDir("", "wal_read_test")
 		require.NoError(b, err)
@@ -178,12 +177,12 @@ func BenchmarkWALReadIntoHead(b *testing.B) {
 
 		b.ResetTimer()
 
-		head, err := OpenHeadBlock(d, 0)
+		_, err = OpenHeadBlock(d, 0)
 		require.NoError(b, err)
 
-		stat, _ := head.wal.f.Stat()
-		fmt.Println("head block initialized from WAL")
-		fmt.Println("read series", head.stats.SeriesCount, "read samples", head.stats.SampleCount, "wal size", fmt.Sprintf("%.2fMiB", float64(stat.Size())/1024/1024))
+		// stat, _ := head.wal.f.Stat()
+		// fmt.Println("head block initialized from WAL")
+		// fmt.Println("read series", head.stats.SeriesCount, "read samples", head.stats.SampleCount, "wal size", fmt.Sprintf("%.2fMiB", float64(stat.Size())/1024/1024))
 	})
 }
 

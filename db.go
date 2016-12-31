@@ -17,6 +17,7 @@ import (
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // DefaultOptions used for the DB. They are sane for setups using
@@ -43,7 +44,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 0
+	shardShift   = 2
 	numShards    = 1 << shardShift
 	maxChunkSize = 1024
 )
@@ -74,7 +75,7 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 		l := log.NewContext(l).With("shard", i)
 		d := shardDir(path, i)
 
-		s, err := OpenShard(d, l)
+		s, err := OpenShard(d, i, l)
 		if err != nil {
 			return nil, fmt.Errorf("initializing shard %q failed: %s", d, err)
 		}
@@ -181,14 +182,55 @@ type Shard struct {
 	path      string
 	persistCh chan struct{}
 	logger    log.Logger
+	metrics   *shardMetrics
 
 	mtx       sync.RWMutex
 	persisted persistedBlocks
 	head      *HeadBlock
 }
 
+type shardMetrics struct {
+	persistences        prometheus.Counter
+	persistenceDuration prometheus.Histogram
+	samplesAppended     prometheus.Counter
+}
+
+func newShardMetrics(r prometheus.Registerer, i int) *shardMetrics {
+	shardLabel := prometheus.Labels{
+		"shard": fmt.Sprintf("%d", i),
+	}
+
+	m := &shardMetrics{
+		persistences: prometheus.NewCounter(prometheus.CounterOpts{
+			Name:        "tsdb_shard_persistences_total",
+			Help:        "Total number of head persistances that ran so far.",
+			ConstLabels: shardLabel,
+		}),
+		persistenceDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:        "tsdb_shard_persistence_duration_seconds",
+			Help:        "Duration of persistences in seconds.",
+			ConstLabels: shardLabel,
+			Buckets:     prometheus.ExponentialBuckets(0.25, 2, 5),
+		}),
+		samplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
+			Name:        "tsdb_shard_samples_appended_total",
+			Help:        "Total number of appended samples for the shard.",
+			ConstLabels: shardLabel,
+		}),
+	}
+
+	if r != nil {
+		r.MustRegister(
+			m.persistences,
+			m.persistenceDuration,
+			m.samplesAppended,
+		)
+	}
+	return m
+}
+
 // OpenShard returns a new Shard.
-func OpenShard(path string, logger log.Logger) (*Shard, error) {
+func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 	// Create directory if shard is new.
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := os.MkdirAll(path, 0777); err != nil {
@@ -219,9 +261,9 @@ func OpenShard(path string, logger log.Logger) (*Shard, error) {
 		path:      path,
 		persistCh: make(chan struct{}, 1),
 		logger:    logger,
+		metrics:   newShardMetrics(prometheus.DefaultRegisterer, i),
 		head:      head,
 		persisted: pbs,
-		// TODO(fabxc): restore from checkpoint.
 	}
 	return s, nil
 }
@@ -248,16 +290,20 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	// TODO(fabxc): distinguish samples between concurrent heads for
 	// different time blocks. Those may occurr during transition to still
 	// allow late samples to arrive for a previous block.
-	err := s.head.appendBatch(samples)
+	err := s.head.appendBatch(samples, s.metrics.samplesAppended)
 
 	// TODO(fabxc): randomize over time and use better scoring function.
-	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 24000 {
+	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 400 {
 		select {
 		case s.persistCh <- struct{}{}:
 			go func() {
+				start := time.Now()
+				defer func() { s.metrics.persistenceDuration.Observe(time.Since(start).Seconds()) }()
+
 				if err := s.persist(); err != nil {
 					s.logger.Log("msg", "persistance error", "err", err)
 				}
+				s.metrics.persistences.Inc()
 			}()
 		default:
 		}

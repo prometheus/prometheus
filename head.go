@@ -8,6 +8,7 @@ import (
 
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // HeadBlock handles reads and writes of time series data within a time window.
@@ -182,7 +183,7 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 	return cd
 }
 
-func (h *HeadBlock) appendBatch(samples []hashedSample) error {
+func (h *HeadBlock) appendBatch(samples []hashedSample, appended prometheus.Counter) error {
 	// Find head chunks for all samples and allocate new IDs/refs for
 	// ones we haven't seen before.
 	var (
@@ -233,6 +234,7 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 			continue
 		}
 
+		appended.Inc()
 		h.stats.SampleCount++
 
 		if s.t > h.stats.MaxTime {
