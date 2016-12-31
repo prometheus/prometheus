@@ -2,7 +2,6 @@ package chunks
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 )
 
@@ -25,12 +24,6 @@ const (
 	EncXOR
 )
 
-var (
-	// ErrChunkFull is returned if the remaining size of a chunk cannot
-	// fit the appended data.
-	ErrChunkFull = errors.New("chunk full")
-)
-
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
 	Bytes() []byte
@@ -51,31 +44,14 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	return nil, fmt.Errorf("unknown chunk encoding: %d", e)
 }
 
-// Iterator provides iterating access over sample pairs in chunks.
-type Iterator interface {
-	StreamingIterator
-
-	// Seek(t int64) bool
-	// SeekBefore(t int64) bool
-	// Next() bool
-	// Values() (int64, float64)
-	// Err() error
-}
-
 // Appender adds sample pairs to a chunk.
 type Appender interface {
-	Append(int64, float64) error
+	Append(int64, float64)
 }
 
-// StreamingIterator is a simple iterator that can only get the next value.
-type StreamingIterator interface {
+// Iterator is a simple iterator that can only get the next value.
+type Iterator interface {
 	Values() (int64, float64)
 	Err() error
 	Next() bool
-}
-
-// fancyIterator wraps a StreamingIterator and implements a regular
-// Iterator with it.
-type fancyIterator struct {
-	StreamingIterator
 }

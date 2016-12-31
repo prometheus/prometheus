@@ -16,12 +16,12 @@ type pair struct {
 }
 
 func TestChunk(t *testing.T) {
-	for enc, nc := range map[Encoding]func(sz int) Chunk{
-		EncXOR: func(sz int) Chunk { return NewXORChunk(sz) },
+	for enc, nc := range map[Encoding]func() Chunk{
+		EncXOR: func() Chunk { return NewXORChunk() },
 	} {
 		t.Run(fmt.Sprintf("%s", enc), func(t *testing.T) {
 			for range make([]struct{}, 1) {
-				c := nc(rand.Intn(1024))
+				c := nc()
 				if err := testChunk(c); err != nil {
 					t.Fatal(err)
 				}
@@ -59,13 +59,7 @@ func testChunk(c Chunk) error {
 			}
 		}
 
-		err = app.Append(ts, v)
-		if err != nil {
-			if err == ErrChunkFull {
-				break
-			}
-			return err
-		}
+		app.Append(ts, v)
 		exp = append(exp, pair{t: ts, v: v})
 		// fmt.Println("appended", len(c.Bytes()), c.Bytes())
 	}
@@ -85,7 +79,7 @@ func testChunk(c Chunk) error {
 	return nil
 }
 
-func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
+func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	var (
 		t = int64(1234123324)
 		v = 1243535.123
@@ -101,19 +95,20 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 
 	var chunks []Chunk
 	for i := 0; i < b.N; {
-		c := newChunk(1024)
+		c := newChunk()
 
 		a, err := c.Appender()
 		if err != nil {
 			b.Fatalf("get appender: %s", err)
 		}
+		j := 0
 		for _, p := range exp {
-			if err := a.Append(p.t, p.v); err == ErrChunkFull {
+			if j > 250 {
 				break
-			} else if err != nil {
-				b.Fatal(err)
 			}
+			a.Append(p.t, p.v)
 			i++
+			j++
 		}
 		chunks = append(chunks, c)
 	}
@@ -141,18 +136,18 @@ func benchmarkIterator(b *testing.B, newChunk func(int) Chunk) {
 }
 
 func BenchmarkXORIterator(b *testing.B) {
-	benchmarkIterator(b, func(sz int) Chunk {
-		return NewXORChunk(sz)
+	benchmarkIterator(b, func() Chunk {
+		return NewXORChunk()
 	})
 }
 
 func BenchmarkXORAppender(b *testing.B) {
-	benchmarkAppender(b, func(sz int) Chunk {
-		return NewXORChunk(sz)
+	benchmarkAppender(b, func() Chunk {
+		return NewXORChunk()
 	})
 }
 
-func benchmarkAppender(b *testing.B, newChunk func(int) Chunk) {
+func benchmarkAppender(b *testing.B, newChunk func() Chunk) {
 	var (
 		t = int64(1234123324)
 		v = 1243535.123
@@ -171,19 +166,20 @@ func benchmarkAppender(b *testing.B, newChunk func(int) Chunk) {
 
 	var chunks []Chunk
 	for i := 0; i < b.N; {
-		c := newChunk(1024)
+		c := newChunk()
 
 		a, err := c.Appender()
 		if err != nil {
 			b.Fatalf("get appender: %s", err)
 		}
+		j := 0
 		for _, p := range exp {
-			if err := a.Append(p.t, p.v); err == ErrChunkFull {
+			if j > 250 {
 				break
-			} else if err != nil {
-				b.Fatal(err)
 			}
+			a.Append(p.t, p.v)
 			i++
+			j++
 		}
 		chunks = append(chunks, c)
 	}

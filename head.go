@@ -1,7 +1,6 @@
 package tsdb
 
 import (
-	"math"
 	"os"
 	"sort"
 	"sync"
@@ -51,9 +50,7 @@ func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 			b.create(lset.Hash(), lset)
 		},
 		sample: func(s hashedSample) {
-			if err := b.descs[s.ref].append(s.t, s.v); err != nil {
-				panic(err) // TODO(fabxc): cannot actually error
-			}
+			b.descs[s.ref].append(s.t, s.v)
 			b.stats.SampleCount++
 		},
 	})
@@ -151,9 +148,16 @@ func (h *HeadBlock) get(hash uint64, lset labels.Labels) (*chunkDesc, uint32) {
 }
 
 func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
+	var err error
+
 	cd := &chunkDesc{
 		lset:  lset,
-		chunk: chunks.NewXORChunk(int(math.MaxInt64)),
+		chunk: chunks.NewXORChunk(),
+	}
+	cd.app, err = cd.chunk.Appender()
+	if err != nil {
+		// Getting an Appender for a new chunk must not panic.
+		panic(err)
 	}
 	// Index the new chunk.
 	ref := len(h.descs)
@@ -226,13 +230,8 @@ func (h *HeadBlock) appendBatch(samples []hashedSample, appended prometheus.Coun
 		h.create(newHashes[i], s)
 	}
 
-	var merr MultiError
 	for _, s := range samples {
-		// TODO(fabxc): ensure that this won't be able to actually error in practice.
-		if err := h.descs[s.ref].append(s.t, s.v); err != nil {
-			merr.Add(err)
-			continue
-		}
+		h.descs[s.ref].append(s.t, s.v)
 
 		appended.Inc()
 		h.stats.SampleCount++
@@ -242,7 +241,7 @@ func (h *HeadBlock) appendBatch(samples []hashedSample, appended prometheus.Coun
 		}
 	}
 
-	return merr.Err()
+	return nil
 }
 
 func (h *HeadBlock) persist(p string) (int64, error) {

@@ -413,23 +413,15 @@ type chunkDesc struct {
 	app chunks.Appender // Current appender for the chunks.
 }
 
-func (cd *chunkDesc) append(ts int64, v float64) (err error) {
-	if cd.app == nil {
-		cd.app, err = cd.chunk.Appender()
-		if err != nil {
-			return err
-		}
+func (cd *chunkDesc) append(ts int64, v float64) {
+	if cd.numSamples == 0 {
 		cd.firsTimestamp = ts
 	}
-	if err := cd.app.Append(ts, v); err != nil {
-		return err
-	}
+	cd.app.Append(ts, v)
 
 	cd.lastTimestamp = ts
 	cd.lastValue = v
 	cd.numSamples++
-
-	return nil
 }
 
 // The MultiError type implements the error interface, and contains the

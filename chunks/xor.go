@@ -11,16 +11,14 @@ import (
 type XORChunk struct {
 	b   *bstream
 	num uint16
-	sz  int
 }
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
-func NewXORChunk(size int) *XORChunk {
+func NewXORChunk() *XORChunk {
 	b := make([]byte, 2, 128)
 
 	return &XORChunk{
 		b:   &bstream{stream: b, count: 0},
-		sz:  size,
 		num: 0,
 	}
 }
@@ -78,7 +76,7 @@ func (c *XORChunk) iterator() *xorIterator {
 
 // Iterator implements the Chunk interface.
 func (c *XORChunk) Iterator() Iterator {
-	return fancyIterator{c.iterator()}
+	return c.iterator()
 }
 
 type xorAppender struct {
@@ -93,9 +91,8 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) Append(t int64, v float64) error {
+func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
-	l := len(a.b.bytes())
 
 	if a.c.num == 0 {
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -140,19 +137,10 @@ func (a *xorAppender) Append(t int64, v float64) error {
 		a.writeVDelta(v)
 	}
 
-	if len(a.b.bytes()) > a.c.sz {
-		// If the appended data exceeded the size limit, we truncate
-		// the underlying data slice back to the length we started with.
-		a.b.stream = a.b.stream[:l]
-		return ErrChunkFull
-	}
-
 	a.t = t
 	a.v = v
 	a.c.num++
 	a.tDelta = tDelta
-
-	return nil
 }
 
 func bitRange(x int64, nbits uint8) bool {
