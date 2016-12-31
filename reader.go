@@ -63,7 +63,10 @@ type IndexReader interface {
 	Postings(name, value string) (Postings, error)
 
 	// Series returns the series for the given reference.
-	Series(ref uint32, mint, maxt int64) (Series, error)
+	Series(ref uint32) (labels.Labels, []ChunkMeta, error)
+
+	// LabelIndices returns the label pairs for which indices exist.
+	LabelIndices() ([][]string, error)
 }
 
 // StringTuples provides access to a sorted list of string tuples.
@@ -178,18 +181,18 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 	return flag, b[:l], nil
 }
 
-func (r *indexReader) lookupSymbol(o uint32) ([]byte, error) {
+func (r *indexReader) lookupSymbol(o uint32) (string, error) {
 	l, n := binary.Uvarint(r.b[o:])
 	if n < 0 {
-		return nil, fmt.Errorf("reading symbol length failed")
+		return "", fmt.Errorf("reading symbol length failed")
 	}
 
 	end := int(o) + n + int(l)
 	if end > len(r.b) {
-		return nil, fmt.Errorf("invalid length")
+		return "", fmt.Errorf("invalid length")
 	}
 
-	return r.b[int(o)+n : end], nil
+	return yoloString(r.b[int(o)+n : end]), nil
 }
 
 func (r *indexReader) Stats() (BlockStats, error) {
@@ -241,56 +244,55 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	return st, nil
 }
 
-func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
+func (r *indexReader) LabelIndices() ([][]string, error) {
+	res := [][]string{}
+
+	for s := range r.labels {
+		res = append(res, strings.Split(s, string(sep)))
+	}
+	return res, nil
+}
+
+func (r *indexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	k, n := binary.Uvarint(r.b[ref:])
 	if n < 1 {
-		return nil, errors.Wrap(errInvalidSize, "number of labels")
+		return nil, nil, errors.Wrap(errInvalidSize, "number of labels")
 	}
 
 	b := r.b[int(ref)+n:]
-	offsets := make([]uint32, 0, 2*k)
-
-	for i := 0; i < 2*int(k); i++ {
-		o, n := binary.Uvarint(b)
-		if n < 1 {
-			return nil, errors.Wrap(errInvalidSize, "symbol offset")
-		}
-		offsets = append(offsets, uint32(o))
-
-		b = b[n:]
-	}
-	// Symbol offests must occur in pairs representing name and value.
-	if len(offsets)&1 != 0 {
-		return nil, errors.New("odd number of symbol references")
-	}
-
-	// TODO(fabxc): Fully materialize series symbols for now. Figure out later if it
-	// makes sense to decode those lazily.
-	// If we use unsafe strings the there'll be no copy overhead.
-	//
-	// The references are expected to be sorted and match the order of
-	// the underlying strings.
 	lbls := make(labels.Labels, 0, k)
 
-	for i := 0; i < len(offsets); i += 2 {
-		n, err := r.lookupSymbol(offsets[i])
-		if err != nil {
-			return nil, errors.Wrap(err, "symbol lookup")
+	for i := 0; i < 2*int(k); i += 2 {
+		o, m := binary.Uvarint(b)
+		if m < 1 {
+			return nil, nil, errors.Wrap(errInvalidSize, "symbol offset")
 		}
-		v, err := r.lookupSymbol(offsets[i+1])
+		n, err := r.lookupSymbol(uint32(o))
 		if err != nil {
-			return nil, errors.Wrap(err, "symbol lookup")
+			return nil, nil, errors.Wrap(err, "symbol lookup")
 		}
+		b = b[m:]
+
+		o, m = binary.Uvarint(b)
+		if m < 1 {
+			return nil, nil, errors.Wrap(errInvalidSize, "symbol offset")
+		}
+		v, err := r.lookupSymbol(uint32(o))
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "symbol lookup")
+		}
+		b = b[m:]
+
 		lbls = append(lbls, labels.Label{
-			Name:  string(n),
-			Value: string(v),
+			Name:  n,
+			Value: v,
 		})
 	}
 
 	// Read the chunks meta data.
 	k, n = binary.Uvarint(b)
 	if n < 1 {
-		return nil, errors.Wrap(errInvalidSize, "number of chunks")
+		return nil, nil, errors.Wrap(errInvalidSize, "number of chunks")
 	}
 
 	b = b[n:]
@@ -299,31 +301,21 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 	for i := 0; i < int(k); i++ {
 		firstTime, n := binary.Varint(b)
 		if n < 1 {
-			return nil, errors.Wrap(errInvalidSize, "first time")
+			return nil, nil, errors.Wrap(errInvalidSize, "first time")
 		}
 		b = b[n:]
 
-		// Terminate early if we exceeded the queried time range.
-		if firstTime > maxt {
-			break
-		}
-
 		lastTime, n := binary.Varint(b)
 		if n < 1 {
-			return nil, errors.Wrap(errInvalidSize, "last time")
+			return nil, nil, errors.Wrap(errInvalidSize, "last time")
 		}
 		b = b[n:]
 
 		o, n := binary.Uvarint(b)
 		if n < 1 {
-			return nil, errors.Wrap(errInvalidSize, "chunk offset")
+			return nil, nil, errors.Wrap(errInvalidSize, "chunk offset")
 		}
 		b = b[n:]
-
-		// Skip the chunk if it is before the queried time range.
-		if lastTime < mint {
-			continue
-		}
 
 		chunks = append(chunks, ChunkMeta{
 			Ref:     uint32(o),
@@ -331,17 +323,8 @@ func (r *indexReader) Series(ref uint32, mint, maxt int64) (Series, error) {
 			MaxTime: lastTime,
 		})
 	}
-	// If no chunks applicable to the time range were found, the series
-	// can be skipped.
-	if len(chunks) == 0 {
-		return nil, nil
-	}
 
-	return &chunkSeries{
-		labels: lbls,
-		chunks: chunks,
-		chunk:  r.series.Chunk,
-	}, nil
+	return lbls, chunks, nil
 }
 
 func (r *indexReader) Postings(name, value string) (Postings, error) {
@@ -419,7 +402,7 @@ func (t *stringTuples) Less(i, j int) bool {
 type serializedStringTuples struct {
 	l      int
 	b      []byte
-	lookup func(uint32) ([]byte, error)
+	lookup func(uint32) (string, error)
 }
 
 func (t *serializedStringTuples) Len() int {
@@ -436,11 +419,11 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 	for k := 0; k < t.l; k++ {
 		offset := binary.BigEndian.Uint32(t.b[(i+k)*4:])
 
-		b, err := t.lookup(offset)
+		s, err := t.lookup(offset)
 		if err != nil {
 			return nil, errors.Wrap(err, "symbol lookup")
 		}
-		res = append(res, string(b))
+		res = append(res, s)
 	}
 
 	return res, nil

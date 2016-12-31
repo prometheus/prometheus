@@ -284,6 +284,9 @@ func (s *Shard) Close() error {
 }
 
 func (s *Shard) appendBatch(samples []hashedSample) error {
+	if len(samples) == 0 {
+		return nil
+	}
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -291,7 +294,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	// different time blocks. Those may occurr during transition to still
 	// allow late samples to arrive for a previous block.
 	err := s.head.appendBatch(samples)
-	if err != nil {
+	if err == nil {
 		s.metrics.samplesAppended.Add(float64(len(samples)))
 	}
 
@@ -451,9 +454,14 @@ func (es MultiError) Error() string {
 }
 
 // Add adds the error to the error list if it is not nil.
-func (es MultiError) Add(err error) {
-	if err != nil {
-		es = append(es, err)
+func (es *MultiError) Add(err error) {
+	if err == nil {
+		return
+	}
+	if merr, ok := err.(MultiError); ok {
+		*es = append(*es, merr...)
+	} else {
+		*es = append(*es, err)
 	}
 }
 

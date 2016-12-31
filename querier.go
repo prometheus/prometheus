@@ -236,6 +236,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 
 	return &blockSeriesSet{
 		index:  q.index,
+		chunks: q.series,
 		it:     Intersect(its...),
 		absent: absent,
 		mint:   q.mint,
@@ -422,6 +423,7 @@ func (s *shardSeriesSet) Next() bool {
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
 	index      IndexReader
+	chunks     SeriesReader
 	it         Postings // postings list referencing series
 	absent     []string // labels that must not be set for result series
 	mint, maxt int64    // considered time range
@@ -434,24 +436,40 @@ func (s *blockSeriesSet) Next() bool {
 	// Step through the postings iterator to find potential series.
 outer:
 	for s.it.Next() {
-		series, err := s.index.Series(s.it.Value(), s.mint, s.maxt)
+		lset, chunks, err := s.index.Series(s.it.Value())
 		if err != nil {
 			s.err = err
 			return false
 		}
-		// Resolving series may return nil if no applicable data for the
-		// time range exists and we can skip to the next series.
-		if series == nil {
-			continue
-		}
+
 		// If a series contains a label that must be absent, it is skipped as well.
 		for _, abs := range s.absent {
-			if series.Labels().Get(abs) != "" {
+			if lset.Get(abs) != "" {
 				continue outer
 			}
 		}
 
-		s.cur = series
+		ser := &chunkSeries{
+			labels: lset,
+			chunks: make([]ChunkMeta, 0, len(chunks)),
+			chunk:  s.chunks.Chunk,
+		}
+		// Only use chunks that fit the time range.
+		for _, c := range chunks {
+			if c.MaxTime < s.mint {
+				continue
+			}
+			if c.MinTime > s.maxt {
+				break
+			}
+			ser.chunks = append(ser.chunks, c)
+		}
+		// If no chunks of the series apply to the time range, skip it.
+		if len(ser.chunks) == 0 {
+			continue
+		}
+
+		s.cur = ser
 		return true
 	}
 	if s.it.Err() != nil {

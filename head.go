@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"errors"
 	"os"
 	"sort"
 	"sync"
@@ -112,25 +113,22 @@ func (h *HeadBlock) Postings(name, value string) (Postings, error) {
 }
 
 // Series returns the series for the given reference.
-func (h *HeadBlock) Series(ref uint32, mint, maxt int64) (Series, error) {
+func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	if int(ref) >= len(h.descs) {
-		return nil, errNotFound
+		return nil, nil, errNotFound
 	}
 	cd := h.descs[ref]
 
-	if !intervalOverlap(cd.firsTimestamp, cd.lastTimestamp, mint, maxt) {
-		return nil, nil
+	return cd.lset, []ChunkMeta{{MinTime: h.stats.MinTime, Ref: ref}}, nil
+}
+
+func (h *HeadBlock) LabelIndices() ([][]string, error) {
+	res := [][]string{}
+
+	for s := range h.values {
+		res = append(res, []string{s})
 	}
-	s := &chunkSeries{
-		labels: cd.lset,
-		chunks: []ChunkMeta{
-			{MinTime: h.stats.MinTime, Ref: 0},
-		},
-		chunk: func(ref uint32) (chunks.Chunk, error) {
-			return cd.chunk, nil
-		},
-	}
-	return s, nil
+	return res, nil
 }
 
 // get retrieves the chunk with the hash and label set and creates
@@ -186,6 +184,11 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 	return cd
 }
 
+var (
+	ErrOutOfOrderSample = errors.New("out of order sample")
+	ErrAmendSample      = errors.New("amending sample")
+)
+
 func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	// Find head chunks for all samples and allocate new IDs/refs for
 	// ones we haven't seen before.
@@ -200,6 +203,13 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 
 		cd := h.get(s.hash, s.labels)
 		if cd != nil {
+			// Samples must only occur in order.
+			if s.t < cd.lastTimestamp {
+				return ErrOutOfOrderSample
+			}
+			if cd.lastTimestamp == s.t && cd.lastValue != s.v {
+				return ErrAmendSample
+			}
 			// TODO(fabxc): sample refs are only scoped within a block for
 			// now and we ignore any previously set value
 			s.ref = cd.ref
@@ -232,14 +242,17 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	}
 
 	for _, s := range samples {
-		h.descs[s.ref].append(s.t, s.v)
-
-		appended.Inc()
-		h.stats.SampleCount++
+		cd := h.descs[s.ref]
+		// Skip duplicate samples.
+		if cd.lastTimestamp == s.t && cd.lastValue != s.v {
+			continue
+		}
+		cd.append(s.t, s.v)
 
 		if s.t > h.stats.MaxTime {
 			h.stats.MaxTime = s.t
 		}
+		h.stats.SampleCount++
 	}
 
 	return nil
@@ -287,5 +300,13 @@ func (h *HeadBlock) persist(p string) (int64, error) {
 		}
 	}
 
-	return iw.Size() + sw.Size(), nil
+	// Everything written successfully, we can remove the WAL.
+	if err := h.wal.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Remove(h.wal.f.Name()); err != nil {
+		return 0, err
+	}
+
+	return iw.Size() + sw.Size(), err
 }
