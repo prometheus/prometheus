@@ -15,7 +15,11 @@ type term struct {
 
 // Postings returns an iterator over the postings list for s.
 func (p *memPostings) get(t term) Postings {
-	return &listPostings{list: p.m[t], idx: -1}
+	l := p.m[t]
+	if l == nil {
+		return emptyPostings
+	}
+	return &listPostings{list: l, idx: -1}
 }
 
 // add adds a document to the index. The caller has to ensure that no

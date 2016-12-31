@@ -290,7 +290,10 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	// TODO(fabxc): distinguish samples between concurrent heads for
 	// different time blocks. Those may occurr during transition to still
 	// allow late samples to arrive for a previous block.
-	err := s.head.appendBatch(samples, s.metrics.samplesAppended)
+	err := s.head.appendBatch(samples)
+	if err != nil {
+		s.metrics.samplesAppended.Add(float64(len(samples)))
+	}
 
 	// TODO(fabxc): randomize over time and use better scoring function.
 	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 400 {
@@ -401,6 +404,7 @@ func (s *Shard) persist() error {
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.
 type chunkDesc struct {
+	ref   uint32
 	lset  labels.Labels
 	chunk chunks.Chunk
 
