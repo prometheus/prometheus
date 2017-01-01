@@ -67,6 +67,7 @@ type Discovery struct {
 	m        sync.RWMutex
 	port     int
 	qtype    uint16
+	lookup   bool
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -85,6 +86,7 @@ func NewDiscovery(conf *config.DNSSDConfig) *Discovery {
 		interval: time.Duration(conf.RefreshInterval),
 		qtype:    qtype,
 		port:     conf.Port,
+		lookup:   conf.Lookup,
 	}
 }
 
@@ -154,9 +156,11 @@ func (dd *Discovery) refresh(ctx context.Context, name string, ch chan<- []*conf
 		}
 
 		// Try to reverse lookup for the host if it is ip addr.
-		names, err := net.LookupAddr(host)
-		if err == nil && len(names) > 0 {
-			name = strings.TrimRight(names[0], ".")
+		if dd.lookup {
+			names, err := net.LookupAddr(host)
+			if err == nil && len(names) > 0 {
+				name = strings.TrimRight(names[0], ".")
+			}
 		}
 		target := model.LabelSet{
 			model.AddressLabel: hostPort(host, port),
