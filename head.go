@@ -269,13 +269,19 @@ func (h *HeadBlock) persist(p string) (int64, error) {
 	}
 
 	iw := newIndexWriter(xf)
-	sw := newSeriesWriter(sf, iw, h.stats.MinTime)
+	sw := newSeriesWriter(sf, iw)
 
 	defer sw.Close()
 	defer iw.Close()
 
 	for ref, cd := range h.descs {
-		if err := sw.WriteSeries(uint32(ref), cd.lset, []*chunkDesc{cd}); err != nil {
+		if err := sw.WriteSeries(uint32(ref), cd.lset, []ChunkMeta{
+			{
+				MinTime: cd.firsTimestamp,
+				MaxTime: cd.lastTimestamp,
+				Chunk:   cd.chunk,
+			},
+		}); err != nil {
 			return 0, err
 		}
 	}
@@ -298,6 +304,14 @@ func (h *HeadBlock) persist(p string) (int64, error) {
 		if err := iw.WritePostings(t.name, t.value, h.postings.get(t)); err != nil {
 			return 0, err
 		}
+	}
+	// Write a postings list containing all series.
+	all := make([]uint32, len(h.descs))
+	for i := range all {
+		all[i] = uint32(i)
+	}
+	if err := iw.WritePostings("", "", newListPostings(all)); err != nil {
+		return 0, err
 	}
 
 	// Everything written successfully, we can remove the WAL.
