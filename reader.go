@@ -191,8 +191,9 @@ func (r *indexReader) lookupSymbol(o uint32) (string, error) {
 	if end > len(r.b) {
 		return "", fmt.Errorf("invalid length")
 	}
+	b := r.b[int(o)+n : end]
 
-	return yoloString(r.b[int(o)+n : end]), nil
+	return yoloString(b), nil
 }
 
 func (r *indexReader) Stats() (BlockStats, error) {

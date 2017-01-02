@@ -16,11 +16,7 @@ type XORChunk struct {
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
 func NewXORChunk() *XORChunk {
 	b := make([]byte, 2, 128)
-
-	return &XORChunk{
-		b:   &bstream{stream: b, count: 0},
-		num: 0,
-	}
+	return &XORChunk{b: &bstream{stream: b, count: 0}}
 }
 
 func (c *XORChunk) Encoding() Encoding {
@@ -29,11 +25,7 @@ func (c *XORChunk) Encoding() Encoding {
 
 // Bytes returns the underlying byte slice of the chunk.
 func (c *XORChunk) Bytes() []byte {
-	b := c.b.bytes()
-	// Lazily populate length bytes – probably not necessary to have the
-	// cache value in struct.
-	binary.BigEndian.PutUint16(b[:2], c.num)
-	return b
+	return c.b.bytes()
 }
 
 // Appender implements the Chunk interface.
@@ -58,7 +50,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 	}
-	if c.num == 0 {
+	if binary.BigEndian.Uint16(a.b.bytes()) == 0 {
 		a.leading = 0xff
 	}
 	return a, nil
@@ -70,7 +62,7 @@ func (c *XORChunk) iterator() *xorIterator {
 	// Could only copy data if the chunk is not completed yet.
 	return &xorIterator{
 		br:       newBReader(c.b.bytes()[2:]),
-		numTotal: c.num,
+		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
 	}
 }
 
@@ -93,15 +85,16 @@ type xorAppender struct {
 
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
+	num := binary.BigEndian.Uint16(a.b.bytes())
 
-	if a.c.num == 0 {
+	if num == 0 {
 		buf := make([]byte, binary.MaxVarintLen64)
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
 			a.b.writeByte(b)
 		}
 		a.b.writeBits(math.Float64bits(v), 64)
 
-	} else if a.c.num == 1 {
+	} else if num == 1 {
 		tDelta = uint64(t - a.t)
 
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -139,7 +132,7 @@ func (a *xorAppender) Append(t int64, v float64) {
 
 	a.t = t
 	a.v = v
-	a.c.num++
+	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
 	a.tDelta = tDelta
 }
 

@@ -424,7 +424,11 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	var refs []uint32
 
 	for it.Next() {
-		refs = append(refs, w.series[it.Value()].offset)
+		s, ok := w.series[it.Value()]
+		if !ok {
+			return errors.Errorf("series for reference %d not found", it.Value())
+		}
+		refs = append(refs, s.offset)
 	}
 	if err := it.Err(); err != nil {
 		return err

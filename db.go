@@ -44,7 +44,7 @@ type DB struct {
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 2
+	shardShift   = 0
 	numShards    = 1 << shardShift
 	maxChunkSize = 1024
 )
@@ -82,8 +82,6 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 
 		c.shards = append(c.shards, s)
 	}
-
-	// TODO(fabxc): run background compaction + GC.
 
 	return c, nil
 }
@@ -187,6 +185,7 @@ type Shard struct {
 	mtx       sync.RWMutex
 	persisted persistedBlocks
 	head      *HeadBlock
+	compactor *compactor
 }
 
 type shardMetrics struct {
@@ -265,6 +264,11 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 		head:      head,
 		persisted: pbs,
 	}
+	s.compactor, err = newCompactor(s, logger)
+	if err != nil {
+		return nil, err
+	}
+
 	return s, nil
 }
 
@@ -274,6 +278,8 @@ func (s *Shard) Close() error {
 	defer s.mtx.Unlock()
 
 	var e MultiError
+
+	e.Add(s.compactor.close())
 
 	for _, pb := range s.persisted {
 		e.Add(pb.Close())
@@ -402,6 +408,8 @@ func (s *Shard) persist() error {
 	s.persisted = append(s.persisted, pb)
 	s.mtx.Unlock()
 
+	s.compactor.trigger()
+
 	return nil
 }
 
@@ -474,9 +482,11 @@ func (es MultiError) Err() error {
 }
 
 func yoloString(b []byte) string {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
 	h := reflect.StringHeader{
-		Data: uintptr(unsafe.Pointer(&b[0])),
-		Len:  len(b),
+		Data: sh.Data,
+		Len:  sh.Len,
 	}
 	return *((*string)(unsafe.Pointer(&h)))
 }
