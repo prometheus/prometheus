@@ -175,15 +175,17 @@ const sep = '\xff'
 // Shard handles reads and writes of time series falling into
 // a hashed shard of a series.
 type Shard struct {
-	path      string
-	persistCh chan struct{}
-	logger    log.Logger
-	metrics   *shardMetrics
+	path    string
+	logger  log.Logger
+	metrics *shardMetrics
 
 	mtx       sync.RWMutex
 	persisted persistedBlocks
 	head      *HeadBlock
 	compactor *compactor
+
+	donec    chan struct{}
+	persistc chan struct{}
 }
 
 type shardMetrics struct {
@@ -242,7 +244,6 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 	}
 
 	// TODO(fabxc): get time from client-defined `now` function.
-	// baset := time.Now().UnixNano() / int64(time.Millisecond)
 	baset := time.Unix(0, 0).UnixNano() / int64(time.Millisecond)
 	if len(pbs) > 0 {
 		baset = pbs[len(pbs)-1].stats.MaxTime
@@ -256,35 +257,52 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 
 	s := &Shard{
 		path:      path,
-		persistCh: make(chan struct{}, 1),
 		logger:    logger,
 		metrics:   newShardMetrics(prometheus.DefaultRegisterer, i),
 		head:      head,
 		persisted: pbs,
+		persistc:  make(chan struct{}, 1),
+		donec:     make(chan struct{}),
 	}
-	s.compactor, err = newCompactor(s, logger)
-	if err != nil {
+	if s.compactor, err = newCompactor(s, logger); err != nil {
 		return nil, err
 	}
+	go s.run()
 
 	return s, nil
 }
 
+func (s *Shard) run() {
+	for range s.persistc {
+		start := time.Now()
+
+		if err := s.persist(); err != nil {
+			s.logger.Log("msg", "persistence error", "err", err)
+		}
+
+		s.metrics.persistenceDuration.Observe(time.Since(start).Seconds())
+		s.metrics.persistences.Inc()
+	}
+	close(s.donec)
+}
+
 // Close the shard.
 func (s *Shard) Close() error {
+	close(s.persistc)
+	<-s.donec
+
+	var merr MultiError
+	merr.Add(s.compactor.Close())
+
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	var e MultiError
-
-	e.Add(s.compactor.Close())
-
 	for _, pb := range s.persisted {
-		e.Add(pb.Close())
+		merr.Add(pb.Close())
 	}
-	e.Add(s.head.Close())
+	merr.Add(s.head.Close())
 
-	return e.Err()
+	return merr.Err()
 }
 
 func (s *Shard) appendBatch(samples []hashedSample) error {
@@ -305,16 +323,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	// TODO(fabxc): randomize over time and use better scoring function.
 	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 400 {
 		select {
-		case s.persistCh <- struct{}{}:
-			go func() {
-				start := time.Now()
-				defer func() { s.metrics.persistenceDuration.Observe(time.Since(start).Seconds()) }()
-
-				if err := s.persist(); err != nil {
-					s.logger.Log("msg", "persistence error", "err", err)
-				}
-				s.metrics.persistences.Inc()
-			}()
+		case s.persistc <- struct{}{}:
 		default:
 		}
 	}
@@ -374,12 +383,6 @@ func (s *Shard) persist() error {
 	s.head = newHead
 
 	s.mtx.Unlock()
-
-	// Only allow another persistence to be triggered after the current one
-	// has completed (successful or not.)
-	defer func() {
-		<-s.persistCh
-	}()
 
 	// TODO(fabxc): add grace period where we can still append to old head shard
 	// before actually persisting it.

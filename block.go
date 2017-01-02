@@ -119,7 +119,6 @@ func findBlocks(path string) ([]*persistedBlock, *HeadBlock, error) {
 		p := filepath.Join(path, fi.Name())
 
 		if _, err := os.Stat(chunksFileName(p)); os.IsNotExist(err) {
-			fmt.Println("found head dir", p)
 			if head != nil {
 				return nil, nil, errors.Errorf("found two head blocks")
 			}

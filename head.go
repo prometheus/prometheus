@@ -187,8 +187,13 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 }
 
 var (
+	// ErrOutOfOrderSample is returned if an appended sample has a
+	// timestamp larger than the most recent sample.
 	ErrOutOfOrderSample = errors.New("out of order sample")
-	ErrAmendSample      = errors.New("amending sample")
+
+	// ErrAmendSample is returned if an appended sample has the same timestamp
+	// as the most recent sample but a different value.
+	ErrAmendSample = errors.New("amending sample")
 )
 
 func (h *HeadBlock) appendBatch(samples []hashedSample) error {
