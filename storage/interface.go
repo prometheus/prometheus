@@ -61,7 +61,7 @@ type Appender interface {
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
-	Series() Series
+	At() Series
 	Err() error
 }
 
@@ -79,8 +79,8 @@ type SeriesIterator interface {
 	// Seek advances the iterator forward to the value at or after
 	// the given timestamp.
 	Seek(t int64) bool
-	// Values returns the current timestamp/value pair.
-	Values() (t int64, v float64)
+	// At returns the current timestamp/value pair.
+	At() (t int64, v float64)
 	// Next advances the iterator by one.
 	Next() bool
 	// Err returns the current error.

@@ -77,7 +77,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		var b []sample
 		bit := it.Buffer()
 		for bit.Next() {
-			t, v := bit.Values()
+			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
 		require.Equal(t, exp, b, "buffer mismatch")
@@ -153,7 +153,7 @@ func newListSeriesIterator(list []sample) *listSeriesIterator {
 	return &listSeriesIterator{list: list, idx: -1}
 }
 
-func (it *listSeriesIterator) Values() (int64, float64) {
+func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.list[it.idx]
 	return s.t, s.v
 }

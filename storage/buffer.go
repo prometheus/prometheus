@@ -62,7 +62,7 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 // Next advances the iterator to the next element.
 func (b *BufferedSeriesIterator) Next() bool {
 	// Add current element to buffer before advancing.
-	b.buf.add(b.it.Values())
+	b.buf.add(b.it.At())
 
 	ok := b.it.Next()
 	if ok {
@@ -73,7 +73,7 @@ func (b *BufferedSeriesIterator) Next() bool {
 
 // Values returns the current element of the iterator.
 func (b *BufferedSeriesIterator) Values() (int64, float64) {
-	return b.it.Values()
+	return b.it.At()
 }
 
 // Err returns the last encountered error.
@@ -130,7 +130,7 @@ func (it *sampleRingIterator) Err() error {
 	return nil
 }
 
-func (it *sampleRingIterator) Values() (int64, float64) {
+func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
 }
 
