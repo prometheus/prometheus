@@ -44,20 +44,17 @@ func (c *compactor) run() {
 		if len(c.shard.persisted) < 2 {
 			continue
 		}
-		dir := fmt.Sprintf("compacted-%d", timestamp.FromTime(time.Now()))
+		var (
+			dir = fmt.Sprintf("compacted-%d", timestamp.FromTime(time.Now()))
+			a   = c.shard.persisted[0]
+			b   = c.shard.persisted[1]
+		)
 
-		p, err := newPersister(dir)
-		if err != nil {
-			c.logger.Log("msg", "creating persister failed", "err", err)
-			continue
-		}
-
-		if err := c.compact(p, c.shard.persisted[0], c.shard.persisted[1]); err != nil {
+		if err := persist(dir, func(indexw IndexWriter, chunkw SeriesWriter) error {
+			return c.compact(indexw, chunkw, a, b)
+		}); err != nil {
 			c.logger.Log("msg", "compaction failed", "err", err)
 			continue
-		}
-		if err := p.Close(); err != nil {
-			c.logger.Log("msg", "compaction failed", "err", err)
 		}
 	}
 	close(c.donec)
@@ -69,7 +66,7 @@ func (c *compactor) Close() error {
 	return nil
 }
 
-func (c *compactor) compact(p *persister, a, b block) error {
+func (c *compactor) compact(indexw IndexWriter, chunkw SeriesWriter, a, b block) error {
 	aall, err := a.index().Postings("", "")
 	if err != nil {
 		return err
@@ -110,7 +107,7 @@ func (c *compactor) compact(p *persister, a, b block) error {
 
 	for set.Next() {
 		lset, chunks := set.At()
-		if err := p.chunkw.WriteSeries(i, lset, chunks); err != nil {
+		if err := chunkw.WriteSeries(i, lset, chunks); err != nil {
 			return err
 		}
 
@@ -133,7 +130,7 @@ func (c *compactor) compact(p *persister, a, b block) error {
 		return set.Err()
 	}
 
-	if err := p.indexw.WriteStats(stats); err != nil {
+	if err := indexw.WriteStats(stats); err != nil {
 		return err
 	}
 
@@ -144,13 +141,13 @@ func (c *compactor) compact(p *persister, a, b block) error {
 		for x := range v {
 			s = append(s, x)
 		}
-		if err := p.indexw.WriteLabelIndex([]string{n}, s); err != nil {
+		if err := indexw.WriteLabelIndex([]string{n}, s); err != nil {
 			return err
 		}
 	}
 
 	for t := range postings.m {
-		if err := p.indexw.WritePostings(t.name, t.value, postings.get(t)); err != nil {
+		if err := indexw.WritePostings(t.name, t.value, postings.get(t)); err != nil {
 			return err
 		}
 	}
@@ -159,7 +156,7 @@ func (c *compactor) compact(p *persister, a, b block) error {
 	for i := range all {
 		all[i] = uint32(i)
 	}
-	if err := p.indexw.WritePostings("", "", newListPostings(all)); err != nil {
+	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
 		return err
 	}
 
@@ -291,68 +288,55 @@ func (c *compactionMerger) At() (labels.Labels, []ChunkMeta) {
 	return c.l, c.c
 }
 
-type persister struct {
-	dir, tmpdir string
-
-	chunkf, indexf *fileutil.LockedFile
-
-	chunkw SeriesWriter
-	indexw IndexWriter
-}
-
-func newPersister(dir string) (*persister, error) {
-	p := &persister{
-		dir:    dir,
-		tmpdir: dir + ".tmp",
-	}
-	var err error
+func persist(dir string, write func(IndexWriter, SeriesWriter) error) error {
+	tmpdir := dir + ".tmp"
 
 	// Write to temporary directory to make persistence appear atomic.
-	if fileutil.Exist(p.tmpdir) {
-		if err := os.RemoveAll(p.tmpdir); err != nil {
-			return nil, err
+	if fileutil.Exist(tmpdir) {
+		if err := os.RemoveAll(tmpdir); err != nil {
+			return err
 		}
 	}
-	if err := fileutil.CreateDirAll(p.tmpdir); err != nil {
-		return nil, err
+	if err := fileutil.CreateDirAll(tmpdir); err != nil {
+		return err
 	}
 
-	p.chunkf, err = fileutil.LockFile(chunksFileName(p.tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	chunkf, err := fileutil.LockFile(chunksFileName(tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	p.indexf, err = fileutil.LockFile(indexFileName(p.tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	indexf, err := fileutil.LockFile(indexFileName(tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return nil, err
-	}
-
-	p.indexw = newIndexWriter(p.indexf)
-	p.chunkw = newSeriesWriter(p.chunkf, p.indexw)
-
-	return p, nil
-}
-
-func (p *persister) Close() error {
-	if err := p.chunkw.Close(); err != nil {
-		return err
-	}
-	if err := p.indexw.Close(); err != nil {
-		return err
-	}
-	if err := fileutil.Fsync(p.chunkf.File); err != nil {
-		return err
-	}
-	if err := fileutil.Fsync(p.indexf.File); err != nil {
-		return err
-	}
-	if err := p.chunkf.Close(); err != nil {
-		return err
-	}
-	if err := p.indexf.Close(); err != nil {
 		return err
 	}
 
-	return renameDir(p.tmpdir, p.dir)
+	indexw := newIndexWriter(indexf)
+	chunkw := newSeriesWriter(chunkf, indexw)
+
+	if err := write(indexw, chunkw); err != nil {
+		return err
+	}
+
+	if err := chunkw.Close(); err != nil {
+		return err
+	}
+	if err := indexw.Close(); err != nil {
+		return err
+	}
+	if err := fileutil.Fsync(chunkf.File); err != nil {
+		return err
+	}
+	if err := fileutil.Fsync(indexf.File); err != nil {
+		return err
+	}
+	if err := chunkf.Close(); err != nil {
+		return err
+	}
+	if err := indexf.Close(); err != nil {
+		return err
+	}
+
+	return renameDir(tmpdir, dir)
 }
 
 func renameDir(from, to string) error {

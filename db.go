@@ -385,18 +385,10 @@ func (s *Shard) persist() error {
 	// before actually persisting it.
 	dir := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
 
-	p, err := newPersister(dir)
-	if err != nil {
+	if err := persist(dir, head.persist); err != nil {
 		return err
 	}
-	if err := head.persist(p); err != nil {
-		return err
-	}
-	if err := p.Close(); err != nil {
-		return err
-	}
-	sz := fmt.Sprintf("%.2fMB", float64(p.chunkw.Size()+p.indexw.Size())/1e6)
-	s.logger.Log("size", sz, "samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
+	s.logger.Log("samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
 
 	// Reopen block as persisted block for querying.
 	pb, err := newPersistedBlock(dir)

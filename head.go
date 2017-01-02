@@ -260,13 +260,13 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	return nil
 }
 
-func (h *HeadBlock) persist(p *persister) error {
+func (h *HeadBlock) persist(indexw IndexWriter, chunkw SeriesWriter) error {
 	if err := h.wal.Close(); err != nil {
 		return err
 	}
 
 	for ref, cd := range h.descs {
-		if err := p.chunkw.WriteSeries(uint32(ref), cd.lset, []ChunkMeta{
+		if err := chunkw.WriteSeries(uint32(ref), cd.lset, []ChunkMeta{
 			{
 				MinTime: cd.firsTimestamp,
 				MaxTime: cd.lastTimestamp,
@@ -277,7 +277,7 @@ func (h *HeadBlock) persist(p *persister) error {
 		}
 	}
 
-	if err := p.indexw.WriteStats(h.stats); err != nil {
+	if err := indexw.WriteStats(h.stats); err != nil {
 		return err
 	}
 	for n, v := range h.values {
@@ -286,13 +286,13 @@ func (h *HeadBlock) persist(p *persister) error {
 			s = append(s, x)
 		}
 
-		if err := p.indexw.WriteLabelIndex([]string{n}, s); err != nil {
+		if err := indexw.WriteLabelIndex([]string{n}, s); err != nil {
 			return err
 		}
 	}
 
 	for t := range h.postings.m {
-		if err := p.indexw.WritePostings(t.name, t.value, h.postings.get(t)); err != nil {
+		if err := indexw.WritePostings(t.name, t.value, h.postings.get(t)); err != nil {
 			return err
 		}
 	}
@@ -301,7 +301,7 @@ func (h *HeadBlock) persist(p *persister) error {
 	for i := range all {
 		all[i] = uint32(i)
 	}
-	if err := p.indexw.WritePostings("", "", newListPostings(all)); err != nil {
+	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
 		return err
 	}
 	return nil
