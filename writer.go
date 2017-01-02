@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -129,15 +128,6 @@ func (w *seriesWriter) Size() int64 {
 }
 
 func (w *seriesWriter) Close() error {
-	if f, ok := w.w.(*os.File); ok {
-		if err := f.Sync(); err != nil {
-			return err
-		}
-	}
-
-	if c, ok := w.w.(io.Closer); ok {
-		return c.Close()
-	}
 	return nil
 }
 
@@ -499,18 +489,5 @@ func (w *indexWriter) finalize() error {
 }
 
 func (w *indexWriter) Close() error {
-	if err := w.finalize(); err != nil {
-		return err
-	}
-
-	if f, ok := w.w.(*os.File); ok {
-		if err := f.Sync(); err != nil {
-			return err
-		}
-	}
-
-	if c, ok := w.w.(io.Closer); ok {
-		return c.Close()
-	}
-	return nil
+	return w.finalize()
 }

@@ -2,7 +2,6 @@ package tsdb
 
 import (
 	"errors"
-	"os"
 	"sort"
 	"sync"
 
@@ -261,36 +260,25 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	return nil
 }
 
-func (h *HeadBlock) persist(p string) (int64, error) {
-	sf, err := os.Create(chunksFileName(p))
-	if err != nil {
-		return 0, err
+func (h *HeadBlock) persist(p *persister) error {
+	if err := h.wal.Close(); err != nil {
+		return err
 	}
-	xf, err := os.Create(indexFileName(p))
-	if err != nil {
-		return 0, err
-	}
-
-	iw := newIndexWriter(xf)
-	sw := newSeriesWriter(sf, iw)
-
-	defer sw.Close()
-	defer iw.Close()
 
 	for ref, cd := range h.descs {
-		if err := sw.WriteSeries(uint32(ref), cd.lset, []ChunkMeta{
+		if err := p.chunkw.WriteSeries(uint32(ref), cd.lset, []ChunkMeta{
 			{
 				MinTime: cd.firsTimestamp,
 				MaxTime: cd.lastTimestamp,
 				Chunk:   cd.chunk,
 			},
 		}); err != nil {
-			return 0, err
+			return err
 		}
 	}
 
-	if err := iw.WriteStats(h.stats); err != nil {
-		return 0, err
+	if err := p.indexw.WriteStats(h.stats); err != nil {
+		return err
 	}
 	for n, v := range h.values {
 		s := make([]string, 0, len(v))
@@ -298,14 +286,14 @@ func (h *HeadBlock) persist(p string) (int64, error) {
 			s = append(s, x)
 		}
 
-		if err := iw.WriteLabelIndex([]string{n}, s); err != nil {
-			return 0, err
+		if err := p.indexw.WriteLabelIndex([]string{n}, s); err != nil {
+			return err
 		}
 	}
 
 	for t := range h.postings.m {
-		if err := iw.WritePostings(t.name, t.value, h.postings.get(t)); err != nil {
-			return 0, err
+		if err := p.indexw.WritePostings(t.name, t.value, h.postings.get(t)); err != nil {
+			return err
 		}
 	}
 	// Write a postings list containing all series.
@@ -313,17 +301,8 @@ func (h *HeadBlock) persist(p string) (int64, error) {
 	for i := range all {
 		all[i] = uint32(i)
 	}
-	if err := iw.WritePostings("", "", newListPostings(all)); err != nil {
-		return 0, err
+	if err := p.indexw.WritePostings("", "", newListPostings(all)); err != nil {
+		return err
 	}
-
-	// Everything written successfully, we can remove the WAL.
-	if err := h.wal.Close(); err != nil {
-		return 0, err
-	}
-	if err := os.Remove(h.wal.f.Name()); err != nil {
-		return 0, err
-	}
-
-	return iw.Size() + sw.Size(), err
+	return nil
 }

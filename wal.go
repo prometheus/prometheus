@@ -74,6 +74,7 @@ type walHandler struct {
 	series func(labels.Labels)
 }
 
+// ReadAll consumes all entries in the WAL and triggers the registered handlers.
 func (w *WAL) ReadAll(h *walHandler) error {
 	dec := &walDecoder{
 		r:       w.f,

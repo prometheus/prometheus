@@ -277,7 +277,7 @@ func (s *Shard) Close() error {
 
 	var e MultiError
 
-	e.Add(s.compactor.close())
+	e.Add(s.compactor.Close())
 
 	for _, pb := range s.persisted {
 		e.Add(pb.Close())
@@ -311,7 +311,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 				defer func() { s.metrics.persistenceDuration.Observe(time.Since(start).Seconds()) }()
 
 				if err := s.persist(); err != nil {
-					s.logger.Log("msg", "persistance error", "err", err)
+					s.logger.Log("msg", "persistence error", "err", err)
 				}
 				s.metrics.persistences.Inc()
 			}()
@@ -383,21 +383,23 @@ func (s *Shard) persist() error {
 
 	// TODO(fabxc): add grace period where we can still append to old head shard
 	// before actually persisting it.
-	p := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
+	dir := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
 
-	if err := os.MkdirAll(p, 0777); err != nil {
-		return err
-	}
-
-	n, err := head.persist(p)
+	p, err := newPersister(dir)
 	if err != nil {
 		return err
 	}
-	sz := fmt.Sprintf("%.2fMiB", float64(n)/1024/1024)
+	if err := head.persist(p); err != nil {
+		return err
+	}
+	if err := p.Close(); err != nil {
+		return err
+	}
+	sz := fmt.Sprintf("%.2fMB", float64(p.chunkw.Size()+p.indexw.Size())/1e6)
 	s.logger.Log("size", sz, "samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
 
 	// Reopen block as persisted block for querying.
-	pb, err := newPersistedBlock(p)
+	pb, err := newPersistedBlock(dir)
 	if err != nil {
 		return err
 	}

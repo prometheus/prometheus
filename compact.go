@@ -3,8 +3,10 @@ package tsdb
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -44,39 +46,30 @@ func (c *compactor) run() {
 		}
 		dir := fmt.Sprintf("compacted-%d", timestamp.FromTime(time.Now()))
 
-		if err := c.compact(dir, c.shard.persisted[0], c.shard.persisted[1]); err != nil {
+		p, err := newPersister(dir)
+		if err != nil {
+			c.logger.Log("msg", "creating persister failed", "err", err)
+			continue
+		}
+
+		if err := c.compact(p, c.shard.persisted[0], c.shard.persisted[1]); err != nil {
+			c.logger.Log("msg", "compaction failed", "err", err)
+			continue
+		}
+		if err := p.Close(); err != nil {
 			c.logger.Log("msg", "compaction failed", "err", err)
 		}
 	}
 	close(c.donec)
 }
 
-func (c *compactor) close() error {
+func (c *compactor) Close() error {
 	close(c.triggerc)
 	<-c.donec
 	return nil
 }
 
-func (c *compactor) compact(dir string, a, b block) error {
-	if err := os.MkdirAll(dir, 0777); err != nil {
-		return err
-	}
-
-	cf, err := os.Create(chunksFileName(dir))
-	if err != nil {
-		return err
-	}
-	xf, err := os.Create(indexFileName(dir))
-	if err != nil {
-		return err
-	}
-
-	index := newIndexWriter(xf)
-	series := newSeriesWriter(cf, index)
-
-	defer index.Close()
-	defer series.Close()
-
+func (c *compactor) compact(p *persister, a, b block) error {
 	aall, err := a.index().Postings("", "")
 	if err != nil {
 		return err
@@ -117,7 +110,7 @@ func (c *compactor) compact(dir string, a, b block) error {
 
 	for set.Next() {
 		lset, chunks := set.At()
-		if err := series.WriteSeries(i, lset, chunks); err != nil {
+		if err := p.chunkw.WriteSeries(i, lset, chunks); err != nil {
 			return err
 		}
 
@@ -140,7 +133,7 @@ func (c *compactor) compact(dir string, a, b block) error {
 		return set.Err()
 	}
 
-	if err := index.WriteStats(stats); err != nil {
+	if err := p.indexw.WriteStats(stats); err != nil {
 		return err
 	}
 
@@ -151,13 +144,13 @@ func (c *compactor) compact(dir string, a, b block) error {
 		for x := range v {
 			s = append(s, x)
 		}
-		if err := index.WriteLabelIndex([]string{n}, s); err != nil {
+		if err := p.indexw.WriteLabelIndex([]string{n}, s); err != nil {
 			return err
 		}
 	}
 
 	for t := range postings.m {
-		if err := index.WritePostings(t.name, t.value, postings.get(t)); err != nil {
+		if err := p.indexw.WritePostings(t.name, t.value, postings.get(t)); err != nil {
 			return err
 		}
 	}
@@ -166,7 +159,7 @@ func (c *compactor) compact(dir string, a, b block) error {
 	for i := range all {
 		all[i] = uint32(i)
 	}
-	if err := index.WritePostings("", "", newListPostings(all)); err != nil {
+	if err := p.indexw.WritePostings("", "", newListPostings(all)); err != nil {
 		return err
 	}
 
@@ -296,4 +289,90 @@ func (c *compactionMerger) Err() error {
 
 func (c *compactionMerger) At() (labels.Labels, []ChunkMeta) {
 	return c.l, c.c
+}
+
+type persister struct {
+	dir, tmpdir string
+
+	chunkf, indexf *fileutil.LockedFile
+
+	chunkw SeriesWriter
+	indexw IndexWriter
+}
+
+func newPersister(dir string) (*persister, error) {
+	p := &persister{
+		dir:    dir,
+		tmpdir: dir + ".tmp",
+	}
+	var err error
+
+	// Write to temporary directory to make persistence appear atomic.
+	if fileutil.Exist(p.tmpdir) {
+		if err := os.RemoveAll(p.tmpdir); err != nil {
+			return nil, err
+		}
+	}
+	if err := fileutil.CreateDirAll(p.tmpdir); err != nil {
+		return nil, err
+	}
+
+	p.chunkf, err = fileutil.LockFile(chunksFileName(p.tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+	p.indexf, err = fileutil.LockFile(indexFileName(p.tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+
+	p.indexw = newIndexWriter(p.indexf)
+	p.chunkw = newSeriesWriter(p.chunkf, p.indexw)
+
+	return p, nil
+}
+
+func (p *persister) Close() error {
+	if err := p.chunkw.Close(); err != nil {
+		return err
+	}
+	if err := p.indexw.Close(); err != nil {
+		return err
+	}
+	if err := fileutil.Fsync(p.chunkf.File); err != nil {
+		return err
+	}
+	if err := fileutil.Fsync(p.indexf.File); err != nil {
+		return err
+	}
+	if err := p.chunkf.Close(); err != nil {
+		return err
+	}
+	if err := p.indexf.Close(); err != nil {
+		return err
+	}
+
+	return renameDir(p.tmpdir, p.dir)
+}
+
+func renameDir(from, to string) error {
+	if err := os.RemoveAll(to); err != nil {
+		return err
+	}
+	if err := os.Rename(from, to); err != nil {
+		return err
+	}
+
+	// Directory was renamed; sync parent dir to persist rename.
+	pdir, err := fileutil.OpenDir(filepath.Dir(to))
+	if err != nil {
+		return err
+	}
+	if err = fileutil.Fsync(pdir); err != nil {
+		return err
+	}
+	if err = pdir.Close(); err != nil {
+		return err
+	}
+	return nil
 }
