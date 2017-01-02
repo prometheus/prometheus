@@ -351,16 +351,16 @@ func (s *mergedSeriesSet) Next() bool {
 type shardSeriesSet struct {
 	a, b SeriesSet
 
-	cur    Series
-	as, bs Series // peek ahead of each set
+	cur          Series
+	adone, bdone bool
 }
 
 func newShardSeriesSet(a, b SeriesSet) *shardSeriesSet {
 	s := &shardSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
-	s.advanceA()
-	s.advanceB()
+	s.adone = !s.a.Next()
+	s.bdone = !s.b.Next()
 
 	return s
 }
@@ -377,50 +377,34 @@ func (s *shardSeriesSet) Err() error {
 }
 
 func (s *shardSeriesSet) compare() int {
-	if s.as == nil {
+	if s.adone {
 		return 1
 	}
-	if s.bs == nil {
+	if s.bdone {
 		return -1
 	}
-	return labels.Compare(s.as.Labels(), s.bs.Labels())
-}
-
-func (s *shardSeriesSet) advanceA() {
-	if s.a.Next() {
-		s.as = s.a.Series()
-	} else {
-		s.as = nil
-	}
-}
-
-func (s *shardSeriesSet) advanceB() {
-	if s.b.Next() {
-		s.bs = s.b.Series()
-	} else {
-		s.bs = nil
-	}
+	return labels.Compare(s.a.Series().Labels(), s.a.Series().Labels())
 }
 
 func (s *shardSeriesSet) Next() bool {
-	if s.as == nil && s.bs == nil || s.Err() != nil {
+	if s.adone && s.bdone || s.Err() != nil {
 		return false
 	}
 
 	d := s.compare()
 	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
-		s.cur = s.bs
-		s.advanceB()
+		s.cur = s.b.Series()
+		s.bdone = !s.b.Next()
 
 	} else if d < 0 {
-		s.cur = s.as
-		s.advanceA()
+		s.cur = s.a.Series()
+		s.adone = !s.a.Next()
 
 	} else {
-		s.cur = &chainedSeries{series: []Series{s.as, s.bs}}
-		s.advanceA()
-		s.advanceB()
+		s.cur = &chainedSeries{series: []Series{s.a.Series(), s.b.Series()}}
+		s.adone = !s.a.Next()
+		s.bdone = !s.b.Next()
 	}
 	return true
 }
