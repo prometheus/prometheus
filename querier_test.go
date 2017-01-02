@@ -10,16 +10,16 @@ import (
 )
 
 type mockSeriesIterator struct {
-	seek   func(int64) bool
-	values func() (int64, float64)
-	next   func() bool
-	err    func() error
+	seek func(int64) bool
+	at   func() (int64, float64)
+	next func() bool
+	err  func() error
 }
 
-func (m *mockSeriesIterator) Seek(t int64) bool        { return m.seek(t) }
-func (m *mockSeriesIterator) Values() (int64, float64) { return m.values() }
-func (m *mockSeriesIterator) Next() bool               { return m.next() }
-func (m *mockSeriesIterator) Err() error               { return m.err() }
+func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
+func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
+func (m *mockSeriesIterator) Next() bool           { return m.next() }
+func (m *mockSeriesIterator) Err() error           { return m.err() }
 
 type mockSeries struct {
 	labels   func() labels.Labels
@@ -38,7 +38,7 @@ func newListSeriesIterator(list []sample) *listSeriesIterator {
 	return &listSeriesIterator{list: list, idx: -1}
 }
 
-func (it *listSeriesIterator) Values() (int64, float64) {
+func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.list[it.idx]
 	return s.t, s.v
 }
@@ -71,9 +71,9 @@ type mockSeriesSet struct {
 	err    func() error
 }
 
-func (m *mockSeriesSet) Next() bool     { return m.next() }
-func (m *mockSeriesSet) Series() Series { return m.series() }
-func (m *mockSeriesSet) Err() error     { return m.err() }
+func (m *mockSeriesSet) Next() bool { return m.next() }
+func (m *mockSeriesSet) At() Series { return m.series() }
+func (m *mockSeriesSet) Err() error { return m.err() }
 
 func newListSeriesSet(list []Series) *mockSeriesSet {
 	i := -1
@@ -152,8 +152,8 @@ Outer:
 			if !eok {
 				continue Outer
 			}
-			sexp := c.exp.Series()
-			sres := res.Series()
+			sexp := c.exp.At()
+			sres := res.At()
 
 			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
 
@@ -168,7 +168,7 @@ Outer:
 
 func expandSeriesIterator(it SeriesIterator) (r []sample, err error) {
 	for it.Next() {
-		t, v := it.Values()
+		t, v := it.At()
 		r = append(r, sample{t: t, v: v})
 	}
 
@@ -243,13 +243,13 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		var b []sample
 		bit := it.Buffer()
 		for bit.Next() {
-			t, v := bit.Values()
+			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
 		require.Equal(t, exp, b, "buffer mismatch")
 	}
 	sampleEq := func(ets int64, ev float64) {
-		ts, v := it.Values()
+		ts, v := it.At()
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
 	}

@@ -136,10 +136,11 @@ func newWALEncoder(f *os.File) (*walEncoder, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &walEncoder{
+	enc := &walEncoder{
 		w:   ioutil.NewPageWriter(f, walPageBytes, int(offset)),
 		buf: make([]byte, 0, 1024*1024),
-	}, nil
+	}
+	return enc, nil
 }
 
 func (e *walEncoder) flush() error {

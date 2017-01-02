@@ -33,8 +33,6 @@ type Series interface {
 
 	// Iterator returns a new iterator of the data of the series.
 	Iterator() SeriesIterator
-
-	// Ref() uint32
 }
 
 // querier merges query results from a set of shard querieres.
@@ -313,15 +311,15 @@ func (q *blockQuerier) Close() error {
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
-	Series() Series
+	At() Series
 	Err() error
 }
 
 type nopSeriesSet struct{}
 
-func (nopSeriesSet) Next() bool     { return false }
-func (nopSeriesSet) Series() Series { return nil }
-func (nopSeriesSet) Err() error     { return nil }
+func (nopSeriesSet) Next() bool { return false }
+func (nopSeriesSet) At() Series { return nil }
+func (nopSeriesSet) Err() error { return nil }
 
 type mergedSeriesSet struct {
 	sets []SeriesSet
@@ -330,8 +328,8 @@ type mergedSeriesSet struct {
 	err error
 }
 
-func (s *mergedSeriesSet) Series() Series { return s.sets[s.cur].Series() }
-func (s *mergedSeriesSet) Err() error     { return s.sets[s.cur].Err() }
+func (s *mergedSeriesSet) At() Series { return s.sets[s.cur].At() }
+func (s *mergedSeriesSet) Err() error { return s.sets[s.cur].Err() }
 
 func (s *mergedSeriesSet) Next() bool {
 	// TODO(fabxc): We just emit the sets one after one. They are each
@@ -365,7 +363,7 @@ func newShardSeriesSet(a, b SeriesSet) *shardSeriesSet {
 	return s
 }
 
-func (s *shardSeriesSet) Series() Series {
+func (s *shardSeriesSet) At() Series {
 	return s.cur
 }
 
@@ -383,7 +381,7 @@ func (s *shardSeriesSet) compare() int {
 	if s.bdone {
 		return -1
 	}
-	return labels.Compare(s.a.Series().Labels(), s.a.Series().Labels())
+	return labels.Compare(s.a.At().Labels(), s.a.At().Labels())
 }
 
 func (s *shardSeriesSet) Next() bool {
@@ -394,15 +392,15 @@ func (s *shardSeriesSet) Next() bool {
 	d := s.compare()
 	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
-		s.cur = s.b.Series()
+		s.cur = s.b.At()
 		s.bdone = !s.b.Next()
 
 	} else if d < 0 {
-		s.cur = s.a.Series()
+		s.cur = s.a.At()
 		s.adone = !s.a.Next()
 
 	} else {
-		s.cur = &chainedSeries{series: []Series{s.a.Series(), s.b.Series()}}
+		s.cur = &chainedSeries{series: []Series{s.a.At(), s.b.At()}}
 		s.adone = !s.a.Next()
 		s.bdone = !s.b.Next()
 	}
@@ -425,7 +423,7 @@ func (s *blockSeriesSet) Next() bool {
 	// Step through the postings iterator to find potential series.
 outer:
 	for s.it.Next() {
-		lset, chunks, err := s.index.Series(s.it.Value())
+		lset, chunks, err := s.index.Series(s.it.At())
 		if err != nil {
 			s.err = err
 			return false
@@ -467,8 +465,8 @@ outer:
 	return false
 }
 
-func (s *blockSeriesSet) Series() Series { return s.cur }
-func (s *blockSeriesSet) Err() error     { return s.err }
+func (s *blockSeriesSet) At() Series { return s.cur }
+func (s *blockSeriesSet) Err() error { return s.err }
 
 // chunkSeries is a series that is backed by a sequence of chunks holding
 // time series data.
@@ -510,7 +508,7 @@ type SeriesIterator interface {
 	// before tt.
 	Seek(t int64) bool
 	// Values returns the current timestamp/value pair.
-	Values() (t int64, v float64)
+	At() (t int64, v float64)
 	// Next advances the iterator by one.
 	Next() bool
 	// Err returns the current error.
@@ -575,8 +573,8 @@ func (it *chainedSeriesIterator) Next() bool {
 	return it.Next()
 }
 
-func (it *chainedSeriesIterator) Values() (t int64, v float64) {
-	return it.cur.Values()
+func (it *chainedSeriesIterator) At() (t int64, v float64) {
+	return it.cur.At()
 }
 
 func (it *chainedSeriesIterator) Err() error {
@@ -625,7 +623,7 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	it.cur = it.chunks[x].Iterator()
 
 	for it.cur.Next() {
-		t0, _ := it.cur.Values()
+		t0, _ := it.cur.At()
 		if t0 >= t {
 			return true
 		}
@@ -633,8 +631,8 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	return false
 }
 
-func (it *chunkSeriesIterator) Values() (t int64, v float64) {
-	return it.cur.Values()
+func (it *chunkSeriesIterator) At() (t int64, v float64) {
+	return it.cur.At()
 }
 
 func (it *chunkSeriesIterator) Next() bool {
@@ -700,7 +698,7 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 		if !ok {
 			return false
 		}
-		b.lastTime, _ = b.Values()
+		b.lastTime, _ = b.At()
 	}
 
 	if b.lastTime >= t {
@@ -718,18 +716,18 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 // Next advances the iterator to the next element.
 func (b *BufferedSeriesIterator) Next() bool {
 	// Add current element to buffer before advancing.
-	b.buf.add(b.it.Values())
+	b.buf.add(b.it.At())
 
 	ok := b.it.Next()
 	if ok {
-		b.lastTime, _ = b.Values()
+		b.lastTime, _ = b.At()
 	}
 	return ok
 }
 
 // Values returns the current element of the iterator.
-func (b *BufferedSeriesIterator) Values() (int64, float64) {
-	return b.it.Values()
+func (b *BufferedSeriesIterator) At() (int64, float64) {
+	return b.it.At()
 }
 
 // Err returns the last encountered error.
@@ -786,7 +784,7 @@ func (it *sampleRingIterator) Err() error {
 	return nil
 }
 
-func (it *sampleRingIterator) Values() (int64, float64) {
+func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
 }
 

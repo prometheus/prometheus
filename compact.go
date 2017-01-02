@@ -196,7 +196,7 @@ func (c *compactionSeriesSet) Next() bool {
 		return false
 	}
 
-	c.l, c.c, c.err = c.index.Series(c.p.Value())
+	c.l, c.c, c.err = c.index.Series(c.p.At())
 	if c.err != nil {
 		return false
 	}

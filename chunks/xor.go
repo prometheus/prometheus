@@ -190,7 +190,7 @@ type xorIterator struct {
 	err    error
 }
 
-func (it *xorIterator) Values() (int64, float64) {
+func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 

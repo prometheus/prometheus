@@ -51,7 +51,7 @@ type Appender interface {
 
 // Iterator is a simple iterator that can only get the next value.
 type Iterator interface {
-	Values() (int64, float64)
+	At() (int64, float64)
 	Err() error
 	Next() bool
 }

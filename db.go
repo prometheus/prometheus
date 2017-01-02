@@ -95,8 +95,6 @@ func (db *DB) Close() error {
 	var g errgroup.Group
 
 	for _, shard := range db.shards {
-		// Fix closure argument to goroutine.
-		shard := shard
 		g.Go(shard.Close)
 	}
 

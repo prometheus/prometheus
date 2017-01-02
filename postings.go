@@ -39,8 +39,8 @@ type Postings interface {
 	// true if a value was found.
 	Seek(v uint32) bool
 
-	// Value returns the value at the current iterator position.
-	Value() uint32
+	// At returns the value at the current iterator position.
+	At() uint32
 
 	// Err returns the last error of the iterator.
 	Err() error
@@ -53,12 +53,12 @@ type errPostings struct {
 
 func (e errPostings) Next() bool       { return false }
 func (e errPostings) Seek(uint32) bool { return false }
-func (e errPostings) Value() uint32    { return 0 }
+func (e errPostings) At() uint32       { return 0 }
 func (e errPostings) Err() error       { return e.err }
 
 func expandPostings(p Postings) (res []uint32, err error) {
 	for p.Next() {
-		res = append(res, p.Value())
+		res = append(res, p.At())
 	}
 	return res, p.Err()
 }
@@ -93,7 +93,7 @@ func newIntersectPostings(a, b Postings) *intersectPostings {
 	return it
 }
 
-func (it *intersectPostings) Value() uint32 {
+func (it *intersectPostings) At() uint32 {
 	return it.cur
 }
 
@@ -102,7 +102,7 @@ func (it *intersectPostings) Next() bool {
 		if !it.aok || !it.bok {
 			return false
 		}
-		av, bv := it.a.Value(), it.b.Value()
+		av, bv := it.a.At(), it.b.At()
 
 		if av < bv {
 			it.aok = it.a.Seek(bv)
@@ -157,7 +157,7 @@ func newMergePostings(a, b Postings) *mergePostings {
 	return it
 }
 
-func (it *mergePostings) Value() uint32 {
+func (it *mergePostings) At() uint32 {
 	return it.cur
 }
 
@@ -167,17 +167,17 @@ func (it *mergePostings) Next() bool {
 	}
 
 	if !it.aok {
-		it.cur = it.b.Value()
+		it.cur = it.b.At()
 		it.bok = it.b.Next()
 		return true
 	}
 	if !it.bok {
-		it.cur = it.a.Value()
+		it.cur = it.a.At()
 		it.aok = it.a.Next()
 		return true
 	}
 
-	acur, bcur := it.a.Value(), it.b.Value()
+	acur, bcur := it.a.At(), it.b.At()
 
 	if acur < bcur {
 		it.cur = acur
@@ -219,7 +219,7 @@ func newListPostings(list []uint32) *listPostings {
 	return &listPostings{list: list, idx: -1}
 }
 
-func (it *listPostings) Value() uint32 {
+func (it *listPostings) At() uint32 {
 	return it.list[it.idx]
 }
 

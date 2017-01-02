@@ -67,7 +67,7 @@ func testChunk(c Chunk) error {
 	it := c.Iterator()
 	var res []pair
 	for it.Next() {
-		ts, v := it.Values()
+		ts, v := it.At()
 		res = append(res, pair{t: ts, v: v})
 	}
 	if it.Err() != nil {
@@ -125,7 +125,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 		it := c.Iterator()
 
 		for it.Next() {
-			_, v := it.Values()
+			_, v := it.At()
 			res = append(res, v)
 		}
 		if it.Err() != io.EOF {
