@@ -58,9 +58,9 @@ type seriesSet struct {
 	set tsdb.SeriesSet
 }
 
-func (s seriesSet) Next() bool             { return s.set.Next() }
-func (s seriesSet) Err() error             { return s.set.Err() }
-func (s seriesSet) Series() storage.Series { return series{s: s.set.Series()} }
+func (s seriesSet) Next() bool         { return s.set.Next() }
+func (s seriesSet) Err() error         { return s.set.Err() }
+func (s seriesSet) At() storage.Series { return series{s: s.set.At()} }
 
 type series struct {
 	s tsdb.Series
@@ -76,6 +76,7 @@ type appender struct {
 func (a appender) Add(lset labels.Labels, t int64, v float64) error {
 	return a.a.Add(toTSDBLabels(lset), t, v)
 }
+
 func (a appender) Commit() error { return a.a.Commit() }
 
 func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {

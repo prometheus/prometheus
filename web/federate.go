@@ -77,7 +77,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	for _, mset := range matcherSets {
 		series := q.Select(mset...)
 		for series.Next() {
-			s := series.Series()
+			s := series.At()
 			// TODO(fabxc): allow fast path for most recent sample either
 			// in the storage itself or caching layer in Prometheus.
 			it := storage.NewBuffer(s.Iterator(), int64(promql.StalenessDelta/1e6))

@@ -431,7 +431,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 
 func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 	for it.Next() {
-		res = append(res, it.Series())
+		res = append(res, it.At())
 	}
 	return res, it.Err()
 }
@@ -676,7 +676,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 		buf := it.Buffer()
 		for buf.Next() {
-			t, v := buf.Values()
+			t, v := buf.At()
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
 				ss.Points = append(ss.Points, Point{T: t, V: v})

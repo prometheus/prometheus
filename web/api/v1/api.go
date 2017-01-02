@@ -309,7 +309,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	for _, mset := range matcherSets {
 		series := q.Select(mset...)
 		for series.Next() {
-			metrics = append(metrics, series.Series().Labels())
+			metrics = append(metrics, series.At().Labels())
 		}
 		if series.Err() != nil {
 			return nil, &apiError{errorExec, series.Err()}
