@@ -57,7 +57,7 @@ func (c *compactor) close() error {
 	return nil
 }
 
-func (c *compactor) compact(dir string, a, b *persistedBlock) error {
+func (c *compactor) compact(dir string, a, b block) error {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return err
 	}
@@ -77,19 +77,28 @@ func (c *compactor) compact(dir string, a, b *persistedBlock) error {
 	defer index.Close()
 	defer series.Close()
 
-	aall, err := a.index.Postings("", "")
+	aall, err := a.index().Postings("", "")
 	if err != nil {
 		return err
 	}
-	ball, err := b.index.Postings("", "")
+	ball, err := b.index().Postings("", "")
 	if err != nil {
 		return err
 	}
 
 	set, err := newCompactionMerger(
-		newCompactionSeriesSet(a.index, a.chunks, aall),
-		newCompactionSeriesSet(b.index, b.chunks, ball),
+		newCompactionSeriesSet(a.index(), a.series(), aall),
+		newCompactionSeriesSet(b.index(), b.series(), ball),
 	)
+	if err != nil {
+		return err
+	}
+
+	astats, err := a.index().Stats()
+	if err != nil {
+		return err
+	}
+	bstats, err := a.index().Stats()
 	if err != nil {
 		return err
 	}
@@ -101,9 +110,9 @@ func (c *compactor) compact(dir string, a, b *persistedBlock) error {
 		i        = uint32(0)
 	)
 	stats := BlockStats{
-		MinTime:     a.stats.MinTime,
-		MaxTime:     b.stats.MaxTime,
-		SampleCount: a.stats.SampleCount + b.stats.SampleCount,
+		MinTime:     astats.MinTime,
+		MaxTime:     bstats.MaxTime,
+		SampleCount: astats.SampleCount + bstats.SampleCount,
 	}
 
 	for set.Next() {

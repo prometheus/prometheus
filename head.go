@@ -66,9 +66,12 @@ func (h *HeadBlock) Close() error {
 	return h.wal.Close()
 }
 
-// Querier returns a new querier over the head block.
-func (h *HeadBlock) Querier(mint, maxt int64) Querier {
-	return newBlockQuerier(h, h, mint, maxt)
+func (h *HeadBlock) index() IndexReader {
+	return h
+}
+
+func (h *HeadBlock) series() SeriesReader {
+	return h
 }
 
 // Chunk returns the chunk for the reference number.

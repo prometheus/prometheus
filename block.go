@@ -13,9 +13,9 @@ import (
 
 // Block handles reads against a block of time series data within a time window.
 type block interface {
-	Querier(mint, maxt int64) Querier
-
 	interval() (int64, int64)
+	index() IndexReader
+	series() SeriesReader
 }
 
 type BlockStats struct {
@@ -34,8 +34,8 @@ const (
 type persistedBlock struct {
 	chunksf, indexf *mmapFile
 
-	chunks *seriesReader
-	index  *indexReader
+	chunkr *seriesReader
+	indexr *indexReader
 
 	stats BlockStats
 }
@@ -70,8 +70,8 @@ func newPersistedBlock(path string) (*persistedBlock, error) {
 	pb := &persistedBlock{
 		chunksf: chunksf,
 		indexf:  indexf,
-		chunks:  sr,
-		index:   ir,
+		chunkr:  sr,
+		indexr:  ir,
 		stats:   stats,
 	}
 	return pb, nil
@@ -87,13 +87,12 @@ func (pb *persistedBlock) Close() error {
 	return err1
 }
 
-func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
-	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  pb.index,
-		series: pb.chunks,
-	}
+func (pb *persistedBlock) index() IndexReader {
+	return pb.indexr
+}
+
+func (pb *persistedBlock) series() SeriesReader {
+	return pb.chunkr
 }
 
 func (pb *persistedBlock) interval() (int64, int64) {

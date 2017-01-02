@@ -148,7 +148,12 @@ func (s *Shard) Querier(mint, maxt int64) Querier {
 	}
 
 	for _, b := range blocks {
-		sq.blocks = append(sq.blocks, b.Querier(mint, maxt))
+		sq.blocks = append(sq.blocks, &blockQuerier{
+			mint:   mint,
+			maxt:   maxt,
+			index:  b.index(),
+			series: b.series(),
+		})
 	}
 
 	return sq
