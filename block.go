@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/bradfitz/slice"
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/pkg/errors"
 )
@@ -15,11 +16,11 @@ import (
 // Block handles reads against a block of time series data.
 type block interface {
 	dir() string
-	// stats() BlockStats
+	stats() BlockStats
 	interval() (int64, int64)
 	index() IndexReader
 	series() SeriesReader
-	// persisted() bool
+	persisted() bool
 }
 
 type BlockStats struct {
@@ -36,8 +37,8 @@ const (
 )
 
 type persistedBlock struct {
-	d     string
-	stats BlockStats
+	d      string
+	bstats BlockStats
 
 	chunksf, indexf *mmapFile
 
@@ -51,25 +52,25 @@ func newPersistedBlock(p string) (*persistedBlock, error) {
 	// mmap files belonging to the block.
 	chunksf, err := openMmapFile(chunksFileName(p))
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "open chunk file")
 	}
 	indexf, err := openMmapFile(indexFileName(p))
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "open index file")
 	}
 
 	sr, err := newSeriesReader(chunksf.b)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "create series reader")
 	}
 	ir, err := newIndexReader(sr, indexf.b)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "create index reader")
 	}
 
 	stats, err := ir.Stats()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "read stats")
 	}
 
 	pb := &persistedBlock{
@@ -78,7 +79,7 @@ func newPersistedBlock(p string) (*persistedBlock, error) {
 		indexf:  indexf,
 		chunkr:  sr,
 		indexr:  ir,
-		stats:   stats,
+		bstats:  stats,
 	}
 	return pb, nil
 }
@@ -94,44 +95,40 @@ func (pb *persistedBlock) Close() error {
 }
 
 func (pb *persistedBlock) dir() string          { return pb.d }
+func (pb *persistedBlock) persisted() bool      { return true }
 func (pb *persistedBlock) index() IndexReader   { return pb.indexr }
 func (pb *persistedBlock) series() SeriesReader { return pb.chunkr }
+func (pb *persistedBlock) stats() BlockStats    { return pb.bstats }
 
 func (pb *persistedBlock) interval() (int64, int64) {
-	return pb.stats.MinTime, pb.stats.MaxTime
+	return pb.bstats.MinTime, pb.bstats.MaxTime
 }
 
-type persistedBlocks []*persistedBlock
-
-func (p persistedBlocks) Len() int           { return len(p) }
-func (p persistedBlocks) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-func (p persistedBlocks) Less(i, j int) bool { return p[i].stats.MinTime < p[j].stats.MinTime }
-
 // findBlocks finds time-ordered persisted blocks within a directory.
-func findBlocks(path string) ([]*persistedBlock, *HeadBlock, error) {
-	var pbs persistedBlocks
+func findBlocks(path string) ([]*persistedBlock, []*HeadBlock, error) {
+	var (
+		pbs   []*persistedBlock
+		heads []*HeadBlock
+	)
 
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	var head *HeadBlock
 
 	for _, fi := range files {
 		p := filepath.Join(path, fi.Name())
 
 		if _, err := os.Stat(chunksFileName(p)); os.IsNotExist(err) {
-			if head != nil {
-				return nil, nil, errors.Errorf("found two head blocks")
-			}
 			ts, err := strconv.Atoi(filepath.Base(p))
 			if err != nil {
 				return nil, nil, errors.Errorf("invalid directory name")
 			}
-			head, err = OpenHeadBlock(p, int64(ts))
+			head, err := OpenHeadBlock(p, int64(ts))
 			if err != nil {
 				return nil, nil, err
 			}
+			heads = append(heads, head)
 			continue
 		}
 
@@ -144,9 +141,9 @@ func findBlocks(path string) ([]*persistedBlock, *HeadBlock, error) {
 
 	// Order blocks by their base time so they represent a continous
 	// range of time.
-	sort.Sort(pbs)
+	slice.Sort(pbs, func(i, j int) bool { return pbs[i].bstats.MinTime < pbs[j].bstats.MinTime })
 
-	return pbs, head, nil
+	return pbs, heads, nil
 }
 
 func chunksFileName(path string) string {

@@ -14,9 +14,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -180,12 +182,12 @@ type Shard struct {
 	metrics *shardMetrics
 
 	mtx       sync.RWMutex
-	persisted persistedBlocks
-	head      *HeadBlock
+	persisted []*persistedBlock
+	heads     []*HeadBlock
 	compactor *compactor
 
-	donec    chan struct{}
-	persistc chan struct{}
+	donec chan struct{}
+	cutc  chan struct{}
 }
 
 type shardMetrics struct {
@@ -199,24 +201,24 @@ func newShardMetrics(r prometheus.Registerer, i int) *shardMetrics {
 		"shard": fmt.Sprintf("%d", i),
 	}
 
-	m := &shardMetrics{
-		persistences: prometheus.NewCounter(prometheus.CounterOpts{
-			Name:        "tsdb_shard_persistences_total",
-			Help:        "Total number of head persistances that ran so far.",
-			ConstLabels: shardLabel,
-		}),
-		persistenceDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:        "tsdb_shard_persistence_duration_seconds",
-			Help:        "Duration of persistences in seconds.",
-			ConstLabels: shardLabel,
-			Buckets:     prometheus.ExponentialBuckets(0.25, 2, 5),
-		}),
-		samplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
-			Name:        "tsdb_shard_samples_appended_total",
-			Help:        "Total number of appended samples for the shard.",
-			ConstLabels: shardLabel,
-		}),
-	}
+	m := &shardMetrics{}
+
+	m.persistences = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "tsdb_shard_persistences_total",
+		Help:        "Total number of head persistances that ran so far.",
+		ConstLabels: shardLabel,
+	})
+	m.persistenceDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:        "tsdb_shard_persistence_duration_seconds",
+		Help:        "Duration of persistences in seconds.",
+		ConstLabels: shardLabel,
+		Buckets:     prometheus.ExponentialBuckets(0.25, 2, 5),
+	})
+	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "tsdb_shard_samples_appended_total",
+		Help:        "Total number of appended samples for the shard.",
+		ConstLabels: shardLabel,
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -238,33 +240,34 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 	}
 
 	// Initialize previously persisted blocks.
-	pbs, head, err := findBlocks(path)
+	persisted, heads, err := findBlocks(path)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO(fabxc): get time from client-defined `now` function.
 	baset := time.Unix(0, 0).UnixNano() / int64(time.Millisecond)
-	if len(pbs) > 0 {
-		baset = pbs[len(pbs)-1].stats.MaxTime
+	if len(persisted) > 0 {
+		baset = persisted[len(persisted)-1].bstats.MaxTime
 	}
-	if head == nil {
-		head, err = OpenHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
+	if len(heads) == 0 {
+		head, err := OpenHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
 		if err != nil {
 			return nil, err
 		}
+		heads = []*HeadBlock{head}
 	}
 
 	s := &Shard{
 		path:      path,
 		logger:    logger,
 		metrics:   newShardMetrics(prometheus.DefaultRegisterer, i),
-		head:      head,
-		persisted: pbs,
-		persistc:  make(chan struct{}, 1),
+		heads:     heads,
+		persisted: persisted,
+		cutc:      make(chan struct{}, 1),
 		donec:     make(chan struct{}),
 	}
-	if s.compactor, err = newCompactor(s, logger); err != nil {
+	if s.compactor, err = newCompactor(i, s, logger); err != nil {
 		return nil, err
 	}
 	go s.run()
@@ -273,22 +276,29 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 }
 
 func (s *Shard) run() {
-	for range s.persistc {
-		start := time.Now()
+	for range s.cutc {
+		// if err := s.cut(); err != nil {
+		// 	s.logger.Log("msg", "cut error", "err", err)
+		// }
+		// select {
+		// case <-s.cutc:
+		// default:
+		// }
+		// start := time.Now()
 
-		if err := s.persist(); err != nil {
-			s.logger.Log("msg", "persistence error", "err", err)
-		}
+		// if err := s.persist(); err != nil {
+		// 	s.logger.Log("msg", "persistence error", "err", err)
+		// }
 
-		s.metrics.persistenceDuration.Observe(time.Since(start).Seconds())
-		s.metrics.persistences.Inc()
+		// s.metrics.persistenceDuration.Observe(time.Since(start).Seconds())
+		// s.metrics.persistences.Inc()
 	}
 	close(s.donec)
 }
 
 // Close the shard.
 func (s *Shard) Close() error {
-	close(s.persistc)
+	close(s.cutc)
 	<-s.donec
 
 	var merr MultiError
@@ -300,7 +310,9 @@ func (s *Shard) Close() error {
 	for _, pb := range s.persisted {
 		merr.Add(pb.Close())
 	}
-	merr.Add(s.head.Close())
+	for _, hb := range s.heads {
+		merr.Add(hb.Close())
+	}
 
 	return merr.Err()
 }
@@ -312,23 +324,116 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	head := s.heads[len(s.heads)-1]
+
 	// TODO(fabxc): distinguish samples between concurrent heads for
 	// different time blocks. Those may occurr during transition to still
 	// allow late samples to arrive for a previous block.
-	err := s.head.appendBatch(samples)
+	err := head.appendBatch(samples)
 	if err == nil {
 		s.metrics.samplesAppended.Add(float64(len(samples)))
 	}
 
 	// TODO(fabxc): randomize over time and use better scoring function.
-	if s.head.stats.SampleCount/(uint64(s.head.stats.ChunkCount)+1) > 400 {
-		select {
-		case s.persistc <- struct{}{}:
-		default:
+	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 400 {
+		if err := s.cut(); err != nil {
+			s.logger.Log("msg", "cut failed", "err", err)
 		}
 	}
 
 	return err
+}
+
+func (s *Shard) lock() sync.Locker {
+	return &s.mtx
+}
+
+func (s *Shard) headForDir(dir string) (int, bool) {
+	for i, b := range s.heads {
+		if b.dir() == dir {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func (s *Shard) persistedForDir(dir string) (int, bool) {
+	for i, b := range s.persisted {
+		if b.dir() == dir {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func (s *Shard) reinit(dir string) error {
+	if !fileutil.Exist(dir) {
+		if i, ok := s.headForDir(dir); ok {
+			if err := s.heads[i].Close(); err != nil {
+				return err
+			}
+			s.heads = append(s.heads[:i], s.heads[i+1:]...)
+		}
+		if i, ok := s.persistedForDir(dir); ok {
+			if err := s.persisted[i].Close(); err != nil {
+				return err
+			}
+			s.persisted = append(s.persisted[:i], s.persisted[i+1:]...)
+		}
+		return nil
+	}
+
+	// If a block dir has to be reinitialized and it wasn't a deletion,
+	// it has to be a newly persisted or compacted one.
+	if !fileutil.Exist(chunksFileName(dir)) {
+		return errors.New("no chunk file for new block dir")
+	}
+
+	// Remove a previous head block.
+	if i, ok := s.headForDir(dir); ok {
+		if err := s.heads[i].Close(); err != nil {
+			return err
+		}
+		s.heads = append(s.heads[:i], s.heads[i+1:]...)
+	}
+	// Close an old persisted block.
+	i, ok := s.persistedForDir(dir)
+	if ok {
+		if err := s.persisted[i].Close(); err != nil {
+			return err
+		}
+	}
+	pb, err := newPersistedBlock(dir)
+	if err != nil {
+		return errors.Wrap(err, "open persisted block")
+	}
+	if i >= 0 {
+		s.persisted[i] = pb
+	} else {
+		s.persisted = append(s.persisted, pb)
+	}
+
+	return nil
+}
+
+func (s *Shard) compactable() []block {
+	var blocks []block
+	for _, pb := range s.persisted {
+		blocks = append(blocks, pb)
+	}
+
+	// threshold := s.heads[len(s.heads)-1].bstats.MaxTime - headGracePeriod
+
+	// for _, hb := range s.heads {
+	// 	if hb.bstats.MaxTime < threshold {
+	// 		blocks = append(blocks, hb)
+	// 	}
+	// }
+	for _, hb := range s.heads[:len(s.heads)-1] {
+		blocks = append(blocks, hb)
+	}
+
+	return blocks
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
@@ -357,56 +462,74 @@ func (s *Shard) blocksForInterval(mint, maxt int64) []block {
 			bs = append(bs, b)
 		}
 	}
+	for _, b := range s.heads {
+		bmin, bmax := b.interval()
 
-	hmin, hmax := s.head.interval()
-
-	if intervalOverlap(mint, maxt, hmin, hmax) {
-		bs = append(bs, s.head)
+		if intervalOverlap(mint, maxt, bmin, bmax) {
+			bs = append(bs, b)
+		}
 	}
 
 	return bs
 }
 
 // TODO(fabxc): make configurable.
-const shardGracePeriod = 60 * 1000 // 60 seconds for millisecond scale
+const headGracePeriod = 60 * 1000 // 60 seconds for millisecond scale
 
-func (s *Shard) persist() error {
-	s.mtx.Lock()
-
+// cut starts a new head block to append to. The completed head block
+// will still be appendable for the configured grace period.
+func (s *Shard) cut() error {
 	// Set new head block.
-	head := s.head
-	newHead, err := OpenHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MaxTime)), head.stats.MaxTime)
-	if err != nil {
-		s.mtx.Unlock()
-		return err
-	}
-	s.head = newHead
+	head := s.heads[len(s.heads)-1]
 
-	s.mtx.Unlock()
-
-	// TODO(fabxc): add grace period where we can still append to old head shard
-	// before actually persisting it.
-	dir := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
-
-	if err := persist(dir, head.persist); err != nil {
-		return err
-	}
-	s.logger.Log("samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
-
-	// Reopen block as persisted block for querying.
-	pb, err := newPersistedBlock(dir)
+	newHead, err := OpenHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.bstats.MaxTime)), head.bstats.MaxTime)
 	if err != nil {
 		return err
 	}
-
-	s.mtx.Lock()
-	s.persisted = append(s.persisted, pb)
-	s.mtx.Unlock()
+	s.heads = append(s.heads, newHead)
 
 	s.compactor.trigger()
 
 	return nil
 }
+
+// func (s *Shard) persist() error {
+// 	s.mtx.Lock()
+
+// 	// Set new head block.
+// 	head := s.head
+// 	newHead, err := OpenHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.bstats.MaxTime)), head.bstats.MaxTime)
+// 	if err != nil {
+// 		s.mtx.Unlock()
+// 		return err
+// 	}
+// 	s.head = newHead
+
+// 	s.mtx.Unlock()
+
+// 	// TODO(fabxc): add grace period where we can still append to old head shard
+// 	// before actually persisting it.
+// 	dir := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
+
+// 	if err := persist(dir, head.persist); err != nil {
+// 		return err
+// 	}
+// 	s.logger.Log("samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
+
+// 	// Reopen block as persisted block for querying.
+// 	pb, err := newPersistedBlock(dir)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	s.mtx.Lock()
+// 	s.persisted = append(s.persisted, pb)
+// 	s.mtx.Unlock()
+
+// 	s.compactor.trigger()
+
+// 	return nil
+// }
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.
 type chunkDesc struct {

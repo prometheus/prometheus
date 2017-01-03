@@ -1,34 +1,80 @@
 package tsdb
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type compactor struct {
-	shard  *Shard
-	blocks compactableBlocks
-	logger log.Logger
+	metrics *compactorMetrics
+	blocks  compactableBlocks
+	logger  log.Logger
 
 	triggerc chan struct{}
 	donec    chan struct{}
 }
 
-type compactableBlocks interface {
-	compactable() []block
-	set([]block)
+type compactorMetrics struct {
+	triggered prometheus.Counter
+	ran       prometheus.Counter
+	failed    prometheus.Counter
+	duration  prometheus.Histogram
 }
 
-func newCompactor(s *Shard, l log.Logger) (*compactor, error) {
+func newCompactorMetrics(i int) *compactorMetrics {
+	shardLabel := prometheus.Labels{
+		"shard": fmt.Sprintf("%d", i),
+	}
+
+	m := &compactorMetrics{}
+
+	m.triggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "tsdb_shard_compactions_triggered_total",
+		Help:        "Total number of triggered compactions for the shard.",
+		ConstLabels: shardLabel,
+	})
+	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "tsdb_shard_compactions_total",
+		Help:        "Total number of compactions that were executed for the shard.",
+		ConstLabels: shardLabel,
+	})
+	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "tsdb_shard_compactions_failed_total",
+		Help:        "Total number of compactions that failed for the shard.",
+		ConstLabels: shardLabel,
+	})
+	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:        "tsdb_shard_compaction_duration",
+		Help:        "Duration of compaction runs.",
+		ConstLabels: shardLabel,
+	})
+
+	return m
+}
+
+type compactableBlocks interface {
+	lock() sync.Locker
+	compactable() []block
+	reinit(dir string) error
+}
+
+func newCompactor(i int, blocks compactableBlocks, l log.Logger) (*compactor, error) {
 	c := &compactor{
 		triggerc: make(chan struct{}, 1),
 		donec:    make(chan struct{}),
-		shard:    s,
 		logger:   l,
+		blocks:   blocks,
+		metrics:  newCompactorMetrics(i),
 	}
 	go c.run()
 
@@ -44,35 +90,59 @@ func (c *compactor) trigger() {
 
 func (c *compactor) run() {
 	for range c.triggerc {
-		// continue
-		// bs := c.blocks.get()
+		c.metrics.triggered.Inc()
 
-		// if len(bs) < 2 {
-		// 	continue
-		// }
+		bs := c.pick()
+		if len(bs) == 0 {
+			continue
+		}
 
-		// var (
-		// 	dir = fmt.Sprintf("compacted-%d", timestamp.FromTime(time.Now()))
-		// 	a   = bs[0]
-		// 	b   = bs[1]
-		// )
+		start := time.Now()
+		err := c.compact(bs...)
 
-		// c.blocks.Lock()
+		c.metrics.ran.Inc()
+		c.metrics.duration.Observe(time.Since(start).Seconds())
 
-		// if err := persist(dir, func(indexw IndexWriter, chunkw SeriesWriter) error {
-		// 	return c.compact(indexw, chunkw, a, b)
-		// }); err != nil {
-		// 	c.logger.Log("msg", "compaction failed", "err", err)
-		// 	continue
-		// }
+		if err != nil {
+			c.logger.Log("msg", "compaction failed", "err", err)
+			c.metrics.failed.Inc()
+			continue
+		}
 
-		// c.blocks.Unlock()
+		// Drain channel of signals triggered during compaction.
+		select {
+		case <-c.triggerc:
+		default:
+		}
 	}
 	close(c.donec)
 }
 
 func (c *compactor) pick() []block {
-	return nil
+	bs := c.blocks.compactable()
+	if len(bs) == 0 {
+		return nil
+	}
+
+	if !bs[len(bs)-1].persisted() {
+		// TODO(fabxc): double check scoring function here or only do it here
+		// and trigger every X scrapes?
+		return bs[len(bs)-1:]
+	}
+
+	candidate := []block{}
+	trange := int64(math.MaxInt64)
+
+	for i, b := range bs[:len(bs)-1] {
+		r := bs[i+1].stats().MaxTime - b.stats().MinTime
+
+		if r < trange {
+			trange = r
+			candidate = bs[i : i+1]
+		}
+	}
+
+	return candidate
 }
 
 func (c *compactor) Close() error {
@@ -81,31 +151,96 @@ func (c *compactor) Close() error {
 	return nil
 }
 
-func (c *compactor) compact(indexw IndexWriter, chunkw SeriesWriter, a, b block) error {
-	aall, err := a.index().Postings("", "")
-	if err != nil {
-		return err
+func mergeStats(blocks ...block) (res BlockStats) {
+	res.MinTime = blocks[0].stats().MinTime
+	res.MaxTime = blocks[len(blocks)-1].stats().MaxTime
+
+	for _, b := range blocks {
+		res.SampleCount += b.stats().SampleCount
 	}
-	ball, err := b.index().Postings("", "")
-	if err != nil {
+	return res
+}
+
+func (c *compactor) compact(blocks ...block) error {
+	tmpdir := blocks[0].dir() + ".tmp"
+
+	// Write to temporary directory to make persistence appear atomic.
+	if fileutil.Exist(tmpdir) {
+		if err := os.RemoveAll(tmpdir); err != nil {
+			return err
+		}
+	}
+	if err := fileutil.CreateDirAll(tmpdir); err != nil {
 		return err
 	}
 
-	set, err := newCompactionMerger(
-		newCompactionSeriesSet(a.index(), a.series(), aall),
-		newCompactionSeriesSet(b.index(), b.series(), ball),
-	)
+	chunkf, err := fileutil.LockFile(chunksFileName(tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "create chunk file")
+	}
+	indexf, err := fileutil.LockFile(indexFileName(tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return errors.Wrap(err, "create index file")
 	}
 
-	astats, err := a.index().Stats()
-	if err != nil {
-		return err
+	indexw := newIndexWriter(indexf)
+	chunkw := newSeriesWriter(chunkf, indexw)
+
+	if err := c.write(blocks, indexw, chunkw); err != nil {
+		return errors.Wrap(err, "write compaction")
 	}
-	bstats, err := a.index().Stats()
-	if err != nil {
-		return err
+
+	if err := chunkw.Close(); err != nil {
+		return errors.Wrap(err, "close chunk writer")
+	}
+	if err := indexw.Close(); err != nil {
+		return errors.Wrap(err, "close index writer")
+	}
+	if err := fileutil.Fsync(chunkf.File); err != nil {
+		return errors.Wrap(err, "fsync chunk file")
+	}
+	if err := fileutil.Fsync(indexf.File); err != nil {
+		return errors.Wrap(err, "fsync index file")
+	}
+	if err := chunkf.Close(); err != nil {
+		return errors.Wrap(err, "close chunk file")
+	}
+	if err := indexf.Close(); err != nil {
+		return errors.Wrap(err, "close index file")
+	}
+
+	c.blocks.lock().Lock()
+	defer c.blocks.lock().Unlock()
+
+	if err := renameDir(tmpdir, blocks[0].dir()); err != nil {
+		return errors.Wrap(err, "rename dir")
+	}
+
+	var merr MultiError
+
+	for _, b := range blocks {
+		merr.Add(errors.Wrapf(c.blocks.reinit(b.dir()), "reinit block at %q", b.dir()))
+	}
+	return merr.Err()
+}
+
+func (c *compactor) write(blocks []block, indexw IndexWriter, chunkw SeriesWriter) error {
+	var set compactionSet
+	for i, b := range blocks {
+		all, err := b.index().Postings("", "")
+		if err != nil {
+			return err
+		}
+		s := newCompactionSeriesSet(b.index(), b.series(), all)
+
+		if i == 0 {
+			set = s
+			continue
+		}
+		set, err = newCompactionMerger(set, s)
+		if err != nil {
+			return err
+		}
 	}
 
 	// We fully rebuild the postings list index from merged series.
@@ -113,12 +248,8 @@ func (c *compactor) compact(indexw IndexWriter, chunkw SeriesWriter, a, b block)
 		postings = &memPostings{m: make(map[term][]uint32, 512)}
 		values   = map[string]stringset{}
 		i        = uint32(0)
+		stats    = mergeStats(blocks...)
 	)
-	stats := BlockStats{
-		MinTime:     astats.MinTime,
-		MaxTime:     bstats.MaxTime,
-		SampleCount: astats.SampleCount + bstats.SampleCount,
-	}
 
 	for set.Next() {
 		lset, chunks := set.At()
@@ -174,8 +305,13 @@ func (c *compactor) compact(indexw IndexWriter, chunkw SeriesWriter, a, b block)
 	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
 		return err
 	}
-
 	return nil
+}
+
+type compactionSet interface {
+	Next() bool
+	At() (labels.Labels, []ChunkMeta)
+	Err() error
 }
 
 type compactionSeriesSet struct {
@@ -229,7 +365,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta) {
 }
 
 type compactionMerger struct {
-	a, b *compactionSeriesSet
+	a, b compactionSet
 
 	adone, bdone bool
 	l            labels.Labels
@@ -241,7 +377,7 @@ type compactionSeries struct {
 	chunks []ChunkMeta
 }
 
-func newCompactionMerger(a, b *compactionSeriesSet) (*compactionMerger, error) {
+func newCompactionMerger(a, b compactionSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

@@ -26,7 +26,7 @@ type HeadBlock struct {
 
 	wal *WAL
 
-	stats BlockStats
+	bstats BlockStats
 }
 
 // OpenHeadBlock creates a new empty head block.
@@ -44,7 +44,7 @@ func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 		postings: &memPostings{m: make(map[term][]uint32)},
 		wal:      wal,
 	}
-	b.stats.MinTime = baseTime
+	b.bstats.MinTime = baseTime
 
 	err = wal.ReadAll(&walHandler{
 		series: func(lset labels.Labels) {
@@ -52,7 +52,7 @@ func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 		},
 		sample: func(s hashedSample) {
 			b.descs[s.ref].append(s.t, s.v)
-			b.stats.SampleCount++
+			b.bstats.SampleCount++
 		},
 	})
 	if err != nil {
@@ -68,8 +68,10 @@ func (h *HeadBlock) Close() error {
 }
 
 func (h *HeadBlock) dir() string          { return h.d }
+func (h *HeadBlock) persisted() bool      { return false }
 func (h *HeadBlock) index() IndexReader   { return h }
 func (h *HeadBlock) series() SeriesReader { return h }
+func (h *HeadBlock) stats() BlockStats    { return h.bstats }
 
 // Chunk returns the chunk for the reference number.
 func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
@@ -80,12 +82,12 @@ func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
 }
 
 func (h *HeadBlock) interval() (int64, int64) {
-	return h.stats.MinTime, h.stats.MaxTime
+	return h.bstats.MinTime, h.bstats.MaxTime
 }
 
 // Stats returns statisitics about the indexed data.
 func (h *HeadBlock) Stats() (BlockStats, error) {
-	return h.stats, nil
+	return h.bstats, nil
 }
 
 // LabelValues returns the possible label values
@@ -119,7 +121,12 @@ func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	}
 	cd := h.descs[ref]
 
-	return cd.lset, []ChunkMeta{{MinTime: h.stats.MinTime, Ref: ref}}, nil
+	meta := ChunkMeta{
+		MinTime: cd.firsTimestamp,
+		MaxTime: cd.lastTimestamp,
+		Ref:     ref,
+	}
+	return cd.lset, []ChunkMeta{meta}, nil
 }
 
 func (h *HeadBlock) LabelIndices() ([][]string, error) {
@@ -162,24 +169,22 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 	h.descs = append(h.descs, cd)
 	h.hashes[hash] = append(h.hashes[hash], cd)
 
-	// Add each label pair as a term to the inverted index.
-	terms := make([]term, 0, len(lset))
-
 	for _, l := range lset {
-		terms = append(terms, term{name: l.Name, value: l.Value})
-
 		valset, ok := h.values[l.Name]
 		if !ok {
 			valset = stringset{}
 			h.values[l.Name] = valset
 		}
 		valset.set(l.Value)
+
+		h.postings.add(cd.ref, term{name: l.Name, value: l.Value})
 	}
-	h.postings.add(cd.ref, terms...)
+
+	h.postings.add(cd.ref, term{})
 
 	// For the head block there's exactly one chunk per series.
-	h.stats.ChunkCount++
-	h.stats.SeriesCount++
+	h.bstats.ChunkCount++
+	h.bstats.SeriesCount++
 
 	return cd
 }
@@ -254,10 +259,10 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 		}
 		cd.append(s.t, s.v)
 
-		if s.t > h.stats.MaxTime {
-			h.stats.MaxTime = s.t
+		if s.t > h.bstats.MaxTime {
+			h.bstats.MaxTime = s.t
 		}
-		h.stats.SampleCount++
+		h.bstats.SampleCount++
 	}
 
 	return nil
@@ -280,7 +285,7 @@ func (h *HeadBlock) persist(indexw IndexWriter, chunkw SeriesWriter) error {
 		}
 	}
 
-	if err := indexw.WriteStats(h.stats); err != nil {
+	if err := indexw.WriteStats(h.bstats); err != nil {
 		return err
 	}
 	for n, v := range h.values {
