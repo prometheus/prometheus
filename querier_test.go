@@ -139,6 +139,57 @@ func TestShardSeriesSet(t *testing.T) {
 				}),
 			}),
 		},
+		{
+			a: newListSeriesSet([]Series{
+				newSeries(map[string]string{
+					"handler":  "prometheus",
+					"instance": "127.0.0.1:9090",
+				}, []sample{
+					{t: 1, v: 1},
+				}),
+				newSeries(map[string]string{
+					"handler":  "prometheus",
+					"instance": "localhost:9090",
+				}, []sample{
+					{t: 1, v: 2},
+				}),
+			}),
+			b: newListSeriesSet([]Series{
+				newSeries(map[string]string{
+					"handler":  "prometheus",
+					"instance": "127.0.0.1:9090",
+				}, []sample{
+					{t: 2, v: 1},
+				}),
+				newSeries(map[string]string{
+					"handler":  "query",
+					"instance": "localhost:9090",
+				}, []sample{
+					{t: 2, v: 2},
+				}),
+			}),
+			exp: newListSeriesSet([]Series{
+				newSeries(map[string]string{
+					"handler":  "prometheus",
+					"instance": "127.0.0.1:9090",
+				}, []sample{
+					{t: 1, v: 1},
+					{t: 2, v: 1},
+				}),
+				newSeries(map[string]string{
+					"handler":  "prometheus",
+					"instance": "localhost:9090",
+				}, []sample{
+					{t: 1, v: 2},
+				}),
+				newSeries(map[string]string{
+					"handler":  "query",
+					"instance": "localhost:9090",
+				}, []sample{
+					{t: 2, v: 2},
+				}),
+			}),
+		},
 	}
 
 Outer:

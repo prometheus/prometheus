@@ -261,7 +261,7 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 	s := &Shard{
 		path:      path,
 		logger:    logger,
-		metrics:   newShardMetrics(prometheus.DefaultRegisterer, i),
+		metrics:   newShardMetrics(nil, i),
 		heads:     heads,
 		persisted: persisted,
 		cutc:      make(chan struct{}, 1),
@@ -335,7 +335,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	}
 
 	// TODO(fabxc): randomize over time and use better scoring function.
-	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 400 {
+	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 500 {
 		if err := s.cut(); err != nil {
 			s.logger.Log("msg", "cut failed", "err", err)
 		}

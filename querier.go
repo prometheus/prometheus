@@ -381,7 +381,7 @@ func (s *shardSeriesSet) compare() int {
 	if s.bdone {
 		return -1
 	}
-	return labels.Compare(s.a.At().Labels(), s.a.At().Labels())
+	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
 }
 
 func (s *shardSeriesSet) Next() bool {
