@@ -1,23 +1,26 @@
 package tsdb
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/pkg/timestamp"
 )
 
 type compactor struct {
 	shard  *Shard
+	blocks compactableBlocks
 	logger log.Logger
 
 	triggerc chan struct{}
 	donec    chan struct{}
+}
+
+type compactableBlocks interface {
+	compactable() []block
+	set([]block)
 }
 
 func newCompactor(s *Shard, l log.Logger) (*compactor, error) {
@@ -41,23 +44,35 @@ func (c *compactor) trigger() {
 
 func (c *compactor) run() {
 	for range c.triggerc {
-		if len(c.shard.persisted) < 2 {
-			continue
-		}
-		var (
-			dir = fmt.Sprintf("compacted-%d", timestamp.FromTime(time.Now()))
-			a   = c.shard.persisted[0]
-			b   = c.shard.persisted[1]
-		)
+		// continue
+		// bs := c.blocks.get()
 
-		if err := persist(dir, func(indexw IndexWriter, chunkw SeriesWriter) error {
-			return c.compact(indexw, chunkw, a, b)
-		}); err != nil {
-			c.logger.Log("msg", "compaction failed", "err", err)
-			continue
-		}
+		// if len(bs) < 2 {
+		// 	continue
+		// }
+
+		// var (
+		// 	dir = fmt.Sprintf("compacted-%d", timestamp.FromTime(time.Now()))
+		// 	a   = bs[0]
+		// 	b   = bs[1]
+		// )
+
+		// c.blocks.Lock()
+
+		// if err := persist(dir, func(indexw IndexWriter, chunkw SeriesWriter) error {
+		// 	return c.compact(indexw, chunkw, a, b)
+		// }); err != nil {
+		// 	c.logger.Log("msg", "compaction failed", "err", err)
+		// 	continue
+		// }
+
+		// c.blocks.Unlock()
 	}
 	close(c.donec)
+}
+
+func (c *compactor) pick() []block {
+	return nil
 }
 
 func (c *compactor) Close() error {

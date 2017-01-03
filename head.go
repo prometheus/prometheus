@@ -12,6 +12,7 @@ import (
 // HeadBlock handles reads and writes of time series data within a time window.
 type HeadBlock struct {
 	mtx sync.RWMutex
+	d   string
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
@@ -36,6 +37,7 @@ func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 	}
 
 	b := &HeadBlock{
+		d:        dir,
 		descs:    []*chunkDesc{},
 		hashes:   map[uint64][]*chunkDesc{},
 		values:   map[string]stringset{},
@@ -65,13 +67,9 @@ func (h *HeadBlock) Close() error {
 	return h.wal.Close()
 }
 
-func (h *HeadBlock) index() IndexReader {
-	return h
-}
-
-func (h *HeadBlock) series() SeriesReader {
-	return h
-}
+func (h *HeadBlock) dir() string          { return h.d }
+func (h *HeadBlock) index() IndexReader   { return h }
+func (h *HeadBlock) series() SeriesReader { return h }
 
 // Chunk returns the chunk for the reference number.
 func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {

@@ -8,14 +8,18 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/pkg/errors"
 )
 
-// Block handles reads against a block of time series data within a time window.
+// Block handles reads against a block of time series data.
 type block interface {
+	dir() string
+	// stats() BlockStats
 	interval() (int64, int64)
 	index() IndexReader
 	series() SeriesReader
+	// persisted() bool
 }
 
 type BlockStats struct {
@@ -32,23 +36,24 @@ const (
 )
 
 type persistedBlock struct {
+	d     string
+	stats BlockStats
+
 	chunksf, indexf *mmapFile
 
 	chunkr *seriesReader
 	indexr *indexReader
-
-	stats BlockStats
 }
 
-func newPersistedBlock(path string) (*persistedBlock, error) {
+func newPersistedBlock(p string) (*persistedBlock, error) {
 	// TODO(fabxc): validate match of name and stats time, validate magic.
 
 	// mmap files belonging to the block.
-	chunksf, err := openMmapFile(chunksFileName(path))
+	chunksf, err := openMmapFile(chunksFileName(p))
 	if err != nil {
 		return nil, err
 	}
-	indexf, err := openMmapFile(indexFileName(path))
+	indexf, err := openMmapFile(indexFileName(p))
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +73,7 @@ func newPersistedBlock(path string) (*persistedBlock, error) {
 	}
 
 	pb := &persistedBlock{
+		d:       p,
 		chunksf: chunksf,
 		indexf:  indexf,
 		chunkr:  sr,
@@ -87,13 +93,9 @@ func (pb *persistedBlock) Close() error {
 	return err1
 }
 
-func (pb *persistedBlock) index() IndexReader {
-	return pb.indexr
-}
-
-func (pb *persistedBlock) series() SeriesReader {
-	return pb.chunkr
-}
+func (pb *persistedBlock) dir() string          { return pb.d }
+func (pb *persistedBlock) index() IndexReader   { return pb.indexr }
+func (pb *persistedBlock) series() SeriesReader { return pb.chunkr }
 
 func (pb *persistedBlock) interval() (int64, int64) {
 	return pb.stats.MinTime, pb.stats.MaxTime
@@ -156,12 +158,12 @@ func indexFileName(path string) string {
 }
 
 type mmapFile struct {
-	f *os.File
+	f *fileutil.LockedFile
 	b []byte
 }
 
 func openMmapFile(path string) (*mmapFile, error) {
-	f, err := os.Open(path)
+	f, err := fileutil.TryLockFile(path, os.O_RDONLY, 0666)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +172,7 @@ func openMmapFile(path string) (*mmapFile, error) {
 		return nil, err
 	}
 
-	b, err := mmap(f, int(info.Size()))
+	b, err := mmap(f.File, int(info.Size()))
 	if err != nil {
 		return nil, err
 	}
