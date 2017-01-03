@@ -86,11 +86,11 @@ The Makefile provides several targets:
 
 ## Contributing
 
-Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
+Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/master/CONTRIBUTING.md)
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/master/LICENSE).
 
 
 [travis]: https://travis-ci.org/prometheus/prometheus
