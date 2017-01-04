@@ -335,7 +335,7 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	}
 
 	// TODO(fabxc): randomize over time and use better scoring function.
-	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 500 {
+	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 250 {
 		if err := s.cut(); err != nil {
 			s.logger.Log("msg", "cut failed", "err", err)
 		}
@@ -383,12 +383,6 @@ func (s *Shard) reinit(dir string) error {
 		return nil
 	}
 
-	// If a block dir has to be reinitialized and it wasn't a deletion,
-	// it has to be a newly persisted or compacted one.
-	if !fileutil.Exist(chunksFileName(dir)) {
-		return errors.New("no chunk file for new block dir")
-	}
-
 	// Remove a previous head block.
 	if i, ok := s.headForDir(dir); ok {
 		if err := s.heads[i].Close(); err != nil {
@@ -419,7 +413,7 @@ func (s *Shard) reinit(dir string) error {
 func (s *Shard) compactable() []block {
 	var blocks []block
 	for _, pb := range s.persisted {
-		blocks = append(blocks, pb)
+		blocks = append([]block{pb}, blocks...)
 	}
 
 	// threshold := s.heads[len(s.heads)-1].bstats.MaxTime - headGracePeriod
@@ -430,7 +424,7 @@ func (s *Shard) compactable() []block {
 	// 	}
 	// }
 	for _, hb := range s.heads[:len(s.heads)-1] {
-		blocks = append(blocks, hb)
+		blocks = append([]block{hb}, blocks...)
 	}
 
 	return blocks
@@ -565,7 +559,7 @@ type MultiError []error
 func (es MultiError) Error() string {
 	var buf bytes.Buffer
 
-	if len(es) > 0 {
+	if len(es) > 1 {
 		fmt.Fprintf(&buf, "%d errors: ", len(es))
 	}
 
