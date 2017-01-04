@@ -538,17 +538,17 @@ type chunkDesc struct {
 	chunk chunks.Chunk
 
 	// Caching fields.
-	firsTimestamp int64
-	lastTimestamp int64
-	lastValue     float64
-	numSamples    int
+	firstTimestamp int64
+	lastTimestamp  int64
+	lastValue      float64
+	numSamples     int
 
 	app chunks.Appender // Current appender for the chunks.
 }
 
 func (cd *chunkDesc) append(ts int64, v float64) {
 	if cd.numSamples == 0 {
-		cd.firsTimestamp = ts
+		cd.firstTimestamp = ts
 	}
 	cd.app.Append(ts, v)
 

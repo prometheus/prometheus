@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"errors"
+	"math"
 	"sort"
 	"sync"
 
@@ -122,7 +123,7 @@ func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	cd := h.descs[ref]
 
 	meta := ChunkMeta{
-		MinTime: cd.firsTimestamp,
+		MinTime: cd.firstTimestamp,
 		MaxTime: cd.lastTimestamp,
 		Ref:     ref,
 	}
@@ -155,9 +156,11 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 	var err error
 
 	cd := &chunkDesc{
-		lset:  lset,
-		chunk: chunks.NewXORChunk(),
+		lset:          lset,
+		chunk:         chunks.NewXORChunk(),
+		lastTimestamp: math.MinInt64,
 	}
+
 	cd.app, err = cd.chunk.Appender()
 	if err != nil {
 		// Getting an Appender for a new chunk must not panic.
@@ -276,7 +279,7 @@ func (h *HeadBlock) persist(indexw IndexWriter, chunkw SeriesWriter) error {
 	for ref, cd := range h.descs {
 		if err := chunkw.WriteSeries(uint32(ref), cd.lset, []ChunkMeta{
 			{
-				MinTime: cd.firsTimestamp,
+				MinTime: cd.firstTimestamp,
 				MaxTime: cd.lastTimestamp,
 				Chunk:   cd.chunk,
 			},
