@@ -249,6 +249,10 @@ func (c *compactor) write(blocks []block, indexw IndexWriter, chunkw SeriesWrite
 		if err != nil {
 			return err
 		}
+		// TODO(fabxc): find more transparent way of handling this.
+		if hb, ok := b.(*HeadBlock); ok {
+			all = hb.remapPostings(all)
+		}
 		s := newCompactionSeriesSet(b.index(), b.series(), all)
 
 		if i == 0 {
@@ -274,7 +278,6 @@ func (c *compactor) write(blocks []block, indexw IndexWriter, chunkw SeriesWrite
 		if err := chunkw.WriteSeries(i, lset, chunks); err != nil {
 			return err
 		}
-		fmt.Println("next", lset, chunks)
 
 		stats.ChunkCount += uint32(len(chunks))
 		stats.SeriesCount++

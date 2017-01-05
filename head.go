@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/bradfitz/slice"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 )
@@ -18,6 +19,9 @@ type HeadBlock struct {
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	descs []*chunkDesc
+	// mapping maps a series ID to its position in an ordered list
+	// of all series. The orderDirty flag indicates that it has gone stale.
+	mapper *positionMapper
 	// hashes contains a collision map of label set hashes of chunks
 	// to their chunk descs.
 	hashes map[uint64][]*chunkDesc
@@ -59,6 +63,8 @@ func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	b.rewriteMapping()
 
 	return b, nil
 }
@@ -103,16 +109,29 @@ func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
 	}
 	sort.Strings(sl)
 
-	t := &stringTuples{
-		l: len(names),
-		s: sl,
-	}
-	return t, nil
+	return &stringTuples{l: len(names), s: sl}, nil
 }
 
 // Postings returns the postings list iterator for the label pair.
 func (h *HeadBlock) Postings(name, value string) (Postings, error) {
 	return h.postings.get(term{name: name, value: value}), nil
+}
+
+// remapPostings changes the order of the postings from their ID to the ordering
+// of the series they reference.
+// Returned postings have no longer monotonic IDs and MUST NOT be used for regular
+// postings set operations, i.e. intersect and merge.
+func (h *HeadBlock) remapPostings(p Postings) Postings {
+	list, err := expandPostings(p)
+	if err != nil {
+		return errPostings{err: err}
+	}
+
+	slice.Sort(list, func(i, j int) bool {
+		return h.mapper.fw[list[i]] < h.mapper.fw[list[j]]
+	})
+
+	return newListPostings(list)
 }
 
 // Series returns the series for the given reference.
@@ -253,6 +272,11 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	for i, s := range newSeries {
 		h.create(newHashes[i], s)
 	}
+	// TODO(fabxc): just mark as dirty instead and trigger a remapping
+	// periodically and upon querying.
+	if len(newSeries) > 0 {
+		h.rewriteMapping()
+	}
 
 	for _, s := range samples {
 		cd := h.descs[s.ref]
@@ -269,4 +293,49 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	}
 
 	return nil
+}
+
+func (h *HeadBlock) rewriteMapping() {
+	cds := make([]*chunkDesc, len(h.descs))
+	copy(cds, h.descs)
+
+	s := slice.SortInterface(cds, func(i, j int) bool {
+		return labels.Compare(cds[i].lset, cds[j].lset) < 0
+	})
+
+	h.mapper = newPositionMapper(s)
+}
+
+// positionMapper stores a position mapping from unsorted to
+// sorted indices of a sortable collection.
+type positionMapper struct {
+	sortable sort.Interface
+	iv, fw   []int
+}
+
+func newPositionMapper(s sort.Interface) *positionMapper {
+	m := &positionMapper{
+		sortable: s,
+		iv:       make([]int, s.Len()),
+		fw:       make([]int, s.Len()),
+	}
+	for i := range m.iv {
+		m.iv[i] = i
+	}
+	sort.Sort(m)
+
+	for i, k := range m.iv {
+		m.fw[k] = i
+	}
+
+	return m
+}
+
+func (m *positionMapper) Len() int           { return m.sortable.Len() }
+func (m *positionMapper) Less(i, j int) bool { return m.sortable.Less(i, j) }
+
+func (m *positionMapper) Swap(i, j int) {
+	m.sortable.Swap(i, j)
+
+	m.iv[i], m.iv[j] = m.iv[j], m.iv[i]
 }

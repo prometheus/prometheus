@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bradfitz/slice"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 )
@@ -147,19 +146,24 @@ func (s *Shard) Querier(mint, maxt int64) Querier {
 	}
 
 	for _, b := range blocks {
-		sq.blocks = append(sq.blocks, &blockQuerier{
+		q := &blockQuerier{
 			mint:   mint,
 			maxt:   maxt,
 			index:  b.index(),
 			series: b.series(),
-		})
+		}
+		sq.blocks = append(sq.blocks, q)
+
+		// TODO(fabxc): find nicer solution.
+		if hb, ok := b.(*HeadBlock); ok {
+			q.postingsMapper = hb.remapPostings
+		}
 	}
 
 	return sq
 }
 
 func (q *shardQuerier) LabelValues(n string) ([]string, error) {
-	// TODO(fabxc): return returned merged result.
 	res, err := q.blocks[0].LabelValues(n)
 	if err != nil {
 		return nil, err
@@ -211,6 +215,8 @@ type blockQuerier struct {
 	index  IndexReader
 	series SeriesReader
 
+	postingsMapper func(Postings) Postings
+
 	mint, maxt int64
 }
 
@@ -238,36 +244,20 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 		its = append(its, q.selectSingle(m))
 	}
 
-	set := &blockSeriesSet{
+	p := Intersect(its...)
+
+	if q.postingsMapper != nil {
+		p = q.postingsMapper(p)
+	}
+
+	return &blockSeriesSet{
 		index:  q.index,
 		chunks: q.series,
-		it:     Intersect(its...),
+		it:     p,
 		absent: absent,
 		mint:   q.mint,
 		maxt:   q.maxt,
 	}
-	// TODO(fabxc): the head block indexes new series in order they come in.
-	// SeriesSets are expected to emit labels in order of their label sets.
-	// We expand the set and sort it for now. This is not a scalable approach
-	// however, and the head block should re-sort itself eventually.
-	// This comes with an initial cost as long as new series come in but should
-	// flatten out quickly after a warump.
-	// When cutting new head blocks, the index would ideally be transferred to
-	// the new head.
-	var all []Series
-	for set.Next() {
-		all = append(all, set.At())
-	}
-	if set.Err() != nil {
-		return errSeriesSet{err: set.Err()}
-	}
-	slice.Sort(all, func(i, j int) bool {
-		return labels.Compare(all[i].Labels(), all[j].Labels()) < 0
-	})
-
-	// TODO(fabxc): additionally bad because this static set uses function pointers
-	// in a mock series set.
-	return newListSeriesSet(all)
 }
 
 func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
