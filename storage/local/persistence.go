@@ -68,7 +68,7 @@ const (
 
 	indexingMaxBatchSize  = 1024 * 1024
 	indexingBatchTimeout  = 500 * time.Millisecond // Commit batch when idle for that long.
-	indexingQueueCapacity = 1024 * 16
+	indexingQueueCapacity = 1024 * 256
 )
 
 var fpLen = len(model.Fingerprint(0).String()) // Length of a fingerprint as string.
