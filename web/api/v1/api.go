@@ -68,7 +68,7 @@ func (e *apiError) Error() string {
 }
 
 type targetRetriever interface {
-	Targets() []retrieval.Target
+	Targets() []*retrieval.Target
 }
 
 type response struct {

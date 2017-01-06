@@ -132,16 +132,16 @@ func (tm *TargetManager) reload() {
 }
 
 // Targets returns the targets currently being scraped bucketed by their job name.
-func (tm *TargetManager) Targets() []Target {
+func (tm *TargetManager) Targets() []*Target {
 	tm.mtx.RLock()
 	defer tm.mtx.RUnlock()
 
-	targets := []Target{}
+	targets := []*Target{}
 	for _, ps := range tm.targetSets {
 		ps.sp.mtx.RLock()
 
 		for _, t := range ps.sp.targets {
-			targets = append(targets, *t)
+			targets = append(targets, t)
 		}
 
 		ps.sp.mtx.RUnlock()
