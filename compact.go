@@ -48,6 +48,10 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	return m
 }
 
+type blockStore interface {
+	blocks() []block
+}
+
 type compactableBlocks interface {
 	compactable() []block
 }
@@ -74,9 +78,14 @@ func (c *compactor) pick() []block {
 	if len(bs) == 1 && !bs[0].persisted() {
 		return bs
 	}
+	if !bs[0].persisted() {
+		if len(bs) == 2 || !compactionMatch(bs[:3]) {
+			return bs[:1]
+		}
+	}
 
-	for i := 0; i+1 < len(bs); i += 2 {
-		tpl := bs[i : i+2]
+	for i := 0; i+2 < len(bs); i += 3 {
+		tpl := bs[i : i+3]
 		if compactionMatch(tpl) {
 			return tpl
 		}
@@ -88,8 +97,23 @@ func compactionMatch(blocks []block) bool {
 	// TODO(fabxc): check whether combined size is below maxCompactionSize.
 	// Apply maximum time range? or number of series? – might already be covered by size implicitly.
 
-	// Blocks should be roughly equal in size.
-	return true
+	// Naively check whether both blocks have roughly the same number of samples
+	// and whether the total sample count doesn't exceed 2GB chunk file size
+	// by rough approximation.
+	n := float64(blocks[0].stats().SampleCount)
+	t := n
+
+	for _, b := range blocks[1:] {
+		m := float64(b.stats().SampleCount)
+
+		if m < 0.8*n || m > 1.2*n {
+			return false
+		}
+		t += m
+	}
+
+	// Pessimistic 10 bytes/sample should do.
+	return t < 10*200e6
 }
 
 func mergeStats(blocks ...block) (res BlockStats) {
