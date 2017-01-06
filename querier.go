@@ -35,10 +35,10 @@ type Series interface {
 	Iterator() SeriesIterator
 }
 
-// querier merges query results from a set of shard querieres.
+// querier merges query results from a set of partition querieres.
 type querier struct {
 	mint, maxt int64
-	shards     []Querier
+	partitions []Querier
 }
 
 // Querier returns a new querier over the database for the given
@@ -48,19 +48,19 @@ func (db *DB) Querier(mint, maxt int64) Querier {
 		mint: mint,
 		maxt: maxt,
 	}
-	for _, s := range db.shards {
-		q.shards = append(q.shards, s.Querier(mint, maxt))
+	for _, s := range db.partitions {
+		q.partitions = append(q.partitions, s.Querier(mint, maxt))
 	}
 
 	return q
 }
 
 func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
-	// We gather the non-overlapping series from every shard and simply
+	// We gather the non-overlapping series from every partition and simply
 	// return their union.
 	r := &mergedSeriesSet{}
 
-	for _, s := range q.shards {
+	for _, s := range q.partitions {
 		r.sets = append(r.sets, s.Select(ms...))
 	}
 	if len(r.sets) == 0 {
@@ -70,11 +70,11 @@ func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
 }
 
 func (q *querier) LabelValues(n string) ([]string, error) {
-	res, err := q.shards[0].LabelValues(n)
+	res, err := q.partitions[0].LabelValues(n)
 	if err != nil {
 		return nil, err
 	}
-	for _, sq := range q.shards[1:] {
+	for _, sq := range q.partitions[1:] {
 		pr, err := sq.LabelValues(n)
 		if err != nil {
 			return nil, err
@@ -120,29 +120,29 @@ func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
 func (q *querier) Close() error {
 	var merr MultiError
 
-	for _, sq := range q.shards {
+	for _, sq := range q.partitions {
 		merr.Add(sq.Close())
 	}
 	return merr.Err()
 }
 
-// shardQuerier aggregates querying results from time blocks within
-// a single shard.
-type shardQuerier struct {
-	shard  *Shard
-	blocks []Querier
+// partitionQuerier aggregates querying results from time blocks within
+// a single partition.
+type partitionQuerier struct {
+	partition *Partition
+	blocks    []Querier
 }
 
-// Querier returns a new querier over the data shard for the given
+// Querier returns a new querier over the data partition for the given
 // time range.
-func (s *Shard) Querier(mint, maxt int64) Querier {
+func (s *Partition) Querier(mint, maxt int64) Querier {
 	s.mtx.RLock()
 
 	blocks := s.blocksForInterval(mint, maxt)
 
-	sq := &shardQuerier{
-		blocks: make([]Querier, 0, len(blocks)),
-		shard:  s,
+	sq := &partitionQuerier{
+		blocks:    make([]Querier, 0, len(blocks)),
+		partition: s,
 	}
 
 	for _, b := range blocks {
@@ -163,7 +163,7 @@ func (s *Shard) Querier(mint, maxt int64) Querier {
 	return sq
 }
 
-func (q *shardQuerier) LabelValues(n string) ([]string, error) {
+func (q *partitionQuerier) LabelValues(n string) ([]string, error) {
 	res, err := q.blocks[0].LabelValues(n)
 	if err != nil {
 		return nil, err
@@ -179,11 +179,11 @@ func (q *shardQuerier) LabelValues(n string) ([]string, error) {
 	return res, nil
 }
 
-func (q *shardQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
+func (q *partitionQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (q *shardQuerier) Select(ms ...labels.Matcher) SeriesSet {
+func (q *partitionQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	// Sets from different blocks have no time overlap. The reference numbers
 	// they emit point to series sorted in lexicographic order.
 	// We can fully connect partial series by simply comparing with the previous
@@ -194,18 +194,18 @@ func (q *shardQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	r := q.blocks[0].Select(ms...)
 
 	for _, s := range q.blocks[1:] {
-		r = newShardSeriesSet(r, s.Select(ms...))
+		r = newPartitionSeriesSet(r, s.Select(ms...))
 	}
 	return r
 }
 
-func (q *shardQuerier) Close() error {
+func (q *partitionQuerier) Close() error {
 	var merr MultiError
 
 	for _, bq := range q.blocks {
 		merr.Add(bq.Close())
 	}
-	q.shard.mtx.RUnlock()
+	q.partition.mtx.RUnlock()
 
 	return merr.Err()
 }
@@ -359,15 +359,15 @@ func (s *mergedSeriesSet) Next() bool {
 	return s.Next()
 }
 
-type shardSeriesSet struct {
+type partitionSeriesSet struct {
 	a, b SeriesSet
 
 	cur          Series
 	adone, bdone bool
 }
 
-func newShardSeriesSet(a, b SeriesSet) *shardSeriesSet {
-	s := &shardSeriesSet{a: a, b: b}
+func newPartitionSeriesSet(a, b SeriesSet) *partitionSeriesSet {
+	s := &partitionSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
 	s.adone = !s.a.Next()
@@ -376,18 +376,18 @@ func newShardSeriesSet(a, b SeriesSet) *shardSeriesSet {
 	return s
 }
 
-func (s *shardSeriesSet) At() Series {
+func (s *partitionSeriesSet) At() Series {
 	return s.cur
 }
 
-func (s *shardSeriesSet) Err() error {
+func (s *partitionSeriesSet) Err() error {
 	if s.a.Err() != nil {
 		return s.a.Err()
 	}
 	return s.b.Err()
 }
 
-func (s *shardSeriesSet) compare() int {
+func (s *partitionSeriesSet) compare() int {
 	if s.adone {
 		return 1
 	}
@@ -397,7 +397,7 @@ func (s *shardSeriesSet) compare() int {
 	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
 }
 
-func (s *shardSeriesSet) Next() bool {
+func (s *partitionSeriesSet) Next() bool {
 	if s.adone && s.bdone || s.Err() != nil {
 		return false
 	}

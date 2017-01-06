@@ -31,31 +31,31 @@ type compactorMetrics struct {
 }
 
 func newCompactorMetrics(i int) *compactorMetrics {
-	shardLabel := prometheus.Labels{
-		"shard": fmt.Sprintf("%d", i),
+	partitionLabel := prometheus.Labels{
+		"partition": fmt.Sprintf("%d", i),
 	}
 
 	m := &compactorMetrics{}
 
 	m.triggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_shard_compactions_triggered_total",
-		Help:        "Total number of triggered compactions for the shard.",
-		ConstLabels: shardLabel,
+		Name:        "tsdb_partition_compactions_triggered_total",
+		Help:        "Total number of triggered compactions for the partition.",
+		ConstLabels: partitionLabel,
 	})
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_shard_compactions_total",
-		Help:        "Total number of compactions that were executed for the shard.",
-		ConstLabels: shardLabel,
+		Name:        "tsdb_partition_compactions_total",
+		Help:        "Total number of compactions that were executed for the partition.",
+		ConstLabels: partitionLabel,
 	})
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_shard_compactions_failed_total",
-		Help:        "Total number of compactions that failed for the shard.",
-		ConstLabels: shardLabel,
+		Name:        "tsdb_partition_compactions_failed_total",
+		Help:        "Total number of compactions that failed for the partition.",
+		ConstLabels: partitionLabel,
 	})
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:        "tsdb_shard_compaction_duration",
+		Name:        "tsdb_partition_compaction_duration",
 		Help:        "Duration of compaction runs.",
-		ConstLabels: shardLabel,
+		ConstLabels: partitionLabel,
 	})
 
 	return m

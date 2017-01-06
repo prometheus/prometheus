@@ -65,7 +65,7 @@ func (it *listSeriesIterator) Err() error {
 	return nil
 }
 
-func TestShardSeriesSet(t *testing.T) {
+func TestPartitionSeriesSet(t *testing.T) {
 	newSeries := func(l map[string]string, s []sample) Series {
 		return &mockSeries{
 			labels:   func() labels.Labels { return labels.FromMap(l) },
@@ -77,7 +77,7 @@ func TestShardSeriesSet(t *testing.T) {
 		// The input sets in order (samples in series in b are strictly
 		// after those in a).
 		a, b SeriesSet
-		// The composition of a and b in the shard series set must yield
+		// The composition of a and b in the partition series set must yield
 		// results equivalent to the result series set.
 		exp SeriesSet
 	}{
@@ -170,7 +170,7 @@ func TestShardSeriesSet(t *testing.T) {
 
 Outer:
 	for _, c := range cases {
-		res := newShardSeriesSet(c.a, c.b)
+		res := newPartitionSeriesSet(c.a, c.b)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()

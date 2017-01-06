@@ -41,14 +41,14 @@ type DB struct {
 	opts   *Options
 	path   string
 
-	shards []*Shard
+	partitions []*Partition
 }
 
 // TODO(fabxc): make configurable
 const (
-	shardShift   = 0
-	numShards    = 1 << shardShift
-	maxChunkSize = 1024
+	partitionShift = 0
+	numPartitions  = 1 << partitionShift
+	maxChunkSize   = 1024
 )
 
 // Open or create a new DB.
@@ -70,25 +70,25 @@ func Open(path string, l log.Logger, opts *Options) (*DB, error) {
 		path:   path,
 	}
 
-	// Initialize vertical shards.
-	// TODO(fabxc): validate shard number to be power of 2, which is required
-	// for the bitshift-modulo when finding the right shard.
-	for i := 0; i < numShards; i++ {
-		l := log.NewContext(l).With("shard", i)
-		d := shardDir(path, i)
+	// Initialize vertical partitions.
+	// TODO(fabxc): validate partition number to be power of 2, which is required
+	// for the bitshift-modulo when finding the right partition.
+	for i := 0; i < numPartitions; i++ {
+		l := log.NewContext(l).With("partition", i)
+		d := partitionDir(path, i)
 
-		s, err := OpenShard(d, i, l)
+		s, err := OpenPartition(d, i, l)
 		if err != nil {
-			return nil, fmt.Errorf("initializing shard %q failed: %s", d, err)
+			return nil, fmt.Errorf("initializing partition %q failed: %s", d, err)
 		}
 
-		c.shards = append(c.shards, s)
+		c.partitions = append(c.partitions, s)
 	}
 
 	return c, nil
 }
 
-func shardDir(base string, i int) string {
+func partitionDir(base string, i int) string {
 	return filepath.Join(base, strconv.Itoa(i))
 }
 
@@ -96,8 +96,8 @@ func shardDir(base string, i int) string {
 func (db *DB) Close() error {
 	var g errgroup.Group
 
-	for _, shard := range db.shards {
-		g.Go(shard.Close)
+	for _, partition := range db.partitions {
+		g.Go(partition.Close)
 	}
 
 	return g.Wait()
@@ -122,7 +122,7 @@ type Appender interface {
 func (db *DB) Appender() Appender {
 	return &bucketAppender{
 		db:      db,
-		buckets: make([][]hashedSample, numShards),
+		buckets: make([][]hashedSample, numPartitions),
 	}
 }
 
@@ -133,7 +133,7 @@ type bucketAppender struct {
 
 func (ba *bucketAppender) Add(lset labels.Labels, t int64, v float64) error {
 	h := lset.Hash()
-	s := h >> (64 - shardShift)
+	s := h >> (64 - partitionShift)
 
 	ba.buckets[s] = append(ba.buckets[s], hashedSample{
 		hash:   h,
@@ -156,9 +156,9 @@ func (ba *bucketAppender) Commit() error {
 
 	var merr MultiError
 
-	// Spill buckets into shards.
+	// Spill buckets into partitions.
 	for s, b := range ba.buckets {
-		merr.Add(ba.db.shards[s].appendBatch(b))
+		merr.Add(ba.db.partitions[s].appendBatch(b))
 	}
 	return merr.Err()
 }
@@ -174,12 +174,12 @@ type hashedSample struct {
 
 const sep = '\xff'
 
-// Shard handles reads and writes of time series falling into
-// a hashed shard of a series.
-type Shard struct {
+// Partition handles reads and writes of time series falling into
+// a hashed partition of a series.
+type Partition struct {
 	path    string
 	logger  log.Logger
-	metrics *shardMetrics
+	metrics *partitionMetrics
 
 	mtx       sync.RWMutex
 	persisted []*persistedBlock
@@ -190,34 +190,34 @@ type Shard struct {
 	cutc  chan struct{}
 }
 
-type shardMetrics struct {
+type partitionMetrics struct {
 	persistences        prometheus.Counter
 	persistenceDuration prometheus.Histogram
 	samplesAppended     prometheus.Counter
 }
 
-func newShardMetrics(r prometheus.Registerer, i int) *shardMetrics {
-	shardLabel := prometheus.Labels{
-		"shard": fmt.Sprintf("%d", i),
+func newPartitionMetrics(r prometheus.Registerer, i int) *partitionMetrics {
+	partitionLabel := prometheus.Labels{
+		"partition": fmt.Sprintf("%d", i),
 	}
 
-	m := &shardMetrics{}
+	m := &partitionMetrics{}
 
 	m.persistences = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_shard_persistences_total",
+		Name:        "tsdb_partition_persistences_total",
 		Help:        "Total number of head persistances that ran so far.",
-		ConstLabels: shardLabel,
+		ConstLabels: partitionLabel,
 	})
 	m.persistenceDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:        "tsdb_shard_persistence_duration_seconds",
+		Name:        "tsdb_partition_persistence_duration_seconds",
 		Help:        "Duration of persistences in seconds.",
-		ConstLabels: shardLabel,
+		ConstLabels: partitionLabel,
 		Buckets:     prometheus.ExponentialBuckets(0.25, 2, 5),
 	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_shard_samples_appended_total",
-		Help:        "Total number of appended samples for the shard.",
-		ConstLabels: shardLabel,
+		Name:        "tsdb_partition_samples_appended_total",
+		Help:        "Total number of appended samples for the partition.",
+		ConstLabels: partitionLabel,
 	})
 
 	if r != nil {
@@ -230,9 +230,9 @@ func newShardMetrics(r prometheus.Registerer, i int) *shardMetrics {
 	return m
 }
 
-// OpenShard returns a new Shard.
-func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
-	// Create directory if shard is new.
+// OpenPartition returns a new Partition.
+func OpenPartition(path string, i int, logger log.Logger) (*Partition, error) {
+	// Create directory if partition is new.
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return nil, err
@@ -258,10 +258,10 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 		heads = []*HeadBlock{head}
 	}
 
-	s := &Shard{
+	s := &Partition{
 		path:      path,
 		logger:    logger,
-		metrics:   newShardMetrics(nil, i),
+		metrics:   newPartitionMetrics(nil, i),
 		heads:     heads,
 		persisted: persisted,
 		cutc:      make(chan struct{}, 1),
@@ -275,7 +275,7 @@ func OpenShard(path string, i int, logger log.Logger) (*Shard, error) {
 	return s, nil
 }
 
-func (s *Shard) run() {
+func (s *Partition) run() {
 	for range s.cutc {
 		// if err := s.cut(); err != nil {
 		// 	s.logger.Log("msg", "cut error", "err", err)
@@ -296,8 +296,8 @@ func (s *Shard) run() {
 	close(s.donec)
 }
 
-// Close the shard.
-func (s *Shard) Close() error {
+// Close the partition.
+func (s *Partition) Close() error {
 	close(s.cutc)
 	<-s.donec
 
@@ -317,7 +317,7 @@ func (s *Shard) Close() error {
 	return merr.Err()
 }
 
-func (s *Shard) appendBatch(samples []hashedSample) error {
+func (s *Partition) appendBatch(samples []hashedSample) error {
 	if len(samples) == 0 {
 		return nil
 	}
@@ -344,11 +344,11 @@ func (s *Shard) appendBatch(samples []hashedSample) error {
 	return err
 }
 
-func (s *Shard) lock() sync.Locker {
+func (s *Partition) lock() sync.Locker {
 	return &s.mtx
 }
 
-func (s *Shard) headForDir(dir string) (int, bool) {
+func (s *Partition) headForDir(dir string) (int, bool) {
 	for i, b := range s.heads {
 		if b.dir() == dir {
 			return i, true
@@ -357,7 +357,7 @@ func (s *Shard) headForDir(dir string) (int, bool) {
 	return -1, false
 }
 
-func (s *Shard) persistedForDir(dir string) (int, bool) {
+func (s *Partition) persistedForDir(dir string) (int, bool) {
 	for i, b := range s.persisted {
 		if b.dir() == dir {
 			return i, true
@@ -366,7 +366,7 @@ func (s *Shard) persistedForDir(dir string) (int, bool) {
 	return -1, false
 }
 
-func (s *Shard) reinit(dir string) error {
+func (s *Partition) reinit(dir string) error {
 	if !fileutil.Exist(dir) {
 		if i, ok := s.headForDir(dir); ok {
 			if err := s.heads[i].Close(); err != nil {
@@ -410,7 +410,7 @@ func (s *Shard) reinit(dir string) error {
 	return nil
 }
 
-func (s *Shard) compactable() []block {
+func (s *Partition) compactable() []block {
 	var blocks []block
 	for _, pb := range s.persisted {
 		blocks = append([]block{pb}, blocks...)
@@ -444,9 +444,9 @@ func intervalContains(min, max, t int64) bool {
 	return t >= min && t <= max
 }
 
-// blocksForRange returns all blocks within the shard that may contain
+// blocksForRange returns all blocks within the partition that may contain
 // data for the given time range.
-func (s *Shard) blocksForInterval(mint, maxt int64) []block {
+func (s *Partition) blocksForInterval(mint, maxt int64) []block {
 	var bs []block
 
 	for _, b := range s.persisted {
@@ -472,7 +472,7 @@ const headGracePeriod = 60 * 1000 // 60 seconds for millisecond scale
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (s *Shard) cut() error {
+func (s *Partition) cut() error {
 	// Set new head block.
 	head := s.heads[len(s.heads)-1]
 
@@ -487,7 +487,7 @@ func (s *Shard) cut() error {
 	return nil
 }
 
-// func (s *Shard) persist() error {
+// func (s *Partition) persist() error {
 // 	s.mtx.Lock()
 
 // 	// Set new head block.
@@ -501,7 +501,7 @@ func (s *Shard) cut() error {
 
 // 	s.mtx.Unlock()
 
-// 	// TODO(fabxc): add grace period where we can still append to old head shard
+// 	// TODO(fabxc): add grace period where we can still append to old head partition
 // 	// before actually persisting it.
 // 	dir := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
 
