@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
@@ -29,6 +30,8 @@ const (
 // WAL is a write ahead log for series data. It can only be written to.
 // Use WALReader to read back from a write ahead log.
 type WAL struct {
+	mtx sync.Mutex
+
 	f             *fileutil.LockedFile
 	enc           *walEncoder
 	logger        log.Logger
@@ -108,6 +111,9 @@ func (w *WAL) ReadAll(h *walHandler) error {
 
 // Log writes a batch of new series labels and samples to the log.
 func (w *WAL) Log(series []labels.Labels, samples []hashedSample) error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
 	if err := w.enc.encodeSeries(series); err != nil {
 		return err
 	}
@@ -142,9 +148,12 @@ func (w *WAL) run(interval time.Duration) {
 		case <-w.stopc:
 			return
 		case <-tick:
+			w.mtx.Lock()
+
 			if err := w.sync(); err != nil {
 				w.logger.Log("msg", "sync failed", "err", err)
 			}
+			w.mtx.Unlock()
 		}
 	}
 }
@@ -172,7 +181,7 @@ const (
 	// walPageBytes is the alignment for flushing records to the backing Writer.
 	// It should be a multiple of the minimum sector size so that WAL can safely
 	// distinguish between torn writes and ordinary data corruption.
-	walPageBytes = 8 * minSectorSize
+	walPageBytes = 32 * minSectorSize
 )
 
 func newWALEncoder(f *os.File) (*walEncoder, error) {

@@ -339,8 +339,8 @@ func (db *DB) appendBatch(samples []hashedSample) error {
 	if len(samples) == 0 {
 		return nil
 	}
-	db.mtx.Lock()
-	defer db.mtx.Unlock()
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
 
 	head := db.heads[len(db.heads)-1]
 
@@ -426,6 +426,9 @@ func (db *DB) reinit(dir string) error {
 }
 
 func (db *DB) compactable() []block {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
 	var blocks []block
 	for _, pb := range db.persisted {
 		blocks = append([]block{pb}, blocks...)

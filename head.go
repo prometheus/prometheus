@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bradfitz/slice"
@@ -100,6 +101,9 @@ func (h *HeadBlock) stats() BlockStats    { return h.bstats }
 
 // Chunk returns the chunk for the reference number.
 func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	if int(ref) >= len(h.descs) {
 		return nil, errNotFound
 	}
@@ -107,16 +111,25 @@ func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
 }
 
 func (h *HeadBlock) interval() (int64, int64) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	return h.bstats.MinTime, h.bstats.MaxTime
 }
 
 // Stats returns statisitics about the indexed data.
 func (h *HeadBlock) Stats() (BlockStats, error) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	return h.bstats, nil
 }
 
 // LabelValues returns the possible label values
 func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	if len(names) != 1 {
 		return nil, errInvalidSize
 	}
@@ -132,11 +145,17 @@ func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
 
 // Postings returns the postings list iterator for the label pair.
 func (h *HeadBlock) Postings(name, value string) (Postings, error) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	return h.postings.get(term{name: name, value: value}), nil
 }
 
 // Series returns the series for the given reference.
 func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	if int(ref) >= len(h.descs) {
 		return nil, nil, errNotFound
 	}
@@ -151,6 +170,9 @@ func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 }
 
 func (h *HeadBlock) LabelIndices() ([][]string, error) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
 	res := [][]string{}
 
 	for s := range h.values {
@@ -226,9 +248,11 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	// ones we haven't seen before.
 	var (
 		newSeries    []labels.Labels
+		newSamples   []*hashedSample
 		newHashes    []uint64
 		uniqueHashes = map[uint64]uint32{}
 	)
+	h.mtx.RLock()
 
 	for i := range samples {
 		s := &samples[i]
@@ -254,12 +278,15 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 			s.ref = ref
 			continue
 		}
-		s.ref = uint32(len(h.descs) + len(newSeries))
+		s.ref = uint32(len(newSeries))
 		uniqueHashes[s.hash] = s.ref
 
 		newSeries = append(newSeries, s.labels)
 		newHashes = append(newHashes, s.hash)
+		newSamples = append(newSamples, s)
 	}
+
+	h.mtx.RUnlock()
 
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
@@ -269,26 +296,54 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 
 	// After the samples were successfully written to the WAL, there may
 	// be no further failures.
-	for i, s := range newSeries {
-		h.create(newHashes[i], s)
+	if len(newSeries) > 0 {
+		h.mtx.Lock()
+
+		base := len(h.descs)
+
+		for i, s := range newSeries {
+			h.create(newHashes[i], s)
+		}
+		for _, s := range newSamples {
+			s.ref = uint32(base) + s.ref
+		}
+
+		h.mtx.Unlock()
+
+		h.mtx.RLock()
+		defer h.mtx.RUnlock()
 	}
+
+	total := len(samples)
 
 	for _, s := range samples {
 		cd := h.descs[s.ref]
 		// Skip duplicate samples.
 		if cd.lastTimestamp == s.t && cd.lastValue != s.v {
+			total--
 			continue
 		}
 		cd.append(s.t, s.v)
 
-		if s.t > h.bstats.MaxTime {
-			h.bstats.MaxTime = s.t
+		if t := h.bstats.MaxTime; s.t > t {
+			// h.bstats.MaxTime = s.t
+			for !atomic.CompareAndSwapInt64(&h.bstats.MaxTime, t, s.t) {
+				if t = h.bstats.MaxTime; s.t <= t {
+					break
+				}
+			}
 		}
-		if s.t < h.bstats.MinTime {
-			h.bstats.MinTime = s.t
+		if t := h.bstats.MinTime; s.t < t {
+			// h.bstats.MinTime = s.t
+			for !atomic.CompareAndSwapInt64(&h.bstats.MinTime, t, s.t) {
+				if t = h.bstats.MinTime; s.t >= t {
+					break
+				}
+			}
 		}
-		h.bstats.SampleCount++
 	}
+
+	atomic.AddUint64(&h.bstats.SampleCount, uint64(total))
 
 	return nil
 }

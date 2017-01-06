@@ -91,7 +91,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	st, err := tsdb.OpenPartitioned(dir, 8, nil, nil)
+	st, err := tsdb.OpenPartitioned(dir, 1, nil, nil)
 	if err != nil {
 		exitWithError(err)
 	}
