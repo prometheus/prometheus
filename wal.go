@@ -7,10 +7,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/coreos/etcd/pkg/ioutil"
 	"github.com/fabxc/tsdb/labels"
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 )
 
@@ -27,8 +29,13 @@ const (
 // WAL is a write ahead log for series data. It can only be written to.
 // Use WALReader to read back from a write ahead log.
 type WAL struct {
-	f   *fileutil.LockedFile
-	enc *walEncoder
+	f             *fileutil.LockedFile
+	enc           *walEncoder
+	logger        log.Logger
+	flushInterval time.Duration
+
+	stopc chan struct{}
+	donec chan struct{}
 
 	symbols map[string]uint32
 }
@@ -37,7 +44,7 @@ const walFileName = "wal-000"
 
 // OpenWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
-func OpenWAL(dir string) (*WAL, error) {
+func OpenWAL(dir string, l log.Logger, flushInterval time.Duration) (*WAL, error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -64,10 +71,16 @@ func OpenWAL(dir string) (*WAL, error) {
 	}
 
 	w := &WAL{
-		f:       f,
-		enc:     enc,
-		symbols: map[string]uint32{},
+		f:             f,
+		logger:        l,
+		enc:           enc,
+		flushInterval: flushInterval,
+		symbols:       map[string]uint32{},
+		donec:         make(chan struct{}),
+		stopc:         make(chan struct{}),
 	}
+	go w.run(flushInterval)
+
 	return w, nil
 }
 
@@ -101,6 +114,9 @@ func (w *WAL) Log(series []labels.Labels, samples []hashedSample) error {
 	if err := w.enc.encodeSamples(samples); err != nil {
 		return err
 	}
+	if w.flushInterval <= 0 {
+		return w.sync()
+	}
 	return nil
 }
 
@@ -111,8 +127,33 @@ func (w *WAL) sync() error {
 	return fileutil.Fdatasync(w.f.File)
 }
 
+func (w *WAL) run(interval time.Duration) {
+	var tick <-chan time.Time
+
+	if interval > 0 {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		tick = ticker.C
+	}
+	defer close(w.donec)
+
+	for {
+		select {
+		case <-w.stopc:
+			return
+		case <-tick:
+			if err := w.sync(); err != nil {
+				w.logger.Log("msg", "sync failed", "err", err)
+			}
+		}
+	}
+}
+
 // Close sync all data and closes the underlying resources.
 func (w *WAL) Close() error {
+	close(w.stopc)
+	<-w.donec
+
 	if err := w.sync(); err != nil {
 		return err
 	}

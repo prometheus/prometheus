@@ -5,10 +5,12 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/bradfitz/slice"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
+	"github.com/go-kit/kit/log"
 )
 
 // HeadBlock handles reads and writes of time series data within a time window.
@@ -35,8 +37,8 @@ type HeadBlock struct {
 }
 
 // OpenHeadBlock creates a new empty head block.
-func OpenHeadBlock(dir string) (*HeadBlock, error) {
-	wal, err := OpenWAL(dir)
+func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
+	wal, err := OpenWAL(dir, log.NewContext(l).With("component", "wal"), 15*time.Second)
 	if err != nil {
 		return nil, err
 	}

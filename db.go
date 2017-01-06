@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sync/errgroup"
@@ -33,8 +34,9 @@ var DefaultOptions = &Options{
 
 // Options of the DB storage.
 type Options struct {
-	Retention  int64
-	DisableWAL bool
+	Retention        int64
+	DisableWAL       bool
+	WALFlushInterval time.Duration
 }
 
 // Appender allows committing batches of samples to a database.
@@ -76,6 +78,7 @@ type DB struct {
 	compactor *compactor
 
 	compactc chan struct{}
+	cutc     chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
 }
@@ -132,6 +135,7 @@ func Open(dir string, logger log.Logger) (db *DB, err error) {
 		logger:   logger,
 		metrics:  newDBMetrics(nil),
 		compactc: make(chan struct{}, 1),
+		cutc:     make(chan struct{}, 1),
 		donec:    make(chan struct{}),
 		stopc:    make(chan struct{}),
 	}
@@ -153,6 +157,25 @@ func (db *DB) run() {
 
 	for {
 		select {
+		case <-db.cutc:
+			db.mtx.Lock()
+			err := db.cut()
+			db.mtx.Unlock()
+
+			if err != nil {
+				db.logger.Log("msg", "cut failed", "err", err)
+			} else {
+				select {
+				case db.compactc <- struct{}{}:
+				default:
+				}
+			}
+			// Drain cut channel so we don't trigger immediately again.
+			select {
+			case <-db.cutc:
+			default:
+			}
+
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -177,6 +200,7 @@ func (db *DB) run() {
 					db.logger.Log("msg", "compaction failed", "err", err)
 				}
 			}
+
 		case <-db.stopc:
 			return
 		}
@@ -244,7 +268,7 @@ func (db *DB) initBlocks() error {
 		dir := filepath.Join(db.dir, fi.Name())
 
 		if fileutil.Exist(filepath.Join(dir, walFileName)) {
-			h, err := OpenHeadBlock(dir)
+			h, err := OpenHeadBlock(dir, db.logger)
 			if err != nil {
 				return err
 			}
@@ -323,13 +347,9 @@ func (db *DB) appendBatch(samples []hashedSample) error {
 
 	// TODO(fabxc): randomize over time and use better scoring function.
 	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 250 {
-		if err := db.cut(); err != nil {
-			db.logger.Log("msg", "cut failed", "err", err)
-		} else {
-			select {
-			case db.compactc <- struct{}{}:
-			default:
-			}
+		select {
+		case db.cutc <- struct{}{}:
+		default:
 		}
 	}
 
@@ -460,22 +480,22 @@ const headGracePeriod = 60 * 1000 // 60 seconds for millisecond scale
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (p *DB) cut() error {
-	dir, err := p.nextBlockDir()
+func (db *DB) cut() error {
+	dir, err := db.nextBlockDir()
 	if err != nil {
 		return err
 	}
-	newHead, err := OpenHeadBlock(dir)
+	newHead, err := OpenHeadBlock(dir, db.logger)
 	if err != nil {
 		return err
 	}
-	p.heads = append(p.heads, newHead)
+	db.heads = append(db.heads, newHead)
 
 	return nil
 }
 
-func (p *DB) nextBlockDir() (string, error) {
-	names, err := fileutil.ReadDir(p.dir)
+func (db *DB) nextBlockDir() (string, error) {
+	names, err := fileutil.ReadDir(db.dir)
 	if err != nil {
 		return "", err
 	}
@@ -491,7 +511,7 @@ func (p *DB) nextBlockDir() (string, error) {
 		}
 		i = j
 	}
-	return filepath.Join(p.dir, fmt.Sprintf("b-%0.6d", i+1)), nil
+	return filepath.Join(db.dir, fmt.Sprintf("b-%0.6d", i+1)), nil
 }
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.
