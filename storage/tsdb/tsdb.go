@@ -11,12 +11,12 @@ import (
 
 // adapter implements a storage.Storage around TSDB.
 type adapter struct {
-	db *tsdb.DB
+	db *tsdb.PartitionedDB
 }
 
 // Open returns a new storage backed by a tsdb database.
 func Open(path string) (storage.Storage, error) {
-	db, err := tsdb.Open(path, nil, nil)
+	db, err := tsdb.OpenPartitioned(path, 1, nil, nil)
 	if err != nil {
 		return nil, err
 	}
