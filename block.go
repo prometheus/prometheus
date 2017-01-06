@@ -1,14 +1,10 @@
 package tsdb
 
 import (
-	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 
-	"github.com/bradfitz/slice"
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/pkg/errors"
 )
@@ -104,54 +100,12 @@ func (pb *persistedBlock) interval() (int64, int64) {
 	return pb.bstats.MinTime, pb.bstats.MaxTime
 }
 
-// findBlocks finds time-ordered persisted blocks within a directory.
-func findBlocks(path string) ([]*persistedBlock, []*HeadBlock, error) {
-	var (
-		pbs   []*persistedBlock
-		heads []*HeadBlock
-	)
-
-	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, fi := range files {
-		p := filepath.Join(path, fi.Name())
-
-		if _, err := os.Stat(chunksFileName(p)); os.IsNotExist(err) {
-			ts, err := strconv.Atoi(filepath.Base(p))
-			if err != nil {
-				return nil, nil, errors.Errorf("invalid directory name")
-			}
-			head, err := OpenHeadBlock(p, int64(ts))
-			if err != nil {
-				return nil, nil, err
-			}
-			heads = append(heads, head)
-			continue
-		}
-
-		pb, err := newPersistedBlock(p)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error initializing block %q: %s", p, err)
-		}
-		pbs = append(pbs, pb)
-	}
-
-	// Order blocks by their base time so they represent a continous
-	// range of time.
-	slice.Sort(pbs, func(i, j int) bool { return pbs[i].bstats.MinTime < pbs[j].bstats.MinTime })
-
-	return pbs, heads, nil
-}
-
 func chunksFileName(path string) string {
-	return filepath.Join(path, "series")
+	return filepath.Join(path, "000-series")
 }
 
 func indexFileName(path string) string {
-	return filepath.Join(path, "index")
+	return filepath.Join(path, "000-index")
 }
 
 type mmapFile struct {

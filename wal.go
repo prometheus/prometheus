@@ -33,6 +33,8 @@ type WAL struct {
 	symbols map[string]uint32
 }
 
+const walFileName = "000-wal"
+
 // OpenWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenWAL(dir string) (*WAL, error) {
@@ -40,7 +42,7 @@ func OpenWAL(dir string) (*WAL, error) {
 		return nil, err
 	}
 
-	p := filepath.Join(dir, "wal")
+	p := filepath.Join(dir, walFileName)
 
 	f, err := fileutil.TryLockFile(p, os.O_RDWR, 0666)
 	if err != nil {

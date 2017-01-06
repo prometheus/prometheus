@@ -35,7 +35,7 @@ type HeadBlock struct {
 }
 
 // OpenHeadBlock creates a new empty head block.
-func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
+func OpenHeadBlock(dir string) (*HeadBlock, error) {
 	wal, err := OpenWAL(dir)
 	if err != nil {
 		return nil, err
@@ -49,14 +49,26 @@ func OpenHeadBlock(dir string, baseTime int64) (*HeadBlock, error) {
 		postings: &memPostings{m: make(map[term][]uint32)},
 		wal:      wal,
 	}
-	b.bstats.MinTime = baseTime
 
 	err = wal.ReadAll(&walHandler{
 		series: func(lset labels.Labels) {
 			b.create(lset.Hash(), lset)
 		},
 		sample: func(s hashedSample) {
-			b.descs[s.ref].append(s.t, s.v)
+			cd := b.descs[s.ref]
+
+			// Duplicated from appendBatch – TODO(fabxc): deduplicate?
+			if cd.lastTimestamp == s.t && cd.lastValue != s.v {
+				return
+			}
+			cd.append(s.t, s.v)
+
+			if s.t > b.bstats.MaxTime {
+				b.bstats.MaxTime = s.t
+			}
+			if s.t < b.bstats.MinTime {
+				b.bstats.MinTime = s.t
+			}
 			b.bstats.SampleCount++
 		},
 	})
@@ -172,14 +184,13 @@ func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
 }
 
 func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
-	var err error
-
 	cd := &chunkDesc{
 		lset:          lset,
 		chunk:         chunks.NewXORChunk(),
 		lastTimestamp: math.MinInt64,
 	}
 
+	var err error
 	cd.app, err = cd.chunk.Appender()
 	if err != nil {
 		// Getting an Appender for a new chunk must not panic.
@@ -288,6 +299,9 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 
 		if s.t > h.bstats.MaxTime {
 			h.bstats.MaxTime = s.t
+		}
+		if s.t < h.bstats.MinTime {
+			h.bstats.MinTime = s.t
 		}
 		h.bstats.SampleCount++
 	}

@@ -4,12 +4,13 @@ package tsdb
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"sync"
-	"time"
 	"unsafe"
 
 	"golang.org/x/sync/errgroup"
@@ -177,7 +178,7 @@ const sep = '\xff'
 // Partition handles reads and writes of time series falling into
 // a hashed partition of a series.
 type Partition struct {
-	path    string
+	dir     string
 	logger  log.Logger
 	metrics *partitionMetrics
 
@@ -185,9 +186,6 @@ type Partition struct {
 	persisted []*persistedBlock
 	heads     []*HeadBlock
 	compactor *compactor
-
-	donec chan struct{}
-	cutc  chan struct{}
 }
 
 type partitionMetrics struct {
@@ -231,86 +229,109 @@ func newPartitionMetrics(r prometheus.Registerer, i int) *partitionMetrics {
 }
 
 // OpenPartition returns a new Partition.
-func OpenPartition(path string, i int, logger log.Logger) (*Partition, error) {
+func OpenPartition(dir string, i int, logger log.Logger) (p *Partition, err error) {
 	// Create directory if partition is new.
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := os.MkdirAll(path, 0777); err != nil {
+	if !fileutil.Exist(dir) {
+		if err := os.MkdirAll(dir, 0777); err != nil {
 			return nil, err
 		}
 	}
 
-	// Initialize previously persisted blocks.
-	persisted, heads, err := findBlocks(path)
-	if err != nil {
+	p = &Partition{
+		dir:     dir,
+		logger:  logger,
+		metrics: newPartitionMetrics(nil, i),
+	}
+	if err := p.initBlocks(); err != nil {
+		return nil, err
+	}
+	if p.compactor, err = newCompactor(i, p, logger); err != nil {
 		return nil, err
 	}
 
-	// TODO(fabxc): get time from client-defined `now` function.
-	baset := time.Unix(0, 0).UnixNano() / int64(time.Millisecond)
-	if len(persisted) > 0 {
-		baset = persisted[len(persisted)-1].bstats.MaxTime
-	}
-	if len(heads) == 0 {
-		head, err := OpenHeadBlock(filepath.Join(path, fmt.Sprintf("%d", baset)), baset)
-		if err != nil {
-			return nil, err
-		}
-		heads = []*HeadBlock{head}
-	}
-
-	s := &Partition{
-		path:      path,
-		logger:    logger,
-		metrics:   newPartitionMetrics(nil, i),
-		heads:     heads,
-		persisted: persisted,
-		cutc:      make(chan struct{}, 1),
-		donec:     make(chan struct{}),
-	}
-	if s.compactor, err = newCompactor(i, s, logger); err != nil {
-		return nil, err
-	}
-	go s.run()
-
-	return s, nil
+	return p, nil
 }
 
-func (s *Partition) run() {
-	for range s.cutc {
-		// if err := s.cut(); err != nil {
-		// 	s.logger.Log("msg", "cut error", "err", err)
-		// }
-		// select {
-		// case <-s.cutc:
-		// default:
-		// }
-		// start := time.Now()
-
-		// if err := s.persist(); err != nil {
-		// 	s.logger.Log("msg", "persistence error", "err", err)
-		// }
-
-		// s.metrics.persistenceDuration.Observe(time.Since(start).Seconds())
-		// s.metrics.persistences.Inc()
+func isBlockDir(fi os.FileInfo) bool {
+	if !fi.IsDir() {
+		return false
 	}
-	close(s.donec)
+	if _, err := strconv.ParseUint(fi.Name(), 10, 32); err != nil {
+		return false
+	}
+	return true
+}
+
+func (p *Partition) initBlocks() error {
+	var (
+		pbs   []*persistedBlock
+		heads []*HeadBlock
+	)
+
+	files, err := ioutil.ReadDir(p.dir)
+	if err != nil {
+		return err
+	}
+
+	for _, fi := range files {
+		if !isBlockDir(fi) {
+			continue
+		}
+		dir := filepath.Join(p.dir, fi.Name())
+
+		if fileutil.Exist(filepath.Join(dir, walFileName)) {
+			h, err := OpenHeadBlock(dir)
+			if err != nil {
+				return err
+			}
+			heads = append(heads, h)
+			continue
+		}
+
+		b, err := newPersistedBlock(dir)
+		if err != nil {
+			return err
+		}
+		pbs = append(pbs, b)
+	}
+
+	// Validate that blocks are sequential in time.
+	lastTime := int64(math.MinInt64)
+
+	for _, b := range pbs {
+		if b.stats().MinTime < lastTime {
+			return errors.Errorf("illegal order for block at %q", b.dir())
+		}
+		lastTime = b.stats().MaxTime
+	}
+	for _, b := range heads {
+		if b.stats().MinTime < lastTime {
+			return errors.Errorf("illegal order for block at %q", b.dir())
+		}
+		lastTime = b.stats().MaxTime
+	}
+
+	p.persisted = pbs
+	p.heads = heads
+
+	if len(heads) == 0 {
+		return p.cut()
+	}
+	return nil
 }
 
 // Close the partition.
-func (s *Partition) Close() error {
-	close(s.cutc)
-	<-s.donec
-
+func (p *Partition) Close() error {
 	var merr MultiError
-	merr.Add(s.compactor.Close())
+	merr.Add(p.compactor.Close())
 
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 
-	for _, pb := range s.persisted {
+	for _, pb := range p.persisted {
 		merr.Add(pb.Close())
 	}
-	for _, hb := range s.heads {
+	for _, hb := range p.heads {
 		merr.Add(hb.Close())
 	}
 
@@ -338,6 +359,8 @@ func (s *Partition) appendBatch(samples []hashedSample) error {
 	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 250 {
 		if err := s.cut(); err != nil {
 			s.logger.Log("msg", "cut failed", "err", err)
+		} else {
+			s.compactor.trigger()
 		}
 	}
 
@@ -444,7 +467,7 @@ func intervalContains(min, max, t int64) bool {
 	return t >= min && t <= max
 }
 
-// blocksForRange returns all blocks within the partition that may contain
+// blocksForInterval returns all blocks within the partition that may contain
 // data for the given time range.
 func (s *Partition) blocksForInterval(mint, maxt int64) []block {
 	var bs []block
@@ -472,58 +495,33 @@ const headGracePeriod = 60 * 1000 // 60 seconds for millisecond scale
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (s *Partition) cut() error {
-	// Set new head block.
-	head := s.heads[len(s.heads)-1]
-
-	newHead, err := OpenHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.bstats.MaxTime)), head.bstats.MaxTime)
+func (p *Partition) cut() error {
+	dir, err := p.nextBlockDir()
 	if err != nil {
 		return err
 	}
-	s.heads = append(s.heads, newHead)
-
-	s.compactor.trigger()
+	newHead, err := OpenHeadBlock(dir)
+	if err != nil {
+		return err
+	}
+	p.heads = append(p.heads, newHead)
 
 	return nil
 }
 
-// func (s *Partition) persist() error {
-// 	s.mtx.Lock()
-
-// 	// Set new head block.
-// 	head := s.head
-// 	newHead, err := OpenHeadBlock(filepath.Join(s.path, fmt.Sprintf("%d", head.bstats.MaxTime)), head.bstats.MaxTime)
-// 	if err != nil {
-// 		s.mtx.Unlock()
-// 		return err
-// 	}
-// 	s.head = newHead
-
-// 	s.mtx.Unlock()
-
-// 	// TODO(fabxc): add grace period where we can still append to old head partition
-// 	// before actually persisting it.
-// 	dir := filepath.Join(s.path, fmt.Sprintf("%d", head.stats.MinTime))
-
-// 	if err := persist(dir, head.persist); err != nil {
-// 		return err
-// 	}
-// 	s.logger.Log("samples", head.stats.SampleCount, "chunks", head.stats.ChunkCount, "msg", "persisted head")
-
-// 	// Reopen block as persisted block for querying.
-// 	pb, err := newPersistedBlock(dir)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	s.mtx.Lock()
-// 	s.persisted = append(s.persisted, pb)
-// 	s.mtx.Unlock()
-
-// 	s.compactor.trigger()
-
-// 	return nil
-// }
+func (p *Partition) nextBlockDir() (string, error) {
+	names, err := fileutil.ReadDir(p.dir)
+	if err != nil {
+		return "", err
+	}
+	i := uint64(0)
+	if len(names) > 0 {
+		if i, err = strconv.ParseUint(names[len(names)-1], 10, 32); err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(p.dir, fmt.Sprintf("%0.6d", i+1)), nil
+}
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.
 type chunkDesc struct {

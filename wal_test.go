@@ -177,7 +177,7 @@ func BenchmarkWALReadIntoHead(b *testing.B) {
 
 		b.ResetTimer()
 
-		_, err = OpenHeadBlock(d, 0)
+		_, err = OpenHeadBlock(d)
 		require.NoError(b, err)
 
 		// stat, _ := head.wal.f.Stat()
