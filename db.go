@@ -213,6 +213,13 @@ func (db *DB) compact(blocks []block) error {
 	}
 	tmpdir := blocks[0].dir() + ".tmp"
 
+	// TODO(fabxc): find a better place to do this transparently.
+	for _, b := range blocks {
+		if h, ok := b.(*HeadBlock); ok {
+			h.updateMapping()
+		}
+	}
+
 	if err := db.compactor.compact(tmpdir, blocks...); err != nil {
 		return err
 	}

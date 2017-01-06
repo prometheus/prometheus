@@ -65,6 +65,7 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 
 		// TODO(fabxc): find nicer solution.
 		if hb, ok := b.(*HeadBlock); ok {
+			hb.updateMapping()
 			q.postingsMapper = hb.remapPostings
 		}
 	}
