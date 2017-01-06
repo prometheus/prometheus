@@ -30,34 +30,34 @@ type compactorMetrics struct {
 	duration  prometheus.Histogram
 }
 
-func newCompactorMetrics(i int) *compactorMetrics {
-	partitionLabel := prometheus.Labels{
-		"partition": fmt.Sprintf("%d", i),
-	}
-
+func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m := &compactorMetrics{}
 
 	m.triggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_partition_compactions_triggered_total",
-		Help:        "Total number of triggered compactions for the partition.",
-		ConstLabels: partitionLabel,
+		Name: "tsdb_compactions_triggered_total",
+		Help: "Total number of triggered compactions for the partition.",
 	})
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_partition_compactions_total",
-		Help:        "Total number of compactions that were executed for the partition.",
-		ConstLabels: partitionLabel,
+		Name: "tsdb_compactions_total",
+		Help: "Total number of compactions that were executed for the partition.",
 	})
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name:        "tsdb_partition_compactions_failed_total",
-		Help:        "Total number of compactions that failed for the partition.",
-		ConstLabels: partitionLabel,
+		Name: "tsdb_compactions_failed_total",
+		Help: "Total number of compactions that failed for the partition.",
 	})
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:        "tsdb_partition_compaction_duration",
-		Help:        "Duration of compaction runs.",
-		ConstLabels: partitionLabel,
+		Name: "tsdb_compaction_duration",
+		Help: "Duration of compaction runs.",
 	})
 
+	if r != nil {
+		r.MustRegister(
+			m.triggered,
+			m.ran,
+			m.failed,
+			m.duration,
+		)
+	}
 	return m
 }
 
@@ -67,13 +67,13 @@ type compactableBlocks interface {
 	reinit(dir string) error
 }
 
-func newCompactor(i int, blocks compactableBlocks, l log.Logger) (*compactor, error) {
+func newCompactor(blocks compactableBlocks, l log.Logger) (*compactor, error) {
 	c := &compactor{
 		triggerc: make(chan struct{}, 1),
 		donec:    make(chan struct{}),
 		logger:   l,
 		blocks:   blocks,
-		metrics:  newCompactorMetrics(i),
+		metrics:  newCompactorMetrics(nil),
 	}
 	go c.run()
 

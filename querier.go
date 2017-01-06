@@ -43,12 +43,12 @@ type querier struct {
 
 // Querier returns a new querier over the database for the given
 // time range.
-func (db *DB) Querier(mint, maxt int64) Querier {
+func (db *PartitionedDB) Querier(mint, maxt int64) Querier {
 	q := &querier{
 		mint: mint,
 		maxt: maxt,
 	}
-	for _, s := range db.partitions {
+	for _, s := range db.Partitions {
 		q.partitions = append(q.partitions, s.Querier(mint, maxt))
 	}
 
@@ -129,13 +129,13 @@ func (q *querier) Close() error {
 // partitionQuerier aggregates querying results from time blocks within
 // a single partition.
 type partitionQuerier struct {
-	partition *Partition
+	partition *DB
 	blocks    []Querier
 }
 
 // Querier returns a new querier over the data partition for the given
 // time range.
-func (s *Partition) Querier(mint, maxt int64) Querier {
+func (s *DB) Querier(mint, maxt int64) Querier {
 	s.mtx.RLock()
 
 	blocks := s.blocksForInterval(mint, maxt)

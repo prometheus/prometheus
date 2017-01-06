@@ -51,7 +51,7 @@ type writeBenchmark struct {
 	cleanup    bool
 	numMetrics int
 
-	storage *tsdb.DB
+	storage *tsdb.PartitionedDB
 
 	cpuprof   *os.File
 	memprof   *os.File
@@ -91,7 +91,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	st, err := tsdb.Open(dir, nil, nil)
+	st, err := tsdb.OpenPartitioned(dir, 1, nil, nil)
 	if err != nil {
 		exitWithError(err)
 	}
