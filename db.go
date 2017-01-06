@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -216,7 +217,10 @@ func isBlockDir(fi os.FileInfo) bool {
 	if !fi.IsDir() {
 		return false
 	}
-	if _, err := strconv.ParseUint(fi.Name(), 10, 32); err != nil {
+	if !strings.HasPrefix(fi.Name(), "b-") {
+		return false
+	}
+	if _, err := strconv.ParseUint(fi.Name()[2:], 10, 32); err != nil {
 		return false
 	}
 	return true
@@ -475,13 +479,19 @@ func (p *DB) nextBlockDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	i := uint64(0)
-	if len(names) > 0 {
-		if i, err = strconv.ParseUint(names[len(names)-1], 10, 32); err != nil {
-			return "", err
+	for _, n := range names {
+		if !strings.HasPrefix(n, "b-") {
+			continue
 		}
+		j, err := strconv.ParseUint(n[2:], 10, 32)
+		if err != nil {
+			continue
+		}
+		i = j
 	}
-	return filepath.Join(p.dir, fmt.Sprintf("%0.6d", i+1)), nil
+	return filepath.Join(p.dir, fmt.Sprintf("b-%0.6d", i+1)), nil
 }
 
 // chunkDesc wraps a plain data chunk and provides cached meta data about it.

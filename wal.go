@@ -33,7 +33,7 @@ type WAL struct {
 	symbols map[string]uint32
 }
 
-const walFileName = "000-wal"
+const walFileName = "wal-000"
 
 // OpenWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.

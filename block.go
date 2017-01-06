@@ -101,11 +101,11 @@ func (pb *persistedBlock) interval() (int64, int64) {
 }
 
 func chunksFileName(path string) string {
-	return filepath.Join(path, "000-series")
+	return filepath.Join(path, "chunks-000")
 }
 
 func indexFileName(path string) string {
-	return filepath.Join(path, "000-index")
+	return filepath.Join(path, "index-000")
 }
 
 type mmapFile struct {
