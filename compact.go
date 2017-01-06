@@ -1,15 +1,12 @@
 package tsdb
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
-	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -17,26 +14,17 @@ import (
 type compactor struct {
 	metrics *compactorMetrics
 	blocks  compactableBlocks
-	logger  log.Logger
-
-	triggerc chan struct{}
-	donec    chan struct{}
 }
 
 type compactorMetrics struct {
-	triggered prometheus.Counter
-	ran       prometheus.Counter
-	failed    prometheus.Counter
-	duration  prometheus.Histogram
+	ran      prometheus.Counter
+	failed   prometheus.Counter
+	duration prometheus.Histogram
 }
 
 func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m := &compactorMetrics{}
 
-	m.triggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_triggered_total",
-		Help: "Total number of triggered compactions for the partition.",
-	})
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
@@ -52,7 +40,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 
 	if r != nil {
 		r.MustRegister(
-			m.triggered,
 			m.ran,
 			m.failed,
 			m.duration,
@@ -62,69 +49,16 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 type compactableBlocks interface {
-	lock() sync.Locker
 	compactable() []block
-	reinit(dir string) error
 }
 
-func newCompactor(blocks compactableBlocks, l log.Logger) (*compactor, error) {
+func newCompactor(blocks compactableBlocks) (*compactor, error) {
 	c := &compactor{
-		triggerc: make(chan struct{}, 1),
-		donec:    make(chan struct{}),
-		logger:   l,
-		blocks:   blocks,
-		metrics:  newCompactorMetrics(nil),
+		blocks:  blocks,
+		metrics: newCompactorMetrics(nil),
 	}
-	go c.run()
 
 	return c, nil
-}
-
-func (c *compactor) trigger() {
-	select {
-	case c.triggerc <- struct{}{}:
-	default:
-	}
-}
-
-func (c *compactor) run() {
-	for range c.triggerc {
-		c.metrics.triggered.Inc()
-
-		// Compact as long as there are candidate blocks.
-		for {
-			rev := c.pick()
-			var bs []block
-			for _, b := range rev {
-				bs = append([]block{b}, bs...)
-			}
-
-			c.logger.Log("msg", "picked for compaction", "candidates", fmt.Sprintf("%v", bs))
-
-			if len(bs) == 0 {
-				break
-			}
-
-			start := time.Now()
-			err := c.compact(bs...)
-
-			c.metrics.ran.Inc()
-			c.metrics.duration.Observe(time.Since(start).Seconds())
-
-			if err != nil {
-				c.logger.Log("msg", "compaction failed", "err", err)
-				c.metrics.failed.Inc()
-				break
-			}
-		}
-
-		// Drain channel of signals triggered during compaction.
-		select {
-		case <-c.triggerc:
-		default:
-		}
-	}
-	close(c.donec)
 }
 
 const (
@@ -158,12 +92,6 @@ func compactionMatch(blocks []block) bool {
 	return true
 }
 
-func (c *compactor) Close() error {
-	close(c.triggerc)
-	<-c.donec
-	return nil
-}
-
 func mergeStats(blocks ...block) (res BlockStats) {
 	res.MinTime = blocks[0].stats().MinTime
 	res.MaxTime = blocks[len(blocks)-1].stats().MaxTime
@@ -174,24 +102,30 @@ func mergeStats(blocks ...block) (res BlockStats) {
 	return res
 }
 
-func (c *compactor) compact(blocks ...block) error {
-	tmpdir := blocks[0].dir() + ".tmp"
+func (c *compactor) compact(dir string, blocks ...block) (err error) {
+	start := time.Now()
+	defer func() {
+		if err != nil {
+			c.metrics.failed.Inc()
+		}
+		c.metrics.duration.Observe(time.Since(start).Seconds())
+	}()
 
 	// Write to temporary directory to make persistence appear atomic.
-	if fileutil.Exist(tmpdir) {
-		if err := os.RemoveAll(tmpdir); err != nil {
+	if fileutil.Exist(dir) {
+		if err = os.RemoveAll(dir); err != nil {
 			return err
 		}
 	}
-	if err := fileutil.CreateDirAll(tmpdir); err != nil {
+	if err = fileutil.CreateDirAll(dir); err != nil {
 		return err
 	}
 
-	chunkf, err := fileutil.LockFile(chunksFileName(tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	chunkf, err := fileutil.LockFile(chunksFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return errors.Wrap(err, "create chunk file")
 	}
-	indexf, err := fileutil.LockFile(indexFileName(tmpdir), os.O_WRONLY|os.O_CREATE, 0666)
+	indexf, err := fileutil.LockFile(indexFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return errors.Wrap(err, "create index file")
 	}
@@ -199,47 +133,29 @@ func (c *compactor) compact(blocks ...block) error {
 	indexw := newIndexWriter(indexf)
 	chunkw := newSeriesWriter(chunkf, indexw)
 
-	if err := c.write(blocks, indexw, chunkw); err != nil {
+	if err = c.write(blocks, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
 
-	if err := chunkw.Close(); err != nil {
+	if err = chunkw.Close(); err != nil {
 		return errors.Wrap(err, "close chunk writer")
 	}
-	if err := indexw.Close(); err != nil {
+	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
 	}
-	if err := fileutil.Fsync(chunkf.File); err != nil {
+	if err = fileutil.Fsync(chunkf.File); err != nil {
 		return errors.Wrap(err, "fsync chunk file")
 	}
-	if err := fileutil.Fsync(indexf.File); err != nil {
+	if err = fileutil.Fsync(indexf.File); err != nil {
 		return errors.Wrap(err, "fsync index file")
 	}
-	if err := chunkf.Close(); err != nil {
+	if err = chunkf.Close(); err != nil {
 		return errors.Wrap(err, "close chunk file")
 	}
-	if err := indexf.Close(); err != nil {
+	if err = indexf.Close(); err != nil {
 		return errors.Wrap(err, "close index file")
 	}
-
-	c.blocks.lock().Lock()
-	defer c.blocks.lock().Unlock()
-
-	if err := renameDir(tmpdir, blocks[0].dir()); err != nil {
-		return errors.Wrap(err, "rename dir")
-	}
-	for _, b := range blocks[1:] {
-		if err := os.RemoveAll(b.dir()); err != nil {
-			return errors.Wrap(err, "delete dir")
-		}
-	}
-
-	var merr MultiError
-
-	for _, b := range blocks {
-		merr.Add(errors.Wrapf(c.blocks.reinit(b.dir()), "reinit block at %q", b.dir()))
-	}
-	return merr.Err()
+	return nil
 }
 
 func (c *compactor) write(blocks []block, indexw IndexWriter, chunkw SeriesWriter) error {

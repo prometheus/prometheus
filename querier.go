@@ -35,102 +35,11 @@ type Series interface {
 	Iterator() SeriesIterator
 }
 
-// querier merges query results from a set of partition querieres.
-type querier struct {
-	mint, maxt int64
-	partitions []Querier
-}
-
-// Querier returns a new querier over the database for the given
-// time range.
-func (db *PartitionedDB) Querier(mint, maxt int64) Querier {
-	q := &querier{
-		mint: mint,
-		maxt: maxt,
-	}
-	for _, s := range db.Partitions {
-		q.partitions = append(q.partitions, s.Querier(mint, maxt))
-	}
-
-	return q
-}
-
-func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
-	// We gather the non-overlapping series from every partition and simply
-	// return their union.
-	r := &mergedSeriesSet{}
-
-	for _, s := range q.partitions {
-		r.sets = append(r.sets, s.Select(ms...))
-	}
-	if len(r.sets) == 0 {
-		return nopSeriesSet{}
-	}
-	return r
-}
-
-func (q *querier) LabelValues(n string) ([]string, error) {
-	res, err := q.partitions[0].LabelValues(n)
-	if err != nil {
-		return nil, err
-	}
-	for _, sq := range q.partitions[1:] {
-		pr, err := sq.LabelValues(n)
-		if err != nil {
-			return nil, err
-		}
-		// Merge new values into deduplicated result.
-		res = mergeStrings(res, pr)
-	}
-	return res, nil
-}
-
-func mergeStrings(a, b []string) []string {
-	maxl := len(a)
-	if len(b) > len(a) {
-		maxl = len(b)
-	}
-	res := make([]string, 0, maxl*10/9)
-
-	for len(a) > 0 && len(b) > 0 {
-		d := strings.Compare(a[0], b[0])
-
-		if d == 0 {
-			res = append(res, a[0])
-			a, b = a[1:], b[1:]
-		} else if d < 0 {
-			res = append(res, a[0])
-			a = a[1:]
-		} else if d > 0 {
-			res = append(res, b[0])
-			b = b[1:]
-		}
-	}
-
-	// Append all remaining elements.
-	res = append(res, a...)
-	res = append(res, b...)
-	return res
-}
-
-func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (q *querier) Close() error {
-	var merr MultiError
-
-	for _, sq := range q.partitions {
-		merr.Add(sq.Close())
-	}
-	return merr.Err()
-}
-
-// partitionQuerier aggregates querying results from time blocks within
+// querier aggregates querying results from time blocks within
 // a single partition.
-type partitionQuerier struct {
-	partition *DB
-	blocks    []Querier
+type querier struct {
+	db     *DB
+	blocks []Querier
 }
 
 // Querier returns a new querier over the data partition for the given
@@ -140,9 +49,9 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 
 	blocks := s.blocksForInterval(mint, maxt)
 
-	sq := &partitionQuerier{
-		blocks:    make([]Querier, 0, len(blocks)),
-		partition: s,
+	sq := &querier{
+		blocks: make([]Querier, 0, len(blocks)),
+		db:     s,
 	}
 
 	for _, b := range blocks {
@@ -163,7 +72,7 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 	return sq
 }
 
-func (q *partitionQuerier) LabelValues(n string) ([]string, error) {
+func (q *querier) LabelValues(n string) ([]string, error) {
 	res, err := q.blocks[0].LabelValues(n)
 	if err != nil {
 		return nil, err
@@ -179,11 +88,11 @@ func (q *partitionQuerier) LabelValues(n string) ([]string, error) {
 	return res, nil
 }
 
-func (q *partitionQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
+func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (q *partitionQuerier) Select(ms ...labels.Matcher) SeriesSet {
+func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
 	// Sets from different blocks have no time overlap. The reference numbers
 	// they emit point to series sorted in lexicographic order.
 	// We can fully connect partial series by simply comparing with the previous
@@ -199,13 +108,13 @@ func (q *partitionQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	return r
 }
 
-func (q *partitionQuerier) Close() error {
+func (q *querier) Close() error {
 	var merr MultiError
 
 	for _, bq := range q.blocks {
 		merr.Add(bq.Close())
 	}
-	q.partition.mtx.RUnlock()
+	q.db.mtx.RUnlock()
 
 	return merr.Err()
 }
@@ -319,6 +228,97 @@ func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 
 func (q *blockQuerier) Close() error {
 	return nil
+}
+
+// partitionedQuerier merges query results from a set of partition querieres.
+type partitionedQuerier struct {
+	mint, maxt int64
+	partitions []Querier
+}
+
+// Querier returns a new querier over the database for the given
+// time range.
+func (db *PartitionedDB) Querier(mint, maxt int64) Querier {
+	q := &partitionedQuerier{
+		mint: mint,
+		maxt: maxt,
+	}
+	for _, s := range db.Partitions {
+		q.partitions = append(q.partitions, s.Querier(mint, maxt))
+	}
+
+	return q
+}
+
+func (q *partitionedQuerier) Select(ms ...labels.Matcher) SeriesSet {
+	// We gather the non-overlapping series from every partition and simply
+	// return their union.
+	r := &mergedSeriesSet{}
+
+	for _, s := range q.partitions {
+		r.sets = append(r.sets, s.Select(ms...))
+	}
+	if len(r.sets) == 0 {
+		return nopSeriesSet{}
+	}
+	return r
+}
+
+func (q *partitionedQuerier) LabelValues(n string) ([]string, error) {
+	res, err := q.partitions[0].LabelValues(n)
+	if err != nil {
+		return nil, err
+	}
+	for _, sq := range q.partitions[1:] {
+		pr, err := sq.LabelValues(n)
+		if err != nil {
+			return nil, err
+		}
+		// Merge new values into deduplicated result.
+		res = mergeStrings(res, pr)
+	}
+	return res, nil
+}
+
+func (q *partitionedQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (q *partitionedQuerier) Close() error {
+	var merr MultiError
+
+	for _, sq := range q.partitions {
+		merr.Add(sq.Close())
+	}
+	return merr.Err()
+}
+
+func mergeStrings(a, b []string) []string {
+	maxl := len(a)
+	if len(b) > len(a) {
+		maxl = len(b)
+	}
+	res := make([]string, 0, maxl*10/9)
+
+	for len(a) > 0 && len(b) > 0 {
+		d := strings.Compare(a[0], b[0])
+
+		if d == 0 {
+			res = append(res, a[0])
+			a, b = a[1:], b[1:]
+		} else if d < 0 {
+			res = append(res, a[0])
+			a = a[1:]
+		} else if d > 0 {
+			res = append(res, b[0])
+			b = b[1:]
+		}
+	}
+
+	// Append all remaining elements.
+	res = append(res, a...)
+	res = append(res, b...)
+	return res
 }
 
 // SeriesSet contains a set of series.

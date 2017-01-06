@@ -73,12 +73,17 @@ type DB struct {
 	persisted []*persistedBlock
 	heads     []*HeadBlock
 	compactor *compactor
+
+	compactc chan struct{}
+	donec    chan struct{}
+	stopc    chan struct{}
 }
 
 type dbMetrics struct {
-	persistences        prometheus.Counter
-	persistenceDuration prometheus.Histogram
-	samplesAppended     prometheus.Counter
+	persistences         prometheus.Counter
+	persistenceDuration  prometheus.Histogram
+	samplesAppended      prometheus.Counter
+	compactionsTriggered prometheus.Counter
 }
 
 func newDBMetrics(r prometheus.Registerer) *dbMetrics {
@@ -97,6 +102,10 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 		Name: "tsdb_samples_appended_total",
 		Help: "Total number of appended sampledb.",
 	})
+	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_compactions_triggered_total",
+		Help: "Total number of triggered compactions for the partition.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -109,7 +118,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 }
 
 // Open returns a new DB in the given directory.
-func Open(dir string, logger log.Logger) (p *DB, err error) {
+func Open(dir string, logger log.Logger) (db *DB, err error) {
 	// Create directory if partition is new.
 	if !fileutil.Exist(dir) {
 		if err := os.MkdirAll(dir, 0777); err != nil {
@@ -117,19 +126,90 @@ func Open(dir string, logger log.Logger) (p *DB, err error) {
 		}
 	}
 
-	p = &DB{
-		dir:     dir,
-		logger:  logger,
-		metrics: newDBMetrics(nil),
+	db = &DB{
+		dir:      dir,
+		logger:   logger,
+		metrics:  newDBMetrics(nil),
+		compactc: make(chan struct{}, 1),
+		donec:    make(chan struct{}),
+		stopc:    make(chan struct{}),
 	}
-	if err := p.initBlocks(); err != nil {
+
+	if err := db.initBlocks(); err != nil {
 		return nil, err
 	}
-	if p.compactor, err = newCompactor(p, logger); err != nil {
+	if db.compactor, err = newCompactor(db); err != nil {
 		return nil, err
 	}
 
-	return p, nil
+	go db.run()
+
+	return db, nil
+}
+
+func (db *DB) run() {
+	defer close(db.donec)
+
+	for {
+		select {
+		case <-db.compactc:
+			db.metrics.compactionsTriggered.Inc()
+
+			for {
+				blocks := db.compactor.pick()
+				if len(blocks) == 0 {
+					break
+				}
+				// TODO(fabxc): pick emits blocks in order. compact acts on
+				// inverted order. Put inversion into compactor?
+				var bs []block
+				for _, b := range blocks {
+					bs = append([]block{b}, bs...)
+				}
+
+				select {
+				case <-db.stopc:
+					return
+				default:
+				}
+				if err := db.compact(bs); err != nil {
+					db.logger.Log("msg", "compaction failed", "err", err)
+				}
+			}
+		case <-db.stopc:
+			return
+		}
+	}
+}
+
+func (db *DB) compact(blocks []block) error {
+	if len(blocks) == 0 {
+		return nil
+	}
+	tmpdir := blocks[0].dir() + ".tmp"
+
+	if err := db.compactor.compact(tmpdir, blocks...); err != nil {
+		return err
+	}
+
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
+	if err := renameDir(tmpdir, blocks[0].dir()); err != nil {
+		return errors.Wrap(err, "rename dir")
+	}
+	for _, b := range blocks[1:] {
+		if err := os.RemoveAll(b.dir()); err != nil {
+			return errors.Wrap(err, "delete dir")
+		}
+	}
+
+	var merr MultiError
+
+	for _, b := range blocks {
+		merr.Add(errors.Wrapf(db.reinit(b.dir()), "reinit block at %q", b.dir()))
+	}
+	return merr.Err()
 }
 
 func isBlockDir(fi os.FileInfo) bool {
@@ -202,8 +282,10 @@ func (db *DB) initBlocks() error {
 
 // Close the partition.
 func (db *DB) Close() error {
+	close(db.stopc)
+	<-db.donec
+
 	var merr MultiError
-	merr.Add(db.compactor.Close())
 
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
@@ -240,15 +322,14 @@ func (db *DB) appendBatch(samples []hashedSample) error {
 		if err := db.cut(); err != nil {
 			db.logger.Log("msg", "cut failed", "err", err)
 		} else {
-			db.compactor.trigger()
+			select {
+			case db.compactc <- struct{}{}:
+			default:
+			}
 		}
 	}
 
 	return err
-}
-
-func (db *DB) lock() sync.Locker {
-	return &db.mtx
 }
 
 func (db *DB) headForDir(dir string) (int, bool) {

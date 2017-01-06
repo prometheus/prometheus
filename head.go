@@ -50,6 +50,9 @@ func OpenHeadBlock(dir string) (*HeadBlock, error) {
 		wal:      wal,
 	}
 
+	b.bstats.MinTime = math.MaxInt64
+	b.bstats.MaxTime = math.MinInt64
+
 	err = wal.ReadAll(&walHandler{
 		series: func(lset labels.Labels) {
 			b.create(lset.Hash(), lset)
