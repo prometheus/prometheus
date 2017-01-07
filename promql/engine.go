@@ -21,6 +21,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -31,6 +32,9 @@ import (
 )
 
 const (
+	namespace = "prometheus"
+	subsystem = "engine"
+
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 model.SampleValue = 9223372036854774784
 	// The smallest SampleValue that can be converted to an int64 without underflow.
@@ -235,6 +239,9 @@ type Engine struct {
 	// The gate limiting the maximum number of concurrent and waiting queries.
 	gate    *queryGate
 	options *EngineOptions
+
+	maxConcurrentQueries prometheus.Metric
+	currentQueries       prometheus.Gauge
 }
 
 // Queryable allows opening a storage querier.
@@ -251,6 +258,21 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 		queryable: queryable,
 		gate:      newQueryGate(o.MaxConcurrentQueries),
 		options:   o,
+		maxConcurrentQueries: prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "max_concurrent_queries"),
+				"The max number of concurrent queries.",
+				nil, nil,
+			),
+			prometheus.GaugeValue,
+			float64(o.MaxConcurrentQueries),
+		),
+		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queries",
+			Help:      "The current number of queries.",
+		}),
 	}
 }
 
@@ -331,6 +353,8 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
+	ng.currentQueries.Inc()
+	defer ng.currentQueries.Dec()
 	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
 	q.cancel = cancel
 
@@ -538,6 +562,18 @@ func (ng *Engine) closeIterators(s *EvalStmt) {
 		}
 		return true
 	})
+}
+
+// Describe implements prometheus.Collector.
+func (ng *Engine) Describe(ch chan<- *prometheus.Desc) {
+	ch <- ng.maxConcurrentQueries.Desc()
+	ch <- ng.currentQueries.Desc()
+}
+
+// Collect implements prometheus.Collector.
+func (ng *Engine) Collect(ch chan<- prometheus.Metric) {
+	ch <- ng.maxConcurrentQueries
+	ch <- ng.currentQueries
 }
 
 // An evaluator evaluates given expressions at a fixed timestamp. It is attached to an

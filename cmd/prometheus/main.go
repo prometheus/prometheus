@@ -204,6 +204,7 @@ func Main() int {
 	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(queryEngine)
 
 	// The notifier is a dependency of the rule manager. It has to be
 	// started before and torn down afterwards.
