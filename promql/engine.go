@@ -51,7 +51,7 @@ var (
 	maxConcurrentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
-		Name:      "max_concurrent_queries",
+		Name:      "queries_concurrent_max",
 		Help:      "The max number of concurrent queries.",
 	})
 )
