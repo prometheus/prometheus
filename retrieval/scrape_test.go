@@ -252,12 +252,7 @@ func TestScrapeLoopWrapSampleAppender(t *testing.T) {
 		target.Labels(),
 		sp.config,
 	).(*scrapeLoop)
-	wrapped, counting := sl.wrapAppender(sl.appender)
-	wrapped.Append(&model.Sample{})
-
-	if counting.count != 1 {
-		t.Errorf("Expected count of 1, got %d", counting.count)
-	}
+	wrapped, _ := sl.wrapAppender(sl.appender)
 
 	rl, ok := wrapped.(ruleLabelsAppender)
 	if !ok {
@@ -283,12 +278,7 @@ func TestScrapeLoopWrapSampleAppender(t *testing.T) {
 		target.Labels(),
 		sp.config,
 	).(*scrapeLoop)
-	wrapped, counting = sl.wrapAppender(sl.appender)
-	wrapped.Append(&model.Sample{})
-
-	if counting.count != 1 {
-		t.Errorf("Expected count of 1, got %d", counting.count)
-	}
+	wrapped, _ = sl.wrapAppender(sl.appender)
 
 	hl, ok := wrapped.(honorLabelsAppender)
 	if !ok {
