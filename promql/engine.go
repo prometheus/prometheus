@@ -271,7 +271,7 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queries",
-			Help:      "The current number of queries.",
+			Help:      "The current number of queries being executed or waiting.",
 		}),
 	}
 }
