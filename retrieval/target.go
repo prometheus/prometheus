@@ -278,15 +278,27 @@ func (app relabelAppender) Append(s *model.Sample) error {
 	return app.SampleAppender.Append(s)
 }
 
-// Appends samples to the given buffer.
+// bufferAppender appends samples to the given buffer.
 type bufferAppender struct {
-	storage.SampleAppender
 	buffer model.Samples
 }
 
 func (app *bufferAppender) Append(s *model.Sample) error {
 	app.buffer = append(app.buffer, s)
 	return nil
+}
+
+func (app *bufferAppender) NeedsThrottling() bool { return false }
+
+// countingAppender counts the samples appended to the underlying appender.
+type countingAppender struct {
+	storage.SampleAppender
+	count int
+}
+
+func (app *countingAppender) Append(s *model.Sample) error {
+	app.count++
+	return app.SampleAppender.Append(s)
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.
