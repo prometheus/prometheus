@@ -21,6 +21,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -31,11 +32,34 @@ import (
 )
 
 const (
+	namespace = "prometheus"
+	subsystem = "engine"
+
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 model.SampleValue = 9223372036854774784
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 model.SampleValue = -9223372036854775808
 )
+
+var (
+	currentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "queries",
+		Help:      "The current number of queries being executed or waiting.",
+	})
+	maxConcurrentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "queries_concurrent_max",
+		Help:      "The max number of concurrent queries.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(currentQueries)
+	prometheus.MustRegister(maxConcurrentQueries)
+}
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
 func convertibleToInt64(v model.SampleValue) bool {
@@ -247,6 +271,7 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
+	maxConcurrentQueries.Set(float64(o.MaxConcurrentQueries))
 	return &Engine{
 		queryable: queryable,
 		gate:      newQueryGate(o.MaxConcurrentQueries),
@@ -331,6 +356,8 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
+	currentQueries.Inc()
+	defer currentQueries.Dec()
 	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
 	q.cancel = cancel
 
