@@ -39,6 +39,12 @@ const (
 )
 
 var (
+	targetFailedScrapes = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_failed_scrapes_total",
+			Help: "Total number of scrapes that errored out (including timeouts).",
+		},
+	)
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_interval_length_seconds",
@@ -51,6 +57,24 @@ var (
 		prometheus.CounterOpts{
 			Name: "prometheus_target_skipped_scrapes_total",
 			Help: "Total number of scrapes that were skipped because the metric storage was throttled.",
+		},
+	)
+	targetStartedScrapes = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_started_scrapes_total",
+			Help: "Total number of scrapes that were attempted.",
+		},
+	)
+	targetSuccessfulScrapes = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_successful_scrapes_total",
+			Help: "Total number of scrapes that were successful.",
+		},
+	)
+	targetTimeoutScrapes = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_timeout_scrapes_total",
+			Help: "Total number of scrapes that timed out.",
 		},
 	)
 	targetReloadIntervalLength = prometheus.NewSummaryVec(
@@ -79,8 +103,12 @@ var (
 )
 
 func init() {
+	prometheus.MustRegister(targetFailedScrapes)
 	prometheus.MustRegister(targetIntervalLength)
 	prometheus.MustRegister(targetSkippedScrapes)
+	prometheus.MustRegister(targetStartedScrapes)
+	prometheus.MustRegister(targetSuccessfulScrapes)
+	prometheus.MustRegister(targetTimeoutScrapes)
 	prometheus.MustRegister(targetReloadIntervalLength)
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
@@ -407,6 +435,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 		}
 
 		if !sl.appender.NeedsThrottling() {
+			targetStartedScrapes.Inc()
 			var (
 				start        = time.Now()
 				scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
@@ -421,8 +450,14 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
+				targetSuccessfulScrapes.Inc()
 				sl.append(samples)
 			} else if errc != nil {
+				if err == context.DeadlineExceeded {
+					targetTimeoutScrapes.Inc()
+				}
+
+				targetFailedScrapes.Inc()
 				errc <- err
 			}
 
