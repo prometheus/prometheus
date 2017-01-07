@@ -219,7 +219,7 @@ func (c *compactor) write(blocks []block, indexw IndexWriter, chunkw SeriesWrite
 			return err
 		}
 
-		stats.ChunkCount += uint32(len(chunks))
+		stats.ChunkCount += uint64(len(chunks))
 		stats.SeriesCount++
 
 		for _, l := range lset {

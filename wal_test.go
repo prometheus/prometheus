@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/fabxc/tsdb/labels"
 	dto "github.com/prometheus/client_model/go"
@@ -21,7 +22,7 @@ func BenchmarkWALWrite(b *testing.B) {
 		require.NoError(b, os.RemoveAll(d))
 	}()
 
-	wal, err := OpenWAL(d)
+	wal, err := OpenWAL(d, nil, 500*time.Millisecond)
 	require.NoError(b, err)
 
 	f, err := os.Open("cmd/tsdb/testdata.1m")
@@ -78,7 +79,7 @@ func BenchmarkWALRead(b *testing.B) {
 			require.NoError(b, os.RemoveAll(d))
 		}()
 
-		wal, err := OpenWAL(d)
+		wal, err := OpenWAL(d, nil, 500*time.Millisecond)
 		require.NoError(b, err)
 
 		var (
@@ -111,7 +112,7 @@ func BenchmarkWALRead(b *testing.B) {
 
 		b.ResetTimer()
 
-		wal, err = OpenWAL(d)
+		wal, err = OpenWAL(d, nil, 500*time.Millisecond)
 		require.NoError(b, err)
 
 		var numSeries, numSamples int
@@ -144,7 +145,7 @@ func BenchmarkWALReadIntoHead(b *testing.B) {
 			require.NoError(b, os.RemoveAll(d))
 		}()
 
-		wal, err := OpenWAL(d)
+		wal, err := OpenWAL(d, nil, 500*time.Millisecond)
 		require.NoError(b, err)
 
 		var (
@@ -177,7 +178,7 @@ func BenchmarkWALReadIntoHead(b *testing.B) {
 
 		b.ResetTimer()
 
-		_, err = OpenHeadBlock(d)
+		_, err = OpenWAL(d, nil, 500*time.Millisecond)
 		require.NoError(b, err)
 
 		// stat, _ := head.wal.f.Stat()

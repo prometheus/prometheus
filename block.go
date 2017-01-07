@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/pkg/errors"
@@ -20,11 +21,14 @@ type block interface {
 }
 
 type BlockStats struct {
-	MinTime     int64
-	MaxTime     int64
+	// Time range of samples in the block.
+	MinTime, MaxTime int64
+
 	SampleCount uint64
-	SeriesCount uint32
-	ChunkCount  uint32
+	SeriesCount uint64
+	ChunkCount  uint64
+
+	mtx sync.RWMutex
 }
 
 const (

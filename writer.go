@@ -259,9 +259,9 @@ func (w *indexWriter) WriteStats(stats BlockStats) error {
 
 	binary.BigEndian.PutUint64(b[0:], uint64(stats.MinTime))
 	binary.BigEndian.PutUint64(b[8:], uint64(stats.MaxTime))
-	binary.BigEndian.PutUint32(b[16:], stats.SeriesCount)
-	binary.BigEndian.PutUint32(b[20:], stats.ChunkCount)
-	binary.BigEndian.PutUint64(b[24:], stats.SampleCount)
+	binary.BigEndian.PutUint64(b[16:], stats.SeriesCount)
+	binary.BigEndian.PutUint64(b[24:], stats.ChunkCount)
+	binary.BigEndian.PutUint64(b[32:], stats.SampleCount)
 
 	err := w.section(64, flagStd, func(wr io.Writer) error {
 		return w.write(wr, b[:])

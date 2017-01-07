@@ -212,9 +212,9 @@ func (r *indexReader) Stats() (BlockStats, error) {
 	return BlockStats{
 		MinTime:     int64(binary.BigEndian.Uint64(b)),
 		MaxTime:     int64(binary.BigEndian.Uint64(b[8:])),
-		SeriesCount: binary.BigEndian.Uint32(b[16:]),
-		ChunkCount:  binary.BigEndian.Uint32(b[20:]),
-		SampleCount: binary.BigEndian.Uint64(b[24:]),
+		SeriesCount: binary.BigEndian.Uint64(b[16:]),
+		ChunkCount:  binary.BigEndian.Uint64(b[24:]),
+		SampleCount: binary.BigEndian.Uint64(b[32:]),
 	}, nil
 }
 

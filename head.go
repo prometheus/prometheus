@@ -5,7 +5,6 @@ import (
 	"math"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bradfitz/slice"
@@ -98,7 +97,13 @@ func (h *HeadBlock) dir() string          { return h.d }
 func (h *HeadBlock) persisted() bool      { return false }
 func (h *HeadBlock) index() IndexReader   { return h }
 func (h *HeadBlock) series() SeriesReader { return h }
-func (h *HeadBlock) stats() BlockStats    { return *h.bstats }
+
+func (h *HeadBlock) stats() BlockStats {
+	h.bstats.mtx.RLock()
+	defer h.bstats.mtx.RUnlock()
+
+	return *h.bstats
+}
 
 // Chunk returns the chunk for the reference number.
 func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
@@ -221,10 +226,6 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 
 	h.postings.add(cd.ref, term{})
 
-	// For the head block there's exactly one chunk per series.
-	atomic.AddUint32(&h.bstats.ChunkCount, 1)
-	atomic.AddUint32(&h.bstats.SeriesCount, 1)
-
 	return cd
 }
 
@@ -307,8 +308,11 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 		h.mtx.RLock()
 	}
 
-	total := len(samples)
-
+	var (
+		total = uint64(len(samples))
+		mint  = int64(math.MaxInt64)
+		maxt  = int64(math.MinInt64)
+	)
 	for _, s := range samples {
 		cd := h.descs[s.ref]
 		// Skip duplicate samples.
@@ -318,21 +322,36 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 		}
 		cd.append(s.t, s.v)
 
-		for t := h.bstats.MaxTime; s.t > t; t = h.bstats.MaxTime {
-			if atomic.CompareAndSwapInt64(&h.bstats.MaxTime, t, s.t) {
-				break
-			}
+		if mint > s.t {
+			mint = s.t
 		}
-		for t := h.bstats.MinTime; s.t < t; t = h.bstats.MinTime {
-			if atomic.CompareAndSwapInt64(&h.bstats.MinTime, t, s.t) {
-				break
-			}
+		if maxt < s.t {
+			maxt = s.t
 		}
 	}
 
-	atomic.AddUint64(&h.bstats.SampleCount, uint64(total))
+	h.bstats.mtx.Lock()
+	defer h.bstats.mtx.Unlock()
+
+	h.bstats.SampleCount += total
+	h.bstats.SeriesCount += uint64(len(newSeries))
+	h.bstats.ChunkCount += uint64(len(newSeries)) // head block has one chunk/series
+
+	if mint < h.bstats.MinTime {
+		h.bstats.MinTime = mint
+	}
+	if maxt > h.bstats.MaxTime {
+		h.bstats.MaxTime = maxt
+	}
 
 	return nil
+}
+
+func (h *HeadBlock) fullness() float64 {
+	h.bstats.mtx.RLock()
+	defer h.bstats.mtx.RUnlock()
+
+	return float64(h.bstats.SampleCount) / float64(h.bstats.SeriesCount+1) / 250
 }
 
 func (h *HeadBlock) updateMapping() {

@@ -352,8 +352,7 @@ func (db *DB) appendBatch(samples []hashedSample) error {
 		db.metrics.samplesAppended.Add(float64(len(samples)))
 	}
 
-	// TODO(fabxc): randomize over time and use better scoring function.
-	if head.bstats.SampleCount/(uint64(head.bstats.ChunkCount)+1) > 250 {
+	if head.fullness() > 1.0 {
 		select {
 		case db.cutc <- struct{}{}:
 		default:
