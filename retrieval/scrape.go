@@ -33,9 +33,10 @@ import (
 )
 
 const (
-	scrapeHealthMetricName   = "up"
-	scrapeDurationMetricName = "scrape_duration_seconds"
-	scrapeSamplesMetricName  = "scrape_samples_scraped"
+	scrapeHealthMetricName       = "up"
+	scrapeDurationMetricName     = "scrape_duration_seconds"
+	scrapeSamplesMetricName      = "scrape_samples_scraped"
+	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling"
 )
 
 var (
@@ -76,6 +77,12 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
+	targetScrapeSampleLimit = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
+			Help: "Total number of scrapes that hit the sample limit and were rejected.",
+		},
+	)
 )
 
 func init() {
@@ -84,6 +91,7 @@ func init() {
 	prometheus.MustRegister(targetReloadIntervalLength)
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
+	prometheus.MustRegister(targetScrapeSampleLimit)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -101,7 +109,7 @@ type scrapePool struct {
 	loops   map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
-	newLoop func(context.Context, scraper, storage.SampleAppender, storage.SampleAppender) loop
+	newLoop func(context.Context, scraper, storage.SampleAppender, model.LabelSet, *config.ScrapeConfig) loop
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app storage.SampleAppender) *scrapePool {
@@ -170,7 +178,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		var (
 			t       = sp.targets[fp]
 			s       = &targetScraper{Target: t, client: sp.client}
-			newLoop = sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
+			newLoop = sp.newLoop(sp.ctx, s, sp.appender, t.Labels(), sp.config)
 		)
 		wg.Add(1)
 
@@ -231,7 +239,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 		if _, ok := sp.targets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client}
-			l := sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
+			l := sp.newLoop(sp.ctx, s, sp.appender, t.Labels(), sp.config)
 
 			sp.targets[hash] = t
 			sp.loops[hash] = l
@@ -261,40 +269,6 @@ func (sp *scrapePool) sync(targets []*Target) {
 	// may be active and tries to insert. The old scraper that didn't terminate yet could still
 	// be inserting a previous sample set.
 	wg.Wait()
-}
-
-// sampleAppender returns an appender for ingested samples from the target.
-func (sp *scrapePool) sampleAppender(target *Target) storage.SampleAppender {
-	app := sp.appender
-	// The relabelAppender has to be inside the label-modifying appenders
-	// so the relabeling rules are applied to the correct label set.
-	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
-		app = relabelAppender{
-			SampleAppender: app,
-			relabelings:    mrc,
-		}
-	}
-
-	if sp.config.HonorLabels {
-		app = honorLabelsAppender{
-			SampleAppender: app,
-			labels:         target.Labels(),
-		}
-	} else {
-		app = ruleLabelsAppender{
-			SampleAppender: app,
-			labels:         target.Labels(),
-		}
-	}
-	return app
-}
-
-// reportAppender returns an appender for reporting samples for the target.
-func (sp *scrapePool) reportAppender(target *Target) storage.SampleAppender {
-	return ruleLabelsAppender{
-		SampleAppender: sp.appender,
-		labels:         target.Labels(),
-	}
 }
 
 // A scraper retrieves samples and accepts a status report at the end.
@@ -364,20 +338,34 @@ type loop interface {
 type scrapeLoop struct {
 	scraper scraper
 
-	appender       storage.SampleAppender
-	reportAppender storage.SampleAppender
+	// Where samples are ultimately sent.
+	appender storage.SampleAppender
+
+	targetLabels         model.LabelSet
+	metricRelabelConfigs []*config.RelabelConfig
+	honorLabels          bool
+	sampleLimit          uint
 
 	done   chan struct{}
 	ctx    context.Context
 	cancel func()
 }
 
-func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.SampleAppender) loop {
+func newScrapeLoop(
+	ctx context.Context,
+	sc scraper,
+	appender storage.SampleAppender,
+	targetLabels model.LabelSet,
+	config *config.ScrapeConfig,
+) loop {
 	sl := &scrapeLoop{
-		scraper:        sc,
-		appender:       app,
-		reportAppender: reportApp,
-		done:           make(chan struct{}),
+		scraper:              sc,
+		appender:             appender,
+		targetLabels:         targetLabels,
+		metricRelabelConfigs: config.MetricRelabelConfigs,
+		honorLabels:          config.HonorLabels,
+		sampleLimit:          config.SampleLimit,
+		done:                 make(chan struct{}),
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -408,8 +396,9 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 		if !sl.appender.NeedsThrottling() {
 			var (
-				start        = time.Now()
-				scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
+				start                 = time.Now()
+				scrapeCtx, _          = context.WithTimeout(sl.ctx, timeout)
+				numPostRelabelSamples = 0
 			)
 
 			// Only record after the first scrape.
@@ -421,12 +410,12 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 			samples, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
-				sl.append(samples)
-			} else if errc != nil {
+				numPostRelabelSamples, err = sl.append(samples)
+			}
+			if err != nil && errc != nil {
 				errc <- err
 			}
-
-			sl.report(start, time.Since(start), len(samples), err)
+			sl.report(start, time.Since(start), len(samples), numPostRelabelSamples, err)
 			last = start
 		} else {
 			targetSkippedScrapes.Inc()
@@ -445,14 +434,73 @@ func (sl *scrapeLoop) stop() {
 	<-sl.done
 }
 
-func (sl *scrapeLoop) append(samples model.Samples) {
+// wrapAppender wraps a SampleAppender for relabeling. It returns the wrappend
+// appender and an innermost countingAppender that counts the samples actually
+// appended in the end.
+func (sl *scrapeLoop) wrapAppender(app storage.SampleAppender) (storage.SampleAppender, *countingAppender) {
+	// Innermost appender is a countingAppender to count how many samples
+	// are left in the end.
+	countingAppender := &countingAppender{
+		SampleAppender: app,
+	}
+	app = countingAppender
+
+	// The relabelAppender has to be inside the label-modifying appenders so
+	// the relabeling rules are applied to the correct label set.
+	if len(sl.metricRelabelConfigs) > 0 {
+		app = relabelAppender{
+			SampleAppender: app,
+			relabelings:    sl.metricRelabelConfigs,
+		}
+	}
+
+	if sl.honorLabels {
+		app = honorLabelsAppender{
+			SampleAppender: app,
+			labels:         sl.targetLabels,
+		}
+	} else {
+		app = ruleLabelsAppender{
+			SampleAppender: app,
+			labels:         sl.targetLabels,
+		}
+	}
+	return app, countingAppender
+}
+
+func (sl *scrapeLoop) append(samples model.Samples) (int, error) {
 	var (
 		numOutOfOrder = 0
 		numDuplicates = 0
+		app           = sl.appender
+		countingApp   *countingAppender
 	)
 
+	if sl.sampleLimit > 0 {
+		// We need to check for the sample limit, so append everything
+		// to a wrapped bufferAppender first. Then point samples to the
+		// result.
+		bufApp := &bufferAppender{buffer: make(model.Samples, 0, len(samples))}
+		var wrappedBufApp storage.SampleAppender
+		wrappedBufApp, countingApp = sl.wrapAppender(bufApp)
+		for _, s := range samples {
+			// Ignore errors as bufferedAppender always succeds.
+			wrappedBufApp.Append(s)
+		}
+		samples = bufApp.buffer
+		if uint(countingApp.count) > sl.sampleLimit {
+			targetScrapeSampleLimit.Inc()
+			return countingApp.count, fmt.Errorf(
+				"%d samples exceeded limit of %d", countingApp.count, sl.sampleLimit,
+			)
+		}
+	} else {
+		// No need to check for sample limit. Wrap sl.appender directly.
+		app, countingApp = sl.wrapAppender(sl.appender)
+	}
+
 	for _, s := range samples {
-		if err := sl.appender.Append(s); err != nil {
+		if err := app.Append(s); err != nil {
 			switch err {
 			case local.ErrOutOfOrderSample:
 				numOutOfOrder++
@@ -471,9 +519,10 @@ func (sl *scrapeLoop) append(samples model.Samples) {
 	if numDuplicates > 0 {
 		log.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
 	}
+	return countingApp.count, nil
 }
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples int, err error) {
+func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples, postRelabelSamples int, err error) {
 	sl.scraper.report(start, duration, err)
 
 	ts := model.TimeFromUnixNano(start.UnixNano())
@@ -504,14 +553,29 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 		Timestamp: ts,
 		Value:     model.SampleValue(scrapedSamples),
 	}
+	postRelabelSample := &model.Sample{
+		Metric: model.Metric{
+			model.MetricNameLabel: samplesPostRelabelMetricName,
+		},
+		Timestamp: ts,
+		Value:     model.SampleValue(postRelabelSamples),
+	}
 
-	if err := sl.reportAppender.Append(healthSample); err != nil {
+	reportAppender := ruleLabelsAppender{
+		SampleAppender: sl.appender,
+		labels:         sl.targetLabels,
+	}
+
+	if err := reportAppender.Append(healthSample); err != nil {
 		log.With("sample", healthSample).With("error", err).Warn("Scrape health sample discarded")
 	}
-	if err := sl.reportAppender.Append(durationSample); err != nil {
+	if err := reportAppender.Append(durationSample); err != nil {
 		log.With("sample", durationSample).With("error", err).Warn("Scrape duration sample discarded")
 	}
-	if err := sl.reportAppender.Append(countSample); err != nil {
+	if err := reportAppender.Append(countSample); err != nil {
 		log.With("sample", durationSample).With("error", err).Warn("Scrape sample count sample discarded")
+	}
+	if err := reportAppender.Append(postRelabelSample); err != nil {
+		log.With("sample", durationSample).With("error", err).Warn("Scrape sample count post-relabeling sample discarded")
 	}
 }
