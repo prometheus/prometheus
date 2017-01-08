@@ -497,6 +497,8 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
+	// More than this many samples post metric-relabelling will cause the scrape to fail.
+	SampleLimit uint `yaml:"sample_limit,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
