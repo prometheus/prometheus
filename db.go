@@ -83,8 +83,6 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	persistences         prometheus.Counter
-	persistenceDuration  prometheus.Histogram
 	samplesAppended      prometheus.Counter
 	compactionsTriggered prometheus.Counter
 }
@@ -92,15 +90,6 @@ type dbMetrics struct {
 func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 	m := &dbMetrics{}
 
-	m.persistences = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_persistences_total",
-		Help: "Total number of head persistances that ran so far.",
-	})
-	m.persistenceDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_persistence_duration_seconds",
-		Help:    "Duration of persistences in seconddb.",
-		Buckets: prometheus.ExponentialBuckets(0.25, 2, 5),
-	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "tsdb_samples_appended_total",
 		Help: "Total number of appended sampledb.",
@@ -112,9 +101,8 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 
 	if r != nil {
 		r.MustRegister(
-			m.persistences,
-			m.persistenceDuration,
 			m.samplesAppended,
+			m.compactionsTriggered,
 		)
 	}
 	return m
@@ -128,11 +116,12 @@ func Open(dir string, logger log.Logger) (db *DB, err error) {
 			return nil, err
 		}
 	}
+	r := prometheus.DefaultRegisterer
 
 	db = &DB{
 		dir:      dir,
 		logger:   logger,
-		metrics:  newDBMetrics(nil),
+		metrics:  newDBMetrics(r),
 		compactc: make(chan struct{}, 1),
 		cutc:     make(chan struct{}, 1),
 		donec:    make(chan struct{}),
@@ -142,7 +131,7 @@ func Open(dir string, logger log.Logger) (db *DB, err error) {
 	if err := db.initBlocks(); err != nil {
 		return nil, err
 	}
-	if db.compactor, err = newCompactor(db); err != nil {
+	if db.compactor, err = newCompactor(db, r); err != nil {
 		return nil, err
 	}
 

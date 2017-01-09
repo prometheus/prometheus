@@ -56,10 +56,10 @@ type compactableBlocks interface {
 	compactable() []block
 }
 
-func newCompactor(blocks compactableBlocks) (*compactor, error) {
+func newCompactor(blocks compactableBlocks, r prometheus.Registerer) (*compactor, error) {
 	c := &compactor{
 		blocks:  blocks,
-		metrics: newCompactorMetrics(nil),
+		metrics: newCompactorMetrics(r),
 	}
 
 	return c, nil
