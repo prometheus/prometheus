@@ -284,7 +284,7 @@ var (
 	ErrAmendSample = errors.New("amending sample")
 )
 
-func (h *HeadBlock) appendBatch(samples []hashedSample) error {
+func (h *HeadBlock) appendBatch(samples []hashedSample) (int, error) {
 	// Find head chunks for all samples and allocate new IDs/refs for
 	// ones we haven't seen before.
 	var (
@@ -303,10 +303,10 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 		if cd != nil {
 			// Samples must only occur in order.
 			if s.t < cd.lastTimestamp {
-				return ErrOutOfOrderSample
+				return 0, ErrOutOfOrderSample
 			}
 			if cd.lastTimestamp == s.t && cd.lastValue != s.v {
-				return ErrAmendSample
+				return 0, ErrAmendSample
 			}
 			// TODO(fabxc): sample refs are only scoped within a block for
 			// now and we ignore any previously set value
@@ -332,7 +332,7 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
 	if err := h.wal.Log(newSeries, samples); err != nil {
-		return err
+		return 0, err
 	}
 
 	// After the samples were successfully written to the WAL, there may
@@ -392,7 +392,7 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) error {
 		h.bstats.MaxTime = maxt
 	}
 
-	return nil
+	return int(total), nil
 }
 
 func (h *HeadBlock) fullness() float64 {
