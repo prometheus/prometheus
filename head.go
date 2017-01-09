@@ -403,9 +403,6 @@ func (h *HeadBlock) fullness() float64 {
 }
 
 func (h *HeadBlock) updateMapping() {
-	h.mapper.mtx.Lock()
-	defer h.mapper.mtx.Unlock()
-
 	h.mtx.RLock()
 
 	if h.mapper.sortable != nil && h.mapper.Len() == len(h.descs) {
@@ -435,14 +432,11 @@ func (h *HeadBlock) remapPostings(p Postings) Postings {
 		return errPostings{err: err}
 	}
 
-	h.mapper.mtx.RLock()
-	defer h.mapper.mtx.RUnlock()
+	h.mapper.mtx.Lock()
+	defer h.mapper.mtx.Unlock()
 
+	h.updateMapping()
 	h.mapper.Sort(list)
-
-	slice.Sort(list, func(i, j int) bool {
-		return h.mapper.fw[list[i]] < h.mapper.fw[list[j]]
-	})
 
 	return newListPostings(list)
 }
