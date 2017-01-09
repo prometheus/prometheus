@@ -33,18 +33,19 @@ func WithParam(ctx context.Context, p, v string) context.Context {
 	return context.WithValue(ctx, param(p), v)
 }
 
-type contextFn func(r *http.Request) (context.Context, error)
+// ContextFunc returns a new context for a request.
+type ContextFunc func(r *http.Request) (context.Context, error)
 
 // Router wraps httprouter.Router and adds support for prefixed sub-routers
 // and per-request context injections.
 type Router struct {
 	rtr    *httprouter.Router
 	prefix string
-	ctxFn  contextFn
+	ctxFn  ContextFunc
 }
 
 // New returns a new Router.
-func New(ctxFn contextFn) *Router {
+func New(ctxFn ContextFunc) *Router {
 	if ctxFn == nil {
 		ctxFn = func(r *http.Request) (context.Context, error) {
 			return context.Background(), nil
