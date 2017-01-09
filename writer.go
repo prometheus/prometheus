@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bradfitz/slice"
+	"github.com/coreos/etcd/pkg/ioutil"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
@@ -21,6 +22,8 @@ const (
 	// MagicIndex 4 bytes at the head of an index file.
 	MagicIndex = 0xBAAAD700
 )
+
+const compactionPageBytes = minSectorSize * 64
 
 // SeriesWriter serializes a time block of chunked series data.
 type SeriesWriter interface {
@@ -40,16 +43,18 @@ type SeriesWriter interface {
 // seriesWriter implements the SeriesWriter interface for the standard
 // serialization format.
 type seriesWriter struct {
-	w io.Writer
-	n int64
-	c int
+	ow io.Writer
+	w  *ioutil.PageWriter
+	n  int64
+	c  int
 
 	index IndexWriter
 }
 
 func newSeriesWriter(w io.Writer, index IndexWriter) *seriesWriter {
 	return &seriesWriter{
-		w:     w,
+		ow:    w,
+		w:     ioutil.NewPageWriter(w, compactionPageBytes, 0),
 		n:     0,
 		index: index,
 	}
@@ -128,7 +133,7 @@ func (w *seriesWriter) Size() int64 {
 }
 
 func (w *seriesWriter) Close() error {
-	return nil
+	return w.w.Flush()
 }
 
 // ChunkMeta holds information about a chunk of data.
@@ -178,8 +183,9 @@ type indexWriterSeries struct {
 // indexWriter implements the IndexWriter interface for the standard
 // serialization format.
 type indexWriter struct {
-	w io.Writer
-	n int64
+	ow io.Writer
+	w  *ioutil.PageWriter
+	n  int64
 
 	series map[uint32]*indexWriterSeries
 
@@ -190,7 +196,8 @@ type indexWriter struct {
 
 func newIndexWriter(w io.Writer) *indexWriter {
 	return &indexWriter{
-		w:       w,
+		w:       ioutil.NewPageWriter(w, compactionPageBytes, 0),
+		ow:      w,
 		n:       0,
 		symbols: make(map[string]uint32, 4096),
 		series:  make(map[uint32]*indexWriterSeries, 4096),
@@ -489,5 +496,8 @@ func (w *indexWriter) finalize() error {
 }
 
 func (w *indexWriter) Close() error {
-	return w.finalize()
+	if err := w.finalize(); err != nil {
+		return err
+	}
+	return w.w.Flush()
 }

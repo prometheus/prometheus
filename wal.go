@@ -174,7 +174,7 @@ const (
 	// walPageBytes is the alignment for flushing records to the backing Writer.
 	// It should be a multiple of the minimum sector size so that WAL can safely
 	// distinguish between torn writes and ordinary data corruption.
-	walPageBytes = 32 * minSectorSize
+	walPageBytes = 16 * minSectorSize
 )
 
 func newWALEncoder(f *os.File) (*walEncoder, error) {

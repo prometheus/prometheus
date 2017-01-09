@@ -409,6 +409,7 @@ func (h *HeadBlock) updateMapping() {
 	h.mtx.RLock()
 
 	if h.mapper.sortable != nil && h.mapper.Len() == len(h.descs) {
+		h.mtx.RUnlock()
 		return
 	}
 
