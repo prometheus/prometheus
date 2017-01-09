@@ -406,12 +406,16 @@ func (h *HeadBlock) updateMapping() {
 	h.mapper.mtx.Lock()
 	defer h.mapper.mtx.Unlock()
 
+	h.mtx.RLock()
+
 	if h.mapper.sortable != nil && h.mapper.Len() == len(h.descs) {
 		return
 	}
 
 	cds := make([]*chunkDesc, len(h.descs))
 	copy(cds, h.descs)
+
+	h.mtx.RUnlock()
 
 	s := slice.SortInterface(cds, func(i, j int) bool {
 		return labels.Compare(cds[i].lset, cds[j].lset) < 0
