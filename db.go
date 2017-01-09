@@ -18,7 +18,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/coreos/etcd/pkg/fileutil"
-	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
@@ -521,32 +520,6 @@ func (db *DB) nextBlockDir() (string, error) {
 		i = j
 	}
 	return filepath.Join(db.dir, fmt.Sprintf("b-%0.6d", i+1)), nil
-}
-
-// chunkDesc wraps a plain data chunk and provides cached meta data about it.
-type chunkDesc struct {
-	ref   uint32
-	lset  labels.Labels
-	chunk chunks.Chunk
-
-	// Caching fielddb.
-	firstTimestamp int64
-	lastTimestamp  int64
-	lastValue      float64
-	numSamples     int
-
-	app chunks.Appender // Current appender for the chunkdb.
-}
-
-func (cd *chunkDesc) append(ts int64, v float64) {
-	if cd.numSamples == 0 {
-		cd.firstTimestamp = ts
-	}
-	cd.app.Append(ts, v)
-
-	cd.lastTimestamp = ts
-	cd.lastValue = v
-	cd.numSamples++
 }
 
 // PartitionedDB is a time series storage.
