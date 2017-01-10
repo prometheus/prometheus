@@ -121,6 +121,7 @@ type persistence struct {
 	dirtyCounter            prometheus.Counter
 	startedDirty            prometheus.Gauge
 	checkpointing           prometheus.Gauge
+	seriesChunksPersisted   prometheus.Histogram
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
 	dirty          bool           // true if persistence was started in dirty state.
@@ -293,6 +294,15 @@ func newPersistence(
 			Name:      "checkpointing",
 			Help:      "1 if the storage is checkpointing, 0 otherwise.",
 		}),
+		seriesChunksPersisted: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "series_chunks_persisted",
+			Help:      "The number of chunks persisted per series.",
+			// Even with 4 vytes per sample, you're not going to get more than 85
+			// chunks in 6 hours for a time series with 1s resolution.
+			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128},
+		}),
 		dirty:          dirty,
 		pedanticChecks: pedanticChecks,
 		dirtyFileName:  dirtyPath,
@@ -344,6 +354,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.checkpointing.Desc()
 	ch <- p.dirtyCounter.Desc()
 	ch <- p.startedDirty.Desc()
+	ch <- p.seriesChunksPersisted.Desc()
 }
 
 // Collect implements prometheus.Collector.
@@ -361,6 +372,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	ch <- p.checkpointing
 	ch <- p.dirtyCounter
 	ch <- p.startedDirty
+	ch <- p.seriesChunksPersisted
 }
 
 // isDirty returns the dirty flag in a goroutine-safe way.
@@ -1565,6 +1577,7 @@ func (p *persistence) writeChunks(w io.Writer, chunks []chunk.Chunk) error {
 		// would only put back the original buf.
 		p.bufPool.Put(b)
 	}()
+	numChunks := len(chunks)
 
 	for batchSize := chunkMaxBatchSize; len(chunks) > 0; chunks = chunks[batchSize:] {
 		if batchSize > len(chunks) {
@@ -1588,6 +1601,7 @@ func (p *persistence) writeChunks(w io.Writer, chunks []chunk.Chunk) error {
 			return err
 		}
 	}
+	p.seriesChunksPersisted.Observe(float64(numChunks))
 	return nil
 }
 
