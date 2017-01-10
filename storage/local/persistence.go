@@ -110,16 +110,17 @@ type persistence struct {
 	indexingStopped chan struct{}
 	indexingFlush   chan chan int
 
-	indexingQueueLength    prometheus.Gauge
-	indexingQueueCapacity  prometheus.Metric
-	indexingBatchSizes     prometheus.Summary
-	indexingBatchDuration  prometheus.Summary
-	checkpointDuration     prometheus.Summary
-	checkpointLastDuration prometheus.Gauge
-	checkpointLastSize     prometheus.Gauge
-	dirtyCounter           prometheus.Counter
-	startedDirty           prometheus.Gauge
-	checkpointing          prometheus.Gauge
+	indexingQueueLength     prometheus.Gauge
+	indexingQueueCapacity   prometheus.Metric
+	indexingBatchSizes      prometheus.Summary
+	indexingBatchDuration   prometheus.Summary
+	checkpointDuration      prometheus.Summary
+	checkpointLastDuration  prometheus.Gauge
+	checkpointLastSize      prometheus.Gauge
+	checkpointChunksWritten prometheus.Summary
+	dirtyCounter            prometheus.Counter
+	startedDirty            prometheus.Gauge
+	checkpointing           prometheus.Gauge
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
 	dirty          bool           // true if persistence was started in dirty state.
@@ -268,6 +269,12 @@ func newPersistence(
 			Name:      "checkpoint_last_size_bytes",
 			Help:      "The size of the last checkpoint",
 		}),
+		checkpointChunksWritten: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpoint_series_chunks_written",
+			Help:      "The number of chunk written per series while checkpointing.",
+		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -333,6 +340,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	ch <- p.checkpointDuration.Desc()
 	ch <- p.checkpointLastDuration.Desc()
 	ch <- p.checkpointLastSize.Desc()
+	ch <- p.checkpointChunksWritten.Desc()
 	ch <- p.checkpointing.Desc()
 	ch <- p.dirtyCounter.Desc()
 	ch <- p.startedDirty.Desc()
@@ -349,6 +357,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	ch <- p.checkpointDuration
 	ch <- p.checkpointLastDuration
 	ch <- p.checkpointLastSize
+	ch <- p.checkpointChunksWritten
 	ch <- p.checkpointing
 	ch <- p.dirtyCounter
 	ch <- p.startedDirty
@@ -707,6 +716,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 						return
 					}
 				}
+				p.checkpointChunksWritten.Observe(float64(len(m.series.chunkDescs) - m.series.persistWatermark))
 			}
 			// Series is checkpointed now, so declare it clean. In case the entire
 			// checkpoint fails later on, this is fine, as the storage's series
