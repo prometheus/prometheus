@@ -110,13 +110,15 @@ type persistence struct {
 	indexingStopped chan struct{}
 	indexingFlush   chan chan int
 
-	indexingQueueLength   prometheus.Gauge
-	indexingQueueCapacity prometheus.Metric
-	indexingBatchSizes    prometheus.Summary
-	indexingBatchDuration prometheus.Summary
-	checkpointDuration    prometheus.Gauge
-	dirtyCounter          prometheus.Counter
-	startedDirty          prometheus.Gauge
+	indexingQueueLength    prometheus.Gauge
+	indexingQueueCapacity  prometheus.Metric
+	indexingBatchSizes     prometheus.Summary
+	indexingBatchDuration  prometheus.Summary
+	checkpointDuration     prometheus.Summary
+	checkpointLastDuration prometheus.Gauge
+	dirtyCounter           prometheus.Counter
+	startedDirty           prometheus.Gauge
+	checkpointing          prometheus.Gauge
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
 	dirty          bool           // true if persistence was started in dirty state.
@@ -247,11 +249,17 @@ func newPersistence(
 				Help:      "Quantiles for batch indexing duration in seconds.",
 			},
 		),
-		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+		checkpointLastDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpoint_last_duration_seconds",
+			Help:      "The duration in seconds it took to last checkpoint in-memory metrics and head chunks.",
+		}),
+		checkpointDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "checkpoint_duration_seconds",
-			Help:      "The duration in seconds it took to checkpoint in-memory metrics and head chunks.",
+			Help:      "The duration in seconds taken for checkpointing",
 		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -264,6 +272,12 @@ func newPersistence(
 			Subsystem: subsystem,
 			Name:      "started_dirty",
 			Help:      "Whether the local storage was found to be dirty (and crash recovery occurred) during Prometheus startup.",
+		}),
+		checkpointing: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpointing",
+			Help:      "1 if the storage is checkpointing, 0 otherwise.",
 		}),
 		dirty:          dirty,
 		pedanticChecks: pedanticChecks,
@@ -310,6 +324,8 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	p.indexingBatchSizes.Describe(ch)
 	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
+	ch <- p.checkpointLastDuration.Desc()
+	ch <- p.checkpointing.Desc()
 	ch <- p.dirtyCounter.Desc()
 	ch <- p.startedDirty.Desc()
 }
@@ -323,6 +339,8 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchSizes.Collect(ch)
 	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
+	ch <- p.checkpointLastDuration
+	ch <- p.checkpointing
 	ch <- p.dirtyCounter
 	ch <- p.startedDirty
 }
@@ -559,6 +577,7 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 //
 func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
 	log.Info("Checkpointing in-memory metrics and chunks...")
+	p.checkpointing.Set(1)
 	begin := time.Now()
 	f, err := os.OpenFile(p.headsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -566,6 +585,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 	}
 
 	defer func() {
+		defer p.checkpointing.Set(0)
 		syncErr := f.Sync()
 		closeErr := f.Close()
 		if err != nil {
@@ -581,7 +601,8 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		}
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
-		p.checkpointDuration.Set(duration.Seconds())
+		p.checkpointDuration.Observe(duration.Seconds())
+		p.checkpointLastDuration.Set(duration.Seconds())
 		log.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
