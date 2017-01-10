@@ -143,17 +143,9 @@ func (c *safeChunk) Iterator() chunks.Iterator {
 	return c.cd.iterator()
 }
 
-func (c *safeChunk) Appender() (chunks.Appender, error) {
-	panic("illegal")
-}
-
-func (c *safeChunk) Bytes() []byte {
-	panic("illegal")
-}
-
-func (c *safeChunk) Encoding() chunks.Encoding {
-	panic("illegal")
-}
+func (c *safeChunk) Appender() (chunks.Appender, error) { panic("illegal") }
+func (c *safeChunk) Bytes() []byte                      { panic("illegal") }
+func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
 
 func (h *HeadBlock) interval() (int64, int64) {
 	h.bstats.mtx.RLock()

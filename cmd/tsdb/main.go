@@ -121,7 +121,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		if err := b.ingestScrapes(metrics, 3000); err != nil {
+		if err := b.ingestScrapes(metrics, 2000); err != nil {
 			exitWithError(err)
 		}
 	})
@@ -135,6 +135,8 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 func (b *writeBenchmark) ingestScrapes(metrics []model.Metric, scrapeCount int) error {
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var total uint64
 
 	for len(metrics) > 0 {
 		l := 1000
@@ -145,20 +147,25 @@ func (b *writeBenchmark) ingestScrapes(metrics []model.Metric, scrapeCount int) 
 		metrics = metrics[l:]
 
 		wg.Add(1)
-		go func() {
-			if err := b.ingestScrapesShard(batch, scrapeCount); err != nil {
+		go func(batch []model.Metric) {
+			n, err := b.ingestScrapesShard(batch, scrapeCount)
+			if err != nil {
 				// exitWithError(err)
 				fmt.Println(" err", err)
 			}
+			mu.Lock()
+			total += n
+			mu.Unlock()
 			wg.Done()
-		}()
+		}(batch)
 	}
-
 	wg.Wait()
+
+	fmt.Println("> total samples:", total)
 	return nil
 }
 
-func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount int) error {
+func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount int) (uint64, error) {
 	app := b.storage.Appender()
 	ts := int64(model.Now())
 
@@ -181,6 +188,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 			value:  123456789,
 		}
 	}
+	total := uint64(0)
 
 	for i := 0; i < scrapeCount; i++ {
 		ts += int64(30000)
@@ -188,12 +196,13 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []model.Metric, scrapeCount 
 		for _, s := range scrape {
 			s.value += 1000
 			app.Add(s.labels, ts, float64(s.value))
+			total++
 		}
 		if err := app.Commit(); err != nil {
-			return err
+			return total, err
 		}
 	}
-	return nil
+	return total, nil
 }
 
 func (b *writeBenchmark) startProfiling() {
