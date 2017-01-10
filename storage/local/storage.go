@@ -178,6 +178,7 @@ type MemorySeriesStorage struct {
 	quarantineStopping, quarantineStopped chan struct{}
 
 	persistErrors                 prometheus.Counter
+	queuedChunksToPersist         prometheus.Counter
 	numSeries                     prometheus.Gauge
 	dirtySeries                   prometheus.Gauge
 	seriesOps                     *prometheus.CounterVec
@@ -240,6 +241,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 			Subsystem: subsystem,
 			Name:      "persist_errors_total",
 			Help:      "The total number of errors while persisting chunks.",
+		}),
+		queuedChunksToPersist: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queued_chunks_to_persist_total",
+			Help:      "The total number of chunks queued for persistence.",
 		}),
 		numSeries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -1540,6 +1547,9 @@ func (s *MemorySeriesStorage) getNumChunksToPersist() int {
 // negative 'by' to decrement.
 func (s *MemorySeriesStorage) incNumChunksToPersist(by int) {
 	atomic.AddInt64(&s.numChunksToPersist, int64(by))
+	if by > 0 {
+		s.queuedChunksToPersist.Add(float64(by))
+	}
 }
 
 // calculatePersistenceUrgencyScore calculates and returns an urgency score for
@@ -1743,6 +1753,7 @@ func (s *MemorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.mapper.Describe(ch)
 
 	ch <- s.persistErrors.Desc()
+	ch <- s.queuedChunksToPersist.Desc()
 	ch <- maxChunksToPersistDesc
 	ch <- numChunksToPersistDesc
 	ch <- s.numSeries.Desc()
@@ -1763,6 +1774,7 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.mapper.Collect(ch)
 
 	ch <- s.persistErrors
+	ch <- s.queuedChunksToPersist
 	ch <- prometheus.MustNewConstMetric(
 		maxChunksToPersistDesc,
 		prometheus.GaugeValue,
