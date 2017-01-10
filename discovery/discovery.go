@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"golang.org/x/net/context"
 )
@@ -105,6 +106,9 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]TargetPro
 	}
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, azure.NewDiscovery(c))
+	}
+	for i, c := range cfg.PuppetDBSDConfigs {
+		app("puppetdb", i, puppetdb.NewDiscovery(c))
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
