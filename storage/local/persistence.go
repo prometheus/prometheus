@@ -116,6 +116,7 @@ type persistence struct {
 	indexingBatchDuration  prometheus.Summary
 	checkpointDuration     prometheus.Summary
 	checkpointLastDuration prometheus.Gauge
+	checkpointLastSize     prometheus.Gauge
 	dirtyCounter           prometheus.Counter
 	startedDirty           prometheus.Gauge
 	checkpointing          prometheus.Gauge
@@ -261,6 +262,12 @@ func newPersistence(
 			Name:      "checkpoint_duration_seconds",
 			Help:      "The duration in seconds taken for checkpointing",
 		}),
+		checkpointLastSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpoint_last_size_bytes",
+			Help:      "The size of the last checkpoint",
+		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -325,6 +332,7 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
 	ch <- p.checkpointLastDuration.Desc()
+	ch <- p.checkpointLastSize.Desc()
 	ch <- p.checkpointing.Desc()
 	ch <- p.dirtyCounter.Desc()
 	ch <- p.startedDirty.Desc()
@@ -340,6 +348,7 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
 	ch <- p.checkpointLastDuration
+	ch <- p.checkpointLastSize
 	ch <- p.checkpointing
 	ch <- p.dirtyCounter
 	ch <- p.startedDirty
@@ -725,6 +734,11 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			return err
 		}
 	}
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	p.checkpointLastSize.Set(float64(info.Size()))
 	return err
 }
 
