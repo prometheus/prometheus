@@ -10,19 +10,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Block handles reads against a block of time series data.
-type block interface {
-	dir() string
-	stats() BlockStats
-	interval() (int64, int64)
-	index() IndexReader
-	series() SeriesReader
-	persisted() bool
+// Block handles reads against a Block of time series data.
+type Block interface {
+	Dir() string
+	Stats() BlockStats
+	Index() IndexReader
+	Series() SeriesReader
+	Persisted() bool
 }
 
+// BlockStats provides stats on a data block.
 type BlockStats struct {
-	// Time range of samples in the block.
-	MinTime, MaxTime int64
+	MinTime, MaxTime int64 // time range of samples in the block
 
 	SampleCount uint64
 	SeriesCount uint64
@@ -37,8 +36,8 @@ const (
 )
 
 type persistedBlock struct {
-	d      string
-	bstats BlockStats
+	dir   string
+	stats *BlockStats
 
 	chunksf, indexf *mmapFile
 
@@ -46,15 +45,15 @@ type persistedBlock struct {
 	indexr *indexReader
 }
 
-func newPersistedBlock(p string) (*persistedBlock, error) {
+func newPersistedBlock(dir string) (*persistedBlock, error) {
 	// TODO(fabxc): validate match of name and stats time, validate magic.
 
 	// mmap files belonging to the block.
-	chunksf, err := openMmapFile(chunksFileName(p))
+	chunksf, err := openMmapFile(chunksFileName(dir))
 	if err != nil {
 		return nil, errors.Wrap(err, "open chunk file")
 	}
-	indexf, err := openMmapFile(indexFileName(p))
+	indexf, err := openMmapFile(indexFileName(dir))
 	if err != nil {
 		return nil, errors.Wrap(err, "open index file")
 	}
@@ -74,12 +73,12 @@ func newPersistedBlock(p string) (*persistedBlock, error) {
 	}
 
 	pb := &persistedBlock{
-		d:       p,
+		dir:     dir,
 		chunksf: chunksf,
 		indexf:  indexf,
 		chunkr:  sr,
 		indexr:  ir,
-		bstats:  stats,
+		stats:   &stats,
 	}
 	return pb, nil
 }
@@ -94,15 +93,11 @@ func (pb *persistedBlock) Close() error {
 	return err1
 }
 
-func (pb *persistedBlock) dir() string          { return pb.d }
-func (pb *persistedBlock) persisted() bool      { return true }
-func (pb *persistedBlock) index() IndexReader   { return pb.indexr }
-func (pb *persistedBlock) series() SeriesReader { return pb.chunkr }
-func (pb *persistedBlock) stats() BlockStats    { return pb.bstats }
-
-func (pb *persistedBlock) interval() (int64, int64) {
-	return pb.bstats.MinTime, pb.bstats.MaxTime
-}
+func (pb *persistedBlock) Dir() string          { return pb.dir }
+func (pb *persistedBlock) Persisted() bool      { return true }
+func (pb *persistedBlock) Index() IndexReader   { return pb.indexr }
+func (pb *persistedBlock) Series() SeriesReader { return pb.chunkr }
+func (pb *persistedBlock) Stats() BlockStats    { return *pb.stats }
 
 func chunksFileName(path string) string {
 	return filepath.Join(path, "chunks-000")

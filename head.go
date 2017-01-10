@@ -13,10 +13,10 @@ import (
 	"github.com/go-kit/kit/log"
 )
 
-// HeadBlock handles reads and writes of time series data within a time window.
-type HeadBlock struct {
+// headBlock handles reads and writes of time series data within a time window.
+type headBlock struct {
 	mtx sync.RWMutex
-	d   string
+	dir string
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
@@ -33,18 +33,18 @@ type HeadBlock struct {
 
 	wal *WAL
 
-	bstats *BlockStats
+	stats *BlockStats
 }
 
-// OpenHeadBlock creates a new empty head block.
-func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
+// openHeadBlock creates a new empty head block.
+func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 	wal, err := OpenWAL(dir, log.NewContext(l).With("component", "wal"), 15*time.Second)
 	if err != nil {
 		return nil, err
 	}
 
-	b := &HeadBlock{
-		d:        dir,
+	b := &headBlock{
+		dir:      dir,
 		descs:    []*chunkDesc{},
 		hashes:   map[uint64][]*chunkDesc{},
 		values:   map[string]stringset{},
@@ -52,31 +52,25 @@ func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
 		wal:      wal,
 		mapper:   newPositionMapper(nil),
 	}
-	b.bstats = &BlockStats{
-		MinTime: math.MaxInt64,
-		MaxTime: math.MinInt64,
+	b.stats = &BlockStats{
+		MinTime: math.MinInt64,
+		MaxTime: math.MaxInt64,
 	}
 
 	err = wal.ReadAll(&walHandler{
 		series: func(lset labels.Labels) {
 			b.create(lset.Hash(), lset)
+			b.stats.SeriesCount++
+			b.stats.ChunkCount++ // head block has one chunk/series
 		},
 		sample: func(s hashedSample) {
 			cd := b.descs[s.ref]
-
-			// Duplicated from appendBatch – TODO(fabxc): deduplicate?
-			if cd.lastTimestamp == s.t && cd.lastValue != s.v {
-				return
-			}
 			cd.append(s.t, s.v)
 
-			if s.t > b.bstats.MaxTime {
-				b.bstats.MaxTime = s.t
+			if s.t > b.stats.MaxTime {
+				b.stats.MaxTime = s.t
 			}
-			if s.t < b.bstats.MinTime {
-				b.bstats.MinTime = s.t
-			}
-			b.bstats.SampleCount++
+			b.stats.SampleCount++
 		},
 	})
 	if err != nil {
@@ -89,24 +83,29 @@ func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
 }
 
 // Close syncs all data and closes underlying resources of the head block.
-func (h *HeadBlock) Close() error {
+func (h *headBlock) Close() error {
 	return h.wal.Close()
 }
 
-func (h *HeadBlock) dir() string          { return h.d }
-func (h *HeadBlock) persisted() bool      { return false }
-func (h *HeadBlock) index() IndexReader   { return h }
-func (h *HeadBlock) series() SeriesReader { return h }
+func (h *headBlock) Dir() string          { return h.dir }
+func (h *headBlock) Persisted() bool      { return false }
+func (h *headBlock) Index() IndexReader   { return &headIndexReader{h} }
+func (h *headBlock) Series() SeriesReader { return &headSeriesReader{h} }
 
-func (h *HeadBlock) stats() BlockStats {
-	h.bstats.mtx.RLock()
-	defer h.bstats.mtx.RUnlock()
+// Stats returns statisitics about the indexed data.
+func (h *headBlock) Stats() BlockStats {
+	h.stats.mtx.RLock()
+	defer h.stats.mtx.RUnlock()
 
-	return *h.bstats
+	return *h.stats
+}
+
+type headSeriesReader struct {
+	*headBlock
 }
 
 // Chunk returns the chunk for the reference number.
-func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
+func (h *headSeriesReader) Chunk(ref uint32) (chunks.Chunk, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -114,22 +113,6 @@ func (h *HeadBlock) Chunk(ref uint32) (chunks.Chunk, error) {
 		return nil, errNotFound
 	}
 	return h.descs[int(ref)].chunk, nil
-}
-
-type headSeriesReader struct {
-	h *HeadBlock
-}
-
-func (h *headSeriesReader) Chunk(ref uint32) (chunks.Chunk, error) {
-	h.h.mtx.RLock()
-	defer h.h.mtx.RUnlock()
-
-	if int(ref) >= len(h.h.descs) {
-		return nil, errNotFound
-	}
-	return &safeChunk{
-		cd: h.h.descs[int(ref)],
-	}, nil
 }
 
 type safeChunk struct {
@@ -147,21 +130,12 @@ func (c *safeChunk) Appender() (chunks.Appender, error) { panic("illegal") }
 func (c *safeChunk) Bytes() []byte                      { panic("illegal") }
 func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
 
-func (h *HeadBlock) interval() (int64, int64) {
-	h.bstats.mtx.RLock()
-	defer h.bstats.mtx.RUnlock()
-	return h.bstats.MinTime, h.bstats.MaxTime
-}
-
-// Stats returns statisitics about the indexed data.
-func (h *HeadBlock) Stats() (BlockStats, error) {
-	h.bstats.mtx.RLock()
-	defer h.bstats.mtx.RUnlock()
-	return *h.bstats, nil
+type headIndexReader struct {
+	*headBlock
 }
 
 // LabelValues returns the possible label values
-func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
+func (h *headIndexReader) LabelValues(names ...string) (StringTuples, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -179,7 +153,7 @@ func (h *HeadBlock) LabelValues(names ...string) (StringTuples, error) {
 }
 
 // Postings returns the postings list iterator for the label pair.
-func (h *HeadBlock) Postings(name, value string) (Postings, error) {
+func (h *headIndexReader) Postings(name, value string) (Postings, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -187,7 +161,7 @@ func (h *HeadBlock) Postings(name, value string) (Postings, error) {
 }
 
 // Series returns the series for the given reference.
-func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
+func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -206,7 +180,7 @@ func (h *HeadBlock) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	return cd.lset, []ChunkMeta{meta}, nil
 }
 
-func (h *HeadBlock) LabelIndices() ([][]string, error) {
+func (h *headIndexReader) LabelIndices() ([][]string, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -218,9 +192,15 @@ func (h *HeadBlock) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
+func (h *headIndexReader) Stats() (BlockStats, error) {
+	h.stats.mtx.RLock()
+	defer h.stats.mtx.RUnlock()
+	return *h.stats, nil
+}
+
 // get retrieves the chunk with the hash and label set and creates
 // a new one if it doesn't exist yet.
-func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
+func (h *headBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
 	cds := h.hashes[hash]
 
 	for _, cd := range cds {
@@ -231,7 +211,7 @@ func (h *HeadBlock) get(hash uint64, lset labels.Labels) *chunkDesc {
 	return nil
 }
 
-func (h *HeadBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
+func (h *headBlock) create(hash uint64, lset labels.Labels) *chunkDesc {
 	cd := &chunkDesc{
 		lset:          lset,
 		chunk:         chunks.NewXORChunk(),
@@ -274,9 +254,11 @@ var (
 	// ErrAmendSample is returned if an appended sample has the same timestamp
 	// as the most recent sample but a different value.
 	ErrAmendSample = errors.New("amending sample")
+
+	ErrOutOfBounds = errors.New("out of bounds")
 )
 
-func (h *HeadBlock) appendBatch(samples []hashedSample) (int, error) {
+func (h *headBlock) appendBatch(samples []hashedSample) (int, error) {
 	// Find head chunks for all samples and allocate new IDs/refs for
 	// ones we haven't seen before.
 	var (
@@ -370,31 +352,31 @@ func (h *HeadBlock) appendBatch(samples []hashedSample) (int, error) {
 		}
 	}
 
-	h.bstats.mtx.Lock()
-	defer h.bstats.mtx.Unlock()
+	h.stats.mtx.Lock()
+	defer h.stats.mtx.Unlock()
 
-	h.bstats.SampleCount += total
-	h.bstats.SeriesCount += uint64(len(newSeries))
-	h.bstats.ChunkCount += uint64(len(newSeries)) // head block has one chunk/series
+	h.stats.SampleCount += total
+	h.stats.SeriesCount += uint64(len(newSeries))
+	h.stats.ChunkCount += uint64(len(newSeries)) // head block has one chunk/series
 
-	if mint < h.bstats.MinTime {
-		h.bstats.MinTime = mint
+	if mint < h.stats.MinTime {
+		h.stats.MinTime = mint
 	}
-	if maxt > h.bstats.MaxTime {
-		h.bstats.MaxTime = maxt
+	if maxt > h.stats.MaxTime {
+		h.stats.MaxTime = maxt
 	}
 
 	return int(total), nil
 }
 
-func (h *HeadBlock) fullness() float64 {
-	h.bstats.mtx.RLock()
-	defer h.bstats.mtx.RUnlock()
+func (h *headBlock) fullness() float64 {
+	h.stats.mtx.RLock()
+	defer h.stats.mtx.RUnlock()
 
-	return float64(h.bstats.SampleCount) / float64(h.bstats.SeriesCount+1) / 250
+	return float64(h.stats.SampleCount) / float64(h.stats.SeriesCount+1) / 250
 }
 
-func (h *HeadBlock) updateMapping() {
+func (h *headBlock) updateMapping() {
 	h.mtx.RLock()
 
 	if h.mapper.sortable != nil && h.mapper.Len() == len(h.descs) {
@@ -418,7 +400,7 @@ func (h *HeadBlock) updateMapping() {
 // of the series they reference.
 // Returned postings have no longer monotonic IDs and MUST NOT be used for regular
 // postings set operations, i.e. intersect and merge.
-func (h *HeadBlock) remapPostings(p Postings) Postings {
+func (h *headBlock) remapPostings(p Postings) Postings {
 	list, err := expandPostings(p)
 	if err != nil {
 		return errPostings{err: err}

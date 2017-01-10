@@ -73,7 +73,7 @@ type DB struct {
 
 	mtx       sync.RWMutex
 	persisted []*persistedBlock
-	heads     []*HeadBlock
+	heads     []*headBlock
 	compactor *compactor
 
 	compactc chan struct{}
@@ -174,9 +174,9 @@ func (db *DB) run() {
 				}
 				// TODO(fabxc): pick emits blocks in order. compact acts on
 				// inverted order. Put inversion into compactor?
-				var bs []block
+				var bs []Block
 				for _, b := range blocks {
-					bs = append([]block{b}, bs...)
+					bs = append([]Block{b}, bs...)
 				}
 
 				select {
@@ -195,15 +195,15 @@ func (db *DB) run() {
 	}
 }
 
-func (db *DB) compact(blocks []block) error {
+func (db *DB) compact(blocks []Block) error {
 	if len(blocks) == 0 {
 		return nil
 	}
-	tmpdir := blocks[0].dir() + ".tmp"
+	tmpdir := blocks[0].Dir() + ".tmp"
 
 	// TODO(fabxc): find a better place to do this transparently.
 	for _, b := range blocks {
-		if h, ok := b.(*HeadBlock); ok {
+		if h, ok := b.(*headBlock); ok {
 			h.updateMapping()
 		}
 	}
@@ -215,11 +215,11 @@ func (db *DB) compact(blocks []block) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	if err := renameDir(tmpdir, blocks[0].dir()); err != nil {
+	if err := renameDir(tmpdir, blocks[0].Dir()); err != nil {
 		return errors.Wrap(err, "rename dir")
 	}
 	for _, b := range blocks[1:] {
-		if err := os.RemoveAll(b.dir()); err != nil {
+		if err := os.RemoveAll(b.Dir()); err != nil {
 			return errors.Wrap(err, "delete dir")
 		}
 	}
@@ -227,7 +227,7 @@ func (db *DB) compact(blocks []block) error {
 	var merr MultiError
 
 	for _, b := range blocks {
-		merr.Add(errors.Wrapf(db.reinit(b.dir()), "reinit block at %q", b.dir()))
+		merr.Add(errors.Wrapf(db.reinit(b.Dir()), "reinit block at %q", b.Dir()))
 	}
 	return merr.Err()
 }
@@ -248,7 +248,7 @@ func isBlockDir(fi os.FileInfo) bool {
 func (db *DB) initBlocks() error {
 	var (
 		pbs   []*persistedBlock
-		heads []*HeadBlock
+		heads []*headBlock
 	)
 
 	files, err := ioutil.ReadDir(db.dir)
@@ -263,7 +263,7 @@ func (db *DB) initBlocks() error {
 		dir := filepath.Join(db.dir, fi.Name())
 
 		if fileutil.Exist(filepath.Join(dir, walFileName)) {
-			h, err := OpenHeadBlock(dir, db.logger)
+			h, err := openHeadBlock(dir, db.logger)
 			if err != nil {
 				return err
 			}
@@ -282,16 +282,16 @@ func (db *DB) initBlocks() error {
 	lastTime := int64(math.MinInt64)
 
 	for _, b := range pbs {
-		if b.stats().MinTime < lastTime {
-			return errors.Errorf("illegal order for block at %q", b.dir())
+		if b.Stats().MinTime < lastTime {
+			return errors.Errorf("illegal order for block at %q", b.Dir())
 		}
-		lastTime = b.stats().MaxTime
+		lastTime = b.Stats().MaxTime
 	}
 	for _, b := range heads {
-		if b.stats().MinTime < lastTime {
-			return errors.Errorf("illegal order for block at %q", b.dir())
+		if b.Stats().MinTime < lastTime {
+			return errors.Errorf("illegal order for block at %q", b.Dir())
 		}
-		lastTime = b.stats().MaxTime
+		lastTime = b.Stats().MaxTime
 	}
 
 	db.persisted = pbs
@@ -381,7 +381,7 @@ func (db *DB) appendBatch(samples []hashedSample) error {
 
 func (db *DB) headForDir(dir string) (int, bool) {
 	for i, b := range db.heads {
-		if b.dir() == dir {
+		if b.Dir() == dir {
 			return i, true
 		}
 	}
@@ -390,7 +390,7 @@ func (db *DB) headForDir(dir string) (int, bool) {
 
 func (db *DB) persistedForDir(dir string) (int, bool) {
 	for i, b := range db.persisted {
-		if b.dir() == dir {
+		if b.Dir() == dir {
 			return i, true
 		}
 	}
@@ -441,13 +441,13 @@ func (db *DB) reinit(dir string) error {
 	return nil
 }
 
-func (db *DB) compactable() []block {
+func (db *DB) compactable() []Block {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
-	var blocks []block
+	var blocks []Block
 	for _, pb := range db.persisted {
-		blocks = append([]block{pb}, blocks...)
+		blocks = append([]Block{pb}, blocks...)
 	}
 
 	// threshold := db.heads[len(db.heads)-1].bstatdb.MaxTime - headGracePeriod
@@ -458,7 +458,7 @@ func (db *DB) compactable() []block {
 	// 	}
 	// }
 	for _, hb := range db.heads[:len(db.heads)-1] {
-		blocks = append([]block{hb}, blocks...)
+		blocks = append([]Block{hb}, blocks...)
 	}
 
 	return blocks
@@ -480,20 +480,18 @@ func intervalContains(min, max, t int64) bool {
 
 // blocksForInterval returns all blocks within the partition that may contain
 // data for the given time range.
-func (db *DB) blocksForInterval(mint, maxt int64) []block {
-	var bs []block
+func (db *DB) blocksForInterval(mint, maxt int64) []Block {
+	var bs []Block
 
 	for _, b := range db.persisted {
-		bmin, bmax := b.interval()
-
-		if intervalOverlap(mint, maxt, bmin, bmax) {
+		s := b.Stats()
+		if intervalOverlap(mint, maxt, s.MinTime, s.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
 	for _, b := range db.heads {
-		bmin, bmax := b.interval()
-
-		if intervalOverlap(mint, maxt, bmin, bmax) {
+		s := b.Stats()
+		if intervalOverlap(mint, maxt, s.MinTime, s.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
@@ -511,7 +509,7 @@ func (db *DB) cut() error {
 	if err != nil {
 		return err
 	}
-	newHead, err := OpenHeadBlock(dir, db.logger)
+	newHead, err := openHeadBlock(dir, db.logger)
 	if err != nil {
 		return err
 	}

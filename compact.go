@@ -49,11 +49,11 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 type blockStore interface {
-	blocks() []block
+	blocks() []Block
 }
 
 type compactableBlocks interface {
-	compactable() []block
+	compactable() []Block
 }
 
 func newCompactor(blocks compactableBlocks, r prometheus.Registerer) (*compactor, error) {
@@ -70,15 +70,15 @@ const (
 	compactionBlocks  = 2
 )
 
-func (c *compactor) pick() []block {
+func (c *compactor) pick() []Block {
 	bs := c.blocks.compactable()
 	if len(bs) == 0 {
 		return nil
 	}
-	if len(bs) == 1 && !bs[0].persisted() {
+	if len(bs) == 1 && !bs[0].Persisted() {
 		return bs
 	}
-	if !bs[0].persisted() {
+	if !bs[0].Persisted() {
 		if len(bs) == 2 || !compactionMatch(bs[:3]) {
 			return bs[:1]
 		}
@@ -93,18 +93,18 @@ func (c *compactor) pick() []block {
 	return nil
 }
 
-func compactionMatch(blocks []block) bool {
+func compactionMatch(blocks []Block) bool {
 	// TODO(fabxc): check whether combined size is below maxCompactionSize.
 	// Apply maximum time range? or number of series? – might already be covered by size implicitly.
 
 	// Naively check whether both blocks have roughly the same number of samples
 	// and whether the total sample count doesn't exceed 2GB chunk file size
 	// by rough approximation.
-	n := float64(blocks[0].stats().SampleCount)
+	n := float64(blocks[0].Stats().SampleCount)
 	t := n
 
 	for _, b := range blocks[1:] {
-		m := float64(b.stats().SampleCount)
+		m := float64(b.Stats().SampleCount)
 
 		if m < 0.8*n || m > 1.2*n {
 			return false
@@ -116,17 +116,17 @@ func compactionMatch(blocks []block) bool {
 	return t < 10*200e6
 }
 
-func mergeStats(blocks ...block) (res BlockStats) {
-	res.MinTime = blocks[0].stats().MinTime
-	res.MaxTime = blocks[len(blocks)-1].stats().MaxTime
+func mergeStats(blocks ...Block) (res BlockStats) {
+	res.MinTime = blocks[0].Stats().MinTime
+	res.MaxTime = blocks[len(blocks)-1].Stats().MaxTime
 
 	for _, b := range blocks {
-		res.SampleCount += b.stats().SampleCount
+		res.SampleCount += b.Stats().SampleCount
 	}
 	return res
 }
 
-func (c *compactor) compact(dir string, blocks ...block) (err error) {
+func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	start := time.Now()
 	defer func() {
 		if err != nil {
@@ -182,18 +182,18 @@ func (c *compactor) compact(dir string, blocks ...block) (err error) {
 	return nil
 }
 
-func (c *compactor) write(blocks []block, indexw IndexWriter, chunkw SeriesWriter) error {
+func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWriter) error {
 	var set compactionSet
 	for i, b := range blocks {
-		all, err := b.index().Postings("", "")
+		all, err := b.Index().Postings("", "")
 		if err != nil {
 			return err
 		}
 		// TODO(fabxc): find more transparent way of handling this.
-		if hb, ok := b.(*HeadBlock); ok {
+		if hb, ok := b.(*headBlock); ok {
 			all = hb.remapPostings(all)
 		}
-		s := newCompactionSeriesSet(b.index(), b.series(), all)
+		s := newCompactionSeriesSet(b.Index(), b.Series(), all)
 
 		if i == 0 {
 			set = s

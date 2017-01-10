@@ -58,14 +58,13 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 		q := &blockQuerier{
 			mint:   mint,
 			maxt:   maxt,
-			index:  b.index(),
-			series: b.series(),
+			index:  b.Index(),
+			series: b.Series(),
 		}
 
 		// TODO(fabxc): find nicer solution.
-		if hb, ok := b.(*HeadBlock); ok {
+		if hb, ok := b.(*headBlock); ok {
 			q.postingsMapper = hb.remapPostings
-			q.series = &headSeriesReader{h: hb}
 		}
 
 		sq.blocks = append(sq.blocks, q)
