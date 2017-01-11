@@ -256,25 +256,27 @@ func newPersistence(
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "checkpoint_last_duration_seconds",
-			Help:      "The duration in seconds it took to last checkpoint in-memory metrics and head chunks.",
+			Help:      "The duration in seconds it took to last checkpoint open chunks and chunks yet to be persisted.",
 		}),
 		checkpointDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "checkpoint_duration_seconds",
-			Help:      "The duration in seconds taken for checkpointing",
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Objectives: map[float64]float64{},
+			Name:       "checkpoint_duration_seconds",
+			Help:       "The duration in seconds taken for checkpointing open chunks and chunks yet to be persisted",
 		}),
 		checkpointLastSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "checkpoint_last_size_bytes",
-			Help:      "The size of the last checkpoint",
+			Help:      "The size of the last checkpoint of open chunks and chunks yet to be persisted",
 		}),
 		checkpointChunksWritten: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "checkpoint_series_chunks_written",
-			Help:      "The number of chunk written per series while checkpointing.",
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Objectives: map[float64]float64{},
+			Name:       "checkpoint_series_chunks_written",
+			Help:       "The number of chunk written per series while checkpointing open chunks and chunks yet to be persisted.",
 		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -299,7 +301,7 @@ func newPersistence(
 			Subsystem: subsystem,
 			Name:      "series_chunks_persisted",
 			Help:      "The number of chunks persisted per series.",
-			// Even with 4 vytes per sample, you're not going to get more than 85
+			// Even with 4 bytes per sample, you're not going to get more than 85
 			// chunks in 6 hours for a time series with 1s resolution.
 			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128},
 		}),
@@ -608,6 +610,7 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
 	log.Info("Checkpointing in-memory metrics and chunks...")
 	p.checkpointing.Set(1)
+	defer p.checkpointing.Set(0)
 	begin := time.Now()
 	f, err := os.OpenFile(p.headsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -615,7 +618,6 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 	}
 
 	defer func() {
-		defer p.checkpointing.Set(0)
 		syncErr := f.Sync()
 		closeErr := f.Close()
 		if err != nil {
