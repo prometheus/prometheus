@@ -178,7 +178,9 @@ type MemorySeriesStorage struct {
 	quarantineStopping, quarantineStopped chan struct{}
 
 	persistErrors                 prometheus.Counter
+	queuedChunksToPersist         prometheus.Counter
 	numSeries                     prometheus.Gauge
+	dirtySeries                   prometheus.Gauge
 	seriesOps                     *prometheus.CounterVec
 	ingestedSamplesCount          prometheus.Counter
 	discardedSamplesCount         *prometheus.CounterVec
@@ -240,11 +242,23 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 			Name:      "persist_errors_total",
 			Help:      "The total number of errors while persisting chunks.",
 		}),
+		queuedChunksToPersist: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queued_chunks_to_persist_total",
+			Help:      "The total number of chunks queued for persistence.",
+		}),
 		numSeries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "memory_series",
 			Help:      "The current number of series in memory.",
+		}),
+		dirtySeries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "memory_dirty_series",
+			Help:      "The current number of series that would require a disk seek during crash recovery.",
 		}),
 		seriesOps: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -1260,6 +1274,7 @@ loop:
 				log.Errorln("Error while checkpointing:", err)
 			} else {
 				dirtySeriesCount = 0
+				s.dirtySeries.Set(0)
 			}
 			// If a checkpoint takes longer than checkpointInterval, unluckily timed
 			// combination with the Reset(0) call below can lead to a case where a
@@ -1272,6 +1287,7 @@ loop:
 		case fp := <-memoryFingerprints:
 			if s.maintainMemorySeries(fp, model.Now().Add(-s.dropAfter)) {
 				dirtySeriesCount++
+				s.dirtySeries.Inc()
 				// Check if we have enough "dirty" series so that we need an early checkpoint.
 				// However, if we are already behind persisting chunks, creating a checkpoint
 				// would be counterproductive, as it would slow down chunk persisting even more,
@@ -1531,6 +1547,9 @@ func (s *MemorySeriesStorage) getNumChunksToPersist() int {
 // negative 'by' to decrement.
 func (s *MemorySeriesStorage) incNumChunksToPersist(by int) {
 	atomic.AddInt64(&s.numChunksToPersist, int64(by))
+	if by > 0 {
+		s.queuedChunksToPersist.Add(float64(by))
+	}
 }
 
 // calculatePersistenceUrgencyScore calculates and returns an urgency score for
@@ -1734,9 +1753,11 @@ func (s *MemorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	s.mapper.Describe(ch)
 
 	ch <- s.persistErrors.Desc()
+	ch <- s.queuedChunksToPersist.Desc()
 	ch <- maxChunksToPersistDesc
 	ch <- numChunksToPersistDesc
 	ch <- s.numSeries.Desc()
+	ch <- s.dirtySeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
 	s.discardedSamplesCount.Describe(ch)
@@ -1753,6 +1774,7 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 	s.mapper.Collect(ch)
 
 	ch <- s.persistErrors
+	ch <- s.queuedChunksToPersist
 	ch <- prometheus.MustNewConstMetric(
 		maxChunksToPersistDesc,
 		prometheus.GaugeValue,
@@ -1764,6 +1786,7 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 		float64(s.getNumChunksToPersist()),
 	)
 	ch <- s.numSeries
+	ch <- s.dirtySeries
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
 	s.discardedSamplesCount.Collect(ch)
