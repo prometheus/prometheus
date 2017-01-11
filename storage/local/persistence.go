@@ -110,13 +110,18 @@ type persistence struct {
 	indexingStopped chan struct{}
 	indexingFlush   chan chan int
 
-	indexingQueueLength   prometheus.Gauge
-	indexingQueueCapacity prometheus.Metric
-	indexingBatchSizes    prometheus.Summary
-	indexingBatchDuration prometheus.Summary
-	checkpointDuration    prometheus.Gauge
-	dirtyCounter          prometheus.Counter
-	startedDirty          prometheus.Gauge
+	indexingQueueLength     prometheus.Gauge
+	indexingQueueCapacity   prometheus.Metric
+	indexingBatchSizes      prometheus.Summary
+	indexingBatchDuration   prometheus.Summary
+	checkpointDuration      prometheus.Summary
+	checkpointLastDuration  prometheus.Gauge
+	checkpointLastSize      prometheus.Gauge
+	checkpointChunksWritten prometheus.Summary
+	dirtyCounter            prometheus.Counter
+	startedDirty            prometheus.Gauge
+	checkpointing           prometheus.Gauge
+	seriesChunksPersisted   prometheus.Histogram
 
 	dirtyMtx       sync.Mutex     // Protects dirty and becameDirty.
 	dirty          bool           // true if persistence was started in dirty state.
@@ -247,11 +252,31 @@ func newPersistence(
 				Help:      "Quantiles for batch indexing duration in seconds.",
 			},
 		),
-		checkpointDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+		checkpointLastDuration: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "checkpoint_duration_seconds",
-			Help:      "The duration in seconds it took to checkpoint in-memory metrics and head chunks.",
+			Name:      "checkpoint_last_duration_seconds",
+			Help:      "The duration in seconds it took to last checkpoint open chunks and chunks yet to be persisted.",
+		}),
+		checkpointDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Objectives: map[float64]float64{},
+			Name:       "checkpoint_duration_seconds",
+			Help:       "The duration in seconds taken for checkpointing open chunks and chunks yet to be persisted",
+		}),
+		checkpointLastSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpoint_last_size_bytes",
+			Help:      "The size of the last checkpoint of open chunks and chunks yet to be persisted",
+		}),
+		checkpointChunksWritten: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Objectives: map[float64]float64{},
+			Name:       "checkpoint_series_chunks_written",
+			Help:       "The number of chunk written per series while checkpointing open chunks and chunks yet to be persisted.",
 		}),
 		dirtyCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -264,6 +289,21 @@ func newPersistence(
 			Subsystem: subsystem,
 			Name:      "started_dirty",
 			Help:      "Whether the local storage was found to be dirty (and crash recovery occurred) during Prometheus startup.",
+		}),
+		checkpointing: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "checkpointing",
+			Help:      "1 if the storage is checkpointing, 0 otherwise.",
+		}),
+		seriesChunksPersisted: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "series_chunks_persisted",
+			Help:      "The number of chunks persisted per series.",
+			// Even with 4 bytes per sample, you're not going to get more than 85
+			// chunks in 6 hours for a time series with 1s resolution.
+			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128},
 		}),
 		dirty:          dirty,
 		pedanticChecks: pedanticChecks,
@@ -310,8 +350,13 @@ func (p *persistence) Describe(ch chan<- *prometheus.Desc) {
 	p.indexingBatchSizes.Describe(ch)
 	p.indexingBatchDuration.Describe(ch)
 	ch <- p.checkpointDuration.Desc()
+	ch <- p.checkpointLastDuration.Desc()
+	ch <- p.checkpointLastSize.Desc()
+	ch <- p.checkpointChunksWritten.Desc()
+	ch <- p.checkpointing.Desc()
 	ch <- p.dirtyCounter.Desc()
 	ch <- p.startedDirty.Desc()
+	ch <- p.seriesChunksPersisted.Desc()
 }
 
 // Collect implements prometheus.Collector.
@@ -323,8 +368,13 @@ func (p *persistence) Collect(ch chan<- prometheus.Metric) {
 	p.indexingBatchSizes.Collect(ch)
 	p.indexingBatchDuration.Collect(ch)
 	ch <- p.checkpointDuration
+	ch <- p.checkpointLastDuration
+	ch <- p.checkpointLastSize
+	ch <- p.checkpointChunksWritten
+	ch <- p.checkpointing
 	ch <- p.dirtyCounter
 	ch <- p.startedDirty
+	ch <- p.seriesChunksPersisted
 }
 
 // isDirty returns the dirty flag in a goroutine-safe way.
@@ -559,6 +609,8 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 //
 func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
 	log.Info("Checkpointing in-memory metrics and chunks...")
+	p.checkpointing.Set(1)
+	defer p.checkpointing.Set(0)
 	begin := time.Now()
 	f, err := os.OpenFile(p.headsTempFileName(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0640)
 	if err != nil {
@@ -581,7 +633,8 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 		}
 		err = os.Rename(p.headsTempFileName(), p.headsFileName())
 		duration := time.Since(begin)
-		p.checkpointDuration.Set(duration.Seconds())
+		p.checkpointDuration.Observe(duration.Seconds())
+		p.checkpointLastDuration.Set(duration.Seconds())
 		log.Infof("Done checkpointing in-memory metrics and chunks in %v.", duration)
 	}()
 
@@ -677,6 +730,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 						return
 					}
 				}
+				p.checkpointChunksWritten.Observe(float64(len(m.series.chunkDescs) - m.series.persistWatermark))
 			}
 			// Series is checkpointed now, so declare it clean. In case the entire
 			// checkpoint fails later on, this is fine, as the storage's series
@@ -704,6 +758,11 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			return err
 		}
 	}
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	p.checkpointLastSize.Set(float64(info.Size()))
 	return err
 }
 
@@ -1520,6 +1579,7 @@ func (p *persistence) writeChunks(w io.Writer, chunks []chunk.Chunk) error {
 		// would only put back the original buf.
 		p.bufPool.Put(b)
 	}()
+	numChunks := len(chunks)
 
 	for batchSize := chunkMaxBatchSize; len(chunks) > 0; chunks = chunks[batchSize:] {
 		if batchSize > len(chunks) {
@@ -1543,6 +1603,7 @@ func (p *persistence) writeChunks(w io.Writer, chunks []chunk.Chunk) error {
 			return err
 		}
 	}
+	p.seriesChunksPersisted.Observe(float64(numChunks))
 	return nil
 }
 
