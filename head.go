@@ -261,12 +261,12 @@ var (
 func (h *headBlock) appendBatch(samples []hashedSample) (int, error) {
 	// Find head chunks for all samples and allocate new IDs/refs for
 	// ones we haven't seen before.
+
 	var (
-		newSeries    []labels.Labels
-		newSamples   []*hashedSample
-		newHashes    []uint64
-		uniqueHashes = map[uint64]uint32{}
+		newSeries = map[uint64][]*hashedSample{}
+		newLabels []labels.Labels
 	)
+
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -289,19 +289,9 @@ func (h *headBlock) appendBatch(samples []hashedSample) (int, error) {
 			continue
 		}
 
-		// There may be several samples for a new series in a batch.
-		// We don't want to reserve a new space for each.
-		if ref, ok := uniqueHashes[s.hash]; ok {
-			s.ref = ref
-			newSamples = append(newSamples, s)
-			continue
-		}
-		s.ref = uint32(len(newSeries))
-		uniqueHashes[s.hash] = s.ref
-
-		newSeries = append(newSeries, s.labels)
-		newHashes = append(newHashes, s.hash)
-		newSamples = append(newSamples, s)
+		// TODO(fabxc): technically there's still collision probability here.
+		// Extract the hashmap of the head block and use an instance of it here as well.
+		newSeries[s.hash] = append(newSeries[s.hash], s)
 	}
 
 	// After the samples were successfully written to the WAL, there may
@@ -316,19 +306,27 @@ func (h *headBlock) appendBatch(samples []hashedSample) (int, error) {
 
 		base := len(h.series)
 
-		for i, s := range newSeries {
-			h.create(newHashes[i], s)
-		}
-		for _, s := range newSamples {
-			s.ref = uint32(base) + s.ref
+		for hash, ser := range newSeries {
+			h.create(hash, ser[0].labels)
 		}
 
 		h.mtx.Unlock()
 		h.mtx.RLock()
+
+		newLabels = make([]labels.Labels, 0, len(newSeries))
+
+		i := 0
+		for _, ser := range newSeries {
+			newLabels = append(newLabels, ser[0].labels)
+			for _, s := range ser {
+				s.ref = uint32(base + i)
+			}
+			i++
+		}
 	}
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
-	if err := h.wal.Log(newSeries, samples); err != nil {
+	if err := h.wal.Log(newLabels, samples); err != nil {
 		return 0, err
 	}
 
