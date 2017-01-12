@@ -266,6 +266,7 @@ func (a *headAppender) Commit() error {
 }
 
 func (a *headAppender) Rollback() error {
+	putHeadAppendBuffer(a.samples)
 	a.mtx.RUnlock()
 	return nil
 }
