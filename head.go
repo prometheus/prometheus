@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bradfitz/slice"
@@ -27,6 +28,8 @@ type headBlock struct {
 	// hashes contains a collision map of label set hashes of chunks
 	// to their chunk descs.
 	hashes map[uint64][]*memSeries
+
+	nextSeriesID uint64
 
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
@@ -59,9 +62,9 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 
 	err = wal.ReadAll(&walHandler{
 		series: func(lset labels.Labels) {
-			b.create(lset.Hash(), lset)
+			b.create(uint32(b.nextSeriesID), lset.Hash(), lset)
+			b.nextSeriesID++
 			b.stats.SeriesCount++
-			b.stats.ChunkCount++ // head block has one chunk/series
 		},
 		sample: func(s hashedSample) {
 			si := s.ref
@@ -100,6 +103,156 @@ func (h *headBlock) Stats() BlockStats {
 	defer h.stats.mtx.RUnlock()
 
 	return *h.stats
+}
+
+func (h *headBlock) Appender() Appender {
+	h.mtx.RLock()
+	return &headAppender{headBlock: h}
+}
+
+type headAppender struct {
+	*headBlock
+
+	newSeries map[uint32]hashedLabels
+	newLabels []labels.Labels
+	samples   []hashedSample
+}
+
+type hashedLabels struct {
+	hash   uint64
+	labels labels.Labels
+}
+
+func (a *headAppender) SetSeries(lset labels.Labels) (uint64, error) {
+	return a.setSeries(lset.Hash(), lset)
+}
+
+func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error) {
+	if ms := a.get(hash, lset); ms != nil {
+		return uint64(ms.ref), nil
+	}
+
+	id := atomic.AddUint64(&a.nextSeriesID, 1) - 1
+	if a.newSeries == nil {
+		a.newSeries = map[uint32]hashedLabels{}
+	}
+	a.newSeries[uint32(id)] = hashedLabels{hash: hash, labels: lset}
+
+	return id, nil
+}
+
+func (a *headAppender) Add(ref uint64, t int64, v float64) error {
+	// We only act on the last 4 bytes. Anything before is used by higher-order
+	// appenders. We erase it to avoid issues.
+	ref = (ref << 32) >> 32
+
+	// Distinguish between existing series and series created in
+	// this transaction.
+	if int(ref) >= len(a.series) {
+		if _, ok := a.newSeries[uint32(ref)]; !ok {
+			return errNotFound
+		}
+		// TODO(fabxc): we also have to validate here that the
+		// sample sequence is valid.
+		// We also have to revalidate it as we switch locks an create
+		// the new series.
+		a.samples = append(a.samples, hashedSample{
+			ref: uint32(ref),
+			t:   t,
+			v:   v,
+		})
+		return nil
+	}
+
+	ms := a.series[int(ref)]
+	if ms == nil {
+		return errNotFound
+	}
+	c := ms.head()
+
+	// TODO(fabxc): memory series should be locked here already.
+	// Only problem is release of locks in case of a rollback.
+	if t < c.maxTime {
+		return ErrOutOfOrderSample
+	}
+	if c.maxTime == t && ms.lastValue != v {
+		return ErrAmendSample
+	}
+
+	a.samples = append(a.samples, hashedSample{
+		ref: uint32(ref),
+		t:   t,
+		v:   v,
+	})
+	return nil
+}
+
+func (a *headAppender) createSeries() {
+	if len(a.newSeries) == 0 {
+		return
+	}
+	a.newLabels = make([]labels.Labels, 0, len(a.newSeries))
+
+	a.mtx.RUnlock()
+	a.mtx.Lock()
+
+	for id, l := range a.newSeries {
+		// We switched locks and have to re-validate that the series were not
+		// created by another goroutine in the meantime.
+		if int(id) < len(a.series) && a.series[id] != nil {
+			continue
+		}
+		// Series is still new.
+		a.newLabels = append(a.newLabels, l.labels)
+
+		a.create(id, l.hash, l.labels)
+	}
+
+	a.mtx.Unlock()
+	a.mtx.RLock()
+}
+
+func (a *headAppender) Commit() error {
+	defer a.mtx.RUnlock()
+
+	// Write all new series and samples to the WAL and add it to the
+	// in-mem database on success.
+	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
+		return err
+	}
+
+	a.createSeries()
+	var (
+		total = uint64(len(a.samples))
+		mint  = int64(math.MaxInt64)
+		maxt  = int64(math.MinInt64)
+	)
+
+	for _, s := range a.samples {
+		if !a.series[s.ref].append(s.t, s.v) {
+			total--
+		}
+	}
+
+	a.stats.mtx.Lock()
+	defer a.stats.mtx.Unlock()
+
+	a.stats.SampleCount += total
+	a.stats.SeriesCount += uint64(len(a.newSeries))
+
+	if mint < a.stats.MinTime {
+		a.stats.MinTime = mint
+	}
+	if maxt > a.stats.MaxTime {
+		a.stats.MaxTime = maxt
+	}
+
+	return nil
+}
+
+func (a *headAppender) Rollback() error {
+	a.mtx.RUnlock()
+	return nil
 }
 
 type headSeriesReader struct {
@@ -221,13 +374,18 @@ func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
-	s := &memSeries{lset: lset}
+func (h *headBlock) create(ref uint32, hash uint64, lset labels.Labels) *memSeries {
+	s := &memSeries{
+		ref:  ref,
+		lset: lset,
+	}
 
-	// Index the new chunk.
-	s.ref = uint32(len(h.series))
+	// Allocate empty space until we can insert at the given index.
+	for int(ref) >= len(h.series) {
+		h.series = append(h.series, nil)
+	}
+	h.series[ref] = s
 
-	h.series = append(h.series, s)
 	h.hashes[hash] = append(h.hashes[hash], s)
 
 	for _, l := range lset {
@@ -258,126 +416,126 @@ var (
 	ErrOutOfBounds = errors.New("out of bounds")
 )
 
-func (h *headBlock) appendBatch(samples []hashedSample) (int, error) {
-	// Find head chunks for all samples and allocate new IDs/refs for
-	// ones we haven't seen before.
+// func (h *headBlock) appendBatch(samples []hashedSample) (int, error) {
+// 	// Find head chunks for all samples and allocate new IDs/refs for
+// 	// ones we haven't seen before.
 
-	var (
-		newSeries = map[uint64][]*hashedSample{}
-		newLabels []labels.Labels
-	)
+// 	var (
+// 		newSeries = map[uint64][]*hashedSample{}
+// 		newLabels []labels.Labels
+// 	)
 
-	h.mtx.RLock()
-	defer h.mtx.RUnlock()
+// 	h.mtx.RLock()
+// 	defer h.mtx.RUnlock()
 
-	for i := range samples {
-		s := &samples[i]
+// 	for i := range samples {
+// 		s := &samples[i]
 
-		ms := h.get(s.hash, s.labels)
-		if ms != nil {
-			c := ms.head()
+// 		ms := h.get(s.hash, s.labels)
+// 		if ms != nil {
+// 			c := ms.head()
 
-			if s.t < c.maxTime {
-				return 0, ErrOutOfOrderSample
-			}
-			if c.maxTime == s.t && ms.lastValue != s.v {
-				return 0, ErrAmendSample
-			}
-			// TODO(fabxc): sample refs are only scoped within a block for
-			// now and we ignore any previously set value
-			s.ref = ms.ref
-			continue
-		}
+// 			if s.t < c.maxTime {
+// 				return 0, ErrOutOfOrderSample
+// 			}
+// 			if c.maxTime == s.t && ms.lastValue != s.v {
+// 				return 0, ErrAmendSample
+// 			}
+// 			// TODO(fabxc): sample refs are only scoped within a block for
+// 			// now and we ignore any previously set value
+// 			s.ref = ms.ref
+// 			continue
+// 		}
 
-		// TODO(fabxc): technically there's still collision probability here.
-		// Extract the hashmap of the head block and use an instance of it here as well.
-		newSeries[s.hash] = append(newSeries[s.hash], s)
-	}
+// 		// TODO(fabxc): technically there's still collision probability here.
+// 		// Extract the hashmap of the head block and use an instance of it here as well.
+// 		newSeries[s.hash] = append(newSeries[s.hash], s)
+// 	}
 
-	// After the samples were successfully written to the WAL, there may
-	// be no further failures.
-	if len(newSeries) > 0 {
-		newLabels = make([]labels.Labels, 0, len(newSeries))
-		base0 := len(h.series)
+// 	// After the samples were successfully written to the WAL, there may
+// 	// be no further failures.
+// 	if len(newSeries) > 0 {
+// 		newLabels = make([]labels.Labels, 0, len(newSeries))
+// 		base0 := len(h.series)
 
-		h.mtx.RUnlock()
-		h.mtx.Lock()
+// 		h.mtx.RUnlock()
+// 		h.mtx.Lock()
 
-		base1 := len(h.series)
-		i := 0
+// 		base1 := len(h.series)
+// 		i := 0
 
-		for hash, ser := range newSeries {
-			lset := ser[0].labels
-			// We switched locks and have to re-validate that the series were not
-			// created by another goroutine in the meantime.
-			if base1 != base0 {
-				if ms := h.get(hash, lset); ms != nil {
-					for _, s := range ser {
-						s.ref = ms.ref
-					}
-					continue
-				}
-			}
-			// Series is still new.
-			newLabels = append(newLabels, lset)
+// 		for hash, ser := range newSeries {
+// 			lset := ser[0].labels
+// 			// We switched locks and have to re-validate that the series were not
+// 			// created by another goroutine in the meantime.
+// 			if base1 != base0 {
+// 				if ms := h.get(hash, lset); ms != nil {
+// 					for _, s := range ser {
+// 						s.ref = ms.ref
+// 					}
+// 					continue
+// 				}
+// 			}
+// 			// Series is still new.
+// 			newLabels = append(newLabels, lset)
 
-			h.create(hash, lset)
-			// Set sample references to the series we just created.
-			for _, s := range ser {
-				s.ref = uint32(base1 + i)
-			}
-			i++
-		}
+// 			h.create(hash, lset)
+// 			// Set sample references to the series we just created.
+// 			for _, s := range ser {
+// 				s.ref = uint32(base1 + i)
+// 			}
+// 			i++
+// 		}
 
-		h.mtx.Unlock()
-		h.mtx.RLock()
-	}
-	// Write all new series and samples to the WAL and add it to the
-	// in-mem database on success.
-	if err := h.wal.Log(newLabels, samples); err != nil {
-		return 0, err
-	}
+// 		h.mtx.Unlock()
+// 		h.mtx.RLock()
+// 	}
+// 	// Write all new series and samples to the WAL and add it to the
+// 	// in-mem database on success.
+// 	if err := h.wal.Log(newLabels, samples); err != nil {
+// 		return 0, err
+// 	}
 
-	var (
-		total = uint64(len(samples))
-		mint  = int64(math.MaxInt64)
-		maxt  = int64(math.MinInt64)
-	)
-	for _, s := range samples {
-		ser := h.series[s.ref]
+// 	var (
+// 		total = uint64(len(samples))
+// 		mint  = int64(math.MaxInt64)
+// 		maxt  = int64(math.MinInt64)
+// 	)
+// 	for _, s := range samples {
+// 		ser := h.series[s.ref]
 
-		ser.mtx.Lock()
-		ok := ser.append(s.t, s.v)
-		ser.mtx.Unlock()
+// 		ser.mtx.Lock()
+// 		ok := ser.append(s.t, s.v)
+// 		ser.mtx.Unlock()
 
-		if !ok {
-			total--
-			continue
-		}
-		if mint > s.t {
-			mint = s.t
-		}
-		if maxt < s.t {
-			maxt = s.t
-		}
-	}
+// 		if !ok {
+// 			total--
+// 			continue
+// 		}
+// 		if mint > s.t {
+// 			mint = s.t
+// 		}
+// 		if maxt < s.t {
+// 			maxt = s.t
+// 		}
+// 	}
 
-	h.stats.mtx.Lock()
-	defer h.stats.mtx.Unlock()
+// 	h.stats.mtx.Lock()
+// 	defer h.stats.mtx.Unlock()
 
-	h.stats.SampleCount += total
-	h.stats.SeriesCount += uint64(len(newSeries))
-	h.stats.ChunkCount += uint64(len(newSeries)) // head block has one chunk/series
+// 	h.stats.SampleCount += total
+// 	h.stats.SeriesCount += uint64(len(newSeries))
+// 	h.stats.ChunkCount += uint64(len(newSeries)) // head block has one chunk/series
 
-	if mint < h.stats.MinTime {
-		h.stats.MinTime = mint
-	}
-	if maxt > h.stats.MaxTime {
-		h.stats.MaxTime = maxt
-	}
+// 	if mint < h.stats.MinTime {
+// 		h.stats.MinTime = mint
+// 	}
+// 	if maxt > h.stats.MaxTime {
+// 		h.stats.MaxTime = maxt
+// 	}
 
-	return int(total), nil
-}
+// 	return int(total), nil
+// }
 
 func (h *headBlock) fullness() float64 {
 	h.stats.mtx.RLock()

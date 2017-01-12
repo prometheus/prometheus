@@ -181,12 +181,12 @@ func (b *writeBenchmark) ingestScrapes(metrics []model.Metric, scrapeCount int) 
 }
 
 func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount int, baset int64) (uint64, error) {
-	app := b.storage.Appender()
 	ts := baset
 
 	type sample struct {
 		labels labels.Labels
 		value  int64
+		ref    *uint64
 	}
 
 	scrape := make([]*sample, 0, len(metrics))
@@ -200,11 +200,35 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 	total := uint64(0)
 
 	for i := 0; i < scrapeCount; i++ {
+		app := b.storage.Appender()
 		ts += int64(30000)
 
 		for _, s := range scrape {
 			s.value += 1000
-			app.Add(s.labels, ts, float64(s.value))
+
+			if s.ref == nil {
+				ref, err := app.SetSeries(s.labels)
+				if err != nil {
+					panic(err)
+				}
+				s.ref = &ref
+			}
+
+			if err := app.Add(*s.ref, ts, float64(s.value)); err != nil {
+				if err.Error() != "not found" {
+					panic(err)
+				}
+
+				ref, err := app.SetSeries(s.labels)
+				if err != nil {
+					panic(err)
+				}
+				s.ref = &ref
+				if err := app.Add(*s.ref, ts, float64(s.value)); err != nil {
+					panic(err)
+				}
+			}
+
 			total++
 		}
 		if err := app.Commit(); err != nil {

@@ -41,13 +41,13 @@ type Options struct {
 // Appender allows committing batches of samples to a database.
 // The data held by the appender is reset after Commit returndb.
 type Appender interface {
-	// AddSeries registers a new known series label set with the appender
+	// SetSeries registers a new known series label set with the appender
 	// and returns a reference number used to add samples to it over the
 	// life time of the Appender.
-	// AddSeries(Labels) uint64
+	SetSeries(labels.Labels) (uint64, error)
 
 	// Add adds a sample pair for the referenced seriedb.
-	Add(lset labels.Labels, t int64, v float64) error
+	Add(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
@@ -74,6 +74,8 @@ type DB struct {
 	mtx       sync.RWMutex
 	persisted []*persistedBlock
 	heads     []*headBlock
+	headGen   uint8
+
 	compactor *compactor
 
 	compactc chan struct{}
@@ -324,60 +326,88 @@ func (db *DB) Close() error {
 }
 
 func (db *DB) Appender() Appender {
-	return &dbAppender{db: db}
+	db.mtx.RLock()
+
+	return &dbAppender{
+		db:   db,
+		head: db.heads[len(db.heads)-1].Appender().(*headAppender),
+		gen:  db.headGen,
+	}
 }
 
 type dbAppender struct {
-	db  *DB
-	buf []hashedSample
+	db   *DB
+	gen  uint8
+	head *headAppender
 }
 
-func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) error {
-	return a.add(hashedSample{
-		hash:   lset.Hash(),
-		labels: lset,
-		t:      t,
-		v:      v,
-	})
+func (a *dbAppender) SetSeries(lset labels.Labels) (uint64, error) {
+	ref, err := a.head.SetSeries(lset)
+	if err != nil {
+		return 0, err
+	}
+	return ref | (uint64(a.gen) << 32), nil
 }
 
-func (a *dbAppender) add(s hashedSample) error {
-	a.buf = append(a.buf, s)
-	return nil
+func (a *dbAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error) {
+	ref, err := a.head.setSeries(hash, lset)
+	if err != nil {
+		return 0, err
+	}
+	return ref | (uint64(a.gen) << 32), nil
+}
+
+func (a *dbAppender) Add(ref uint64, t int64, v float64) error {
+	// We store the head generation in the 4th byte and use it to reject
+	// stale references.
+	gen := uint8((ref << 24) >> 56)
+
+	if gen != a.gen {
+		return errNotFound
+	}
+	return a.head.Add(ref, t, v)
 }
 
 func (a *dbAppender) Commit() error {
-	err := a.db.appendBatch(a.buf)
-	a.buf = a.buf[:0]
-	return err
-}
+	defer a.db.mtx.RUnlock()
 
-func (db *DB) appendBatch(samples []hashedSample) error {
-	if len(samples) == 0 {
-		return nil
-	}
-	db.mtx.RLock()
-	defer db.mtx.RUnlock()
+	err := a.head.Commit()
 
-	head := db.heads[len(db.heads)-1]
-
-	// TODO(fabxc): distinguish samples between concurrent heads for
-	// different time blocks. Those may occurr during transition to still
-	// allow late samples to arrive for a previous block.
-	n, err := head.appendBatch(samples)
-	if err == nil {
-		db.metrics.samplesAppended.Add(float64(n))
-	}
-
-	if head.fullness() > 1.0 {
+	if a.head.headBlock.fullness() > 1.0 {
 		select {
-		case db.cutc <- struct{}{}:
+		case a.db.cutc <- struct{}{}:
 		default:
 		}
 	}
-
 	return err
 }
+
+// func (db *DB) appendBatch(samples []hashedSample) error {
+// 	if len(samples) == 0 {
+// 		return nil
+// 	}
+// 	db.mtx.RLock()
+// 	defer db.mtx.RUnlock()
+
+// 	head := db.heads[len(db.heads)-1]
+
+// 	// TODO(fabxc): distinguish samples between concurrent heads for
+// 	// different time blocks. Those may occurr during transition to still
+// 	// allow late samples to arrive for a previous block.
+// 	n, err := head.appendBatch(samples)
+// 	if err == nil {
+// 		db.metrics.samplesAppended.Add(float64(n))
+// 	}
+
+// 	if head.fullness() > 1.0 {
+// 		select {
+// 		case db.cutc <- struct{}{}:
+// 		default:
+// 		}
+// 	}
+
+// 	return err
+// }
 
 func (db *DB) headForDir(dir string) (int, bool) {
 	for i, b := range db.heads {
@@ -514,6 +544,7 @@ func (db *DB) cut() error {
 		return err
 	}
 	db.heads = append(db.heads, newHead)
+	db.headGen++
 
 	return nil
 }
@@ -613,39 +644,38 @@ func (db *PartitionedDB) Appender() Appender {
 	app := &partitionedAppender{db: db}
 
 	for _, p := range db.Partitions {
-		app.buckets = append(app.buckets, p.Appender().(*dbAppender))
+		app.partitions = append(app.partitions, p.Appender().(*dbAppender))
 	}
 	return app
 }
 
 type partitionedAppender struct {
-	db      *PartitionedDB
-	buckets []*dbAppender
+	db         *PartitionedDB
+	partitions []*dbAppender
 }
 
-func (ba *partitionedAppender) SetSeries(lset labels.Labels) (uint32, error) {
-
-	return 0, nil
-}
-
-func (a *partitionedAppender) Add(lset labels.Labels, t int64, v float64) error {
+func (a *partitionedAppender) SetSeries(lset labels.Labels) (uint64, error) {
 	h := lset.Hash()
-	s := h >> (64 - a.db.partitionPow)
+	p := h >> (64 - a.db.partitionPow)
 
-	return a.buckets[s].add(hashedSample{
-		hash:   h,
-		labels: lset,
-		t:      t,
-		v:      v,
-	})
+	ref, err := a.partitions[p].setSeries(h, lset)
+	if err != nil {
+		return 0, err
+	}
+	return ref | (p << 40), nil
 }
 
-func (ba *partitionedAppender) Commit() error {
+func (a *partitionedAppender) Add(ref uint64, t int64, v float64) error {
+	p := uint8((ref << 16) >> 56)
+	return a.partitions[p].Add(ref, t, v)
+}
+
+func (a *partitionedAppender) Commit() error {
 	var merr MultiError
 
 	// Spill buckets into partitiondb.
-	for _, b := range ba.buckets {
-		merr.Add(b.Commit())
+	for _, p := range a.partitions {
+		merr.Add(p.Commit())
 	}
 	return merr.Err()
 }
