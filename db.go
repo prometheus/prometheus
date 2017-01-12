@@ -382,33 +382,6 @@ func (a *dbAppender) Commit() error {
 	return err
 }
 
-// func (db *DB) appendBatch(samples []hashedSample) error {
-// 	if len(samples) == 0 {
-// 		return nil
-// 	}
-// 	db.mtx.RLock()
-// 	defer db.mtx.RUnlock()
-
-// 	head := db.heads[len(db.heads)-1]
-
-// 	// TODO(fabxc): distinguish samples between concurrent heads for
-// 	// different time blocks. Those may occurr during transition to still
-// 	// allow late samples to arrive for a previous block.
-// 	n, err := head.appendBatch(samples)
-// 	if err == nil {
-// 		db.metrics.samplesAppended.Add(float64(n))
-// 	}
-
-// 	if head.fullness() > 1.0 {
-// 		select {
-// 		case db.cutc <- struct{}{}:
-// 		default:
-// 		}
-// 	}
-
-// 	return err
-// }
-
 func (db *DB) headForDir(dir string) (int, bool) {
 	for i, b := range db.heads {
 		if b.Dir() == dir {
