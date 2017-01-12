@@ -150,7 +150,7 @@ func (b *writeBenchmark) ingestScrapes(metrics []model.Metric, scrapeCount int) 
 		lbls = append(lbls, lset)
 	}
 
-	for i := 0; i < scrapeCount; i += 25 {
+	for i := 0; i < scrapeCount; i += 50 {
 		lbls := lbls
 		for len(lbls) > 0 {
 			l := 1000
@@ -162,7 +162,7 @@ func (b *writeBenchmark) ingestScrapes(metrics []model.Metric, scrapeCount int) 
 
 			wg.Add(1)
 			go func() {
-				n, err := b.ingestScrapesShard(batch, 25, int64(30000*i))
+				n, err := b.ingestScrapesShard(batch, 50, int64(30000*i))
 				if err != nil {
 					// exitWithError(err)
 					fmt.Println(" err", err)

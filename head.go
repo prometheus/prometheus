@@ -107,7 +107,21 @@ func (h *headBlock) Stats() BlockStats {
 
 func (h *headBlock) Appender() Appender {
 	h.mtx.RLock()
-	return &headAppender{headBlock: h}
+	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
+}
+
+var headPool = sync.Pool{}
+
+func getHeadAppendBuffer() []hashedSample {
+	b := headPool.Get()
+	if b == nil {
+		return make([]hashedSample, 0, 512)
+	}
+	return b.([]hashedSample)
+}
+
+func putHeadAppendBuffer(b []hashedSample) {
+	headPool.Put(b[:0])
 }
 
 type headAppender struct {
@@ -213,6 +227,7 @@ func (a *headAppender) createSeries() {
 }
 
 func (a *headAppender) Commit() error {
+	defer putHeadAppendBuffer(a.samples)
 	defer a.mtx.RUnlock()
 
 	// Write all new series and samples to the WAL and add it to the
