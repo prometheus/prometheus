@@ -351,16 +351,20 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels model.LabelSet `json:"labels"`
 
-	ScrapeUrl string `json:"scrapeUrl"`
+	ScrapeURL string `json:"scrapeUrl"`
 
 	LastError  string                 `json:"lastError"`
 	LastScrape time.Time              `json:"lastScrape"`
 	Health     retrieval.TargetHealth `json:"health"`
 }
 
+type TargetDiscovery struct {
+	ActiveTargets []*Target `json:"activeTargets"`
+}
+
 func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	targets := api.targetRetriever.Targets()
-	res := make([]*Target, len(targets))
+	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(targets))}
 
 	for i, t := range targets {
 		lastErrStr := ""
@@ -369,10 +373,10 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 			lastErrStr = lastErr.Error()
 		}
 
-		res[i] = &Target{
+		res.ActiveTargets[i] = &Target{
 			DiscoveredLabels: t.DiscoveredLabels(),
 			Labels:           t.Labels(),
-			ScrapeUrl:        t.URL().String(),
+			ScrapeURL:        t.URL().String(),
 			LastError:        lastErrStr,
 			LastScrape:       t.LastScrape(),
 			Health:           t.Health(),

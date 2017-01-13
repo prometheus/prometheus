@@ -440,12 +440,14 @@ func TestEndpoints(t *testing.T) {
 			}{2},
 		}, {
 			endpoint: api.targets,
-			response: []*Target{
-				&Target{
-					DiscoveredLabels: model.LabelSet{},
-					Labels:           model.LabelSet{},
-					ScrapeUrl:        "http://example.com:8080/metrics",
-					Health:           "unknown",
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					&Target{
+						DiscoveredLabels: model.LabelSet{},
+						Labels:           model.LabelSet{},
+						ScrapeURL:        "http://example.com:8080/metrics",
+						Health:           "unknown",
+					},
 				},
 			},
 		}, {
