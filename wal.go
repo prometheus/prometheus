@@ -88,7 +88,7 @@ func OpenWAL(dir string, l log.Logger, flushInterval time.Duration) (*WAL, error
 }
 
 type walHandler struct {
-	sample func(hashedSample)
+	sample func(refdSample)
 	series func(labels.Labels)
 }
 
@@ -110,7 +110,7 @@ func (w *WAL) ReadAll(h *walHandler) error {
 }
 
 // Log writes a batch of new series labels and samples to the log.
-func (w *WAL) Log(series []labels.Labels, samples []hashedSample) error {
+func (w *WAL) Log(series []labels.Labels, samples []refdSample) error {
 	if err := w.enc.encodeSeries(series); err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (e *walEncoder) encodeSeries(series []labels.Labels) error {
 	return e.entry(WALEntrySeries, walSeriesSimple, buf)
 }
 
-func (e *walEncoder) encodeSamples(samples []hashedSample) error {
+func (e *walEncoder) encodeSamples(samples []refdSample) error {
 	if len(samples) == 0 {
 		return nil
 	}
@@ -282,7 +282,7 @@ func (e *walEncoder) encodeSamples(samples []hashedSample) error {
 	// TODO(fabxc): optimize for all samples having the same timestamp.
 	first := samples[0]
 
-	binary.BigEndian.PutUint32(b, first.ref)
+	binary.BigEndian.PutUint64(b, first.ref)
 	buf = append(buf, b[:4]...)
 	binary.BigEndian.PutUint64(b, uint64(first.t))
 	buf = append(buf, b[:8]...)
@@ -351,20 +351,21 @@ func (d *walDecoder) decodeSamples(flag byte, b []byte) error {
 		return errors.Wrap(errInvalidSize, "header length")
 	}
 	var (
-		baseRef  = binary.BigEndian.Uint32(b)
+		baseRef  = binary.BigEndian.Uint64(b)
 		baseTime = int64(binary.BigEndian.Uint64(b[4:]))
 	)
 	b = b[12:]
 
 	for len(b) > 0 {
-		var smpl hashedSample
+		var smpl refdSample
 
 		dref, n := binary.Varint(b)
 		if n < 1 {
 			return errors.Wrap(errInvalidSize, "sample ref delta")
 		}
 		b = b[n:]
-		smpl.ref = uint32(int64(baseRef) + dref)
+
+		smpl.ref = uint64(int64(baseRef) + dref)
 
 		dtime, n := binary.Varint(b)
 		if n < 1 {

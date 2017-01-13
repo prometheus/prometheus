@@ -352,7 +352,7 @@ func (a *dbAppender) SetSeries(lset labels.Labels) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ref | (uint64(a.gen) << 32), nil
+	return ref | (uint64(a.gen) << 40), nil
 }
 
 func (a *dbAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error) {
@@ -360,13 +360,13 @@ func (a *dbAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
-	return ref | (uint64(a.gen) << 32), nil
+	return ref | (uint64(a.gen) << 40), nil
 }
 
 func (a *dbAppender) Add(ref uint64, t int64, v float64) error {
 	// We store the head generation in the 4th byte and use it to reject
 	// stale references.
-	gen := uint8((ref << 24) >> 56)
+	gen := uint8((ref << 16) >> 56)
 
 	if gen != a.gen {
 		return errNotFound
@@ -647,11 +647,11 @@ func (a *partitionedAppender) SetSeries(lset labels.Labels) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ref | (p << 40), nil
+	return ref | (p << 48), nil
 }
 
 func (a *partitionedAppender) Add(ref uint64, t int64, v float64) error {
-	p := uint8((ref << 16) >> 56)
+	p := uint8((ref << 8) >> 56)
 	return a.partitions[p].Add(ref, t, v)
 }
 

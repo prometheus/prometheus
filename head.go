@@ -3,9 +3,9 @@ package tsdb
 import (
 	"errors"
 	"math"
+	"math/rand"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bradfitz/slice"
@@ -28,8 +28,6 @@ type headBlock struct {
 	// hashes contains a collision map of label set hashes of chunks
 	// to their chunk descs.
 	hashes map[uint64][]*memSeries
-
-	nextSeriesID uint64
 
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
@@ -62,11 +60,10 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 
 	err = wal.ReadAll(&walHandler{
 		series: func(lset labels.Labels) {
-			b.create(uint32(b.nextSeriesID), lset.Hash(), lset)
-			b.nextSeriesID++
+			b.create(lset.Hash(), lset)
 			b.stats.SeriesCount++
 		},
-		sample: func(s hashedSample) {
+		sample: func(s refdSample) {
 			si := s.ref
 
 			cd := b.series[si]
@@ -112,32 +109,38 @@ func (h *headBlock) Appender() Appender {
 
 var headPool = sync.Pool{}
 
-func getHeadAppendBuffer() []hashedSample {
+func getHeadAppendBuffer() []refdSample {
 	b := headPool.Get()
 	if b == nil {
-		return make([]hashedSample, 0, 512)
+		return make([]refdSample, 0, 512)
 	}
-	return b.([]hashedSample)
+	return b.([]refdSample)
 }
 
-func putHeadAppendBuffer(b []hashedSample) {
+func putHeadAppendBuffer(b []refdSample) {
 	headPool.Put(b[:0])
 }
 
 type headAppender struct {
 	*headBlock
 
-	newSeries map[uint32]hashedLabels
-	newHashes map[uint64]uint32
+	newSeries map[uint64]hashedLabels
+	newHashes map[uint64]uint64
+	refmap    map[uint64]uint64
 	newLabels []labels.Labels
-	newRefs   []uint32
 
-	samples []hashedSample
+	samples []refdSample
 }
 
 type hashedLabels struct {
 	hash   uint64
 	labels labels.Labels
+}
+
+type refdSample struct {
+	ref uint64
+	t   int64
+	v   float64
 }
 
 func (a *headAppender) SetSeries(lset labels.Labels) (uint64, error) {
@@ -152,35 +155,41 @@ func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error
 		return uint64(ref), nil
 	}
 
-	id := atomic.AddUint64(&a.nextSeriesID, 1) - 1
-	if a.newSeries == nil {
-		a.newSeries = map[uint32]hashedLabels{}
-		a.newHashes = map[uint64]uint32{}
-	}
-	a.newSeries[uint32(id)] = hashedLabels{hash: hash, labels: lset}
-	a.newHashes[hash] = uint32(id)
-	a.newRefs = append(a.newRefs, uint32(id))
+	// We only know the actual reference after committing. We generate an
+	// intermediate reference only valid for this batch.
+	// It is indicated by the the LSB of the 4th byte being set to 1.
+	// We use a random ID to avoid collisions when new series are created
+	// in two subsequent batches. (TODO(fabxc): safe enough?)
+	ref := uint64(rand.Int31()) | (1 << 32)
 
-	return id, nil
+	if a.newSeries == nil {
+		a.newSeries = map[uint64]hashedLabels{}
+		a.newHashes = map[uint64]uint64{}
+		a.refmap = map[uint64]uint64{}
+	}
+	a.newSeries[ref] = hashedLabels{hash: hash, labels: lset}
+	a.newHashes[hash] = ref
+
+	return ref, nil
 }
 
 func (a *headAppender) Add(ref uint64, t int64, v float64) error {
-	// We only act on the last 4 bytes. Anything before is used by higher-order
-	// appenders. We erase it to avoid issues.
-	ref = (ref << 32) >> 32
+	// We only own the first 5 bytes of the reference. Anything before is
+	// used by higher-order appenders. We erase it to avoid issues.
+	ref = (ref << 31) >> 31
 
 	// Distinguish between existing series and series created in
 	// this transaction.
-	if int(ref) >= len(a.series) {
-		if _, ok := a.newSeries[uint32(ref)]; !ok {
+	if ref&(1<<32) > 0 {
+		if _, ok := a.newSeries[ref]; !ok {
 			return errNotFound
 		}
 		// TODO(fabxc): we also have to validate here that the
 		// sample sequence is valid.
 		// We also have to revalidate it as we switch locks an create
 		// the new series.
-		a.samples = append(a.samples, hashedSample{
-			ref: uint32(ref),
+		a.samples = append(a.samples, refdSample{
+			ref: ref,
 			t:   t,
 			v:   v,
 		})
@@ -202,8 +211,8 @@ func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 		return ErrAmendSample
 	}
 
-	a.samples = append(a.samples, hashedSample{
-		ref: uint32(ref),
+	a.samples = append(a.samples, refdSample{
+		ref: ref,
 		t:   t,
 		v:   v,
 	})
@@ -215,21 +224,27 @@ func (a *headAppender) createSeries() {
 		return
 	}
 	a.newLabels = make([]labels.Labels, 0, len(a.newSeries))
+	base0 := len(a.series)
 
 	a.mtx.RUnlock()
 	a.mtx.Lock()
 
-	for _, ref := range a.newRefs {
-		l := a.newSeries[ref]
+	base1 := len(a.series)
+
+	for ref, l := range a.newSeries {
 		// We switched locks and have to re-validate that the series were not
 		// created by another goroutine in the meantime.
-		if int(ref) < len(a.series) && a.series[ref] != nil {
-			continue
+		if base1 > base0 {
+			if ms := a.get(l.hash, l.labels); ms != nil {
+				a.refmap[ref] = uint64(ms.ref)
+				continue
+			}
 		}
 		// Series is still new.
 		a.newLabels = append(a.newLabels, l.labels)
+		a.refmap[ref] = uint64(len(a.series))
 
-		a.create(ref, l.hash, l.labels)
+		a.create(l.hash, l.labels)
 	}
 
 	a.mtx.Unlock()
@@ -253,7 +268,12 @@ func (a *headAppender) Commit() error {
 		maxt  = int64(math.MinInt64)
 	)
 
-	for _, s := range a.samples {
+	for i := range a.samples {
+		s := &a.samples[i]
+
+		if s.ref&(1<<32) > 0 {
+			s.ref = a.refmap[s.ref]
+		}
 		if !a.series[s.ref].append(s.t, s.v) {
 			total--
 		}
@@ -401,17 +421,14 @@ func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (h *headBlock) create(ref uint32, hash uint64, lset labels.Labels) *memSeries {
+func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	s := &memSeries{
-		ref:  ref,
 		lset: lset,
+		ref:  uint32(len(h.series)),
 	}
 
 	// Allocate empty space until we can insert at the given index.
-	for int(ref) >= len(h.series) {
-		h.series = append(h.series, nil)
-	}
-	h.series[ref] = s
+	h.series = append(h.series, s)
 
 	h.hashes[hash] = append(h.hashes[hash], s)
 
