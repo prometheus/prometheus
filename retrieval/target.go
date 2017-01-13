@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
@@ -233,7 +234,7 @@ type ruleLabelsAppender struct {
 	labels labels.Labels
 }
 
-func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) error {
+func (app ruleLabelsAppender) SetSeries(lset labels.Labels) (uint64, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -244,7 +245,7 @@ func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) error 
 		lb.Set(l.Name, l.Value)
 	}
 
-	return app.Appender.Add(lb.Labels(), t, v)
+	return app.Appender.SetSeries(lb.Labels())
 }
 
 type honorLabelsAppender struct {
@@ -255,7 +256,7 @@ type honorLabelsAppender struct {
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) error {
+func (app honorLabelsAppender) SetSeries(lset labels.Labels) (uint64, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -263,8 +264,7 @@ func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) error
 			lb.Set(l.Name, l.Value)
 		}
 	}
-
-	return app.Appender.Add(lb.Labels(), t, v)
+	return app.Appender.SetSeries(lb.Labels())
 }
 
 // Applies a set of relabel configurations to the sample's metric
@@ -274,14 +274,14 @@ type relabelAppender struct {
 	relabelings []*config.RelabelConfig
 }
 
-func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) error {
-	lset = relabel.Process(lset, app.relabelings...)
+var errSeriesDropped = errors.New("series dropped")
 
-	// Check if the timeseries was dropped.
+func (app relabelAppender) SetSeries(lset labels.Labels) (uint64, error) {
+	lset = relabel.Process(lset, app.relabelings...)
 	if lset == nil {
-		return nil
+		return 0, errSeriesDropped
 	}
-	return app.Appender.Add(lset, t, v)
+	return app.Appender.SetSeries(lset)
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.

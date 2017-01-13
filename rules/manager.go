@@ -275,8 +275,19 @@ func (g *Group) Eval() {
 				numDuplicates = 0
 			)
 
+			app, err := g.opts.Appendable.Appender()
+			if err != nil {
+				log.With("err", err).Warn("creating appender failed")
+				return
+			}
+
 			for _, s := range vector {
-				if err := g.opts.SampleAppender.Add(s.Metric, s.T, s.V); err != nil {
+				ref, err := app.SetSeries(s.Metric)
+				if err != nil {
+					log.With("sample", s).With("error", err).Warn("Setting metric failed")
+					continue
+				}
+				if err := app.Add(ref, s.T, s.V); err != nil {
 					switch err {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
@@ -295,7 +306,7 @@ func (g *Group) Eval() {
 			if numDuplicates > 0 {
 				log.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
 			}
-			if err := g.opts.SampleAppender.Commit(); err != nil {
+			if err := app.Commit(); err != nil {
 				log.With("err", err).Warn("rule sample appending failed")
 			}
 		}(rule)
@@ -341,13 +352,17 @@ type Manager struct {
 	block  chan struct{}
 }
 
+type Appendable interface {
+	Appender() (storage.Appender, error)
+}
+
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL    *url.URL
-	QueryEngine    *promql.Engine
-	Context        context.Context
-	Notifier       *notifier.Notifier
-	SampleAppender storage.Appender
+	ExternalURL *url.URL
+	QueryEngine *promql.Engine
+	Context     context.Context
+	Notifier    *notifier.Notifier
+	Appendable  Appendable
 }
 
 // NewManager returns an implementation of Manager, ready to be started

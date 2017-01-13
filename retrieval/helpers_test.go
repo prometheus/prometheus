@@ -27,31 +27,41 @@ func (a nopAppendable) Appender() (storage.Appender, error) {
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(l labels.Labels, t int64, v float64) error { return nil }
-func (a nopAppender) Commit() error                                 { return nil }
+func (a nopAppender) SetSeries(labels.Labels) (uint64, error) { return 0, nil }
+func (a nopAppender) Add(uint64, int64, float64) error        { return nil }
+func (a nopAppender) Commit() error                           { return nil }
+func (a nopAppender) Rollback() error                         { return nil }
 
 type collectResultAppender struct {
-	result    []sample
-	throttled bool
+	refs   map[uint64]labels.Labels
+	result []sample
 }
 
-func (a *collectResultAppender) Add(l labels.Labels, t int64, v float64) error {
+func (a *collectResultAppender) SetSeries(l labels.Labels) (uint64, error) {
+	if a.refs == nil {
+		a.refs = map[uint64]labels.Labels{}
+	}
+	ref := uint64(len(a.refs))
+	a.refs[ref] = l
+	return ref, nil
+}
+
+func (a *collectResultAppender) Add(ref uint64, t int64, v float64) error {
 	// for ln, lv := range s.Metric {
 	// 	if len(lv) == 0 {
 	// 		delete(s.Metric, ln)
 	// 	}
 	// }
 	a.result = append(a.result, sample{
-		metric: l,
+		metric: a.refs[ref],
 		t:      t,
 		v:      v,
 	})
 	return nil
 }
 
-func (a *collectResultAppender) Commit() error {
-	return nil
-}
+func (a *collectResultAppender) Commit() error   { return nil }
+func (a *collectResultAppender) Rollback() error { return nil }
 
 // fakeTargetProvider implements a TargetProvider and allows manual injection
 // of TargetGroups through the update channel.

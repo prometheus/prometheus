@@ -280,14 +280,21 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...sequenceValue) {
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.Appender) {
+func (cmd *loadCmd) append(a storage.Appender) error {
 	for h, smpls := range cmd.defs {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			a.Add(m, s.T, s.V)
+			ref, err := a.SetSeries(m)
+			if err != nil {
+				return err
+			}
+			if err := a.Add(ref, s.T, s.V); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // evalCmd is a command that evaluates an expression for the given time (range)
@@ -473,7 +480,10 @@ func (t *Test) exec(tc testCommand) error {
 		if err != nil {
 			return err
 		}
-		cmd.append(app)
+		if err := cmd.append(app); err != nil {
+			app.Rollback()
+			return err
+		}
 
 		if err := app.Commit(); err != nil {
 			return err

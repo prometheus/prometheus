@@ -139,7 +139,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app, reportApp storage.Appender) loop {
+	newLoop := func(ctx context.Context, s scraper, app, reportApp func() storage.Appender) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -351,8 +351,8 @@ func TestScrapeLoopRun(t *testing.T) {
 		errc   = make(chan error)
 
 		scraper   = &testScraper{}
-		app       = &nopAppender{}
-		reportApp = &nopAppender{}
+		app       = func() storage.Appender { return &nopAppender{} }
+		reportApp = func() storage.Appender { return &nopAppender{} }
 	)
 	defer close(signal)
 

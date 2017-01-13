@@ -102,7 +102,7 @@ type scrapePool struct {
 	loops   map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
-	newLoop func(context.Context, scraper, storage.Appender, storage.Appender) loop
+	newLoop func(context.Context, scraper, func() storage.Appender, func() storage.Appender) loop
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable) *scrapePool {
@@ -171,7 +171,14 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		var (
 			t       = sp.targets[fp]
 			s       = &targetScraper{Target: t, client: sp.client}
-			newLoop = sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
+			newLoop = sp.newLoop(sp.ctx, s,
+				func() storage.Appender {
+					return sp.sampleAppender(t)
+				},
+				func() storage.Appender {
+					return sp.reportAppender(t)
+				},
+			)
 		)
 		wg.Add(1)
 
@@ -227,12 +234,20 @@ func (sp *scrapePool) sync(targets []*Target) {
 	)
 
 	for _, t := range targets {
+		t := t
 		hash := t.hash()
 		uniqueTargets[hash] = struct{}{}
 
 		if _, ok := sp.targets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client}
-			l := sp.newLoop(sp.ctx, s, sp.sampleAppender(t), sp.reportAppender(t))
+			l := sp.newLoop(sp.ctx, s,
+				func() storage.Appender {
+					return sp.sampleAppender(t)
+				},
+				func() storage.Appender {
+					return sp.reportAppender(t)
+				},
+			)
 
 			sp.targets[hash] = t
 			sp.loops[hash] = l
@@ -378,15 +393,15 @@ type loop interface {
 type scrapeLoop struct {
 	scraper scraper
 
-	appender       storage.Appender
-	reportAppender storage.Appender
+	appender       func() storage.Appender
+	reportAppender func() storage.Appender
 
 	done   chan struct{}
 	ctx    context.Context
 	cancel func()
 }
 
-func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp storage.Appender) loop {
+func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp func() storage.Appender) loop {
 	sl := &scrapeLoop{
 		scraper:        sc,
 		appender:       app,
@@ -481,9 +496,15 @@ func (sl *scrapeLoop) append(samples samples) {
 		numOutOfOrder = 0
 		numDuplicates = 0
 	)
+	app := sl.appender()
 
 	for _, s := range samples {
-		if err := sl.appender.Add(s.metric, s.t, s.v); err != nil {
+		ref, err := app.SetSeries(s.metric)
+		if err != nil {
+			log.With("sample", s).With("error", err).Debug("Setting metric failed")
+			continue
+		}
+		if err := app.Add(ref, s.t, s.v); err != nil {
 			switch err {
 			case storage.ErrOutOfOrderSample:
 				numOutOfOrder++
@@ -503,7 +524,7 @@ func (sl *scrapeLoop) append(samples samples) {
 		log.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
 	}
 
-	if err := sl.appender.Commit(); err != nil {
+	if err := app.Commit(); err != nil {
 		log.With("err", err).Warn("Error commiting scrape")
 	}
 }
@@ -518,6 +539,8 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 		health = 1
 	}
 
+	app := sl.reportAppender()
+
 	var (
 		healthMet = labels.Labels{
 			labels.Label{Name: labels.MetricName, Value: scrapeHealthMetricName},
@@ -530,17 +553,29 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 		}
 	)
 
-	if err := sl.reportAppender.Add(healthMet, ts, health); err != nil {
+	ref, err := app.SetSeries(healthMet)
+	if err != nil {
+		panic(err)
+	}
+	if err := app.Add(ref, ts, health); err != nil {
 		log.With("err", err).Warn("Scrape health sample discarded")
 	}
-	if err := sl.reportAppender.Add(durationMet, ts, duration.Seconds()); err != nil {
+	ref, err = app.SetSeries(durationMet)
+	if err != nil {
+		panic(err)
+	}
+	if err := app.Add(ref, ts, duration.Seconds()); err != nil {
 		log.With("err", err).Warn("Scrape duration sample discarded")
 	}
-	if err := sl.reportAppender.Add(countMet, ts, float64(scrapedSamples)); err != nil {
+	ref, err = app.SetSeries(countMet)
+	if err != nil {
+		panic(err)
+	}
+	if err := app.Add(ref, ts, float64(scrapedSamples)); err != nil {
 		log.With("err", err).Warn("Scrape sample count sample discarded")
 	}
 
-	if err := sl.reportAppender.Commit(); err != nil {
+	if err := app.Commit(); err != nil {
 		log.With("err", err).Warn("Commiting report samples failed")
 	}
 }
