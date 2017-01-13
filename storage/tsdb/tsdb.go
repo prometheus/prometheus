@@ -73,11 +73,16 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) Add(lset labels.Labels, t int64, v float64) error {
-	return a.a.Add(toTSDBLabels(lset), t, v)
+func (a appender) SetSeries(lset labels.Labels) (uint64, error) {
+	return a.a.SetSeries(toTSDBLabels(lset))
 }
 
-func (a appender) Commit() error { return a.a.Commit() }
+func (a appender) Add(ref uint64, t int64, v float64) error {
+	return a.a.Add(ref, t, v)
+}
+
+func (a appender) Commit() error   { return a.a.Commit() }
+func (a appender) Rollback() error { return a.a.Rollback() }
 
 func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 	switch m.Type {

@@ -84,12 +84,6 @@ func Main() int {
 		return 1
 	}
 
-	sampleAppender, err := localStorage.Appender()
-	if err != nil {
-		log.Errorf("Creating sample appender failed: %s", err)
-		return 1
-	}
-
 	// reloadableRemoteStorage := remote.New()
 	// sampleAppender = append(sampleAppender, reloadableRemoteStorage)
 	// reloadables = append(reloadables, reloadableRemoteStorage)
@@ -102,11 +96,11 @@ func Main() int {
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		SampleAppender: sampleAppender,
-		Notifier:       notifier,
-		QueryEngine:    queryEngine,
-		Context:        ctx,
-		ExternalURL:    cfg.web.ExternalURL,
+		Appendable:  localStorage,
+		Notifier:    notifier,
+		QueryEngine: queryEngine,
+		Context:     ctx,
+		ExternalURL: cfg.web.ExternalURL,
 	})
 
 	cfg.web.Context = ctx
