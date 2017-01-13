@@ -123,7 +123,8 @@ func Open(dir string, logger log.Logger) (db *DB, err error) {
 			return nil, err
 		}
 	}
-	r := prometheus.DefaultRegisterer
+	var r prometheus.Registerer
+	// r := prometheus.DefaultRegisterer
 
 	db = &DB{
 		dir:      dir,

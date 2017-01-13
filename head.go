@@ -128,8 +128,11 @@ type headAppender struct {
 	*headBlock
 
 	newSeries map[uint32]hashedLabels
+	newHashes map[uint64]uint32
 	newLabels []labels.Labels
-	samples   []hashedSample
+	newRefs   []uint32
+
+	samples []hashedSample
 }
 
 type hashedLabels struct {
@@ -145,12 +148,18 @@ func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error
 	if ms := a.get(hash, lset); ms != nil {
 		return uint64(ms.ref), nil
 	}
+	if ref, ok := a.newHashes[hash]; ok {
+		return uint64(ref), nil
+	}
 
 	id := atomic.AddUint64(&a.nextSeriesID, 1) - 1
 	if a.newSeries == nil {
 		a.newSeries = map[uint32]hashedLabels{}
+		a.newHashes = map[uint64]uint32{}
 	}
 	a.newSeries[uint32(id)] = hashedLabels{hash: hash, labels: lset}
+	a.newHashes[hash] = uint32(id)
+	a.newRefs = append(a.newRefs, uint32(id))
 
 	return id, nil
 }
@@ -210,16 +219,17 @@ func (a *headAppender) createSeries() {
 	a.mtx.RUnlock()
 	a.mtx.Lock()
 
-	for id, l := range a.newSeries {
+	for _, ref := range a.newRefs {
+		l := a.newSeries[ref]
 		// We switched locks and have to re-validate that the series were not
 		// created by another goroutine in the meantime.
-		if int(id) < len(a.series) && a.series[id] != nil {
+		if int(ref) < len(a.series) && a.series[ref] != nil {
 			continue
 		}
 		// Series is still new.
 		a.newLabels = append(a.newLabels, l.labels)
 
-		a.create(id, l.hash, l.labels)
+		a.create(ref, l.hash, l.labels)
 	}
 
 	a.mtx.Unlock()
@@ -228,15 +238,15 @@ func (a *headAppender) createSeries() {
 
 func (a *headAppender) Commit() error {
 	defer putHeadAppendBuffer(a.samples)
-	defer a.mtx.RUnlock()
-
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
 	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
+		a.mtx.RUnlock()
 		return err
 	}
 
 	a.createSeries()
+
 	var (
 		total = uint64(len(a.samples))
 		mint  = int64(math.MaxInt64)
@@ -248,6 +258,7 @@ func (a *headAppender) Commit() error {
 			total--
 		}
 	}
+	a.mtx.RUnlock()
 
 	a.stats.mtx.Lock()
 	defer a.stats.mtx.Unlock()

@@ -26,7 +26,23 @@ func (p *memPostings) get(t term) Postings {
 // term argument appears twice.
 func (p *memPostings) add(id uint32, terms ...term) {
 	for _, t := range terms {
-		p.m[t] = append(p.m[t], id)
+		// We expect IDs to roughly be appended in order but some concurrency
+		// related out of order at the end. We do insertion sort from the end
+		// to account for it.
+		l := p.m[t]
+		i := len(l) - 1
+
+		for ; i >= 0; i-- {
+			if id > l[i] {
+				break
+			}
+		}
+		l = append(l, 0)
+
+		copy(l[i+2:], l[i+1:])
+		l[i+1] = id
+
+		p.m[t] = l
 	}
 }
 
