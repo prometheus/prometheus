@@ -71,6 +71,10 @@ type targetRetriever interface {
 	Targets() []*retrieval.Target
 }
 
+type alertmanagerRetriever interface {
+	Alertmanagers() []string
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -93,20 +97,22 @@ type API struct {
 	Storage     local.Storage
 	QueryEngine *promql.Engine
 
-	targetRetriever targetRetriever
+	targetRetriever       targetRetriever
+	alertmanagerRetriever alertmanagerRetriever
 
 	context func(r *http.Request) context.Context
 	now     func() model.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever) *API {
+func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever, ar alertmanagerRetriever) *API {
 	return &API{
-		QueryEngine:     qe,
-		Storage:         st,
-		targetRetriever: tr,
-		context:         route.Context,
-		now:             model.Now,
+		QueryEngine:           qe,
+		Storage:               st,
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		context:               route.Context,
+		now:                   model.Now,
 	}
 }
 
@@ -139,6 +145,7 @@ func (api *API) Register(r *route.Router) {
 	r.Del("/series", instr("drop_series", api.dropSeries))
 
 	r.Get("/targets", instr("targets", api.targets))
+	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
 }
 
 type queryData struct {
@@ -373,6 +380,25 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return res, nil
+}
+
+type AlertmanagerDiscovery struct {
+	ActiveAlertmanagers []*AlertmanagerTarget `json:"activeAlertmanagers"`
+}
+
+type AlertmanagerTarget struct {
+	URL string `json:"url"`
+}
+
+func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
+	urls := api.alertmanagerRetriever.Alertmanagers()
+	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls))}
+
+	for i := range urls {
+		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: urls[i]}
+	}
+
+	return ams, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
