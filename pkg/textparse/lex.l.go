@@ -28,6 +28,8 @@ func (l *lexer) Lex() int {
 	}
 	c := l.b[l.i]
 
+	l.offsets = l.offsets[:0]
+
 yystate0:
 
 	switch yyt := s; yyt {
@@ -309,13 +311,15 @@ yyrule3: // [\r\n \t]+
 	}
 yyrule4: // {L}({L}|{D})*\{
 	{
-		s = lstateLName
+		s = lstateLabels
+		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
 yyrule5: // {L}({L}|{D})*
 	{
 		s = lstateValue
 		l.mend = l.i
+		l.offsets = append(l.offsets, l.i)
 		goto yystate0
 	}
 yyrule6: // [ \t]+
@@ -330,21 +334,25 @@ yyrule7: // \}
 yyrule8: // ,?
 	{
 		s = lstateLName
+		l.offsets = append(l.offsets, l.i)
 		goto yystate0
 	}
 yyrule9: // {M}({M}|{D})*=
 	{
 		s = lstateLValue
+		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
 yyrule10: // \"(\\.|[^\\"])*\"
 	{
 		s = lstateLabels
+		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
 yyrule11: // \'(\\.|[^\\'])*\'
 	{
 		s = lstateLabels
+		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
 yyrule12: // [ \t]+
