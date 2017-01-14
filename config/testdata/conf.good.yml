@@ -70,6 +70,8 @@ scrape_configs:
   scrape_interval: 50s
   scrape_timeout:  5s
 
+  sample_limit: 1000
+
   metrics_path: /my_path
   scheme: https
 

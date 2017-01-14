@@ -33,9 +33,9 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 )
 
-type targetRetrieverFunc func() []retrieval.Target
+type targetRetrieverFunc func() []*retrieval.Target
 
-func (f targetRetrieverFunc) Targets() []retrieval.Target {
+func (f targetRetrieverFunc) Targets() []*retrieval.Target {
 	return f()
 }
 
@@ -57,9 +57,9 @@ func TestEndpoints(t *testing.T) {
 
 	now := model.Now()
 
-	tr := targetRetrieverFunc(func() []retrieval.Target {
-		return []retrieval.Target{
-			*retrieval.NewTarget(
+	tr := targetRetrieverFunc(func() []*retrieval.Target {
+		return []*retrieval.Target{
+			retrieval.NewTarget(
 				model.LabelSet{
 					model.SchemeLabel:      "http",
 					model.AddressLabel:     "example.com:8080",
