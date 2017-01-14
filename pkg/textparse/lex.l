@@ -27,6 +27,8 @@ func (l *lexer) Lex() int {
         return eof
     }
     c := l.b[l.i]
+
+    l.offsets = l.offsets[:0]
 %}
 
 D     [0-9]
@@ -47,19 +49,25 @@ M     [a-zA-Z_:]
 #[^\r\n]*\n          l.mstart = l.i
 [\r\n \t]+           l.mstart = l.i
 
-{L}({L}|{D})*\{      s = lstateLName
+{L}({L}|{D})*\{      s = lstateLabels
+                     l.offsets = append(l.offsets, l.i-1)
 {L}({L}|{D})*        s = lstateValue
                      l.mend = l.i
+                     l.offsets = append(l.offsets, l.i)
 
 <lstateLabels>[ \t]+
 <lstateLabels>\}       s = lstateValue
                        l.mend = l.i
 <lstateLabels>,?       s = lstateLName
+                       l.offsets = append(l.offsets, l.i)
 
-<lstateLName>{M}({M}|{D})*=    s = lstateLValue    
+<lstateLName>{M}({M}|{D})*=    s = lstateLValue
+                               l.offsets = append(l.offsets, l.i-1)
 
 <lstateLValue>\"(\\.|[^\\"])*\"       s = lstateLabels
+                                      l.offsets = append(l.offsets, l.i-1)
 <lstateLValue>\'(\\.|[^\\'])*\'       s = lstateLabels
+                                      l.offsets = append(l.offsets, l.i-1)
 
 <lstateValue>[ \t]+             l.vstart = l.i
 <lstateValue>(NaN)              l.val = math.NaN()

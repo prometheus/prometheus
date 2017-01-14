@@ -5,9 +5,10 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"sort"
 	"unsafe"
 
-	"k8s.io/client-go/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 type lexer struct {
@@ -15,9 +16,10 @@ type lexer struct {
 	i      int
 	vstart int
 
-	mstart, mend int
 	err          error
 	val          float64
+	offsets      []int
+	mstart, mend int
 }
 
 const eof = 0
@@ -70,8 +72,22 @@ func (p *Parser) Err() error {
 	return p.l.err
 }
 
-func (p *Parser) Metric() labels.Labels {
-	return nil
+func (p *Parser) Metric(l *labels.Labels) {
+	*l = append(*l, labels.Label{
+		Name:  labels.MetricName,
+		Value: string(p.l.b[p.l.mstart:p.l.offsets[0]]),
+	})
+
+	for i := 1; i < len(p.l.offsets); i += 3 {
+		a, b, c := p.l.offsets[i], p.l.offsets[i+1], p.l.offsets[i+2]
+
+		*l = append(*l, labels.Label{
+			Name:  string(p.l.b[a:b]),
+			Value: string(p.l.b[b+2 : c]),
+		})
+	}
+
+	sort.Sort((*l)[1:])
 }
 
 func yoloString(b []byte) string {
