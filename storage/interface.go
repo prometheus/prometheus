@@ -20,6 +20,7 @@ import (
 )
 
 var (
+	ErrNotFound                    = errors.New("not found")
 	ErrOutOfOrderSample            = errors.New("out of order sample")
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 )

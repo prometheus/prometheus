@@ -14,23 +14,25 @@
 package retrieval
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -321,9 +323,9 @@ func TestScrapeLoopStop(t *testing.T) {
 	}
 
 	// Running the scrape loop must exit before calling the scraper even once.
-	scraper.scrapeFunc = func(context.Context, time.Time) (samples, error) {
+	scraper.scrapeFunc = func(context.Context, io.Writer) error {
 		t.Fatalf("scraper was called for terminated scrape loop")
-		return nil, nil
+		return nil
 	}
 
 	runDone := make(chan struct{})
@@ -385,13 +387,13 @@ func TestScrapeLoopRun(t *testing.T) {
 	scraper.offsetDur = 0
 
 	block := make(chan struct{})
-	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (samples, error) {
+	scraper.scrapeFunc = func(ctx context.Context, _ io.Writer) error {
 		select {
 		case <-block:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
-		return nil, nil
+		return nil
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
@@ -450,33 +452,12 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		},
 		client: http.DefaultClient,
 	}
-	now := time.Now()
+	var buf bytes.Buffer
 
-	smpls, err := ts.scrape(context.Background(), now)
-	if err != nil {
+	if err := ts.scrape(context.Background(), &buf); err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
-
-	expectedSamples := samples{
-		sample{
-			metric: labels.FromStrings(labels.MetricName, "metric_a"),
-			t:      timestamp.FromTime(now),
-			v:      1,
-		},
-		sample{
-			metric: labels.FromStrings(labels.MetricName, "metric_b"),
-			t:      timestamp.FromTime(now),
-			v:      2,
-		},
-	}
-	sort.Sort(expectedSamples)
-	sort.Sort(smpls)
-
-	if !reflect.DeepEqual(smpls, expectedSamples) {
-		t.Errorf("Scraped samples did not match served metrics")
-		t.Errorf("Expected: %v", expectedSamples)
-		t.Fatalf("Got: %v", smpls)
-	}
+	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -513,7 +494,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		if _, err := ts.scrape(ctx, time.Now()); err != context.Canceled {
+		if err := ts.scrape(ctx, ioutil.Discard); err != context.Canceled {
 			errc <- fmt.Errorf("Expected context cancelation error but got: %s", err)
 		}
 		close(errc)
@@ -555,7 +536,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 		client: http.DefaultClient,
 	}
 
-	if _, err := ts.scrape(context.Background(), time.Now()); !strings.Contains(err.Error(), "404") {
+	if err := ts.scrape(context.Background(), ioutil.Discard); !strings.Contains(err.Error(), "404") {
 		t.Fatalf("Expected \"404 NotFound\" error but got: %s", err)
 	}
 }
@@ -571,7 +552,7 @@ type testScraper struct {
 
 	samples    samples
 	scrapeErr  error
-	scrapeFunc func(context.Context, time.Time) (samples, error)
+	scrapeFunc func(context.Context, io.Writer) error
 }
 
 func (ts *testScraper) offset(interval time.Duration) time.Duration {
@@ -584,9 +565,9 @@ func (ts *testScraper) report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(ctx context.Context, t time.Time) (samples, error) {
+func (ts *testScraper) scrape(ctx context.Context, w io.Writer) error {
 	if ts.scrapeFunc != nil {
-		return ts.scrapeFunc(ctx, t)
+		return ts.scrapeFunc(ctx, w)
 	}
-	return ts.samples, ts.scrapeErr
+	return ts.scrapeErr
 }
