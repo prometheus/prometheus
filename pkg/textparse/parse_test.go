@@ -1,11 +1,15 @@
 package textparse
 
 import (
-	"fmt"
+	"bytes"
+	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
 
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
 )
@@ -71,41 +75,153 @@ go_goroutines 33`
 
 }
 
+const (
+	testdataSampleCount = 410
+)
+
 func BenchmarkParse(b *testing.B) {
-	f, err := os.Open("testdata.txt")
-	require.NoError(b, err)
-	defer f.Close()
+	for _, fn := range []string{"testdata.txt", "testdata.nometa.txt"} {
+		f, err := os.Open(fn)
+		require.NoError(b, err)
+		defer f.Close()
 
-	var tbuf []byte
+		buf, err := ioutil.ReadAll(f)
+		require.NoError(b, err)
 
-	buf, err := ioutil.ReadAll(f)
-	require.NoError(b, err)
+		b.Run("no-decode-metric/"+fn, func(b *testing.B) {
+			total := 0
 
-	for i := 0; i*527 < b.N; i++ {
-		tbuf = append(tbuf, buf...)
-		tbuf = append(tbuf, '\n')
+			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i += testdataSampleCount {
+				p := New(buf)
+
+				for p.Next() && i < b.N {
+					m, _, _ := p.At()
+
+					total += len(m)
+					i++
+				}
+				require.NoError(b, p.Err())
+			}
+			_ = total
+		})
+		b.Run("decode-metric/"+fn, func(b *testing.B) {
+			total := 0
+
+			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i += testdataSampleCount {
+				p := New(buf)
+
+				for p.Next() && i < b.N {
+					m, _, _ := p.At()
+
+					res := make(labels.Labels, 0, 5)
+					p.Metric(&res)
+
+					total += len(m)
+					i++
+				}
+				require.NoError(b, p.Err())
+			}
+			_ = total
+		})
+		b.Run("decode-metric-reuse/"+fn, func(b *testing.B) {
+			total := 0
+			res := make(labels.Labels, 0, 5)
+
+			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i += testdataSampleCount {
+				p := New(buf)
+
+				for p.Next() && i < b.N {
+					m, _, _ := p.At()
+
+					p.Metric(&res)
+
+					total += len(m)
+					i++
+					res = res[:0]
+				}
+				require.NoError(b, p.Err())
+			}
+			_ = total
+		})
+		b.Run("expfmt-text/"+fn, func(b *testing.B) {
+			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			total := 0
+
+			for i := 0; i < b.N; i += testdataSampleCount {
+				var (
+					decSamples = make(model.Vector, 0, 50)
+				)
+				sdec := expfmt.SampleDecoder{
+					Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
+					Opts: &expfmt.DecodeOptions{
+						Timestamp: model.TimeFromUnixNano(0),
+					},
+				}
+
+				for {
+					if err = sdec.Decode(&decSamples); err != nil {
+						break
+					}
+					total += len(decSamples)
+					decSamples = decSamples[:0]
+				}
+			}
+			_ = total
+		})
 	}
+}
 
-	p := New(tbuf)
-	i := 0
-	var m labels.Labels
-	total := 0
+func BenchmarkGzip(b *testing.B) {
+	for _, fn := range []string{"testdata.txt", "testdata.nometa.txt"} {
+		b.Run(fn, func(b *testing.B) {
+			f, err := os.Open(fn)
+			require.NoError(b, err)
+			defer f.Close()
 
-	b.ResetTimer()
-	b.ReportAllocs()
-	b.SetBytes(int64(len(tbuf)))
+			var buf bytes.Buffer
+			gw := gzip.NewWriter(&buf)
 
-	for p.Next() && i < b.N {
-		p.At()
+			n, err := io.Copy(gw, f)
+			require.NoError(b, err)
+			require.NoError(b, gw.Close())
 
-		res := make(labels.Labels, 0, 5)
-		p.Metric(&res)
+			gbuf, err := ioutil.ReadAll(&buf)
+			require.NoError(b, err)
 
-		total += len(res)
-		i++
-		res = res[:0]
+			k := b.N / testdataSampleCount
+
+			b.ReportAllocs()
+			b.SetBytes(int64(k) * int64(n))
+			b.ResetTimer()
+
+			total := 0
+
+			for i := 0; i < k; i++ {
+				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
+				require.NoError(b, err)
+
+				d, err := ioutil.ReadAll(gr)
+				require.NoError(b, err)
+				require.NoError(b, gr.Close())
+
+				total += len(d)
+			}
+			_ = total
+		})
 	}
-	_ = m
-	fmt.Println(total)
-	require.NoError(b, p.Err())
 }
