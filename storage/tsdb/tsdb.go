@@ -78,7 +78,17 @@ func (a appender) SetSeries(lset labels.Labels) (uint64, error) {
 }
 
 func (a appender) Add(ref uint64, t int64, v float64) error {
-	return a.a.Add(ref, t, v)
+	err := a.a.Add(ref, t, v)
+
+	switch err {
+	case tsdb.ErrNotFound:
+		return storage.ErrNotFound
+	case tsdb.ErrOutOfOrderSample:
+		return storage.ErrOutOfOrderSample
+	case tsdb.ErrAmendSample:
+		return storage.ErrDuplicateSampleForTimestamp
+	}
+	return err
 }
 
 func (a appender) Commit() error   { return a.a.Commit() }
