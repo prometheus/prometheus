@@ -27,6 +27,8 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -34,8 +36,6 @@ import (
 	"github.com/prometheus/prometheus/storage/local/index"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/common/model"
 )
 
 // cfg contains immutable configuration parameters for a running Prometheus
@@ -403,7 +403,6 @@ func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error)
 
 	return acfg, nil
 }
-
 
 var helpTmpl = `
 usage: prometheus [<args>]
