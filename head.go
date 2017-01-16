@@ -427,7 +427,6 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 		lset: lset,
 		ref:  uint32(len(h.series)),
 	}
-	fmt.Println("create", lset)
 
 	// Allocate empty space until we can insert at the given index.
 	h.series = append(h.series, s)
