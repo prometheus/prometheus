@@ -73,18 +73,21 @@ func (p *Parser) Err() error {
 }
 
 func (p *Parser) Metric(l *labels.Labels) {
+	// Allocate the full immutable string immediately, so we just
+	// have to create references on it below.
+	s := string(p.l.b[p.l.mstart:p.l.mend])
+
 	*l = append(*l, labels.Label{
 		Name:  labels.MetricName,
-		Value: string(p.l.b[p.l.mstart:p.l.offsets[0]]),
+		Value: s[:p.l.offsets[0]-p.l.mstart],
 	})
 
 	for i := 1; i < len(p.l.offsets); i += 3 {
-		a, b, c := p.l.offsets[i], p.l.offsets[i+1], p.l.offsets[i+2]
+		a := p.l.offsets[i] - p.l.mstart
+		b := p.l.offsets[i+1] - p.l.mstart
+		c := p.l.offsets[i+2] - p.l.mstart
 
-		*l = append(*l, labels.Label{
-			Name:  string(p.l.b[a:b]),
-			Value: string(p.l.b[b+2 : c]),
-		})
+		*l = append(*l, labels.Label{Name: s[a:b], Value: s[b+2 : c]})
 	}
 
 	sort.Sort((*l)[1:])
