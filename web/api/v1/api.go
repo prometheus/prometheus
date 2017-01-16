@@ -290,8 +290,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	} else {
 		end = maxTime
 	}
-	fmt.Println("q range", timestamp.FromTime(start), timestamp.FromTime(end), r.FormValue("start"), r.FormValue("end"))
-
+	
 	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)

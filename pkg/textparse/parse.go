@@ -1,4 +1,7 @@
+//go:generate go get github.com/cznic/golex
 //go:generate golex -o=lex.l.go lex.l
+
+// Package textparse contains an efficient parser for the Prometheus text format.
 package textparse
 
 import (
@@ -38,16 +41,21 @@ func (l *lexer) Error(es string) {
 	l.err = errors.New(es)
 }
 
+// Parser parses samples from a byte slice of samples in the official
+// Prometheus text exposition format.
 type Parser struct {
 	l   *lexer
 	err error
 	val float64
 }
 
+// New returns a new parser of the byte slice.
 func New(b []byte) *Parser {
 	return &Parser{l: &lexer{b: b}}
 }
 
+// Next advances the parser to the next sample. It returns false if no
+// more samples were read or an error occurred.
 func (p *Parser) Next() bool {
 	switch p.l.Lex() {
 	case 0, -1:
@@ -58,10 +66,13 @@ func (p *Parser) Next() bool {
 	panic("unexpected")
 }
 
+// At returns the bytes of the metric, the timestamp if set, and the value
+// of the current sample.
 func (p *Parser) At() ([]byte, *int64, float64) {
 	return p.l.b[p.l.mstart:p.l.mend], nil, p.l.val
 }
 
+// Err returns the current error.
 func (p *Parser) Err() error {
 	if p.err != nil {
 		return p.err
@@ -72,6 +83,7 @@ func (p *Parser) Err() error {
 	return p.l.err
 }
 
+// Metric writes the labels of the current sample into the passed labels.
 func (p *Parser) Metric(l *labels.Labels) {
 	// Allocate the full immutable string immediately, so we just
 	// have to create references on it below.
