@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"bufio"
 	"encoding/binary"
 	"hash/crc32"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
-	"github.com/coreos/etcd/pkg/ioutil"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
@@ -165,7 +165,8 @@ func (w *WAL) Close() error {
 
 type walEncoder struct {
 	mtx sync.Mutex
-	w   *ioutil.PageWriter
+	// w   *ioutil.PageWriter
+	w *bufio.Writer
 }
 
 const (
@@ -178,12 +179,13 @@ const (
 )
 
 func newWALEncoder(f *os.File) (*walEncoder, error) {
-	offset, err := f.Seek(0, os.SEEK_CUR)
-	if err != nil {
-		return nil, err
-	}
+	// offset, err := f.Seek(0, os.SEEK_CUR)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	enc := &walEncoder{
-		w: ioutil.NewPageWriter(f, walPageBytes, int(offset)),
+		// w: ioutil.NewPageWriter(f, walPageBytes, int(offset)),
+		w: bufio.NewWriterSize(f, 4*1024*1024),
 	}
 	return enc, nil
 }
