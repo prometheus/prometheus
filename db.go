@@ -369,7 +369,7 @@ func (a *dbAppender) Add(ref uint64, t int64, v float64) error {
 	gen := uint8((ref << 16) >> 56)
 
 	if gen != a.gen {
-		return errNotFound
+		return ErrNotFound
 	}
 	return a.head.Add(ref, t, v)
 }

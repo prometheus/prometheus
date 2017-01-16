@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -182,7 +183,7 @@ func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 	// this transaction.
 	if ref&(1<<32) > 0 {
 		if _, ok := a.newSeries[ref]; !ok {
-			return errNotFound
+			return ErrNotFound
 		}
 		// TODO(fabxc): we also have to validate here that the
 		// sample sequence is valid.
@@ -198,7 +199,7 @@ func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 
 	ms := a.series[int(ref)]
 	if ms == nil {
-		return errNotFound
+		return ErrNotFound
 	}
 	c := ms.head()
 
@@ -371,7 +372,7 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error)
 	defer h.mtx.RUnlock()
 
 	if int(ref) >= len(h.series) {
-		return nil, nil, errNotFound
+		return nil, nil, ErrNotFound
 	}
 	s := h.series[ref]
 	metas := make([]ChunkMeta, 0, len(s.chunks))
@@ -426,6 +427,7 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 		lset: lset,
 		ref:  uint32(len(h.series)),
 	}
+	fmt.Println("create", lset)
 
 	// Allocate empty space until we can insert at the given index.
 	h.series = append(h.series, s)
@@ -449,6 +451,7 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 }
 
 var (
+	ErrNotFound = fmt.Errorf("not found")
 	// ErrOutOfOrderSample is returned if an appended sample has a
 	// timestamp larger than the most recent sample.
 	ErrOutOfOrderSample = errors.New("out of order sample")

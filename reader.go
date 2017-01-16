@@ -91,7 +91,6 @@ type indexReader struct {
 var (
 	errInvalidSize = fmt.Errorf("invalid size")
 	errInvalidFlag = fmt.Errorf("invalid flag")
-	errNotFound    = fmt.Errorf("not found")
 )
 
 func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
@@ -333,7 +332,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 
 	off, ok := r.postings[key]
 	if !ok {
-		return nil, errNotFound
+		return nil, ErrNotFound
 	}
 
 	flag, b, err := r.section(off)
