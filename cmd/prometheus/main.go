@@ -18,7 +18,6 @@ import (
 	"flag"
 	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,7 +25,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
 
@@ -264,25 +262,9 @@ func reloadConfig(filename string, rls ...Reloadable) (err error) {
 
 	// Add AlertmanagerConfigs for legacy Alertmanager URL flags.
 	for us := range cfg.alertmanagerURLs {
-		u, err := url.Parse(us)
+		acfg, err := parseAlertmanagerURLToConfig(us)
 		if err != nil {
 			return err
-		}
-		acfg := &config.AlertmanagerConfig{
-			Scheme:     u.Scheme,
-			PathPrefix: u.Path,
-			Timeout:    cfg.notifierTimeout,
-			ServiceDiscoveryConfig: config.ServiceDiscoveryConfig{
-				StaticConfigs: []*config.TargetGroup{
-					{
-						Targets: []model.LabelSet{
-							{
-								model.AddressLabel: model.LabelValue(u.Host),
-							},
-						},
-					},
-				},
-			},
 		}
 		conf.AlertingConfig.AlertmanagerConfigs = append(conf.AlertingConfig.AlertmanagerConfigs, acfg)
 	}
