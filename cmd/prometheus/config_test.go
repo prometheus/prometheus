@@ -83,17 +83,17 @@ func TestParse(t *testing.T) {
 
 func TestParseAlertmanagerURLToConfig(t *testing.T) {
 	tests := []struct {
-		url string
+		url      string
 		username string
 		password string
 	}{
 		{
-			url: "http://alertmanager.company.com",
+			url:      "http://alertmanager.company.com",
 			username: "",
 			password: "",
 		},
 		{
-			url: "https://user:password@alertmanager.company.com",
+			url:      "https://user:password@alertmanager.company.com",
 			username: "user",
 			password: "password",
 		},
