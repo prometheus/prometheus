@@ -295,7 +295,7 @@ yystate27:
 
 yyrule1: // \0
 	{
-		return 0
+		return eof
 	}
 yyrule2: // #[^\r\n]*\n
 	{
