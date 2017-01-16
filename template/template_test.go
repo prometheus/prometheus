@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -209,8 +210,13 @@ func TestTemplateExpansion(t *testing.T) {
 		t.Fatalf("get appender: %s", err)
 	}
 
-	app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 0, 11)
-	app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 0, 21)
+	aref, err := app.SetSeries(labels.FromStrings(labels.MetricName, "metric", "instance", "a"))
+	require.NoError(t, err)
+	bref, err := app.SetSeries(labels.FromStrings(labels.MetricName, "metric", "instance", "b"))
+	require.NoError(t, err)
+
+	app.Add(aref, 0, 11)
+	app.Add(bref, 0, 21)
 
 	if err := app.Commit(); err != nil {
 		t.Fatalf("commit samples: %s", err)

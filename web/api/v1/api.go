@@ -258,6 +258,11 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	return vals, nil
 }
 
+var (
+	minTime = time.Unix(math.MinInt64/1000+62135596801, 0)
+	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
+)
+
 func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	r.ParseForm()
 	if len(r.Form["match[]"]) == 0 {
@@ -272,7 +277,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 			return nil, &apiError{errorBadData, err}
 		}
 	} else {
-		start = time.Unix(math.MinInt64, 0)
+		start = minTime
 	}
 
 	var end time.Time
@@ -283,8 +288,9 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 			return nil, &apiError{errorBadData, err}
 		}
 	} else {
-		end = time.Unix(math.MaxInt64, 0)
+		end = maxTime
 	}
+	fmt.Println("q range", timestamp.FromTime(start), timestamp.FromTime(end), r.FormValue("start"), r.FormValue("end"))
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {

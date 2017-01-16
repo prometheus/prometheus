@@ -429,6 +429,7 @@ func TestEndpoints(t *testing.T) {
 		api.context = func(r *http.Request) context.Context {
 			return ctx
 		}
+		t.Logf("run query %q", test.query.Encode())
 
 		req, err := http.NewRequest("ANY", fmt.Sprintf("http://example.com?%s", test.query.Encode()), nil)
 		if err != nil {
