@@ -156,6 +156,14 @@ var (
 		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
+	// DefaultPuppetDBSDConfig is the default PuppetDB SD configuration.
+	DefaultPuppetDBSDConfig = PuppetDBSDConfig{
+		Host:            "puppetdb",
+		Port:            8080,
+		Query:           "facts[certname,name,value]{nodes{resources{type='Class' and title='Collectd'}} and name='ipaddress'}",
+		RefreshInterval: model.Duration(30 * time.Minute),
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout: model.Duration(30 * time.Second),
@@ -437,6 +445,8 @@ type ServiceDiscoveryConfig struct {
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of PuppetDB service discovery configurations.
+	PuppetDBSDConfigs []*PuppetDBSDConfig `yaml:"puppetdb_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1086,6 +1096,14 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	return checkOverflow(c.XXX, "azure_sd_config")
+}
+
+// PuppetDBSDConfig is the configuration for PuppetDB based service discovery.
+type PuppetDBSDConfig struct {
+	Host            string         `yaml:"host"`
+	Port            int            `yaml:"port"`
+	Query           string         `yaml:"query"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
 // RelabelAction is the action to be performed on relabeling.
