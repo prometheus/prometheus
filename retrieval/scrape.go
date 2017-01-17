@@ -507,7 +507,9 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (n int, err error) {
 		mets := string(met)
 		ref, ok := sl.cache[mets]
 		if ok {
-			if err = app.Add(ref, t, v); err != storage.ErrNotFound {
+			if err = app.Add(ref, t, v); err == nil {
+				continue
+			} else if err != storage.ErrNotFound {
 				break
 			}
 			ok = false
