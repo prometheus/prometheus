@@ -990,7 +990,7 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	}
 	if c.APIServer.URL == nil &&
 		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
-			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" && c.TLSConfig.KeyFile != "") {
+			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
 		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
 	}
 	return nil
