@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
+	"os"
 )
 
 const (
@@ -77,6 +78,7 @@ type Discovery struct {
 	refreshInterval time.Duration
 	lastRefresh     map[string]*config.TargetGroup
 	appsClient      AppListClient
+	token           string
 }
 
 // Initialize sets up the discovery for usage.
@@ -98,6 +100,7 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
+		token:           os.Getenv(conf.TokenEnvName),
 	}, nil
 }
 
@@ -160,7 +163,7 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 
 func (md *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
 	url := RandomAppsURL(md.servers)
-	apps, err := md.appsClient(md.client, url)
+	apps, err := md.appsClient(md.client, url, md.token)
 	if err != nil {
 		return nil, err
 	}
@@ -201,20 +204,29 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url string) (*AppList, error)
+type AppListClient func(client *http.Client, url, token string) (*AppList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url string) (*AppList, error) {
+func fetchApps(client *http.Client, url, token string) (*AppList, error) {
 	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	if token != "" {
+		req.Header.Add("Authorization", "token="+token)
+	}
+	resp, errl := client.Do(req)
+
+	if errl != nil {
+		return nil, errl
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-
 	return parseAppJSON(body)
 }
 
