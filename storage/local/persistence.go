@@ -668,8 +668,10 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			fpLocker.Lock(m.fp)
 			defer fpLocker.Unlock(m.fp)
 
-			if len(m.series.chunkDescs) == 0 {
-				// This series was completely purged or archived in the meantime. Ignore.
+			chunksToPersist := len(m.series.chunkDescs) - m.series.persistWatermark
+			if len(m.series.chunkDescs) == 0 || chunksToPersist == 0 {
+				// This series was completely purged or archived in the meantime or has
+				// no chunks that need persisting. Ignore.
 				return
 			}
 			realNumberOfSeries++
@@ -688,7 +690,9 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			if _, err = w.Write(buf); err != nil {
 				return
 			}
-			if _, err = codable.EncodeVarint(w, int64(m.series.persistWatermark)); err != nil {
+			// persistWatermark. We only checkpoint chunks that need persisting, so
+			// this is always 0.
+			if _, err = codable.EncodeVarint(w, int64(0)); err != nil {
 				return
 			}
 			if m.series.modTime.IsZero() {
@@ -700,37 +704,25 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					return
 				}
 			}
-			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset)); err != nil {
+			// chunkDescsOffset.
+			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset+m.series.persistWatermark)); err != nil {
 				return
 			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.savedFirstTime)); err != nil {
 				return
 			}
-			if _, err = codable.EncodeVarint(w, int64(len(m.series.chunkDescs))); err != nil {
+			// Number of chunkDescs.
+			if _, err = codable.EncodeVarint(w, int64(chunksToPersist)); err != nil {
 				return
 			}
-			for i, chunkDesc := range m.series.chunkDescs {
-				if i < m.series.persistWatermark {
-					if _, err = codable.EncodeVarint(w, int64(chunkDesc.FirstTime())); err != nil {
-						return
-					}
-					lt, err := chunkDesc.LastTime()
-					if err != nil {
-						return
-					}
-					if _, err = codable.EncodeVarint(w, int64(lt)); err != nil {
-						return
-					}
-				} else {
-					// This is a non-persisted chunk. Fully marshal it.
-					if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
-						return
-					}
-					if err = chunkDesc.C.Marshal(w); err != nil {
-						return
-					}
+			for _, chunkDesc := range m.series.chunkDescs[m.series.persistWatermark:] {
+				if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
+					return
 				}
-				p.checkpointChunksWritten.Observe(float64(len(m.series.chunkDescs) - m.series.persistWatermark))
+				if err = chunkDesc.C.Marshal(w); err != nil {
+					return
+				}
+				p.checkpointChunksWritten.Observe(float64(chunksToPersist))
 			}
 			// Series is checkpointed now, so declare it clean. In case the entire
 			// checkpoint fails later on, this is fine, as the storage's series
