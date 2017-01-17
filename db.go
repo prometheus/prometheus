@@ -58,15 +58,6 @@ type Appender interface {
 	Rollback() error
 }
 
-type hashedSample struct {
-	hash   uint64
-	labels labels.Labels
-	ref    uint32
-
-	t int64
-	v float64
-}
-
 const sep = '\xff'
 
 // DB handles reads and writes of time series falling into

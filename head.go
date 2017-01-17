@@ -65,10 +65,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 			b.stats.SeriesCount++
 		},
 		sample: func(s refdSample) {
-			si := s.ref
-
-			cd := b.series[si]
-			cd.append(s.t, s.v)
+			b.series[s.ref].append(s.t, s.v)
 
 			if s.t > b.stats.MaxTime {
 				b.stats.MaxTime = s.t
@@ -177,11 +174,11 @@ func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error
 func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 	// We only own the first 5 bytes of the reference. Anything before is
 	// used by higher-order appenders. We erase it to avoid issues.
-	ref = (ref << 31) >> 31
+	ref = (ref << 24) >> 24
 
 	// Distinguish between existing series and series created in
 	// this transaction.
-	if ref&(1<<32) > 0 {
+	if ref&(1<<32) != 0 {
 		if _, ok := a.newSeries[ref]; !ok {
 			return ErrNotFound
 		}
@@ -189,27 +186,21 @@ func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 		// sample sequence is valid.
 		// We also have to revalidate it as we switch locks an create
 		// the new series.
-		a.samples = append(a.samples, refdSample{
-			ref: ref,
-			t:   t,
-			v:   v,
-		})
-		return nil
-	}
+	} else {
+		ms := a.series[int(ref)]
+		if ms == nil {
+			return ErrNotFound
+		}
+		c := ms.head()
 
-	ms := a.series[int(ref)]
-	if ms == nil {
-		return ErrNotFound
-	}
-	c := ms.head()
-
-	// TODO(fabxc): memory series should be locked here already.
-	// Only problem is release of locks in case of a rollback.
-	if t < c.maxTime {
-		return ErrOutOfOrderSample
-	}
-	if c.maxTime == t && ms.lastValue != v {
-		return ErrAmendSample
+		// TODO(fabxc): memory series should be locked here already.
+		// Only problem is release of locks in case of a rollback.
+		if t < c.maxTime {
+			return ErrOutOfOrderSample
+		}
+		if c.maxTime == t && ms.lastValue != v {
+			return ErrAmendSample
+		}
 	}
 
 	a.samples = append(a.samples, refdSample{
@@ -254,12 +245,6 @@ func (a *headAppender) createSeries() {
 
 func (a *headAppender) Commit() error {
 	defer putHeadAppendBuffer(a.samples)
-	// Write all new series and samples to the WAL and add it to the
-	// in-mem database on success.
-	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
-		a.mtx.RUnlock()
-		return err
-	}
 
 	a.createSeries()
 
@@ -279,7 +264,14 @@ func (a *headAppender) Commit() error {
 			total--
 		}
 	}
+
 	a.mtx.RUnlock()
+
+	// Write all new series and samples to the WAL and add it to the
+	// in-mem database on success.
+	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
+		return err
+	}
 
 	a.stats.mtx.Lock()
 	defer a.stats.mtx.Unlock()

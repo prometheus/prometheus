@@ -285,7 +285,7 @@ func (e *walEncoder) encodeSamples(samples []refdSample) error {
 	first := samples[0]
 
 	binary.BigEndian.PutUint64(b, first.ref)
-	buf = append(buf, b[:4]...)
+	buf = append(buf, b[:8]...)
 	binary.BigEndian.PutUint64(b, uint64(first.t))
 	buf = append(buf, b[:8]...)
 
@@ -349,14 +349,14 @@ func (d *walDecoder) decodeSeries(flag byte, b []byte) error {
 }
 
 func (d *walDecoder) decodeSamples(flag byte, b []byte) error {
-	if len(b) < 12 {
+	if len(b) < 16 {
 		return errors.Wrap(errInvalidSize, "header length")
 	}
 	var (
 		baseRef  = binary.BigEndian.Uint64(b)
-		baseTime = int64(binary.BigEndian.Uint64(b[4:]))
+		baseTime = int64(binary.BigEndian.Uint64(b[8:]))
 	)
-	b = b[12:]
+	b = b[16:]
 
 	for len(b) > 0 {
 		var smpl refdSample
