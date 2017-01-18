@@ -17,6 +17,7 @@ type Block interface {
 	Index() IndexReader
 	Series() SeriesReader
 	Persisted() bool
+	Close() error
 }
 
 // BlockStats provides stats on a data block.

@@ -13,7 +13,7 @@ import (
 
 type compactor struct {
 	metrics *compactorMetrics
-	blocks  compactableBlocks
+	opts    *compactorOptions
 }
 
 type compactorMetrics struct {
@@ -48,49 +48,42 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	return m
 }
 
-type blockStore interface {
-	blocks() []Block
+type compactorOptions struct {
+	maxBlocks     uint8
+	maxBlockRange uint64
+	maxSize       uint64
 }
 
-type compactableBlocks interface {
-	compactable() []Block
-}
-
-func newCompactor(blocks compactableBlocks, r prometheus.Registerer) (*compactor, error) {
-	c := &compactor{
-		blocks:  blocks,
+func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
+	return &compactor{
+		opts:    opts,
 		metrics: newCompactorMetrics(r),
 	}
-
-	return c, nil
 }
 
-const (
-	compactionMaxSize = 1 << 30 // 1GB
-	compactionBlocks  = 2
-)
-
-func (c *compactor) pick() []Block {
-	bs := c.blocks.compactable()
+// pick returns a range [i, j] in the blocks that are suitable to be compacted
+// into a single block at position i.
+func (c *compactor) pick(bs []Block) (i, j int, ok bool) {
+	last := len(bs) - 1
 	if len(bs) == 0 {
-		return nil
+		return 0, 0, false
 	}
-	if len(bs) == 1 && !bs[0].Persisted() {
-		return bs
-	}
-	if !bs[0].Persisted() {
-		if len(bs) == 2 || !compactionMatch(bs[:3]) {
-			return bs[:1]
+
+	// Make sure we always compact the last block if unpersisted.
+	if !bs[last].Persisted() {
+		if len(bs) >= 3 && compactionMatch(bs[last-2:last+1]) {
+			return last - 2, last, true
 		}
+		return last, last, true
 	}
 
 	for i := 0; i+2 < len(bs); i += 3 {
 		tpl := bs[i : i+3]
 		if compactionMatch(tpl) {
-			return tpl
+			return i, i + 2, true
 		}
 	}
-	return nil
+	return 0, 0, false
 }
 
 func compactionMatch(blocks []Block) bool {
@@ -106,7 +99,7 @@ func compactionMatch(blocks []Block) bool {
 	for _, b := range blocks[1:] {
 		m := float64(b.Stats().SampleCount)
 
-		if m < 0.8*n || m > 1.2*n {
+		if m < 0.7*n || m > 1.3*n {
 			return false
 		}
 		t += m
@@ -184,6 +177,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 
 func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWriter) error {
 	var set compactionSet
+
 	for i, b := range blocks {
 		all, err := b.Index().Postings("", "")
 		if err != nil {
