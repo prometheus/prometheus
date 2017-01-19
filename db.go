@@ -222,6 +222,8 @@ func (db *DB) blocks() (bs []Block) {
 	return bs
 }
 
+// compact block in range [i, j] into a temporary directory and atomically
+// swap the blocks out on successful completion.
 func (db *DB) compact(i, j int) error {
 	if j < i {
 		return errors.New("invalid compaction block range")

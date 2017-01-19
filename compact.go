@@ -64,29 +64,45 @@ func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
 // pick returns a range [i, j] in the blocks that are suitable to be compacted
 // into a single block at position i.
 func (c *compactor) pick(bs []Block) (i, j int, ok bool) {
+
 	last := len(bs) - 1
 	if len(bs) == 0 {
 		return 0, 0, false
 	}
 
 	// Make sure we always compact the last block if unpersisted.
-	if !bs[last].Persisted() {
+	if bs[last].Meta().Compaction.Generation == 0 {
 		if len(bs) >= 3 && compactionMatch(bs[last-2:last+1]) {
 			return last - 2, last, true
 		}
 		return last, last, true
 	}
 
-	for i := 0; i+2 < len(bs); i += 3 {
-		tpl := bs[i : i+3]
+	for i := len(bs); i-3 >= 0; i -= 3 {
+		tpl := bs[i-3 : i]
 		if compactionMatch(tpl) {
-			return i, i + 2, true
+			return i - 3, i - 1, true
 		}
 	}
 	return 0, 0, false
 }
 
 func compactionMatch(blocks []Block) bool {
+	g := blocks[0].Meta().Compaction.Generation
+	if g >= 5 {
+		return false
+	}
+
+	for _, b := range blocks[1:] {
+		if b.Meta().Compaction.Generation == 0 {
+			continue
+		}
+		if b.Meta().Compaction.Generation != g {
+			return false
+		}
+	}
+	return true
+
 	// TODO(fabxc): check whether combined size is below maxCompactionSize.
 	// Apply maximum time range? or number of series? – might already be covered by size implicitly.
 
@@ -112,6 +128,7 @@ func compactionMatch(blocks []Block) bool {
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	res.MinTime = blocks[0].Meta().MinTime
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
+	res.Compaction.Generation = blocks[0].Meta().Compaction.Generation + 1
 
 	for _, b := range blocks {
 		res.Stats.NumSamples += b.Meta().Stats.NumSamples

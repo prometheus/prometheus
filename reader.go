@@ -24,6 +24,9 @@ type seriesReader struct {
 }
 
 func newSeriesReader(b []byte) (*seriesReader, error) {
+	if len(b) < 4 {
+		return nil, errors.Wrap(errInvalidSize, "index header")
+	}
 	// Verify magic number.
 	if m := binary.BigEndian.Uint32(b[:4]); m != MagicSeries {
 		return nil, fmt.Errorf("invalid magic number %x", m)
@@ -91,7 +94,7 @@ var (
 )
 
 func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
-	if len(b) < 16 {
+	if len(b) < 4 {
 		return nil, errors.Wrap(errInvalidSize, "index header")
 	}
 	r := &indexReader{

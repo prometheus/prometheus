@@ -46,6 +46,10 @@ type BlockMeta struct {
 		NumSeries  uint64 `json:"numSeries,omitempty"`
 		NumChunks  uint64 `json:"numChunks,omitempty"`
 	} `json:"stats,omitempty"`
+
+	Compaction struct {
+		Generation int `json:"generation"`
+	} `json:"compaction"`
 }
 
 const (
@@ -108,9 +112,11 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 }
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
-	// TODO(fabxc): validate match of name and stats time, validate magic.
+	meta, err := readMetaFile(dir)
+	if err != nil {
+		return nil, err
+	}
 
-	// mmap files belonging to the block.
 	chunksf, err := openMmapFile(chunksFileName(dir))
 	if err != nil {
 		return nil, errors.Wrap(err, "open chunk file")
@@ -129,11 +135,6 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, errors.Wrap(err, "create index reader")
 	}
 
-	meta, err := readMetaFile(dir)
-	if err != nil {
-		return nil, err
-	}
-
 	pb := &persistedBlock{
 		dir:     dir,
 		meta:    *meta,
@@ -142,7 +143,6 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		chunkr:  sr,
 		indexr:  ir,
 	}
-
 	return pb, nil
 }
 
