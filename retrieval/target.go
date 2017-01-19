@@ -78,9 +78,9 @@ func NewHTTPClient(cfg config.HTTPClientConfig) (*http.Client, error) {
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
-		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
-		DisableKeepAlives: true,
-		TLSClientConfig:   tlsConfig,
+		Proxy:           http.ProxyURL(cfg.ProxyURL.URL),
+		MaxIdleConns:    10000,
+		TLSClientConfig: tlsConfig,
 	}
 
 	// If a bearer token is provided, create a round tripper that will set the

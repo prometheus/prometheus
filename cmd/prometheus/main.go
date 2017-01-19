@@ -20,6 +20,8 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/trace"
 	"syscall"
 	"time"
 
@@ -56,10 +58,24 @@ var (
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("prometheus"))
+	runtime.SetMutexProfileFraction(20)
+	runtime.SetBlockProfileRate(20)
 }
 
-// Main manages the startup and shutdown lifecycle of the entire Prometheus server.
+// Main manages the stup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
+	go func() {
+		f, err := os.Create("trace")
+		if err != nil {
+			panic(err)
+		}
+		if err := trace.Start(f); err != nil {
+			panic(err)
+		}
+		time.Sleep(30 * time.Second)
+		trace.Stop()
+		f.Close()
+	}()
 	if err := parse(os.Args[1:]); err != nil {
 		log.Error(err)
 		return 2
