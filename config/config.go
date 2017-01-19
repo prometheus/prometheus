@@ -997,6 +997,11 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
+	if c.APIServer.URL == nil &&
+		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
+			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
+		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
+	}
 	return nil
 }
 
