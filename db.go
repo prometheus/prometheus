@@ -113,8 +113,8 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 			return nil, err
 		}
 	}
-	var r prometheus.Registerer
-	// r := prometheus.DefaultRegisterer
+	// var r prometheus.Registerer
+	r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -393,6 +393,8 @@ func (a *dbAppender) Add(ref uint64, t int64, v float64) error {
 	if gen != a.gen {
 		return ErrNotFound
 	}
+	a.db.metrics.samplesAppended.Inc()
+
 	return a.head.Add(ref, t, v)
 }
 

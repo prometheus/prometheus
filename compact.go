@@ -134,7 +134,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 			return err
 		}
 	}
-	if err = fileutil.CreateDirAll(dir); err != nil {
+	if err = os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 

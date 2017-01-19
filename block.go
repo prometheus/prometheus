@@ -114,18 +114,20 @@ type mmapFile struct {
 }
 
 func openMmapFile(path string) (*mmapFile, error) {
-	f, err := fileutil.TryLockFile(path, os.O_RDONLY, 0666)
+	// We have to open the file in RDWR for the lock to work with fileutil.
+	// TODO(fabxc): use own flock call that supports multi-reader.
+	f, err := fileutil.TryLockFile(path, os.O_RDWR, 0666)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "try lock file")
 	}
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "stat")
 	}
 
 	b, err := mmap(f.File, int(info.Size()))
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "mmap")
 	}
 
 	return &mmapFile{f: f, b: b}, nil
