@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -724,8 +723,6 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	q := ev.evalFloat(args[0])
 	inVec := ev.evalVector(args[1])
-
-	fmt.Println("invec", inVec)
 
 	outVec := Vector{}
 	signatureToMetricWithBuckets := map[uint64]*metricWithBuckets{}
