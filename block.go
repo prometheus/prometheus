@@ -35,8 +35,11 @@ type Block interface {
 
 // BlockMeta provides meta information about a block.
 type BlockMeta struct {
-	MinTime int64 `json:"minTime,omitempty"`
-	MaxTime int64 `json:"maxTime,omitempty"`
+	// MinTime and MaxTime specify the time range all samples
+	// in the block must be in. If unset, samples can be appended
+	// freely until they are set.
+	MinTime *int64 `json:"minTime,omitempty"`
+	MaxTime *int64 `json:"maxTime,omitempty"`
 
 	Stats struct {
 		NumSamples uint64 `json:"numSamples,omitempty"`
@@ -61,11 +64,47 @@ type persistedBlock struct {
 }
 
 type blockMeta struct {
-	Version int       `json:"version"`
-	Meta    BlockMeta `json:",inline"`
+	*BlockMeta
+	Version int `json:"version"`
 }
 
 const metaFilename = "meta.json"
+
+func readMetaFile(dir string) (*BlockMeta, error) {
+	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
+	if err != nil {
+		return nil, err
+	}
+	var m blockMeta
+
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	if m.Version != 1 {
+		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
+	}
+
+	return m.BlockMeta, nil
+}
+
+func writeMetaFile(dir string, meta *BlockMeta) error {
+	f, err := os.Create(filepath.Join(dir, metaFilename))
+	if err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "\t")
+
+	if err := enc.Encode(&blockMeta{Version: 1, BlockMeta: meta}); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
 	// TODO(fabxc): validate match of name and stats time, validate magic.
@@ -89,20 +128,18 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, errors.Wrap(err, "create index reader")
 	}
 
+	meta, err := readMetaFile(dir)
+	if err != nil {
+		return nil, err
+	}
+
 	pb := &persistedBlock{
 		dir:     dir,
+		meta:    *meta,
 		chunksf: chunksf,
 		indexf:  indexf,
 		chunkr:  sr,
 		indexr:  ir,
-	}
-
-	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(b, &pb.meta); err != nil {
-		return nil, err
 	}
 
 	return pb, nil

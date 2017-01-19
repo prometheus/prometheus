@@ -191,15 +191,14 @@ type indexWriter struct {
 	postings     []hashEntry       // postings lists offsets
 }
 
-func newIndexWriter(w io.Writer) (*indexWriter, error) {
-	ix := &indexWriter{
+func newIndexWriter(w io.Writer) *indexWriter {
+	return &indexWriter{
 		w:       ioutil.NewPageWriter(w, compactionPageBytes, 0),
 		ow:      w,
 		n:       0,
 		symbols: make(map[string]uint32, 4096),
 		series:  make(map[uint32]*indexWriterSeries, 4096),
 	}
-	return ix, ix.writeMeta()
 }
 
 func (w *indexWriter) write(wr io.Writer, b []byte) error {
@@ -336,6 +335,19 @@ func (w *indexWriter) writeSeries() error {
 }
 
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
+	if !w.started {
+		if err := w.writeMeta(); err != nil {
+			return err
+		}
+		if err := w.writeSymbols(); err != nil {
+			return err
+		}
+		if err := w.writeSeries(); err != nil {
+			return err
+		}
+		w.started = true
+	}
+
 	valt, err := newStringTuples(values, len(names))
 	if err != nil {
 		return err

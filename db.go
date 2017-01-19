@@ -281,7 +281,7 @@ func (db *DB) initBlocks() error {
 
 	for _, dir := range dirs {
 		if fileutil.Exist(filepath.Join(dir, walFileName)) {
-			h, err := openHeadBlock(dir, db.logger, nil)
+			h, err := openHeadBlock(dir, db.logger)
 			if err != nil {
 				return err
 			}
@@ -365,7 +365,6 @@ func (a *dbAppender) Add(ref uint64, t int64, v float64) error {
 	if gen != a.gen {
 		return ErrNotFound
 	}
-	a.db.metrics.samplesAppended.Inc()
 
 	return a.head.Add(ref, t, v)
 }
@@ -426,13 +425,12 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 
 	for _, b := range db.persisted {
 		m := b.Meta()
-		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
+		if intervalOverlap(mint, maxt, *m.MinTime, *m.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
 	for _, b := range db.heads {
-		m := b.Meta()
-		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
+		if intervalOverlap(mint, maxt, b.mint, b.maxt) {
 			bs = append(bs, b)
 		}
 	}
@@ -443,22 +441,33 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
 func (db *DB) cut() (*headBlock, error) {
+	var mint *int64
+
+	// If a previous block exists, fix its max time and and take the
+	// timestamp after as the minimum for the new head.
+	if len(db.heads) > 0 {
+		cur := db.heads[len(db.heads)-1]
+
+		cur.metamtx.Lock()
+
+		if cur.meta.MinTime == nil {
+			mt := cur.mint
+			cur.meta.MinTime = &mt
+		}
+		cur.meta.MaxTime = new(int64)
+
+		mt := cur.maxt + 1
+		cur.meta.MaxTime = &mt
+		mint = &mt
+
+		cur.metamtx.Unlock()
+	}
+
 	dir, err := nextBlockDir(db.dir)
 	if err != nil {
 		return nil, err
 	}
-
-	// If its not the very first head block, all its samples must not be
-	// larger than
-	var minTime *int64
-
-	if len(db.heads) > 0 {
-		cb := db.heads[len(db.heads)-1]
-		minTime = new(int64)
-		*minTime = cb.Meta().MaxTime + 1
-	}
-
-	newHead, err := openHeadBlock(dir, db.logger, minTime)
+	newHead, err := createHeadBlock(dir, db.logger, mint)
 	if err != nil {
 		return nil, err
 	}

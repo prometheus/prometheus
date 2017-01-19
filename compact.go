@@ -147,13 +147,10 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		return errors.Wrap(err, "create index file")
 	}
 
-	indexw, err := newIndexWriter(indexf)
-	if err != nil {
-		return errors.Wrap(err, "open index writer")
-	}
+	indexw := newIndexWriter(indexf)
 	chunkw := newSeriesWriter(chunkf, indexw)
 
-	if err = c.write(blocks, indexw, chunkw); err != nil {
+	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
 
@@ -178,7 +175,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	return nil
 }
 
-func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWriter) error {
+func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw SeriesWriter) error {
 	var set compactionSet
 
 	for i, b := range blocks {
@@ -260,7 +257,8 @@ func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWrite
 	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
 		return err
 	}
-	return nil
+
+	return writeMetaFile(dir, &meta)
 }
 
 type compactionSet interface {

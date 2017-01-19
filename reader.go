@@ -178,14 +178,17 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 }
 
 func (r *indexReader) lookupSymbol(o uint32) (string, error) {
+	if int(o) > len(r.b) {
+		return "", errors.Errorf("invalid symbol offset %d", o)
+	}
 	l, n := binary.Uvarint(r.b[o:])
 	if n < 0 {
-		return "", fmt.Errorf("reading symbol length failed")
+		return "", errors.New("reading symbol length failed")
 	}
 
 	end := int(o) + n + int(l)
 	if end > len(r.b) {
-		return "", fmt.Errorf("invalid length")
+		return "", errors.New("invalid length")
 	}
 	b := r.b[int(o)+n : end]
 

@@ -1,13 +1,10 @@
 package tsdb
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -40,10 +37,7 @@ var (
 type headBlock struct {
 	mtx sync.RWMutex
 	dir string
-
-	// Head blocks are initialized with a minimum timestamp if they were preceded
-	// by another block. Appended samples must not have a smaller timestamp than this.
-	minTime *int64
+	wal *WAL
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
@@ -58,14 +52,24 @@ type headBlock struct {
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
-	wal *WAL
+	metamtx    sync.RWMutex
+	meta       BlockMeta
+	mint, maxt int64 // timestamp range of current samples
+}
 
-	metamtx sync.RWMutex
-	meta    BlockMeta
+func createHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+
+	if err := writeMetaFile(dir, &BlockMeta{MinTime: minTime}); err != nil {
+		return nil, err
+	}
+	return openHeadBlock(dir, l)
 }
 
 // openHeadBlock creates a new empty head block.
-func openHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error) {
+func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -74,24 +78,22 @@ func openHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error)
 	if err != nil {
 		return nil, err
 	}
+	meta, err := readMetaFile(dir)
+	if err != nil {
+		return nil, err
+	}
 
 	h := &headBlock{
 		dir:      dir,
-		minTime:  minTime,
+		wal:      wal,
 		series:   []*memSeries{},
 		hashes:   map[uint64][]*memSeries{},
 		values:   map[string]stringset{},
 		postings: &memPostings{m: make(map[term][]uint32)},
-		wal:      wal,
 		mapper:   newPositionMapper(nil),
-	}
-
-	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(b, &h.meta); err != nil {
-		return nil, err
+		meta:     *meta,
+		mint:     math.MaxInt64,
+		maxt:     math.MinInt64,
 	}
 
 	// Replay contents of the write ahead log.
@@ -99,23 +101,22 @@ func openHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error)
 		series: func(lset labels.Labels) error {
 			h.create(lset.Hash(), lset)
 			h.meta.Stats.NumSeries++
-
 			return nil
 		},
 		sample: func(s refdSample) error {
 			h.series[s.ref].append(s.t, s.v)
 
-			if h.minTime != nil && s.t < *h.minTime {
-				return errors.Errorf("sample earlier than minimum timestamp %d", *h.minTime)
+			if !h.inBounds(s.t) {
+				return ErrOutOfBounds
 			}
-			if s.t < h.meta.MinTime {
-				h.meta.MinTime = s.t
+
+			if s.t < h.mint {
+				h.mint = s.t
 			}
-			if s.t > h.meta.MaxTime {
-				h.meta.MaxTime = s.t
+			if s.t > h.maxt {
+				h.maxt = s.t
 			}
 			h.meta.Stats.NumSamples++
-
 			return nil
 		},
 	}); err != nil {
@@ -125,6 +126,12 @@ func openHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error)
 	h.updateMapping()
 
 	return h, nil
+}
+
+// inBounds returns true if the given timestamp is within the valid
+// time bounds of the block.
+func (h *headBlock) inBounds(t int64) bool {
+	return h.meta.MinTime != nil && t < *h.meta.MinTime
 }
 
 // Close syncs all data and closes underlying resources of the head block.
@@ -294,12 +301,6 @@ func (a *headAppender) Commit() error {
 
 	a.createSeries()
 
-	var (
-		total = uint64(len(a.samples))
-		mint  = int64(math.MaxInt64)
-		maxt  = int64(math.MinInt64)
-	)
-
 	for i := range a.samples {
 		s := &a.samples[i]
 
@@ -315,9 +316,21 @@ func (a *headAppender) Commit() error {
 		return err
 	}
 
+	var (
+		total = uint64(len(a.samples))
+		mint  = int64(math.MaxInt64)
+		maxt  = int64(math.MinInt64)
+	)
+
 	for _, s := range a.samples {
 		if !a.series[s.ref].append(s.t, s.v) {
 			total--
+		}
+		if s.t < mint {
+			mint = s.t
+		}
+		if s.t > maxt {
+			maxt = s.t
 		}
 	}
 
@@ -329,11 +342,11 @@ func (a *headAppender) Commit() error {
 	a.meta.Stats.NumSamples += total
 	a.meta.Stats.NumSeries += uint64(len(a.newSeries))
 
-	if mint < a.meta.MinTime {
-		a.meta.MinTime = mint
+	if mint < a.mint {
+		a.mint = mint
 	}
-	if maxt > a.meta.MaxTime {
-		a.meta.MaxTime = maxt
+	if maxt > a.maxt {
+		a.maxt = maxt
 	}
 
 	return nil
