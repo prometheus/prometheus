@@ -2,7 +2,6 @@ package tsdb
 
 import (
 	"encoding/binary"
-	"fmt"
 	"hash/crc32"
 	"io"
 	"sort"
@@ -156,9 +155,6 @@ type IndexWriter interface {
 	// list iterator. It only has to be available during the write processing.
 	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta)
 
-	// WriteStats writes final stats for the indexed block.
-	WriteStats(BlockStats) error
-
 	// WriteLabelIndex serializes an index from label names to values.
 	// The passed in values chained tuples of strings of the length of names.
 	WriteLabelIndex(names []string, values []string) error
@@ -183,9 +179,10 @@ type indexWriterSeries struct {
 // indexWriter implements the IndexWriter interface for the standard
 // serialization format.
 type indexWriter struct {
-	ow io.Writer
-	w  *ioutil.PageWriter
-	n  int64
+	ow      io.Writer
+	w       *ioutil.PageWriter
+	n       int64
+	started bool
 
 	series map[uint32]*indexWriterSeries
 
@@ -194,14 +191,15 @@ type indexWriter struct {
 	postings     []hashEntry       // postings lists offsets
 }
 
-func newIndexWriter(w io.Writer) *indexWriter {
-	return &indexWriter{
+func newIndexWriter(w io.Writer) (*indexWriter, error) {
+	ix := &indexWriter{
 		w:       ioutil.NewPageWriter(w, compactionPageBytes, 0),
 		ow:      w,
 		n:       0,
 		symbols: make(map[string]uint32, 4096),
 		series:  make(map[uint32]*indexWriterSeries, 4096),
 	}
+	return ix, ix.writeMeta()
 }
 
 func (w *indexWriter) write(wr io.Writer, b []byte) error {
@@ -251,39 +249,6 @@ func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkM
 		labels: lset,
 		chunks: chunks,
 	}
-}
-
-func (w *indexWriter) WriteStats(stats BlockStats) error {
-	if w.n != 0 {
-		return fmt.Errorf("WriteStats must be called first")
-	}
-
-	if err := w.writeMeta(); err != nil {
-		return err
-	}
-
-	b := [64]byte{}
-
-	binary.BigEndian.PutUint64(b[0:], uint64(stats.MinTime))
-	binary.BigEndian.PutUint64(b[8:], uint64(stats.MaxTime))
-	binary.BigEndian.PutUint64(b[16:], stats.SeriesCount)
-	binary.BigEndian.PutUint64(b[24:], stats.ChunkCount)
-	binary.BigEndian.PutUint64(b[32:], stats.SampleCount)
-
-	err := w.section(64, flagStd, func(wr io.Writer) error {
-		return w.write(wr, b[:])
-	})
-	if err != nil {
-		return err
-	}
-
-	if err := w.writeSymbols(); err != nil {
-		return err
-	}
-	if err := w.writeSeries(); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (w *indexWriter) writeSymbols() error {

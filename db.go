@@ -152,7 +152,7 @@ func (db *DB) run() {
 		select {
 		case <-db.cutc:
 			db.mtx.Lock()
-			err := db.cut()
+			_, err := db.cut()
 			db.mtx.Unlock()
 
 			if err != nil {
@@ -268,34 +268,6 @@ func (db *DB) compact(i, j int) error {
 	return nil
 }
 
-func isBlockDir(fi os.FileInfo) bool {
-	if !fi.IsDir() {
-		return false
-	}
-	if !strings.HasPrefix(fi.Name(), "b-") {
-		return false
-	}
-	if _, err := strconv.ParseUint(fi.Name()[2:], 10, 32); err != nil {
-		return false
-	}
-	return true
-}
-
-func blockDirs(dir string) ([]string, error) {
-	files, err := ioutil.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var dirs []string
-
-	for _, fi := range files {
-		if isBlockDir(fi) {
-			dirs = append(dirs, filepath.Join(dir, fi.Name()))
-		}
-	}
-	return dirs, nil
-}
-
 func (db *DB) initBlocks() error {
 	var (
 		persisted []*persistedBlock
@@ -309,7 +281,7 @@ func (db *DB) initBlocks() error {
 
 	for _, dir := range dirs {
 		if fileutil.Exist(filepath.Join(dir, walFileName)) {
-			h, err := openHeadBlock(dir, db.logger)
+			h, err := openHeadBlock(dir, db.logger, nil)
 			if err != nil {
 				return err
 			}
@@ -327,9 +299,9 @@ func (db *DB) initBlocks() error {
 	db.heads = heads
 
 	if len(heads) == 0 {
-		return db.cut()
+		_, err = db.cut()
 	}
-	return nil
+	return err
 }
 
 // Close the partition.
@@ -418,24 +390,6 @@ func (a *dbAppender) Rollback() error {
 	return err
 }
 
-func (db *DB) headForDir(dir string) (int, bool) {
-	for i, b := range db.heads {
-		if b.Dir() == dir {
-			return i, true
-		}
-	}
-	return -1, false
-}
-
-func (db *DB) persistedForDir(dir string) (int, bool) {
-	for i, b := range db.persisted {
-		if b.Dir() == dir {
-			return i, true
-		}
-	}
-	return -1, false
-}
-
 func (db *DB) compactable() []Block {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
@@ -471,14 +425,14 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 	var bs []Block
 
 	for _, b := range db.persisted {
-		s := b.Stats()
-		if intervalOverlap(mint, maxt, s.MinTime, s.MaxTime) {
+		m := b.Meta()
+		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
 	for _, b := range db.heads {
-		s := b.Stats()
-		if intervalOverlap(mint, maxt, s.MinTime, s.MaxTime) {
+		m := b.Meta()
+		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
@@ -488,23 +442,62 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (db *DB) cut() error {
-	dir, err := db.nextBlockDir()
+func (db *DB) cut() (*headBlock, error) {
+	dir, err := nextBlockDir(db.dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	newHead, err := openHeadBlock(dir, db.logger)
+
+	// If its not the very first head block, all its samples must not be
+	// larger than
+	var minTime *int64
+
+	if len(db.heads) > 0 {
+		cb := db.heads[len(db.heads)-1]
+		minTime = new(int64)
+		*minTime = cb.Meta().MaxTime + 1
+	}
+
+	newHead, err := openHeadBlock(dir, db.logger, minTime)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	db.heads = append(db.heads, newHead)
 	db.headGen++
 
-	return nil
+	return newHead, nil
 }
 
-func (db *DB) nextBlockDir() (string, error) {
-	names, err := fileutil.ReadDir(db.dir)
+func isBlockDir(fi os.FileInfo) bool {
+	if !fi.IsDir() {
+		return false
+	}
+	if !strings.HasPrefix(fi.Name(), "b-") {
+		return false
+	}
+	if _, err := strconv.ParseUint(fi.Name()[2:], 10, 32); err != nil {
+		return false
+	}
+	return true
+}
+
+func blockDirs(dir string) ([]string, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+
+	for _, fi := range files {
+		if isBlockDir(fi) {
+			dirs = append(dirs, filepath.Join(dir, fi.Name()))
+		}
+	}
+	return dirs, nil
+}
+
+func nextBlockDir(dir string) (string, error) {
+	names, err := fileutil.ReadDir(dir)
 	if err != nil {
 		return "", err
 	}
@@ -520,7 +513,7 @@ func (db *DB) nextBlockDir() (string, error) {
 		}
 		i = j
 	}
-	return filepath.Join(db.dir, fmt.Sprintf("b-%0.6d", i+1)), nil
+	return filepath.Join(dir, fmt.Sprintf("b-%0.6d", i+1)), nil
 }
 
 // PartitionedDB is a time series storage.
@@ -690,15 +683,4 @@ func yoloString(b []byte) string {
 		Len:  sh.Len,
 	}
 	return *((*string)(unsafe.Pointer(&h)))
-}
-
-func yoloBytes(s string) []byte {
-	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
-
-	h := reflect.SliceHeader{
-		Cap:  sh.Len,
-		Len:  sh.Len,
-		Data: sh.Data,
-	}
-	return *((*[]byte)(unsafe.Pointer(&h)))
 }

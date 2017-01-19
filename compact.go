@@ -93,11 +93,11 @@ func compactionMatch(blocks []Block) bool {
 	// Naively check whether both blocks have roughly the same number of samples
 	// and whether the total sample count doesn't exceed 2GB chunk file size
 	// by rough approximation.
-	n := float64(blocks[0].Stats().SampleCount)
+	n := float64(blocks[0].Meta().Stats.NumSamples)
 	t := n
 
 	for _, b := range blocks[1:] {
-		m := float64(b.Stats().SampleCount)
+		m := float64(b.Meta().Stats.NumSamples)
 
 		if m < 0.7*n || m > 1.3*n {
 			return false
@@ -109,12 +109,12 @@ func compactionMatch(blocks []Block) bool {
 	return t < 10*200e6
 }
 
-func mergeStats(blocks ...Block) (res BlockStats) {
-	res.MinTime = blocks[0].Stats().MinTime
-	res.MaxTime = blocks[len(blocks)-1].Stats().MaxTime
+func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
+	res.MinTime = blocks[0].Meta().MinTime
+	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
 
 	for _, b := range blocks {
-		res.SampleCount += b.Stats().SampleCount
+		res.Stats.NumSamples += b.Meta().Stats.NumSamples
 	}
 	return res
 }
@@ -147,7 +147,10 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		return errors.Wrap(err, "create index file")
 	}
 
-	indexw := newIndexWriter(indexf)
+	indexw, err := newIndexWriter(indexf)
+	if err != nil {
+		return errors.Wrap(err, "open index writer")
+	}
 	chunkw := newSeriesWriter(chunkf, indexw)
 
 	if err = c.write(blocks, indexw, chunkw); err != nil {
@@ -204,7 +207,7 @@ func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWrite
 		postings = &memPostings{m: make(map[term][]uint32, 512)}
 		values   = map[string]stringset{}
 		i        = uint32(0)
-		stats    = mergeStats(blocks...)
+		meta     = mergeBlockMetas(blocks...)
 	)
 
 	for set.Next() {
@@ -213,8 +216,8 @@ func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWrite
 			return err
 		}
 
-		stats.ChunkCount += uint64(len(chunks))
-		stats.SeriesCount++
+		meta.Stats.NumChunks += uint64(len(chunks))
+		meta.Stats.NumSeries++
 
 		for _, l := range lset {
 			valset, ok := values[l.Name]
@@ -230,10 +233,6 @@ func (c *compactor) write(blocks []Block, indexw IndexWriter, chunkw SeriesWrite
 	}
 	if set.Err() != nil {
 		return set.Err()
-	}
-
-	if err := indexw.WriteStats(stats); err != nil {
-		return err
 	}
 
 	s := make([]string, 0, 256)

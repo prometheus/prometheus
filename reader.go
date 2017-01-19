@@ -53,9 +53,6 @@ func (s *seriesReader) Chunk(offset uint32) (chunks.Chunk, error) {
 
 // IndexReader provides reading access of serialized index data.
 type IndexReader interface {
-	// Stats returns statisitics about the indexed data.
-	Stats() (BlockStats, error)
-
 	// LabelValues returns the possible label values
 	LabelValues(names ...string) (StringTuples, error)
 
@@ -193,28 +190,6 @@ func (r *indexReader) lookupSymbol(o uint32) (string, error) {
 	b := r.b[int(o)+n : end]
 
 	return yoloString(b), nil
-}
-
-func (r *indexReader) Stats() (BlockStats, error) {
-	flag, b, err := r.section(8)
-	if err != nil {
-		return BlockStats{}, err
-	}
-	if flag != flagStd {
-		return BlockStats{}, errInvalidFlag
-	}
-
-	if len(b) != 64 {
-		return BlockStats{}, errInvalidSize
-	}
-
-	return BlockStats{
-		MinTime:     int64(binary.BigEndian.Uint64(b)),
-		MaxTime:     int64(binary.BigEndian.Uint64(b[8:])),
-		SeriesCount: binary.BigEndian.Uint64(b[16:]),
-		ChunkCount:  binary.BigEndian.Uint64(b[24:]),
-		SampleCount: binary.BigEndian.Uint64(b[32:]),
-	}, nil
 }
 
 func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {

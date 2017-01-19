@@ -118,8 +118,14 @@ func BenchmarkWALRead(b *testing.B) {
 		var numSeries, numSamples int
 
 		err = wal.ReadAll(&walHandler{
-			series: func(lset labels.Labels) { numSeries++ },
-			sample: func(smpl refdSample) { numSamples++ },
+			series: func(lset labels.Labels) error {
+				numSeries++
+				return nil
+			},
+			sample: func(smpl refdSample) error {
+				numSamples++
+				return nil
+			},
 		})
 		require.NoError(b, err)
 

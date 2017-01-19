@@ -1,10 +1,11 @@
 package tsdb
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/pkg/errors"
@@ -12,23 +13,36 @@ import (
 
 // Block handles reads against a Block of time series data.
 type Block interface {
+	// Directory where block data is stored.
 	Dir() string
-	Stats() BlockStats
+
+	// Stats returns statistics about the block.
+	Meta() BlockMeta
+
+	// Index returns an IndexReader over the block's data.
 	Index() IndexReader
+
+	// Series returns a SeriesReader over the block's data.
 	Series() SeriesReader
+
+	// Persisted returns whether the block is already persisted,
+	// and no longer being appended to.
 	Persisted() bool
+
+	// Close releases all underlying resources of the block.
 	Close() error
 }
 
-// BlockStats provides stats on a data block.
-type BlockStats struct {
-	MinTime, MaxTime int64 // time range of samples in the block
+// BlockMeta provides meta information about a block.
+type BlockMeta struct {
+	MinTime int64 `json:"minTime,omitempty"`
+	MaxTime int64 `json:"maxTime,omitempty"`
 
-	SampleCount uint64
-	SeriesCount uint64
-	ChunkCount  uint64
-
-	mtx sync.RWMutex
+	Stats struct {
+		NumSamples uint64 `json:"numSamples,omitempty"`
+		NumSeries  uint64 `json:"numSeries,omitempty"`
+		NumChunks  uint64 `json:"numChunks,omitempty"`
+	} `json:"stats,omitempty"`
 }
 
 const (
@@ -37,14 +51,21 @@ const (
 )
 
 type persistedBlock struct {
-	dir   string
-	stats *BlockStats
+	dir  string
+	meta BlockMeta
 
 	chunksf, indexf *mmapFile
 
 	chunkr *seriesReader
 	indexr *indexReader
 }
+
+type blockMeta struct {
+	Version int       `json:"version"`
+	Meta    BlockMeta `json:",inline"`
+}
+
+const metaFilename = "meta.json"
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
 	// TODO(fabxc): validate match of name and stats time, validate magic.
@@ -68,19 +89,22 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, errors.Wrap(err, "create index reader")
 	}
 
-	stats, err := ir.Stats()
-	if err != nil {
-		return nil, errors.Wrap(err, "read stats")
-	}
-
 	pb := &persistedBlock{
 		dir:     dir,
 		chunksf: chunksf,
 		indexf:  indexf,
 		chunkr:  sr,
 		indexr:  ir,
-		stats:   &stats,
 	}
+
+	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, &pb.meta); err != nil {
+		return nil, err
+	}
+
 	return pb, nil
 }
 
@@ -98,7 +122,7 @@ func (pb *persistedBlock) Dir() string          { return pb.dir }
 func (pb *persistedBlock) Persisted() bool      { return true }
 func (pb *persistedBlock) Index() IndexReader   { return pb.indexr }
 func (pb *persistedBlock) Series() SeriesReader { return pb.chunkr }
-func (pb *persistedBlock) Stats() BlockStats    { return *pb.stats }
+func (pb *persistedBlock) Meta() BlockMeta      { return pb.meta }
 
 func chunksFileName(path string) string {
 	return filepath.Join(path, "chunks-000")

@@ -88,8 +88,8 @@ func OpenWAL(dir string, l log.Logger, flushInterval time.Duration) (*WAL, error
 }
 
 type walHandler struct {
-	sample func(refdSample)
-	series func(labels.Labels)
+	sample func(refdSample) error
+	series func(labels.Labels) error
 }
 
 // ReadAll consumes all entries in the WAL and triggers the registered handlers.
@@ -343,7 +343,9 @@ func (d *walDecoder) decodeSeries(flag byte, b []byte) error {
 			b = b[n+int(vl):]
 		}
 
-		d.handler.series(lset)
+		if err := d.handler.series(lset); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -382,7 +384,9 @@ func (d *walDecoder) decodeSamples(flag byte, b []byte) error {
 		smpl.v = float64(math.Float64frombits(binary.BigEndian.Uint64(b)))
 		b = b[8:]
 
-		d.handler.sample(smpl)
+		if err := d.handler.sample(smpl); err != nil {
+			return err
+		}
 	}
 	return nil
 }

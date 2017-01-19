@@ -1,10 +1,13 @@
 package tsdb
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -37,6 +41,10 @@ type headBlock struct {
 	mtx sync.RWMutex
 	dir string
 
+	// Head blocks are initialized with a minimum timestamp if they were preceded
+	// by another block. Appended samples must not have a smaller timestamp than this.
+	minTime *int64
+
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	series []*memSeries
@@ -52,18 +60,24 @@ type headBlock struct {
 
 	wal *WAL
 
-	stats *BlockStats
+	metamtx sync.RWMutex
+	meta    BlockMeta
 }
 
 // openHeadBlock creates a new empty head block.
-func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
+func openHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+
 	wal, err := OpenWAL(dir, log.NewContext(l).With("component", "wal"), 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
 
-	b := &headBlock{
+	h := &headBlock{
 		dir:      dir,
+		minTime:  minTime,
 		series:   []*memSeries{},
 		hashes:   map[uint64][]*memSeries{},
 		values:   map[string]stringset{},
@@ -71,35 +85,46 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		wal:      wal,
 		mapper:   newPositionMapper(nil),
 	}
-	b.stats = &BlockStats{
-		MinTime: math.MinInt64,
-		MaxTime: math.MaxInt64,
-	}
 
-	err = wal.ReadAll(&walHandler{
-		series: func(lset labels.Labels) {
-			b.create(lset.Hash(), lset)
-			b.stats.SeriesCount++
-		},
-		sample: func(s refdSample) {
-			b.series[s.ref].append(s.t, s.v)
-
-			if s.t < b.stats.MinTime {
-				b.stats.MinTime = s.t
-			}
-			if s.t > b.stats.MaxTime {
-				b.stats.MaxTime = s.t
-			}
-			b.stats.SampleCount++
-		},
-	})
+	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, err
 	}
+	if err := json.Unmarshal(b, &h.meta); err != nil {
+		return nil, err
+	}
 
-	b.updateMapping()
+	// Replay contents of the write ahead log.
+	if err = wal.ReadAll(&walHandler{
+		series: func(lset labels.Labels) error {
+			h.create(lset.Hash(), lset)
+			h.meta.Stats.NumSeries++
 
-	return b, nil
+			return nil
+		},
+		sample: func(s refdSample) error {
+			h.series[s.ref].append(s.t, s.v)
+
+			if h.minTime != nil && s.t < *h.minTime {
+				return errors.Errorf("sample earlier than minimum timestamp %d", *h.minTime)
+			}
+			if s.t < h.meta.MinTime {
+				h.meta.MinTime = s.t
+			}
+			if s.t > h.meta.MaxTime {
+				h.meta.MaxTime = s.t
+			}
+			h.meta.Stats.NumSamples++
+
+			return nil
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	h.updateMapping()
+
+	return h, nil
 }
 
 // Close syncs all data and closes underlying resources of the head block.
@@ -107,18 +132,17 @@ func (h *headBlock) Close() error {
 	return h.wal.Close()
 }
 
+func (h *headBlock) Meta() BlockMeta {
+	h.metamtx.RLock()
+	defer h.metamtx.RUnlock()
+
+	return h.meta
+}
+
 func (h *headBlock) Dir() string          { return h.dir }
 func (h *headBlock) Persisted() bool      { return false }
 func (h *headBlock) Index() IndexReader   { return &headIndexReader{h} }
 func (h *headBlock) Series() SeriesReader { return &headSeriesReader{h} }
-
-// Stats returns statisitics about the indexed data.
-func (h *headBlock) Stats() BlockStats {
-	h.stats.mtx.RLock()
-	defer h.stats.mtx.RUnlock()
-
-	return *h.stats
-}
 
 func (h *headBlock) Appender() Appender {
 	h.mtx.RLock()
@@ -194,7 +218,7 @@ func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error
 }
 
 func (a *headAppender) Add(ref uint64, t int64, v float64) error {
-	// We only own the first 5 bytes of the reference. Anything before is
+	// We only own the last 5 bytes of the reference. Anything before is
 	// used by higher-order appenders. We erase it to avoid issues.
 	ref = (ref << 24) >> 24
 
@@ -287,6 +311,7 @@ func (a *headAppender) Commit() error {
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
 	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
+		a.mtx.RUnlock()
 		return err
 	}
 
@@ -298,17 +323,17 @@ func (a *headAppender) Commit() error {
 
 	a.mtx.RUnlock()
 
-	a.stats.mtx.Lock()
-	defer a.stats.mtx.Unlock()
+	a.metamtx.Lock()
+	defer a.metamtx.Unlock()
 
-	a.stats.SampleCount += total
-	a.stats.SeriesCount += uint64(len(a.newSeries))
+	a.meta.Stats.NumSamples += total
+	a.meta.Stats.NumSeries += uint64(len(a.newSeries))
 
-	if mint < a.stats.MinTime {
-		a.stats.MinTime = mint
+	if mint < a.meta.MinTime {
+		a.meta.MinTime = mint
 	}
-	if maxt > a.stats.MaxTime {
-		a.stats.MaxTime = maxt
+	if maxt > a.meta.MaxTime {
+		a.meta.MaxTime = maxt
 	}
 
 	return nil
@@ -420,12 +445,6 @@ func (h *headIndexReader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-func (h *headIndexReader) Stats() (BlockStats, error) {
-	h.stats.mtx.RLock()
-	defer h.stats.mtx.RUnlock()
-	return *h.stats, nil
-}
-
 // get retrieves the chunk with the hash and label set and creates
 // a new one if it doesn't exist yet.
 func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
@@ -467,10 +486,10 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (h *headBlock) fullness() float64 {
-	h.stats.mtx.RLock()
-	defer h.stats.mtx.RUnlock()
+	h.metamtx.RLock()
+	defer h.metamtx.RUnlock()
 
-	return float64(h.stats.SampleCount) / float64(h.stats.SeriesCount+1) / 250
+	return float64(h.meta.Stats.NumSamples) / float64(h.meta.Stats.NumSeries+1) / 250
 }
 
 func (h *headBlock) updateMapping() {
