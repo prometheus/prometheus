@@ -82,11 +82,38 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Kubernetes, error) {
 		err  error
 	)
 	if conf.APIServer.URL == nil {
+		// Use the Kubernetes provided pod service account
+		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
 		kcfg, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err
 		}
+		// Because the handling of configuration parameters changes
+		// we should inform the user when their currently configured values
+		// will be ignored due to precedence of InClusterConfig
+		l.Info("Using pod service account via in-cluster config")
+		if conf.TLSConfig.CAFile != "" {
+			l.Warn("Configured TLS CA file is ignored when using pod service account")
+		}
+		if conf.TLSConfig.CertFile != "" || conf.TLSConfig.KeyFile != "" {
+			l.Warn("Configured TLS client certificate is ignored when using pod service account")
+		}
+		if conf.BearerToken != "" {
+			l.Warn("Configured auth token is ignored when using pod service account")
+		}
+		if conf.BasicAuth != nil {
+			l.Warn("Configured basic authentication credentials are ignored when using pod service account")
+		}
 	} else {
+		kcfg = &rest.Config{
+			Host: conf.APIServer.String(),
+			TLSClientConfig: rest.TLSClientConfig{
+				CAFile:   conf.TLSConfig.CAFile,
+				CertFile: conf.TLSConfig.CertFile,
+				KeyFile:  conf.TLSConfig.KeyFile,
+			},
+			Insecure: conf.TLSConfig.InsecureSkipVerify,
+		}
 		token := conf.BearerToken
 		if conf.BearerTokenFile != "" {
 			bf, err := ioutil.ReadFile(conf.BearerTokenFile)
@@ -95,24 +122,15 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Kubernetes, error) {
 			}
 			token = string(bf)
 		}
+		kcfg.BearerToken = token
 
-		kcfg = &rest.Config{
-			Host:        conf.APIServer.String(),
-			BearerToken: token,
-			TLSClientConfig: rest.TLSClientConfig{
-				CAFile: conf.TLSConfig.CAFile,
-			},
+		if conf.BasicAuth != nil {
+			kcfg.Username = conf.BasicAuth.Username
+			kcfg.Password = conf.BasicAuth.Password
 		}
 	}
-	kcfg.UserAgent = "prometheus/discovery"
 
-	if conf.BasicAuth != nil {
-		kcfg.Username = conf.BasicAuth.Username
-		kcfg.Password = conf.BasicAuth.Password
-	}
-	kcfg.TLSClientConfig.CertFile = conf.TLSConfig.CertFile
-	kcfg.TLSClientConfig.KeyFile = conf.TLSConfig.KeyFile
-	kcfg.Insecure = conf.TLSConfig.InsecureSkipVerify
+	kcfg.UserAgent = "prometheus/discovery"
 
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {

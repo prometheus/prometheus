@@ -39,6 +39,12 @@ func (f targetRetrieverFunc) Targets() []*retrieval.Target {
 	return f()
 }
 
+type alertmanagerRetrieverFunc func() []string
+
+func (f alertmanagerRetrieverFunc) Alertmanagers() []string {
+	return f()
+}
+
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
@@ -71,11 +77,16 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
+	ar := alertmanagerRetrieverFunc(func() []string {
+		return []string{"http://alertmanager.example.com:8080/api/v1/alerts"}
+	})
+
 	api := &API{
-		Storage:         suite.Storage(),
-		QueryEngine:     suite.QueryEngine(),
-		targetRetriever: tr,
-		now:             func() model.Time { return now },
+		Storage:               suite.Storage(),
+		QueryEngine:           suite.QueryEngine(),
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		now: func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -429,12 +440,23 @@ func TestEndpoints(t *testing.T) {
 			}{2},
 		}, {
 			endpoint: api.targets,
-			response: []*Target{
-				&Target{
-					DiscoveredLabels: model.LabelSet{},
-					Labels:           model.LabelSet{},
-					ScrapeUrl:        "http://example.com:8080/metrics",
-					Health:           "unknown",
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					&Target{
+						DiscoveredLabels: model.LabelSet{},
+						Labels:           model.LabelSet{},
+						ScrapeURL:        "http://example.com:8080/metrics",
+						Health:           "unknown",
+					},
+				},
+			},
+		}, {
+			endpoint: api.alertmanagers,
+			response: &AlertmanagerDiscovery{
+				ActiveAlertmanagers: []*AlertmanagerTarget{
+					&AlertmanagerTarget{
+						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
 				},
 			},
 		},

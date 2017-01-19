@@ -27,6 +27,8 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -363,6 +365,43 @@ func validateAlertmanagerURL(u string) error {
 		return fmt.Errorf("missing scheme in Alertmanager URL: %s", u)
 	}
 	return nil
+}
+
+func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error) {
+	u, err := url.Parse(us)
+	if err != nil {
+		return nil, err
+	}
+	acfg := &config.AlertmanagerConfig{
+		Scheme:     u.Scheme,
+		PathPrefix: u.Path,
+		Timeout:    cfg.notifierTimeout,
+		ServiceDiscoveryConfig: config.ServiceDiscoveryConfig{
+			StaticConfigs: []*config.TargetGroup{
+				{
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel: model.LabelValue(u.Host),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if u.User != nil {
+		acfg.HTTPClientConfig = config.HTTPClientConfig{
+			BasicAuth: &config.BasicAuth{
+				Username: u.User.Username(),
+			},
+		}
+
+		if password, isSet := u.User.Password(); isSet {
+			acfg.HTTPClientConfig.BasicAuth.Password = password
+		}
+	}
+
+	return acfg, nil
 }
 
 var helpTmpl = `

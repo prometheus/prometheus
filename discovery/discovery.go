@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"golang.org/x/net/context"
 )
@@ -114,6 +115,15 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]TargetPro
 			log.Errorf("Cannot create ECS discovery: %s", err)
 		}
 		app("ecs", i, d)
+	}
+
+	for i, c := range cfg.TritonSDConfigs {
+		t, err := triton.New(log.With("sd", "triton"), c)
+		if err != nil {
+			log.Errorf("Cannot create Triton discovery: %s", err)
+			continue
+		}
+		app("triton", i, t)
 	}
 
 	if len(cfg.StaticConfigs) > 0 {
