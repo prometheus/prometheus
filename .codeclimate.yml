@@ -9,3 +9,6 @@ ratings:
  paths:
  - "**.go"
 exclude_paths:
+ - /vendor
+ - /web/ui/static/vendor
+ - /web/ui/bindata.go
