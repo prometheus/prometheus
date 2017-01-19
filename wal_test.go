@@ -32,16 +32,16 @@ func BenchmarkWALWrite(b *testing.B) {
 	require.NoError(b, err)
 
 	var (
-		samples [][]hashedSample
+		samples [][]refdSample
 		ts      int64
 	)
 	for i := 0; i < 300; i++ {
 		ts += int64(30000)
-		scrape := make([]hashedSample, 0, len(series))
+		scrape := make([]refdSample, 0, len(series))
 
 		for ref := range series {
-			scrape = append(scrape, hashedSample{
-				ref: uint32(ref),
+			scrape = append(scrape, refdSample{
+				ref: uint64(ref),
 				t:   ts,
 				v:   12345788,
 			})
@@ -83,16 +83,16 @@ func BenchmarkWALRead(b *testing.B) {
 		require.NoError(b, err)
 
 		var (
-			samples [][]hashedSample
+			samples [][]refdSample
 			ts      int64
 		)
 		for i := 0; i < 300; i++ {
 			ts += int64(30000)
-			scrape := make([]hashedSample, 0, len(bseries))
+			scrape := make([]refdSample, 0, len(bseries))
 
 			for ref := range bseries {
-				scrape = append(scrape, hashedSample{
-					ref: uint32(ref),
+				scrape = append(scrape, refdSample{
+					ref: uint64(ref),
 					t:   ts,
 					v:   12345788,
 				})
@@ -119,7 +119,7 @@ func BenchmarkWALRead(b *testing.B) {
 
 		err = wal.ReadAll(&walHandler{
 			series: func(lset labels.Labels) { numSeries++ },
-			sample: func(smpl hashedSample) { numSamples++ },
+			sample: func(smpl refdSample) { numSamples++ },
 		})
 		require.NoError(b, err)
 
@@ -149,16 +149,16 @@ func BenchmarkWALReadIntoHead(b *testing.B) {
 		require.NoError(b, err)
 
 		var (
-			samples [][]hashedSample
+			samples [][]refdSample
 			ts      int64
 		)
 		for i := 0; i < 300; i++ {
 			ts += int64(30000)
-			scrape := make([]hashedSample, 0, len(bseries))
+			scrape := make([]refdSample, 0, len(bseries))
 
 			for ref := range bseries {
-				scrape = append(scrape, hashedSample{
-					ref: uint32(ref),
+				scrape = append(scrape, refdSample{
+					ref: uint64(ref),
 					t:   ts,
 					v:   12345788,
 				})
