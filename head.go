@@ -131,7 +131,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 // inBounds returns true if the given timestamp is within the valid
 // time bounds of the block.
 func (h *headBlock) inBounds(t int64) bool {
-	return h.meta.MinTime != nil && t < *h.meta.MinTime
+	return h.meta.MinTime == nil || t >= *h.meta.MinTime
 }
 
 // Close syncs all data and closes underlying resources of the head block.
@@ -244,10 +244,17 @@ func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 		if ms == nil {
 			return ErrNotFound
 		}
-		c := ms.head()
-
 		// TODO(fabxc): memory series should be locked here already.
 		// Only problem is release of locks in case of a rollback.
+		c := ms.head()
+
+		// TODO(fabxc): this is a race. The meta must be locked.
+		// Just drop out-of-bounds sample for now – support for multiple
+		// appendable heads needed.
+		if !a.inBounds(t) {
+			// return ErrOutOfBounds
+			return nil
+		}
 		if t < c.maxTime {
 			return ErrOutOfOrderSample
 		}

@@ -65,6 +65,7 @@ type persistedBlock struct {
 
 type blockMeta struct {
 	*BlockMeta
+
 	Version int `json:"version"`
 }
 
