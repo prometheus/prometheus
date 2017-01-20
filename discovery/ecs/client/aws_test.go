@@ -212,7 +212,7 @@ func TestGetClusters(t *testing.T) {
 		// Mock
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListClusters(t, mockECS, test.errorList, cIDs...)
 		awsmock.MockECSDescribeClusters(t, mockECS, test.errorDesc, test.clusters...)
 
@@ -226,7 +226,6 @@ func TestGetClusters(t *testing.T) {
 			if len(res) != len(test.clusters) {
 				t.Errorf("- %+v\n -The length of the retrieved clusters differ, want: %d; got: %d", test, len(test.clusters), len(res))
 			}
-
 			for i, got := range res {
 				want := test.clusters[i]
 				if !reflect.DeepEqual(want, got) {
@@ -288,9 +287,7 @@ func TestGetContainerInstances(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListContainerInstances(t, mockECS, test.errorList, ciIDs...)
 		awsmock.MockECSDescribeContainerInstances(t, mockECS, test.errorDesc, test.cInstances...)
 
@@ -367,9 +364,7 @@ func TestGetTasks(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListTasks(t, mockECS, test.errorList, tIDs...)
 		awsmock.MockECSDescribeTasks(t, mockECS, test.errorDesc, test.tasks...)
 
@@ -436,9 +431,7 @@ func TestGetInstances(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockEC2 := sdk.NewMockEC2API(ctrl)
+		mockEC2 := &sdk.EC2API{}
 		awsmock.MockEC2DescribeInstances(t, mockEC2, test.errorDesc, test.instances...)
 
 		r := &AWSRetriever{
@@ -574,9 +567,7 @@ func TestGetServices(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListServices(t, mockECS, test.errorList, sIDs...)
 		awsmock.MockECSDescribeServices(t, mockECS, test.errorDesc, test.services...)
 
@@ -716,9 +707,7 @@ func TestGetTaskDefinitions(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSDescribeTaskDefinition(t, mockECS, test.errorWhen, test.taskDefs...)
 
 		r := &AWSRetriever{
@@ -811,9 +800,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
+		mockECS := &sdk.ECSAPI{}
 		if test.wantCached {
 			awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, test.newTaskDefs...)
 		} else {
@@ -841,7 +828,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 	}
 }
 
-func mockFullAPI(t *testing.T, mockECS *sdk.MockECSAPI, mockEC2 *sdk.MockEC2API,
+func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 	errLClusters, errDClusters, errLCInstances, errDCInstances, errDInstances,
 	errLTasks, errDTasks, errLServices, errDServices bool) {
 
@@ -1148,10 +1135,8 @@ func TestRetrieveOk(t *testing.T) {
 	}
 
 	// Mock
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	mockECS := sdk.NewMockECSAPI(ctrl)
-	mockEC2 := sdk.NewMockEC2API(ctrl)
+	mockECS := &sdk.ECSAPI{}
+	mockEC2 := &sdk.EC2API{}
 
 	// Mock all the API
 	mockFullAPI(t, mockECS, mockEC2, false, false, false, false, false, false, false, false, false)
@@ -1208,8 +1193,8 @@ func TestRetrieveError(t *testing.T) {
 		// Mock
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockECS := sdk.NewMockECSAPI(ctrl)
-		mockEC2 := sdk.NewMockEC2API(ctrl)
+		mockECS := &sdk.ECSAPI{}
+		mockEC2 := &sdk.EC2API{}
 
 		// Mock all the API
 		mockFullAPI(t, mockECS, mockEC2, test.errLClusters, test.errDClusters, test.errLCInstances, test.errDCInstances, test.errDInstances, test.errLTasks, test.errDTasks, test.errLServices, test.errDServices)

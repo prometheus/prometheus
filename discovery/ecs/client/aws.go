@@ -30,8 +30,8 @@ import (
 )
 
 // Generate ECS API mocks running go generate
-//go:generate mockgen -source ../../vendor/github.com/aws/aws-sdk-go/service/ecs/ecsiface/interface.go -package sdk -destination ./mock/aws/sdk/ecsiface_mock.go
-//go:generate mockgen -source ../../vendor/github.com/aws/aws-sdk-go/service/ec2/ec2iface/interface.go -package sdk -destination ./mock/aws/sdk/ec2iface_mock.go
+//go:generate mockery -dir ../../vendor/github.com/aws/aws-sdk-go/service/ecs/ecsiface/ -name ECSAPI -output ./mock/aws/sdk/  -outpkg sdk
+//go:generate mockery -dir ../../vendor/github.com/aws/aws-sdk-go/service/ec2/ec2iface/ -name EC2API -output ./mock/aws/sdk/  -outpkg sdk
 
 const (
 	maxAPIRes = 100
