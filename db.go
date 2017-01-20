@@ -132,7 +132,6 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 	}
 	db.compactor = newCompactor(r, &compactorOptions{
 		maxBlockRange: opts.MaxBlockRange,
-		maxBlocks:     3,
 		maxSize:       1 << 29, // 512MB
 	})
 
@@ -148,31 +147,49 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 func (db *DB) run() {
 	defer close(db.donec)
 
-	for {
-		select {
-		case <-db.cutc:
-			db.mtx.Lock()
-			_, err := db.cut()
-			db.mtx.Unlock()
-
-			if err != nil {
-				db.logger.Log("msg", "cut failed", "err", err)
-			} else {
-				select {
-				case db.compactc <- struct{}{}:
-				default:
-				}
-			}
-			// Drain cut channel so we don't trigger immediately again.
+	go func() {
+		for {
 			select {
 			case <-db.cutc:
-			default:
-			}
+				db.mtx.Lock()
+				_, err := db.cut()
+				db.mtx.Unlock()
 
+				if err != nil {
+					db.logger.Log("msg", "cut failed", "err", err)
+				} else {
+					select {
+					case db.compactc <- struct{}{}:
+					default:
+					}
+				}
+				// Drain cut channel so we don't trigger immediately again.
+				select {
+				case <-db.cutc:
+				default:
+				}
+			case <-db.stopc:
+			}
+		}
+	}()
+
+	for {
+		select {
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
-			i, j, ok := db.compactor.pick(db.compactable())
+			var infos []compactionInfo
+			for _, b := range db.compactable() {
+				m := b.Meta()
+
+				infos = append(infos, compactionInfo{
+					generation: m.Compaction.Generation,
+					mint:       *m.MinTime,
+					maxt:       *m.MaxTime,
+				})
+			}
+
+			i, j, ok := db.compactor.pick(infos)
 			if !ok {
 				continue
 			}
@@ -180,6 +197,7 @@ func (db *DB) run() {
 				db.logger.Log("msg", "compaction failed", "err", err)
 				continue
 			}
+			db.logger.Log("msg", "compaction completed")
 			// Trigger another compaction in case there's more work to do.
 			select {
 			case db.compactc <- struct{}{}:

@@ -49,7 +49,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 type compactorOptions struct {
-	maxBlocks     uint8
 	maxBlockRange uint64
 	maxSize       uint64
 }
@@ -61,9 +60,14 @@ func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
 	}
 }
 
+type compactionInfo struct {
+	generation int
+	mint, maxt int64
+}
+
 // pick returns a range [i, j] in the blocks that are suitable to be compacted
 // into a single block at position i.
-func (c *compactor) pick(bs []Block) (i, j int, ok bool) {
+func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
 
 	last := len(bs) - 1
 	if len(bs) == 0 {
@@ -71,8 +75,8 @@ func (c *compactor) pick(bs []Block) (i, j int, ok bool) {
 	}
 
 	// Make sure we always compact the last block if unpersisted.
-	if bs[last].Meta().Compaction.Generation == 0 {
-		if len(bs) >= 3 && compactionMatch(bs[last-2:last+1]) {
+	if bs[last].generation == 0 {
+		if len(bs) >= 3 && c.match(bs[last-2:last+1]) {
 			return last - 2, last, true
 		}
 		return last, last, true
@@ -80,55 +84,40 @@ func (c *compactor) pick(bs []Block) (i, j int, ok bool) {
 
 	for i := len(bs); i-3 >= 0; i -= 3 {
 		tpl := bs[i-3 : i]
-		if compactionMatch(tpl) {
+		if c.match(tpl) {
 			return i - 3, i - 1, true
 		}
 	}
 	return 0, 0, false
 }
 
-func compactionMatch(blocks []Block) bool {
-	g := blocks[0].Meta().Compaction.Generation
+func (c *compactor) match(bs []compactionInfo) bool {
+	g := bs[0].generation
 	if g >= 5 {
 		return false
 	}
 
-	for _, b := range blocks[1:] {
-		if b.Meta().Compaction.Generation == 0 {
+	for _, b := range bs {
+		if b.generation == 0 {
 			continue
 		}
-		if b.Meta().Compaction.Generation != g {
+		if b.generation != g {
 			return false
 		}
 	}
-	return true
 
-	// TODO(fabxc): check whether combined size is below maxCompactionSize.
-	// Apply maximum time range? or number of series? – might already be covered by size implicitly.
-
-	// Naively check whether both blocks have roughly the same number of samples
-	// and whether the total sample count doesn't exceed 2GB chunk file size
-	// by rough approximation.
-	n := float64(blocks[0].Meta().Stats.NumSamples)
-	t := n
-
-	for _, b := range blocks[1:] {
-		m := float64(b.Meta().Stats.NumSamples)
-
-		if m < 0.7*n || m > 1.3*n {
-			return false
-		}
-		t += m
-	}
-
-	// Pessimistic 10 bytes/sample should do.
-	return t < 10*200e6
+	return uint64(bs[len(bs)-1].maxt-bs[0].mint) <= c.opts.maxBlockRange
 }
 
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	res.MinTime = blocks[0].Meta().MinTime
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
-	res.Compaction.Generation = blocks[0].Meta().Compaction.Generation + 1
+
+	g := blocks[0].Meta().Compaction.Generation
+	if g == 0 && len(blocks) > 1 {
+		g++
+	}
+	res.Compaction.Generation = g + 1
 
 	for _, b := range blocks {
 		res.Stats.NumSamples += b.Meta().Stats.NumSamples

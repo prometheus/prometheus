@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"bufio"
 	"encoding/binary"
 	"hash/crc32"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/bradfitz/slice"
-	"github.com/coreos/etcd/pkg/ioutil"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
@@ -43,7 +43,7 @@ type SeriesWriter interface {
 // serialization format.
 type seriesWriter struct {
 	ow io.Writer
-	w  *ioutil.PageWriter
+	w  *bufio.Writer
 	n  int64
 	c  int
 
@@ -53,7 +53,7 @@ type seriesWriter struct {
 func newSeriesWriter(w io.Writer, index IndexWriter) *seriesWriter {
 	return &seriesWriter{
 		ow:    w,
-		w:     ioutil.NewPageWriter(w, compactionPageBytes, 0),
+		w:     bufio.NewWriterSize(w, 1*1024*1024),
 		n:     0,
 		index: index,
 	}
@@ -180,7 +180,7 @@ type indexWriterSeries struct {
 // serialization format.
 type indexWriter struct {
 	ow      io.Writer
-	w       *ioutil.PageWriter
+	w       *bufio.Writer
 	n       int64
 	started bool
 
@@ -193,7 +193,7 @@ type indexWriter struct {
 
 func newIndexWriter(w io.Writer) *indexWriter {
 	return &indexWriter{
-		w:       ioutil.NewPageWriter(w, compactionPageBytes, 0),
+		w:       bufio.NewWriterSize(w, 1*1024*1024),
 		ow:      w,
 		n:       0,
 		symbols: make(map[string]uint32, 4096),

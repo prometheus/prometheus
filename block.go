@@ -68,9 +68,9 @@ type persistedBlock struct {
 }
 
 type blockMeta struct {
-	*BlockMeta
-
 	Version int `json:"version"`
+
+	*BlockMeta
 }
 
 const metaFilename = "meta.json"
