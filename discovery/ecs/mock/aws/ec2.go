@@ -18,13 +18,13 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/golang/mock/gomock"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/discovery/ecs/mock/aws/sdk"
+	"github.com/stretchr/testify/mock"
 )
 
 // MockEC2DescribeInstances mocks the description of instances EC2 API call
-func MockEC2DescribeInstances(t *testing.T, mockMatcher *sdk.MockEC2API, wantError bool, instances ...*ec2.Instance) {
+func MockEC2DescribeInstances(t *testing.T, m *sdk.EC2API, wantError bool, instances ...*ec2.Instance) {
 	log.Warnf("Mocking AWS iface: DescribeInstances")
 	var err error
 	if wantError {
@@ -37,10 +37,10 @@ func MockEC2DescribeInstances(t *testing.T, mockMatcher *sdk.MockEC2API, wantErr
 			},
 		},
 	}
-	mockMatcher.EXPECT().DescribeInstances(gomock.Any()).Do(func(input interface{}) {
-		i := input.(*ec2.DescribeInstancesInput)
+	m.On("DescribeInstances", mock.AnythingOfType("*ec2.DescribeInstancesInput")).Run(func(args mock.Arguments) {
+		i := args.Get(0).(*ec2.DescribeInstancesInput)
 		if len(i.InstanceIds) == 0 {
 			t.Errorf("Wrong api call, needs at least 1 instance ID")
 		}
-	}).AnyTimes().Return(result, err)
+	}).Return(result, err)
 }
