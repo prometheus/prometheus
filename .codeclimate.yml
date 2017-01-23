@@ -10,6 +10,6 @@ ratings:
  - "**.go"
 exclude_paths:
 - "/storage/remote/remote.pb.go"
-- /vendor
-- /web/ui/static/vendor
+- vendor/
+- web/ui/static/vendor/
 - "/web/ui/bindata.go"
