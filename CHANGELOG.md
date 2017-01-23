@@ -1,3 +1,20 @@
+## 1.5.0 / 2017-01-23
+
+* [CHANGE] Use lexicographic order to sort alerts by name.
+* [FEATURE] Add Joyent Triton discovery.
+* [FEATURE] Add scrape targets and alertmanager targets API.
+* [FEATURE] Add various persistence related metrics.
+* [FEATURE] Add various query engine related metrics.
+* [FEATURE] Add ability to limit scrape samples, and related metrics.
+* [FEATURE] Add labeldrop and labelkeep relabelling actions.
+* [FEATURE] Display current working directory on status-page.
+* [ENHANCEMENT] Strictly use ServiceAccount for in cluster configuration on Kubernetes.
+* [ENHANCEMENT] Various performance and memory-management improvements.
+* [BUGFIX] Fix basic auth for alertmanagers configured via flag.
+* [BUGFIX] Don't panic on decoding corrupt data.
+* [BUGFIX] Ignore dotfiles in data directory.
+* [BUGFIX] Abort on intermediate federation errors.
+
 ## 1.4.1 / 2016-11-28
 
 * [BUGFIX] Fix Consul service discovery
