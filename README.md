@@ -84,7 +84,7 @@ The Makefile provides several targets:
 
   * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
   * You will find a Travis CI configuration in `.travis.yml`.
-  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers) and the `#prometheus` channel on `irc.freenode.net`.
+  * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
 
