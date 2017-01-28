@@ -109,8 +109,10 @@ func (ad *AzureDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGro
 
 // azureClient represents multiple Azure Resource Manager providers.
 type azureClient struct {
-	nic network.InterfacesClient
-	vm  compute.VirtualMachinesClient
+	nic    network.InterfacesClient
+	vm     compute.VirtualMachinesClient
+	vmss   compute.VirtualMachineScaleSetsClient
+	vmssvm compute.VirtualMachineScaleSetVMsClient
 }
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
@@ -130,6 +132,12 @@ func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
 
 	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
 	c.nic.Authorizer = spt
+
+	c.vmss = compute.NewVirtualMachineScaleSetsClient(cfg.SubscriptionID)
+	c.vmss.Authorizer = spt
+
+	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClient(cfg.SubscriptionID)
+	c.vmssvm.Authorizer = spt
 
 	return c, nil
 }
@@ -185,7 +193,28 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 		machines = append(machines, *result.Value...)
 	}
+
 	log.Debugf("Found %d virtual machines during Azure discovery.", len(machines))
+
+	// Load the vms managed by scale sets
+	scaleSets, err := client.getScaleSets()
+	if err != nil {
+		return tg, fmt.Errorf("could not get virtual machine scale sets: %s", err)
+	}
+
+	log.Debugf("Found %d scale sets during Azure discovery.", len(scaleSets))
+
+	var scaleSetMachines []compute.VirtualMachineScaleSetVM
+
+	for _, scaleSet := range scaleSets {
+		scaleSetVms, err := client.getScaleSetVMs(&scaleSet)
+		if err != nil {
+			return tg, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
+		}
+		scaleSetMachines = append(scaleSetMachines, scaleSetVms...)
+	}
+
+	log.Debugf("Found %d scale set virtual machines during Azure discovery.", len(scaleSetMachines))
 
 	// We have the slice of machines. Now turn them into targets.
 	// Doing them in go routines because the network interface calls are slow.
@@ -274,4 +303,46 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 
 	log.Debugf("Azure discovery completed.")
 	return tg, nil
+}
+
+func (client *azureClient) getScaleSets() (scaleSets []compute.VirtualMachineScaleSet, err error) {
+	result, err := client.vmss.ListAll()
+	if err != nil {
+		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+	}
+	scaleSets = append(scaleSets, *result.Value...)
+
+	for result.NextLink != nil {
+		result, err = client.vmss.ListAllNextResults(result)
+		if err != nil {
+			return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+		}
+		scaleSets = append(scaleSets, *result.Value...)
+	}
+
+	return
+}
+
+func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) (machines []compute.VirtualMachineScaleSetVM, err error) {
+	r, err := newAzureResourceFromID(*scaleSet.ID)
+
+	if err != nil {
+		return machines, fmt.Errorf("could not parse scale set ID: %s", err)
+	}
+
+	result, err := client.vmssvm.List(r.ResourceGroup, r.Name, "", "", "")
+	if err != nil {
+		return machines, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+	}
+	machines = append(machines, *result.Value...)
+
+	for result.NextLink != nil {
+		result, err = client.vmssvm.ListNextResults(result)
+		if err != nil {
+			return machines, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+		}
+		machines = append(machines, *result.Value...)
+	}
+
+	return
 }
