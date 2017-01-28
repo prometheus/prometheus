@@ -164,6 +164,15 @@ func newAzureResourceFromID(id string) (azureResource, error) {
 	}, nil
 }
 
+type virtualMachine struct {
+	ID             *string
+	Name           *string
+	Type           *string
+	Location       *string
+	Tags           *map[string]*string
+	NetworkProfile *compute.NetworkProfile
+}
+
 func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
@@ -178,20 +187,9 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		return tg, fmt.Errorf("could not create Azure client: %s", err)
 	}
 
-	var machines []compute.VirtualMachine
-	result, err := client.vm.ListAll()
+	machines, err := client.getVMs()
 	if err != nil {
-		return tg, fmt.Errorf("could not list virtual machines: %s", err)
-	}
-	machines = append(machines, *result.Value...)
-
-	// If we still have results, keep going until we have no more.
-	for result.NextLink != nil {
-		result, err = client.vm.ListAllNextResults(result)
-		if err != nil {
-			return tg, fmt.Errorf("could not list virtual machines: %s", err)
-		}
-		machines = append(machines, *result.Value...)
+		return tg, fmt.Errorf("could not get virtual machines: %s", err)
 	}
 
 	log.Debugf("Found %d virtual machines during Azure discovery.", len(machines))
@@ -211,7 +209,7 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		if err != nil {
 			return tg, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
 		}
-		scaleSetMachines = append(scaleSetMachines, scaleSetVms...)
+		machines = append(machines, scaleSetVms...)
 	}
 
 	log.Debugf("Found %d scale set virtual machines during Azure discovery.", len(scaleSetMachines))
@@ -225,7 +223,7 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 
 	ch := make(chan target, len(machines))
 	for i, vm := range machines {
-		go func(i int, vm compute.VirtualMachine) {
+		go func(i int, vm virtualMachine) {
 			r, err := newAzureResourceFromID(*vm.ID)
 			if err != nil {
 				ch <- target{labelSet: nil, err: err}
@@ -247,7 +245,7 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 			}
 
 			// Get the IP address information via separate call to the network provider.
-			for _, nic := range *vm.Properties.NetworkProfile.NetworkInterfaces {
+			for _, nic := range *vm.NetworkProfile.NetworkInterfaces {
 				r, err := newAzureResourceFromID(*nic.ID)
 				if err != nil {
 					ch <- target{labelSet: nil, err: err}
@@ -305,6 +303,31 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 	return tg, nil
 }
 
+func (client *azureClient) getVMs() (vms []virtualMachine, err error) {
+	result, err := client.vm.ListAll()
+	if err != nil {
+		return vms, fmt.Errorf("could not list virtual machines: %s", err)
+	}
+
+	for _, vm := range *result.Value {
+		vms = append(vms, mapFromVM(&vm))
+	}
+
+	// If we still have results, keep going until we have no more.
+	for result.NextLink != nil {
+		result, err = client.vm.ListAllNextResults(result)
+		if err != nil {
+			return vms, fmt.Errorf("could not list virtual machines: %s", err)
+		}
+
+		for _, vm := range *result.Value {
+			vms = append(vms, mapFromVM(&vm))
+		}
+	}
+
+	return
+}
+
 func (client *azureClient) getScaleSets() (scaleSets []compute.VirtualMachineScaleSet, err error) {
 	result, err := client.vmss.ListAll()
 	if err != nil {
@@ -323,26 +346,40 @@ func (client *azureClient) getScaleSets() (scaleSets []compute.VirtualMachineSca
 	return
 }
 
-func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) (machines []compute.VirtualMachineScaleSetVM, err error) {
+func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) (vms []virtualMachine, err error) {
 	r, err := newAzureResourceFromID(*scaleSet.ID)
 
 	if err != nil {
-		return machines, fmt.Errorf("could not parse scale set ID: %s", err)
+		return vms, fmt.Errorf("could not parse scale set ID: %s", err)
 	}
 
 	result, err := client.vmssvm.List(r.ResourceGroup, r.Name, "", "", "")
 	if err != nil {
-		return machines, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+		return vms, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
 	}
-	machines = append(machines, *result.Value...)
+
+	for _, vm := range *result.Value {
+		vms = append(vms, mapFromVMScaleSetVM(&vm))
+	}
 
 	for result.NextLink != nil {
 		result, err = client.vmssvm.ListNextResults(result)
 		if err != nil {
-			return machines, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+			return vms, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
 		}
-		machines = append(machines, *result.Value...)
+
+		for _, vm := range *result.Value {
+			vms = append(vms, mapFromVMScaleSetVM(&vm))
+		}
 	}
 
 	return
+}
+
+func mapFromVM(vm *compute.VirtualMachine) virtualMachine {
+	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, vm.Tags, vm.Properties.NetworkProfile}
+}
+
+func mapFromVMScaleSetVM(vm *compute.VirtualMachineScaleSetVM) virtualMachine {
+	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, vm.Tags, vm.Properties.NetworkProfile}
 }
