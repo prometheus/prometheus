@@ -16,11 +16,13 @@ package azure
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 	"github.com/Azure/azure-sdk-for-go/arm/network"
+	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/azure"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -152,8 +154,10 @@ type azureResource struct {
 func newAzureResourceFromID(id string) (azureResource, error) {
 	// Resource IDs have the following format.
 	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME
+	// or if embeded resource then
+	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME/TYPE/NAME
 	s := strings.Split(id, "/")
-	if len(s) != 9 {
+	if len(s) != 9 && len(s) != 11 {
 		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource", id)
 		log.Error(err)
 		return azureResource{}, err
@@ -246,14 +250,9 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nic := range *vm.NetworkProfile.NetworkInterfaces {
-				r, err := newAzureResourceFromID(*nic.ID)
+				networkInterface, err := client.getNetworkInterfaceByID(*nic.ID)
 				if err != nil {
-					ch <- target{labelSet: nil, err: err}
-					return
-				}
-				networkInterface, err := client.nic.Get(r.ResourceGroup, r.Name, "")
-				if err != nil {
-					log.Errorf("Unable to get network interface %s: %s", r.Name, err)
+					log.Errorf("Unable to get network interface %s: %s", *nic.ID, err)
 					ch <- target{labelSet: nil, err: err}
 					// Get out of this routine because we cannot continue without a network interface.
 					return
@@ -382,4 +381,34 @@ func mapFromVM(vm *compute.VirtualMachine) virtualMachine {
 
 func mapFromVMScaleSetVM(vm *compute.VirtualMachineScaleSetVM) virtualMachine {
 	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, vm.Tags, vm.Properties.NetworkProfile}
+}
+
+func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (result network.Interface, err error) {
+
+	queryParameters := map[string]interface{}{
+		"api-version": client.nic.APIVersion,
+	}
+
+	preparer := autorest.CreatePreparer(
+		autorest.AsGet(),
+		autorest.WithBaseURL(client.nic.BaseURI),
+		autorest.WithPath(networkInterfaceID),
+		autorest.WithQueryParameters(queryParameters))
+	req, err := preparer.Prepare(&http.Request{})
+	if err != nil {
+		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
+	}
+
+	resp, err := client.nic.GetSender(req)
+	if err != nil {
+		result.Response = autorest.Response{Response: resp}
+		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
+	}
+
+	result, err = client.nic.GetResponder(resp)
+	if err != nil {
+		err = autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
+	}
+
+	return
 }
