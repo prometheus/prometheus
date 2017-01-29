@@ -29,12 +29,20 @@ import (
 var DefaultOptions = &Options{
 	WALFlushInterval: 5 * time.Second,
 	MaxBlockRange:    24 * 60 * 60 * 1000, // 1 day in milliseconds
+	GracePeriod:      30 * 60 * 1000,      // 30 minutes in milliseconds
 }
 
 // Options of the DB storage.
 type Options struct {
+	// The interval at which the write ahead log is flushed to disc.
 	WALFlushInterval time.Duration
-	MaxBlockRange    uint64
+
+	// The maximum timestamp range of compacted blocks.
+	MaxBlockRange uint64
+
+	// Time window between the highest timestamp and the minimum timestamp
+	// that can still be appended.
+	GracePeriod uint64
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -193,6 +201,11 @@ func (db *DB) run() {
 			if !ok {
 				continue
 			}
+			db.logger.Log("msg", "picked", "i", i, "j", j)
+			for k := i; k <= j; k++ {
+				db.logger.Log("k", k, "generation", infos[k].generation)
+			}
+
 			if err := db.compact(i, j); err != nil {
 				db.logger.Log("msg", "compaction failed", "err", err)
 				continue
@@ -413,11 +426,17 @@ func (db *DB) compactable() []Block {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
+	// h := db.heads[len(db.heads)-1]
+	// mint := h.maxt - int64(db.opts.GracePeriod)
+
 	var blocks []Block
 	for _, pb := range db.persisted {
 		blocks = append(blocks, pb)
 	}
 	for _, hb := range db.heads[:len(db.heads)-1] {
+		// if hb.maxt < mint {
+		// 	break
+		// }
 		blocks = append(blocks, hb)
 	}
 
@@ -483,11 +502,11 @@ func (db *DB) cut() (*headBlock, error) {
 		cur.metamtx.Unlock()
 	}
 
-	dir, err := nextBlockDir(db.dir)
+	dir, seq, err := nextBlockDir(db.dir)
 	if err != nil {
 		return nil, err
 	}
-	newHead, err := createHeadBlock(dir, db.logger, mint)
+	newHead, err := createHeadBlock(dir, seq, db.logger, mint)
 	if err != nil {
 		return nil, err
 	}
@@ -525,10 +544,10 @@ func blockDirs(dir string) ([]string, error) {
 	return dirs, nil
 }
 
-func nextBlockDir(dir string) (string, error) {
+func nextBlockDir(dir string) (string, int, error) {
 	names, err := fileutil.ReadDir(dir)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	i := uint64(0)
@@ -542,7 +561,7 @@ func nextBlockDir(dir string) (string, error) {
 		}
 		i = j
 	}
-	return filepath.Join(dir, fmt.Sprintf("b-%0.6d", i+1)), nil
+	return filepath.Join(dir, fmt.Sprintf("b-%0.6d", i+1)), int(i + 1), nil
 }
 
 // PartitionedDB is a time series storage.

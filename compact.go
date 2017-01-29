@@ -110,10 +110,13 @@ func (c *compactor) match(bs []compactionInfo) bool {
 }
 
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
-	res.MinTime = blocks[0].Meta().MinTime
+	m0 := blocks[0].Meta()
+
+	res.Sequence = m0.Sequence
+	res.MinTime = m0.MinTime
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
 
-	g := blocks[0].Meta().Compaction.Generation
+	g := m0.Compaction.Generation
 	if g == 0 && len(blocks) > 1 {
 		g++
 	}
@@ -134,7 +137,6 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		c.metrics.duration.Observe(time.Since(start).Seconds())
 	}()
 
-	// Write to temporary directory to make persistence appear atomic.
 	if fileutil.Exist(dir) {
 		if err = os.RemoveAll(dir); err != nil {
 			return err

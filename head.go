@@ -57,12 +57,15 @@ type headBlock struct {
 	mint, maxt int64 // timestamp range of current samples
 }
 
-func createHeadBlock(dir string, l log.Logger, minTime *int64) (*headBlock, error) {
+func createHeadBlock(dir string, seq int, l log.Logger, minTime *int64) (*headBlock, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
 
-	if err := writeMetaFile(dir, &BlockMeta{MinTime: minTime}); err != nil {
+	if err := writeMetaFile(dir, &BlockMeta{
+		Sequence: seq,
+		MinTime:  minTime,
+	}); err != nil {
 		return nil, err
 	}
 	return openHeadBlock(dir, l)

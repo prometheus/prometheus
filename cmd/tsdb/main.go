@@ -120,7 +120,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		if err := b.ingestScrapes(metrics, 2000); err != nil {
+		if err := b.ingestScrapes(metrics, 10000); err != nil {
 			exitWithError(err)
 		}
 	})

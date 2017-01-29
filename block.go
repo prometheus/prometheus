@@ -35,18 +35,23 @@ type Block interface {
 
 // BlockMeta provides meta information about a block.
 type BlockMeta struct {
+	// Sequence number of the block.
+	Sequence int `json:"sequence"`
+
 	// MinTime and MaxTime specify the time range all samples
 	// in the block must be in. If unset, samples can be appended
 	// freely until they are set.
 	MinTime *int64 `json:"minTime,omitempty"`
 	MaxTime *int64 `json:"maxTime,omitempty"`
 
+	// Stats about the contents of the block.
 	Stats struct {
 		NumSamples uint64 `json:"numSamples,omitempty"`
 		NumSeries  uint64 `json:"numSeries,omitempty"`
 		NumChunks  uint64 `json:"numChunks,omitempty"`
 	} `json:"stats,omitempty"`
 
+	// Information on compactions the block was created from.
 	Compaction struct {
 		Generation int `json:"generation"`
 	} `json:"compaction"`
