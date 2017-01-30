@@ -166,7 +166,7 @@ func New(o *Options) *Notifier {
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "dropped_total",
-			Help:      "Total number of alerts dropped due to alert manager missing in configuration.",
+			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
 		}),
 		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,

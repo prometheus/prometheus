@@ -46,7 +46,7 @@
   </tr>
   <tr>
     <td>Checkpoint Duration</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_checkpoint_duration_seconds{job='prometheus',instance='%s'}" .Params.instance) "" "humanizeDuration") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "prometheus_local_storage_checkpoint_last_duration_seconds{job='prometheus',instance='%s'}" .Params.instance) "" "humanizeDuration") }}</td>
   </tr>
 
   <tr>

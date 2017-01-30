@@ -69,7 +69,11 @@ func (e *apiError) Error() string {
 }
 
 type targetRetriever interface {
-	Targets() []retrieval.Target
+	Targets() []*retrieval.Target
+}
+
+type alertmanagerRetriever interface {
+	Alertmanagers() []string
 }
 
 type response struct {
@@ -94,20 +98,22 @@ type API struct {
 	Storage     storage.Storage
 	QueryEngine *promql.Engine
 
-	targetRetriever targetRetriever
+	targetRetriever       targetRetriever
+	alertmanagerRetriever alertmanagerRetriever
 
 	context func(r *http.Request) context.Context
 	now     func() time.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st storage.Storage, tr targetRetriever) *API {
+func NewAPI(qe *promql.Engine, st storage.Storage, tr targetRetriever, ar alertmanagerRetriever) *API {
 	return &API{
-		QueryEngine:     qe,
-		Storage:         st,
-		targetRetriever: tr,
-		context:         route.Context,
-		now:             time.Now,
+		QueryEngine:           qe,
+		Storage:               st,
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		context:               route.Context,
+		now:                   time.Now,
 	}
 }
 
@@ -140,6 +146,7 @@ func (api *API) Register(r *route.Router) {
 	r.Del("/series", instr("drop_series", api.dropSeries))
 
 	r.Get("/targets", instr("targets", api.targets))
+	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
 }
 
 type queryData struct {
@@ -290,7 +297,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	} else {
 		end = maxTime
 	}
-	
+
 	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {
 		matchers, err := promql.ParseMetricSelector(s)
@@ -360,16 +367,20 @@ type Target struct {
 	// Any labels that are added to this target and its metrics.
 	Labels map[string]string `json:"labels"`
 
-	ScrapeUrl string `json:"scrapeUrl"`
+	ScrapeURL string `json:"scrapeUrl"`
 
 	LastError  string                 `json:"lastError"`
 	LastScrape time.Time              `json:"lastScrape"`
 	Health     retrieval.TargetHealth `json:"health"`
 }
 
+type TargetDiscovery struct {
+	ActiveTargets []*Target `json:"activeTargets"`
+}
+
 func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	targets := api.targetRetriever.Targets()
-	res := make([]*Target, len(targets))
+	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(targets))}
 
 	for i, t := range targets {
 		lastErrStr := ""
@@ -378,10 +389,10 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 			lastErrStr = lastErr.Error()
 		}
 
-		res[i] = &Target{
+		res.ActiveTargets[i] = &Target{
 			DiscoveredLabels: t.DiscoveredLabels().Map(),
 			Labels:           t.Labels().Map(),
-			ScrapeUrl:        t.URL().String(),
+			ScrapeURL:        t.URL().String(),
 			LastError:        lastErrStr,
 			LastScrape:       t.LastScrape(),
 			Health:           t.Health(),
@@ -389,6 +400,25 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return res, nil
+}
+
+type AlertmanagerDiscovery struct {
+	ActiveAlertmanagers []*AlertmanagerTarget `json:"activeAlertmanagers"`
+}
+
+type AlertmanagerTarget struct {
+	URL string `json:"url"`
+}
+
+func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
+	urls := api.alertmanagerRetriever.Alertmanagers()
+	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls))}
+
+	for i := range urls {
+		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: urls[i]}
+	}
+
+	return ams, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {

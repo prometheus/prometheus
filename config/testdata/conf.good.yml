@@ -70,6 +70,8 @@ scrape_configs:
   scrape_interval: 50s
   scrape_timeout:  5s
 
+  sample_limit: 1000
+
   metrics_path: /my_path
   scheme: https
 
@@ -178,6 +180,18 @@ scrape_configs:
   static_configs:
     - targets:
       - localhost:9090
+
+- job_name: service-triton
+  triton_sd_configs:
+  - account: 'testAccount'
+    dns_suffix: 'triton.example.com'
+    endpoint: 'triton.example.com'
+    port: 9163
+    refresh_interval: 1m
+    version: 1
+    tls_config:
+      cert_file: testdata/valid_cert_file
+      key_file: testdata/valid_key_file
 
 alerting:
   alertmanagers:

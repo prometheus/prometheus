@@ -285,6 +285,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	}
 
 	cfg.HonorLabels = true
+	cfg.SampleLimit = 100
 	wrapped = sp.sampleAppender(target)
 
 	hl, ok := wrapped.(honorLabelsAppender)
@@ -295,7 +296,11 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected relabelAppender but got %T", hl.Appender)
 	}
-	if _, ok := re.Appender.(nopAppender); !ok {
+	lm, ok := re.Appender.(*limitAppender)
+	if !ok {
+		t.Fatalf("Expected limitAppender but got %T", lm.Appender)
+	}
+	if _, ok := lm.Appender.(nopAppender); !ok {
 		t.Fatalf("Expected base appender but got %T", re.Appender)
 	}
 }
@@ -305,7 +310,7 @@ func TestScrapeLoopStop(t *testing.T) {
 	sl := newScrapeLoop(context.Background(), scraper, nil, nil)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
-	// loops are syarted asynchronously. Thus it's possible, that a loop is stopped
+	// loops are started asynchronously. Thus it's possible, that a loop is stopped
 	// again before having started properly.
 	// Stopping not-yet-started loops must block until the run method was called and exited.
 	// The run method must exit immediately.

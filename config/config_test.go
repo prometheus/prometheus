@@ -133,6 +133,7 @@ var expectedConf = &Config{
 
 			ScrapeInterval: model.Duration(50 * time.Second),
 			ScrapeTimeout:  model.Duration(5 * time.Second),
+			SampleLimit:    1000,
 
 			HTTPClientConfig: HTTPClientConfig{
 				BasicAuth: &BasicAuth{
@@ -408,6 +409,33 @@ var expectedConf = &Config{
 					{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
+						},
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-triton",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				TritonSDConfigs: []*TritonSDConfig{
+					{
+
+						Account:         "testAccount",
+						DNSSuffix:       "triton.example.com",
+						Endpoint:        "triton.example.com",
+						Port:            9163,
+						RefreshInterval: model.Duration(60 * time.Second),
+						Version:         1,
+						TLSConfig: TLSConfig{
+							CertFile: "testdata/valid_cert_file",
+							KeyFile:  "testdata/valid_key_file",
 						},
 					},
 				},

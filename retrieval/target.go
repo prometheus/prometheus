@@ -227,6 +227,26 @@ func (ts Targets) Len() int           { return len(ts) }
 func (ts Targets) Less(i, j int) bool { return ts[i].URL().String() < ts[j].URL().String() }
 func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 
+// limitAppender limits the number of total appended samples in a batch.
+type limitAppender struct {
+	storage.Appender
+
+	limit int
+	i     int
+}
+
+func (app *limitAppender) Add(ref uint64, t int64, v float64) error {
+	if app.i+1 > app.limit {
+		return errors.New("sample limit exceeded")
+	}
+
+	if err := app.Appender.Add(ref, t, v); err != nil {
+		return fmt.Errorf("sample limit of %d exceeded", app.limit)
+	}
+	app.i++
+	return nil
+}
+
 // Merges the ingested sample's metric with the label set. On a collision the
 // value of the ingested label is stored in a label prefixed with 'exported_'.
 type ruleLabelsAppender struct {
