@@ -35,9 +35,15 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 )
 
-type targetRetrieverFunc func() []retrieval.Target
+type targetRetrieverFunc func() []*retrieval.Target
 
-func (f targetRetrieverFunc) Targets() []retrieval.Target {
+func (f targetRetrieverFunc) Targets() []*retrieval.Target {
+	return f()
+}
+
+type alertmanagerRetrieverFunc func() []string
+
+func (f alertmanagerRetrieverFunc) Alertmanagers() []string {
 	return f()
 }
 
@@ -59,9 +65,9 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	tr := targetRetrieverFunc(func() []retrieval.Target {
-		return []retrieval.Target{
-			*retrieval.NewTarget(
+	tr := targetRetrieverFunc(func() []*retrieval.Target {
+		return []*retrieval.Target{
+			retrieval.NewTarget(
 				labels.FromMap(map[string]string{
 					model.SchemeLabel:      "http",
 					model.AddressLabel:     "example.com:8080",
@@ -73,11 +79,16 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
+	ar := alertmanagerRetrieverFunc(func() []string {
+		return []string{"http://alertmanager.example.com:8080/api/v1/alerts"}
+	})
+
 	api := &API{
-		Storage:         suite.Storage(),
-		QueryEngine:     suite.QueryEngine(),
-		targetRetriever: tr,
-		now:             func() time.Time { return now },
+		Storage:               suite.Storage(),
+		QueryEngine:           suite.QueryEngine(),
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		now: func() time.Time { return now },
 	}
 
 	start := time.Unix(0, 0)

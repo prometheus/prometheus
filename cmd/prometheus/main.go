@@ -20,7 +20,6 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
-	"runtime"
 	"runtime/trace"
 	"syscall"
 	"time"
@@ -58,8 +57,6 @@ var (
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("prometheus"))
-	runtime.SetMutexProfileFraction(20)
-	runtime.SetBlockProfileRate(20)
 }
 
 // Main manages the stup and shutdown lifecycle of the entire Prometheus server.

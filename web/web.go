@@ -155,7 +155,7 @@ func New(o *Options) *Handler {
 		storage:       o.Storage,
 		notifier:      o.Notifier,
 
-		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager),
+		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager, o.Notifier),
 		now:   model.Now,
 	}
 
@@ -274,7 +274,7 @@ func (h *Handler) Run() {
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 	alerts := h.ruleManager.AlertingRules()
-	alertsSorter := byAlertStateSorter{alerts: alerts}
+	alertsSorter := byAlertStateAndNameSorter{alerts: alerts}
 	sort.Sort(alertsSorter)
 
 	alertStatus := AlertStatus{
@@ -373,14 +373,14 @@ func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	// Bucket targets by job label
-	tps := map[string][]retrieval.Target{}
+	tps := map[string][]*retrieval.Target{}
 	for _, t := range h.targetManager.Targets() {
 		job := t.Labels().Get(model.JobLabel)
 		tps[job] = append(tps[job], t)
 	}
 
 	h.executeTemplate(w, "targets.html", struct {
-		TargetPools map[string][]retrieval.Target
+		TargetPools map[string][]*retrieval.Target
 	}{
 		TargetPools: tps,
 	})
@@ -541,18 +541,20 @@ type AlertStatus struct {
 	AlertStateToRowClass map[rules.AlertState]string
 }
 
-type byAlertStateSorter struct {
+type byAlertStateAndNameSorter struct {
 	alerts []*rules.AlertingRule
 }
 
-func (s byAlertStateSorter) Len() int {
+func (s byAlertStateAndNameSorter) Len() int {
 	return len(s.alerts)
 }
 
-func (s byAlertStateSorter) Less(i, j int) bool {
-	return s.alerts[i].State() > s.alerts[j].State()
+func (s byAlertStateAndNameSorter) Less(i, j int) bool {
+	return s.alerts[i].State() > s.alerts[j].State() ||
+		(s.alerts[i].State() == s.alerts[j].State() &&
+			s.alerts[i].Name() < s.alerts[j].Name())
 }
 
-func (s byAlertStateSorter) Swap(i, j int) {
+func (s byAlertStateAndNameSorter) Swap(i, j int) {
 	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
 }

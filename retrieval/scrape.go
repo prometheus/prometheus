@@ -34,9 +34,10 @@ import (
 )
 
 const (
-	scrapeHealthMetricName   = "up"
-	scrapeDurationMetricName = "scrape_duration_seconds"
-	scrapeSamplesMetricName  = "scrape_samples_scraped"
+	scrapeHealthMetricName       = "up"
+	scrapeDurationMetricName     = "scrape_duration_seconds"
+	scrapeSamplesMetricName      = "scrape_samples_scraped"
+	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling"
 )
 
 var (
@@ -77,6 +78,12 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
+	targetScrapeSampleLimit = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
+			Help: "Total number of scrapes that hit the sample limit and were rejected.",
+		},
+	)
 )
 
 func init() {
@@ -85,6 +92,7 @@ func init() {
 	prometheus.MustRegister(targetReloadIntervalLength)
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
+	prometheus.MustRegister(targetScrapeSampleLimit)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -285,6 +293,15 @@ func (sp *scrapePool) sampleAppender(target *Target) storage.Appender {
 	if err != nil {
 		panic(err)
 	}
+
+	// The limit is applied after metrics are potentially dropped via relabeling.
+	if sp.config.SampleLimit > 0 {
+		app = &limitAppender{
+			Appender: app,
+			limit:    int(sp.config.SampleLimit),
+		}
+	}
+
 	// The relabelAppender has to be inside the label-modifying appenders
 	// so the relabeling rules are applied to the correct label set.
 	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
@@ -427,6 +444,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 		}
 
 		var (
+			total, added int
 			start        = time.Now()
 			scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
 		)
@@ -438,14 +456,13 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 			)
 		}
 
-		n := 0
 		buf := bytes.NewBuffer(getScrapeBuf())
 
 		err := sl.scraper.scrape(scrapeCtx, buf)
 		if err == nil {
 			b := buf.Bytes()
 
-			if n, err = sl.append(b, start); err != nil {
+			if total, added, err = sl.append(b, start); err != nil {
 				log.With("err", err).Error("append failed")
 			}
 			putScrapeBuf(b)
@@ -453,7 +470,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 			errc <- err
 		}
 
-		sl.report(start, time.Since(start), n, err)
+		sl.report(start, time.Since(start), total, added, err)
 		last = start
 
 		select {
@@ -490,7 +507,7 @@ func (s samples) Less(i, j int) bool {
 	return s[i].t < s[j].t
 }
 
-func (sl *scrapeLoop) append(b []byte, ts time.Time) (n int, err error) {
+func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err error) {
 	var (
 		app     = sl.appender()
 		p       = textparse.New(b)
@@ -498,6 +515,8 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (n int, err error) {
 	)
 
 	for p.Next() {
+		total++
+
 		t := defTime
 		met, tp, v := p.At()
 		if tp != nil {
@@ -508,6 +527,7 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (n int, err error) {
 		ref, ok := sl.cache[mets]
 		if ok {
 			if err = app.Add(ref, t, v); err == nil {
+				added++
 				continue
 			} else if err != storage.ErrNotFound {
 				break
@@ -517,31 +537,36 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (n int, err error) {
 		if !ok {
 			var lset labels.Labels
 			p.Metric(&lset)
+
 			ref, err = app.SetSeries(lset)
+			// TODO(fabxc): also add a dropped-cache?
+			if err == errSeriesDropped {
+				continue
+			}
 			if err != nil {
 				break
 			}
 			if err = app.Add(ref, t, v); err != nil {
 				break
 			}
+			added++
 		}
 		sl.cache[mets] = ref
-		n++
 	}
 	if err == nil {
 		err = p.Err()
 	}
 	if err != nil {
 		app.Rollback()
-		return 0, err
+		return total, 0, err
 	}
 	if err := app.Commit(); err != nil {
-		return 0, err
+		return total, 0, err
 	}
-	return n, nil
+	return total, added, nil
 }
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples int, err error) error {
+func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended int, err error) error {
 	sl.scraper.report(start, duration, err)
 
 	ts := timestamp.FromTime(start)
@@ -561,7 +586,11 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 		app.Rollback()
 		return err
 	}
-	if err := sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scrapedSamples)); err != nil {
+	if err := sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
+		app.Rollback()
+		return err
+	}
+	if err := sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(appended)); err != nil {
 		app.Rollback()
 		return err
 	}
