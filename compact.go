@@ -50,7 +50,6 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 
 type compactorOptions struct {
 	maxBlockRange uint64
-	maxSize       uint64
 }
 
 func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
@@ -65,29 +64,51 @@ type compactionInfo struct {
 	mint, maxt int64
 }
 
-// pick returns a range [i, j] in the blocks that are suitable to be compacted
+const compactionBlocksLen = 4
+
+// pick returns a range [i, j) in the blocks that are suitable to be compacted
 // into a single block at position i.
 func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
-
-	last := len(bs) - 1
 	if len(bs) == 0 {
 		return 0, 0, false
 	}
 
-	// Make sure we always compact the last block if unpersisted.
-	if bs[last].generation == 0 {
-		if len(bs) >= 3 && c.match(bs[last-2:last+1]) {
-			return last - 2, last, true
+	// First, we always compact pending in-memory blocks – oldest first.
+	for i, b := range bs {
+		if b.generation > 0 {
+			continue
 		}
-		return last, last, true
+		// Directly compact into 2nd generation with previous generation 1 blocks.
+		if i+1 >= compactionBlocksLen {
+			match := true
+			for _, pb := range bs[i-compactionBlocksLen+1 : i] {
+				match = match && pb.generation == 1
+			}
+			if match {
+				return i - compactionBlocksLen + 1, i + 1, true
+			}
+		}
+		// If we have enough generation 0 blocks to directly move to the
+		// 2nd generation, skip generation 1.
+		if len(bs)-i >= compactionBlocksLen {
+			// Guard against the newly compacted block becoming larger than
+			// the previous one.
+			if i == 0 || bs[i-1].generation >= 2 {
+				return i, i + compactionBlocksLen, true
+			}
+		}
+
+		// No optimizations possible, naiively compact the new block.
+		return i, i + 1, true
 	}
 
-	for i := len(bs); i-3 >= 0; i -= 3 {
-		tpl := bs[i-3 : i]
-		if c.match(tpl) {
-			return i - 3, i - 1, true
+	// Then we care about compacting multiple blocks, starting with the oldest.
+	for i := 0; i < len(bs)-compactionBlocksLen; i += compactionBlocksLen {
+		if c.match(bs[i : i+2]) {
+			return i, i + compactionBlocksLen, true
 		}
 	}
+
 	return 0, 0, false
 }
 

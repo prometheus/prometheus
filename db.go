@@ -140,7 +140,6 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 	}
 	db.compactor = newCompactor(r, &compactorOptions{
 		maxBlockRange: opts.MaxBlockRange,
-		maxSize:       1 << 29, // 512MB
 	})
 
 	if err := db.initBlocks(); err != nil {
@@ -202,7 +201,7 @@ func (db *DB) run() {
 				continue
 			}
 			db.logger.Log("msg", "picked", "i", i, "j", j)
-			for k := i; k <= j; k++ {
+			for k := i; k < j; k++ {
 				db.logger.Log("k", k, "generation", infos[k].generation)
 			}
 
@@ -230,10 +229,10 @@ func (db *DB) getBlock(i int) Block {
 	return db.heads[i-len(db.persisted)]
 }
 
-// removeBlocks removes the blocks in range [i, j] from the list of persisted
+// removeBlocks removes the blocks in range [i, j) from the list of persisted
 // and head blocks. The blocks are not closed and their files not deleted.
 func (db *DB) removeBlocks(i, j int) {
-	for k := i; k <= j; k++ {
+	for k := i; k < j; k++ {
 		if i < len(db.persisted) {
 			db.persisted = append(db.persisted[:i], db.persisted[i+1:]...)
 		} else {
@@ -253,14 +252,14 @@ func (db *DB) blocks() (bs []Block) {
 	return bs
 }
 
-// compact block in range [i, j] into a temporary directory and atomically
+// compact block in range [i, j) into a temporary directory and atomically
 // swap the blocks out on successful completion.
 func (db *DB) compact(i, j int) error {
-	if j < i {
+	if j <= i {
 		return errors.New("invalid compaction block range")
 	}
 	var blocks []Block
-	for k := i; k <= j; k++ {
+	for k := i; k < j; k++ {
 		blocks = append(blocks, db.getBlock(k))
 	}
 	var (
