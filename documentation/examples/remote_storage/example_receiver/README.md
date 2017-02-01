@@ -7,7 +7,7 @@ To use it:
 
 ```
 go build
-./remote_storage
+./example_receiver
 ```
 
 ...and then add the following to your `prometheus.yml`:
