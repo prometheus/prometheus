@@ -42,7 +42,7 @@ var (
 func newTestPersistence(t *testing.T, encoding chunk.Encoding) (*persistence, testutil.Closer) {
 	chunk.DefaultEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.1)
+	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.15)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -171,6 +171,25 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 				)
 			}
 
+		}
+	}
+	// Try to drop one chunk, which must be prevented by the shrink ratio.
+	for fp, _ := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunks, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
 		}
 	}
 	// Drop half of the chunks.
