@@ -247,7 +247,9 @@ func (s *memorySeries) add(v model.SamplePair) (int, error) {
 
 	// Populate lastTime of now-closed chunks.
 	for _, cd := range s.chunkDescs[len(s.chunkDescs)-len(chunks) : len(s.chunkDescs)-1] {
-		cd.MaybePopulateLastTime()
+		if err := cd.MaybePopulateLastTime(); err != nil {
+			return 0, err
+		}
 	}
 
 	s.lastTime = v.Timestamp
@@ -261,19 +263,18 @@ func (s *memorySeries) add(v model.SamplePair) (int, error) {
 // If the head chunk is already closed, the method is a no-op and returns false.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) maybeCloseHeadChunk() bool {
+func (s *memorySeries) maybeCloseHeadChunk() (bool, error) {
 	if s.headChunkClosed {
-		return false
+		return false, nil
 	}
 	if time.Now().Sub(s.lastTime.Time()) > headChunkTimeout {
 		s.headChunkClosed = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.
 		s.headChunkUsedByIterator = false
-		s.head().MaybePopulateLastTime()
-		return true
+		return true, s.head().MaybePopulateLastTime()
 	}
-	return false
+	return false, nil
 }
 
 // evictChunkDescs evicts chunkDescs if the chunk is evicted.
