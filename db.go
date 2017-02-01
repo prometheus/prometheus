@@ -28,8 +28,9 @@ import (
 // millisecond precision timestampdb.
 var DefaultOptions = &Options{
 	WALFlushInterval: 5 * time.Second,
-	MaxBlockRange:    24 * 60 * 60 * 1000, // 1 day in milliseconds
-	GracePeriod:      30 * 60 * 1000,      // 30 minutes in milliseconds
+	MinBlockDuration: 3 * 60 * 60 * 1000,  // 2 hours in milliseconds
+	MaxBlockDuration: 48 * 60 * 60 * 1000, // 1 day in milliseconds
+	GracePeriod:      2 * 60 * 60 * 1000,  // 2 hours in milliseconds
 }
 
 // Options of the DB storage.
@@ -37,8 +38,12 @@ type Options struct {
 	// The interval at which the write ahead log is flushed to disc.
 	WALFlushInterval time.Duration
 
+	// The timestamp range of head blocks after which they get persisted.
+	// It's the minimum duration of any persisted block.
+	MinBlockDuration uint64
+
 	// The maximum timestamp range of compacted blocks.
-	MaxBlockRange uint64
+	MaxBlockDuration uint64
 
 	// Time window between the highest timestamp and the minimum timestamp
 	// that can still be appended.
@@ -48,15 +53,17 @@ type Options struct {
 // Appender allows appending a batch of data. It must be completed with a
 // call to Commit or Rollback and must not be reused afterwards.
 type Appender interface {
-	// SetSeries ensures that a series with the given label set exists and
-	// returns a unique reference number identifying it. Returned reference
-	// numbers are ephemeral and may be rejected in calls to Add() at any point.
-	// A new reference number can then be requested with another call to
-	// SetSeries.
-	SetSeries(labels.Labels) (uint64, error)
+	// Add adds a sample pair for the given series. A reference number is
+	// returned which can be used to add further samples in the same or later
+	// transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AddFast() at any point. Adding the sample via Add() returns a new
+	// reference number.
+	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
-	// Add adds a sample pair for the referenced serie.
-	Add(ref uint64, t int64, v float64) error
+	// Add adds a sample pair for the referenced series. It is generally faster
+	// than adding a sample by providing its full label set.
+	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
@@ -121,8 +128,8 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 			return nil, err
 		}
 	}
-	// var r prometheus.Registerer
-	r := prometheus.DefaultRegisterer
+	var r prometheus.Registerer
+	// r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -139,7 +146,7 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 		stopc:    make(chan struct{}),
 	}
 	db.compactor = newCompactor(r, &compactorOptions{
-		maxBlockRange: opts.MaxBlockRange,
+		maxBlockRange: opts.MaxBlockDuration,
 	})
 
 	if err := db.initBlocks(); err != nil {
@@ -154,31 +161,31 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 func (db *DB) run() {
 	defer close(db.donec)
 
-	go func() {
-		for {
-			select {
-			case <-db.cutc:
-				db.mtx.Lock()
-				_, err := db.cut()
-				db.mtx.Unlock()
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case <-db.cutc:
+	// 			db.mtx.Lock()
+	// 			_, err := db.cut()
+	// 			db.mtx.Unlock()
 
-				if err != nil {
-					db.logger.Log("msg", "cut failed", "err", err)
-				} else {
-					select {
-					case db.compactc <- struct{}{}:
-					default:
-					}
-				}
-				// Drain cut channel so we don't trigger immediately again.
-				select {
-				case <-db.cutc:
-				default:
-				}
-			case <-db.stopc:
-			}
-		}
-	}()
+	// 			if err != nil {
+	// 				db.logger.Log("msg", "cut failed", "err", err)
+	// 			} else {
+	// 				select {
+	// 				case db.compactc <- struct{}{}:
+	// 				default:
+	// 				}
+	// 			}
+	// 			// Drain cut channel so we don't trigger immediately again.
+	// 			select {
+	// 			case <-db.cutc:
+	// 			default:
+	// 			}
+	// 		case <-db.stopc:
+	// 		}
+	// 	}
+	// }()
 
 	for {
 		select {
@@ -191,8 +198,8 @@ func (db *DB) run() {
 
 				infos = append(infos, compactionInfo{
 					generation: m.Compaction.Generation,
-					mint:       *m.MinTime,
-					maxt:       *m.MaxTime,
+					mint:       m.MinTime,
+					maxt:       m.MaxTime,
 				})
 			}
 
@@ -317,6 +324,8 @@ func (db *DB) initBlocks() error {
 			if err != nil {
 				return err
 			}
+			h.generation = db.headGen
+			db.headGen++
 			heads = append(heads, h)
 			continue
 		}
@@ -330,10 +339,10 @@ func (db *DB) initBlocks() error {
 	db.persisted = persisted
 	db.heads = heads
 
-	if len(heads) == 0 {
-		_, err = db.cut()
-	}
-	return err
+	// if len(heads) == 0 {
+	// 	_, err = db.cut()
+	// }
+	return nil
 }
 
 // Close the partition.
@@ -359,83 +368,185 @@ func (db *DB) Close() error {
 // Appender returns a new Appender on the database.
 func (db *DB) Appender() Appender {
 	db.mtx.RLock()
+	a := &dbAppender{db: db}
 
-	return &dbAppender{
-		db:   db,
-		head: db.heads[len(db.heads)-1].Appender().(*headAppender),
-		gen:  db.headGen,
+	for _, b := range db.appendable() {
+		a.heads = append(a.heads, b.Appender().(*headAppender))
 	}
+	return a
 }
 
 type dbAppender struct {
-	db   *DB
-	gen  uint8
-	head *headAppender
+	db *DB
+	// gen  uint8
+	// head *headAppender
+	maxGen uint8
+
+	heads []*headAppender
 }
 
-func (a *dbAppender) SetSeries(lset labels.Labels) (uint64, error) {
-	ref, err := a.head.SetSeries(lset)
+func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	h, err := a.appenderFor(t)
+	if err != nil {
+		fmt.Println("no appender")
+		return 0, err
+	}
+	ref, err := h.Add(lset, t, v)
 	if err != nil {
 		return 0, err
 	}
-	return ref | (uint64(a.gen) << 40), nil
+	return ref | (uint64(h.generation) << 40), nil
 }
 
-func (a *dbAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error) {
-	ref, err := a.head.setSeries(hash, lset)
+func (a *dbAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+	h, err := a.appenderFor(t)
+	if err != nil {
+		fmt.Println("no appender")
+		return 0, err
+	}
+	ref, err := h.hashedAdd(hash, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
-	return ref | (uint64(a.gen) << 40), nil
+	return ref | (uint64(h.generation) << 40), nil
 }
 
-func (a *dbAppender) Add(ref uint64, t int64, v float64) error {
+func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
 	// We store the head generation in the 4th byte and use it to reject
 	// stale references.
 	gen := uint8((ref << 16) >> 56)
 
-	if gen != a.gen {
+	h, err := a.appenderFor(t)
+	if err != nil {
+		return err
+	}
+	// fmt.Println("check gen", h.generation, gen)
+	if h.generation != gen {
 		return ErrNotFound
 	}
 
-	return a.head.Add(ref, t, v)
+	return h.AddFast(ref, t, v)
+}
+
+// appenderFor gets the appender for the head containing timestamp t.
+// If the head block doesn't exist yet, it gets created.
+func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
+	if len(a.heads) == 0 {
+		if err := a.addNextHead(t); err != nil {
+			return nil, err
+		}
+		return a.appenderFor(t)
+	}
+	for i := len(a.heads) - 1; i >= 0; i-- {
+		h := a.heads[i]
+
+		if t > h.meta.MaxTime {
+			if err := a.addNextHead(t); err != nil {
+				return nil, err
+			}
+			return a.appenderFor(t)
+		}
+		if t >= h.meta.MinTime {
+			return h, nil
+		}
+	}
+
+	return nil, ErrNotFound
+}
+
+func (a *dbAppender) addNextHead(t int64) error {
+	a.db.mtx.RUnlock()
+	a.db.mtx.Lock()
+
+	// We switched locks, validate that adding a head for the timestamp
+	// is still required.
+	if len(a.db.heads) > 1 {
+		h := a.db.heads[len(a.db.heads)-1]
+		if t <= h.meta.MaxTime {
+			a.heads = append(a.heads, h.Appender().(*headAppender))
+			a.maxGen++
+			a.db.mtx.Unlock()
+			a.db.mtx.RLock()
+			return nil
+		}
+	}
+
+	h, err := a.db.cut(t)
+	if err == nil {
+		a.heads = append(a.heads, h.Appender().(*headAppender))
+		a.maxGen++
+	}
+
+	a.db.mtx.Unlock()
+	a.db.mtx.RLock()
+
+	return err
 }
 
 func (a *dbAppender) Commit() error {
-	defer a.db.mtx.RUnlock()
+	var merr MultiError
 
-	err := a.head.Commit()
-
-	if a.head.headBlock.fullness() > 1.0 {
-		select {
-		case a.db.cutc <- struct{}{}:
-		default:
-		}
+	for _, h := range a.heads {
+		merr.Add(h.Commit())
 	}
-	return err
+	a.db.mtx.RUnlock()
+
+	return merr.Err()
 }
 
 func (a *dbAppender) Rollback() error {
-	err := a.head.Rollback()
+	var merr MultiError
+
+	for _, h := range a.heads {
+		merr.Add(h.Rollback())
+	}
 	a.db.mtx.RUnlock()
-	return err
+
+	return merr.Err()
+}
+
+func (db *DB) appendable() []*headBlock {
+	if len(db.heads) == 0 {
+		return nil
+	}
+	var blocks []*headBlock
+	maxHead := db.heads[len(db.heads)-1]
+
+	k := len(db.heads) - 2
+	for i := k; i >= 0; i-- {
+		if db.heads[i].meta.MaxTime < maxHead.meta.MinTime-int64(db.opts.GracePeriod) {
+			break
+		}
+		k--
+	}
+	for i := k + 1; i < len(db.heads); i++ {
+		blocks = append(blocks, db.heads[i])
+	}
+	return blocks
 }
 
 func (db *DB) compactable() []Block {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
-	// h := db.heads[len(db.heads)-1]
-	// mint := h.maxt - int64(db.opts.GracePeriod)
-
 	var blocks []Block
 	for _, pb := range db.persisted {
 		blocks = append(blocks, pb)
 	}
-	for _, hb := range db.heads[:len(db.heads)-1] {
-		// if hb.maxt < mint {
-		// 	break
-		// }
+
+	maxHead := db.heads[len(db.heads)-1]
+
+	k := len(db.heads) - 2
+	for i := k; i >= 0; i-- {
+		if db.heads[i].meta.MaxTime < maxHead.meta.MinTime-int64(db.opts.GracePeriod) {
+			break
+		}
+		k--
+	}
+	for i, hb := range db.heads[:len(db.heads)-1] {
+		if i > k {
+			break
+		}
 		blocks = append(blocks, hb)
 	}
 
@@ -463,12 +574,13 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 
 	for _, b := range db.persisted {
 		m := b.Meta()
-		if intervalOverlap(mint, maxt, *m.MinTime, *m.MaxTime) {
+		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
 	for _, b := range db.heads {
-		if intervalOverlap(mint, maxt, b.mint, b.maxt) {
+		m := b.Meta()
+		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
 			bs = append(bs, b)
 		}
 	}
@@ -478,39 +590,30 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (db *DB) cut() (*headBlock, error) {
-	var mint *int64
-
-	// If a previous block exists, fix its max time and and take the
-	// timestamp after as the minimum for the new head.
-	if len(db.heads) > 0 {
-		cur := db.heads[len(db.heads)-1]
-
-		cur.metamtx.Lock()
-
-		if cur.meta.MinTime == nil {
-			mt := cur.mint
-			cur.meta.MinTime = &mt
-		}
-		cur.meta.MaxTime = new(int64)
-
-		mt := cur.maxt + 1
-		cur.meta.MaxTime = &mt
-		mint = &mt
-
-		cur.metamtx.Unlock()
-	}
+func (db *DB) cut(mint int64) (*headBlock, error) {
+	maxt := mint + int64(db.opts.MinBlockDuration) - 1
+	fmt.Println("cut", mint, maxt)
 
 	dir, seq, err := nextBlockDir(db.dir)
 	if err != nil {
 		return nil, err
 	}
-	newHead, err := createHeadBlock(dir, seq, db.logger, mint)
+	newHead, err := createHeadBlock(dir, seq, db.logger, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
+
 	db.heads = append(db.heads, newHead)
 	db.headGen++
+
+	newHead.generation = db.headGen
+
+	fmt.Println("headlen", len(db.heads))
+
+	select {
+	case db.compactc <- struct{}{}:
+	default:
+	}
 
 	return newHead, nil
 }
@@ -646,20 +749,20 @@ type partitionedAppender struct {
 	partitions []*dbAppender
 }
 
-func (a *partitionedAppender) SetSeries(lset labels.Labels) (uint64, error) {
+func (a *partitionedAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	h := lset.Hash()
 	p := h >> (64 - a.db.partitionPow)
 
-	ref, err := a.partitions[p].setSeries(h, lset)
+	ref, err := a.partitions[p].hashedAdd(h, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref | (p << 48), nil
 }
 
-func (a *partitionedAppender) Add(ref uint64, t int64, v float64) error {
+func (a *partitionedAppender) AddFast(ref uint64, t int64, v float64) error {
 	p := uint8((ref << 8) >> 56)
-	return a.partitions[p].Add(ref, t, v)
+	return a.partitions[p].AddFast(ref, t, v)
 }
 
 func (a *partitionedAppender) Commit() error {

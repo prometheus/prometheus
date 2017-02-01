@@ -118,12 +118,19 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	measureTime("ingestScrapes", func() {
+	var total uint64
+
+	dur := measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		if err := b.ingestScrapes(metrics, 10000); err != nil {
+		total, err = b.ingestScrapes(metrics, 3000)
+		if err != nil {
 			exitWithError(err)
 		}
 	})
+
+	fmt.Println(" > total samples:", total)
+	fmt.Println(" > samples/sec:", float64(total)/dur.Seconds())
+
 	measureTime("stopStorage", func() {
 		if err := b.storage.Close(); err != nil {
 			exitWithError(err)
@@ -132,7 +139,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 	})
 }
 
-func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) error {
+func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (uint64, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var total uint64
@@ -163,8 +170,7 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) er
 		wg.Wait()
 	}
 
-	fmt.Println("> total samples:", total)
-	return nil
+	return total, nil
 }
 
 func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount int, baset int64) (uint64, error) {
@@ -194,26 +200,23 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 			s.value += 1000
 
 			if s.ref == nil {
-				ref, err := app.SetSeries(s.labels)
+				ref, err := app.Add(s.labels, ts, float64(s.value))
 				if err != nil {
 					panic(err)
 				}
+				// fmt.Println("Add:", s.labels, ref)
 				s.ref = &ref
-			}
-
-			if err := app.Add(*s.ref, ts, float64(s.value)); err != nil {
+			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
+				// fmt.Println("AddFast:", *s.ref)
 				if err.Error() != "not found" {
 					panic(err)
 				}
 
-				ref, err := app.SetSeries(s.labels)
+				ref, err := app.Add(s.labels, ts, float64(s.value))
 				if err != nil {
 					panic(err)
 				}
 				s.ref = &ref
-				if err := app.Add(*s.ref, ts, float64(s.value)); err != nil {
-					panic(err)
-				}
 			}
 
 			total++
@@ -285,11 +288,12 @@ func reportSize(dir string) {
 	}
 }
 
-func measureTime(stage string, f func()) {
+func measureTime(stage string, f func()) time.Duration {
 	fmt.Printf(">> start stage=%s\n", stage)
 	start := time.Now()
 	f()
 	fmt.Printf(">> completed stage=%s duration=%s\n", stage, time.Since(start))
+	return time.Since(start)
 }
 
 func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {

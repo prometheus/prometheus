@@ -35,9 +35,10 @@ var (
 
 // headBlock handles reads and writes of time series data within a time window.
 type headBlock struct {
-	mtx sync.RWMutex
-	dir string
-	wal *WAL
+	mtx        sync.RWMutex
+	dir        string
+	generation uint8
+	wal        *WAL
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
@@ -52,19 +53,19 @@ type headBlock struct {
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
-	metamtx    sync.RWMutex
-	meta       BlockMeta
-	mint, maxt int64 // timestamp range of current samples
+	metamtx sync.RWMutex
+	meta    BlockMeta
 }
 
-func createHeadBlock(dir string, seq int, l log.Logger, minTime *int64) (*headBlock, error) {
+func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*headBlock, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
 
 	if err := writeMetaFile(dir, &BlockMeta{
 		Sequence: seq,
-		MinTime:  minTime,
+		MinTime:  mint,
+		MaxTime:  maxt,
 	}); err != nil {
 		return nil, err
 	}
@@ -73,10 +74,6 @@ func createHeadBlock(dir string, seq int, l log.Logger, minTime *int64) (*headBl
 
 // openHeadBlock creates a new empty head block.
 func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
-	}
-
 	wal, err := OpenWAL(dir, log.NewContext(l).With("component", "wal"), 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -95,8 +92,6 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		postings: &memPostings{m: make(map[term][]uint32)},
 		mapper:   newPositionMapper(nil),
 		meta:     *meta,
-		mint:     math.MaxInt64,
-		maxt:     math.MinInt64,
 	}
 
 	// Replay contents of the write ahead log.
@@ -113,12 +108,6 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 				return ErrOutOfBounds
 			}
 
-			if s.t < h.mint {
-				h.mint = s.t
-			}
-			if s.t > h.maxt {
-				h.maxt = s.t
-			}
 			h.meta.Stats.NumSamples++
 			return nil
 		},
@@ -134,7 +123,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 // inBounds returns true if the given timestamp is within the valid
 // time bounds of the block.
 func (h *headBlock) inBounds(t int64) bool {
-	return h.meta.MinTime == nil || t >= *h.meta.MinTime
+	return t >= h.meta.MinTime && t <= h.meta.MaxTime
 }
 
 // Close syncs all data and closes underlying resources of the head block.
@@ -195,15 +184,17 @@ type refdSample struct {
 	v   float64
 }
 
-func (a *headAppender) SetSeries(lset labels.Labels) (uint64, error) {
-	return a.setSeries(lset.Hash(), lset)
+func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	return a.hashedAdd(lset.Hash(), lset, t, v)
 }
 
-func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error) {
+func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if ms := a.get(hash, lset); ms != nil {
+		// fmt.Println("add ref get", ms.ref)
 		return uint64(ms.ref), nil
 	}
 	if ref, ok := a.newHashes[hash]; ok {
+		// fmt.Println("add ref newHashes", ref)
 		return uint64(ref), nil
 	}
 
@@ -224,10 +215,13 @@ func (a *headAppender) setSeries(hash uint64, lset labels.Labels) (uint64, error
 	a.newSeries[ref] = hashedLabels{hash: hash, labels: lset}
 	a.newHashes[hash] = ref
 
-	return ref, nil
+	// fmt.Println("add ref", ref)
+
+	return ref, a.AddFast(ref, t, v)
 }
 
-func (a *headAppender) Add(ref uint64, t int64, v float64) error {
+func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
+	// fmt.Println("add fast ref", ref)
 	// We only own the last 5 bytes of the reference. Anything before is
 	// used by higher-order appenders. We erase it to avoid issues.
 	ref = (ref << 24) >> 24
@@ -251,12 +245,8 @@ func (a *headAppender) Add(ref uint64, t int64, v float64) error {
 		// Only problem is release of locks in case of a rollback.
 		c := ms.head()
 
-		// TODO(fabxc): this is a race. The meta must be locked.
-		// Just drop out-of-bounds sample for now – support for multiple
-		// appendable heads needed.
 		if !a.inBounds(t) {
-			// return ErrOutOfBounds
-			return nil
+			return ErrOutOfBounds
 		}
 		if t < c.maxTime {
 			return ErrOutOfOrderSample
@@ -351,13 +341,6 @@ func (a *headAppender) Commit() error {
 
 	a.meta.Stats.NumSamples += total
 	a.meta.Stats.NumSeries += uint64(len(a.newSeries))
-
-	if mint < a.mint {
-		a.mint = mint
-	}
-	if maxt > a.maxt {
-		a.maxt = maxt
-	}
 
 	return nil
 }

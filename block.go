@@ -39,10 +39,9 @@ type BlockMeta struct {
 	Sequence int `json:"sequence"`
 
 	// MinTime and MaxTime specify the time range all samples
-	// in the block must be in. If unset, samples can be appended
-	// freely until they are set.
-	MinTime *int64 `json:"minTime,omitempty"`
-	MaxTime *int64 `json:"maxTime,omitempty"`
+	// in the block are in.
+	MinTime int64 `json:"minTime"`
+	MaxTime int64 `json:"maxTime"`
 
 	// Stats about the contents of the block.
 	Stats struct {
