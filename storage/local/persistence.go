@@ -310,6 +310,7 @@ func newPersistence(
 		dirtyFileName:  dirtyPath,
 		fLock:          fLock,
 		shouldSync:     shouldSync,
+		minShrinkRatio: minShrinkRatio,
 		// Create buffers of length 3*chunkLenWithHeader by default because that is still reasonably small
 		// and at the same time enough for many uses. The contract is to never return buffer smaller than
 		// that to the pool so that callers can rely on a minimum buffer size.
