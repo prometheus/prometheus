@@ -305,6 +305,7 @@ func (app *countingAppender) Append(s *model.Sample) error {
 // It returns a label set before relabeling was applied as the second return value.
 // Returns a nil label set if the target is dropped during relabeling.
 func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig model.LabelSet, err error) {
+	lset = lset.Clone()
 	if _, ok := lset[model.AddressLabel]; !ok {
 		return nil, nil, fmt.Errorf("no address")
 	}
