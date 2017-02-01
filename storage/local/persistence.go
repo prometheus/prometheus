@@ -693,7 +693,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			}
 			// persistWatermark. We only checkpoint chunks that need persisting, so
 			// this is always 0.
-			if _, err = codable.EncodeVarint(w, int64(0)); err != nil {
+			if _, err = codable.EncodeVarint(w, 0); err != nil {
 				return
 			}
 			if m.series.modTime.IsZero() {
