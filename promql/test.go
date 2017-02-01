@@ -285,11 +285,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			ref, err := a.SetSeries(m)
-			if err != nil {
-				return err
-			}
-			if err := a.Add(ref, s.T, s.V); err != nil {
+			if _, err := a.Add(m, s.T, s.V); err != nil {
 				return err
 			}
 		}

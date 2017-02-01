@@ -235,12 +235,24 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(ref uint64, t int64, v float64) error {
+func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	if app.i+1 > app.limit {
+		return 0, errors.New("sample limit exceeded")
+	}
+	ref, err := app.Appender.Add(lset, t, v)
+	if err != nil {
+		return 0, fmt.Errorf("sample limit of %d exceeded", app.limit)
+	}
+	app.i++
+	return ref, nil
+}
+
+func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
 	if app.i+1 > app.limit {
 		return errors.New("sample limit exceeded")
 	}
 
-	if err := app.Appender.Add(ref, t, v); err != nil {
+	if err := app.Appender.AddFast(ref, t, v); err != nil {
 		return fmt.Errorf("sample limit of %d exceeded", app.limit)
 	}
 	app.i++
@@ -254,7 +266,7 @@ type ruleLabelsAppender struct {
 	labels labels.Labels
 }
 
-func (app ruleLabelsAppender) SetSeries(lset labels.Labels) (uint64, error) {
+func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -265,7 +277,7 @@ func (app ruleLabelsAppender) SetSeries(lset labels.Labels) (uint64, error) {
 		lb.Set(l.Name, l.Value)
 	}
 
-	return app.Appender.SetSeries(lb.Labels())
+	return app.Appender.Add(lb.Labels(), t, v)
 }
 
 type honorLabelsAppender struct {
@@ -276,7 +288,7 @@ type honorLabelsAppender struct {
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) SetSeries(lset labels.Labels) (uint64, error) {
+func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -284,7 +296,7 @@ func (app honorLabelsAppender) SetSeries(lset labels.Labels) (uint64, error) {
 			lb.Set(l.Name, l.Value)
 		}
 	}
-	return app.Appender.SetSeries(lb.Labels())
+	return app.Appender.Add(lb.Labels(), t, v)
 }
 
 // Applies a set of relabel configurations to the sample's metric
@@ -296,12 +308,12 @@ type relabelAppender struct {
 
 var errSeriesDropped = errors.New("series dropped")
 
-func (app relabelAppender) SetSeries(lset labels.Labels) (uint64, error) {
+func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	lset = relabel.Process(lset, app.relabelings...)
 	if lset == nil {
 		return 0, errSeriesDropped
 	}
-	return app.Appender.SetSeries(lset)
+	return app.Appender.Add(lset, t, v)
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.

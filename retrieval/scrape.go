@@ -514,6 +514,7 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err erro
 		defTime = timestamp.FromTime(ts)
 	)
 
+loop:
 	for p.Next() {
 		total++
 
@@ -526,32 +527,32 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err erro
 		mets := string(met)
 		ref, ok := sl.cache[mets]
 		if ok {
-			if err = app.Add(ref, t, v); err == nil {
-				added++
+			switch err = app.AddFast(ref, t, v); err {
+			case nil:
+			case storage.ErrNotFound:
+				ok = false
+			case errSeriesDropped:
 				continue
-			} else if err != storage.ErrNotFound {
-				break
+			default:
+				break loop
 			}
-			ok = false
 		}
 		if !ok {
 			var lset labels.Labels
 			p.Metric(&lset)
 
-			ref, err = app.SetSeries(lset)
+			ref, err = app.Add(lset, t, v)
 			// TODO(fabxc): also add a dropped-cache?
-			if err == errSeriesDropped {
+			switch err {
+			case nil:
+			case errSeriesDropped:
 				continue
+			default:
+				break loop
 			}
-			if err != nil {
-				break
-			}
-			if err = app.Add(ref, t, v); err != nil {
-				break
-			}
-			added++
+			sl.cache[mets] = ref
 		}
-		sl.cache[mets] = ref
+		added++
 	}
 	if err == nil {
 		err = p.Err()
@@ -601,18 +602,17 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	ref, ok := sl.cache[s]
 
 	if ok {
-		if err := app.Add(ref, t, v); err != storage.ErrNotFound {
+		if err := app.AddFast(ref, t, v); err == nil {
+			return nil
+		} else if err != storage.ErrNotFound {
 			return err
 		}
 	}
 	met := labels.Labels{
 		labels.Label{Name: labels.MetricName, Value: s},
 	}
-	ref, err := app.SetSeries(met)
+	ref, err := app.Add(met, t, v)
 	if err != nil {
-		return err
-	}
-	if err = app.Add(ref, t, v); err != nil {
 		return err
 	}
 	sl.cache[s] = ref

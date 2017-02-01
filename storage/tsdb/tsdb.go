@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"time"
 	"unsafe"
 
 	"github.com/fabxc/tsdb"
@@ -14,9 +15,34 @@ type adapter struct {
 	db *tsdb.PartitionedDB
 }
 
+// Options of the DB storage.
+type Options struct {
+	// The interval at which the write ahead log is flushed to disc.
+	WALFlushInterval time.Duration
+
+	// The timestamp range of head blocks after which they get persisted.
+	// It's the minimum duration of any persisted block.
+	MinBlockDuration uint64
+
+	// The maximum timestamp range of compacted blocks.
+	MaxBlockDuration uint64
+
+	// Number of head blocks that can be appended to.
+	// Should be two or higher to prevent write errors in general scenarios.
+	//
+	// After a new block is started for timestamp t0 or higher, appends with
+	// timestamps as early as t0 - (n-1) * MinBlockDuration are valid.
+	AppendableBlocks int
+}
+
 // Open returns a new storage backed by a tsdb database.
-func Open(path string) (storage.Storage, error) {
-	db, err := tsdb.OpenPartitioned(path, 1, nil, nil)
+func Open(path string, opts *Options) (storage.Storage, error) {
+	db, err := tsdb.OpenPartitioned(path, 1, nil, &tsdb.Options{
+		WALFlushInterval: 10 * time.Second,
+		MinBlockDuration: opts.MinBlockDuration,
+		MaxBlockDuration: opts.MaxBlockDuration,
+		AppendableBlocks: opts.AppendableBlocks,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +99,22 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) SetSeries(lset labels.Labels) (uint64, error) {
-	return a.a.SetSeries(toTSDBLabels(lset))
+func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	ref, err := a.a.Add(toTSDBLabels(lset), t, v)
+
+	switch err {
+	case tsdb.ErrNotFound:
+		return 0, storage.ErrNotFound
+	case tsdb.ErrOutOfOrderSample:
+		return 0, storage.ErrOutOfOrderSample
+	case tsdb.ErrAmendSample:
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+	return ref, err
 }
 
-func (a appender) Add(ref uint64, t int64, v float64) error {
-	err := a.a.Add(ref, t, v)
+func (a appender) AddFast(ref uint64, t int64, v float64) error {
+	err := a.a.AddFast(ref, t, v)
 
 	switch err {
 	case tsdb.ErrNotFound:

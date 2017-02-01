@@ -282,21 +282,16 @@ func (g *Group) Eval() {
 			}
 
 			for _, s := range vector {
-				ref, err := app.SetSeries(s.Metric)
-				if err != nil {
-					log.With("sample", s).With("error", err).Warn("Setting metric failed")
-					continue
-				}
-				if err := app.Add(ref, s.T, s.V); err != nil {
+				if _, err := app.Add(s.Metric, s.T, s.V); err != nil {
 					switch err {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
-						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
+						log.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
 					case storage.ErrDuplicateSampleForTimestamp:
 						numDuplicates++
-						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
+						log.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
 					default:
-						log.With("sample", s).With("error", err).Warn("Rule evaluation result discarded")
+						log.With("sample", s).With("err", err).Warn("Rule evaluation result discarded")
 					}
 				}
 			}

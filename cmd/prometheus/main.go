@@ -20,7 +20,6 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
-	"runtime/trace"
 	"syscall"
 	"time"
 
@@ -61,18 +60,6 @@ func init() {
 
 // Main manages the stup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
-	go func() {
-		f, err := os.Create("trace")
-		if err != nil {
-			panic(err)
-		}
-		if err := trace.Start(f); err != nil {
-			panic(err)
-		}
-		time.Sleep(30 * time.Second)
-		trace.Stop()
-		f.Close()
-	}()
 	if err := parse(os.Args[1:]); err != nil {
 		log.Error(err)
 		return 2
@@ -91,7 +78,11 @@ func Main() int {
 		reloadables []Reloadable
 	)
 
-	localStorage, err := tsdb.Open(cfg.localStoragePath)
+	localStorage, err := tsdb.Open(cfg.localStoragePath, &tsdb.Options{
+		MinBlockDuration: 2 * 60 * 60 * 1000,
+		MaxBlockDuration: 24 * 60 * 60 * 1000,
+		AppendableBlocks: 2,
+	})
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
 		return 1

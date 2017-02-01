@@ -52,10 +52,9 @@ type Querier interface {
 
 // Appender provides batched appends against a storage.
 type Appender interface {
-	SetSeries(labels.Labels) (uint64, error)
+	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
-	// Add adds a sample pair for the referenced series.
-	Add(ref uint64, t int64, v float64) error
+	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
