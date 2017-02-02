@@ -264,6 +264,12 @@ func (db *DB) compact(i, j int) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
+	for _, b := range blocks {
+		if err := b.Close(); err != nil {
+			return errors.Wrap(err, "close old block")
+		}
+	}
+
 	if err := renameDir(tmpdir, dir); err != nil {
 		return errors.Wrap(err, "rename dir")
 	}
@@ -273,9 +279,6 @@ func (db *DB) compact(i, j int) error {
 	db.persisted = append(db.persisted, pb)
 
 	for i, b := range blocks {
-		if err := b.Close(); err != nil {
-			return errors.Wrap(err, "close old block")
-		}
 		if i > 0 {
 			if err := os.RemoveAll(b.Dir()); err != nil {
 				return errors.Wrap(err, "removing old block")
