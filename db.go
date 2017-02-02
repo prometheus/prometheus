@@ -28,7 +28,7 @@ import (
 // millisecond precision timestampdb.
 var DefaultOptions = &Options{
 	WALFlushInterval: 5 * time.Second,
-	MinBlockDuration: 3 * 60 * 60 * 1000,  // 2 hours in milliseconds
+	MinBlockDuration: 2 * 60 * 60 * 1000,  // 2 hours in milliseconds
 	MaxBlockDuration: 48 * 60 * 60 * 1000, // 1 day in milliseconds
 	AppendableBlocks: 2,
 }
@@ -93,7 +93,6 @@ type DB struct {
 	compactor *compactor
 
 	compactc chan struct{}
-	cutc     chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
 }
@@ -137,6 +136,9 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 	if opts == nil {
 		opts = DefaultOptions
 	}
+	if opts.AppendableBlocks < 1 {
+		return nil, errors.Errorf("AppendableBlocks must be greater than 0")
+	}
 
 	db = &DB{
 		dir:      dir,
@@ -144,7 +146,6 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 		metrics:  newDBMetrics(r),
 		opts:     opts,
 		compactc: make(chan struct{}, 1),
-		cutc:     make(chan struct{}, 1),
 		donec:    make(chan struct{}),
 		stopc:    make(chan struct{}),
 	}
@@ -163,32 +164,6 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 
 func (db *DB) run() {
 	defer close(db.donec)
-
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-db.cutc:
-	// 			db.mtx.Lock()
-	// 			_, err := db.cut()
-	// 			db.mtx.Unlock()
-
-	// 			if err != nil {
-	// 				db.logger.Log("msg", "cut failed", "err", err)
-	// 			} else {
-	// 				select {
-	// 				case db.compactc <- struct{}{}:
-	// 				default:
-	// 				}
-	// 			}
-	// 			// Drain cut channel so we don't trigger immediately again.
-	// 			select {
-	// 			case <-db.cutc:
-	// 			default:
-	// 			}
-	// 		case <-db.stopc:
-	// 		}
-	// 	}
-	// }()
 
 	for {
 		select {
@@ -342,9 +317,6 @@ func (db *DB) initBlocks() error {
 	db.persisted = persisted
 	db.heads = heads
 
-	// if len(heads) == 0 {
-	// 	_, err = db.cut()
-	// }
 	return nil
 }
 
@@ -433,17 +405,30 @@ func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
 // If the head block doesn't exist yet, it gets created.
 func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
 	// If there's no fitting head block for t, ensure it gets created.
-	if len(a.heads) == 0 || t > a.heads[len(a.heads)-1].meta.MaxTime {
+	if len(a.heads) == 0 || t >= a.heads[len(a.heads)-1].meta.MaxTime {
 		a.db.mtx.RUnlock()
+		var mints []int64
+		for _, h := range a.heads {
+			mints = append(mints, h.meta.MinTime)
+		}
+		fmt.Println("ensure head", t, mints)
 		if err := a.db.ensureHead(t); err != nil {
 			a.db.mtx.RLock()
 			return nil, err
 		}
 		a.db.mtx.RLock()
 
-		a.heads = nil
-		for _, b := range a.db.appendable() {
-			a.heads = append(a.heads, b.Appender().(*headAppender))
+		if len(a.heads) == 0 {
+			for _, b := range a.db.appendable() {
+				a.heads = append(a.heads, b.Appender().(*headAppender))
+			}
+		} else {
+			maxSeq := a.heads[len(a.heads)-1].meta.Sequence
+			for _, b := range a.db.appendable() {
+				if b.meta.Sequence > maxSeq {
+					a.heads = append(a.heads, b.Appender().(*headAppender))
+				}
+			}
 		}
 	}
 	for i := len(a.heads) - 1; i >= 0; i-- {
@@ -463,6 +448,7 @@ func (db *DB) ensureHead(t int64) error {
 	// AppendableBlocks-1 front padding heads.
 	if len(db.heads) == 0 {
 		for i := int64(db.opts.AppendableBlocks - 1); i >= 0; i-- {
+			fmt.Println("cut init for", t-i*int64(db.opts.MinBlockDuration))
 			if _, err := db.cut(t - i*int64(db.opts.MinBlockDuration)); err != nil {
 				return err
 			}
@@ -472,10 +458,11 @@ func (db *DB) ensureHead(t int64) error {
 	for {
 		h := db.heads[len(db.heads)-1]
 		// If t doesn't exceed the range of heads blocks, there's nothing to do.
-		if t <= h.meta.MaxTime {
+		if t < h.meta.MaxTime {
 			return nil
 		}
-		if _, err := db.cut(h.meta.MaxTime + 1); err != nil {
+		fmt.Println("cut for", h.meta.MaxTime)
+		if _, err := db.cut(h.meta.MaxTime); err != nil {
 			return err
 		}
 	}
@@ -567,7 +554,7 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
 func (db *DB) cut(mint int64) (*headBlock, error) {
-	maxt := mint + int64(db.opts.MinBlockDuration) - 1
+	maxt := mint + int64(db.opts.MinBlockDuration)
 
 	dir, seq, err := nextBlockDir(db.dir)
 	if err != nil {
@@ -663,9 +650,6 @@ func OpenPartitioned(dir string, n int, l log.Logger, opts *Options) (*Partition
 	if l == nil {
 		l = log.NewLogfmtLogger(os.Stdout)
 		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-	}
-	if opts.AppendableBlocks < 1 {
-		return nil, errors.Errorf("AppendableBlocks must be greater than 0")
 	}
 
 	if err := os.MkdirAll(dir, 0777); err != nil {

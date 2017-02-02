@@ -128,6 +128,9 @@ func (h *headBlock) inBounds(t int64) bool {
 
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
+	if err := writeMetaFile(h.dir, &h.meta); err != nil {
+		return err
+	}
 	return h.wal.Close()
 }
 
@@ -190,11 +193,9 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if ms := a.get(hash, lset); ms != nil {
-		// fmt.Println("add ref get", ms.ref)
 		return uint64(ms.ref), nil
 	}
 	if ref, ok := a.newHashes[hash]; ok {
-		// fmt.Println("add ref newHashes", ref)
 		return uint64(ref), nil
 	}
 
@@ -214,8 +215,6 @@ func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v flo
 	}
 	a.newSeries[ref] = hashedLabels{hash: hash, labels: lset}
 	a.newHashes[hash] = ref
-
-	// fmt.Println("add ref", ref)
 
 	return ref, a.AddFast(ref, t, v)
 }

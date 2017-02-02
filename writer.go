@@ -132,6 +132,12 @@ func (w *seriesWriter) Size() int64 {
 }
 
 func (w *seriesWriter) Close() error {
+	// Initialize block in case no data was written to it.
+	if w.n == 0 {
+		if err := w.writeMeta(); err != nil {
+			return err
+		}
+	}
 	return w.w.Flush()
 }
 
@@ -334,18 +340,26 @@ func (w *indexWriter) writeSeries() error {
 	})
 }
 
+func (w *indexWriter) init() error {
+	if err := w.writeMeta(); err != nil {
+		return err
+	}
+	if err := w.writeSymbols(); err != nil {
+		return err
+	}
+	if err := w.writeSeries(); err != nil {
+		return err
+	}
+	w.started = true
+
+	return nil
+}
+
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	if !w.started {
-		if err := w.writeMeta(); err != nil {
+		if err := w.init(); err != nil {
 			return err
 		}
-		if err := w.writeSymbols(); err != nil {
-			return err
-		}
-		if err := w.writeSeries(); err != nil {
-			return err
-		}
-		w.started = true
 	}
 
 	valt, err := newStringTuples(values, len(names))
@@ -382,6 +396,12 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 }
 
 func (w *indexWriter) WritePostings(name, value string, it Postings) error {
+	if !w.started {
+		if err := w.init(); err != nil {
+			return err
+		}
+	}
+
 	key := name + string(sep) + value
 
 	w.postings = append(w.postings, hashEntry{
@@ -473,6 +493,12 @@ func (w *indexWriter) finalize() error {
 }
 
 func (w *indexWriter) Close() error {
+	// Handle blocks without any data.
+	if !w.started {
+		if err := w.init(); err != nil {
+			return err
+		}
+	}
 	if err := w.finalize(); err != nil {
 		return err
 	}
