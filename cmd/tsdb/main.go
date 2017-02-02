@@ -122,7 +122,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dur := measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		total, err = b.ingestScrapes(metrics, 3000)
+		total, err = b.ingestScrapes(metrics, 4000)
 		if err != nil {
 			exitWithError(err)
 		}
@@ -140,11 +140,11 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 }
 
 func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (uint64, error) {
-	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var total uint64
 
-	for i := 0; i < scrapeCount; i += 50 {
+	for i := 0; i < scrapeCount; i += 100 {
+		var wg sync.WaitGroup
 		lbls := lbls
 		for len(lbls) > 0 {
 			l := 1000
@@ -156,7 +156,7 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 
 			wg.Add(1)
 			go func() {
-				n, err := b.ingestScrapesShard(batch, 50, int64(30000*i))
+				n, err := b.ingestScrapesShard(batch, 100, int64(30000*i))
 				if err != nil {
 					// exitWithError(err)
 					fmt.Println(" err", err)
@@ -204,10 +204,9 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 				if err != nil {
 					panic(err)
 				}
-				// fmt.Println("Add:", s.labels, ref)
 				s.ref = &ref
 			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
-				// fmt.Println("AddFast:", *s.ref)
+
 				if err.Error() != "not found" {
 					panic(err)
 				}

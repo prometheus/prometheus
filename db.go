@@ -266,7 +266,7 @@ func (db *DB) compact(i, j int) error {
 
 	for _, b := range blocks {
 		if err := b.Close(); err != nil {
-			return errors.Wrap(err, "close old block")
+			return errors.Wrapf(err, "close old block %s", b.Dir())
 		}
 	}
 
@@ -278,11 +278,9 @@ func (db *DB) compact(i, j int) error {
 	db.removeBlocks(i, j)
 	db.persisted = append(db.persisted, pb)
 
-	for i, b := range blocks {
-		if i > 0 {
-			if err := os.RemoveAll(b.Dir()); err != nil {
-				return errors.Wrap(err, "removing old block")
-			}
+	for _, b := range blocks[1:] {
+		if err := os.RemoveAll(b.Dir()); err != nil {
+			return errors.Wrap(err, "removing old block")
 		}
 	}
 	return nil
@@ -355,11 +353,7 @@ func (db *DB) Appender() Appender {
 }
 
 type dbAppender struct {
-	db *DB
-	// gen  uint8
-	// head *headAppender
-	maxGen uint8
-
+	db    *DB
 	heads []*headAppender
 }
 
@@ -410,15 +404,12 @@ func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
 	// If there's no fitting head block for t, ensure it gets created.
 	if len(a.heads) == 0 || t >= a.heads[len(a.heads)-1].meta.MaxTime {
 		a.db.mtx.RUnlock()
-		var mints []int64
-		for _, h := range a.heads {
-			mints = append(mints, h.meta.MinTime)
-		}
-		fmt.Println("ensure head", t, mints)
+
 		if err := a.db.ensureHead(t); err != nil {
 			a.db.mtx.RLock()
 			return nil, err
 		}
+
 		a.db.mtx.RLock()
 
 		if len(a.heads) == 0 {
@@ -451,7 +442,6 @@ func (db *DB) ensureHead(t int64) error {
 	// AppendableBlocks-1 front padding heads.
 	if len(db.heads) == 0 {
 		for i := int64(db.opts.AppendableBlocks - 1); i >= 0; i-- {
-			fmt.Println("cut init for", t-i*int64(db.opts.MinBlockDuration))
 			if _, err := db.cut(t - i*int64(db.opts.MinBlockDuration)); err != nil {
 				return err
 			}
@@ -464,7 +454,6 @@ func (db *DB) ensureHead(t int64) error {
 		if t < h.meta.MaxTime {
 			return nil
 		}
-		fmt.Println("cut for", h.meta.MaxTime)
 		if _, err := db.cut(h.meta.MaxTime); err != nil {
 			return err
 		}

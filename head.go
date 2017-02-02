@@ -193,10 +193,10 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if ms := a.get(hash, lset); ms != nil {
-		return uint64(ms.ref), nil
+		return uint64(ms.ref), a.AddFast(uint64(ms.ref), t, v)
 	}
 	if ref, ok := a.newHashes[hash]; ok {
-		return uint64(ref), nil
+		return uint64(ref), a.AddFast(uint64(ref), t, v)
 	}
 
 	// We only know the actual reference after committing. We generate an
@@ -220,7 +220,6 @@ func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v flo
 }
 
 func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
-	// fmt.Println("add fast ref", ref)
 	// We only own the last 5 bytes of the reference. Anything before is
 	// used by higher-order appenders. We erase it to avoid issues.
 	ref = (ref << 24) >> 24
@@ -325,6 +324,7 @@ func (a *headAppender) Commit() error {
 		if !a.series[s.ref].append(s.t, s.v) {
 			total--
 		}
+
 		if s.t < mint {
 			mint = s.t
 		}
@@ -568,7 +568,7 @@ func (s *memSeries) cut() *memChunk {
 func (s *memSeries) append(t int64, v float64) bool {
 	var c *memChunk
 
-	if s.app == nil || s.head().samples > 10050 {
+	if s.app == nil || s.head().samples > 2000 {
 		c = s.cut()
 		c.minTime = t
 	} else {
