@@ -20,14 +20,12 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/discovery/ecs/mock/aws/sdk"
 	"github.com/stretchr/testify/mock"
 )
 
 // MockECSListClusters mocks listing cluster ECS API call
 func MockECSListClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
-	log.Warnf("Mocking2 AWS iface: ListClusters")
 	var err error
 	if wantError {
 		err = errors.New("ListClusters wrong!")
@@ -45,7 +43,6 @@ func MockECSListClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...str
 
 // MockECSDescribeClusters mocks the description of clusters ECS API call
 func MockECSDescribeClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, clusters ...*ecs.Cluster) {
-	log.Warnf("Mocking AWS iface: DescribeClusters")
 	var err error
 	if wantError {
 		err = errors.New("DescribeClusters wrong!")
@@ -58,7 +55,6 @@ func MockECSDescribeClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, cluste
 
 // MockECSListContainerInstances mocks listing container instances ECS API call
 func MockECSListContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
-	log.Warnf("Mocking AWS iface: ListContainerInstances")
 	var err error
 	if wantError {
 		err = errors.New("ListContainerInstances wrong!")
@@ -81,7 +77,6 @@ func MockECSListContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, 
 
 // MockECSDescribeContainerInstances mocks the description of container instances ECS API call
 func MockECSDescribeContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, cis ...*ecs.ContainerInstance) {
-	log.Warnf("Mocking AWS iface: DescribeContainerInstances")
 	var err error
 	if wantError {
 		err = errors.New("DescribeContainerInstances wrong!")
@@ -102,7 +97,6 @@ func MockECSDescribeContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bo
 
 // MockECSListTasks mocks listing tasks ECS API call
 func MockECSListTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
-	log.Warnf("Mocking AWS iface: ListTasks")
 	var err error
 	if wantError {
 		err = errors.New("ListTasks wrong!")
@@ -125,7 +119,6 @@ func MockECSListTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string
 
 // MockECSDescribeTasks mocks the description of tasks ECS API call
 func MockECSDescribeTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ts ...*ecs.Task) {
-	log.Warnf("Mocking AWS iface: DescribeTasks")
 	var err error
 	if wantError {
 		err = errors.New("DescribeTasks wrong!")
@@ -146,7 +139,6 @@ func MockECSDescribeTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ts ...*ec
 
 // MockECSListServices mocks listing services ECS API call
 func MockECSListServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
-	log.Warnf("Mocking AWS iface: ListServices")
 	var err error
 	if wantError {
 		err = errors.New("ListServices wrong!")
@@ -169,7 +161,6 @@ func MockECSListServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...str
 
 // MockECSDescribeServices mocks the description of services ECS API call
 func MockECSDescribeServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ss ...*ecs.Service) {
-	log.Warnf("Mocking AWS iface: DescribeServices")
 	var err error
 	if wantError {
 		err = errors.New("DescribeServices wrong!")
@@ -190,8 +181,6 @@ func MockECSDescribeServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ss ...
 
 // MockECSDescribeTaskDefinition mocks the description of task definition ECS API call
 func MockECSDescribeTaskDefinition(t *testing.T, m *sdk.ECSAPI, wantErrorOn int, tds ...*ecs.TaskDefinition) {
-	log.Warnf("Mocking AWS iface: DescribeTaskDefinition")
-
 	for i, td := range tds {
 		var err error
 		// if want error is 0 then means disabled

@@ -14,13 +14,13 @@
 package client
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/golang/mock/gomock"
 
 	awsmock "github.com/prometheus/prometheus/discovery/ecs/mock/aws"
 	"github.com/prometheus/prometheus/discovery/ecs/mock/aws/sdk"
@@ -210,8 +210,6 @@ func TestGetClusters(t *testing.T) {
 		}
 
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
 		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListClusters(t, mockECS, test.errorList, cIDs...)
 		awsmock.MockECSDescribeClusters(t, mockECS, test.errorDesc, test.clusters...)
@@ -220,7 +218,7 @@ func TestGetClusters(t *testing.T) {
 			ecsCli: mockECS,
 		}
 
-		res, err := r.getClusters()
+		res, err := r.getClusters(context.TODO())
 
 		if !test.wantError {
 			if len(res) != len(test.clusters) {
@@ -295,7 +293,7 @@ func TestGetContainerInstances(t *testing.T) {
 			ecsCli: mockECS,
 		}
 
-		res, err := r.getContainerInstances(&ecs.Cluster{ClusterArn: aws.String("c1")})
+		res, err := r.getContainerInstances(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
 			if len(res) != len(test.cInstances) {
@@ -372,7 +370,7 @@ func TestGetTasks(t *testing.T) {
 			ecsCli: mockECS,
 		}
 
-		res, err := r.getTasks(&ecs.Cluster{ClusterArn: aws.String("c1")})
+		res, err := r.getTasks(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
 			if len(res) != len(test.tasks) {
@@ -438,7 +436,7 @@ func TestGetInstances(t *testing.T) {
 			ec2Cli: mockEC2,
 		}
 
-		res, err := r.getInstances(iIDs)
+		res, err := r.getInstances(context.TODO(), iIDs)
 
 		if !test.wantError {
 			if len(res) != len(test.instances) {
@@ -575,7 +573,7 @@ func TestGetServices(t *testing.T) {
 			ecsCli: mockECS,
 		}
 
-		res, err := r.getServices(&ecs.Cluster{ClusterArn: aws.String("c1")})
+		res, err := r.getServices(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
 			if len(res) != len(test.services) {
@@ -715,7 +713,7 @@ func TestGetTaskDefinitions(t *testing.T) {
 			cache:  newAWSCache(),
 		}
 
-		res, err := r.getTaskDefinitions(tIDs, false)
+		res, err := r.getTaskDefinitions(context.TODO(), tIDs, false)
 
 		if !test.wantError {
 			if len(res) != len(test.taskDefs) {
@@ -818,7 +816,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 			r.cache.setTaskDefinition(t)
 		}
 
-		res, err := r.getTaskDefinitions(tIDs, test.wantCached)
+		res, err := r.getTaskDefinitions(context.TODO(), tIDs, test.wantCached)
 		if err != nil {
 			t.Errorf("- %+v\n -Getting task definitions shouldn't error: %s", test, err)
 		}
@@ -1191,8 +1189,6 @@ func TestRetrieveError(t *testing.T) {
 
 	for _, test := range tests {
 		// Mock
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
 		mockECS := &sdk.ECSAPI{}
 		mockEC2 := &sdk.EC2API{}
 

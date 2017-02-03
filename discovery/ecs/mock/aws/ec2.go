@@ -18,14 +18,12 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/discovery/ecs/mock/aws/sdk"
 	"github.com/stretchr/testify/mock"
 )
 
 // MockEC2DescribeInstances mocks the description of instances EC2 API call
 func MockEC2DescribeInstances(t *testing.T, m *sdk.EC2API, wantError bool, instances ...*ec2.Instance) {
-	log.Warnf("Mocking AWS iface: DescribeInstances")
 	var err error
 	if wantError {
 		err = errors.New("DescribeInstances wrong!")
