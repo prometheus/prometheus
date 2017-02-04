@@ -283,6 +283,9 @@ func (s *memorySeries) evictChunkDescs(lenToEvict int) {
 	if lenToEvict < 1 {
 		return
 	}
+	if s.chunkDescsOffset < 0 {
+		panic("chunk desc eviction requested with unknown chunk desc offset")
+	}
 	lenToKeep := len(s.chunkDescs) - lenToEvict
 	s.savedFirstTime = s.firstTime()
 	s.chunkDescsOffset += lenToEvict
