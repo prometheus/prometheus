@@ -706,6 +706,9 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 				}
 			}
 			// chunkDescsOffset.
+			if m.series.chunkDescsOffset < 0 && m.series.persistWatermark > 0 {
+				panic("encountered unknown chunk desc offset in combination with positive persist watermark")
+			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset+m.series.persistWatermark)); err != nil {
 				return
 			}
