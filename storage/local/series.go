@@ -277,24 +277,23 @@ func (s *memorySeries) maybeCloseHeadChunk() (bool, error) {
 	return false, nil
 }
 
-// evictChunkDescs evicts chunkDescs if the chunk is evicted.
-// iOldestNotEvicted is the index within the current chunkDescs of the oldest
-// chunk that is not evicted.
-func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
-	lenToKeep := len(s.chunkDescs) - iOldestNotEvicted
-	if lenToKeep < len(s.chunkDescs) {
-		s.savedFirstTime = s.firstTime()
-		lenEvicted := len(s.chunkDescs) - lenToKeep
-		s.chunkDescsOffset += lenEvicted
-		s.persistWatermark -= lenEvicted
-		chunk.DescOps.WithLabelValues(chunk.Evict).Add(float64(lenEvicted))
-		chunk.NumMemDescs.Sub(float64(lenEvicted))
-		s.chunkDescs = append(
-			make([]*chunk.Desc, 0, lenToKeep),
-			s.chunkDescs[lenEvicted:]...,
-		)
-		s.dirty = true
+// evictChunkDescs evicts chunkDescs. lenToEvict is the index within the current
+// chunkDescs of the oldest chunk that is not evicted.
+func (s *memorySeries) evictChunkDescs(lenToEvict int) {
+	if lenToEvict < 1 {
+		return
 	}
+	lenToKeep := len(s.chunkDescs) - lenToEvict
+	s.savedFirstTime = s.firstTime()
+	s.chunkDescsOffset += lenToEvict
+	s.persistWatermark -= lenToEvict
+	chunk.DescOps.WithLabelValues(chunk.Evict).Add(float64(lenToEvict))
+	chunk.NumMemDescs.Sub(float64(lenToEvict))
+	s.chunkDescs = append(
+		make([]*chunk.Desc, 0, lenToKeep),
+		s.chunkDescs[lenToEvict:]...,
+	)
+	s.dirty = true
 }
 
 // dropChunks removes chunkDescs older than t. The caller must have locked the
