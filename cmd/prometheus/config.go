@@ -229,6 +229,15 @@ func init() {
 		"The timeout to use when sending samples to the remote storage.",
 	)
 
+	cfg.fs.StringVar(
+		&cfg.remote.Warp10Address, "storage.remote.warp10.address", "",
+		"The warp10 address",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.Warp10WriteToken, "storage.remote.warp10.write-token", "",
+		"Warp10 write token",
+	)
+
 	// Alertmanager.
 	cfg.fs.Var(
 		&cfg.alertmanagerURLs, "alertmanager.url",

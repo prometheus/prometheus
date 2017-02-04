@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
+	"github.com/prometheus/prometheus/storage/remote/warp10"
 )
 
 // Storage collects multiple remote storage queues.
@@ -61,6 +62,7 @@ func New(o *Options) (*Storage, error) {
 		c := opentsdb.NewClient(o.OpentsdbURL, o.StorageTimeout)
 		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
+
 	if o.InfluxdbURL != nil {
 		conf := influx.Config{
 			URL:      *o.InfluxdbURL,
@@ -70,6 +72,10 @@ func New(o *Options) (*Storage, error) {
 		}
 		c := influxdb.NewClient(conf, o.InfluxdbDatabase, o.InfluxdbRetentionPolicy)
 		prometheus.MustRegister(c)
+		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
+	}
+	if o.Warp10Address != "" {
+		c := warp10.NewClient(o.Warp10Address, o.Warp10WriteToken)
 		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
 	if len(s.queues) == 0 {
@@ -90,6 +96,8 @@ type Options struct {
 	GraphiteAddress         string
 	GraphiteTransport       string
 	GraphitePrefix          string
+	Warp10Address           string
+	Warp10WriteToken        string
 }
 
 // Start starts the background processing of the storage queues.
