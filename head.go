@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bradfitz/slice"
@@ -39,6 +40,8 @@ type headBlock struct {
 	dir        string
 	generation uint8
 	wal        *WAL
+
+	activeWriters uint64
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
@@ -147,6 +150,8 @@ func (h *headBlock) Index() IndexReader   { return &headIndexReader{h} }
 func (h *headBlock) Series() SeriesReader { return &headSeriesReader{h} }
 
 func (h *headBlock) Appender() Appender {
+	atomic.AddUint64(&h.activeWriters, 1)
+
 	h.mtx.RLock()
 	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
 }
@@ -295,6 +300,7 @@ func (a *headAppender) createSeries() {
 }
 
 func (a *headAppender) Commit() error {
+	defer atomic.AddUint64(&a.activeWriters, ^uint64(0))
 	defer putHeadAppendBuffer(a.samples)
 
 	a.createSeries()
@@ -345,8 +351,9 @@ func (a *headAppender) Commit() error {
 }
 
 func (a *headAppender) Rollback() error {
-	putHeadAppendBuffer(a.samples)
 	a.mtx.RUnlock()
+	atomic.AddUint64(&a.activeWriters, ^uint64(0))
+	putHeadAppendBuffer(a.samples)
 	return nil
 }
 

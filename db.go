@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -29,7 +30,7 @@ import (
 var DefaultOptions = &Options{
 	WALFlushInterval: 5 * time.Second,
 	MinBlockDuration: 2 * 60 * 60 * 1000,  // 2 hours in milliseconds
-	MaxBlockDuration: 48 * 60 * 60 * 1000, // 1 day in milliseconds
+	MaxBlockDuration: 48 * 60 * 60 * 1000, // 2 days in milliseconds
 	AppendableBlocks: 2,
 }
 
@@ -503,6 +504,12 @@ func (db *DB) compactable() []Block {
 	}
 
 	for _, h := range db.heads[:len(db.heads)-db.opts.AppendableBlocks] {
+		// Blocks that won't be appendable when instantiating a new appender
+		// might still have active appenders on them.
+		// Abort at the first one we encounter.
+		if atomic.LoadUint64(&h.activeWriters) > 0 {
+			break
+		}
 		blocks = append(blocks, h)
 	}
 	return blocks
