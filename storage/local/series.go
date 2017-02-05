@@ -464,9 +464,9 @@ func (s *memorySeries) preloadChunksForRange(
 				fp, s.chunkDescsOffset, len(cds),
 			)
 		}
+		s.persistWatermark += len(cds)
 		s.chunkDescs = append(cds, s.chunkDescs...)
 		s.chunkDescsOffset = 0
-		s.persistWatermark += len(cds)
 		if len(s.chunkDescs) > 0 {
 			firstChunkDescTime = s.chunkDescs[0].FirstTime()
 		}
