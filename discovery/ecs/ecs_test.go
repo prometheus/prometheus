@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/ecs/client"
 	"github.com/prometheus/prometheus/discovery/ecs/types"
@@ -151,6 +153,7 @@ func TestRefresh(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		// Create our mock
 		c := &client.MockRetriever{
@@ -166,30 +169,20 @@ func TestRefresh(t *testing.T) {
 		tgs, err := d.refresh()
 
 		if !test.wantError {
-			if err != nil {
-				t.Errorf("-%+v\n- Refresh shouldn't error, it did: %s", test, err)
-			}
+			assert.Nil(err, "%+v\n- Refresh shouldn't error", test)
 
 			// Check source.
-			if tgs.Source != d.source {
-				t.Errorf("-%+v\n- Source of targets is wrong, want: %s; got: %s", test, d.source, tgs.Source)
-			}
+			assert.Equal(d.source, tgs.Source, "-%+v\n- Source of targets should be the same", test)
 
 			// Check all the targets are ok.
-			if len(test.wantTargets.Targets) != len(tgs.Targets) {
-				t.Errorf("-%+v\n- Length of the received target group is not ok, want: %d; got: %d", test, len(test.wantTargets.Targets), len(tgs.Targets))
-			}
+			assert.Len(tgs.Targets, len(test.wantTargets.Targets), "-%+v\n- Length of the received target group and wanted should be the same", test)
 
 			for i, got := range tgs.Targets {
 				want := test.wantTargets.Targets[i]
-				if !want.Equal(got) {
-					t.Errorf("-%+v\n- Received target is wrong; want: '%s'; got: '%s'", test, want.String(), got.String())
-				}
+				assert.Equal(want, got, "-%+v\n- Received target should be the same", test)
 			}
 		} else {
-			if err == nil {
-				t.Errorf("-%+v\n- Refresh should error, it didn't", test)
-			}
+			assert.NotNil(err, "-%+v\n- Refresh should error", test)
 		}
 	}
 }

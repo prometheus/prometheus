@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/ecs/client"
 	"github.com/prometheus/prometheus/discovery/ecs/types"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRun(t *testing.T) {
@@ -116,6 +117,7 @@ func TestRun(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		// Create our mock.
 		c := &client.MockRetriever{
@@ -143,14 +145,10 @@ func TestRun(t *testing.T) {
 			}
 			for _, sis := range tg {
 				// Check all the targets are ok.
-				if len(test.wantTargets.Targets) != len(sis.Targets) {
-					t.Errorf("-%+v\n- Length of the received target group is not ok, want: %d; got: %d", test, len(test.wantTargets.Targets), len(sis.Targets))
-				}
-				for i, tg := range sis.Targets {
+				assert.Len(sis.Targets, len(test.wantTargets.Targets), "-%+v\n- Length of the received target group should be the same as expected", test)
+				for i, got := range sis.Targets {
 					want := test.wantTargets.Targets[i]
-					if !want.Equal(tg) {
-						t.Errorf("-%+v\n- Received target is wrong; want: '%s'; got: '%s'", test, want.String(), tg.String())
-					}
+					assert.Equal(want, got, "-%+v\n- Received target should be equal", test)
 				}
 			}
 			counter--

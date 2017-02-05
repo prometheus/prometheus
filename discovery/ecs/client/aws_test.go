@@ -15,12 +15,12 @@ package client
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/stretchr/testify/assert"
 
 	awsmock "github.com/prometheus/prometheus/discovery/ecs/mock/aws"
 	"github.com/prometheus/prometheus/discovery/ecs/mock/aws/sdk"
@@ -153,15 +153,12 @@ func TestCreateServiceInstances(t *testing.T) {
 
 	res := eTT.createServiceInstances()
 
-	if len(res) != len(want) {
-		t.Errorf("The length of the result service instances is wrong, want: %d; got: %d", len(want), len(res))
-	}
+	assert := assert.New(t)
+	assert.Len(res, len(want))
 
 	for i, got := range res {
 		w := want[i]
-		if !reflect.DeepEqual(w, got) {
-			t.Errorf("- Received service instance taget is wrong want: %+v; got: %+v", w, got)
-		}
+		assert.Equal(w, got, "Service instnace must be equal")
 	}
 
 }
@@ -203,6 +200,7 @@ func TestGetClusters(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		cIDs := make([]string, len(test.clusters))
 		for i, cs := range test.clusters {
@@ -221,20 +219,14 @@ func TestGetClusters(t *testing.T) {
 		res, err := r.getClusters(context.TODO())
 
 		if !test.wantError {
-			if len(res) != len(test.clusters) {
-				t.Errorf("- %+v\n -The length of the retrieved clusters differ, want: %d; got: %d", test, len(test.clusters), len(res))
-			}
+			assert.Len(res, len(test.clusters), "- %+v\n -The length of the retrieved clusters must be the same", test)
 			for i, got := range res {
 				want := test.clusters[i]
-				if !reflect.DeepEqual(want, got) {
-					t.Errorf("\n- %v\n-  Received clusters from API is wrong, want: %v; got: %v", test, want, got)
-				}
+				assert.Equal(want, got, "\n- %v\n-  Received clusters from API must be the same", test)
 			}
 
 		} else {
-			if err == nil {
-				t.Errorf("- %+v\n -Getting clusters should error, it didn't", test)
-			}
+			assert.NotNil(err, "- %+v\n -Getting clusters should error", test)
 		}
 	}
 }
@@ -278,6 +270,7 @@ func TestGetContainerInstances(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		ciIDs := make([]string, len(test.cInstances))
 		for i, ci := range test.cInstances {
@@ -296,21 +289,15 @@ func TestGetContainerInstances(t *testing.T) {
 		res, err := r.getContainerInstances(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
-			if len(res) != len(test.cInstances) {
-				t.Errorf("- %+v\n -The length of the retrieved container instances differ, want: %d; got: %d", test, len(test.cInstances), len(res))
-			}
+			assert.Len(res, len(test.cInstances), "- %+v\n -The length of the retrieved container must be the same", test)
 
 			for i, got := range res {
 				want := test.cInstances[i]
-				if !reflect.DeepEqual(want, got) {
-					t.Errorf("\n- %v\n-  Received container instances from API is wrong, want: %v; got: %v", test, want, got)
-				}
+				assert.Equal(want, got, "\n- %v\n-  Received container instances from API must be the same", test)
 			}
 
 		} else {
-			if err == nil {
-				t.Errorf("- %+v\n -Getting Container instances should error, it didn't", test)
-			}
+			assert.NotNil(err, "- %+v\n -Getting Container instances should error", test)
 		}
 	}
 }
@@ -355,6 +342,7 @@ func TestGetTasks(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		tIDs := make([]string, len(test.tasks))
 		for i, t := range test.tasks {
@@ -373,21 +361,15 @@ func TestGetTasks(t *testing.T) {
 		res, err := r.getTasks(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
-			if len(res) != len(test.tasks) {
-				t.Errorf("- %+v\n -The length of the retrieved tasks differ, want: %d; got: %d", test, len(test.tasks), len(res))
-			}
+			assert.Len(res, len(test.tasks), "- %+v\n -The length of the retrieved tasks must be the same", test)
 
 			for i, got := range res {
 				want := test.tasks[i]
-				if !reflect.DeepEqual(want, got) {
-					t.Errorf("\n- %v\n-  Received tasks from API is wrong, want: %v; got: %v", test, want, got)
-				}
+				assert.Equal(want, got, "\n- %v\n-  Received tasks from API must be the same", test)
 			}
 
 		} else {
-			if err == nil {
-				t.Errorf("- %+v\n -Getting tasks should error, it didn't", test)
-			}
+			assert.NotNil(err, "- %+v\n -Getting tasks should error", test)
 		}
 	}
 }
@@ -422,6 +404,7 @@ func TestGetInstances(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		iIDs := make([]*string, len(test.instances))
 		for i, it := range test.instances {
@@ -439,21 +422,15 @@ func TestGetInstances(t *testing.T) {
 		res, err := r.getInstances(context.TODO(), iIDs)
 
 		if !test.wantError {
-			if len(res) != len(test.instances) {
-				t.Errorf("- %+v\n -The length of the retrieved instances differ, want: %d; got: %d", test, len(test.instances), len(res))
-			}
+			assert.Len(res, len(test.instances), "- %+v\n -The length of the retrieved instances must be the same", test)
 
 			for i, got := range res {
 				want := test.instances[i]
-				if !reflect.DeepEqual(want, got) {
-					t.Errorf("\n- %v\n-  Received instance from API is wrong, want: %v; got: %v", test, want, got)
-				}
+				assert.Equal(want, got, "\n- %v\n-  Received instance from API must be the same", test)
 			}
 
 		} else {
-			if err == nil {
-				t.Errorf("- %+v\n -Getting instances should error, it didn't", test)
-			}
+			assert.NotNil(err, "- %+v\n -Getting instances should error", test)
 		}
 	}
 }
@@ -558,6 +535,7 @@ func TestGetServices(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		sIDs := make([]string, len(test.services))
 		for i, s := range test.services {
@@ -576,21 +554,15 @@ func TestGetServices(t *testing.T) {
 		res, err := r.getServices(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
 
 		if !test.wantError {
-			if len(res) != len(test.services) {
-				t.Errorf("- %+v\n -The length of the retrieved services differ, want: %d; got: %d", test, len(test.services), len(res))
-			}
+			assert.Len(res, len(test.services), "- %+v\n -The length of the services instances must be the same", test)
 
 			for i, got := range res {
 				want := test.services[i]
-				if !reflect.DeepEqual(want, got) {
-					t.Errorf("\n- %v\n-  Received service from API is wrong, want: %v; got: %v", test, want, got)
-				}
+				assert.Equal(want, got, "\n- %v\n-  Received service from API must be the same", test)
 			}
 
 		} else {
-			if err == nil {
-				t.Errorf("- %+v\n -Getting services should error, it didn't", test)
-			}
+			assert.NotNil(err, "- %+v\n -Getting services should error", test)
 		}
 	}
 }
@@ -698,6 +670,7 @@ func TestGetTaskDefinitions(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		tIDs := make([]*string, len(test.taskDefs))
 		for i, td := range test.taskDefs {
@@ -716,13 +689,9 @@ func TestGetTaskDefinitions(t *testing.T) {
 		res, err := r.getTaskDefinitions(context.TODO(), tIDs, false)
 
 		if !test.wantError {
-			if len(res) != len(test.taskDefs) {
-				t.Errorf("- %+v\n -The length of the retrieved task definitions differ, want: %d; got: %d", test, len(test.taskDefs), len(res))
-			}
+			assert.Len(res, len(test.taskDefs), "- %+v\n -The length of the task definitions instances must be the same", test)
 		} else {
-			if err == nil {
-				t.Errorf("- %+v\n -Getting task definitions should error, it didn't", test)
-			}
+			assert.NotNil(err, "- %+v\n -Getting task definitions should error", test)
 		}
 	}
 }
@@ -790,6 +759,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		assert := assert.New(t)
 
 		tIDs := []*string{}
 		allTaskDefs := []*ecs.TaskDefinition{}
@@ -821,17 +791,11 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 		}
 
 		res, err := r.getTaskDefinitions(context.TODO(), tIDs, test.wantCached)
-		if err != nil {
-			t.Errorf("- %+v\n -Getting task definitions shouldn't error: %s", test, err)
-		}
-		if len(res) != test.wantRetrieved {
-			t.Errorf("- %+v\n -The length of the retrieved task definitions differ, want: %d; got: %d", test, test.wantRetrieved, len(res))
-		}
+		assert.Nil(err, "- %+v\n -Getting task definitions shouldn't error", test)
+		assert.Len(res, test.wantRetrieved, "- %+v\n -The length of the task definitions instances must be the same", test)
 
 		// Check calls.
-		if !mockECS.AssertNumberOfCalls(t, "DescribeTaskDefinition", test.wantCalls) {
-			t.Errorf("- %+v\n -Wrong number of calls to AWS API, want: %d", test, test.wantCalls)
-		}
+		assert.True(mockECS.AssertNumberOfCalls(t, "DescribeTaskDefinition", test.wantCalls), "- %+v\n -WNumber of calls must match", test)
 	}
 }
 
@@ -1154,22 +1118,16 @@ func TestRetrieveOk(t *testing.T) {
 		cache:  newAWSCache(),
 	}
 
+	assert := assert.New(t)
+
 	// Retrieve the information.
 	got, err := r.Retrieve()
-
-	if err != nil {
-		t.Errorf("Retrieval shound't error, it did: %s", err)
-	}
-
-	if len(got) != len(want) {
-		t.Errorf("The retrieved length of service instances is not correct, got: %d; want: %d", len(got), len(want))
-	}
+	assert.Nil(err, "Retrieval shouldm't error")
+	assert.Len(got, len(want), "The retrieved length must match")
 
 	for i, gotT := range got {
 		w := want[i]
-		if !reflect.DeepEqual(w, gotT) {
-			t.Errorf("- Received service instance taget is wrong want: %+v; got: %+v", w, gotT)
-		}
+		assert.Equal(w, gotT, "Received service instance target must match")
 	}
 }
 
@@ -1212,10 +1170,7 @@ func TestRetrieveError(t *testing.T) {
 
 		// Retrieve the information.
 		_, err := r.Retrieve()
-
-		if err == nil {
-			t.Errorf("Retrieval should error, it didn't")
-		}
+		assert.NotNil(t, err, "Retrieval should error")
 	}
 
 }
