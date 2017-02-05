@@ -900,6 +900,7 @@ func (p *persistence) dropAndPersistChunks(
 	for ; ; numDropped++ {
 		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
 		if err != nil {
+			numDropped = -1
 			return
 		}
 		_, err = io.ReadFull(f, headerBuf)
@@ -920,6 +921,7 @@ func (p *persistence) dropAndPersistChunks(
 			return
 		}
 		if err != nil {
+			numDropped = -1
 			return
 		}
 		lastTime := model.Time(
