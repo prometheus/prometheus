@@ -78,11 +78,7 @@ func Main() int {
 		reloadables []Reloadable
 	)
 
-	localStorage, err := tsdb.Open(cfg.localStoragePath, &tsdb.Options{
-		MinBlockDuration: 2 * 60 * 60 * 1000,
-		MaxBlockDuration: 24 * 60 * 60 * 1000,
-		AppendableBlocks: 2,
-	})
+	localStorage, err := tsdb.Open(cfg.localStoragePath, &cfg.tsdb)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
 		return 1

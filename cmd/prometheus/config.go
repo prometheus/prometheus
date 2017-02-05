@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -48,6 +49,7 @@ var cfg = struct {
 	notifierTimeout    time.Duration
 	queryEngine        promql.EngineOptions
 	web                web.Options
+	tsdb               tsdb.Options
 
 	alertmanagerURLs stringset
 	prometheusURL    string
@@ -115,6 +117,18 @@ func init() {
 	cfg.fs.StringVar(
 		&cfg.localStoragePath, "storage.local.path", "data",
 		"Base path for metrics storage.",
+	)
+	cfg.fs.DurationVar(
+		&cfg.tsdb.MinBlockDuration, "storage.tsdb.min-block-duration", 2*time.Hour,
+		"Minimum duration of a data block before being persisted.",
+	)
+	cfg.fs.DurationVar(
+		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration", 36*time.Hour,
+		"Maximum duration compacted blocks may span.",
+	)
+	cfg.fs.IntVar(
+		&cfg.tsdb.AppendableBlocks, "storage.tsdb.AppendableBlocks", 2,
+		"Number of head blocks that can be appended to.",
 	)
 
 	// Alertmanager.
