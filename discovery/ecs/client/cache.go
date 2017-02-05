@@ -52,86 +52,140 @@ func newAWSCache() *awsCache {
 		instances:  map[string]*ec2.Instance{},
 		services:   map[string]*ecs.Service{},
 		taskDefs:   map[string]*ecs.TaskDefinition{},
-
-		clustersMutex:   sync.Mutex{},
-		cInstancesMutex: sync.Mutex{},
-		tasksMutex:      sync.Mutex{},
-		instancesMutex:  sync.Mutex{},
-		servicesMutex:   sync.Mutex{},
-		taskDefsMutex:   sync.Mutex{},
 	}
 
 	return a
 }
 
 func (a *awsCache) getCluster(clusterARN string) (cluster *ecs.Cluster, ok bool) {
+	a.clustersMutex.Lock()
+	defer a.clustersMutex.Unlock()
 	cluster, ok = a.clusters[clusterARN]
 	return
 }
 
-func (a *awsCache) SetCluster(cluster *ecs.Cluster) {
+func (a *awsCache) SetClusters(clusters ...*ecs.Cluster) {
 	a.clustersMutex.Lock()
 	defer a.clustersMutex.Unlock()
-	a.clusters[aws.StringValue(cluster.ClusterArn)] = cluster
+	for _, c := range clusters {
+		a.clusters[aws.StringValue(c.ClusterArn)] = c
+	}
+}
+
+func (a *awsCache) flushClusters() {
+	a.clustersMutex.Lock()
+	defer a.clustersMutex.Unlock()
+	a.clusters = map[string]*ecs.Cluster{}
 }
 
 func (a *awsCache) getContainerInstance(cIARN string) (cInstance *ecs.ContainerInstance, ok bool) {
+	a.cInstancesMutex.Lock()
+	defer a.cInstancesMutex.Unlock()
 	cInstance, ok = a.cInstances[cIARN]
 	return
 }
 
-func (a *awsCache) setContainerInstance(cInstance *ecs.ContainerInstance) {
+func (a *awsCache) setContainerInstances(cInstances ...*ecs.ContainerInstance) {
 	a.cInstancesMutex.Lock()
 	defer a.cInstancesMutex.Unlock()
-	a.cInstances[aws.StringValue(cInstance.ContainerInstanceArn)] = cInstance
+	for _, c := range cInstances {
+		a.cInstances[aws.StringValue(c.ContainerInstanceArn)] = c
+	}
+}
+
+func (a *awsCache) flushContainerInstances() {
+	a.cInstancesMutex.Lock()
+	defer a.cInstancesMutex.Unlock()
+	a.cInstances = map[string]*ecs.ContainerInstance{}
 }
 
 func (a *awsCache) getTask(taskARN string) (task *ecs.Task, ok bool) {
+	a.tasksMutex.Lock()
+	defer a.tasksMutex.Unlock()
 	task, ok = a.tasks[taskARN]
 	return
 }
 
-func (a *awsCache) setTask(task *ecs.Task) {
+func (a *awsCache) setTasks(tasks ...*ecs.Task) {
 	a.tasksMutex.Lock()
 	defer a.tasksMutex.Unlock()
-	a.tasks[aws.StringValue(task.TaskArn)] = task
+	for _, t := range tasks {
+		a.tasks[aws.StringValue(t.TaskArn)] = t
+	}
+}
+
+func (a *awsCache) flushTasks() {
+	a.tasksMutex.Lock()
+	defer a.tasksMutex.Unlock()
+	a.tasks = map[string]*ecs.Task{}
 }
 
 func (a *awsCache) getIntance(instanceID string) (instance *ec2.Instance, ok bool) {
+	a.instancesMutex.Lock()
+	defer a.instancesMutex.Unlock()
 	instance, ok = a.instances[instanceID]
 	return
 }
 
-func (a *awsCache) setInstance(instance *ec2.Instance) {
+func (a *awsCache) setInstances(instances ...*ec2.Instance) {
 	a.instancesMutex.Lock()
 	defer a.instancesMutex.Unlock()
-	a.instances[aws.StringValue(instance.InstanceId)] = instance
+	for _, i := range instances {
+		a.instances[aws.StringValue(i.InstanceId)] = i
+	}
+}
+
+func (a *awsCache) flushInstances() {
+	a.instancesMutex.Lock()
+	defer a.instancesMutex.Unlock()
+	a.instances = map[string]*ec2.Instance{}
 }
 
 func (a *awsCache) getService(taskDefinitionARN string) (service *ecs.Service, ok bool) {
+	a.servicesMutex.Lock()
+	defer a.servicesMutex.Unlock()
 	service, ok = a.services[taskDefinitionARN]
 	return
 }
 
-func (a *awsCache) setService(service *ecs.Service) {
+func (a *awsCache) setServices(services ...*ecs.Service) {
 	a.servicesMutex.Lock()
 	defer a.servicesMutex.Unlock()
-	// Insert one entry per running deployment task indexed by task defintion, the task defintion ARN is
-	// the glue to reference a service from a task
-	for _, d := range service.Deployments {
-		if aws.StringValue(d.Status) != serviceTaskStatusInactive {
-			a.services[aws.StringValue(d.TaskDefinition)] = service
+	for _, service := range services {
+		// Insert one entry per running deployment task indexed by task defintion, the task defintion ARN is
+		// the glue to reference a service from a task
+		for _, d := range service.Deployments {
+			if aws.StringValue(d.Status) != serviceTaskStatusInactive {
+				a.services[aws.StringValue(d.TaskDefinition)] = service
+			}
 		}
 	}
 }
 
+func (a *awsCache) flushServices() (service *ecs.Service, ok bool) {
+	a.servicesMutex.Lock()
+	defer a.servicesMutex.Unlock()
+	a.services = map[string]*ecs.Service{}
+	return
+}
+
 func (a *awsCache) getTaskDefinition(taskDefinitionARN string) (taskDef *ecs.TaskDefinition, ok bool) {
+	a.taskDefsMutex.Lock()
+	defer a.taskDefsMutex.Unlock()
 	taskDef, ok = a.taskDefs[taskDefinitionARN]
 	return
 }
 
-func (a *awsCache) setTaskDefinition(taskDef *ecs.TaskDefinition) {
+func (a *awsCache) setTaskDefinition(taskDefs ...*ecs.TaskDefinition) {
 	a.taskDefsMutex.Lock()
 	defer a.taskDefsMutex.Unlock()
-	a.taskDefs[aws.StringValue(taskDef.TaskDefinitionArn)] = taskDef
+	for _, td := range taskDefs {
+		a.taskDefs[aws.StringValue(td.TaskDefinitionArn)] = td
+	}
+}
+
+func (a *awsCache) flushTaskDefinitions() {
+	a.taskDefsMutex.Lock()
+	defer a.taskDefsMutex.Unlock()
+	a.taskDefs = map[string]*ecs.TaskDefinition{}
 }

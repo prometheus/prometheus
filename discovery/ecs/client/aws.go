@@ -347,8 +347,9 @@ func (c *AWSRetriever) getTaskDefinitions(ctx context.Context, tDIDs []*string, 
 	var wg sync.WaitGroup
 	cached := 0
 	for _, tID := range tDIDs {
-		// If we want cache then check if already present
-		if _, ok := c.cache.getTaskDefinition(aws.StringValue(tID)); useChache && ok {
+		// If we want cache then check if already present (and save as retrieved to emulate a hit on cache)
+		if td, ok := c.cache.getTaskDefinition(aws.StringValue(tID)); useChache && ok {
+			tDefs = append(tDefs, td)
 			cached++
 			continue
 		}
@@ -414,6 +415,15 @@ func (c *AWSRetriever) getInstances(ctx context.Context, ec2IDs []*string) ([]*e
 	return instances, nil
 }
 
+// cleanStaleCache will flush all the caches that have dynamic data (everything except task definitions)
+func (c *AWSRetriever) cleanStaleCache() {
+	c.cache.flushClusters()
+	c.cache.flushContainerInstances()
+	c.cache.flushTasks()
+	c.cache.flushInstances()
+	c.cache.flushServices()
+}
+
 // Retrieve will get all the service instance calling multiple AWS APIs
 func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	// Create a ne context and errgroup for this retrieval iteration
@@ -426,9 +436,11 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 		return nil, err
 	}
 
-	for _, cl := range clusters {
-		c.cache.SetCluster(cl)
-	}
+	c.cache.SetClusters(clusters...)
+
+	// Temporal variable to store task definitions so we can flush the task defs cache freely
+	tTaskDefs := []*ecs.TaskDefinition{}
+	var tTaskDefsMutex sync.Mutex
 
 	// For each cluster get all the required objects from AWS
 	for _, cluster := range clusters {
@@ -441,8 +453,8 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			}
 
 			ec2Ids := []*string{}
+			c.cache.setContainerInstances(cInstances...)
 			for _, ci := range cInstances {
-				c.cache.setContainerInstance(ci)
 				ec2Ids = append(ec2Ids, ci.Ec2InstanceId)
 			}
 
@@ -452,9 +464,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return err2
 			}
 
-			for _, i := range instances {
-				c.cache.setInstance(i)
-			}
+			c.cache.setInstances(instances...)
 
 			// Get cluster tasks
 			ts, err2 := c.getTasks(ctx, clstCopy)
@@ -462,9 +472,9 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return err2
 			}
 
+			c.cache.setTasks(ts...)
 			tDefIDs := []*string{}
 			for _, t := range ts {
-				c.cache.setTask(t)
 				tDefIDs = append(tDefIDs, t.TaskDefinitionArn)
 			}
 
@@ -474,19 +484,16 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				return err2
 			}
 
-			for _, s := range srvs {
-				c.cache.setService(s)
-			}
+			c.cache.setServices(srvs...)
 
 			// Get task definitions
 			tds, err2 := c.getTaskDefinitions(ctx, tDefIDs, true)
 			if err2 != nil {
 				return err2
 			}
-
-			for _, t := range tds {
-				c.cache.setTaskDefinition(t)
-			}
+			tTaskDefsMutex.Lock()
+			tTaskDefs = append(tTaskDefs, tds...)
+			tTaskDefsMutex.Unlock()
 
 			return nil
 		})
@@ -495,6 +502,10 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 	if err = g.Wait(); err != nil {
 		return nil, err
 	}
+
+	// Flush stale task definitions and set the new ones (including the old ones been hit)
+	c.cache.flushTaskDefinitions()
+	c.cache.setTaskDefinition(tTaskDefs...)
 
 	// Create the targets
 	sInstances := []*types.ServiceInstance{}

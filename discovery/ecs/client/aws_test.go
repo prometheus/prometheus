@@ -732,6 +732,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 		cachedTaskDefs []*ecs.TaskDefinition
 		newTaskDefs    []*ecs.TaskDefinition
 		wantRetrieved  int
+		wantCalls      int
 		wantCached     bool
 	}{
 		{
@@ -746,6 +747,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
 			},
 			wantRetrieved: 6,
+			wantCalls:     6,
 			wantCached:    false,
 		},
 		{
@@ -759,7 +761,8 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t2")},
 				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
 			},
-			wantRetrieved: 3,
+			wantRetrieved: 6,
+			wantCalls:     3,
 			wantCached:    true,
 		},
 		{
@@ -770,6 +773,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
 			},
 			wantRetrieved: 3,
+			wantCalls:     3,
 			wantCached:    false,
 		},
 		{
@@ -780,6 +784,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 				&ecs.TaskDefinition{TaskDefinitionArn: aws.String("t3")},
 			},
 			wantRetrieved: 3,
+			wantCalls:     3,
 			wantCached:    true,
 		},
 	}
@@ -802,7 +807,6 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 		if test.wantCached {
 			awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, test.newTaskDefs...)
 		} else {
-
 			awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, allTaskDefs...)
 		}
 
@@ -822,6 +826,11 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 		}
 		if len(res) != test.wantRetrieved {
 			t.Errorf("- %+v\n -The length of the retrieved task definitions differ, want: %d; got: %d", test, test.wantRetrieved, len(res))
+		}
+
+		// Check calls
+		if !mockECS.AssertNumberOfCalls(t, "DescribeTaskDefinition", test.wantCalls) {
+			t.Errorf("- %+v\n -Wrong number of calls to AWS API, want: %d", test, test.wantCalls)
 		}
 	}
 }
