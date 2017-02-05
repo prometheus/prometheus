@@ -212,7 +212,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           items: "all",
           matcher: function(item) {
             // If we have result for current query, skip
-            if (self.fuzzyResult.query === null || self.fuzzyResult.query !== this.query) {
+            if (self.fuzzyResult.query !== this.query) {
               self.fuzzyResult.query = this.query;
               self.fuzzyResult.map = {};
               self.fuzzyResult.result = fuzzy.filter(this.query.replace(/ /g, ''), metrics, {
