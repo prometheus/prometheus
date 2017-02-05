@@ -62,17 +62,16 @@ func init() {
 	prometheus.MustRegister(ecsSDRetrievedTargets)
 }
 
-// Discovery periodically performs ECS-SD requests. It implements
-// the TargetProvider interface.
+// Discovery periodically performs ECS-SD requests. It implements the TargetProvider interface.
 type Discovery struct {
-	client client.Retriever // the client used to retrieve the service instances from AWS
+	client client.Retriever // The client used to retrieve the service instances from AWS.
 
-	source   string // the source of the services
+	source   string // The source of the services.
 	interval time.Duration
 	port     int
 }
 
-// NewDiscovery returns a new Discovery
+// NewDiscovery returns a new Discovery.
 func NewDiscovery(conf *config.ECSSDConfig) (*Discovery, error) {
 	c, err := client.NewAWSRetriever(conf.AccessKey, conf.SecretKey, conf.Region, conf.Profile)
 	if err != nil {
@@ -93,7 +92,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
-	// First discovery
+	// First discovery.
 	tg, err := d.refresh()
 	if err != nil {
 		log.Error(err)
@@ -143,7 +142,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		Source: d.source,
 	}
 
-	// Get the service instances
+	// Get the service instances.
 	sis, err := d.client.Retrieve()
 	if err != nil {
 		return nil, err
@@ -151,7 +150,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 	for _, s := range sis {
 
-		// Constant labels
+		// Constant labels.
 		l := model.LabelSet{
 			model.AddressLabel:         model.LabelValue(s.Addr),
 			ecsLabelcluster:            model.LabelValue(s.Cluster),
@@ -161,7 +160,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			ecsLabelContainerPort:      model.LabelValue(s.ContainerPort),
 			ecsLabelContainerPortProto: model.LabelValue(s.ContainerPortProto),
 		}
-		// Dynamic labels
+		// Dynamic labels.
 		for k, v := range s.Tags {
 			name := strutil.SanitizeLabelName(k)
 			l[ecsLabelNodeTag+model.LabelName(name)] = model.LabelValue(v)

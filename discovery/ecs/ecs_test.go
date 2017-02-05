@@ -170,12 +170,12 @@ func TestRefresh(t *testing.T) {
 				t.Errorf("-%+v\n- Refresh shouldn't error, it did: %s", test, err)
 			}
 
-			// Check source
+			// Check source.
 			if tgs.Source != d.source {
 				t.Errorf("-%+v\n- Source of targets is wrong, want: %s; got: %s", test, d.source, tgs.Source)
 			}
 
-			// Check all the targets are ok
+			// Check all the targets are ok.
 			if len(test.wantTargets.Targets) != len(tgs.Targets) {
 				t.Errorf("-%+v\n- Length of the received target group is not ok, want: %d; got: %d", test, len(test.wantTargets.Targets), len(tgs.Targets))
 			}

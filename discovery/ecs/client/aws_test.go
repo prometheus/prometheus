@@ -28,10 +28,10 @@ import (
 )
 
 func TestCreateServiceInstances(t *testing.T) {
-	// Cluster
+	// Cluster.
 	cls := &ecs.Cluster{ClusterName: aws.String("prod-cluster-infra")}
 
-	// Task
+	// Task.
 	tsk := &ecs.Task{
 		Containers: []*ecs.Container{
 			&ecs.Container{
@@ -64,7 +64,7 @@ func TestCreateServiceInstances(t *testing.T) {
 		},
 	}
 
-	// Task definition
+	// Task definition.
 	tDef := &ecs.TaskDefinition{
 		ContainerDefinitions: []*ecs.ContainerDefinition{
 			&ecs.ContainerDefinition{
@@ -92,7 +92,7 @@ func TestCreateServiceInstances(t *testing.T) {
 		},
 	}
 
-	// EC2 instance
+	// EC2 instance.
 	intc := &ec2.Instance{
 		InstanceId:       aws.String("i-0ef582cb6c1bbbdd3"),
 		PrivateIpAddress: aws.String("10.0.250.65"),
@@ -103,7 +103,7 @@ func TestCreateServiceInstances(t *testing.T) {
 		},
 	}
 
-	// Service
+	// Service.
 	srv := &ecs.Service{ServiceName: aws.String("myService")}
 
 	want := []*types.ServiceInstance{
@@ -142,7 +142,7 @@ func TestCreateServiceInstances(t *testing.T) {
 		},
 	}
 
-	// Create our object and test
+	// Create our object and test.
 	eTT := &ecsTargetTask{
 		cluster:  cls,
 		task:     tsk,
@@ -209,7 +209,7 @@ func TestGetClusters(t *testing.T) {
 			cIDs[i] = aws.StringValue(cs.ClusterArn)
 		}
 
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListClusters(t, mockECS, test.errorList, cIDs...)
 		awsmock.MockECSDescribeClusters(t, mockECS, test.errorDesc, test.clusters...)
@@ -284,7 +284,7 @@ func TestGetContainerInstances(t *testing.T) {
 			ciIDs[i] = aws.StringValue(ci.ContainerInstanceArn)
 		}
 
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListContainerInstances(t, mockECS, test.errorList, ciIDs...)
 		awsmock.MockECSDescribeContainerInstances(t, mockECS, test.errorDesc, test.cInstances...)
@@ -361,7 +361,7 @@ func TestGetTasks(t *testing.T) {
 			tIDs[i] = aws.StringValue(t.TaskArn)
 		}
 
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListTasks(t, mockECS, test.errorList, tIDs...)
 		awsmock.MockECSDescribeTasks(t, mockECS, test.errorDesc, test.tasks...)
@@ -428,7 +428,7 @@ func TestGetInstances(t *testing.T) {
 			iIDs[i] = it.InstanceId
 		}
 
-		// Mock
+		// Mock.
 		mockEC2 := &sdk.EC2API{}
 		awsmock.MockEC2DescribeInstances(t, mockEC2, test.errorDesc, test.instances...)
 
@@ -564,7 +564,7 @@ func TestGetServices(t *testing.T) {
 			sIDs[i] = aws.StringValue(s.ServiceArn)
 		}
 
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSListServices(t, mockECS, test.errorList, sIDs...)
 		awsmock.MockECSDescribeServices(t, mockECS, test.errorDesc, test.services...)
@@ -704,7 +704,7 @@ func TestGetTaskDefinitions(t *testing.T) {
 			tIDs[i] = td.TaskDefinitionArn
 		}
 
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		awsmock.MockECSDescribeTaskDefinition(t, mockECS, test.errorWhen, test.taskDefs...)
 
@@ -802,7 +802,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 			allTaskDefs = append(allTaskDefs, td)
 		}
 
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		if test.wantCached {
 			awsmock.MockECSDescribeTaskDefinition(t, mockECS, 0, test.newTaskDefs...)
@@ -815,7 +815,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 			cache:  newAWSCache(),
 		}
 
-		// Fill cache
+		// Fill cache.
 		for _, t := range test.cachedTaskDefs {
 			r.cache.setTaskDefinition(t)
 		}
@@ -828,7 +828,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 			t.Errorf("- %+v\n -The length of the retrieved task definitions differ, want: %d; got: %d", test, test.wantRetrieved, len(res))
 		}
 
-		// Check calls
+		// Check calls.
 		if !mockECS.AssertNumberOfCalls(t, "DescribeTaskDefinition", test.wantCalls) {
 			t.Errorf("- %+v\n -Wrong number of calls to AWS API, want: %d", test, test.wantCalls)
 		}
@@ -839,7 +839,7 @@ func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 	errLClusters, errDClusters, errLCInstances, errDCInstances, errDInstances,
 	errLTasks, errDTasks, errLServices, errDServices bool) {
 
-	// Mock our cluster
+	// Mock our cluster.
 	cluster := &ecs.Cluster{
 		ClusterArn:  aws.String("c1"),
 		ClusterName: aws.String("cluster1"),
@@ -854,7 +854,7 @@ func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 		return
 	}
 
-	// Mock container instances
+	// Mock container instances.
 	cInstance1 := &ecs.ContainerInstance{
 		ContainerInstanceArn: aws.String("ci1"),
 		Ec2InstanceId:        aws.String("ec2i1"),
@@ -872,7 +872,7 @@ func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 		return
 	}
 
-	// Mock ec2 instances
+	// Mock ec2 instances.
 	ec2Instance1 := &ec2.Instance{
 		InstanceId:       aws.String("ec2i1"),
 		PrivateIpAddress: aws.String("10.0.250.65"),
@@ -895,7 +895,7 @@ func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 	if errDInstances {
 		return
 	}
-	// Mock tasks
+	// Mock tasks.
 	task1 := &ecs.Task{
 		TaskArn:              aws.String("task1"),
 		TaskDefinitionArn:    aws.String("taskdef1"),
@@ -976,7 +976,7 @@ func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 		return
 	}
 
-	// Mock services
+	// Mock services.
 	service1 := &ecs.Service{
 		ServiceName: aws.String("service1"),
 		Deployments: []*ecs.Deployment{
@@ -1010,7 +1010,7 @@ func mockFullAPI(t *testing.T, mockECS *sdk.ECSAPI, mockEC2 *sdk.EC2API,
 		return
 	}
 
-	// Mock task definitions
+	// Mock task definitions.
 	taskdef1 := &ecs.TaskDefinition{
 		TaskDefinitionArn: aws.String("taskdef1"),
 		ContainerDefinitions: []*ecs.ContainerDefinition{
@@ -1141,11 +1141,11 @@ func TestRetrieveOk(t *testing.T) {
 		},
 	}
 
-	// Mock
+	// Mock.
 	mockECS := &sdk.ECSAPI{}
 	mockEC2 := &sdk.EC2API{}
 
-	// Mock all the API
+	// Mock all the API.
 	mockFullAPI(t, mockECS, mockEC2, false, false, false, false, false, false, false, false, false)
 
 	r := &AWSRetriever{
@@ -1154,7 +1154,7 @@ func TestRetrieveOk(t *testing.T) {
 		cache:  newAWSCache(),
 	}
 
-	// Retrieve the information
+	// Retrieve the information.
 	got, err := r.Retrieve()
 
 	if err != nil {
@@ -1197,11 +1197,11 @@ func TestRetrieveError(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		// Mock
+		// Mock.
 		mockECS := &sdk.ECSAPI{}
 		mockEC2 := &sdk.EC2API{}
 
-		// Mock all the API
+		// Mock all the API.
 		mockFullAPI(t, mockECS, mockEC2, test.errLClusters, test.errDClusters, test.errLCInstances, test.errDCInstances, test.errDInstances, test.errLTasks, test.errDTasks, test.errLServices, test.errDServices)
 
 		r := &AWSRetriever{
@@ -1210,7 +1210,7 @@ func TestRetrieveError(t *testing.T) {
 			cache:  newAWSCache(),
 		}
 
-		// Retrieve the information
+		// Retrieve the information.
 		_, err := r.Retrieve()
 
 		if err == nil {

@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockECSListClusters mocks listing cluster ECS API call
+// MockECSListClusters mocks listing cluster ECS API call.
 func MockECSListClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
@@ -41,7 +41,7 @@ func MockECSListClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...str
 	m.On("ListClusters", mock.AnythingOfType("*ecs.ListClustersInput")).Return(result, err)
 }
 
-// MockECSDescribeClusters mocks the description of clusters ECS API call
+// MockECSDescribeClusters mocks the description of clusters ECS API call.
 func MockECSDescribeClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, clusters ...*ecs.Cluster) {
 	var err error
 	if wantError {
@@ -53,7 +53,7 @@ func MockECSDescribeClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, cluste
 	m.On("DescribeClusters", mock.AnythingOfType("*ecs.DescribeClustersInput")).Return(result, err)
 }
 
-// MockECSListContainerInstances mocks listing container instances ECS API call
+// MockECSListContainerInstances mocks listing container instances ECS API call.
 func MockECSListContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
@@ -75,7 +75,7 @@ func MockECSListContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, 
 	}).Return(result, err)
 }
 
-// MockECSDescribeContainerInstances mocks the description of container instances ECS API call
+// MockECSDescribeContainerInstances mocks the description of container instances ECS API call.
 func MockECSDescribeContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, cis ...*ecs.ContainerInstance) {
 	var err error
 	if wantError {
@@ -95,7 +95,7 @@ func MockECSDescribeContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bo
 	}).Return(result, err)
 }
 
-// MockECSListTasks mocks listing tasks ECS API call
+// MockECSListTasks mocks listing tasks ECS API call.
 func MockECSListTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
@@ -117,7 +117,7 @@ func MockECSListTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string
 	}).Return(result, err)
 }
 
-// MockECSDescribeTasks mocks the description of tasks ECS API call
+// MockECSDescribeTasks mocks the description of tasks ECS API call.
 func MockECSDescribeTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ts ...*ecs.Task) {
 	var err error
 	if wantError {
@@ -137,7 +137,7 @@ func MockECSDescribeTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ts ...*ec
 	}).Return(result, err)
 }
 
-// MockECSListServices mocks listing services ECS API call
+// MockECSListServices mocks listing services ECS API call.
 func MockECSListServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
@@ -159,7 +159,7 @@ func MockECSListServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...str
 	}).Return(result, err)
 }
 
-// MockECSDescribeServices mocks the description of services ECS API call
+// MockECSDescribeServices mocks the description of services ECS API call.
 func MockECSDescribeServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ss ...*ecs.Service) {
 	var err error
 	if wantError {
@@ -179,11 +179,11 @@ func MockECSDescribeServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ss ...
 	}).Return(result, err)
 }
 
-// MockECSDescribeTaskDefinition mocks the description of task definition ECS API call
+// MockECSDescribeTaskDefinition mocks the description of task definition ECS API call.
 func MockECSDescribeTaskDefinition(t *testing.T, m *sdk.ECSAPI, wantErrorOn int, tds ...*ecs.TaskDefinition) {
 	for i, td := range tds {
 		var err error
-		// if want error is 0 then means disabled
+		// If want error is 0 then means disabled.
 		if wantErrorOn-1 == i {
 			err = fmt.Errorf("DescribeTaskDefinition on call %d wrong!", i)
 		}
@@ -192,7 +192,7 @@ func MockECSDescribeTaskDefinition(t *testing.T, m *sdk.ECSAPI, wantErrorOn int,
 		result := &ecs.DescribeTaskDefinitionOutput{
 			TaskDefinition: &cpyTd,
 		}
-		// Mock the call
+		// Mock the call.
 		m.On("DescribeTaskDefinition", mock.AnythingOfType("*ecs.DescribeTaskDefinitionInput")).Once().Run(func(args mock.Arguments) {
 			in := args.Get(0).(*ecs.DescribeTaskDefinitionInput)
 			if in.TaskDefinition == nil {
@@ -200,7 +200,7 @@ func MockECSDescribeTaskDefinition(t *testing.T, m *sdk.ECSAPI, wantErrorOn int,
 			}
 		}).Return(result, err)
 
-		// If we arrored then there no more calls are being made
+		// If we arror then there no more calls are being made.
 		if err != nil {
 			break
 		}

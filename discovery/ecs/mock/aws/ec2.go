@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockEC2DescribeInstances mocks the description of instances EC2 API call
+// MockEC2DescribeInstances mocks the description of instances EC2 API call.
 func MockEC2DescribeInstances(t *testing.T, m *sdk.EC2API, wantError bool, instances ...*ec2.Instance) {
 	var err error
 	if wantError {

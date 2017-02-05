@@ -31,7 +31,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Generate ECS API mocks running go generate
+// Generate ECS API mocks running go generate.
 //go:generate mockery -dir ../../vendor/github.com/aws/aws-sdk-go/service/ecs/ecsiface/ -name ECSAPI -output ./mock/aws/sdk/  -outpkg sdk
 //go:generate mockery -dir ../../vendor/github.com/aws/aws-sdk-go/service/ec2/ec2iface/ -name EC2API -output ./mock/aws/sdk/  -outpkg sdk
 
@@ -39,7 +39,7 @@ const (
 	maxAPIRes = 100
 )
 
-// ecsTargetTask is a helper that has all the objects required to create a final service instances
+// ecsTargetTask is a helper that has all the objects required to create a final service instances.
 type ecsTargetTask struct {
 	cluster  *ecs.Cluster
 	task     *ecs.Task
@@ -49,13 +49,13 @@ type ecsTargetTask struct {
 }
 
 func (a *ecsTargetTask) createServiceInstances() []*types.ServiceInstance {
-	// Create ec2 tags
+	// Create ec2 tags.
 	tags := map[string]string{}
 	for _, t := range a.instance.Tags {
 		tags[aws.StringValue(t.Key)] = aws.StringValue(t.Value)
 	}
 
-	// create container definition index
+	// Create container definition index.
 	cDefIdx := map[string]*ecs.ContainerDefinition{}
 	for _, c := range a.taskDef.ContainerDefinitions {
 		cDefIdx[aws.StringValue(c.Name)] = c
@@ -65,7 +65,7 @@ func (a *ecsTargetTask) createServiceInstances() []*types.ServiceInstance {
 	for _, c := range a.task.Containers {
 		cDef := cDefIdx[aws.StringValue(c.Name)]
 
-		// Create container labels
+		// Create container labels.
 		labels := map[string]string{}
 		for k, v := range cDef.DockerLabels {
 			labels[k] = aws.StringValue(v)
@@ -92,15 +92,15 @@ func (a *ecsTargetTask) createServiceInstances() []*types.ServiceInstance {
 	return sis
 }
 
-// AWSRetriever is the wrapper around AWS client
+// AWSRetriever is the wrapper around AWS client.
 type AWSRetriever struct {
 	ecsCli ecsiface.ECSAPI
 	ec2Cli ec2iface.EC2API
 
-	cache *awsCache // cache will store all the retrieved objects in order to compose the targets at the final stage
+	cache *awsCache // cache will store all the retrieved objects in order to compose the targets at the final stage.
 }
 
-// NewAWSRetriever will create a new AWS API retriever
+// NewAWSRetriever will create a new AWS API retriever.
 func NewAWSRetriever(accessKey, secretKey, region, profile string) (*AWSRetriever, error) {
 	creds := credentials.NewStaticCredentials(accessKey, secretKey, "")
 	if accessKey == "" && secretKey == "" {
@@ -142,7 +142,7 @@ func (c *AWSRetriever) getClusters(ctx context.Context) ([]*ecs.Cluster, error) 
 		MaxResults: aws.Int64(maxAPIRes),
 	}
 	log.Debugf("Getting clusters")
-	// Start listing clusters
+	// Start listing clusters.
 	for {
 		resp, err := c.ecsCli.ListClusters(params)
 		if err != nil {
@@ -154,7 +154,7 @@ func (c *AWSRetriever) getClusters(ctx context.Context) ([]*ecs.Cluster, error) 
 			cArns = append(cArns, cl)
 		}
 
-		// Describe clusters
+		// Describe clusters.
 		params2 := &ecs.DescribeClustersInput{
 			Clusters: cArns,
 		}
@@ -191,7 +191,7 @@ func (c *AWSRetriever) getContainerInstances(ctx context.Context, cluster *ecs.C
 		MaxResults: aws.Int64(maxAPIRes),
 	}
 	log.Debugf("Getting cluster %s container instances", aws.StringValue(cluster.ClusterName))
-	// Start listing container instances
+	// Start listing container instances.
 	for {
 		resp, err := c.ecsCli.ListContainerInstances(params)
 		if err != nil {
@@ -203,7 +203,7 @@ func (c *AWSRetriever) getContainerInstances(ctx context.Context, cluster *ecs.C
 			ciArns = append(ciArns, ci)
 		}
 
-		// Describe container instances
+		// Describe container instances.
 		params2 := &ecs.DescribeContainerInstancesInput{
 			Cluster:            cluster.ClusterArn,
 			ContainerInstances: ciArns,
@@ -243,7 +243,7 @@ func (c *AWSRetriever) getTasks(ctx context.Context, cluster *ecs.Cluster) ([]*e
 	}
 	log.Debugf("Getting cluster %s tasks", aws.StringValue(cluster.ClusterName))
 
-	// Start listing tasks
+	// Start listing tasks.
 	for {
 		resp, err := c.ecsCli.ListTasks(params)
 		if err != nil {
@@ -255,7 +255,7 @@ func (c *AWSRetriever) getTasks(ctx context.Context, cluster *ecs.Cluster) ([]*e
 			tArns = append(tArns, t)
 		}
 
-		// Describe tasks
+		// Describe tasks.
 		params2 := &ecs.DescribeTasksInput{
 			Cluster: cluster.ClusterArn,
 			Tasks:   tArns,
@@ -267,7 +267,7 @@ func (c *AWSRetriever) getTasks(ctx context.Context, cluster *ecs.Cluster) ([]*e
 		}
 
 		for _, t := range resp2.Tasks {
-			// We don't want stopped tasks
+			// We don't want stopped tasks.
 			if t.StoppedAt == nil {
 				tasks = append(tasks, t)
 			}
@@ -297,7 +297,7 @@ func (c *AWSRetriever) getServices(ctx context.Context, cluster *ecs.Cluster) ([
 		MaxResults: aws.Int64(maxAPIRes),
 	}
 	log.Debugf("Getting cluster %s services", aws.StringValue(cluster.ClusterName))
-	// Start listing services
+	// Start listing services.
 	for {
 		resp, err := c.ecsCli.ListServices(params)
 		if err != nil {
@@ -309,7 +309,7 @@ func (c *AWSRetriever) getServices(ctx context.Context, cluster *ecs.Cluster) ([
 			srvArns = append(srvArns, srv)
 		}
 
-		// Describe services
+		// Describe services.
 		params2 := &ecs.DescribeServicesInput{
 			Cluster:  cluster.ClusterArn,
 			Services: srvArns,
@@ -347,7 +347,7 @@ func (c *AWSRetriever) getTaskDefinitions(ctx context.Context, tDIDs []*string, 
 	var wg sync.WaitGroup
 	cached := 0
 	for _, tID := range tDIDs {
-		// If we want cache then check if already present (and save as retrieved to emulate a hit on cache)
+		// If we want cache then check if already present (and save as retrieved to emulate a hit on cache).
 		if td, ok := c.cache.getTaskDefinition(aws.StringValue(tID)); useChache && ok {
 			tDefs = append(tDefs, td)
 			cached++
@@ -392,7 +392,7 @@ func (c *AWSRetriever) getInstances(ctx context.Context, ec2IDs []*string) ([]*e
 		InstanceIds: ec2IDs,
 	}
 
-	// Start describing instances
+	// Start describing instances.
 	for {
 		resp, err := c.ec2Cli.DescribeInstances(params)
 		if err != nil {
@@ -415,7 +415,7 @@ func (c *AWSRetriever) getInstances(ctx context.Context, ec2IDs []*string) ([]*e
 	return instances, nil
 }
 
-// cleanStaleCache will flush all the caches that have dynamic data (everything except task definitions)
+// cleanStaleCache will flush all the caches that have dynamic data (everything except task definitions).
 func (c *AWSRetriever) cleanStaleCache() {
 	c.cache.flushClusters()
 	c.cache.flushContainerInstances()
@@ -424,13 +424,13 @@ func (c *AWSRetriever) cleanStaleCache() {
 	c.cache.flushServices()
 }
 
-// Retrieve will get all the service instance calling multiple AWS APIs
+// Retrieve will get all the service instance calling multiple AWS APIs.
 func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
-	// Create a ne context and errgroup for this retrieval iteration
+	// Create a ne context and errgroup for this retrieval iteration.
 	ctx := context.Background()
 	g, ctx := errgroup.WithContext(ctx)
 
-	// First get the clusters and map them
+	// First get the clusters and map them.
 	clusters, err := c.getClusters(ctx)
 	if err != nil {
 		return nil, err
@@ -438,15 +438,15 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 
 	c.cache.SetClusters(clusters...)
 
-	// Temporal variable to store task definitions so we can flush the task defs cache freely
+	// Temporal variable to store task definitions so we can flush the task defs cache freely.
 	tTaskDefs := []*ecs.TaskDefinition{}
 	var tTaskDefsMutex sync.Mutex
 
-	// For each cluster get all the required objects from AWS
+	// For each cluster get all the required objects from AWS.
 	for _, cluster := range clusters {
-		clstCopy := cluster // copy cluster so we don't use the same variable in all iterations of the loop
+		clstCopy := cluster // Copy cluster so we don't use the same variable in all iterations of the loop.
 		g.Go(func() error {
-			// Get cluster container instances
+			// Get cluster container instances.
 			cInstances, err2 := c.getContainerInstances(ctx, clstCopy)
 			if err2 != nil {
 				return err2
@@ -458,7 +458,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				ec2Ids = append(ec2Ids, ci.Ec2InstanceId)
 			}
 
-			// Get cluster ec2 instances
+			// Get cluster ec2 instances.
 			instances, err2 := c.getInstances(ctx, ec2Ids)
 			if err2 != nil {
 				return err2
@@ -466,7 +466,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 
 			c.cache.setInstances(instances...)
 
-			// Get cluster tasks
+			// Get cluster tasks.
 			ts, err2 := c.getTasks(ctx, clstCopy)
 			if err2 != nil {
 				return err2
@@ -478,7 +478,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 				tDefIDs = append(tDefIDs, t.TaskDefinitionArn)
 			}
 
-			// Get cluster services
+			// Get cluster services.
 			srvs, err2 := c.getServices(ctx, clstCopy)
 			if err2 != nil {
 				return err2
@@ -486,7 +486,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 
 			c.cache.setServices(srvs...)
 
-			// Get task definitions
+			// Get task definitions.
 			tds, err2 := c.getTaskDefinitions(ctx, tDefIDs, true)
 			if err2 != nil {
 				return err2
@@ -503,11 +503,11 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 		return nil, err
 	}
 
-	// Flush stale task definitions and set the new ones (including the old ones been hit)
+	// Flush stale task definitions and set the new ones (including the old ones been hit).
 	c.cache.flushTaskDefinitions()
 	c.cache.setTaskDefinition(tTaskDefs...)
 
-	// Create the targets
+	// Create the targets.
 	sInstances := []*types.ServiceInstance{}
 	for _, v := range c.cache.tasks {
 		clID := aws.StringValue(v.ClusterArn)

@@ -76,7 +76,7 @@ func TestRun(t *testing.T) {
 
 	for _, test := range tests {
 
-		// Create our mock
+		// Create our mock.
 		c := &client.MockRetriever{
 			Instances: test.instances,
 		}
@@ -91,17 +91,17 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 		defer ctx.Done()
 
-		// Run our discoverer with the mocked retriever
+		// Run our discoverer with the mocked retriever.
 		go d.Run(ctx, ch)
 
-		// Check multiple times
+		// Check multiple times.
 		counter := 5
 		for tg := range ch {
 			if counter == 0 {
 				break
 			}
 			for _, sis := range tg {
-				// Check all the targets are ok
+				// Check all the targets are ok.
 				if len(test.wantTargets) != len(sis.Targets) {
 					t.Errorf("-%+v\n- Length of the received target group is not ok, want: %d; got: %d", test, len(test.wantTargets), len(sis.Targets))
 				}

@@ -25,15 +25,15 @@ const (
 	serviceTaskStatusInactive = "INACTIVE"
 )
 
-// awsCache is a temporal store to map between ids on AWS API objects
+// awsCache is a temporal store to map between ids on AWS API objects.
 type awsCache struct {
-	// Store indexes
-	clusters   map[string]*ecs.Cluster           // cluster cache
-	cInstances map[string]*ecs.ContainerInstance // container instance cache
-	tasks      map[string]*ecs.Task              // task cache
-	instances  map[string]*ec2.Instance          // instance cache
-	services   map[string]*ecs.Service           // service cache
-	taskDefs   map[string]*ecs.TaskDefinition    // task definition cache
+	// Store indexes.
+	clusters   map[string]*ecs.Cluster           // Cluster cache.
+	cInstances map[string]*ecs.ContainerInstance // Container instance cache.
+	tasks      map[string]*ecs.Task              // Task cache.
+	instances  map[string]*ec2.Instance          // Instance cache.
+	services   map[string]*ecs.Service           // Service cache.
+	taskDefs   map[string]*ecs.TaskDefinition    // Task definition cache.
 
 	// mutexes
 	clustersMutex   sync.Mutex
@@ -153,7 +153,7 @@ func (a *awsCache) setServices(services ...*ecs.Service) {
 	defer a.servicesMutex.Unlock()
 	for _, service := range services {
 		// Insert one entry per running deployment task indexed by task defintion, the task defintion ARN is
-		// the glue to reference a service from a task
+		// the glue to reference a service from a task.
 		for _, d := range service.Deployments {
 			if aws.StringValue(d.Status) != serviceTaskStatusInactive {
 				a.services[aws.StringValue(d.TaskDefinition)] = service
