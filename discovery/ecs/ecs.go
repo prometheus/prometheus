@@ -175,5 +175,5 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	}
 
 	log.Debugf("Finished discovery with %d targets", len(tg.Targets))
-	return
+	return tg, nil
 }
