@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/ecs/client"
 	"github.com/prometheus/prometheus/discovery/ecs/types"
@@ -28,7 +29,7 @@ import (
 func TestRun(t *testing.T) {
 	tests := []struct {
 		instances   []*types.ServiceInstance
-		wantTargets []string
+		wantTargets *config.TargetGroup
 	}{
 		{
 			instances: []*types.ServiceInstance{
@@ -66,10 +67,50 @@ func TestRun(t *testing.T) {
 					Tags:               map[string]string{"env": "prod", "kind": "ecs", "cluster": "infra"},
 				},
 			},
-			wantTargets: []string{
-				`{__address__="10.0.250.65:36112", __meta_ecs_cluster="prod-cluster-infra", __meta_ecs_container="myService", __meta_ecs_container_label_kind="main", __meta_ecs_container_label_monitor="true", __meta_ecs_container_port_number="8080", __meta_ecs_container_port_protocol="tcp", __meta_ecs_image="000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e", __meta_ecs_node_tag_cluster="infra", __meta_ecs_node_tag_env="prod", __meta_ecs_node_tag_kind="ecs", __meta_ecs_service="myService"}`,
-				`{__address__="10.0.250.65:24567", __meta_ecs_cluster="prod-cluster-infra", __meta_ecs_container="myService", __meta_ecs_container_label_kind="main", __meta_ecs_container_label_monitor="true", __meta_ecs_container_port_number="1568", __meta_ecs_container_port_protocol="udp", __meta_ecs_image="000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e", __meta_ecs_node_tag_cluster="infra", __meta_ecs_node_tag_env="prod", __meta_ecs_node_tag_kind="ecs", __meta_ecs_service="myService"}`,
-				`{__address__="10.0.250.65:30987", __meta_ecs_cluster="prod-cluster-infra", __meta_ecs_container="nginx", __meta_ecs_container_label_kind="front-http", __meta_ecs_container_port_number="8081", __meta_ecs_container_port_protocol="tcp", __meta_ecs_image="nginx:latest", __meta_ecs_node_tag_cluster="infra", __meta_ecs_node_tag_env="prod", __meta_ecs_node_tag_kind="ecs", __meta_ecs_service="myService"}`,
+			wantTargets: &config.TargetGroup{
+				Targets: []model.LabelSet{
+					model.LabelSet{
+						"__address__":                        model.LabelValue("10.0.250.65:36112"),
+						"__meta_ecs_cluster":                 model.LabelValue("prod-cluster-infra"),
+						"__meta_ecs_service":                 model.LabelValue("myService"),
+						"__meta_ecs_image":                   model.LabelValue("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+						"__meta_ecs_container":               model.LabelValue("myService"),
+						"__meta_ecs_container_port_number":   model.LabelValue("8080"),
+						"__meta_ecs_container_port_protocol": model.LabelValue("tcp"),
+						"__meta_ecs_container_label_kind":    model.LabelValue("main"),
+						"__meta_ecs_container_label_monitor": model.LabelValue("true"),
+						"__meta_ecs_node_tag_cluster":        model.LabelValue("infra"),
+						"__meta_ecs_node_tag_env":            model.LabelValue("prod"),
+						"__meta_ecs_node_tag_kind":           model.LabelValue("ecs"),
+					},
+					model.LabelSet{
+						"__address__":                        model.LabelValue("10.0.250.65:24567"),
+						"__meta_ecs_cluster":                 model.LabelValue("prod-cluster-infra"),
+						"__meta_ecs_service":                 model.LabelValue("myService"),
+						"__meta_ecs_image":                   model.LabelValue("000000000000.dkr.ecr.us-east-1.amazonaws.com/myCompany/myService:29f323e"),
+						"__meta_ecs_container":               model.LabelValue("myService"),
+						"__meta_ecs_container_port_number":   model.LabelValue("1568"),
+						"__meta_ecs_container_port_protocol": model.LabelValue("udp"),
+						"__meta_ecs_container_label_kind":    model.LabelValue("main"),
+						"__meta_ecs_container_label_monitor": model.LabelValue("true"),
+						"__meta_ecs_node_tag_cluster":        model.LabelValue("infra"),
+						"__meta_ecs_node_tag_env":            model.LabelValue("prod"),
+						"__meta_ecs_node_tag_kind":           model.LabelValue("ecs"),
+					},
+					model.LabelSet{
+						"__address__":                        model.LabelValue("10.0.250.65:30987"),
+						"__meta_ecs_cluster":                 model.LabelValue("prod-cluster-infra"),
+						"__meta_ecs_service":                 model.LabelValue("myService"),
+						"__meta_ecs_image":                   model.LabelValue("nginx:latest"),
+						"__meta_ecs_container":               model.LabelValue("nginx"),
+						"__meta_ecs_container_port_number":   model.LabelValue("8081"),
+						"__meta_ecs_container_port_protocol": model.LabelValue("tcp"),
+						"__meta_ecs_container_label_kind":    model.LabelValue("front-http"),
+						"__meta_ecs_node_tag_cluster":        model.LabelValue("infra"),
+						"__meta_ecs_node_tag_env":            model.LabelValue("prod"),
+						"__meta_ecs_node_tag_kind":           model.LabelValue("ecs"),
+					},
+				},
 			},
 		},
 	}
@@ -102,13 +143,13 @@ func TestRun(t *testing.T) {
 			}
 			for _, sis := range tg {
 				// Check all the targets are ok.
-				if len(test.wantTargets) != len(sis.Targets) {
-					t.Errorf("-%+v\n- Length of the received target group is not ok, want: %d; got: %d", test, len(test.wantTargets), len(sis.Targets))
+				if len(test.wantTargets.Targets) != len(sis.Targets) {
+					t.Errorf("-%+v\n- Length of the received target group is not ok, want: %d; got: %d", test, len(test.wantTargets.Targets), len(sis.Targets))
 				}
 				for i, tg := range sis.Targets {
-					want := test.wantTargets[i]
-					if want != tg.String() {
-						t.Errorf("-%+v\n- Received target is wrong; want: '%s'; got: '%s'", test, want, tg.String())
+					want := test.wantTargets.Targets[i]
+					if !want.Equal(tg) {
+						t.Errorf("-%+v\n- Received target is wrong; want: '%s'; got: '%s'", test, want.String(), tg.String())
 					}
 				}
 			}
