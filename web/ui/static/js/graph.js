@@ -212,13 +212,12 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           items: "all",
           matcher: function(item) {
             // If we have result for current query, skip
-            if (!self.fuzzyResult.query || self.fuzzyResult.query !== this.query) {
+            if (self.fuzzyResult.query === null || self.fuzzyResult.query !== this.query) {
               self.fuzzyResult.query = this.query;
               self.fuzzyResult.map = {};
-              self.fuzzyResult.result = fuzzy.filter(this.query.replace('_', ' '), metrics, {
+              self.fuzzyResult.result = fuzzy.filter(this.query.replace(/ /g, ''), metrics, {
                 pre: '<strong>',
-                post: '</strong>',
-                extract: function(el) { return el.replace('_', ' ') }
+                post: '</strong>'
               });
               self.fuzzyResult.result.forEach(function(r) {
                 self.fuzzyResult.map[r.original] = r;
@@ -237,7 +236,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           },
 
           highlighter: function (item) {
-            return $('<div>' + self.fuzzyResult.map[item].string.replace(' ', '_') + '</div>')
+            return $('<div>' + self.fuzzyResult.map[item].string + '</div>')
           },
         });
         // This needs to happen after attaching the typeahead plugin, as it
