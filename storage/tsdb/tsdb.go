@@ -22,10 +22,10 @@ type Options struct {
 
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
-	MinBlockDuration uint64
+	MinBlockDuration time.Duration
 
 	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration uint64
+	MaxBlockDuration time.Duration
 
 	// Number of head blocks that can be appended to.
 	// Should be two or higher to prevent write errors in general scenarios.
@@ -39,8 +39,8 @@ type Options struct {
 func Open(path string, opts *Options) (storage.Storage, error) {
 	db, err := tsdb.OpenPartitioned(path, 1, nil, &tsdb.Options{
 		WALFlushInterval: 10 * time.Second,
-		MinBlockDuration: opts.MinBlockDuration,
-		MaxBlockDuration: opts.MaxBlockDuration,
+		MinBlockDuration: uint64(opts.MinBlockDuration.Seconds() * 1000),
+		MaxBlockDuration: uint64(opts.MaxBlockDuration.Seconds() * 1000),
 		AppendableBlocks: opts.AppendableBlocks,
 	})
 	if err != nil {
