@@ -879,6 +879,13 @@ func (p *persistence) dropAndPersistChunks(
 	}
 	defer f.Close()
 
+	// Calculate total chunks
+	fi, err := f.Stat()
+	if err != nil {
+		return
+	}
+	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
+
 	headerBuf := make([]byte, chunkHeaderLen)
 	var firstTimeInFile model.Time
 	// Find the first chunk in the file that should be kept.
@@ -920,14 +927,6 @@ func (p *persistence) dropAndPersistChunks(
 		}
 	}
 
-	// We've found the first chunk that should be kept.
-	// First check if the shrink ratio is good enough to perform the the
-	// actual drop or leave it for next time if it is not worth the effort.
-	fi, err := f.Stat()
-	if err != nil {
-		return
-	}
-	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
 	if numDropped == 0 || float64(numDropped)/float64(totalChunks) < p.minShrinkRatio {
 		// Nothing to drop. Just adjust the return values and append the chunks (if any).
 		numDropped = 0
