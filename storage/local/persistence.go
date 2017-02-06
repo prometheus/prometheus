@@ -670,12 +670,39 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			defer fpLocker.Unlock(m.fp)
 
 			chunksToPersist := len(m.series.chunkDescs) - m.series.persistWatermark
-			if len(m.series.chunkDescs) == 0 || chunksToPersist == 0 {
-				// This series was completely purged or archived in the meantime or has
-				// no chunks that need persisting. Ignore.
+			if len(m.series.chunkDescs) == 0 {
+				// This series was completely purged or archived
+				// in the meantime. Ignore.
 				return
 			}
 			realNumberOfSeries++
+
+			// Sanity checks.
+			if m.series.chunkDescsOffset < 0 && m.series.persistWatermark > 0 {
+				panic("encountered unknown chunk desc offset in combination with positive persist watermark")
+			}
+
+			// These are the values to save in the normal case.
+			var (
+				// persistWatermark is zero as we only checkpoint non-persisted chunks.
+				persistWatermark int64
+				// chunkDescsOffset is shifted by the original persistWatermark for the same reason.
+				chunkDescsOffset = int64(m.series.chunkDescsOffset + m.series.persistWatermark)
+				numChunkDescs    = int64(chunksToPersist)
+			)
+			// However, in the special case of a series being fully
+			// persisted but still in memory (i.e. not archived), we
+			// need to save a "placeholder", for which we use just
+			// the chunk desc of the last chunk. Values have to be
+			// adjusted accordingly. (The reason for doing it in
+			// this weird way is to keep the checkpoint format
+			// compatible with older versions.)
+			if chunksToPersist == 0 {
+				persistWatermark = 1
+				chunkDescsOffset-- // Save one chunk desc after all.
+				numChunkDescs = 1
+			}
+
 			// seriesFlags left empty in v2.
 			if err = w.WriteByte(0); err != nil {
 				return
@@ -691,9 +718,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			if _, err = w.Write(buf); err != nil {
 				return
 			}
-			// persistWatermark. We only checkpoint chunks that need persisting, so
-			// this is always 0.
-			if _, err = codable.EncodeVarint(w, int64(0)); err != nil {
+			if _, err = codable.EncodeVarint(w, persistWatermark); err != nil {
 				return
 			}
 			if m.series.modTime.IsZero() {
@@ -705,25 +730,39 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					return
 				}
 			}
-			// chunkDescsOffset.
-			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset+m.series.persistWatermark)); err != nil {
+			if _, err = codable.EncodeVarint(w, chunkDescsOffset); err != nil {
 				return
 			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.savedFirstTime)); err != nil {
 				return
 			}
-			// Number of chunkDescs.
-			if _, err = codable.EncodeVarint(w, int64(chunksToPersist)); err != nil {
+			if _, err = codable.EncodeVarint(w, numChunkDescs); err != nil {
 				return
 			}
-			for _, chunkDesc := range m.series.chunkDescs[m.series.persistWatermark:] {
-				if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
+			if chunksToPersist == 0 {
+				// Save the one placeholder chunk desc for a fully persisted series.
+				chunkDesc := m.series.chunkDescs[len(m.series.chunkDescs)-1]
+				if _, err = codable.EncodeVarint(w, int64(chunkDesc.FirstTime())); err != nil {
 					return
 				}
-				if err = chunkDesc.C.Marshal(w); err != nil {
+				lt, err := chunkDesc.LastTime()
+				if err != nil {
 					return
 				}
-				p.checkpointChunksWritten.Observe(float64(chunksToPersist))
+				if _, err = codable.EncodeVarint(w, int64(lt)); err != nil {
+					return
+				}
+			} else {
+				// Save (only) the non-persisted chunks.
+				for _, chunkDesc := range m.series.chunkDescs[m.series.persistWatermark:] {
+					if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
+						return
+					}
+					if err = chunkDesc.C.Marshal(w); err != nil {
+						return
+					}
+					p.checkpointChunksWritten.Observe(float64(chunksToPersist))
+				}
 			}
 			// Series is checkpointed now, so declare it clean. In case the entire
 			// checkpoint fails later on, this is fine, as the storage's series
