@@ -1376,7 +1376,12 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 
 	defer s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 
-	if series.maybeCloseHeadChunk() {
+	closed, err := series.maybeCloseHeadChunk()
+	if err != nil {
+		s.quarantineSeries(fp, series.metric, err)
+		s.persistErrors.Inc()
+	}
+	if closed {
 		s.incNumChunksToPersist(1)
 	}
 
