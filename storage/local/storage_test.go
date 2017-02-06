@@ -840,10 +840,15 @@ func TestLoop(t *testing.T) {
 		storage.Append(s)
 	}
 	storage.WaitForIndexing()
-	series, _ := storage.fpToSeries.get(model.Metric{}.FastFingerprint())
+	fp := model.Metric{}.FastFingerprint()
+	series, _ := storage.fpToSeries.get(fp)
+	storage.fpLocker.Lock(fp)
 	cdsBefore := len(series.chunkDescs)
+	storage.fpLocker.Unlock(fp)
 	time.Sleep(fpMaxWaitDuration + time.Second) // TODO(beorn7): Ugh, need to wait for maintenance to kick in.
+	storage.fpLocker.Lock(fp)
 	cdsAfter := len(series.chunkDescs)
+	storage.fpLocker.Unlock(fp)
 	storage.Stop()
 	if cdsBefore <= cdsAfter {
 		t.Errorf(

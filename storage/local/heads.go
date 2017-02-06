@@ -188,7 +188,9 @@ func (hs *headsScanner) scan() bool {
 				// This is NOT the head chunk. So it's a chunk
 				// to be persisted, and we need to populate lastTime.
 				hs.chunksToPersistTotal++
-				cd.MaybePopulateLastTime()
+				if hs.err = cd.MaybePopulateLastTime(); hs.err != nil {
+					return false
+				}
 			}
 			chunkDescs[i] = cd
 		}
