@@ -54,11 +54,21 @@ var (
 		Name:      "queries_concurrent_max",
 		Help:      "The max number of concurrent queries.",
 	})
+	queryTimingStats = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_time",
+			Help:      "Query timmings",
+		},
+		[]string{"slice"},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(currentQueries)
 	prometheus.MustRegister(maxConcurrentQueries)
+	prometheus.MustRegister(queryTimingStats)
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -376,7 +386,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
 	const env = "query execution"
 
 	evalTimer := q.stats.GetTimer(stats.TotalEvalTime).Start()
-	defer evalTimer.Stop()
+	defer func() {
+		evalTimer.Stop()
+		queryTimingStats.WithLabelValues("eval_total").
+			Observe(float64(evalTimer.ElapsedTime()) / float64(time.Millisecond))
+	}()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
 	if err := contextDone(ctx, env); err != nil {
@@ -404,6 +418,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
 	err = ng.populateIterators(ctx, querier, s)
 	prepareTimer.Stop()
+	queryTimingStats.WithLabelValues("prepare_time").
+		Observe(float64(prepareTimer.ElapsedTime()) / float64(time.Millisecond))
+
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +448,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 
 		evalTimer.Stop()
+		queryTimingStats.WithLabelValues("inner_eval").
+			Observe(float64(evalTimer.ElapsedTime()) / float64(time.Millisecond))
+
 		return val, nil
 	}
 	numSteps := int(s.End.Sub(s.Start) / s.Interval)
@@ -486,6 +506,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 	}
 	evalTimer.Stop()
+	queryTimingStats.WithLabelValues("inner_eval").
+		Observe(float64(evalTimer.ElapsedTime()) / float64(time.Millisecond))
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -497,6 +519,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		mat = append(mat, ss)
 	}
 	appendTimer.Stop()
+	queryTimingStats.WithLabelValues("result_append").
+		Observe(float64(appendTimer.ElapsedTime()) / float64(time.Millisecond))
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -508,7 +532,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sortTimer := query.stats.GetTimer(stats.ResultSortTime).Start()
 	sort.Sort(resMatrix)
 	sortTimer.Stop()
-
+	queryTimingStats.WithLabelValues("result_sort").
+		Observe(float64(sortTimer.ElapsedTime()) / float64(time.Millisecond))
 	return resMatrix, nil
 }
 
@@ -552,15 +577,18 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 }
 
 func (ng *Engine) closeIterators(s *EvalStmt) {
+	var countv float64
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for _, it := range n.iterators {
 				it.Close()
+				countv++
 			}
 		case *MatrixSelector:
 			for _, it := range n.iterators {
 				it.Close()
+				countv++
 			}
 		}
 		return true
