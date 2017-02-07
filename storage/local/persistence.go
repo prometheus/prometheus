@@ -886,8 +886,8 @@ func (p *persistence) dropAndPersistChunks(
 	}
 	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
 
-	// Calculate chunk index from minShrinkRatio, to skip unnecessary chunk header reading
-	var chunkIndexToStartSeek int
+	// Calculate chunk index from minShrinkRatio, to skip unnecessary chunk header reading.
+	chunkIndexToStartSeek := 0
 	if p.minShrinkRatio < 1 {
 		chunkIndexToStartSeek = int(math.Floor(float64(totalChunks) * p.minShrinkRatio))
 	} else {
@@ -900,7 +900,6 @@ func (p *persistence) dropAndPersistChunks(
 	for ; ; numDropped++ {
 		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
 		if err != nil {
-			numDropped = -1
 			return
 		}
 		_, err = io.ReadFull(f, headerBuf)
@@ -921,7 +920,6 @@ func (p *persistence) dropAndPersistChunks(
 			return
 		}
 		if err != nil {
-			numDropped = -1
 			return
 		}
 		lastTime := model.Time(
