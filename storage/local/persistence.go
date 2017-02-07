@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -918,8 +919,22 @@ func (p *persistence) dropAndPersistChunks(
 	}
 	defer f.Close()
 
+	fi, err := f.Stat()
+	if err != nil {
+		return
+	}
+	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
+
+	// Calculate chunk index from minShrinkRatio, to skip unnecessary chunk header reading.
+	chunkIndexToStartSeek := 0
+	if p.minShrinkRatio < 1 {
+		chunkIndexToStartSeek = int(math.Floor(float64(totalChunks) * p.minShrinkRatio))
+	} else {
+		chunkIndexToStartSeek = totalChunks - 1
+	}
+	numDropped = chunkIndexToStartSeek
+
 	headerBuf := make([]byte, chunkHeaderLen)
-	var firstTimeInFile model.Time
 	// Find the first chunk in the file that should be kept.
 	for ; ; numDropped++ {
 		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
@@ -946,11 +961,6 @@ func (p *persistence) dropAndPersistChunks(
 		if err != nil {
 			return
 		}
-		if numDropped == 0 {
-			firstTimeInFile = model.Time(
-				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
-			)
-		}
 		lastTime := model.Time(
 			binary.LittleEndian.Uint64(headerBuf[chunkHeaderLastTimeOffset:]),
 		)
@@ -959,18 +969,21 @@ func (p *persistence) dropAndPersistChunks(
 		}
 	}
 
-	// We've found the first chunk that should be kept.
-	// First check if the shrink ratio is good enough to perform the the
-	// actual drop or leave it for next time if it is not worth the effort.
-	fi, err := f.Stat()
-	if err != nil {
-		return
-	}
-	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
-	if numDropped == 0 || float64(numDropped)/float64(totalChunks) < p.minShrinkRatio {
+	// If numDropped isn't incremented, the minShrinkRatio condition isn't satisfied.
+	if numDropped == chunkIndexToStartSeek {
 		// Nothing to drop. Just adjust the return values and append the chunks (if any).
 		numDropped = 0
-		firstTimeNotDropped = firstTimeInFile
+		_, err = f.Seek(offsetForChunkIndex(0), os.SEEK_SET)
+		if err != nil {
+			return
+		}
+		_, err = io.ReadFull(f, headerBuf)
+		if err != nil {
+			return
+		}
+		firstTimeNotDropped = model.Time(
+			binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+		)
 		if len(chunks) > 0 {
 			offset, err = p.persistChunks(fp, chunks)
 		}
