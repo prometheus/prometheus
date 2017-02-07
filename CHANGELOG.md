@@ -1,3 +1,10 @@
+## 1.5.1 / 2017-02-07
+
+* [BUGFIX] Don't lose fully persisted memory series during checkpointing.
+* [BUGFIX] Fix intermittently failing relabeling.
+* [BUGFIX] Make `-storage.local.series-file-shrink-ratio` work.
+* [BUGFIX] Remove race condition from TestLoop.
+
 ## 1.5.0 / 2017-01-23
 
 * [CHANGE] Use lexicographic order to sort alerts by name.
