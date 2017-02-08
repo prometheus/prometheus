@@ -314,6 +314,8 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
 	q.cancel = cancel
 
+	execTimer := q.stats.GetTimer(stats.ExecTotalTime).Start()
+	defer execTimer.Stop()
 	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
 
 	if err := ng.gate.Start(ctx); err != nil {
