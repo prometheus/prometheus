@@ -25,6 +25,7 @@ const (
 	InnerEvalTime
 	ResultAppendTime
 	ExecQueueTime
+	ExecTotalTime
 )
 
 // Return a string representation of a QueryTiming identifier.
@@ -42,7 +43,47 @@ func (s QueryTiming) String() string {
 		return "Result append time"
 	case ExecQueueTime:
 		return "Exec queue wait time"
+	case ExecTotalTime:
+		return "Exec total time"
 	default:
 		return "Unknown query timing"
 	}
+}
+
+// QueryStats with all query timers mapped to durations.
+type QueryStats struct {
+	TotalEvalTime        float64 `json:"totalEvalTime"`
+	ResultSortTime       float64 `json:"resultSortTime"`
+	QueryPreparationTime float64 `json:"queryPreparationTime"`
+	InnerEvalTime        float64 `json:"innerEvalTime"`
+	ResultAppendTime     float64 `json:"resultAppendTime"`
+	ExecQueueTime        float64 `json:"execQueueTime"`
+	ExecTotalTime        float64 `json:"execTotalTime"`
+}
+
+// MakeQueryStats makes a QueryStats struct with all QueryTimings found in the
+// given TimerGroup.
+func MakeQueryStats(tg *TimerGroup) *QueryStats {
+	var qs QueryStats
+
+	for s, timer := range tg.timers {
+		switch s {
+		case TotalEvalTime:
+			qs.TotalEvalTime = timer.Duration()
+		case ResultSortTime:
+			qs.ResultSortTime = timer.Duration()
+		case QueryPreparationTime:
+			qs.QueryPreparationTime = timer.Duration()
+		case InnerEvalTime:
+			qs.InnerEvalTime = timer.Duration()
+		case ResultAppendTime:
+			qs.ResultAppendTime = timer.Duration()
+		case ExecQueueTime:
+			qs.ExecQueueTime = timer.Duration()
+		case ExecTotalTime:
+			qs.ExecTotalTime = timer.Duration()
+		}
+	}
+
+	return &qs
 }
