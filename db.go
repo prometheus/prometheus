@@ -29,8 +29,8 @@ import (
 // millisecond precision timestampdb.
 var DefaultOptions = &Options{
 	WALFlushInterval: 5 * time.Second,
-	MinBlockDuration: 2 * 60 * 60 * 1000,  // 2 hours in milliseconds
-	MaxBlockDuration: 48 * 60 * 60 * 1000, // 2 days in milliseconds
+	MinBlockDuration: 3 * 60 * 60 * 1000,  // 2 hours in milliseconds
+	MaxBlockDuration: 24 * 60 * 60 * 1000, // 1 days in milliseconds
 	AppendableBlocks: 2,
 }
 
@@ -131,8 +131,8 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 			return nil, err
 		}
 	}
-	var r prometheus.Registerer
-	// r := prometheus.DefaultRegisterer
+	// var r prometheus.Registerer
+	r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -354,8 +354,9 @@ func (db *DB) Appender() Appender {
 }
 
 type dbAppender struct {
-	db    *DB
-	heads []*headAppender
+	db      *DB
+	heads   []*headAppender
+	samples int
 }
 
 func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -367,6 +368,7 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error)
 	if err != nil {
 		return 0, err
 	}
+	a.samples++
 	return ref | (uint64(h.generation) << 40), nil
 }
 
@@ -379,6 +381,7 @@ func (a *dbAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float
 	if err != nil {
 		return 0, err
 	}
+	a.samples++
 	return ref | (uint64(h.generation) << 40), nil
 }
 
@@ -396,7 +399,12 @@ func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
 	if h.generation != gen {
 		return ErrNotFound
 	}
-	return h.AddFast(ref, t, v)
+	if err := h.AddFast(ref, t, v); err != nil {
+		return err
+	}
+
+	a.samples++
+	return nil
 }
 
 // appenderFor gets the appender for the head containing timestamp t.
@@ -469,6 +477,9 @@ func (a *dbAppender) Commit() error {
 	}
 	a.db.mtx.RUnlock()
 
+	if merr.Err() == nil {
+		a.db.metrics.samplesAppended.Add(float64(a.samples))
+	}
 	return merr.Err()
 }
 

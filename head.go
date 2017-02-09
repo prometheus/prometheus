@@ -43,6 +43,7 @@ type headBlock struct {
 
 	activeWriters uint64
 
+	symbols map[string]struct{}
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	series []*memSeries
