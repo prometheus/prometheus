@@ -173,14 +173,16 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 
 		}
 	}
-	// Try to drop one chunk, which must be prevented by the shrink ratio.
+	// Try to drop one chunk, which must be prevented by the shrink
+	// ratio. Since we do not pass in any chunks to persist, the offset
+	// should be the number of chunks in the file.
 	for fp, _ := range fpToChunks {
 		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if offset != 0 {
-			t.Errorf("want offset 0, got %d", offset)
+		if offset != 10 {
+			t.Errorf("want offset 10, got %d", offset)
 		}
 		if firstTime != 0 {
 			t.Errorf("want first time 0, got %d", firstTime)
@@ -422,14 +424,14 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 			t.Error("all chunks dropped")
 		}
 	}
-	// Drop only the first two chunks should not happen, either.
+	// Drop only the first two chunks should not happen, either. Chunks in file is now 9.
 	for fp := range fpToChunks {
 		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 2, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if offset != 0 {
-			t.Errorf("want offset 0, got %d", offset)
+		if offset != 9 {
+			t.Errorf("want offset 9, got %d", offset)
 		}
 		if firstTime != 0 {
 			t.Errorf("want first time 0, got %d", firstTime)
