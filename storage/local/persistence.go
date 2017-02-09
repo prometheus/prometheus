@@ -846,12 +846,14 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 // dropAndPersistChunks deletes all chunks from a series file whose last sample
 // time is before beforeTime, and then appends the provided chunks, leaving out
 // those whose last sample time is before beforeTime. It returns the timestamp
-// of the first sample in the oldest chunk _not_ dropped, the offset within the
-// series file of the first chunk persisted (out of the provided chunks), the
-// number of deleted chunks, and true if all chunks of the series have been
-// deleted (in which case the returned timestamp will be 0 and must be ignored).
-// It is the caller's responsibility to make sure nothing is persisted or loaded
-// for the same fingerprint concurrently.
+// of the first sample in the oldest chunk _not_ dropped, the chunk offset
+// within the series file of the first chunk persisted (out of the provided
+// chunks, or - if no chunks were provided - the chunk offset where chunks would
+// have been persisted, i.e. the end of the file), the number of deleted chunks,
+// and true if all chunks of the series have been deleted (in which case the
+// returned timestamp will be 0 and must be ignored).  It is the caller's
+// responsibility to make sure nothing is persisted or loaded for the same
+// fingerprint concurrently.
 //
 // Returning an error signals problems with the series file. In this case, the
 // caller should quarantine the series.
@@ -923,7 +925,8 @@ func (p *persistence) dropAndPersistChunks(
 	if err != nil {
 		return
 	}
-	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
+	chunksInFile := int(fi.Size()) / chunkLenWithHeader
+	totalChunks := chunksInFile + len(chunks)
 
 	// Calculate chunk index from minShrinkRatio, to skip unnecessary chunk header reading.
 	chunkIndexToStartSeek := 0
@@ -986,6 +989,8 @@ func (p *persistence) dropAndPersistChunks(
 		)
 		if len(chunks) > 0 {
 			offset, err = p.persistChunks(fp, chunks)
+		} else {
+			offset = chunksInFile
 		}
 		return
 	}
