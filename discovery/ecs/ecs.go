@@ -19,11 +19,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/ecs/client"
 	"github.com/prometheus/prometheus/util/strutil"
+	"golang.org/x/net/context"
 )
 
 var (
@@ -69,11 +68,12 @@ type Discovery struct {
 	source   string // The source of the services.
 	interval time.Duration
 	port     int
+	logger   log.Logger
 }
 
 // NewDiscovery returns a new Discovery.
-func NewDiscovery(conf *config.ECSSDConfig) (*Discovery, error) {
-	c, err := client.NewAWSRetriever(conf.AccessKey, conf.SecretKey, conf.Region, conf.Profile)
+func NewDiscovery(l log.Logger, conf *config.ECSSDConfig) (*Discovery, error) {
+	c, err := client.NewAWSRetriever(l, conf.AccessKey, conf.SecretKey, conf.Region, conf.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -82,13 +82,12 @@ func NewDiscovery(conf *config.ECSSDConfig) (*Discovery, error) {
 		interval: time.Duration(conf.RefreshInterval),
 		client:   c,
 		source:   conf.Region,
+		logger:   l.With("discovery", "ecs"),
 	}, nil
 }
 
 // Run implements the TargetProvider interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	log.Debugf("Start running ECS discovery")
-
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
@@ -112,6 +111,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 				log.Error(err)
 				continue
 			}
+
 			select {
 			case ch <- []*config.TargetGroup{tg}:
 			case <-ctx.Done():
@@ -124,7 +124,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
-	log.Debugf("Start discovery of new targets")
 	tStart := time.Now()
 	defer func() {
 		ecsSDRefreshDuration.Observe(time.Since(tStart).Seconds())
@@ -173,6 +172,6 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		tg.Targets = append(tg.Targets, l)
 	}
 
-	log.Debugf("Finished discovery with %d targets", len(tg.Targets))
+	d.logger.With("targets", len(tg.Targets)).Info("Finished discovery refresh")
 	return tg, nil
 }

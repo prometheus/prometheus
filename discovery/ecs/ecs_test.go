@@ -16,6 +16,7 @@ package ecs
 import (
 	"testing"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 
@@ -164,6 +165,7 @@ func TestRefresh(t *testing.T) {
 		d := Discovery{
 			source: "us-west-2",
 			client: c,
+			logger: log.Base(),
 		}
 
 		tgs, err := d.refresh()

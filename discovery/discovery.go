@@ -110,7 +110,7 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]TargetPro
 	}
 
 	for i, c := range cfg.ECSSDConfigs {
-		d, err := ecs.NewDiscovery(c)
+		d, err := ecs.NewDiscovery(log.Base(), c)
 		if err != nil {
 			log.Errorf("Cannot create ECS discovery: %s", err)
 		}

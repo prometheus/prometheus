@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/prometheus/common/log"
 	"github.com/stretchr/testify/assert"
 
 	awsmock "github.com/prometheus/prometheus/discovery/ecs/mock/aws"
@@ -214,6 +215,7 @@ func TestGetClusters(t *testing.T) {
 
 		r := &AWSRetriever{
 			ecsCli: mockECS,
+			logger: log.Base(),
 		}
 
 		res, err := r.getClusters(context.TODO())
@@ -284,6 +286,7 @@ func TestGetContainerInstances(t *testing.T) {
 
 		r := &AWSRetriever{
 			ecsCli: mockECS,
+			logger: log.Base(),
 		}
 
 		res, err := r.getContainerInstances(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
@@ -356,6 +359,7 @@ func TestGetTasks(t *testing.T) {
 
 		r := &AWSRetriever{
 			ecsCli: mockECS,
+			logger: log.Base(),
 		}
 
 		res, err := r.getTasks(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
@@ -417,6 +421,7 @@ func TestGetInstances(t *testing.T) {
 
 		r := &AWSRetriever{
 			ec2Cli: mockEC2,
+			logger: log.Base(),
 		}
 
 		res, err := r.getInstances(context.TODO(), iIDs)
@@ -549,6 +554,7 @@ func TestGetServices(t *testing.T) {
 
 		r := &AWSRetriever{
 			ecsCli: mockECS,
+			logger: log.Base(),
 		}
 
 		res, err := r.getServices(context.TODO(), &ecs.Cluster{ClusterArn: aws.String("c1")})
@@ -684,6 +690,7 @@ func TestGetTaskDefinitions(t *testing.T) {
 		r := &AWSRetriever{
 			ecsCli: mockECS,
 			cache:  newAWSCache(),
+			logger: log.Base(),
 		}
 
 		res, err := r.getTaskDefinitions(context.TODO(), tIDs, false)
@@ -783,6 +790,7 @@ func TestGetTaskDefinitionsCached(t *testing.T) {
 		r := &AWSRetriever{
 			ecsCli: mockECS,
 			cache:  newAWSCache(),
+			logger: log.Base(),
 		}
 
 		// Fill cache.
@@ -1116,13 +1124,14 @@ func TestRetrieveOk(t *testing.T) {
 		ecsCli: mockECS,
 		ec2Cli: mockEC2,
 		cache:  newAWSCache(),
+		logger: log.Base(),
 	}
 
 	assert := assert.New(t)
 
 	// Retrieve the information.
 	got, err := r.Retrieve()
-	assert.Nil(err, "Retrieval shouldm't error")
+	assert.Nil(err, "Retrieval shouldn't error")
 	assert.Len(got, len(want), "The retrieved length must match")
 
 	for i, gotT := range got {
@@ -1166,6 +1175,7 @@ func TestRetrieveError(t *testing.T) {
 			ecsCli: mockECS,
 			ec2Cli: mockEC2,
 			cache:  newAWSCache(),
+			logger: log.Base(),
 		}
 
 		// Retrieve the information.

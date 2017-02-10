@@ -97,11 +97,12 @@ type AWSRetriever struct {
 	ecsCli ecsiface.ECSAPI
 	ec2Cli ec2iface.EC2API
 
-	cache *awsCache // cache will store all the retrieved objects in order to compose the targets at the final stage.
+	cache  *awsCache // cache will store all the retrieved objects in order to compose the targets at the final stage.
+	logger log.Logger
 }
 
 // NewAWSRetriever will create a new AWS API retriever.
-func NewAWSRetriever(accessKey, secretKey, region, profile string) (*AWSRetriever, error) {
+func NewAWSRetriever(l log.Logger, accessKey, secretKey, region, profile string) (*AWSRetriever, error) {
 	creds := credentials.NewStaticCredentials(accessKey, secretKey, "")
 	if accessKey == "" && secretKey == "" {
 		creds = nil
@@ -124,6 +125,7 @@ func NewAWSRetriever(accessKey, secretKey, region, profile string) (*AWSRetrieve
 		ecsCli: ecs.New(sess),
 		ec2Cli: ec2.New(sess),
 		cache:  newAWSCache(),
+		logger: l.With("client", "AWS"),
 	}, nil
 
 }
@@ -141,7 +143,7 @@ func (c *AWSRetriever) getClusters(ctx context.Context) ([]*ecs.Cluster, error) 
 	params := &ecs.ListClustersInput{
 		MaxResults: aws.Int64(maxAPIRes),
 	}
-	log.Debugf("Getting clusters")
+
 	// Start listing clusters.
 	for {
 		resp, err := c.ecsCli.ListClusters(params)
@@ -173,7 +175,6 @@ func (c *AWSRetriever) getClusters(ctx context.Context) ([]*ecs.Cluster, error) 
 		}
 		params.NextToken = resp.NextToken
 	}
-	log.Debugf("Retrieved %d clusters", len(clusters))
 	return clusters, nil
 }
 
@@ -190,7 +191,6 @@ func (c *AWSRetriever) getContainerInstances(ctx context.Context, cluster *ecs.C
 		Cluster:    cluster.ClusterArn,
 		MaxResults: aws.Int64(maxAPIRes),
 	}
-	log.Debugf("Getting cluster %s container instances", aws.StringValue(cluster.ClusterName))
 	// Start listing container instances.
 	for {
 		resp, err := c.ecsCli.ListContainerInstances(params)
@@ -224,7 +224,6 @@ func (c *AWSRetriever) getContainerInstances(ctx context.Context, cluster *ecs.C
 		params.NextToken = resp.NextToken
 
 	}
-	log.Debugf("Retrieved %d container instances on cluster %s", len(contInsts), aws.StringValue(cluster.ClusterName))
 	return contInsts, nil
 }
 
@@ -241,7 +240,6 @@ func (c *AWSRetriever) getTasks(ctx context.Context, cluster *ecs.Cluster) ([]*e
 		Cluster:    cluster.ClusterArn,
 		MaxResults: aws.Int64(maxAPIRes),
 	}
-	log.Debugf("Getting cluster %s tasks", aws.StringValue(cluster.ClusterName))
 
 	// Start listing tasks.
 	for {
@@ -279,7 +277,6 @@ func (c *AWSRetriever) getTasks(ctx context.Context, cluster *ecs.Cluster) ([]*e
 		params.NextToken = resp.NextToken
 
 	}
-	log.Debugf("Retrieved %d tasks on cluster %s", len(tasks), aws.StringValue(cluster.ClusterName))
 	return tasks, nil
 }
 
@@ -296,7 +293,6 @@ func (c *AWSRetriever) getServices(ctx context.Context, cluster *ecs.Cluster) ([
 		Cluster:    cluster.ClusterArn,
 		MaxResults: aws.Int64(maxAPIRes),
 	}
-	log.Debugf("Getting cluster %s services", aws.StringValue(cluster.ClusterName))
 	// Start listing services.
 	for {
 		resp, err := c.ecsCli.ListServices(params)
@@ -328,13 +324,11 @@ func (c *AWSRetriever) getServices(ctx context.Context, cluster *ecs.Cluster) ([
 			break
 		}
 		params.NextToken = resp.NextToken
-
 	}
-	log.Debugf("Retrieved %d services on cluster %s", len(srvs), aws.StringValue(cluster.ClusterName))
 	return srvs, nil
 }
 
-func (c *AWSRetriever) getTaskDefinitions(ctx context.Context, tDIDs []*string, useChache bool) ([]*ecs.TaskDefinition, error) {
+func (c *AWSRetriever) getTaskDefinitions(ctx context.Context, tDIDs []*string, useCache bool) ([]*ecs.TaskDefinition, error) {
 	tDefs := []*ecs.TaskDefinition{}
 
 	select {
@@ -386,8 +380,6 @@ func (c *AWSRetriever) getInstances(ctx context.Context, ec2IDs []*string) ([]*e
 	default:
 	}
 
-	log.Debugf("Getting ec2 instances")
-
 	params := &ec2.DescribeInstancesInput{
 		InstanceIds: ec2IDs,
 	}
@@ -411,7 +403,6 @@ func (c *AWSRetriever) getInstances(ctx context.Context, ec2IDs []*string) ([]*e
 		params.NextToken = resp.NextToken
 	}
 
-	log.Debugf("Retrieved %d ec2 instances", len(instances))
 	return instances, nil
 }
 
@@ -485,7 +476,6 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 			}
 
 			c.cache.setServices(srvs...)
-
 			// Get task definitions.
 			tds, err2 := c.getTaskDefinitions(ctx, tDefIDs, true)
 			if err2 != nil {
@@ -531,7 +521,7 @@ func (c *AWSRetriever) Retrieve() ([]*types.ServiceInstance, error) {
 		tdID := aws.StringValue(v.TaskDefinitionArn)
 		srv, ok := c.cache.getService(tdID)
 		if !ok {
-			return nil, fmt.Errorf("zervice not available: %s", tdID)
+			return nil, fmt.Errorf("service not available: %s", tdID)
 		}
 
 		td, ok := c.cache.getTaskDefinition(tdID)
