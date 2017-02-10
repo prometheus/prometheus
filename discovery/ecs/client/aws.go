@@ -337,38 +337,45 @@ func (c *AWSRetriever) getTaskDefinitions(ctx context.Context, tDIDs []*string, 
 	default:
 	}
 
-	var mErr error
-	var wg sync.WaitGroup
+	// Create a ne context and errgroup for this retrieval iteration.
+	ctx2 := context.Background()
+	g, ctx2 := errgroup.WithContext(ctx2)
+
 	cached := 0
 	for _, tID := range tDIDs {
 		// If we want cache then check if already present (and save as retrieved to emulate a hit on cache).
-		if td, ok := c.cache.getTaskDefinition(aws.StringValue(tID)); useChache && ok {
-			tDefs = append(tDefs, td)
+		if td, ok := c.cache.getTaskDefinition(aws.StringValue(tID)); useCache && ok {
 			cached++
+			tDefs = append(tDefs, td)
 			continue
 		}
-		wg.Add(1)
-		go func(tID string) {
-			defer wg.Done()
+		tIDCpy := tID
+		g.Go(func() error {
 			params := &ecs.DescribeTaskDefinitionInput{
-				TaskDefinition: aws.String(tID),
+				TaskDefinition: tIDCpy,
 			}
-			if mErr != nil {
-				return
+
+			select {
+			case <-ctx2.Done():
+				return nil
+			default:
 			}
+
 			resp, err := c.ecsCli.DescribeTaskDefinition(params)
 			if err != nil {
-				mErr = err
-				return
+				return err
 			}
 
 			tDefs = append(tDefs, resp.TaskDefinition)
-		}(*tID)
-	}
-	wg.Wait()
+			return nil
+		})
 
-	log.Debugf("Retrieved %d new task definitions, cached %d", len(tDefs), cached)
-	return tDefs, mErr
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	c.logger.Debugf("Got %d task definition cache hits from a total of %d", cached, len(tDefs))
+	return tDefs, nil
 }
 
 func (c *AWSRetriever) getInstances(ctx context.Context, ec2IDs []*string) ([]*ec2.Instance, error) {
