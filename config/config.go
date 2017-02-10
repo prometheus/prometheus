@@ -1111,7 +1111,7 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return checkOverflow(c.XXX, "azure_sd_config")
 }
 
-// ECSSConfig is the configuration for ECS based service discovery.
+// ECSSDConfig is the configuration for ECS based service discovery.
 type ECSSDConfig struct {
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`

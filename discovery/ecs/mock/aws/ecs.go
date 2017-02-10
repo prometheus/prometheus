@@ -28,7 +28,7 @@ import (
 func MockECSListClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
-		err = errors.New("ListClusters wrong!")
+		err = errors.New("error: ListClusters wrong")
 	}
 	cIds := []*string{}
 	for _, id := range ids {
@@ -45,7 +45,7 @@ func MockECSListClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...str
 func MockECSDescribeClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, clusters ...*ecs.Cluster) {
 	var err error
 	if wantError {
-		err = errors.New("DescribeClusters wrong!")
+		err = errors.New("error: DescribeClusters wrong")
 	}
 	result := &ecs.DescribeClustersOutput{
 		Clusters: clusters,
@@ -57,7 +57,7 @@ func MockECSDescribeClusters(t *testing.T, m *sdk.ECSAPI, wantError bool, cluste
 func MockECSListContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
-		err = errors.New("ListContainerInstances wrong!")
+		err = errors.New("error: ListContainerInstances wrong")
 	}
 	ciIds := []*string{}
 	for _, id := range ids {
@@ -79,7 +79,7 @@ func MockECSListContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, 
 func MockECSDescribeContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bool, cis ...*ecs.ContainerInstance) {
 	var err error
 	if wantError {
-		err = errors.New("DescribeContainerInstances wrong!")
+		err = errors.New("error: DescribeContainerInstances wrong")
 	}
 	result := &ecs.DescribeContainerInstancesOutput{
 		ContainerInstances: cis,
@@ -99,7 +99,7 @@ func MockECSDescribeContainerInstances(t *testing.T, m *sdk.ECSAPI, wantError bo
 func MockECSListTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
-		err = errors.New("ListTasks wrong!")
+		err = errors.New("error: ListTasks wrong")
 	}
 	tIds := []*string{}
 	for _, id := range ids {
@@ -121,7 +121,7 @@ func MockECSListTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string
 func MockECSDescribeTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ts ...*ecs.Task) {
 	var err error
 	if wantError {
-		err = errors.New("DescribeTasks wrong!")
+		err = errors.New("error: DescribeTasks wrong")
 	}
 	result := &ecs.DescribeTasksOutput{
 		Tasks: ts,
@@ -141,7 +141,7 @@ func MockECSDescribeTasks(t *testing.T, m *sdk.ECSAPI, wantError bool, ts ...*ec
 func MockECSListServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...string) {
 	var err error
 	if wantError {
-		err = errors.New("ListServices wrong!")
+		err = errors.New("error: ListServices wrong")
 	}
 	sIds := []*string{}
 	for _, id := range ids {
@@ -163,7 +163,7 @@ func MockECSListServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ids ...str
 func MockECSDescribeServices(t *testing.T, m *sdk.ECSAPI, wantError bool, ss ...*ecs.Service) {
 	var err error
 	if wantError {
-		err = errors.New("DescribeServices wrong!")
+		err = errors.New("error: DescribeServices wrong")
 	}
 	result := &ecs.DescribeServicesOutput{
 		Services: ss,
@@ -185,7 +185,7 @@ func MockECSDescribeTaskDefinition(t *testing.T, m *sdk.ECSAPI, wantErrorOn int,
 		var err error
 		// If want error is 0 then means disabled.
 		if wantErrorOn-1 == i {
-			err = fmt.Errorf("DescribeTaskDefinition on call %d wrong!", i)
+			err = fmt.Errorf("error: DescribeTaskDefinition on call %d wrong", i)
 		}
 
 		cpyTd := *td

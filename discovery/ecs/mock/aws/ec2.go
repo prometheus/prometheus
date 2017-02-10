@@ -26,7 +26,7 @@ import (
 func MockEC2DescribeInstances(t *testing.T, m *sdk.EC2API, wantError bool, instances ...*ec2.Instance) {
 	var err error
 	if wantError {
-		err = errors.New("DescribeInstances wrong!")
+		err = errors.New("error: DescribeInstances wrong")
 	}
 	result := &ec2.DescribeInstancesOutput{
 		Reservations: []*ec2.Reservation{
