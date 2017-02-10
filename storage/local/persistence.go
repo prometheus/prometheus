@@ -962,7 +962,7 @@ func (p *persistence) dropAndPersistChunks(
 	}
 
 	// We've found the first chunk that should be kept.
-	// First check if the shrink ratio is good enough to perform the the
+	// First check if the shrink ratio is good enough to perform the
 	// actual drop or leave it for next time if it is not worth the effort.
 	fi, err := f.Stat()
 	if err != nil {
