@@ -932,8 +932,9 @@ func (p *persistence) dropAndPersistChunks(
 	chunkIndexToStartSeek := 0
 	if p.minShrinkRatio < 1 {
 		chunkIndexToStartSeek = int(math.Floor(float64(totalChunks) * p.minShrinkRatio))
-	} else {
-		chunkIndexToStartSeek = totalChunks - 1
+	}
+	if chunkIndexToStartSeek >= chunksInFile {
+		chunkIndexToStartSeek = chunksInFile - 1
 	}
 	numDropped = chunkIndexToStartSeek
 
