@@ -1,3 +1,35 @@
+## 1.5.2 / 2017-02-10
+
+* [BUGFIX] Fix series corruption in a special case of series maintenance where
+  the minimum series-file-shrink-ratio kicks in.
+* [BUGFIX] Fix two panic conditions both related to processing a series
+  scheduled to be quarantined.
+* [ENHANCEMENT] Binaries built with Go1.7.5.
+
+## 1.5.1 / 2017-02-07
+
+* [BUGFIX] Don't lose fully persisted memory series during checkpointing.
+* [BUGFIX] Fix intermittently failing relabeling.
+* [BUGFIX] Make `-storage.local.series-file-shrink-ratio` work.
+* [BUGFIX] Remove race condition from TestLoop.
+
+## 1.5.0 / 2017-01-23
+
+* [CHANGE] Use lexicographic order to sort alerts by name.
+* [FEATURE] Add Joyent Triton discovery.
+* [FEATURE] Add scrape targets and alertmanager targets API.
+* [FEATURE] Add various persistence related metrics.
+* [FEATURE] Add various query engine related metrics.
+* [FEATURE] Add ability to limit scrape samples, and related metrics.
+* [FEATURE] Add labeldrop and labelkeep relabelling actions.
+* [FEATURE] Display current working directory on status-page.
+* [ENHANCEMENT] Strictly use ServiceAccount for in cluster configuration on Kubernetes.
+* [ENHANCEMENT] Various performance and memory-management improvements.
+* [BUGFIX] Fix basic auth for alertmanagers configured via flag.
+* [BUGFIX] Don't panic on decoding corrupt data.
+* [BUGFIX] Ignore dotfiles in data directory.
+* [BUGFIX] Abort on intermediate federation errors.
+
 ## 1.4.1 / 2016-11-28
 
 * [BUGFIX] Fix Consul service discovery

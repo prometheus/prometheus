@@ -1376,7 +1376,12 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 
 	defer s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 
-	if series.maybeCloseHeadChunk() {
+	closed, err := series.maybeCloseHeadChunk()
+	if err != nil {
+		s.quarantineSeries(fp, series.metric, err)
+		s.persistErrors.Inc()
+	}
+	if closed {
 		s.incNumChunksToPersist(1)
 	}
 
@@ -1428,6 +1433,11 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 // contains no chunks after dropping old chunks, it is purged entirely. In that
 // case, the method returns true.
 //
+// If a persist error is encountered, the series is queued for quarantine. In
+// that case, the method returns true, too, because the series should not be
+// processed anymore (even if it will only be gone for real once quarantining
+// has been completed).
+//
 // The caller must have locked the fp.
 func (s *MemorySeriesStorage) writeMemorySeries(
 	fp model.Fingerprint, series *memorySeries, beforeTime model.Time,
@@ -1469,7 +1479,7 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 		var offset int
 		offset, persistErr = s.persistence.persistChunks(fp, chunks)
 		if persistErr != nil {
-			return false
+			return true
 		}
 		if series.chunkDescsOffset == -1 {
 			// This is the first chunk persisted for a newly created
@@ -1483,10 +1493,10 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 	newFirstTime, offset, numDroppedFromPersistence, allDroppedFromPersistence, persistErr :=
 		s.persistence.dropAndPersistChunks(fp, beforeTime, chunks)
 	if persistErr != nil {
-		return false
+		return true
 	}
 	if persistErr = series.dropChunks(beforeTime); persistErr != nil {
-		return false
+		return true
 	}
 	if len(series.chunkDescs) == 0 && allDroppedFromPersistence {
 		// All chunks dropped from both memory and persistence. Delete the series for good.
@@ -1503,7 +1513,8 @@ func (s *MemorySeriesStorage) writeMemorySeries(
 		series.chunkDescsOffset -= numDroppedFromPersistence
 		if series.chunkDescsOffset < 0 {
 			persistErr = errors.New("dropped more chunks from persistence than from memory")
-			series.chunkDescsOffset = -1
+			series.chunkDescsOffset = 0
+			return true
 		}
 	}
 	return false

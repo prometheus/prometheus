@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -310,6 +311,7 @@ func newPersistence(
 		dirtyFileName:  dirtyPath,
 		fLock:          fLock,
 		shouldSync:     shouldSync,
+		minShrinkRatio: minShrinkRatio,
 		// Create buffers of length 3*chunkLenWithHeader by default because that is still reasonably small
 		// and at the same time enough for many uses. The contract is to never return buffer smaller than
 		// that to the pool so that callers can rely on a minimum buffer size.
@@ -669,12 +671,39 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			defer fpLocker.Unlock(m.fp)
 
 			chunksToPersist := len(m.series.chunkDescs) - m.series.persistWatermark
-			if len(m.series.chunkDescs) == 0 || chunksToPersist == 0 {
-				// This series was completely purged or archived in the meantime or has
-				// no chunks that need persisting. Ignore.
+			if len(m.series.chunkDescs) == 0 {
+				// This series was completely purged or archived
+				// in the meantime. Ignore.
 				return
 			}
 			realNumberOfSeries++
+
+			// Sanity checks.
+			if m.series.chunkDescsOffset < 0 && m.series.persistWatermark > 0 {
+				panic("encountered unknown chunk desc offset in combination with positive persist watermark")
+			}
+
+			// These are the values to save in the normal case.
+			var (
+				// persistWatermark is zero as we only checkpoint non-persisted chunks.
+				persistWatermark int64
+				// chunkDescsOffset is shifted by the original persistWatermark for the same reason.
+				chunkDescsOffset = int64(m.series.chunkDescsOffset + m.series.persistWatermark)
+				numChunkDescs    = int64(chunksToPersist)
+			)
+			// However, in the special case of a series being fully
+			// persisted but still in memory (i.e. not archived), we
+			// need to save a "placeholder", for which we use just
+			// the chunk desc of the last chunk. Values have to be
+			// adjusted accordingly. (The reason for doing it in
+			// this weird way is to keep the checkpoint format
+			// compatible with older versions.)
+			if chunksToPersist == 0 {
+				persistWatermark = 1
+				chunkDescsOffset-- // Save one chunk desc after all.
+				numChunkDescs = 1
+			}
+
 			// seriesFlags left empty in v2.
 			if err = w.WriteByte(0); err != nil {
 				return
@@ -690,9 +719,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 			if _, err = w.Write(buf); err != nil {
 				return
 			}
-			// persistWatermark. We only checkpoint chunks that need persisting, so
-			// this is always 0.
-			if _, err = codable.EncodeVarint(w, int64(0)); err != nil {
+			if _, err = codable.EncodeVarint(w, persistWatermark); err != nil {
 				return
 			}
 			if m.series.modTime.IsZero() {
@@ -704,25 +731,39 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 					return
 				}
 			}
-			// chunkDescsOffset.
-			if _, err = codable.EncodeVarint(w, int64(m.series.chunkDescsOffset+m.series.persistWatermark)); err != nil {
+			if _, err = codable.EncodeVarint(w, chunkDescsOffset); err != nil {
 				return
 			}
 			if _, err = codable.EncodeVarint(w, int64(m.series.savedFirstTime)); err != nil {
 				return
 			}
-			// Number of chunkDescs.
-			if _, err = codable.EncodeVarint(w, int64(chunksToPersist)); err != nil {
+			if _, err = codable.EncodeVarint(w, numChunkDescs); err != nil {
 				return
 			}
-			for _, chunkDesc := range m.series.chunkDescs[m.series.persistWatermark:] {
-				if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
+			if chunksToPersist == 0 {
+				// Save the one placeholder chunk desc for a fully persisted series.
+				chunkDesc := m.series.chunkDescs[len(m.series.chunkDescs)-1]
+				if _, err = codable.EncodeVarint(w, int64(chunkDesc.FirstTime())); err != nil {
 					return
 				}
-				if err = chunkDesc.C.Marshal(w); err != nil {
+				lt, err := chunkDesc.LastTime()
+				if err != nil {
 					return
 				}
-				p.checkpointChunksWritten.Observe(float64(chunksToPersist))
+				if _, err = codable.EncodeVarint(w, int64(lt)); err != nil {
+					return
+				}
+			} else {
+				// Save (only) the non-persisted chunks.
+				for _, chunkDesc := range m.series.chunkDescs[m.series.persistWatermark:] {
+					if err = w.WriteByte(byte(chunkDesc.C.Encoding())); err != nil {
+						return
+					}
+					if err = chunkDesc.C.Marshal(w); err != nil {
+						return
+					}
+					p.checkpointChunksWritten.Observe(float64(chunksToPersist))
+				}
 			}
 			// Series is checkpointed now, so declare it clean. In case the entire
 			// checkpoint fails later on, this is fine, as the storage's series
@@ -805,12 +846,14 @@ func (p *persistence) loadSeriesMapAndHeads() (sm *seriesMap, chunksToPersist in
 // dropAndPersistChunks deletes all chunks from a series file whose last sample
 // time is before beforeTime, and then appends the provided chunks, leaving out
 // those whose last sample time is before beforeTime. It returns the timestamp
-// of the first sample in the oldest chunk _not_ dropped, the offset within the
-// series file of the first chunk persisted (out of the provided chunks), the
-// number of deleted chunks, and true if all chunks of the series have been
-// deleted (in which case the returned timestamp will be 0 and must be ignored).
-// It is the caller's responsibility to make sure nothing is persisted or loaded
-// for the same fingerprint concurrently.
+// of the first sample in the oldest chunk _not_ dropped, the chunk offset
+// within the series file of the first chunk persisted (out of the provided
+// chunks, or - if no chunks were provided - the chunk offset where chunks would
+// have been persisted, i.e. the end of the file), the number of deleted chunks,
+// and true if all chunks of the series have been deleted (in which case the
+// returned timestamp will be 0 and must be ignored).  It is the caller's
+// responsibility to make sure nothing is persisted or loaded for the same
+// fingerprint concurrently.
 //
 // Returning an error signals problems with the series file. In this case, the
 // caller should quarantine the series.
@@ -878,8 +921,24 @@ func (p *persistence) dropAndPersistChunks(
 	}
 	defer f.Close()
 
+	fi, err := f.Stat()
+	if err != nil {
+		return
+	}
+	chunksInFile := int(fi.Size()) / chunkLenWithHeader
+	totalChunks := chunksInFile + len(chunks)
+
+	// Calculate chunk index from minShrinkRatio, to skip unnecessary chunk header reading.
+	chunkIndexToStartSeek := 0
+	if p.minShrinkRatio < 1 {
+		chunkIndexToStartSeek = int(math.Floor(float64(totalChunks) * p.minShrinkRatio))
+	}
+	if chunkIndexToStartSeek >= chunksInFile {
+		chunkIndexToStartSeek = chunksInFile - 1
+	}
+	numDropped = chunkIndexToStartSeek
+
 	headerBuf := make([]byte, chunkHeaderLen)
-	var firstTimeInFile model.Time
 	// Find the first chunk in the file that should be kept.
 	for ; ; numDropped++ {
 		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
@@ -906,11 +965,6 @@ func (p *persistence) dropAndPersistChunks(
 		if err != nil {
 			return
 		}
-		if numDropped == 0 {
-			firstTimeInFile = model.Time(
-				binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
-			)
-		}
 		lastTime := model.Time(
 			binary.LittleEndian.Uint64(headerBuf[chunkHeaderLastTimeOffset:]),
 		)
@@ -919,20 +973,25 @@ func (p *persistence) dropAndPersistChunks(
 		}
 	}
 
-	// We've found the first chunk that should be kept.
-	// First check if the shrink ratio is good enough to perform the the
-	// actual drop or leave it for next time if it is not worth the effort.
-	fi, err := f.Stat()
-	if err != nil {
-		return
-	}
-	totalChunks := int(fi.Size())/chunkLenWithHeader + len(chunks)
-	if numDropped == 0 || float64(numDropped)/float64(totalChunks) < p.minShrinkRatio {
+	// If numDropped isn't incremented, the minShrinkRatio condition isn't satisfied.
+	if numDropped == chunkIndexToStartSeek {
 		// Nothing to drop. Just adjust the return values and append the chunks (if any).
 		numDropped = 0
-		firstTimeNotDropped = firstTimeInFile
+		_, err = f.Seek(offsetForChunkIndex(0), os.SEEK_SET)
+		if err != nil {
+			return
+		}
+		_, err = io.ReadFull(f, headerBuf)
+		if err != nil {
+			return
+		}
+		firstTimeNotDropped = model.Time(
+			binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
+		)
 		if len(chunks) > 0 {
 			offset, err = p.persistChunks(fp, chunks)
+		} else {
+			offset = chunksInFile
 		}
 		return
 	}

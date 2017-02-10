@@ -42,7 +42,7 @@ var (
 func newTestPersistence(t *testing.T, encoding chunk.Encoding) (*persistence, testutil.Closer) {
 	chunk.DefaultEncoding = encoding
 	dir := testutil.NewTemporaryDirectory("test_persistence", t)
-	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.1)
+	p, err := newPersistence(dir.Path(), false, false, func() bool { return false }, 0.15)
 	if err != nil {
 		dir.Close()
 		t.Fatal(err)
@@ -171,6 +171,27 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 				)
 			}
 
+		}
+	}
+	// Try to drop one chunk, which must be prevented by the shrink
+	// ratio. Since we do not pass in any chunks to persist, the offset
+	// should be the number of chunks in the file.
+	for fp, _ := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 10 {
+			t.Errorf("want offset 10, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunks, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
 		}
 	}
 	// Drop half of the chunks.
@@ -403,14 +424,14 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 			t.Error("all chunks dropped")
 		}
 	}
-	// Drop only the first two chunks should not happen, either.
+	// Drop only the first two chunks should not happen, either. Chunks in file is now 9.
 	for fp := range fpToChunks {
 		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 2, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if offset != 0 {
-			t.Errorf("want offset 0, got %d", offset)
+		if offset != 9 {
+			t.Errorf("want offset 9, got %d", offset)
 		}
 		if firstTime != 0 {
 			t.Errorf("want first time 0, got %d", firstTime)
@@ -441,6 +462,81 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 			t.Error("all chunks dropped")
 		}
 	}
+	// Drop all the chunks again.
+	for fp := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 100, nil)
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 0 {
+			t.Errorf("want offset 0, got %d", offset)
+		}
+		if numDropped != 7 {
+			t.Errorf("want 7 dropped chunks, got %v", numDropped)
+		}
+		if !allDropped {
+			t.Error("not all chunks dropped")
+		}
+	}
+	// Re-add first two of the chunks again.
+	for fp, chunks := range fpToChunks {
+		firstTimeNotDropped, offset, numDropped, allDropped, err :=
+			p.dropAndPersistChunks(fp, model.Earliest, chunks[:2])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := firstTimeNotDropped, model.Time(0); got != want {
+			t.Errorf("Want firstTimeNotDropped %v, got %v.", got, want)
+		}
+		if got, want := offset, 0; got != want {
+			t.Errorf("Want offset %v, got %v.", got, want)
+		}
+		if got, want := numDropped, 0; got != want {
+			t.Errorf("Want numDropped %v, got %v.", got, want)
+		}
+		if allDropped {
+			t.Error("All dropped.")
+		}
+	}
+	// Try to drop the first of the chunks while adding eight more. The drop
+	// should not happen because of the shrink ratio. Also, this time the
+	// minimum cut-off point is within the added chunks and not in the file
+	// anymore.
+	for fp, chunks := range fpToChunks {
+		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, chunks[2:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if offset != 2 {
+			t.Errorf("want offset 2, got %d", offset)
+		}
+		if firstTime != 0 {
+			t.Errorf("want first time 0, got %d", firstTime)
+		}
+		if numDropped != 0 {
+			t.Errorf("want 0 dropped chunk, got %v", numDropped)
+		}
+		if allDropped {
+			t.Error("all chunks dropped")
+		}
+		wantChunks := chunks
+		indexes := make([]int, len(wantChunks))
+		for i := range indexes {
+			indexes[i] = i
+		}
+		gotChunks, err := p.loadChunks(fp, indexes, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, wantChunk := range wantChunks {
+			if !chunksEqual(wantChunk, gotChunks[i]) {
+				t.Errorf("%d. Chunks not equal.", i)
+			}
+		}
+	}
 }
 
 func TestPersistLoadDropChunksType0(t *testing.T) {
@@ -465,7 +561,10 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 	s1.add(model.SamplePair{Timestamp: 1, Value: 3.14})
 	s3.add(model.SamplePair{Timestamp: 2, Value: 2.7})
 	s3.headChunkClosed = true
-	s3.persistWatermark = 1
+	// Create another chunk in s3.
+	s3.add(model.SamplePair{Timestamp: 3, Value: 1.4})
+	s3.headChunkClosed = true
+	s3.persistWatermark = 2
 	for i := 0; i < 10000; i++ {
 		s4.add(model.SamplePair{
 			Timestamp: model.Time(i),
@@ -493,8 +592,8 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loadedSM.length() != 3 {
-		t.Errorf("want 3 series in map, got %d", loadedSM.length())
+	if loadedSM.length() != 4 {
+		t.Errorf("want 4 series in map, got %d", loadedSM.length())
 	}
 	if loadedS1, ok := loadedSM.get(m1.FastFingerprint()); ok {
 		if !reflect.DeepEqual(loadedS1.metric, m1) {
@@ -517,6 +616,28 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 		}
 	} else {
 		t.Errorf("couldn't find %v in loaded map", m1)
+	}
+	if loadedS3, ok := loadedSM.get(m3.FastFingerprint()); ok {
+		if !reflect.DeepEqual(loadedS3.metric, m3) {
+			t.Errorf("want metric %v, got %v", m3, loadedS3.metric)
+		}
+		if loadedS3.head().C != nil {
+			t.Error("head chunk not evicted")
+		}
+		if loadedS3.chunkDescsOffset != 1 {
+			t.Errorf("want chunkDescsOffset 1, got %d", loadedS3.chunkDescsOffset)
+		}
+		if !loadedS3.headChunkClosed {
+			t.Error("headChunkClosed is false")
+		}
+		if loadedS3.head().ChunkFirstTime != 3 {
+			t.Errorf("want ChunkFirstTime in head chunk to be 3, got %d", loadedS3.head().ChunkFirstTime)
+		}
+		if loadedS3.head().ChunkLastTime != 3 {
+			t.Errorf("want ChunkLastTime in head chunk to be 3, got %d", loadedS3.head().ChunkLastTime)
+		}
+	} else {
+		t.Errorf("couldn't find %v in loaded map", m3)
 	}
 	if loadedS4, ok := loadedSM.get(m4.FastFingerprint()); ok {
 		if !reflect.DeepEqual(loadedS4.metric, m4) {
