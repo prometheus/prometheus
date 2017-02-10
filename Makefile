@@ -40,6 +40,10 @@ test:
 	@echo ">> running short tests"
 	@$(GO) test -short $(pkgs)
 
+integration_test:
+	@echo ">> running unit and integration tests"
+	@$(GO) test -short -tags="integration" $(pkgs)
+
 format:
 	@echo ">> formatting code"
 	@$(GO) fmt $(pkgs)
