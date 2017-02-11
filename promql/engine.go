@@ -58,7 +58,7 @@ var (
 		prometheus.SummaryOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "query_time",
+			Name:      "query_duration_seconds",
 			Help:      "Query timmings",
 		},
 		[]string{"slice"},
@@ -389,7 +389,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
 	defer func() {
 		evalTimer.Stop()
 		queryTimingStats.WithLabelValues("eval_total").
-			Observe(float64(evalTimer.ElapsedTime()) / float64(time.Millisecond))
+			Observe(evalTimer.ElapsedTime().Seconds())
 	}()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
@@ -419,7 +419,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	err = ng.populateIterators(ctx, querier, s)
 	prepareTimer.Stop()
 	queryTimingStats.WithLabelValues("prepare_time").
-		Observe(float64(prepareTimer.ElapsedTime()) / float64(time.Millisecond))
+		Observe(prepareTimer.ElapsedTime().Seconds())
 
 	if err != nil {
 		return nil, err
@@ -449,7 +449,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 		evalTimer.Stop()
 		queryTimingStats.WithLabelValues("inner_eval").
-			Observe(float64(evalTimer.ElapsedTime()) / float64(time.Millisecond))
+			Observe(evalTimer.ElapsedTime().Seconds())
 
 		return val, nil
 	}
@@ -507,7 +507,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 	evalTimer.Stop()
 	queryTimingStats.WithLabelValues("inner_eval").
-		Observe(float64(evalTimer.ElapsedTime()) / float64(time.Millisecond))
+		Observe(evalTimer.ElapsedTime().Seconds())
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -520,7 +520,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 	appendTimer.Stop()
 	queryTimingStats.WithLabelValues("result_append").
-		Observe(float64(appendTimer.ElapsedTime()) / float64(time.Millisecond))
+		Observe(appendTimer.ElapsedTime().Seconds())
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -533,7 +533,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sort.Sort(resMatrix)
 	sortTimer.Stop()
 	queryTimingStats.WithLabelValues("result_sort").
-		Observe(float64(sortTimer.ElapsedTime()) / float64(time.Millisecond))
+		Observe(sortTimer.ElapsedTime().Seconds())
 	return resMatrix, nil
 }
 
