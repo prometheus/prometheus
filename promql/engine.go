@@ -577,18 +577,15 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 }
 
 func (ng *Engine) closeIterators(s *EvalStmt) {
-	var countv float64
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for _, it := range n.iterators {
 				it.Close()
-				countv++
 			}
 		case *MatrixSelector:
 			for _, it := range n.iterators {
 				it.Close()
-				countv++
 			}
 		}
 		return true
