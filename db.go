@@ -292,6 +292,9 @@ func (db *DB) compact(i, j int) error {
 }
 
 func (db *DB) retentionCutoff() error {
+	if db.opts.RetentionDuration == 0 {
+		return nil
+	}
 	h := db.heads[len(db.heads)-1]
 	t := h.meta.MinTime - int64(db.opts.RetentionDuration)
 
