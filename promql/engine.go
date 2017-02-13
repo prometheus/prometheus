@@ -99,7 +99,6 @@ func init() {
 	prometheus.MustRegister(queryInnerEval)
 	prometheus.MustRegister(queryResultAppend)
 	prometheus.MustRegister(queryResultSort)
-
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
