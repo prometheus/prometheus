@@ -141,8 +141,12 @@ func (dd *Discovery) refresh(ctx context.Context, name string, ch chan<- []*conf
 		case *dns.SRV:
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
-
-			target = hostPort(addr.Target, int(addr.Port))
+			p := int(addr.Port)
+			// Fill in the port if results had no port, but config has one.
+			if p == 0 {
+				p = dd.port
+			}
+			target = hostPort(addr.Target, p)
 		case *dns.A:
 			target = hostPort(addr.A.String(), dd.port)
 		case *dns.AAAA:
