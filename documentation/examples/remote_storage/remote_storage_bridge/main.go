@@ -29,12 +29,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/storage/remote/graphite"
-	"github.com/prometheus/prometheus/storage/remote/influxdb"
-	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 
 	influx "github.com/influxdb/influxdb/client"
+
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/graphite"
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/influxdb"
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/opentsdb"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 type config struct {
