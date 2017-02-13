@@ -37,18 +37,6 @@ func TestParse(t *testing.T) {
 			valid: false,
 		},
 		{
-			input: []string{"-storage.remote.influxdb-url", ""},
-			valid: true,
-		},
-		{
-			input: []string{"-storage.remote.influxdb-url", "http://localhost:8086/"},
-			valid: true,
-		},
-		{
-			input: []string{"-storage.remote.influxdb-url", "'https://some-url/'"},
-			valid: false,
-		},
-		{
 			input: []string{"-alertmanager.url", ""},
 			valid: true,
 		},
@@ -69,7 +57,6 @@ func TestParse(t *testing.T) {
 	for i, test := range tests {
 		// reset "immutable" config
 		cfg.prometheusURL = ""
-		cfg.influxdbURL = ""
 		cfg.alertmanagerURLs = stringset{}
 
 		err := parse(test.input)
