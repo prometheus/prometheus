@@ -14,10 +14,12 @@ rule_files:
 - "my/*.rules"
 
 remote_write:
-  write_relabel_configs:
-  - source_labels: [__name__]
-    regex:         expensive.*
-    action:        drop
+  - url: http://remote1/push
+    write_relabel_configs:
+    - source_labels: [__name__]
+      regex:         expensive.*
+      action:        drop
+  - url: http://remote2/push
 
 scrape_configs:
 - job_name: prometheus
