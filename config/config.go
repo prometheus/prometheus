@@ -204,7 +204,7 @@ type Config struct {
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
-	RemoteWriteConfig RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
