@@ -212,6 +212,14 @@ func init() {
 		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
 	)
 	cfg.fs.StringVar(
+		&cfg.remote.KafkaBrokerList, "storage.remote.kafka-broker-list", "",
+		"The URL of the remote Kafka server to send samples to. None, if empty.",
+	)
+	cfg.fs.StringVar(
+		&cfg.remote.KafkaTopic, "storage.remote.kafka-topic", "",
+		"The Topix on the Kafka server. None, if empty.",
+	)
+	cfg.fs.StringVar(
 		&cfg.remote.InfluxdbRetentionPolicy, "storage.remote.influxdb.retention-policy", "default",
 		"The InfluxDB retention policy to use.",
 	)

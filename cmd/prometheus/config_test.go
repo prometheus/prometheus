@@ -49,6 +49,14 @@ func TestParse(t *testing.T) {
 			valid: false,
 		},
 		{
+			input: []string{"-storage.remote.kafka-broker-list", "localhost:9092"},
+			valid: true,
+		},
+		{
+			input: []string{"-storage.remote.kafka-topic", "prometheus"},
+			valid: true,
+		},
+		{
 			input: []string{"-alertmanager.url", ""},
 			valid: true,
 		},

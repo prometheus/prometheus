@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/storage/remote/graphite"
 	"github.com/prometheus/prometheus/storage/remote/influxdb"
+	"github.com/prometheus/prometheus/storage/remote/kafka"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 )
 
@@ -61,6 +62,11 @@ func New(o *Options) (*Storage, error) {
 		c := opentsdb.NewClient(o.OpentsdbURL, o.StorageTimeout)
 		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
 	}
+	if o.KafkaBrokerList != "" {
+		print("using kafka broker" + o.KafkaBrokerList)
+		c := kafka.NewClient(o.KafkaBrokerList, o.KafkaTopic)
+		s.queues = append(s.queues, NewStorageQueueManager(c, nil))
+	}
 	if o.InfluxdbURL != nil {
 		conf := influx.Config{
 			URL:      *o.InfluxdbURL,
@@ -87,6 +93,8 @@ type Options struct {
 	InfluxdbPassword        string
 	InfluxdbDatabase        string
 	OpentsdbURL             string
+	KafkaBrokerList         string
+	KafkaTopic              string
 	GraphiteAddress         string
 	GraphiteTransport       string
 	GraphitePrefix          string
