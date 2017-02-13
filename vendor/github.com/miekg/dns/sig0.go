@@ -60,16 +60,15 @@ func (rr *SIG) Sign(k crypto.Signer, m *Msg) ([]byte, error) {
 	}
 
 	rr.Signature = toBase64(signature)
-	sig := string(signature)
 
-	buf = append(buf, sig...)
+	buf = append(buf, signature...)
 	if len(buf) > int(^uint16(0)) {
 		return nil, ErrBuf
 	}
 	// Adjust sig data length
 	rdoff := len(mbuf) + 1 + 2 + 2 + 4
 	rdlen := binary.BigEndian.Uint16(buf[rdoff:])
-	rdlen += uint16(len(sig))
+	rdlen += uint16(len(signature))
 	binary.BigEndian.PutUint16(buf[rdoff:], rdlen)
 	// Adjust additional count
 	adc := binary.BigEndian.Uint16(buf[10:])

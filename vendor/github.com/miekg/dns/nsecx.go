@@ -3,7 +3,6 @@ package dns
 import (
 	"crypto/sha1"
 	"hash"
-	"io"
 	"strings"
 )
 
@@ -36,15 +35,15 @@ func HashName(label string, ha uint8, iter uint16, salt string) string {
 	}
 
 	// k = 0
-	name = append(name, wire...)
-	io.WriteString(s, string(name))
+	s.Write(name)
+	s.Write(wire)
 	nsec3 := s.Sum(nil)
 	// k > 0
 	for k := uint16(0); k < iter; k++ {
 		s.Reset()
-		nsec3 = append(nsec3, wire...)
-		io.WriteString(s, string(nsec3))
-		nsec3 = s.Sum(nil)
+		s.Write(nsec3)
+		s.Write(wire)
+		nsec3 = s.Sum(nsec3[:0])
 	}
 	return toBase32(nsec3)
 }
