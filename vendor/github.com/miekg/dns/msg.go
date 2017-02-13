@@ -16,21 +16,8 @@ import (
 	"math/big"
 	"math/rand"
 	"strconv"
+	"sync"
 )
-
-func init() {
-	// Initialize default math/rand source using crypto/rand to provide better
-	// security without the performance trade-off.
-	buf := make([]byte, 8)
-	_, err := crand.Read(buf)
-	if err != nil {
-		// Failed to read from cryptographic source, fallback to default initial
-		// seed (1) by returning early
-		return
-	}
-	seed := binary.BigEndian.Uint64(buf)
-	rand.Seed(int64(seed))
-}
 
 const maxCompressionOffset = 2 << 13 // We have 14 bits for the compression pointer
 
@@ -66,11 +53,45 @@ var (
 //	dns.Id = func() uint16 { return 3 }
 var Id func() uint16 = id
 
+var (
+	idLock sync.Mutex
+	idRand *rand.Rand
+)
+
 // id returns a 16 bits random number to be used as a
 // message id. The random provided should be good enough.
 func id() uint16 {
-	id32 := rand.Uint32()
-	return uint16(id32)
+	idLock.Lock()
+
+	if idRand == nil {
+		// This (partially) works around
+		// https://github.com/golang/go/issues/11833 by only
+		// seeding idRand upon the first call to id.
+
+		var seed int64
+		var buf [8]byte
+
+		if _, err := crand.Read(buf[:]); err == nil {
+			seed = int64(binary.LittleEndian.Uint64(buf[:]))
+		} else {
+			seed = rand.Int63()
+		}
+
+		idRand = rand.New(rand.NewSource(seed))
+	}
+
+	// The call to idRand.Uint32 must be within the
+	// mutex lock because *rand.Rand is not safe for
+	// concurrent use.
+	//
+	// There is no added performance overhead to calling
+	// idRand.Uint32 inside a mutex lock over just
+	// calling rand.Uint32 as the global math/rand rng
+	// is internally protected by a sync.Mutex.
+	id := uint16(idRand.Uint32())
+
+	idLock.Unlock()
+	return id
 }
 
 // MsgHdr is a a manually-unpacked version of (id, bits).
@@ -203,12 +224,6 @@ func packDomainName(s string, msg []byte, off int, compression map[string]int, c
 					bs[j] = bs[j+2]
 				}
 				ls -= 2
-			} else if bs[i] == 't' {
-				bs[i] = '\t'
-			} else if bs[i] == 'r' {
-				bs[i] = '\r'
-			} else if bs[i] == 'n' {
-				bs[i] = '\n'
 			}
 			escapedDot = bs[i] == '.'
 			bsFresh = false
@@ -335,10 +350,6 @@ Loop:
 					fallthrough
 				case '"', '\\':
 					s = append(s, '\\', b)
-				case '\t':
-					s = append(s, '\\', 't')
-				case '\r':
-					s = append(s, '\\', 'r')
 				default:
 					if b < 32 || b >= 127 { // unprintable use \DDD
 						var buf [3]byte
@@ -431,12 +442,6 @@ func packTxtString(s string, msg []byte, offset int, tmp []byte) (int, error) {
 			if i+2 < len(bs) && isDigit(bs[i]) && isDigit(bs[i+1]) && isDigit(bs[i+2]) {
 				msg[offset] = dddToByte(bs[i:])
 				i += 2
-			} else if bs[i] == 't' {
-				msg[offset] = '\t'
-			} else if bs[i] == 'r' {
-				msg[offset] = '\r'
-			} else if bs[i] == 'n' {
-				msg[offset] = '\n'
 			} else {
 				msg[offset] = bs[i]
 			}
@@ -508,12 +513,6 @@ func unpackTxtString(msg []byte, offset int) (string, int, error) {
 		switch b {
 		case '"', '\\':
 			s = append(s, '\\', b)
-		case '\t':
-			s = append(s, `\t`...)
-		case '\r':
-			s = append(s, `\r`...)
-		case '\n':
-			s = append(s, `\n`...)
 		default:
 			if b < 32 || b > 127 { // unprintable
 				var buf [3]byte
@@ -781,9 +780,6 @@ func (dns *Msg) Unpack(msg []byte) (err error) {
 	if dh, off, err = unpackMsgHdr(msg, off); err != nil {
 		return err
 	}
-	if off == len(msg) {
-		return ErrTruncated
-	}
 
 	dns.Id = dh.Id
 	dns.Response = (dh.Bits & _QR) != 0
@@ -796,6 +792,10 @@ func (dns *Msg) Unpack(msg []byte) (err error) {
 	dns.AuthenticatedData = (dh.Bits & _AD) != 0
 	dns.CheckingDisabled = (dh.Bits & _CD) != 0
 	dns.Rcode = int(dh.Bits & 0xF)
+
+	if off == len(msg) {
+		return ErrTruncated
+	}
 
 	// Optimistically use the count given to us in the header
 	dns.Question = make([]Question, 0, int(dh.Qdcount))
