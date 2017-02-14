@@ -21,15 +21,18 @@ import (
 type WALEntryType byte
 
 const (
-	WALMagic = 0x43AF00EF
+	// WALMagic is a 4 byte number every WAL segment file starts with.
+	WALMagic = uint32(0x43AF00EF)
 
-	// Format versioning flag of a WAL segment file.
-	WALFormatDefault byte = 1
+	// WALFormatDefault is the version flag for the default outer segment file format.
+	WALFormatDefault = byte(1)
+)
 
-	// Entry types in a segment file.
-	WALEntrySymbols = 1
-	WALEntrySeries  = 2
-	WALEntrySamples = 3
+// Entry types in a segment file.
+const (
+	WALEntrySymbols WALEntryType = 1
+	WALEntrySeries  WALEntryType = 2
+	WALEntrySamples WALEntryType = 3
 )
 
 // WAL is a write ahead log for series data. It can only be written to.
@@ -42,9 +45,10 @@ type WAL struct {
 
 	logger        log.Logger
 	flushInterval time.Duration
+	segmentSize   int64
 
 	cur  *bufio.Writer
-	curN int
+	curN int64
 
 	stopc chan struct{}
 	donec chan struct{}
@@ -74,6 +78,7 @@ func OpenWAL(dir string, l log.Logger, flushInterval time.Duration) (*WAL, error
 		flushInterval: flushInterval,
 		donec:         make(chan struct{}),
 		stopc:         make(chan struct{}),
+		segmentSize:   walSegmentSizeBytes,
 	}
 	if err := w.initSegments(); err != nil {
 		return nil, err
@@ -101,7 +106,7 @@ func (w *WAL) ReadAll(h *walHandler) error {
 		dec := newWALDecoder(f, h)
 
 		for {
-			if err := dec.entry(); err != nil {
+			if err := dec.next(); err != nil {
 				if err == io.EOF {
 					// If file end was reached, move on to the next segment.
 					break
@@ -145,7 +150,7 @@ func (w *WAL) initSegments() error {
 		return nil
 	}
 	if len(fns) > 1 {
-		for _, fn := range fns[:len(fns)-2] {
+		for _, fn := range fns[:len(fns)-1] {
 			lf, err := fileutil.TryLockFile(fn, os.O_RDONLY, 0666)
 			if err != nil {
 				return err
@@ -184,17 +189,12 @@ func (w *WAL) initSegments() error {
 // cut finishes the currently active segments and open the next one.
 // The encoder is reset to point to the new segment.
 func (w *WAL) cut() error {
-	// If there's a previous segment, truncate it to its final size
-	// and sync everything to disc.
+	// Sync current tail to disc and close.
 	if tf := w.tail(); tf != nil {
-		off, err := tf.Seek(0, os.SEEK_CUR)
-		if err != nil {
-			return err
-		}
-		if err := tf.Truncate(off); err != nil {
-			return err
-		}
 		if err := w.sync(); err != nil {
+			return err
+		}
+		if err := tf.Close(); err != nil {
 			return err
 		}
 	}
@@ -207,10 +207,7 @@ func (w *WAL) cut() error {
 	if err != nil {
 		return err
 	}
-	if _, err = f.Seek(0, os.SEEK_SET); err != nil {
-		return err
-	}
-	if err = fileutil.Preallocate(f.File, walSegmentSizeBytes, true); err != nil {
+	if err = fileutil.Preallocate(f.File, w.segmentSize, true); err != nil {
 		return err
 	}
 	if err = w.dirFile.Sync(); err != nil {
@@ -228,7 +225,7 @@ func (w *WAL) cut() error {
 
 	w.files = append(w.files, f)
 	w.cur = bufio.NewWriterSize(f, 4*1024*1024)
-	w.curN = len(metab)
+	w.curN = 8
 
 	return nil
 }
@@ -284,15 +281,12 @@ func (w *WAL) Close() error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
-	var merr MultiError
-
 	if err := w.sync(); err != nil {
 		return err
 	}
-	for _, f := range w.files {
-		merr.Add(f.Close())
-	}
-	return merr.Err()
+	// On opening, a WAL must be fully consumed once. Afterwards
+	// only the current segment will still be open.
+	return w.tail().Close()
 }
 
 const (
@@ -308,16 +302,16 @@ func (w *WAL) entry(et WALEntryType, flag byte, buf []byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
-	sz := 6 + 4 + len(buf)
+	sz := int64(6 + 4 + len(buf))
 
-	if w.curN+sz > walSegmentSizeBytes {
+	if w.curN+sz > w.segmentSize {
 		if err := w.cut(); err != nil {
 			return err
 		}
 	}
 
 	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.cur)
+	wr := io.MultiWriter(h, w.cur, os.Stdout)
 
 	b := make([]byte, 6)
 	b[0] = byte(et)
@@ -437,6 +431,20 @@ func newWALDecoder(r io.Reader, h *walHandler) *walDecoder {
 	}
 }
 
+func (d *walDecoder) next() error {
+	t, flag, b, err := d.entry()
+	if err != nil {
+		return err
+	}
+	switch t {
+	case WALEntrySamples:
+		return d.decodeSamples(flag, b)
+	case WALEntrySeries:
+		return d.decodeSamples(flag, b)
+	}
+	return errors.Errorf("unknown WAL entry type %q", t)
+}
+
 func (d *walDecoder) decodeSeries(flag byte, b []byte) error {
 	for len(b) > 0 {
 		l, n := binary.Uvarint(b)
@@ -510,10 +518,13 @@ func (d *walDecoder) decodeSamples(flag byte, b []byte) error {
 	return nil
 }
 
-func (d *walDecoder) entry() error {
+func (d *walDecoder) entry() (WALEntryType, byte, []byte, error) {
+	cw := crc32.NewIEEE()
+	tr := io.TeeReader(d.r, cw)
+
 	b := make([]byte, 6)
-	if _, err := d.r.Read(b); err != nil {
-		return err
+	if _, err := tr.Read(b); err != nil {
+		return 0, 0, nil, err
 	}
 
 	var (
@@ -523,7 +534,7 @@ func (d *walDecoder) entry() error {
 	)
 	// Exit if we reached pre-allocated space.
 	if etype == 0 {
-		return io.EOF
+		return 0, 0, nil, io.EOF
 	}
 
 	if length > len(d.buf) {
@@ -531,26 +542,16 @@ func (d *walDecoder) entry() error {
 	}
 	buf := d.buf[:length]
 
-	cw := crc32.NewIEEE()
-	tr := io.TeeReader(d.r, cw)
-
 	if _, err := tr.Read(buf); err != nil {
-		return err
+		return 0, 0, nil, err
 	}
 	_, err := d.r.Read(b[:4])
 	if err != nil {
-		return err
+		return 0, 0, nil, err
 	}
 	if exp, has := binary.BigEndian.Uint32(b[:4]), cw.Sum32(); has != exp {
-		return errors.Errorf("unexpected CRC32 checksum %x, want %x", has, exp)
+		return 0, 0, nil, errors.Errorf("unexpected CRC32 checksum %x, want %x", has, exp)
 	}
 
-	switch etype {
-	case WALEntrySeries:
-		return d.decodeSeries(flag, buf)
-	case WALEntrySamples:
-		return d.decodeSamples(flag, buf)
-	}
-
-	return errors.Errorf("unknown WAL entry type %q", etype)
+	return etype, flag, buf, nil
 }

@@ -1,11 +1,17 @@
 package tsdb
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 	"sort"
 	"testing"
+	"unsafe"
 
+	"github.com/fabxc/tsdb/labels"
+
+	promlabels "github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,4 +65,30 @@ func BenchmarkCreateSeries(b *testing.B) {
 			h.create(l.Hash(), l)
 		}
 	})
+}
+
+func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	p := textparse.New(b)
+	i := 0
+	var mets []labels.Labels
+	hashes := map[uint64]struct{}{}
+
+	for p.Next() && i < n {
+		m := make(labels.Labels, 0, 10)
+		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
+
+		h := m.Hash()
+		if _, ok := hashes[h]; ok {
+			continue
+		}
+		mets = append(mets, m)
+		hashes[h] = struct{}{}
+		i++
+	}
+	return mets, p.Err()
 }
