@@ -97,7 +97,7 @@ type walHandler struct {
 
 // ReadAll consumes all entries in the WAL and triggers the registered handlers.
 func (w *WAL) ReadAll(h *walHandler) error {
-	for _, f := range w.files {
+	for i, f := range w.files {
 		dec := newWALDecoder(f, h)
 
 		for {
@@ -106,6 +106,13 @@ func (w *WAL) ReadAll(h *walHandler) error {
 					// If file end was reached, move on to the next segment.
 					break
 				}
+				return err
+			}
+		}
+
+		// Close completed file after we are done reading it.
+		if i < len(w.files)-1 {
+			if err := f.Close(); err != nil {
 				return err
 			}
 		}
@@ -524,13 +531,18 @@ func (d *walDecoder) entry() error {
 	}
 	buf := d.buf[:length]
 
-	if _, err := d.r.Read(buf); err != nil {
+	cw := crc32.NewIEEE()
+	tr := io.TeeReader(d.r, cw)
+
+	if _, err := tr.Read(buf); err != nil {
 		return err
 	}
-	// Read away checksum.
-	// TODO(fabxc): verify it
-	if _, err := d.r.Read(b[:4]); err != nil {
+	_, err := d.r.Read(b[:4])
+	if err != nil {
 		return err
+	}
+	if exp, has := binary.BigEndian.Uint32(b[:4]), cw.Sum32(); has != exp {
+		return errors.Errorf("unexpected CRC32 checksum %x, want %x", has, exp)
 	}
 
 	switch etype {
