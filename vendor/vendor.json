@@ -1,6 +1,6 @@
 {
 	"comment": "",
-	"ignore": "test appengine",
+	"ignore": "test",
 	"package": [
 		{
 			"checksumSHA1": "Cslv4/ITyQmgjSUhNXFu8q5bqOU=",
@@ -508,7 +508,7 @@
 			"revisionTime": "2015-04-06T19:39:34+02:00"
 		},
 		{
-			"checksumSHA1": "wJxkqZ80Ux6+klKr1+3erSZjVnQ=",
+			"checksumSHA1": "UoQnBcZrj1gvLAK+MGNB+E7+AIE=",
 			"path": "github.com/miekg/dns",
 			"revision": "672033dedc09500ca4d340760d0b80b9c0b198bd",
 			"revisionTime": "2017-02-13T20:16:50Z"
