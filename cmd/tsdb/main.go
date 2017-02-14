@@ -91,10 +91,10 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 	dir := filepath.Join(b.outPath, "storage")
 
 	st, err := tsdb.OpenPartitioned(dir, 1, nil, &tsdb.Options{
-		WALFlushInterval:  5 * time.Second,
+		WALFlushInterval:  200 * time.Millisecond,
 		RetentionDuration: 1 * 24 * 60 * 60 * 1000, // 1 days in milliseconds
-		MinBlockDuration:  2 * 60 * 60 * 1000,      // 2 hours in milliseconds
-		MaxBlockDuration:  16 * 60 * 60 * 1000,     // 1 days in milliseconds
+		MinBlockDuration:  3 * 60 * 60 * 1000,      // 2 hours in milliseconds
+		MaxBlockDuration:  24 * 60 * 60 * 1000,     // 1 days in milliseconds
 		AppendableBlocks:  2,
 	})
 	if err != nil {
@@ -128,7 +128,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dur := measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		total, err = b.ingestScrapes(metrics, 4000)
+		total, err = b.ingestScrapes(metrics, 3000)
 		if err != nil {
 			exitWithError(err)
 		}

@@ -334,7 +334,7 @@ func (db *DB) initBlocks() error {
 	}
 
 	for _, dir := range dirs {
-		if fileutil.Exist(filepath.Join(dir, walFileName)) {
+		if fileutil.Exist(filepath.Join(dir, walDirName)) {
 			h, err := openHeadBlock(dir, db.logger)
 			if err != nil {
 				return err
@@ -601,7 +601,7 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 func (db *DB) cut(mint int64) (*headBlock, error) {
 	maxt := mint + int64(db.opts.MinBlockDuration)
 
-	dir, seq, err := nextSequenceDir(db.dir, "b-")
+	dir, seq, err := nextSequenceFile(db.dir, "b-")
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +651,32 @@ func blockDirs(dir string) ([]string, error) {
 	return dirs, nil
 }
 
-func nextSequenceDir(dir, prefix string) (string, int, error) {
+func sequenceFiles(dir, prefix string) ([]string, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var res []string
+
+	for _, fi := range files {
+		if isSequenceFile(fi, prefix) {
+			res = append(res, filepath.Join(dir, fi.Name()))
+		}
+	}
+	return res, nil
+}
+
+func isSequenceFile(fi os.FileInfo, prefix string) bool {
+	if !strings.HasPrefix(fi.Name(), prefix) {
+		return false
+	}
+	if _, err := strconv.ParseUint(fi.Name()[len(prefix):], 10, 32); err != nil {
+		return false
+	}
+	return true
+}
+
+func nextSequenceFile(dir, prefix string) (string, int, error) {
 	names, err := fileutil.ReadDir(dir)
 	if err != nil {
 		return "", 0, err
