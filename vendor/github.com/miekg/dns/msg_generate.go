@@ -117,9 +117,9 @@ return off, err
 			switch {
 			case st.Tag(i) == `dns:"-"`: // ignored
 			case st.Tag(i) == `dns:"cdomain-name"`:
-				fallthrough
-			case st.Tag(i) == `dns:"domain-name"`:
 				o("off, err = PackDomainName(rr.%s, msg, off, compression, compress)\n")
+			case st.Tag(i) == `dns:"domain-name"`:
+				o("off, err = PackDomainName(rr.%s, msg, off, compression, false)\n")
 			case st.Tag(i) == `dns:"a"`:
 				o("off, err = packDataA(rr.%s, msg, off)\n")
 			case st.Tag(i) == `dns:"aaaa"`:
