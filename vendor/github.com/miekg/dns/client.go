@@ -300,6 +300,18 @@ func tcpMsgLen(t io.Reader) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	// As seen with my local router/switch, retursn 1 byte on the above read,
+	// resulting a a ShortRead. Just write it out (instead of loop) and read the
+	// other byte.
+	if n == 1 {
+		n1, err := t.Read(p[1:])
+		if err != nil {
+			return 0, err
+		}
+		n += n1
+	}
+
 	if n != 2 {
 		return 0, ErrShortRead
 	}
@@ -400,7 +412,7 @@ func (co *Conn) Write(p []byte) (n int, err error) {
 		n, err := io.Copy(w, bytes.NewReader(p))
 		return int(n), err
 	}
-	n, err = co.Conn.(*net.UDPConn).Write(p)
+	n, err = co.Conn.Write(p)
 	return n, err
 }
 
