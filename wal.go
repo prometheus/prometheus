@@ -3,6 +3,7 @@ package tsdb
 import (
 	"bufio"
 	"encoding/binary"
+	"hash"
 	"hash/crc32"
 	"io"
 	"math"
@@ -47,8 +48,9 @@ type WAL struct {
 	flushInterval time.Duration
 	segmentSize   int64
 
-	cur  *bufio.Writer
-	curN int64
+	crc32 hash.Hash32
+	cur   *bufio.Writer
+	curN  int64
 
 	stopc chan struct{}
 	donec chan struct{}
@@ -79,6 +81,7 @@ func OpenWAL(dir string, l log.Logger, flushInterval time.Duration) (*WAL, error
 		donec:         make(chan struct{}),
 		stopc:         make(chan struct{}),
 		segmentSize:   walSegmentSizeBytes,
+		crc32:         crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 	}
 	if err := w.initSegments(); err != nil {
 		return nil, err
@@ -96,7 +99,7 @@ func (w *WAL) Reader() *WALReader {
 	for _, f := range w.files {
 		rs = append(rs, f)
 	}
-	return &WALReader{rs: rs}
+	return NewWALReader(rs...)
 }
 
 // Log writes a batch of new series labels and samples to the log.
@@ -301,8 +304,8 @@ func (w *WAL) entry(et WALEntryType, flag byte, buf []byte) error {
 		}
 	}
 
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.cur)
+	w.crc32.Reset()
+	wr := io.MultiWriter(w.crc32, w.cur)
 
 	b := make([]byte, 6)
 	b[0] = byte(et)
@@ -316,7 +319,7 @@ func (w *WAL) entry(et WALEntryType, flag byte, buf []byte) error {
 	if _, err := wr.Write(buf); err != nil {
 		return err
 	}
-	if _, err := w.cur.Write(h.Sum(nil)); err != nil {
+	if _, err := w.cur.Write(w.crc32.Sum(nil)); err != nil {
 		return err
 	}
 
@@ -407,9 +410,10 @@ func (w *WAL) encodeSamples(samples []refdSample) error {
 
 // WALReader decodes and emits write ahead log entries.
 type WALReader struct {
-	rs  []io.ReadCloser
-	cur int
-	buf []byte
+	rs    []io.ReadCloser
+	cur   int
+	buf   []byte
+	crc32 hash.Hash32
 
 	err     error
 	labels  []labels.Labels
@@ -419,8 +423,9 @@ type WALReader struct {
 // NewWALReader returns a new WALReader over the sequence of the given ReadClosers.
 func NewWALReader(rs ...io.ReadCloser) *WALReader {
 	return &WALReader{
-		rs:  rs,
-		buf: make([]byte, 0, 1024*1024),
+		rs:    rs,
+		buf:   make([]byte, 0, 128*4096),
+		crc32: crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 	}
 }
 
@@ -483,8 +488,8 @@ func (r *WALReader) Next() bool {
 }
 
 func (r *WALReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
-	cw := crc32.NewIEEE()
-	tr := io.TeeReader(cr, cw)
+	r.crc32.Reset()
+	tr := io.TeeReader(cr, r.crc32)
 
 	b := make([]byte, 6)
 	if _, err := tr.Read(b); err != nil {
@@ -513,7 +518,7 @@ func (r *WALReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	if exp, has := binary.BigEndian.Uint32(b[:4]), cw.Sum32(); has != exp {
+	if exp, has := binary.BigEndian.Uint32(b[:4]), r.crc32.Sum32(); has != exp {
 		return 0, 0, nil, errors.Errorf("unexpected CRC32 checksum %x, want %x", has, exp)
 	}
 

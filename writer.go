@@ -3,6 +3,7 @@ package tsdb
 import (
 	"bufio"
 	"encoding/binary"
+	"hash"
 	"hash/crc32"
 	"io"
 	"sort"
@@ -42,10 +43,11 @@ type SeriesWriter interface {
 // seriesWriter implements the SeriesWriter interface for the standard
 // serialization format.
 type seriesWriter struct {
-	ow io.Writer
-	w  *bufio.Writer
-	n  int64
-	c  int
+	ow    io.Writer
+	w     *bufio.Writer
+	n     int64
+	c     int
+	crc32 hash.Hash
 
 	index IndexWriter
 }
@@ -55,6 +57,7 @@ func newSeriesWriter(w io.Writer, index IndexWriter) *seriesWriter {
 		ow:    w,
 		w:     bufio.NewWriterSize(w, 1*1024*1024),
 		n:     0,
+		crc32: crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 		index: index,
 	}
 }
@@ -82,9 +85,8 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkM
 		}
 	}
 
-	// TODO(fabxc): is crc32 enough for chunks of one series?
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
+	w.crc32.Reset()
+	wr := io.MultiWriter(w.crc32, w.w)
 
 	// For normal reads we don't need the number of the chunk section but
 	// it allows us to verify checksums without reading the index file.
@@ -117,7 +119,7 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkM
 		chk.Chunk = nil
 	}
 
-	if err := w.write(w.w, h.Sum(nil)); err != nil {
+	if err := w.write(w.w, w.crc32.Sum(nil)); err != nil {
 		return err
 	}
 
@@ -195,6 +197,8 @@ type indexWriter struct {
 	symbols      map[string]uint32 // symbol offsets
 	labelIndexes []hashEntry       // label index offsets
 	postings     []hashEntry       // postings lists offsets
+
+	crc32 hash.Hash
 }
 
 func newIndexWriter(w io.Writer) *indexWriter {
@@ -204,6 +208,7 @@ func newIndexWriter(w io.Writer) *indexWriter {
 		n:       0,
 		symbols: make(map[string]uint32, 4096),
 		series:  make(map[uint32]*indexWriterSeries, 4096),
+		crc32:   crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 	}
 }
 
@@ -215,8 +220,8 @@ func (w *indexWriter) write(wr io.Writer, b []byte) error {
 
 // section writes a CRC32 checksummed section of length l and guarded by flag.
 func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) error {
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
+	w.crc32.Reset()
+	wr := io.MultiWriter(w.crc32, w.w)
 
 	b := [5]byte{flag, 0, 0, 0, 0}
 	binary.BigEndian.PutUint32(b[1:], l)
@@ -228,7 +233,7 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 	if err := f(wr); err != nil {
 		return errors.Wrap(err, "contents write func")
 	}
-	if err := w.write(w.w, h.Sum(nil)); err != nil {
+	if err := w.write(w.w, w.crc32.Sum(nil)); err != nil {
 		return errors.Wrap(err, "writing checksum")
 	}
 	return nil
