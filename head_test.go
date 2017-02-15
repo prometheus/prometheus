@@ -1,7 +1,6 @@
 package tsdb
 
 import (
-	"io"
 	"io/ioutil"
 	"os"
 	"sort"
@@ -43,11 +42,7 @@ func TestPositionMapper(t *testing.T) {
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
-	f, err := os.Open("cmd/tsdb/testdata.1m")
-	require.NoError(b, err)
-	defer f.Close()
-
-	lbls, err := readPrometheusLabels(f, 1e6)
+	lbls, err := readPrometheusLabels("cmd/tsdb/testdata.1m", 1e6)
 	require.NoError(b, err)
 
 	b.Run("", func(b *testing.B) {
@@ -67,8 +62,14 @@ func BenchmarkCreateSeries(b *testing.B) {
 	})
 }
 
-func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
-	b, err := ioutil.ReadAll(r)
+func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
+	f, err := os.Open(fn)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	b, err := ioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}

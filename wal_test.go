@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"testing"
 
@@ -106,10 +107,62 @@ func TestWAL_cut(t *testing.T) {
 
 		// We cannot actually check for correct pre-allocation as it is
 		// optional per filesystem and handled transparently.
-		et, flag, b, err := newWALDecoder(f, nil).entry()
+		et, flag, b, err := NewWALReader(f).nextEntry()
 		require.NoError(t, err)
 		require.Equal(t, WALEntrySeries, et)
 		require.Equal(t, flag, byte(walSeriesSimple))
 		require.Equal(t, []byte("Hello World!!"), b)
 	}
+}
+
+// Symmetrical test of reading and writing to the WAL via its main interface.
+func TestWAL_Log_Restore(t *testing.T) {
+	// Generate testing data. It does not make semantical sense but
+	// for the purpose of this test.
+	series, err := readPrometheusLabels("testdata/20k.series", 10000)
+	require.NoError(t, err)
+
+	var samples []refdSample
+	for i := 0; i < 200000; i++ {
+		samples = append(samples, refdSample{
+			ref: uint64(i % 10000),
+			t:   int64(i * 2),
+			v:   rand.Float64(),
+		})
+	}
+
+	dir, err := ioutil.TempDir("", "test_wal_log_restore")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	w, err := OpenWAL(dir, nil, 0)
+	require.NoError(t, err)
+
+	// Set smaller segment size so we can actually write several files.
+	w.segmentSize = 300 * 1000
+
+	for i := 0; i < len(series); i += 100 {
+		require.NoError(t, w.Log(series[i:i+100], samples[i*10:(i+100)*10]))
+	}
+
+	require.NoError(t, w.Close())
+
+	w, err = OpenWAL(dir, nil, 0)
+	r := w.Reader()
+
+	var i, j int
+
+	for r.Next() {
+		lsets, smpls := r.At()
+
+		if l := len(lsets); l > 0 {
+			require.Equal(t, series[i:i+l], lsets)
+			i += l
+		}
+		if l := len(smpls); l > 0 {
+			require.Equal(t, samples[j:j+l], smpls)
+			j += l
+		}
+	}
+	require.NoError(t, r.Err())
 }

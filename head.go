@@ -98,25 +98,26 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		meta:     *meta,
 	}
 
-	// Replay contents of the write ahead log.
-	if err = wal.ReadAll(&walHandler{
-		series: func(lset labels.Labels) error {
+	r := wal.Reader()
+
+	for r.Next() {
+		series, samples := r.At()
+
+		for _, lset := range series {
 			h.create(lset.Hash(), lset)
 			h.meta.Stats.NumSeries++
-			return nil
-		},
-		sample: func(s refdSample) error {
+		}
+		for _, s := range samples {
 			h.series[s.ref].append(s.t, s.v)
 
 			if !h.inBounds(s.t) {
-				return ErrOutOfBounds
+				return nil, errors.Wrap(ErrOutOfBounds, "consume WAL")
 			}
-
 			h.meta.Stats.NumSamples++
-			return nil
-		},
-	}); err != nil {
-		return nil, err
+		}
+	}
+	if err := r.Err(); err != nil {
+		return nil, errors.Wrap(err, "consume WAL")
 	}
 
 	h.updateMapping()
