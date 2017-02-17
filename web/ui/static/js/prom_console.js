@@ -505,6 +505,8 @@ PromConsole.Graph.prototype._render = function(data) {
   xAxis.render();
   yAxis.render();
   graph.render();
+
+  // Keep a reference so that further updates (e.g. annotations) can be made.
   this.rickshawGraph = graph;
 };
 
