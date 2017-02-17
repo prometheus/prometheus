@@ -180,6 +180,7 @@ type MemorySeriesStorage struct {
 	persistErrors                 prometheus.Counter
 	queuedChunksToPersist         prometheus.Counter
 	numSeries                     prometheus.Gauge
+	numHeadChunks                 prometheus.Gauge
 	dirtySeries                   prometheus.Gauge
 	seriesOps                     *prometheus.CounterVec
 	ingestedSamplesCount          prometheus.Counter
@@ -253,6 +254,12 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 			Subsystem: subsystem,
 			Name:      "memory_series",
 			Help:      "The current number of series in memory.",
+		}),
+		numHeadChunks: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "open_head_chunks",
+			Help:      "The current number of open head chunks.",
 		}),
 		dirtySeries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -372,6 +379,14 @@ func (s *MemorySeriesStorage) Start() (err error) {
 
 	log.Info("Loading series map and head chunks...")
 	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
+	for fp := range s.fpToSeries.fpIter() {
+		if series, ok := s.fpToSeries.get(fp); ok {
+			if !series.headChunkClosed {
+				s.numHeadChunks.Inc()
+			}
+		}
+	}
+
 	if err != nil {
 		return err
 	}
@@ -977,6 +992,9 @@ func (s *MemorySeriesStorage) getOrCreateSeries(fp model.Fingerprint, m model.Me
 		}
 		s.fpToSeries.put(fp, series)
 		s.numSeries.Inc()
+		if !series.headChunkClosed {
+			s.numHeadChunks.Inc()
+		}
 	}
 	return series, nil
 }
@@ -1383,6 +1401,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 	}
 	if closed {
 		s.incNumChunksToPersist(1)
+		s.numHeadChunks.Dec()
 	}
 
 	seriesWasDirty := series.dirty
@@ -1783,6 +1802,7 @@ func (s *MemorySeriesStorage) Describe(ch chan<- *prometheus.Desc) {
 	ch <- maxChunksToPersistDesc
 	ch <- numChunksToPersistDesc
 	ch <- s.numSeries.Desc()
+	ch <- s.numHeadChunks.Desc()
 	ch <- s.dirtySeries.Desc()
 	s.seriesOps.Describe(ch)
 	ch <- s.ingestedSamplesCount.Desc()
@@ -1812,6 +1832,7 @@ func (s *MemorySeriesStorage) Collect(ch chan<- prometheus.Metric) {
 		float64(s.getNumChunksToPersist()),
 	)
 	ch <- s.numSeries
+	ch <- s.numHeadChunks
 	ch <- s.dirtySeries
 	s.seriesOps.Collect(ch)
 	ch <- s.ingestedSamplesCount
