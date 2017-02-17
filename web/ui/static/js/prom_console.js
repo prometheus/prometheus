@@ -332,6 +332,7 @@ PromConsole.Graph = function(params) {
 
   this.params = params;
   this.rendered_data = null;
+  this.rickshawGraph = null;
   PromConsole._graph_registry.push(this);
 
   /*
@@ -504,6 +505,7 @@ PromConsole.Graph.prototype._render = function(data) {
   xAxis.render();
   yAxis.render();
   graph.render();
+  this.rickshawGraph = graph;
 };
 
 PromConsole.Graph.prototype._clearGraph = function() {
@@ -513,6 +515,7 @@ PromConsole.Graph.prototype._clearGraph = function() {
   while (this.legendDiv.lastChild) {
     this.legendDiv.removeChild(this.legendDiv.lastChild);
   }
+  this.rickshawGraph = null;
 };
 
 PromConsole.Graph.prototype._xhrs = [];
