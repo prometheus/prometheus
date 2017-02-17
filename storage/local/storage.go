@@ -383,7 +383,7 @@ func (s *MemorySeriesStorage) Start() (err error) {
 	for fp := range s.fpToSeries.fpIter() {
 		if series, ok := s.fpToSeries.get(fp); ok {
 			if !series.headChunkClosed {
-				openHeadCount += 1
+				openHeadCount++
 			}
 		}
 	}
