@@ -332,6 +332,7 @@ PromConsole.Graph = function(params) {
 
   this.params = params;
   this.rendered_data = null;
+  // Keep a reference so that further updates (e.g. annotations) can be made.
   this.rickshawGraph = null;
   PromConsole._graph_registry.push(this);
 
@@ -506,7 +507,6 @@ PromConsole.Graph.prototype._render = function(data) {
   yAxis.render();
   graph.render();
 
-  // Keep a reference so that further updates (e.g. annotations) can be made.
   this.rickshawGraph = graph;
 };
 
