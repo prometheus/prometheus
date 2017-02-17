@@ -258,7 +258,7 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 		numHeadChunks: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "num_head_chunks_open",
+			Name:      "open_head_chunks",
 			Help:      "The current number of open head chunks.",
 		}),
 		dirtySeries: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -379,15 +379,13 @@ func (s *MemorySeriesStorage) Start() (err error) {
 
 	log.Info("Loading series map and head chunks...")
 	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
-	openHeadCount := 0
 	for fp := range s.fpToSeries.fpIter() {
 		if series, ok := s.fpToSeries.get(fp); ok {
 			if !series.headChunkClosed {
-				openHeadCount++
+				s.numHeadChunks.Inc()
 			}
 		}
 	}
-	s.numHeadChunks.Set(float64(openHeadCount))
 
 	if err != nil {
 		return err
