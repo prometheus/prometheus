@@ -332,7 +332,8 @@ PromConsole.Graph = function(params) {
 
   this.params = params;
   this.rendered_data = null;
-  // Keep a reference so that further updates (e.g. annotations) can be made.
+  // Keep a reference so that further updates (e.g. annotations) can be made
+  // by the user in their templates.
   this.rickshawGraph = null;
   PromConsole._graph_registry.push(this);
 
