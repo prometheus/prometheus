@@ -130,11 +130,11 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, errors.Wrap(err, "open index file")
 	}
 
-	sr, err := newSeriesReader(chunksf.b)
+	sr, err := newSeriesReader([][]byte{chunksf.b})
 	if err != nil {
 		return nil, errors.Wrap(err, "create series reader")
 	}
-	ir, err := newIndexReader(sr, indexf.b)
+	ir, err := newIndexReader(indexf.b)
 	if err != nil {
 		return nil, errors.Wrap(err, "create index reader")
 	}

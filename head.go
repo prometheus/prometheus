@@ -364,14 +364,17 @@ type headSeriesReader struct {
 }
 
 // Chunk returns the chunk for the reference number.
-func (h *headSeriesReader) Chunk(ref uint32) (chunks.Chunk, error) {
+func (h *headSeriesReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
+	si := ref >> 32
+	ci := (ref << 32) >> 32
+
 	c := &safeChunk{
-		Chunk: h.series[ref>>8].chunks[int((ref<<24)>>24)].chunk,
-		s:     h.series[ref>>8],
-		i:     int((ref << 24) >> 24),
+		Chunk: h.series[si].chunks[ci].chunk,
+		s:     h.series[si],
+		i:     int(ci),
 	}
 	return c, nil
 }
@@ -440,7 +443,7 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error)
 		metas = append(metas, ChunkMeta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
-			Ref:     (ref << 8) | uint32(i),
+			Ref:     (uint64(ref) << 32) | uint64(i),
 		})
 	}
 

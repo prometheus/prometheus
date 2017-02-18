@@ -491,7 +491,7 @@ type chunkSeries struct {
 
 	// chunk is a function that retrieves chunks based on a reference
 	// number contained in the chunk meta information.
-	chunk func(ref uint32) (chunks.Chunk, error)
+	chunk func(ref uint64) (chunks.Chunk, error)
 }
 
 func (s *chunkSeries) Labels() labels.Labels {

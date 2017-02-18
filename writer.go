@@ -103,7 +103,7 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkM
 	for i := range chks {
 		chk := &chks[i]
 
-		chk.Ref = uint32(w.n)
+		chk.Ref = uint64(w.n)
 
 		n = binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
 
@@ -148,7 +148,7 @@ type ChunkMeta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
 	// Generally, only one of them is set.
-	Ref   uint32
+	Ref   uint64
 	Chunk chunks.Chunk
 
 	MinTime, MaxTime int64 // time range the data covers
