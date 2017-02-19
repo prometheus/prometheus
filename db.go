@@ -21,6 +21,7 @@ import (
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/nightlyone/lockfile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -86,6 +87,7 @@ const sep = '\xff'
 // a hashed partition of a seriedb.
 type DB struct {
 	dir     string
+	lockf   lockfile.Lockfile
 	logger  log.Logger
 	metrics *dbMetrics
 	opts    *Options
@@ -130,11 +132,22 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 
 // Open returns a new DB in the given directory.
 func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
-	if !fileutil.Exist(dir) {
-		if err := os.MkdirAll(dir, 0777); err != nil {
-			return nil, err
-		}
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return nil, err
 	}
+
+	absdir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
+	if err != nil {
+		return nil, err
+	}
+	if err := lockf.TryLock(); err != nil {
+		return nil, errors.Wrapf(err, "open DB in %s", dir)
+	}
+
 	// var r prometheus.Registerer
 	r := prometheus.DefaultRegisterer
 
@@ -147,6 +160,7 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 
 	db = &DB{
 		dir:      dir,
+		lockf:    lockf,
 		logger:   logger,
 		metrics:  newDBMetrics(r),
 		opts:     opts,
@@ -373,6 +387,8 @@ func (db *DB) Close() error {
 	for _, hb := range db.heads {
 		merr.Add(hb.Close())
 	}
+
+	merr.Add(db.lockf.Unlock())
 
 	return merr.Err()
 }

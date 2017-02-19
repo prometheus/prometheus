@@ -42,7 +42,7 @@ type WAL struct {
 	mtx sync.Mutex
 
 	dirFile *os.File
-	files   []*fileutil.LockedFile
+	files   []*os.File
 
 	logger        log.Logger
 	flushInterval time.Duration
@@ -128,19 +128,19 @@ func (w *WAL) initSegments() error {
 	}
 	if len(fns) > 1 {
 		for _, fn := range fns[:len(fns)-1] {
-			lf, err := fileutil.TryLockFile(fn, os.O_RDONLY, 0666)
+			f, err := os.Open(fn)
 			if err != nil {
 				return err
 			}
-			w.files = append(w.files, lf)
+			w.files = append(w.files, f)
 		}
 	}
 	// The most recent WAL file is the one we have to keep appending to.
-	lf, err := fileutil.TryLockFile(fns[len(fns)-1], os.O_RDWR, 0666)
+	f, err := os.OpenFile(fns[len(fns)-1], os.O_RDWR, 0666)
 	if err != nil {
 		return err
 	}
-	w.files = append(w.files, lf)
+	w.files = append(w.files, f)
 
 	// Consume and validate meta headers.
 	for _, f := range w.files {
@@ -187,11 +187,11 @@ func (w *WAL) cut() error {
 	if err != nil {
 		return err
 	}
-	f, err := fileutil.LockFile(p, os.O_RDWR|os.O_CREATE, 0666)
+	f, err := os.Create(p)
 	if err != nil {
 		return err
 	}
-	if err = fileutil.Preallocate(f.File, w.segmentSize, true); err != nil {
+	if err = fileutil.Preallocate(f, w.segmentSize, true); err != nil {
 		return err
 	}
 	if err = w.dirFile.Sync(); err != nil {
@@ -214,7 +214,7 @@ func (w *WAL) cut() error {
 	return nil
 }
 
-func (w *WAL) tail() *fileutil.LockedFile {
+func (w *WAL) tail() *os.File {
 	if len(w.files) == 0 {
 		return nil
 	}
@@ -235,7 +235,7 @@ func (w *WAL) sync() error {
 	if err := w.cur.Flush(); err != nil {
 		return err
 	}
-	return fileutil.Fdatasync(w.tail().File)
+	return fileutil.Fdatasync(w.tail())
 }
 
 func (w *WAL) run(interval time.Duration) {

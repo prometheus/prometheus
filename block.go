@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/pkg/errors"
 )
 
@@ -175,14 +174,12 @@ func indexFileName(path string) string {
 }
 
 type mmapFile struct {
-	f *fileutil.LockedFile
+	f *os.File
 	b []byte
 }
 
 func openMmapFile(path string) (*mmapFile, error) {
-	// We have to open the file in RDWR for the lock to work with fileutil.
-	// TODO(fabxc): use own flock call that supports multi-reader.
-	f, err := fileutil.TryLockFile(path, os.O_RDWR, 0666)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "try lock file")
 	}
@@ -191,7 +188,7 @@ func openMmapFile(path string) (*mmapFile, error) {
 		return nil, errors.Wrap(err, "stat")
 	}
 
-	b, err := mmap(f.File, int(info.Size()))
+	b, err := mmap(f, int(info.Size()))
 	if err != nil {
 		return nil, errors.Wrap(err, "mmap")
 	}
