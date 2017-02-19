@@ -177,7 +177,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	}
 
 	indexw := newIndexWriter(indexf)
-	chunkw := newSeriesWriter(chunkf, indexw)
+	chunkw := newChunkWriter(chunkf)
 
 	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
@@ -204,7 +204,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	return nil
 }
 
-func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw SeriesWriter) error {
+func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw ChunkWriter) error {
 	var set compactionSet
 
 	for i, b := range blocks {
@@ -238,9 +238,11 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 
 	for set.Next() {
 		lset, chunks := set.At()
-		if err := chunkw.WriteSeries(i, lset, chunks); err != nil {
+		if err := chunkw.WriteChunks(chunks...); err != nil {
 			return err
 		}
+
+		indexw.AddSeries(i, lset, chunks...)
 
 		meta.Stats.NumChunks += uint64(len(chunks))
 		meta.Stats.NumSeries++
