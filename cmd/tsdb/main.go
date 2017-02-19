@@ -50,7 +50,7 @@ type writeBenchmark struct {
 	cleanup    bool
 	numMetrics int
 
-	storage *tsdb.PartitionedDB
+	storage *tsdb.DB
 
 	cpuprof   *os.File
 	memprof   *os.File
@@ -90,7 +90,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	st, err := tsdb.OpenPartitioned(dir, 1, nil, &tsdb.Options{
+	st, err := tsdb.Open(dir, nil, &tsdb.Options{
 		WALFlushInterval:  200 * time.Millisecond,
 		RetentionDuration: 1 * 24 * 60 * 60 * 1000, // 1 days in milliseconds
 		MinBlockDuration:  3 * 60 * 60 * 1000,      // 2 hours in milliseconds

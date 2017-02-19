@@ -158,12 +158,11 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		c.metrics.duration.Observe(time.Since(start).Seconds())
 	}()
 
-	if fileutil.Exist(dir) {
-		if err = os.RemoveAll(dir); err != nil {
-			return err
-		}
+	if err = os.RemoveAll(dir); err != nil {
+		return err
 	}
-	if err = os.MkdirAll(dir, 0755); err != nil {
+
+	if err = os.MkdirAll(dir, 0777); err != nil {
 		return err
 	}
 

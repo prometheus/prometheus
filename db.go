@@ -131,7 +131,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 }
 
 // Open returns a new DB in the given directory.
-func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
+func Open(dir string, l log.Logger, opts *Options) (db *DB, err error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -148,8 +148,13 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 		return nil, errors.Wrapf(err, "open DB in %s", dir)
 	}
 
-	// var r prometheus.Registerer
-	r := prometheus.DefaultRegisterer
+	if l == nil {
+		l = log.NewLogfmtLogger(os.Stdout)
+		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+	}
+
+	var r prometheus.Registerer
+	// r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -161,7 +166,7 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 	db = &DB{
 		dir:      dir,
 		lockf:    lockf,
-		logger:   logger,
+		logger:   l,
 		metrics:  newDBMetrics(r),
 		opts:     opts,
 		compactc: make(chan struct{}, 1),
