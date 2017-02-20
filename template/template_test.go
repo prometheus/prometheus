@@ -210,13 +210,10 @@ func TestTemplateExpansion(t *testing.T) {
 		t.Fatalf("get appender: %s", err)
 	}
 
-	aref, err := app.SetSeries(labels.FromStrings(labels.MetricName, "metric", "instance", "a"))
+	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 0, 11)
 	require.NoError(t, err)
-	bref, err := app.SetSeries(labels.FromStrings(labels.MetricName, "metric", "instance", "b"))
+	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 0, 21)
 	require.NoError(t, err)
-
-	app.Add(aref, 0, 11)
-	app.Add(bref, 0, 21)
 
 	if err := app.Commit(); err != nil {
 		t.Fatalf("commit samples: %s", err)

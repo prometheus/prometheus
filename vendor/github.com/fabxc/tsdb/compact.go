@@ -158,26 +158,25 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		c.metrics.duration.Observe(time.Since(start).Seconds())
 	}()
 
-	if fileutil.Exist(dir) {
-		if err = os.RemoveAll(dir); err != nil {
-			return err
-		}
-	}
-	if err = os.MkdirAll(dir, 0755); err != nil {
+	if err = os.RemoveAll(dir); err != nil {
 		return err
 	}
 
-	chunkf, err := fileutil.LockFile(chunksFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
+	if err = os.MkdirAll(dir, 0777); err != nil {
+		return err
+	}
+
+	chunkf, err := os.OpenFile(chunksFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return errors.Wrap(err, "create chunk file")
 	}
-	indexf, err := fileutil.LockFile(indexFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
+	indexf, err := os.OpenFile(indexFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return errors.Wrap(err, "create index file")
 	}
 
 	indexw := newIndexWriter(indexf)
-	chunkw := newSeriesWriter(chunkf, indexw)
+	chunkw := newChunkWriter(chunkf)
 
 	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
@@ -189,10 +188,10 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
 	}
-	if err = fileutil.Fsync(chunkf.File); err != nil {
+	if err = fileutil.Fsync(chunkf); err != nil {
 		return errors.Wrap(err, "fsync chunk file")
 	}
-	if err = fileutil.Fsync(indexf.File); err != nil {
+	if err = fileutil.Fsync(indexf); err != nil {
 		return errors.Wrap(err, "fsync index file")
 	}
 	if err = chunkf.Close(); err != nil {
@@ -204,7 +203,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	return nil
 }
 
-func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw SeriesWriter) error {
+func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw ChunkWriter) error {
 	var set compactionSet
 
 	for i, b := range blocks {
@@ -238,9 +237,11 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 
 	for set.Next() {
 		lset, chunks := set.At()
-		if err := chunkw.WriteSeries(i, lset, chunks); err != nil {
+		if err := chunkw.WriteChunks(chunks...); err != nil {
 			return err
 		}
+
+		indexw.AddSeries(i, lset, chunks...)
 
 		meta.Stats.NumChunks += uint64(len(chunks))
 		meta.Stats.NumSeries++

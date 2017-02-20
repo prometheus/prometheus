@@ -368,10 +368,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "8moNbKzCSmH0RNnoroJikyd95aA=",
+			"checksumSHA1": "edB8coiX4s6hf6BZuYE5+MPJYX8=",
 			"path": "github.com/fabxc/tsdb",
-			"revision": "012cf4ef254e34a10befd0b592bcfa5b1794e92b",
-			"revisionTime": "2017-02-04T10:53:52Z"
+			"revision": "f734773214e1bcb7962d92155863110d01214db5",
+			"revisionTime": "2017-02-19T12:01:19Z"
 		},
 		{
 			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
@@ -566,6 +566,12 @@
 			"path": "github.com/miekg/dns",
 			"revision": "58f52c57ce9df13460ac68200cef30a008b9c468",
 			"revisionTime": "2016-10-18T06:08:08Z"
+		},
+		{
+			"checksumSHA1": "aCtmlyAgau9n0UHs8Pk+3xfIaVk=",
+			"path": "github.com/nightlyone/lockfile",
+			"revision": "1d49c987357a327b5b03aa84cbddd582c328615d",
+			"revisionTime": "2016-09-28T00:14:32Z"
 		},
 		{
 			"checksumSHA1": "3YJklSuzSE1Rt8A+2dhiWSmf/fw=",
