@@ -21,6 +21,7 @@ import (
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/nightlyone/lockfile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -28,16 +29,20 @@ import (
 // DefaultOptions used for the DB. They are sane for setups using
 // millisecond precision timestampdb.
 var DefaultOptions = &Options{
-	WALFlushInterval: 5 * time.Second,
-	MinBlockDuration: 3 * 60 * 60 * 1000,  // 2 hours in milliseconds
-	MaxBlockDuration: 24 * 60 * 60 * 1000, // 1 days in milliseconds
-	AppendableBlocks: 2,
+	WALFlushInterval:  5 * time.Second,
+	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
+	MinBlockDuration:  3 * 60 * 60 * 1000,       // 2 hours in milliseconds
+	MaxBlockDuration:  24 * 60 * 60 * 1000,      // 1 days in milliseconds
+	AppendableBlocks:  2,
 }
 
 // Options of the DB storage.
 type Options struct {
 	// The interval at which the write ahead log is flushed to disc.
 	WALFlushInterval time.Duration
+
+	// Duration of persisted data to keep.
+	RetentionDuration uint64
 
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
@@ -82,6 +87,7 @@ const sep = '\xff'
 // a hashed partition of a seriedb.
 type DB struct {
 	dir     string
+	lockf   lockfile.Lockfile
 	logger  log.Logger
 	metrics *dbMetrics
 	opts    *Options
@@ -126,13 +132,24 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 
 // Open returns a new DB in the given directory.
 func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
-	if !fileutil.Exist(dir) {
-		if err := os.MkdirAll(dir, 0777); err != nil {
-			return nil, err
-		}
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return nil, err
 	}
-	// var r prometheus.Registerer
-	r := prometheus.DefaultRegisterer
+
+	absdir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
+	if err != nil {
+		return nil, err
+	}
+	if err := lockf.TryLock(); err != nil {
+		return nil, errors.Wrapf(err, "open DB in %s", dir)
+	}
+
+	var r prometheus.Registerer
+	// r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -143,6 +160,7 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 
 	db = &DB{
 		dir:      dir,
+		lockf:    lockf,
 		logger:   logger,
 		metrics:  newDBMetrics(r),
 		opts:     opts,
@@ -284,6 +302,37 @@ func (db *DB) compact(i, j int) error {
 			return errors.Wrap(err, "removing old block")
 		}
 	}
+	return db.retentionCutoff()
+}
+
+func (db *DB) retentionCutoff() error {
+	if db.opts.RetentionDuration == 0 {
+		return nil
+	}
+	h := db.heads[len(db.heads)-1]
+	t := h.meta.MinTime - int64(db.opts.RetentionDuration)
+
+	var (
+		blocks = db.blocks()
+		i      int
+		b      Block
+	)
+	for i, b = range blocks {
+		if b.Meta().MinTime >= t {
+			break
+		}
+	}
+	if i <= 1 {
+		return nil
+	}
+	db.logger.Log("msg", "retention cutoff", "idx", i-1)
+	db.removeBlocks(0, i)
+
+	for _, b := range blocks[:i] {
+		if err := os.RemoveAll(b.Dir()); err != nil {
+			return errors.Wrap(err, "removing old block")
+		}
+	}
 	return nil
 }
 
@@ -299,7 +348,7 @@ func (db *DB) initBlocks() error {
 	}
 
 	for _, dir := range dirs {
-		if fileutil.Exist(filepath.Join(dir, walFileName)) {
+		if fileutil.Exist(filepath.Join(dir, walDirName)) {
 			h, err := openHeadBlock(dir, db.logger)
 			if err != nil {
 				return err
@@ -338,6 +387,8 @@ func (db *DB) Close() error {
 	for _, hb := range db.heads {
 		merr.Add(hb.Close())
 	}
+
+	merr.Add(db.lockf.Unlock())
 
 	return merr.Err()
 }
@@ -566,7 +617,7 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 func (db *DB) cut(mint int64) (*headBlock, error) {
 	maxt := mint + int64(db.opts.MinBlockDuration)
 
-	dir, seq, err := nextBlockDir(db.dir)
+	dir, seq, err := nextSequenceFile(db.dir, "b-")
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +667,32 @@ func blockDirs(dir string) ([]string, error) {
 	return dirs, nil
 }
 
-func nextBlockDir(dir string) (string, int, error) {
+func sequenceFiles(dir, prefix string) ([]string, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var res []string
+
+	for _, fi := range files {
+		if isSequenceFile(fi, prefix) {
+			res = append(res, filepath.Join(dir, fi.Name()))
+		}
+	}
+	return res, nil
+}
+
+func isSequenceFile(fi os.FileInfo, prefix string) bool {
+	if !strings.HasPrefix(fi.Name(), prefix) {
+		return false
+	}
+	if _, err := strconv.ParseUint(fi.Name()[len(prefix):], 10, 32); err != nil {
+		return false
+	}
+	return true
+}
+
+func nextSequenceFile(dir, prefix string) (string, int, error) {
 	names, err := fileutil.ReadDir(dir)
 	if err != nil {
 		return "", 0, err
@@ -624,16 +700,16 @@ func nextBlockDir(dir string) (string, int, error) {
 
 	i := uint64(0)
 	for _, n := range names {
-		if !strings.HasPrefix(n, "b-") {
+		if !strings.HasPrefix(n, prefix) {
 			continue
 		}
-		j, err := strconv.ParseUint(n[2:], 10, 32)
+		j, err := strconv.ParseUint(n[len(prefix):], 10, 32)
 		if err != nil {
 			continue
 		}
 		i = j
 	}
-	return filepath.Join(dir, fmt.Sprintf("b-%0.6d", i+1)), int(i + 1), nil
+	return filepath.Join(dir, fmt.Sprintf("%s%0.6d", prefix, i+1)), int(i + 1), nil
 }
 
 // PartitionedDB is a time series storage.

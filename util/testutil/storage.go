@@ -3,6 +3,7 @@ package testutil
 import (
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/storage"
@@ -20,8 +21,8 @@ func NewStorage(t T) storage.Storage {
 	log.With("dir", dir).Debugln("opening test storage")
 
 	db, err := tsdb.Open(dir, &tsdb.Options{
-		MinBlockDuration: 2 * 60 * 60 * 1000,
-		MaxBlockDuration: 24 * 60 * 60 * 1000,
+		MinBlockDuration: 2 * time.Hour,
+		MaxBlockDuration: 24 * time.Hour,
 		AppendableBlocks: 10,
 	})
 	if err != nil {

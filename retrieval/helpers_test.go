@@ -27,10 +27,10 @@ func (a nopAppendable) Appender() (storage.Appender, error) {
 
 type nopAppender struct{}
 
-func (a nopAppender) SetSeries(labels.Labels) (uint64, error) { return 0, nil }
-func (a nopAppender) Add(uint64, int64, float64) error        { return nil }
-func (a nopAppender) Commit() error                           { return nil }
-func (a nopAppender) Rollback() error                         { return nil }
+func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error) { return 0, nil }
+func (a nopAppender) AddFast(uint64, int64, float64) error              { return nil }
+func (a nopAppender) Commit() error                                     { return nil }
+func (a nopAppender) Rollback() error                                   { return nil }
 
 type collectResultAppender struct {
 	refs   map[uint64]labels.Labels

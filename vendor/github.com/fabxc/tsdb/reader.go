@@ -13,32 +13,45 @@ import (
 // SeriesReader provides reading access of serialized time series data.
 type SeriesReader interface {
 	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref uint32) (chunks.Chunk, error)
+	Chunk(ref uint64) (chunks.Chunk, error)
 }
 
 // seriesReader implements a SeriesReader for a serialized byte stream
 // of series data.
 type seriesReader struct {
-	// The underlying byte slice holding the encoded series data.
-	b []byte
+	// The underlying bytes holding the encoded series data.
+	bs [][]byte
 }
 
-func newSeriesReader(b []byte) (*seriesReader, error) {
-	if len(b) < 4 {
-		return nil, errors.Wrap(errInvalidSize, "index header")
+func newSeriesReader(bs [][]byte) (*seriesReader, error) {
+	s := &seriesReader{bs: bs}
+
+	for i, b := range bs {
+		if len(b) < 4 {
+			return nil, errors.Wrapf(errInvalidSize, "validate magic in segment %d", i)
+		}
+		// Verify magic number.
+		if m := binary.BigEndian.Uint32(b[:4]); m != MagicSeries {
+			return nil, fmt.Errorf("invalid magic number %x", m)
+		}
 	}
-	// Verify magic number.
-	if m := binary.BigEndian.Uint32(b[:4]); m != MagicSeries {
-		return nil, fmt.Errorf("invalid magic number %x", m)
-	}
-	return &seriesReader{b: b}, nil
+	return s, nil
 }
 
-func (s *seriesReader) Chunk(offset uint32) (chunks.Chunk, error) {
-	if int(offset) > len(s.b) {
-		return nil, errors.Errorf("offset %d beyond data size %d", offset, len(s.b))
+func (s *seriesReader) Chunk(ref uint64) (chunks.Chunk, error) {
+	var (
+		seq = int(ref >> 32)
+		off = int((ref << 32) >> 32)
+	)
+	if seq >= len(s.bs) {
+		return nil, errors.Errorf("reference sequence %d out of range", seq)
 	}
-	b := s.b[offset:]
+	b := s.bs[seq]
+
+	if int(off) >= len(b) {
+		return nil, errors.Errorf("offset %d beyond data size %d", off, len(b))
+	}
+	b = b[off:]
 
 	l, n := binary.Uvarint(b)
 	if n < 0 {
@@ -78,8 +91,6 @@ type StringTuples interface {
 }
 
 type indexReader struct {
-	series SeriesReader
-
 	// The underlying byte slice holding the encoded series data.
 	b []byte
 
@@ -93,14 +104,11 @@ var (
 	errInvalidFlag = fmt.Errorf("invalid flag")
 )
 
-func newIndexReader(s SeriesReader, b []byte) (*indexReader, error) {
+func newIndexReader(b []byte) (*indexReader, error) {
 	if len(b) < 4 {
 		return nil, errors.Wrap(errInvalidSize, "index header")
 	}
-	r := &indexReader{
-		series: s,
-		b:      b,
-	}
+	r := &indexReader{b: b}
 
 	// Verify magic number.
 	if m := binary.BigEndian.Uint32(b[:4]); m != MagicIndex {
@@ -299,7 +307,7 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 		b = b[n:]
 
 		chunks = append(chunks, ChunkMeta{
-			Ref:     uint32(o),
+			Ref:     o,
 			MinTime: firstTime,
 			MaxTime: lastTime,
 		})

@@ -3,6 +3,7 @@ package tsdb
 import (
 	"bufio"
 	"encoding/binary"
+	"hash"
 	"hash/crc32"
 	"io"
 	"sort"
@@ -24,12 +25,13 @@ const (
 
 const compactionPageBytes = minSectorSize * 64
 
-// SeriesWriter serializes a time block of chunked series data.
-type SeriesWriter interface {
-	// WriteSeries writes the time series data chunks for a single series.
-	// The reference is used to resolve the correct series in the written index.
-	// It only has to be valid for the duration of the write.
-	WriteSeries(ref uint32, l labels.Labels, chunks []ChunkMeta) error
+// ChunkWriter serializes a time block of chunked series data.
+type ChunkWriter interface {
+	// WriteChunks writes several chunks. The data field of the ChunkMetas
+	// must be populated.
+	// After returning successfully, the Ref fields in the ChunkMetas
+	// is set and can be used to retrieve the chunks from the written data.
+	WriteChunks(chunks ...ChunkMeta) error
 
 	// Size returns the size of the data written so far.
 	Size() int64
@@ -39,33 +41,32 @@ type SeriesWriter interface {
 	Close() error
 }
 
-// seriesWriter implements the SeriesWriter interface for the standard
+// chunkWriter implements the ChunkWriter interface for the standard
 // serialization format.
-type seriesWriter struct {
-	ow io.Writer
-	w  *bufio.Writer
-	n  int64
-	c  int
-
-	index IndexWriter
+type chunkWriter struct {
+	ow    io.Writer
+	w     *bufio.Writer
+	n     int64
+	c     int
+	crc32 hash.Hash
 }
 
-func newSeriesWriter(w io.Writer, index IndexWriter) *seriesWriter {
-	return &seriesWriter{
+func newChunkWriter(w io.Writer) *chunkWriter {
+	return &chunkWriter{
 		ow:    w,
 		w:     bufio.NewWriterSize(w, 1*1024*1024),
 		n:     0,
-		index: index,
+		crc32: crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 	}
 }
 
-func (w *seriesWriter) write(wr io.Writer, b []byte) error {
+func (w *chunkWriter) write(wr io.Writer, b []byte) error {
 	n, err := wr.Write(b)
 	w.n += int64(n)
 	return err
 }
 
-func (w *seriesWriter) writeMeta() error {
+func (w *chunkWriter) writeMeta() error {
 	b := [8]byte{}
 
 	binary.BigEndian.PutUint32(b[:4], MagicSeries)
@@ -74,7 +75,7 @@ func (w *seriesWriter) writeMeta() error {
 	return w.write(w.w, b[:])
 }
 
-func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkMeta) error {
+func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
 	// Initialize with meta data.
 	if w.n == 0 {
 		if err := w.writeMeta(); err != nil {
@@ -82,9 +83,8 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkM
 		}
 	}
 
-	// TODO(fabxc): is crc32 enough for chunks of one series?
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
+	w.crc32.Reset()
+	wr := io.MultiWriter(w.crc32, w.w)
 
 	// For normal reads we don't need the number of the chunk section but
 	// it allows us to verify checksums without reading the index file.
@@ -101,7 +101,7 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkM
 	for i := range chks {
 		chk := &chks[i]
 
-		chk.Ref = uint32(w.n)
+		chk.Ref = uint64(w.n)
 
 		n = binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
 
@@ -117,21 +117,17 @@ func (w *seriesWriter) WriteSeries(ref uint32, lset labels.Labels, chks []ChunkM
 		chk.Chunk = nil
 	}
 
-	if err := w.write(w.w, h.Sum(nil)); err != nil {
+	if err := w.write(w.w, w.crc32.Sum(nil)); err != nil {
 		return err
-	}
-
-	if w.index != nil {
-		w.index.AddSeries(ref, lset, chks...)
 	}
 	return nil
 }
 
-func (w *seriesWriter) Size() int64 {
+func (w *chunkWriter) Size() int64 {
 	return w.n
 }
 
-func (w *seriesWriter) Close() error {
+func (w *chunkWriter) Close() error {
 	// Initialize block in case no data was written to it.
 	if w.n == 0 {
 		if err := w.writeMeta(); err != nil {
@@ -146,7 +142,7 @@ type ChunkMeta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
 	// Generally, only one of them is set.
-	Ref   uint32
+	Ref   uint64
 	Chunk chunks.Chunk
 
 	MinTime, MaxTime int64 // time range the data covers
@@ -195,6 +191,8 @@ type indexWriter struct {
 	symbols      map[string]uint32 // symbol offsets
 	labelIndexes []hashEntry       // label index offsets
 	postings     []hashEntry       // postings lists offsets
+
+	crc32 hash.Hash
 }
 
 func newIndexWriter(w io.Writer) *indexWriter {
@@ -204,6 +202,7 @@ func newIndexWriter(w io.Writer) *indexWriter {
 		n:       0,
 		symbols: make(map[string]uint32, 4096),
 		series:  make(map[uint32]*indexWriterSeries, 4096),
+		crc32:   crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 	}
 }
 
@@ -215,8 +214,8 @@ func (w *indexWriter) write(wr io.Writer, b []byte) error {
 
 // section writes a CRC32 checksummed section of length l and guarded by flag.
 func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) error {
-	h := crc32.NewIEEE()
-	wr := io.MultiWriter(h, w.w)
+	w.crc32.Reset()
+	wr := io.MultiWriter(w.crc32, w.w)
 
 	b := [5]byte{flag, 0, 0, 0, 0}
 	binary.BigEndian.PutUint32(b[1:], l)
@@ -228,7 +227,7 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 	if err := f(wr); err != nil {
 		return errors.Wrap(err, "contents write func")
 	}
-	if err := w.write(w.w, h.Sum(nil)); err != nil {
+	if err := w.write(w.w, w.crc32.Sum(nil)); err != nil {
 		return errors.Wrap(err, "writing checksum")
 	}
 	return nil
