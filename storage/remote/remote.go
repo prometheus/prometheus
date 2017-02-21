@@ -24,7 +24,7 @@ import (
 // Storage allows queueing samples for remote writes.
 type Storage struct {
 	mtx    sync.RWMutex
-	queues []*StorageQueueManager
+	queues []*QueueManager
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -32,7 +32,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	newQueues := []*StorageQueueManager{}
+	newQueues := []*QueueManager{}
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
@@ -40,7 +40,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewStorageQueueManager(StorageQueueManagerConfig{
+		newQueues = append(newQueues, NewQueueManager(QueueManagerConfig{
 			Client:         c,
 			ExternalLabels: conf.GlobalConfig.ExternalLabels,
 			RelabelConfigs: rwConf.WriteRelabelConfigs,

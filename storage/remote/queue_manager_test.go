@@ -97,7 +97,7 @@ func TestSampleDelivery(t *testing.T) {
 	c := NewTestStorageClient()
 	c.expectSamples(samples[:len(samples)/2])
 
-	m := NewStorageQueueManager(StorageQueueManagerConfig{
+	m := NewQueueManager(QueueManagerConfig{
 		Client: c,
 		Shards: 1,
 	})
@@ -134,7 +134,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples)
-	m := NewStorageQueueManager(StorageQueueManagerConfig{
+	m := NewQueueManager(QueueManagerConfig{
 		Client: c,
 		// Ensure we don't drop samples in this test.
 		QueueCapacity: n,
@@ -184,7 +184,7 @@ func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
 }
 
-func (t *StorageQueueManager) queueLen() int {
+func (t *QueueManager) queueLen() int {
 	queueLength := 0
 	for _, shard := range t.shards {
 		queueLength += len(shard)
@@ -211,7 +211,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	}
 
 	c := NewTestBlockedStorageClient()
-	m := NewStorageQueueManager(StorageQueueManagerConfig{
+	m := NewQueueManager(QueueManagerConfig{
 		Client:        c,
 		QueueCapacity: n,
 	})
@@ -244,7 +244,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	}
 
 	if m.queueLen() != defaultMaxSamplesPerSend {
-		t.Fatalf("Failed to drain StorageQueueManager queue, %d elements left",
+		t.Fatalf("Failed to drain QueueManager queue, %d elements left",
 			m.queueLen(),
 		)
 	}
