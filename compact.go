@@ -64,7 +64,7 @@ type compactionInfo struct {
 	mint, maxt int64
 }
 
-const compactionBlocksLen = 4
+const compactionBlocksLen = 3
 
 // pick returns a range [i, j) in the blocks that are suitable to be compacted
 // into a single block at position i.
@@ -114,9 +114,6 @@ func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
 
 func (c *compactor) match(bs []compactionInfo) bool {
 	g := bs[0].generation
-	if g >= 5 {
-		return false
-	}
 
 	for _, b := range bs {
 		if b.generation == 0 {
@@ -166,17 +163,16 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		return err
 	}
 
-	chunkf, err := os.OpenFile(chunksFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return errors.Wrap(err, "create chunk file")
-	}
 	indexf, err := os.OpenFile(indexFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		return errors.Wrap(err, "create index file")
 	}
 
 	indexw := newIndexWriter(indexf)
-	chunkw := newChunkWriter(chunkf)
+	chunkw, err := newChunkWriter(filepath.Join(dir, "chunks"))
+	if err != nil {
+		return errors.Wrap(err, "open chunk writer")
+	}
 
 	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
@@ -188,14 +184,8 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
 	}
-	if err = fileutil.Fsync(chunkf); err != nil {
-		return errors.Wrap(err, "fsync chunk file")
-	}
 	if err = fileutil.Fsync(indexf); err != nil {
 		return errors.Wrap(err, "fsync index file")
-	}
-	if err = chunkf.Close(); err != nil {
-		return errors.Wrap(err, "close chunk file")
 	}
 	if err = indexf.Close(); err != nil {
 		return errors.Wrap(err, "close index file")
@@ -215,7 +205,7 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 		if hb, ok := b.(*headBlock); ok {
 			all = hb.remapPostings(all)
 		}
-		s := newCompactionSeriesSet(b.Index(), b.Series(), all)
+		s := newCompactionSeriesSet(b.Index(), b.Chunks(), all)
 
 		if i == 0 {
 			set = s
@@ -300,17 +290,17 @@ type compactionSet interface {
 type compactionSeriesSet struct {
 	p      Postings
 	index  IndexReader
-	series SeriesReader
+	chunks ChunkReader
 
 	l   labels.Labels
 	c   []ChunkMeta
 	err error
 }
 
-func newCompactionSeriesSet(i IndexReader, s SeriesReader, p Postings) *compactionSeriesSet {
+func newCompactionSeriesSet(i IndexReader, c ChunkReader, p Postings) *compactionSeriesSet {
 	return &compactionSeriesSet{
 		index:  i,
-		series: s,
+		chunks: c,
 		p:      p,
 	}
 }
@@ -327,7 +317,7 @@ func (c *compactionSeriesSet) Next() bool {
 	for i := range c.c {
 		chk := &c.c[i]
 
-		chk.Chunk, c.err = c.series.Chunk(chk.Ref)
+		chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
 		if c.err != nil {
 			return false
 		}

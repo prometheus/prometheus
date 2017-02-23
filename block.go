@@ -22,7 +22,7 @@ type Block interface {
 	Index() IndexReader
 
 	// Series returns a SeriesReader over the block's data.
-	Series() SeriesReader
+	Chunks() ChunkReader
 
 	// Persisted returns whether the block is already persisted,
 	// and no longer being appended to.
@@ -64,9 +64,9 @@ type persistedBlock struct {
 	dir  string
 	meta BlockMeta
 
-	chunksf, indexf *mmapFile
+	indexf *mmapFile
 
-	chunkr *seriesReader
+	chunkr *chunkReader
 	indexr *indexReader
 }
 
@@ -120,18 +120,18 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, err
 	}
 
-	chunksf, err := openMmapFile(chunksFileName(dir))
+	cr, err := newChunkReader(filepath.Join(dir, "chunks"))
 	if err != nil {
-		return nil, errors.Wrap(err, "open chunk file")
+		return nil, err
 	}
+	// ir, err := newIndexReader(dir)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	indexf, err := openMmapFile(indexFileName(dir))
 	if err != nil {
 		return nil, errors.Wrap(err, "open index file")
-	}
-
-	sr, err := newSeriesReader([][]byte{chunksf.b})
-	if err != nil {
-		return nil, errors.Wrap(err, "create series reader")
 	}
 	ir, err := newIndexReader(indexf.b)
 	if err != nil {
@@ -139,18 +139,17 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 	}
 
 	pb := &persistedBlock{
-		dir:     dir,
-		meta:    *meta,
-		chunksf: chunksf,
-		indexf:  indexf,
-		chunkr:  sr,
-		indexr:  ir,
+		dir:    dir,
+		meta:   *meta,
+		indexf: indexf,
+		chunkr: cr,
+		indexr: ir,
 	}
 	return pb, nil
 }
 
 func (pb *persistedBlock) Close() error {
-	err0 := pb.chunksf.Close()
+	err0 := pb.chunkr.Close()
 	err1 := pb.indexf.Close()
 
 	if err0 != nil {
@@ -159,11 +158,11 @@ func (pb *persistedBlock) Close() error {
 	return err1
 }
 
-func (pb *persistedBlock) Dir() string          { return pb.dir }
-func (pb *persistedBlock) Persisted() bool      { return true }
-func (pb *persistedBlock) Index() IndexReader   { return pb.indexr }
-func (pb *persistedBlock) Series() SeriesReader { return pb.chunkr }
-func (pb *persistedBlock) Meta() BlockMeta      { return pb.meta }
+func (pb *persistedBlock) Dir() string         { return pb.dir }
+func (pb *persistedBlock) Persisted() bool     { return true }
+func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
+func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
+func (pb *persistedBlock) Meta() BlockMeta     { return pb.meta }
 
 func chunksFileName(path string) string {
 	return filepath.Join(path, "chunks-000")

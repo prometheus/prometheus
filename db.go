@@ -153,8 +153,8 @@ func Open(dir string, l log.Logger, opts *Options) (db *DB, err error) {
 		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	}
 
-	var r prometheus.Registerer
-	// r := prometheus.DefaultRegisterer
+	// var r prometheus.Registerer
+	r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -307,7 +307,11 @@ func (db *DB) compact(i, j int) error {
 			return errors.Wrap(err, "removing old block")
 		}
 	}
-	return db.retentionCutoff()
+	if err := db.retentionCutoff(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (db *DB) retentionCutoff() error {

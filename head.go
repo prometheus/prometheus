@@ -146,10 +146,10 @@ func (h *headBlock) Meta() BlockMeta {
 	return h.meta
 }
 
-func (h *headBlock) Dir() string          { return h.dir }
-func (h *headBlock) Persisted() bool      { return false }
-func (h *headBlock) Index() IndexReader   { return &headIndexReader{h} }
-func (h *headBlock) Series() SeriesReader { return &headSeriesReader{h} }
+func (h *headBlock) Dir() string         { return h.dir }
+func (h *headBlock) Persisted() bool     { return false }
+func (h *headBlock) Index() IndexReader  { return &headIndexReader{h} }
+func (h *headBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
 func (h *headBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
@@ -359,12 +359,12 @@ func (a *headAppender) Rollback() error {
 	return nil
 }
 
-type headSeriesReader struct {
+type headChunkReader struct {
 	*headBlock
 }
 
 // Chunk returns the chunk for the reference number.
-func (h *headSeriesReader) Chunk(ref uint64) (chunks.Chunk, error) {
+func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 

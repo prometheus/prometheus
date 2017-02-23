@@ -3,6 +3,7 @@ package tsdb
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/fabxc/tsdb/chunks"
@@ -10,23 +11,42 @@ import (
 	"github.com/pkg/errors"
 )
 
-// SeriesReader provides reading access of serialized time series data.
-type SeriesReader interface {
+// ChunkReader provides reading access of serialized time series data.
+type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
 	Chunk(ref uint64) (chunks.Chunk, error)
+
+	// Close releases all underlying resources of the reader.
+	Close() error
 }
 
-// seriesReader implements a SeriesReader for a serialized byte stream
+// chunkReader implements a SeriesReader for a serialized byte stream
 // of series data.
-type seriesReader struct {
+type chunkReader struct {
 	// The underlying bytes holding the encoded series data.
 	bs [][]byte
+
+	cs []io.Closer
 }
 
-func newSeriesReader(bs [][]byte) (*seriesReader, error) {
-	s := &seriesReader{bs: bs}
+// newChunkReader returns a new chunkReader based on mmaped files found in dir.
+func newChunkReader(dir string) (*chunkReader, error) {
+	files, err := sequenceFiles(dir, "")
+	if err != nil {
+		return nil, err
+	}
+	var cr chunkReader
 
-	for i, b := range bs {
+	for _, fn := range files {
+		f, err := openMmapFile(fn)
+		if err != nil {
+			return nil, errors.Wrapf(err, "mmap files")
+		}
+		cr.cs = append(cr.cs, f)
+		cr.bs = append(cr.bs, f.b)
+	}
+
+	for i, b := range cr.bs {
 		if len(b) < 4 {
 			return nil, errors.Wrapf(errInvalidSize, "validate magic in segment %d", i)
 		}
@@ -35,10 +55,14 @@ func newSeriesReader(bs [][]byte) (*seriesReader, error) {
 			return nil, fmt.Errorf("invalid magic number %x", m)
 		}
 	}
-	return s, nil
+	return &cr, nil
 }
 
-func (s *seriesReader) Chunk(ref uint64) (chunks.Chunk, error) {
+func (s *chunkReader) Close() error {
+	return closeAll(s.cs...)
+}
+
+func (s *chunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	var (
 		seq = int(ref >> 32)
 		off = int((ref << 32) >> 32)

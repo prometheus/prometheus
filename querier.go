@@ -59,7 +59,7 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 			mint:   mint,
 			maxt:   maxt,
 			index:  b.Index(),
-			series: b.Series(),
+			chunks: b.Chunks(),
 		}
 
 		// TODO(fabxc): find nicer solution.
@@ -123,19 +123,19 @@ func (q *querier) Close() error {
 // blockQuerier provides querying access to a single block database.
 type blockQuerier struct {
 	index  IndexReader
-	series SeriesReader
+	chunks ChunkReader
 
 	postingsMapper func(Postings) Postings
 
 	mint, maxt int64
 }
 
-func newBlockQuerier(ix IndexReader, s SeriesReader, mint, maxt int64) *blockQuerier {
+func newBlockQuerier(ix IndexReader, c ChunkReader, mint, maxt int64) *blockQuerier {
 	return &blockQuerier{
 		mint:   mint,
 		maxt:   maxt,
 		index:  ix,
-		series: s,
+		chunks: c,
 	}
 }
 
@@ -162,7 +162,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 
 	return &blockSeriesSet{
 		index:  q.index,
-		chunks: q.series,
+		chunks: q.chunks,
 		it:     p,
 		absent: absent,
 		mint:   q.mint,
@@ -425,7 +425,7 @@ func (s *partitionSeriesSet) Next() bool {
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
 	index      IndexReader
-	chunks     SeriesReader
+	chunks     ChunkReader
 	it         Postings // postings list referencing series
 	absent     []string // labels that must not be set for result series
 	mint, maxt int64    // considered time range
