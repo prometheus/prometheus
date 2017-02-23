@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -35,6 +37,8 @@ const (
 	// The queue capacity is per shard.
 	defaultQueueCapacity     = 100 * 1024 / defaultShards
 	defaultBatchSendDeadline = 5 * time.Second
+	logRateLimit             = 0.1 // Limit to 1 log event every 10s
+	logBurst                 = 10
 )
 
 var (
@@ -127,11 +131,12 @@ type QueueManagerConfig struct {
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided StorageClient.
 type QueueManager struct {
-	cfg       QueueManagerConfig
-	shards    []chan *model.Sample
-	wg        sync.WaitGroup
-	done      chan struct{}
-	queueName string
+	cfg        QueueManagerConfig
+	shards     []chan *model.Sample
+	wg         sync.WaitGroup
+	done       chan struct{}
+	queueName  string
+	logLimiter *rate.Limiter
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -155,10 +160,11 @@ func NewQueueManager(cfg QueueManagerConfig) *QueueManager {
 	}
 
 	t := &QueueManager{
-		cfg:       cfg,
-		shards:    shards,
-		done:      make(chan struct{}),
-		queueName: cfg.Client.Name(),
+		cfg:        cfg,
+		shards:     shards,
+		done:       make(chan struct{}),
+		queueName:  cfg.Client.Name(),
+		logLimiter: rate.NewLimiter(logRateLimit, logBurst),
 	}
 
 	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.QueueCapacity))
@@ -195,7 +201,9 @@ func (t *QueueManager) Append(s *model.Sample) error {
 		queueLength.WithLabelValues(t.queueName).Inc()
 	default:
 		droppedSamplesTotal.WithLabelValues(t.queueName).Inc()
-		log.Warn("Remote storage queue full, discarding sample.")
+		if t.logLimiter.Allow() {
+			log.Warn("Remote storage queue full, discarding sample. Multiple subsequent messages of this kind may be suppressed.")
+		}
 	}
 	return nil
 }
