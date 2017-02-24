@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -285,7 +286,8 @@ type targetScraper struct {
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,*/*;q=0.1`
-const userAgentHeader = `Prometheus-scraper/1.0`
+
+var userAgentHeader = fmt.Sprintf("Prometheus-scraper/%s", version.Version)
 
 func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
 	req, err := http.NewRequest("GET", s.URL().String(), nil)
