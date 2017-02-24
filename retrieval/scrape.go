@@ -285,6 +285,7 @@ type targetScraper struct {
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,*/*;q=0.1`
+const userAgentHeader = `Prometheus-scraper/1.0`
 
 func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
 	req, err := http.NewRequest("GET", s.URL().String(), nil)
@@ -292,6 +293,7 @@ func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples
 		return nil, err
 	}
 	req.Header.Add("Accept", acceptHeader)
+	req.Header.Set("User-Agent", userAgentHeader)
 
 	resp, err := ctxhttp.Do(ctx, s.client, req)
 	if err != nil {
