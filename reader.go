@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/fabxc/tsdb/chunks"
@@ -26,6 +27,7 @@ type chunkReader struct {
 	// The underlying bytes holding the encoded series data.
 	bs [][]byte
 
+	// Closers for resources behind the byte slices.
 	cs []io.Closer
 }
 
@@ -104,6 +106,9 @@ type IndexReader interface {
 
 	// LabelIndices returns the label pairs for which indices exist.
 	LabelIndices() ([][]string, error)
+
+	// Close released the underlying resources of the reader.
+	Close() error
 }
 
 // StringTuples provides access to a sorted list of string tuples.
@@ -118,6 +123,9 @@ type indexReader struct {
 	// The underlying byte slice holding the encoded series data.
 	b []byte
 
+	// Close that releases the underlying resources of the byte slice.
+	c io.Closer
+
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint32
 	postings map[string]uint32
@@ -128,34 +136,38 @@ var (
 	errInvalidFlag = fmt.Errorf("invalid flag")
 )
 
-func newIndexReader(b []byte) (*indexReader, error) {
-	if len(b) < 4 {
-		return nil, errors.Wrap(errInvalidSize, "index header")
+// newIndexReader returns a new indexReader on the given directory.
+func newIndexReader(dir string) (*indexReader, error) {
+	f, err := openMmapFile(filepath.Join(dir, "index"))
+	if err != nil {
+		return nil, err
 	}
-	r := &indexReader{b: b}
+	r := &indexReader{b: f.b, c: f}
 
 	// Verify magic number.
-	if m := binary.BigEndian.Uint32(b[:4]); m != MagicIndex {
-		return nil, fmt.Errorf("invalid magic number %x", m)
+	if len(f.b) < 4 {
+		return nil, errors.Wrap(errInvalidSize, "index header")
+	}
+	if m := binary.BigEndian.Uint32(r.b[:4]); m != MagicIndex {
+		return nil, errors.Errorf("invalid magic number %x", m)
 	}
 
-	var err error
 	// The last two 4 bytes hold the pointers to the hashmaps.
-	loff := binary.BigEndian.Uint32(b[len(b)-8 : len(b)-4])
-	poff := binary.BigEndian.Uint32(b[len(b)-4:])
+	loff := binary.BigEndian.Uint32(r.b[len(r.b)-8 : len(r.b)-4])
+	poff := binary.BigEndian.Uint32(r.b[len(r.b)-4:])
 
-	f, b, err := r.section(loff)
+	flag, b, err := r.section(loff)
 	if err != nil {
 		return nil, errors.Wrapf(err, "label index hashmap section at %d", loff)
 	}
-	if r.labels, err = readHashmap(f, b); err != nil {
+	if r.labels, err = readHashmap(flag, b); err != nil {
 		return nil, errors.Wrap(err, "read label index hashmap")
 	}
-	f, b, err = r.section(poff)
+	flag, b, err = r.section(poff)
 	if err != nil {
 		return nil, errors.Wrapf(err, "postings hashmap section at %d", loff)
 	}
-	if r.postings, err = readHashmap(f, b); err != nil {
+	if r.postings, err = readHashmap(flag, b); err != nil {
 		return nil, errors.Wrap(err, "read postings hashmap")
 	}
 
@@ -191,6 +203,10 @@ func readHashmap(flag byte, b []byte) (map[string]uint32, error) {
 	}
 
 	return h, nil
+}
+
+func (r *indexReader) Close() error {
+	return r.c.Close()
 }
 
 func (r *indexReader) section(o uint32) (byte, []byte, error) {

@@ -163,15 +163,13 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		return err
 	}
 
-	indexf, err := os.OpenFile(indexFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return errors.Wrap(err, "create index file")
-	}
-
-	indexw := newIndexWriter(indexf)
 	chunkw, err := newChunkWriter(filepath.Join(dir, "chunks"))
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
+	}
+	indexw, err := newIndexWriter(dir)
+	if err != nil {
+		return errors.Wrap(err, "open index writer")
 	}
 
 	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
@@ -183,12 +181,6 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	}
 	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
-	}
-	if err = fileutil.Fsync(indexf); err != nil {
-		return errors.Wrap(err, "fsync index file")
-	}
-	if err = indexf.Close(); err != nil {
-		return errors.Wrap(err, "close index file")
 	}
 	return nil
 }

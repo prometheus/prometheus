@@ -64,8 +64,6 @@ type persistedBlock struct {
 	dir  string
 	meta BlockMeta
 
-	indexf *mmapFile
-
 	chunkr *chunkReader
 	indexr *indexReader
 }
@@ -124,24 +122,14 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	// ir, err := newIndexReader(dir)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	indexf, err := openMmapFile(indexFileName(dir))
+	ir, err := newIndexReader(dir)
 	if err != nil {
-		return nil, errors.Wrap(err, "open index file")
-	}
-	ir, err := newIndexReader(indexf.b)
-	if err != nil {
-		return nil, errors.Wrap(err, "create index reader")
+		return nil, err
 	}
 
 	pb := &persistedBlock{
 		dir:    dir,
 		meta:   *meta,
-		indexf: indexf,
 		chunkr: cr,
 		indexr: ir,
 	}
@@ -150,7 +138,7 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 
 func (pb *persistedBlock) Close() error {
 	err0 := pb.chunkr.Close()
-	err1 := pb.indexf.Close()
+	err1 := pb.indexr.Close()
 
 	if err0 != nil {
 		return err0
