@@ -274,15 +274,19 @@ func targetsForApp(app *App) []model.LabelSet {
 		if len(t.Ports) == 0 {
 			continue
 		}
-		target := targetForTask(&t)
-		targets = append(targets, model.LabelSet{
-			model.AddressLabel: model.LabelValue(target),
-			taskLabel:          model.LabelValue(t.ID),
-		})
+// Iterate over all the ports of a task
+		for _, port := range t.Ports {
+			target := targetForTask(&t, port)
+			targets = append(targets, model.LabelSet{
+				model.AddressLabel: model.LabelValue(target),
+				taskLabel:          model.LabelValue(t.ID),
+			})
+		}
 	}
 	return targets
 }
 
-func targetForTask(task *Task) string {
-	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[0]))
-}
+// Function to return target for a given task and a port
+func targetForTask(task *Task, port uint32) string {
+	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", port))
+ }
