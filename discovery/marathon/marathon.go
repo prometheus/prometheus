@@ -274,7 +274,7 @@ func targetsForApp(app *App) []model.LabelSet {
 		if len(t.Ports) == 0 {
 			continue
 		}
-                // Iterate over all the ports of a task
+		// Iterate over all the ports of a task
 		for _, port := range t.Ports {
 			target := targetForTask(&t, port)
 			targets = append(targets, model.LabelSet{
