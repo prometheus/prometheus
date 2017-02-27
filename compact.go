@@ -1,12 +1,14 @@
 package tsdb
 
 import (
+	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -127,12 +129,15 @@ func (c *compactor) match(bs []compactionInfo) bool {
 	return uint64(bs[len(bs)-1].maxt-bs[0].mint) <= c.opts.maxBlockRange
 }
 
+var entropy = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	m0 := blocks[0].Meta()
 
 	res.Sequence = m0.Sequence
 	res.MinTime = m0.MinTime
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
+	res.ULID = ulid.MustNew(ulid.Now(), entropy)
 
 	g := m0.Compaction.Generation
 	if g == 0 && len(blocks) > 1 {
@@ -163,7 +168,7 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		return err
 	}
 
-	chunkw, err := newChunkWriter(filepath.Join(dir, "chunks"))
+	chunkw, err := newChunkWriter(chunkDir(dir))
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}

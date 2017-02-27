@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 )
 
@@ -24,16 +25,15 @@ type Block interface {
 	// Series returns a SeriesReader over the block's data.
 	Chunks() ChunkReader
 
-	// Persisted returns whether the block is already persisted,
-	// and no longer being appended to.
-	Persisted() bool
-
 	// Close releases all underlying resources of the block.
 	Close() error
 }
 
 // BlockMeta provides meta information about a block.
 type BlockMeta struct {
+	// Unique identifier for the block and its contents. Changes on compaction.
+	ULID ulid.ULID `json:"ulid"`
+
 	// Sequence number of the block.
 	Sequence int `json:"sequence"`
 
@@ -118,7 +118,7 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, err
 	}
 
-	cr, err := newChunkReader(filepath.Join(dir, "chunks"))
+	cr, err := newChunkReader(chunkDir(dir))
 	if err != nil {
 		return nil, err
 	}
@@ -137,28 +137,21 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 }
 
 func (pb *persistedBlock) Close() error {
-	err0 := pb.chunkr.Close()
-	err1 := pb.indexr.Close()
+	var merr MultiError
 
-	if err0 != nil {
-		return err0
-	}
-	return err1
+	merr.Add(pb.chunkr.Close())
+	merr.Add(pb.indexr.Close())
+
+	return merr.Err()
 }
 
 func (pb *persistedBlock) Dir() string         { return pb.dir }
-func (pb *persistedBlock) Persisted() bool     { return true }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
 func (pb *persistedBlock) Meta() BlockMeta     { return pb.meta }
 
-func chunksFileName(path string) string {
-	return filepath.Join(path, "chunks-000")
-}
-
-func indexFileName(path string) string {
-	return filepath.Join(path, "index-000")
-}
+func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
+func walDir(dir string) string   { return filepath.Join(dir, "wal") }
 
 type mmapFile struct {
 	f *os.File

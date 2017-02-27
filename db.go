@@ -4,6 +4,7 @@ package tsdb
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"os"
@@ -888,4 +889,13 @@ func yoloString(b []byte) string {
 		Len:  sh.Len,
 	}
 	return *((*string)(unsafe.Pointer(&h)))
+}
+
+func closeAll(cs ...io.Closer) error {
+	var merr MultiError
+
+	for _, c := range cs {
+		merr.Add(c.Close())
+	}
+	return merr.Err()
 }
