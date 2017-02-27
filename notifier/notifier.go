@@ -77,11 +77,17 @@ type Options struct {
 	QueueCapacity  int
 	ExternalLabels model.LabelSet
 	RelabelConfigs []*config.RelabelConfig
+	// Used for sending HTTP requests to the Alertmanager.
+	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 }
 
 // New constructs a new Notifier.
 func New(o *Options) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	if o.Do == nil {
+		o.Do = ctxhttp.Do
+	}
 
 	return &Notifier{
 		queue:  make(model.Alerts, 0, o.QueueCapacity),
@@ -351,7 +357,12 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 }
 
 func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
-	resp, err := ctxhttp.Post(ctx, c, url, contentTypeJSON, bytes.NewReader(b))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentTypeJSON)
+	resp, err := n.opts.Do(ctx, c, req)
 	if err != nil {
 		return err
 	}
