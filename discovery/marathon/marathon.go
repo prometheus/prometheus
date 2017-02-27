@@ -289,4 +289,4 @@ func targetsForApp(app *App) []model.LabelSet {
 // Function to return target for a given task and a port
 func targetForTask(task *Task, port uint32) string {
 	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", port))
- }
+}
