@@ -70,6 +70,13 @@ func Main() int {
 		return 0
 	}
 
+	// go func() {
+	// 	for {
+	// 		time.Sleep(30 * time.Second)
+	// 		debug.FreeOSMemory()
+	// 	}
+	// }()
+
 	log.Infoln("Starting prometheus", version.Info())
 	log.Infoln("Build context", version.BuildContext())
 
@@ -78,7 +85,7 @@ func Main() int {
 		reloadables []Reloadable
 	)
 
-	localStorage, err := tsdb.Open(cfg.localStoragePath, &cfg.tsdb)
+	localStorage, err := tsdb.Open(cfg.localStoragePath, prometheus.DefaultRegisterer, &cfg.tsdb)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
 		return 1
