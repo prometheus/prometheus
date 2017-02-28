@@ -332,6 +332,9 @@ PromConsole.Graph = function(params) {
 
   this.params = params;
   this.rendered_data = null;
+  // Keep a reference so that further updates (e.g. annotations) can be made
+  // by the user in their templates.
+  this.rickshawGraph = null;
   PromConsole._graph_registry.push(this);
 
   /*
@@ -504,6 +507,8 @@ PromConsole.Graph.prototype._render = function(data) {
   xAxis.render();
   yAxis.render();
   graph.render();
+
+  this.rickshawGraph = graph;
 };
 
 PromConsole.Graph.prototype._clearGraph = function() {
@@ -513,6 +518,7 @@ PromConsole.Graph.prototype._clearGraph = function() {
   while (this.legendDiv.lastChild) {
     this.legendDiv.removeChild(this.legendDiv.lastChild);
   }
+  this.rickshawGraph = null;
 };
 
 PromConsole.Graph.prototype._xhrs = [];

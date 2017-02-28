@@ -141,9 +141,13 @@ func TestPopulateLabels(t *testing.T) {
 		},
 	}
 	for i, c := range cases {
+		in := c.in.Clone()
 		res, orig, err := populateLabels(c.in, c.cfg)
 		if err != nil {
 			t.Fatalf("case %d: %s", i, err)
+		}
+		if !reflect.DeepEqual(c.in, in) {
+			t.Errorf("case %d: input lset was changed was\n\t%+v\n now\n\t%+v", i, in, c.in)
 		}
 		if !reflect.DeepEqual(res, c.res) {
 			t.Errorf("case %d: expected res\n\t%+v\n got\n\t%+v", i, c.res, res)

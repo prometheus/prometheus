@@ -26,6 +26,14 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+func mustParseURL(u string) *URL {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		panic(err)
+	}
+	return &URL{URL: parsed}
+}
+
 var expectedConf = &Config{
 	GlobalConfig: GlobalConfig{
 		ScrapeInterval:     model.Duration(15 * time.Second),
@@ -44,16 +52,23 @@ var expectedConf = &Config{
 		"testdata/my/*.rules",
 	},
 
-	RemoteWriteConfig: RemoteWriteConfig{
-		RemoteTimeout: model.Duration(30 * time.Second),
-		WriteRelabelConfigs: []*RelabelConfig{
-			{
-				SourceLabels: model.LabelNames{"__name__"},
-				Separator:    ";",
-				Regex:        MustNewRegexp("expensive.*"),
-				Replacement:  "$1",
-				Action:       RelabelDrop,
+	RemoteWriteConfigs: []*RemoteWriteConfig{
+		{
+			URL:           mustParseURL("http://remote1/push"),
+			RemoteTimeout: model.Duration(30 * time.Second),
+			WriteRelabelConfigs: []*RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Separator:    ";",
+					Regex:        MustNewRegexp("expensive.*"),
+					Replacement:  "$1",
+					Action:       RelabelDrop,
+				},
 			},
+		},
+		{
+			URL:           mustParseURL("http://remote2/push"),
+			RemoteTimeout: model.Duration(30 * time.Second),
 		},
 	},
 

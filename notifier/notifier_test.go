@@ -16,10 +16,13 @@ package notifier
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -184,6 +187,37 @@ func TestHandlerSendAll(t *testing.T) {
 	status2 = http.StatusInternalServerError
 	if h.sendAll(h.queue...) {
 		t.Fatalf("all sends succeeded unexpectedly")
+	}
+}
+
+func TestCustomDo(t *testing.T) {
+	const testURL = "http://testurl.com/"
+	const testBody = "testbody"
+
+	var received bool
+	h := New(&Options{
+		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+			received = true
+			body, err := ioutil.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("Unable to read request body: %v", err)
+			}
+			if string(body) != testBody {
+				t.Fatalf("Unexpected body; want %v, got %v", testBody, string(body))
+			}
+			if req.URL.String() != testURL {
+				t.Fatalf("Unexpected URL; want %v, got %v", testURL, req.URL.String())
+			}
+			return &http.Response{
+				Body: ioutil.NopCloser(nil),
+			}, nil
+		},
+	})
+
+	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
+
+	if !received {
+		t.Fatal("Expected to receive an alert, but didn't")
 	}
 }
 

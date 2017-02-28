@@ -91,9 +91,9 @@ func Main() int {
 		return 1
 	}
 
-	// reloadableRemoteStorage := remote.New()
-	// sampleAppender = append(sampleAppender, reloadableRemoteStorage)
-	// reloadables = append(reloadables, reloadableRemoteStorage)
+	// remoteStorage := &remote.Storage{}
+	// sampleAppender = append(sampleAppender, remoteStorage)
+	// reloadables = append(reloadables, remoteStorage)
 
 	var (
 		notifier       = notifier.New(&cfg.notifier)
@@ -172,12 +172,8 @@ func Main() int {
 		}
 	}()
 
-	// defer reloadableRemoteStorage.Stop()
+	// defer remoteStorage.Stop()
 
-	// The storage has to be fully initialized before registering.
-	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
-		prometheus.MustRegister(instrumentedStorage)
-	}
 	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)

@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"hash"
-	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -124,7 +123,7 @@ func TsigGenerate(m *Msg, secret, requestMAC string, timersOnly bool) ([]byte, s
 	default:
 		return nil, "", ErrKeyAlg
 	}
-	io.WriteString(h, string(buf))
+	h.Write(buf)
 	t.MAC = hex.EncodeToString(h.Sum(nil))
 	t.MACSize = uint16(len(t.MAC) / 2) // Size is half!
 

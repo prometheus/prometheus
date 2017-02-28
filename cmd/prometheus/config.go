@@ -53,7 +53,6 @@ var cfg = struct {
 
 	alertmanagerURLs stringset
 	prometheusURL    string
-	influxdbURL      string
 }{
 	alertmanagerURLs: stringset{},
 }
@@ -129,6 +128,10 @@ func init() {
 	cfg.fs.IntVar(
 		&cfg.tsdb.AppendableBlocks, "storage.tsdb.AppendableBlocks", 2,
 		"Number of head blocks that can be appended to.",
+	)
+	cfg.fs.StringVar(
+		&cfg.localStorageEngine, "storage.local.engine", "persisted",
+		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
 	)
 
 	// Alertmanager.

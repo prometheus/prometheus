@@ -94,7 +94,11 @@ func readMetaFile(dir string) (*BlockMeta, error) {
 }
 
 func writeMetaFile(dir string, meta *BlockMeta) error {
-	f, err := os.Create(filepath.Join(dir, metaFilename))
+	// Make any changes to the file appear atomic.
+	path := filepath.Join(dir, metaFilename)
+	tmp := path + ".tmp"
+
+	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
@@ -108,8 +112,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-
-	return nil
+	return renameFile(tmp, path)
 }
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
