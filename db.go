@@ -132,7 +132,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 }
 
 // Open returns a new DB in the given directory.
-func Open(dir string, l log.Logger, opts *Options) (db *DB, err error) {
+func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db *DB, err error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -153,9 +153,6 @@ func Open(dir string, l log.Logger, opts *Options) (db *DB, err error) {
 		l = log.NewLogfmtLogger(os.Stdout)
 		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	}
-
-	// var r prometheus.Registerer
-	r := prometheus.DefaultRegisterer
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -736,7 +733,7 @@ func isPowTwo(x int) bool {
 }
 
 // OpenPartitioned or create a new DB.
-func OpenPartitioned(dir string, n int, l log.Logger, opts *Options) (*PartitionedDB, error) {
+func OpenPartitioned(dir string, n int, l log.Logger, r prometheus.Registerer, opts *Options) (*PartitionedDB, error) {
 	if !isPowTwo(n) {
 		return nil, errors.Errorf("%d is not a power of two", n)
 	}
@@ -764,7 +761,7 @@ func OpenPartitioned(dir string, n int, l log.Logger, opts *Options) (*Partition
 		l := log.NewContext(l).With("partition", i)
 		d := partitionDir(dir, i)
 
-		s, err := Open(d, l, opts)
+		s, err := Open(d, l, r, opts)
 		if err != nil {
 			return nil, fmt.Errorf("initializing partition %q failed: %s", d, err)
 		}
