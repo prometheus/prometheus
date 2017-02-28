@@ -20,7 +20,7 @@ func NewStorage(t T) storage.Storage {
 
 	log.With("dir", dir).Debugln("opening test storage")
 
-	db, err := tsdb.Open(dir, &tsdb.Options{
+	db, err := tsdb.Open(dir, nil, &tsdb.Options{
 		MinBlockDuration: 2 * time.Hour,
 		MaxBlockDuration: 24 * time.Hour,
 		AppendableBlocks: 10,
