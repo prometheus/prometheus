@@ -1,12 +1,14 @@
 package tsdb
 
 import (
+	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -60,11 +62,12 @@ func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
 }
 
 type compactionInfo struct {
+	seq        int
 	generation int
 	mint, maxt int64
 }
 
-const compactionBlocksLen = 4
+const compactionBlocksLen = 3
 
 // pick returns a range [i, j) in the blocks that are suitable to be compacted
 // into a single block at position i.
@@ -103,8 +106,8 @@ func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
 	}
 
 	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(bs)-compactionBlocksLen; i += compactionBlocksLen {
-		if c.match(bs[i : i+2]) {
+	for i := 0; i < len(bs)-compactionBlocksLen+1; i += compactionBlocksLen {
+		if c.match(bs[i : i+3]) {
 			return i, i + compactionBlocksLen, true
 		}
 	}
@@ -114,21 +117,16 @@ func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
 
 func (c *compactor) match(bs []compactionInfo) bool {
 	g := bs[0].generation
-	if g >= 5 {
-		return false
-	}
 
 	for _, b := range bs {
-		if b.generation == 0 {
-			continue
-		}
 		if b.generation != g {
 			return false
 		}
 	}
-
 	return uint64(bs[len(bs)-1].maxt-bs[0].mint) <= c.opts.maxBlockRange
 }
+
+var entropy = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	m0 := blocks[0].Meta()
@@ -136,6 +134,7 @@ func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	res.Sequence = m0.Sequence
 	res.MinTime = m0.MinTime
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
+	res.ULID = ulid.MustNew(ulid.Now(), entropy)
 
 	g := m0.Compaction.Generation
 	if g == 0 && len(blocks) > 1 {
@@ -166,17 +165,14 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 		return err
 	}
 
-	chunkf, err := os.OpenFile(chunksFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
+	chunkw, err := newChunkWriter(chunkDir(dir))
 	if err != nil {
-		return errors.Wrap(err, "create chunk file")
+		return errors.Wrap(err, "open chunk writer")
 	}
-	indexf, err := os.OpenFile(indexFileName(dir), os.O_WRONLY|os.O_CREATE, 0666)
+	indexw, err := newIndexWriter(dir)
 	if err != nil {
-		return errors.Wrap(err, "create index file")
+		return errors.Wrap(err, "open index writer")
 	}
-
-	indexw := newIndexWriter(indexf)
-	chunkw := newChunkWriter(chunkf)
 
 	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
@@ -187,18 +183,6 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	}
 	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
-	}
-	if err = fileutil.Fsync(chunkf); err != nil {
-		return errors.Wrap(err, "fsync chunk file")
-	}
-	if err = fileutil.Fsync(indexf); err != nil {
-		return errors.Wrap(err, "fsync index file")
-	}
-	if err = chunkf.Close(); err != nil {
-		return errors.Wrap(err, "close chunk file")
-	}
-	if err = indexf.Close(); err != nil {
-		return errors.Wrap(err, "close index file")
 	}
 	return nil
 }
@@ -215,7 +199,7 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 		if hb, ok := b.(*headBlock); ok {
 			all = hb.remapPostings(all)
 		}
-		s := newCompactionSeriesSet(b.Index(), b.Series(), all)
+		s := newCompactionSeriesSet(b.Index(), b.Chunks(), all)
 
 		if i == 0 {
 			set = s
@@ -300,17 +284,17 @@ type compactionSet interface {
 type compactionSeriesSet struct {
 	p      Postings
 	index  IndexReader
-	series SeriesReader
+	chunks ChunkReader
 
 	l   labels.Labels
 	c   []ChunkMeta
 	err error
 }
 
-func newCompactionSeriesSet(i IndexReader, s SeriesReader, p Postings) *compactionSeriesSet {
+func newCompactionSeriesSet(i IndexReader, c ChunkReader, p Postings) *compactionSeriesSet {
 	return &compactionSeriesSet{
 		index:  i,
-		series: s,
+		chunks: c,
 		p:      p,
 	}
 }
@@ -327,7 +311,7 @@ func (c *compactionSeriesSet) Next() bool {
 	for i := range c.c {
 		chk := &c.c[i]
 
-		chk.Chunk, c.err = c.series.Chunk(chk.Ref)
+		chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
 		if c.err != nil {
 			return false
 		}

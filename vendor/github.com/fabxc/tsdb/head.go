@@ -14,6 +14,7 @@ import (
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 )
 
@@ -62,11 +63,16 @@ type headBlock struct {
 }
 
 func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*headBlock, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return nil, err
+	}
+	ulid, err := ulid.New(ulid.Now(), entropy)
+	if err != nil {
 		return nil, err
 	}
 
 	if err := writeMetaFile(dir, &BlockMeta{
+		ULID:     ulid,
 		Sequence: seq,
 		MinTime:  mint,
 		MaxTime:  maxt,
@@ -133,10 +139,19 @@ func (h *headBlock) inBounds(t int64) bool {
 
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
-	if err := writeMetaFile(h.dir, &h.meta); err != nil {
+	if err := h.wal.Close(); err != nil {
 		return err
 	}
-	return h.wal.Close()
+	// Check whether the head block still exists in the underlying dir
+	// or has already been replaced with a compacted version
+	meta, err := readMetaFile(h.dir)
+	if err != nil {
+		return err
+	}
+	if meta.ULID == h.meta.ULID {
+		return writeMetaFile(h.dir, &h.meta)
+	}
+	return nil
 }
 
 func (h *headBlock) Meta() BlockMeta {
@@ -146,10 +161,10 @@ func (h *headBlock) Meta() BlockMeta {
 	return h.meta
 }
 
-func (h *headBlock) Dir() string          { return h.dir }
-func (h *headBlock) Persisted() bool      { return false }
-func (h *headBlock) Index() IndexReader   { return &headIndexReader{h} }
-func (h *headBlock) Series() SeriesReader { return &headSeriesReader{h} }
+func (h *headBlock) Dir() string         { return h.dir }
+func (h *headBlock) Persisted() bool     { return false }
+func (h *headBlock) Index() IndexReader  { return &headIndexReader{h} }
+func (h *headBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
 func (h *headBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
@@ -359,12 +374,12 @@ func (a *headAppender) Rollback() error {
 	return nil
 }
 
-type headSeriesReader struct {
+type headChunkReader struct {
 	*headBlock
 }
 
 // Chunk returns the chunk for the reference number.
-func (h *headSeriesReader) Chunk(ref uint64) (chunks.Chunk, error) {
+func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
