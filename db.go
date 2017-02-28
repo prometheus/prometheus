@@ -192,6 +192,7 @@ func (db *DB) run() {
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
+			var seqs []int
 			var infos []compactionInfo
 			for _, b := range db.compactable() {
 				m := b.Meta()
@@ -200,17 +201,16 @@ func (db *DB) run() {
 					generation: m.Compaction.Generation,
 					mint:       m.MinTime,
 					maxt:       m.MaxTime,
+					seq:        m.Sequence,
 				})
+				seqs = append(seqs, m.Sequence)
 			}
 
 			i, j, ok := db.compactor.pick(infos)
 			if !ok {
 				continue
 			}
-			db.logger.Log("msg", "picked", "i", i, "j", j)
-			for k := i; k < j; k++ {
-				db.logger.Log("k", k, "generation", infos[k].generation)
-			}
+			db.logger.Log("msg", "compact", "seqs", fmt.Sprintf("%v", seqs[i:j]))
 
 			if err := db.compact(i, j); err != nil {
 				db.logger.Log("msg", "compaction failed", "err", err)
@@ -301,6 +301,7 @@ func (db *DB) compact(i, j int) error {
 	db.persisted = append(db.persisted, pb)
 
 	for _, b := range blocks[1:] {
+		db.logger.Log("msg", "remove old dir", "dir", b.Dir())
 		if err := os.RemoveAll(b.Dir()); err != nil {
 			return errors.Wrap(err, "removing old block")
 		}

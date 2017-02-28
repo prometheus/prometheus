@@ -62,6 +62,7 @@ func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
 }
 
 type compactionInfo struct {
+	seq        int
 	generation int
 	mint, maxt int64
 }
@@ -105,8 +106,8 @@ func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
 	}
 
 	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(bs)-compactionBlocksLen; i += compactionBlocksLen {
-		if c.match(bs[i : i+2]) {
+	for i := 0; i < len(bs)-compactionBlocksLen+1; i += compactionBlocksLen {
+		if c.match(bs[i : i+3]) {
 			return i, i + compactionBlocksLen, true
 		}
 	}
@@ -118,14 +119,10 @@ func (c *compactor) match(bs []compactionInfo) bool {
 	g := bs[0].generation
 
 	for _, b := range bs {
-		if b.generation == 0 {
-			continue
-		}
 		if b.generation != g {
 			return false
 		}
 	}
-
 	return uint64(bs[len(bs)-1].maxt-bs[0].mint) <= c.opts.maxBlockRange
 }
 
