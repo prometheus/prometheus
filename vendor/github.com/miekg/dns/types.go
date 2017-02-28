@@ -480,12 +480,6 @@ func appendDomainNameByte(s []byte, b byte) []byte {
 
 func appendTXTStringByte(s []byte, b byte) []byte {
 	switch b {
-	case '\t':
-		return append(s, '\\', 't')
-	case '\r':
-		return append(s, '\\', 'r')
-	case '\n':
-		return append(s, '\\', 'n')
 	case '"', '\\':
 		return append(s, '\\', b)
 	}
@@ -525,17 +519,8 @@ func nextByte(b []byte, offset int) (byte, int) {
 			return dddToByte(b[offset+1:]), 4
 		}
 	}
-	// not \ddd, maybe a control char
-	switch b[offset+1] {
-	case 't':
-		return '\t', 2
-	case 'r':
-		return '\r', 2
-	case 'n':
-		return '\n', 2
-	default:
-		return b[offset+1], 2
-	}
+	// not \ddd, just an RFC 1035 "quoted" character
+	return b[offset+1], 2
 }
 
 type SPF struct {

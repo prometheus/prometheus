@@ -208,9 +208,6 @@ func (k *DNSKEY) ToDS(h uint8) *DS {
 	// "|" denotes concatenation
 	// DNSKEY RDATA = Flags | Protocol | Algorithm | Public Key.
 
-	// digest buffer
-	digest := append(owner, wire...) // another copy
-
 	var hash crypto.Hash
 	switch h {
 	case SHA1:
@@ -226,7 +223,8 @@ func (k *DNSKEY) ToDS(h uint8) *DS {
 	}
 
 	s := hash.New()
-	s.Write(digest)
+	s.Write(owner)
+	s.Write(wire)
 	ds.Digest = hex.EncodeToString(s.Sum(nil))
 	return ds
 }
@@ -297,7 +295,6 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 	if err != nil {
 		return err
 	}
-	signdata = append(signdata, wire...)
 
 	hash, ok := AlgorithmToHash[rr.Algorithm]
 	if !ok {
@@ -306,6 +303,7 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 
 	h := hash.New()
 	h.Write(signdata)
+	h.Write(wire)
 
 	signature, err := sign(k, h.Sum(nil), hash, rr.Algorithm)
 	if err != nil {
@@ -415,7 +413,6 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 	if err != nil {
 		return err
 	}
-	signeddata = append(signeddata, wire...)
 
 	sigbuf := rr.sigBuf()           // Get the binary signature data
 	if rr.Algorithm == PRIVATEDNS { // PRIVATEOID
@@ -438,6 +435,7 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 
 		h := hash.New()
 		h.Write(signeddata)
+		h.Write(wire)
 		return rsa.VerifyPKCS1v15(pubkey, hash, h.Sum(nil), sigbuf)
 
 	case ECDSAP256SHA256, ECDSAP384SHA384:
@@ -452,6 +450,7 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 
 		h := hash.New()
 		h.Write(signeddata)
+		h.Write(wire)
 		if ecdsa.Verify(pubkey, h.Sum(nil), r, s) {
 			return nil
 		}

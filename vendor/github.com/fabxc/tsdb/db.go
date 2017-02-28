@@ -187,8 +187,16 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 func (db *DB) run() {
 	defer close(db.donec)
 
+	tick := time.NewTicker(30 * time.Second)
+	defer tick.Stop()
+
 	for {
 		select {
+		case <-tick.C:
+			select {
+			case db.compactc <- struct{}{}:
+			default:
+			}
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -292,7 +300,7 @@ func (db *DB) compact(i, j int) error {
 		}
 	}
 
-	if err := renameDir(tmpdir, dir); err != nil {
+	if err := renameFile(tmpdir, dir); err != nil {
 		return errors.Wrap(err, "rename dir")
 	}
 	pb.dir = dir

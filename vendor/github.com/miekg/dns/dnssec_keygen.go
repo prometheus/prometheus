@@ -121,17 +121,17 @@ func (k *DNSKEY) setPublicKeyDSA(_Q, _P, _G, _Y *big.Int) bool {
 // RFC 3110: Section 2. RSA Public KEY Resource Records
 func exponentToBuf(_E int) []byte {
 	var buf []byte
-	i := big.NewInt(int64(_E))
-	if len(i.Bytes()) < 256 {
-		buf = make([]byte, 1)
-		buf[0] = uint8(len(i.Bytes()))
+	i := big.NewInt(int64(_E)).Bytes()
+	if len(i) < 256 {
+		buf = make([]byte, 1, 1+len(i))
+		buf[0] = uint8(len(i))
 	} else {
-		buf = make([]byte, 3)
+		buf = make([]byte, 3, 3+len(i))
 		buf[0] = 0
-		buf[1] = uint8(len(i.Bytes()) >> 8)
-		buf[2] = uint8(len(i.Bytes()))
+		buf[1] = uint8(len(i) >> 8)
+		buf[2] = uint8(len(i))
 	}
-	buf = append(buf, i.Bytes()...)
+	buf = append(buf, i...)
 	return buf
 }
 

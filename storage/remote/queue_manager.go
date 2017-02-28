@@ -17,9 +17,13 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 )
 
 // String constants for instrumentation.
@@ -27,6 +31,14 @@ const (
 	namespace = "prometheus"
 	subsystem = "remote_storage"
 	queue     = "queue"
+
+	defaultShards            = 10
+	defaultMaxSamplesPerSend = 100
+	// The queue capacity is per shard.
+	defaultQueueCapacity     = 100 * 1024 / defaultShards
+	defaultBatchSendDeadline = 5 * time.Second
+	logRateLimit             = 0.1 // Limit to 1 log event every 10s
+	logBurst                 = 10
 )
 
 var (
@@ -105,35 +117,41 @@ type StorageClient interface {
 	Name() string
 }
 
-type StorageQueueManagerConfig struct {
+// QueueManagerConfig configures a storage queue.
+type QueueManagerConfig struct {
 	QueueCapacity     int           // Number of samples to buffer per shard before we start dropping them.
 	Shards            int           // Number of shards, i.e. amount of concurrency.
 	MaxSamplesPerSend int           // Maximum number of samples per send.
 	BatchSendDeadline time.Duration // Maximum time sample will wait in buffer.
+	ExternalLabels    model.LabelSet
+	RelabelConfigs    []*config.RelabelConfig
+	Client            StorageClient
 }
 
-var defaultConfig = StorageQueueManagerConfig{
-	QueueCapacity:     100 * 1024 / 10,
-	Shards:            10,
-	MaxSamplesPerSend: 100,
-	BatchSendDeadline: 5 * time.Second,
-}
-
-// StorageQueueManager manages a queue of samples to be sent to the Storage
+// QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided StorageClient.
-type StorageQueueManager struct {
-	cfg       StorageQueueManagerConfig
-	tsdb      StorageClient
-	shards    []chan *model.Sample
-	wg        sync.WaitGroup
-	done      chan struct{}
-	queueName string
+type QueueManager struct {
+	cfg        QueueManagerConfig
+	shards     []chan *model.Sample
+	wg         sync.WaitGroup
+	done       chan struct{}
+	queueName  string
+	logLimiter *rate.Limiter
 }
 
-// NewStorageQueueManager builds a new StorageQueueManager.
-func NewStorageQueueManager(tsdb StorageClient, cfg *StorageQueueManagerConfig) *StorageQueueManager {
-	if cfg == nil {
-		cfg = &defaultConfig
+// NewQueueManager builds a new QueueManager.
+func NewQueueManager(cfg QueueManagerConfig) *QueueManager {
+	if cfg.QueueCapacity == 0 {
+		cfg.QueueCapacity = defaultQueueCapacity
+	}
+	if cfg.Shards == 0 {
+		cfg.Shards = defaultShards
+	}
+	if cfg.MaxSamplesPerSend == 0 {
+		cfg.MaxSamplesPerSend = defaultMaxSamplesPerSend
+	}
+	if cfg.BatchSendDeadline == 0 {
+		cfg.BatchSendDeadline = defaultBatchSendDeadline
 	}
 
 	shards := make([]chan *model.Sample, cfg.Shards)
@@ -141,12 +159,12 @@ func NewStorageQueueManager(tsdb StorageClient, cfg *StorageQueueManagerConfig) 
 		shards[i] = make(chan *model.Sample, cfg.QueueCapacity)
 	}
 
-	t := &StorageQueueManager{
-		cfg:       *cfg,
-		tsdb:      tsdb,
-		shards:    shards,
-		done:      make(chan struct{}),
-		queueName: tsdb.Name(),
+	t := &QueueManager{
+		cfg:        cfg,
+		shards:     shards,
+		done:       make(chan struct{}),
+		queueName:  cfg.Client.Name(),
+		logLimiter: rate.NewLimiter(logRateLimit, logBurst),
 	}
 
 	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.QueueCapacity))
@@ -157,16 +175,35 @@ func NewStorageQueueManager(tsdb StorageClient, cfg *StorageQueueManagerConfig) 
 // Append queues a sample to be sent to the remote storage. It drops the
 // sample on the floor if the queue is full.
 // Always returns nil.
-func (t *StorageQueueManager) Append(s *model.Sample) error {
-	fp := s.Metric.FastFingerprint()
+func (t *QueueManager) Append(s *model.Sample) error {
+	var snew model.Sample
+	snew = *s
+	snew.Metric = s.Metric.Clone()
+
+	for ln, lv := range t.cfg.ExternalLabels {
+		if _, ok := s.Metric[ln]; !ok {
+			snew.Metric[ln] = lv
+		}
+	}
+
+	snew.Metric = model.Metric(
+		relabel.Process(model.LabelSet(snew.Metric), t.cfg.RelabelConfigs...))
+
+	if snew.Metric == nil {
+		return nil
+	}
+
+	fp := snew.Metric.FastFingerprint()
 	shard := uint64(fp) % uint64(t.cfg.Shards)
 
 	select {
-	case t.shards[shard] <- s:
+	case t.shards[shard] <- &snew:
 		queueLength.WithLabelValues(t.queueName).Inc()
 	default:
 		droppedSamplesTotal.WithLabelValues(t.queueName).Inc()
-		log.Warn("Remote storage queue full, discarding sample.")
+		if t.logLimiter.Allow() {
+			log.Warn("Remote storage queue full, discarding sample. Multiple subsequent messages of this kind may be suppressed.")
+		}
 	}
 	return nil
 }
@@ -174,13 +211,13 @@ func (t *StorageQueueManager) Append(s *model.Sample) error {
 // NeedsThrottling implements storage.SampleAppender. It will always return
 // false as a remote storage drops samples on the floor if backlogging instead
 // of asking for throttling.
-func (*StorageQueueManager) NeedsThrottling() bool {
+func (*QueueManager) NeedsThrottling() bool {
 	return false
 }
 
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
-func (t *StorageQueueManager) Start() {
+func (t *QueueManager) Start() {
 	for i := 0; i < t.cfg.Shards; i++ {
 		go t.runShard(i)
 	}
@@ -188,7 +225,7 @@ func (t *StorageQueueManager) Start() {
 
 // Stop stops sending samples to the remote storage and waits for pending
 // sends to complete.
-func (t *StorageQueueManager) Stop() {
+func (t *QueueManager) Stop() {
 	log.Infof("Stopping remote storage...")
 	for _, shard := range t.shards {
 		close(shard)
@@ -197,7 +234,7 @@ func (t *StorageQueueManager) Stop() {
 	log.Info("Remote storage stopped.")
 }
 
-func (t *StorageQueueManager) runShard(i int) {
+func (t *QueueManager) runShard(i int) {
 	defer t.wg.Done()
 	shard := t.shards[i]
 
@@ -234,12 +271,12 @@ func (t *StorageQueueManager) runShard(i int) {
 	}
 }
 
-func (t *StorageQueueManager) sendSamples(s model.Samples) {
+func (t *QueueManager) sendSamples(s model.Samples) {
 	// Samples are sent to the remote storage on a best-effort basis. If a
 	// sample isn't sent correctly the first time, it's simply dropped on the
 	// floor.
 	begin := time.Now()
-	err := t.tsdb.Store(s)
+	err := t.cfg.Client.Store(s)
 	duration := time.Since(begin).Seconds()
 
 	if err != nil {

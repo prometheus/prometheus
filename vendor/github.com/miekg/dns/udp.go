@@ -1,10 +1,9 @@
-// +build !windows,!plan9
+// +build !windows
 
 package dns
 
 import (
 	"net"
-	"syscall"
 )
 
 // SessionUDP holds the remote address and the associated
@@ -16,29 +15,6 @@ type SessionUDP struct {
 
 // RemoteAddr returns the remote network address.
 func (s *SessionUDP) RemoteAddr() net.Addr { return s.raddr }
-
-// setUDPSocketOptions sets the UDP socket options.
-// This function is implemented on a per platform basis. See udp_*.go for more details
-func setUDPSocketOptions(conn *net.UDPConn) error {
-	sa, err := getUDPSocketName(conn)
-	if err != nil {
-		return err
-	}
-	switch sa.(type) {
-	case *syscall.SockaddrInet6:
-		v6only, err := getUDPSocketOptions6Only(conn)
-		if err != nil {
-			return err
-		}
-		setUDPSocketOptions6(conn)
-		if !v6only {
-			setUDPSocketOptions4(conn)
-		}
-	case *syscall.SockaddrInet4:
-		setUDPSocketOptions4(conn)
-	}
-	return nil
-}
 
 // ReadFromSessionUDP acts just like net.UDPConn.ReadFrom(), but returns a session object instead of a
 // net.UDPAddr.

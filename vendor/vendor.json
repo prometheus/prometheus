@@ -1,6 +1,6 @@
 {
 	"comment": "",
-	"ignore": "test appengine",
+	"ignore": "test",
 	"package": [
 		{
 			"checksumSHA1": "oIt4tXgFYnZJBsCac1BQLnTWALM=",
@@ -368,10 +368,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "UeErAjCWDt1vzaXGQGxnenFUg7w=",
+			"checksumSHA1": "E5C5z6CV6JeIA2cpT3KVWeFgZdM=",
 			"path": "github.com/fabxc/tsdb",
-			"revision": "db5c88ea9ac9400b0e58ef18b9b272c34b98639b",
-			"revisionTime": "2017-02-28T07:40:51Z"
+			"revision": "2c3b56350a6d75a15484494c5a87145828cb34ef",
+			"revisionTime": "2017-03-01T16:19:57Z"
 		},
 		{
 			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
@@ -562,10 +562,10 @@
 			"revisionTime": "2015-04-06T19:39:34+02:00"
 		},
 		{
-			"checksumSHA1": "Wahi4g/9XiHhSLAJ+8jskg71PCU=",
+			"checksumSHA1": "UoQnBcZrj1gvLAK+MGNB+E7+AIE=",
 			"path": "github.com/miekg/dns",
-			"revision": "58f52c57ce9df13460ac68200cef30a008b9c468",
-			"revisionTime": "2016-10-18T06:08:08Z"
+			"revision": "672033dedc09500ca4d340760d0b80b9c0b198bd",
+			"revisionTime": "2017-02-13T20:16:50Z"
 		},
 		{
 			"checksumSHA1": "aCtmlyAgau9n0UHs8Pk+3xfIaVk=",
@@ -626,8 +626,8 @@
 		{
 			"checksumSHA1": "vopCLXHzYm+3l5fPKOf4/fQwrCM=",
 			"path": "github.com/prometheus/common/model",
-			"revision": "dd2f054febf4a6c00f2343686efb775948a8bff4",
-			"revisionTime": "2017-01-08T23:12:12Z"
+			"revision": "3007b6072c17c8d985734e6e19b1dea9174e13d3",
+			"revisionTime": "2017-02-19T00:35:58+01:00"
 		},
 		{
 			"checksumSHA1": "ZbbESWBHHcPUJ/A5yrzKhTHuPc8=",
@@ -860,6 +860,12 @@
 			"path": "golang.org/x/text/width",
 			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
 			"revisionTime": "2016-09-30T00:14:02Z"
+		},
+		{
+			"checksumSHA1": "eFQDEix/mGnhwnFu/Hq63zMfrX8=",
+			"path": "golang.org/x/time/rate",
+			"revision": "f51c12702a4d776e4c1fa9b0fabab841babae631",
+			"revisionTime": "2016-10-28T04:02:39Z"
 		},
 		{
 			"checksumSHA1": "AjdmRXf0fiy6Bec9mNlsGsmZi1k=",
