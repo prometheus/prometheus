@@ -4,6 +4,7 @@ package tsdb
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"os"
@@ -131,7 +132,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 }
 
 // Open returns a new DB in the given directory.
-func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
+func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db *DB, err error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -148,8 +149,10 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 		return nil, errors.Wrapf(err, "open DB in %s", dir)
 	}
 
-	var r prometheus.Registerer
-	// r := prometheus.DefaultRegisterer
+	if l == nil {
+		l = log.NewLogfmtLogger(os.Stdout)
+		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+	}
 
 	if opts == nil {
 		opts = DefaultOptions
@@ -161,7 +164,7 @@ func Open(dir string, logger log.Logger, opts *Options) (db *DB, err error) {
 	db = &DB{
 		dir:      dir,
 		lockf:    lockf,
-		logger:   logger,
+		logger:   l,
 		metrics:  newDBMetrics(r),
 		opts:     opts,
 		compactc: make(chan struct{}, 1),
@@ -189,6 +192,7 @@ func (db *DB) run() {
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
+			var seqs []int
 			var infos []compactionInfo
 			for _, b := range db.compactable() {
 				m := b.Meta()
@@ -197,17 +201,16 @@ func (db *DB) run() {
 					generation: m.Compaction.Generation,
 					mint:       m.MinTime,
 					maxt:       m.MaxTime,
+					seq:        m.Sequence,
 				})
+				seqs = append(seqs, m.Sequence)
 			}
 
 			i, j, ok := db.compactor.pick(infos)
 			if !ok {
 				continue
 			}
-			db.logger.Log("msg", "picked", "i", i, "j", j)
-			for k := i; k < j; k++ {
-				db.logger.Log("k", k, "generation", infos[k].generation)
-			}
+			db.logger.Log("msg", "compact", "seqs", fmt.Sprintf("%v", seqs[i:j]))
 
 			if err := db.compact(i, j); err != nil {
 				db.logger.Log("msg", "compaction failed", "err", err)
@@ -298,11 +301,16 @@ func (db *DB) compact(i, j int) error {
 	db.persisted = append(db.persisted, pb)
 
 	for _, b := range blocks[1:] {
+		db.logger.Log("msg", "remove old dir", "dir", b.Dir())
 		if err := os.RemoveAll(b.Dir()); err != nil {
 			return errors.Wrap(err, "removing old block")
 		}
 	}
-	return db.retentionCutoff()
+	if err := db.retentionCutoff(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (db *DB) retentionCutoff() error {
@@ -726,7 +734,7 @@ func isPowTwo(x int) bool {
 }
 
 // OpenPartitioned or create a new DB.
-func OpenPartitioned(dir string, n int, l log.Logger, opts *Options) (*PartitionedDB, error) {
+func OpenPartitioned(dir string, n int, l log.Logger, r prometheus.Registerer, opts *Options) (*PartitionedDB, error) {
 	if !isPowTwo(n) {
 		return nil, errors.Errorf("%d is not a power of two", n)
 	}
@@ -754,7 +762,7 @@ func OpenPartitioned(dir string, n int, l log.Logger, opts *Options) (*Partition
 		l := log.NewContext(l).With("partition", i)
 		d := partitionDir(dir, i)
 
-		s, err := Open(d, l, opts)
+		s, err := Open(d, l, r, opts)
 		if err != nil {
 			return nil, fmt.Errorf("initializing partition %q failed: %s", d, err)
 		}
@@ -879,4 +887,13 @@ func yoloString(b []byte) string {
 		Len:  sh.Len,
 	}
 	return *((*string)(unsafe.Pointer(&h)))
+}
+
+func closeAll(cs ...io.Closer) error {
+	var merr MultiError
+
+	for _, c := range cs {
+		merr.Add(c.Close())
+	}
+	return merr.Err()
 }

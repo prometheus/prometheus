@@ -6,10 +6,13 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/bradfitz/slice"
+	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
@@ -33,9 +36,6 @@ type ChunkWriter interface {
 	// is set and can be used to retrieve the chunks from the written data.
 	WriteChunks(chunks ...ChunkMeta) error
 
-	// Size returns the size of the data written so far.
-	Size() int64
-
 	// Close writes any required finalization and closes the resources
 	// associated with the underlying writer.
 	Close() error
@@ -44,20 +44,109 @@ type ChunkWriter interface {
 // chunkWriter implements the ChunkWriter interface for the standard
 // serialization format.
 type chunkWriter struct {
-	ow    io.Writer
-	w     *bufio.Writer
-	n     int64
-	c     int
-	crc32 hash.Hash
+	dirFile *os.File
+	files   []*os.File
+	wbuf    *bufio.Writer
+	n       int64
+	crc32   hash.Hash
+
+	segmentSize int64
 }
 
-func newChunkWriter(w io.Writer) *chunkWriter {
-	return &chunkWriter{
-		ow:    w,
-		w:     bufio.NewWriterSize(w, 1*1024*1024),
-		n:     0,
-		crc32: crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+const (
+	defaultChunkSegmentSize = 512 * 1024 * 1024
+
+	chunksFormatV1 = 1
+	indexFormatV1  = 1
+)
+
+func newChunkWriter(dir string) (*chunkWriter, error) {
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return nil, err
 	}
+	dirFile, err := fileutil.OpenDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	cw := &chunkWriter{
+		dirFile:     dirFile,
+		n:           0,
+		crc32:       crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+		segmentSize: defaultChunkSegmentSize,
+	}
+	return cw, nil
+}
+
+func (w *chunkWriter) tail() *os.File {
+	if len(w.files) == 0 {
+		return nil
+	}
+	return w.files[len(w.files)-1]
+}
+
+// finalizeTail writes all pending data to the current tail file,
+// truncates its size, and closes it.
+func (w *chunkWriter) finalizeTail() error {
+	tf := w.tail()
+	if tf == nil {
+		return nil
+	}
+
+	if err := w.wbuf.Flush(); err != nil {
+		return err
+	}
+	if err := fileutil.Fsync(tf); err != nil {
+		return err
+	}
+	// As the file was pre-allocated, we truncate any superfluous zero bytes.
+	off, err := tf.Seek(0, os.SEEK_CUR)
+	if err != nil {
+		return err
+	}
+	if err := tf.Truncate(off); err != nil {
+		return err
+	}
+	return tf.Close()
+}
+
+func (w *chunkWriter) cut() error {
+	// Sync current tail to disk and close.
+	w.finalizeTail()
+
+	p, _, err := nextSequenceFile(w.dirFile.Name(), "")
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+	if err = fileutil.Preallocate(f, w.segmentSize, true); err != nil {
+		return err
+	}
+	if err = w.dirFile.Sync(); err != nil {
+		return err
+	}
+
+	// Write header metadata for new file.
+
+	metab := make([]byte, 8)
+	binary.BigEndian.PutUint32(metab[:4], MagicSeries)
+	metab[4] = chunksFormatV1
+
+	if _, err := f.Write(metab); err != nil {
+		return err
+	}
+
+	w.files = append(w.files, f)
+	if w.wbuf != nil {
+		w.wbuf.Reset(f)
+	} else {
+		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
+	}
+	w.n = 8
+
+	return nil
 }
 
 func (w *chunkWriter) write(wr io.Writer, b []byte) error {
@@ -66,44 +155,40 @@ func (w *chunkWriter) write(wr io.Writer, b []byte) error {
 	return err
 }
 
-func (w *chunkWriter) writeMeta() error {
-	b := [8]byte{}
-
-	binary.BigEndian.PutUint32(b[:4], MagicSeries)
-	b[4] = flagStd
-
-	return w.write(w.w, b[:])
-}
-
 func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
-	// Initialize with meta data.
-	if w.n == 0 {
-		if err := w.writeMeta(); err != nil {
+	// Calculate maximum space we need and cut a new segment in case
+	// we don't fit into the current one.
+	maxLen := int64(binary.MaxVarintLen32)
+	for _, c := range chks {
+		maxLen += binary.MaxVarintLen32 + 1
+		maxLen += int64(len(c.Chunk.Bytes()))
+	}
+	newsz := w.n + maxLen
+
+	if w.wbuf == nil || w.n > w.segmentSize || newsz > w.segmentSize && maxLen <= w.segmentSize {
+		if err := w.cut(); err != nil {
 			return err
 		}
 	}
 
+	// Write chunks sequentially and set the reference field in the ChunkMeta.
 	w.crc32.Reset()
-	wr := io.MultiWriter(w.crc32, w.w)
+	wr := io.MultiWriter(w.crc32, w.wbuf)
 
-	// For normal reads we don't need the number of the chunk section but
-	// it allows us to verify checksums without reading the index file.
-	// The offsets are also technically enough to calculate chunk size. but
-	// holding the length of each chunk could later allow for adding padding
-	// between chunks.
-	b := [binary.MaxVarintLen32]byte{}
-	n := binary.PutUvarint(b[:], uint64(len(chks)))
+	b := make([]byte, binary.MaxVarintLen32)
+	n := binary.PutUvarint(b, uint64(len(chks)))
 
 	if err := w.write(wr, b[:n]); err != nil {
 		return err
 	}
+	seq := uint64(w.seq()) << 32
 
 	for i := range chks {
 		chk := &chks[i]
 
-		chk.Ref = uint64(w.n)
+		chk.Ref = seq | uint64(w.n)
 
-		n = binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
+		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
 
 		if err := w.write(wr, b[:n]); err != nil {
 			return err
@@ -117,24 +202,18 @@ func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
 		chk.Chunk = nil
 	}
 
-	if err := w.write(w.w, w.crc32.Sum(nil)); err != nil {
+	if err := w.write(w.wbuf, w.crc32.Sum(nil)); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (w *chunkWriter) Size() int64 {
-	return w.n
+func (w *chunkWriter) seq() int {
+	return len(w.files) - 1
 }
 
 func (w *chunkWriter) Close() error {
-	// Initialize block in case no data was written to it.
-	if w.n == 0 {
-		if err := w.writeMeta(); err != nil {
-			return err
-		}
-	}
-	return w.w.Flush()
+	return w.finalizeTail()
 }
 
 // ChunkMeta holds information about a chunk of data.
@@ -155,7 +234,7 @@ type IndexWriter interface {
 	// of chunks that the index can reference.
 	// The reference number is used to resolve a series against the postings
 	// list iterator. It only has to be available during the write processing.
-	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta)
+	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta) error
 
 	// WriteLabelIndex serializes an index from label names to values.
 	// The passed in values chained tuples of strings of the length of names.
@@ -163,9 +242,6 @@ type IndexWriter interface {
 
 	// WritePostings writes a postings list for a single label pair.
 	WritePostings(name, value string, it Postings) error
-
-	// Size returns the size of the data written so far.
-	Size() int64
 
 	// Close writes any finalization and closes theresources associated with
 	// the underlying writer.
@@ -181,13 +257,12 @@ type indexWriterSeries struct {
 // indexWriter implements the IndexWriter interface for the standard
 // serialization format.
 type indexWriter struct {
-	ow      io.Writer
-	w       *bufio.Writer
+	f       *os.File
+	bufw    *bufio.Writer
 	n       int64
 	started bool
 
-	series map[uint32]*indexWriterSeries
-
+	series       map[uint32]*indexWriterSeries
 	symbols      map[string]uint32 // symbol offsets
 	labelIndexes []hashEntry       // label index offsets
 	postings     []hashEntry       // postings lists offsets
@@ -195,15 +270,31 @@ type indexWriter struct {
 	crc32 hash.Hash
 }
 
-func newIndexWriter(w io.Writer) *indexWriter {
-	return &indexWriter{
-		w:       bufio.NewWriterSize(w, 1*1024*1024),
-		ow:      w,
+func newIndexWriter(dir string) (*indexWriter, error) {
+	df, err := fileutil.OpenDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "index"), os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return nil, err
+	}
+	if err := fileutil.Fsync(df); err != nil {
+		return nil, errors.Wrap(err, "sync dir")
+	}
+
+	iw := &indexWriter{
+		f:       f,
+		bufw:    bufio.NewWriterSize(f, 1*1024*1024),
 		n:       0,
 		symbols: make(map[string]uint32, 4096),
 		series:  make(map[uint32]*indexWriterSeries, 4096),
 		crc32:   crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 	}
+	if err := iw.writeMeta(); err != nil {
+		return nil, err
+	}
+	return iw, nil
 }
 
 func (w *indexWriter) write(wr io.Writer, b []byte) error {
@@ -215,7 +306,7 @@ func (w *indexWriter) write(wr io.Writer, b []byte) error {
 // section writes a CRC32 checksummed section of length l and guarded by flag.
 func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) error {
 	w.crc32.Reset()
-	wr := io.MultiWriter(w.crc32, w.w)
+	wr := io.MultiWriter(w.crc32, w.bufw)
 
 	b := [5]byte{flag, 0, 0, 0, 0}
 	binary.BigEndian.PutUint32(b[1:], l)
@@ -225,9 +316,9 @@ func (w *indexWriter) section(l uint32, flag byte, f func(w io.Writer) error) er
 	}
 
 	if err := f(wr); err != nil {
-		return errors.Wrap(err, "contents write func")
+		return errors.Wrap(err, "write contents")
 	}
-	if err := w.write(w.w, w.crc32.Sum(nil)); err != nil {
+	if err := w.write(w.bufw, w.crc32.Sum(nil)); err != nil {
 		return errors.Wrap(err, "writing checksum")
 	}
 	return nil
@@ -239,10 +330,13 @@ func (w *indexWriter) writeMeta() error {
 	binary.BigEndian.PutUint32(b[:4], MagicIndex)
 	b[4] = flagStd
 
-	return w.write(w.w, b[:])
+	return w.write(w.bufw, b[:])
 }
 
-func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkMeta) {
+func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkMeta) error {
+	if _, ok := w.series[ref]; ok {
+		return errors.Errorf("series with reference %d already added", ref)
+	}
 	// Populate the symbol table from all label sets we have to reference.
 	for _, l := range lset {
 		w.symbols[l.Name] = 0
@@ -253,6 +347,7 @@ func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkM
 		labels: lset,
 		chunks: chunks,
 	}
+	return nil
 }
 
 func (w *indexWriter) writeSymbols() error {
@@ -340,9 +435,6 @@ func (w *indexWriter) writeSeries() error {
 }
 
 func (w *indexWriter) init() error {
-	if err := w.writeMeta(); err != nil {
-		return err
-	}
 	if err := w.writeSymbols(); err != nil {
 		return err
 	}
@@ -439,10 +531,6 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	})
 }
 
-func (w *indexWriter) Size() int64 {
-	return w.n
-}
-
 type hashEntry struct {
 	name   string
 	offset uint32
@@ -482,24 +570,22 @@ func (w *indexWriter) finalize() error {
 	// for any index query.
 	// TODO(fabxc): also store offset to series section to allow plain
 	// iteration over all existing series?
-	// TODO(fabxc): store references like these that are not resolved via direct
-	// mmap using explicit endianness?
 	b := [8]byte{}
 	binary.BigEndian.PutUint32(b[:4], lo)
 	binary.BigEndian.PutUint32(b[4:], po)
 
-	return w.write(w.w, b[:])
+	return w.write(w.bufw, b[:])
 }
 
 func (w *indexWriter) Close() error {
-	// Handle blocks without any data.
-	if !w.started {
-		if err := w.init(); err != nil {
-			return err
-		}
-	}
 	if err := w.finalize(); err != nil {
 		return err
 	}
-	return w.w.Flush()
+	if err := w.bufw.Flush(); err != nil {
+		return err
+	}
+	if err := fileutil.Fsync(w.f); err != nil {
+		return err
+	}
+	return w.f.Close()
 }
