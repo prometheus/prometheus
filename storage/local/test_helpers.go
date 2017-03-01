@@ -45,8 +45,7 @@ func NewTestStorage(t testutil.T, encoding chunk.Encoding) (*MemorySeriesStorage
 	chunk.DefaultEncoding = encoding
 	directory := testutil.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
-		MemoryChunks:               1000000,
-		MaxChunksToPersist:         1000000,
+		TargetHeapSize:             1000000000,
 		PersistenceRetentionPeriod: 24 * time.Hour * 365 * 100, // Enough to never trigger purging.
 		PersistenceStoragePath:     directory.Path(),
 		HeadChunkTimeout:           5 * time.Minute,

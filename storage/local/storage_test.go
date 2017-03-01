@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -824,8 +825,7 @@ func TestLoop(t *testing.T) {
 	directory := testutil.NewTemporaryDirectory("test_storage", t)
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
-		MemoryChunks:               50,
-		MaxChunksToPersist:         1000000,
+		TargetHeapSize:             100000,
 		PersistenceRetentionPeriod: 24 * 7 * time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		HeadChunkTimeout:           5 * time.Minute,
@@ -877,7 +877,6 @@ func testChunk(t *testing.T, encoding chunk.Encoding) {
 
 	for m := range s.fpToSeries.iter() {
 		s.fpLocker.Lock(m.fp)
-		defer s.fpLocker.Unlock(m.fp) // TODO remove, see below
 		var values []model.SamplePair
 		for _, cd := range m.series.chunkDescs {
 			if cd.IsEvicted() {
@@ -900,7 +899,7 @@ func testChunk(t *testing.T, encoding chunk.Encoding) {
 				t.Errorf("%d. Got %v; want %v", i, v.Value, samples[i].Value)
 			}
 		}
-		//s.fpLocker.Unlock(m.fp)
+		s.fpLocker.Unlock(m.fp)
 	}
 	log.Info("test done, closing")
 }
@@ -1459,8 +1458,8 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunk.Encoding) {
 	s, closer := NewTestStorage(t, encoding)
 	defer closer.Close()
 
-	// Adjust memory chunks to lower value to see evictions.
-	s.maxMemoryChunks = 1
+	// Adjust target heap size to lower value to see evictions.
+	s.targetHeapSize = 1000000
 
 	for _, sample := range samples {
 		s.Append(sample)
@@ -1478,7 +1477,7 @@ func testEvictAndLoadChunkDescs(t *testing.T, encoding chunk.Encoding) {
 	// Maintain series without any dropped chunks.
 	s.maintainMemorySeries(fp, 0)
 	// Give the evict goroutine an opportunity to run.
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(1250 * time.Millisecond)
 	// Maintain series again to trigger chunk.Desc eviction.
 	s.maintainMemorySeries(fp, 0)
 
@@ -1605,8 +1604,7 @@ func benchmarkFuzz(b *testing.B, encoding chunk.Encoding) {
 	directory := testutil.NewTemporaryDirectory("test_storage", b)
 	defer directory.Close()
 	o := &MemorySeriesStorageOptions{
-		MemoryChunks:               100,
-		MaxChunksToPersist:         1000000,
+		TargetHeapSize:             200000,
 		PersistenceRetentionPeriod: time.Hour,
 		PersistenceStoragePath:     directory.Path(),
 		HeadChunkTimeout:           5 * time.Minute,
@@ -2007,6 +2005,242 @@ func TestAppendOutOfOrder(t *testing.T) {
 		wantSamplePair := want[i]
 		if !wantSamplePair.Equal(&gotSamplePair) {
 			t.Fatalf("want %v, got %v", wantSamplePair, gotSamplePair)
+		}
+	}
+}
+
+func TestCalculatePersistUrgency(t *testing.T) {
+	tests := map[string]struct {
+		persistUrgency                        int32
+		lenEvictList                          int
+		numChunksToPersist                    int64
+		targetHeapSize, msNextGC, msHeapAlloc uint64
+		msNumGC, lastNumGC                    uint32
+
+		wantPersistUrgency int32
+		wantChunksToEvict  int
+		wantLastNumGC      uint32
+	}{
+		"all zeros": {
+			persistUrgency:     0,
+			lenEvictList:       0,
+			numChunksToPersist: 0,
+			targetHeapSize:     0,
+			msNextGC:           0,
+			msHeapAlloc:        0,
+			msNumGC:            0,
+			lastNumGC:          0,
+
+			wantPersistUrgency: 0,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      0,
+		},
+		"far from target heap size, plenty of chunks to persist, GC has happened": {
+			persistUrgency:     500,
+			lenEvictList:       1000,
+			numChunksToPersist: 100,
+			targetHeapSize:     1000000,
+			msNextGC:           500000,
+			msHeapAlloc:        400000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 45,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"far from target heap size, plenty of chunks to persist, GC hasn't happened, urgency must not decrease": {
+			persistUrgency:     500,
+			lenEvictList:       1000,
+			numChunksToPersist: 100,
+			targetHeapSize:     1000000,
+			msNextGC:           500000,
+			msHeapAlloc:        400000,
+			msNumGC:            42,
+			lastNumGC:          42,
+
+			wantPersistUrgency: 500,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"far from target heap size but no chunks to persist": {
+			persistUrgency:     50,
+			lenEvictList:       0,
+			numChunksToPersist: 100,
+			targetHeapSize:     1000000,
+			msNextGC:           500000,
+			msHeapAlloc:        400000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 500,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"far from target heap size but no chunks to persist, HeapAlloc > NextGC": {
+			persistUrgency:     50,
+			lenEvictList:       0,
+			numChunksToPersist: 100,
+			targetHeapSize:     1000000,
+			msNextGC:           500000,
+			msHeapAlloc:        600000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 600,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded but GC hasn't happened": {
+			persistUrgency:     50,
+			lenEvictList:       3000,
+			numChunksToPersist: 1000,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          42,
+
+			wantPersistUrgency: 275,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded, GC has happened": {
+			persistUrgency:     50,
+			lenEvictList:       3000,
+			numChunksToPersist: 1000,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 275,
+			wantChunksToEvict:  97,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded, GC has happened, urgency bumped due to low number of evictable chunks": {
+			persistUrgency:     50,
+			lenEvictList:       300,
+			numChunksToPersist: 100,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 323,
+			wantChunksToEvict:  97,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded but no evictable chunks and GC hasn't happened": {
+			persistUrgency:     50,
+			lenEvictList:       0,
+			numChunksToPersist: 1000,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          42,
+
+			wantPersistUrgency: 1000,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded but no evictable chunks and GC has happened": {
+			persistUrgency:     50,
+			lenEvictList:       0,
+			numChunksToPersist: 1000,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 1000,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded, very few evictable chunks, GC hasn't happened": {
+			persistUrgency:     50,
+			lenEvictList:       10,
+			numChunksToPersist: 1000,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          42,
+
+			wantPersistUrgency: 1000,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded, some evictable chunks (but not enough), GC hasn't happened": {
+			persistUrgency:     50,
+			lenEvictList:       50,
+			numChunksToPersist: 250,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          42,
+
+			wantPersistUrgency: 916,
+			wantChunksToEvict:  0,
+			wantLastNumGC:      42,
+		},
+		"target heap size exceeded, some evictable chunks (but not enough), GC has happened": {
+			persistUrgency:     50,
+			lenEvictList:       50,
+			numChunksToPersist: 250,
+			targetHeapSize:     1000000,
+			msNextGC:           1100000,
+			msHeapAlloc:        900000,
+			msNumGC:            42,
+			lastNumGC:          41,
+
+			wantPersistUrgency: 1000,
+			wantChunksToEvict:  50,
+			wantLastNumGC:      42,
+		},
+	}
+
+	s, closer := NewTestStorage(t, 1)
+	defer closer.Close()
+
+	for scenario, test := range tests {
+		s.persistUrgency = test.persistUrgency
+		s.numChunksToPersist = test.numChunksToPersist
+		s.targetHeapSize = test.targetHeapSize
+		s.lastNumGC = test.lastNumGC
+		s.evictList.Init()
+		for i := 0; i < test.lenEvictList; i++ {
+			s.evictList.PushBack(&struct{}{})
+		}
+		ms := runtime.MemStats{
+			NextGC:    test.msNextGC,
+			HeapAlloc: test.msHeapAlloc,
+			NumGC:     test.msNumGC,
+		}
+		chunksToEvict := s.calculatePersistUrgency(&ms)
+
+		if chunksToEvict != test.wantChunksToEvict {
+			t.Errorf(
+				"scenario %q: got %d chunks to evict, want %d",
+				scenario, chunksToEvict, test.wantChunksToEvict,
+			)
+		}
+		if s.persistUrgency != test.wantPersistUrgency {
+			t.Errorf(
+				"scenario %q: got persist urgency %d, want %d",
+				scenario, s.persistUrgency, test.wantPersistUrgency,
+			)
+		}
+		if s.lastNumGC != test.wantLastNumGC {
+			t.Errorf(
+				"scenario %q: got lastNumGC %d , want %d",
+				scenario, s.lastNumGC, test.wantLastNumGC,
+			)
 		}
 	}
 }
