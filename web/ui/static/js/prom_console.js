@@ -523,8 +523,6 @@ PromConsole.Graph.prototype._clearGraph = function() {
 
 PromConsole.Graph.prototype._xhrs = [];
 
-// Enable a user to build a query in the context of this graph
-// e.g. relevant annotations
 PromConsole.Graph.prototype.buildQueryUrl = function(expr) {
   var p = this.params;
   return PATH_PREFIX + "/api/v1/query_range?query=" +
