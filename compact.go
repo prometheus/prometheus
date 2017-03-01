@@ -406,7 +406,7 @@ func (c *compactionMerger) At() (labels.Labels, []ChunkMeta) {
 	return c.l, c.c
 }
 
-func renameDir(from, to string) error {
+func renameFile(from, to string) error {
 	if err := os.RemoveAll(to); err != nil {
 		return err
 	}

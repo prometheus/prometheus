@@ -300,7 +300,7 @@ func (db *DB) compact(i, j int) error {
 		}
 	}
 
-	if err := renameDir(tmpdir, dir); err != nil {
+	if err := renameFile(tmpdir, dir); err != nil {
 		return errors.Wrap(err, "rename dir")
 	}
 	pb.dir = dir
