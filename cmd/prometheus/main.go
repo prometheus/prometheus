@@ -97,7 +97,7 @@ func Main() int {
 	reloadables = append(reloadables, remoteStorage)
 
 	var (
-		notifier       = notifier.New(&cfg.notifier)
+		notifier       = notifier.New(&cfg.notifier, prometheus.DefaultRegisterer)
 		targetManager  = retrieval.NewTargetManager(sampleAppender)
 		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
