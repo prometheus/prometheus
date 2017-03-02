@@ -13,6 +13,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// Compactor provides compaction against an underlying storage
+// of time series data.
+type Compactor interface {
+	// Plan returns a set of non-overlapping directories that can
+	// be compacted concurrently.
+	// Results returned when compactions are in progress are undefined.
+	Plan(dir string) ([][]string, error)
+
+	// Write persists a Block into a directory.
+	Write(dir string, b Block) error
+
+	// Compact runs compaction against the provided directories. Must
+	// only be called concurrently with results of Plan().
+	Compact(dirs ...string) error
+}
+
+// compactor implements the Compactor interface.
 type compactor struct {
 	metrics *compactorMetrics
 	opts    *compactorOptions
@@ -69,61 +86,55 @@ type compactionInfo struct {
 
 const compactionBlocksLen = 3
 
-// pick returns a range [i, j) in the blocks that are suitable to be compacted
-// into a single block at position i.
-func (c *compactor) pick(bs []compactionInfo) (i, j int, ok bool) {
-	if len(bs) == 0 {
-		return 0, 0, false
+func (c *compactor) Plan(dir string) ([][]string, error) {
+	dirs, err := blockDirs(dir)
+	if err != nil {
+		return nil, err
 	}
 
-	// First, we always compact pending in-memory blocks – oldest first.
-	for i, b := range bs {
-		if b.generation > 0 {
-			continue
-		}
-		// Directly compact into 2nd generation with previous generation 1 blocks.
-		if i+1 >= compactionBlocksLen {
-			match := true
-			for _, pb := range bs[i-compactionBlocksLen+1 : i] {
-				match = match && pb.generation == 1
-			}
-			if match {
-				return i - compactionBlocksLen + 1, i + 1, true
-			}
-		}
-		// If we have enough generation 0 blocks to directly move to the
-		// 2nd generation, skip generation 1.
-		if len(bs)-i >= compactionBlocksLen {
-			// Guard against the newly compacted block becoming larger than
-			// the previous one.
-			if i == 0 || bs[i-1].generation >= 2 {
-				return i, i + compactionBlocksLen, true
-			}
-		}
+	var bs []*BlockMeta
 
-		// No optimizations possible, naiively compact the new block.
-		return i, i + 1, true
+	for _, dir := range dirs {
+		meta, err := readMetaFile(dir)
+		if err != nil {
+			return nil, err
+		}
+		if meta.Compaction.Generation > 0 {
+			bs = append(bs, meta)
+		}
+	}
+
+	if len(bs) == 0 {
+		return nil, nil
+	}
+
+	sliceDirs := func(i, j int) [][]string {
+		var res []string
+		for k := i; k < j; k++ {
+			res = append(res, dirs[k])
+		}
+		return [][]string{res}
 	}
 
 	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(bs)-compactionBlocksLen+1; i += compactionBlocksLen {
+	for i := 0; i < len(bs)-compactionBlocksLen+1; i++ {
 		if c.match(bs[i : i+3]) {
-			return i, i + compactionBlocksLen, true
+			return sliceDirs(i, i+compactionBlocksLen), nil
 		}
 	}
 
-	return 0, 0, false
+	return nil, nil
 }
 
-func (c *compactor) match(bs []compactionInfo) bool {
-	g := bs[0].generation
+func (c *compactor) match(bs []*BlockMeta) bool {
+	g := bs[0].Compaction.Generation
 
 	for _, b := range bs {
-		if b.generation != g {
+		if b.Compaction.Generation != g {
 			return false
 		}
 	}
-	return uint64(bs[len(bs)-1].maxt-bs[0].mint) <= c.opts.maxBlockRange
+	return uint64(bs[len(bs)-1].MaxTime-bs[0].MinTime) <= c.opts.maxBlockRange
 }
 
 var entropy = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -136,11 +147,7 @@ func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
 	res.ULID = ulid.MustNew(ulid.Now(), entropy)
 
-	g := m0.Compaction.Generation
-	if g == 0 && len(blocks) > 1 {
-		g++
-	}
-	res.Compaction.Generation = g + 1
+	res.Compaction.Generation = m0.Compaction.Generation + 1
 
 	for _, b := range blocks {
 		res.Stats.NumSamples += b.Meta().Stats.NumSamples
@@ -148,34 +155,61 @@ func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	return res
 }
 
-func (c *compactor) compact(dir string, blocks ...Block) (err error) {
-	start := time.Now()
-	defer func() {
+func (c *compactor) Compact(dirs ...string) (err error) {
+	var blocks []Block
+
+	for _, d := range dirs {
+		b, err := newPersistedBlock(d)
+		if err != nil {
+			return err
+		}
+		blocks = append(blocks, b)
+	}
+
+	return c.write(dirs[0], blocks...)
+}
+
+func (c *compactor) Write(dir string, b Block) error {
+	return c.write(dir, b)
+}
+
+// write creates a new block that is the union of the provided blocks into dir.
+// It cleans up all files of the old blocks after completing successfully.
+func (c *compactor) write(dir string, blocks ...Block) (err error) {
+	defer func(t time.Time) {
 		if err != nil {
 			c.metrics.failed.Inc()
 		}
-		c.metrics.duration.Observe(time.Since(start).Seconds())
-	}()
+		c.metrics.duration.Observe(time.Since(t).Seconds())
+	}(time.Now())
 
-	if err = os.RemoveAll(dir); err != nil {
+	tmp := dir + ".tmp"
+
+	if err = os.RemoveAll(tmp); err != nil {
 		return err
 	}
 
-	if err = os.MkdirAll(dir, 0777); err != nil {
+	if err = os.MkdirAll(tmp, 0777); err != nil {
 		return err
 	}
 
-	chunkw, err := newChunkWriter(chunkDir(dir))
+	// Populate chunk and index files into temporary directory with
+	// data of all blocks.
+	chunkw, err := newChunkWriter(chunkDir(tmp))
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
-	indexw, err := newIndexWriter(dir)
+	indexw, err := newIndexWriter(tmp)
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
 
-	if err = c.write(dir, blocks, indexw, chunkw); err != nil {
+	meta, err := c.populate(blocks, indexw, chunkw)
+	if err != nil {
 		return errors.Wrap(err, "write compaction")
+	}
+	if err = writeMetaFile(tmp, meta); err != nil {
+		return errors.Wrap(err, "write merged meta")
 	}
 
 	if err = chunkw.Close(); err != nil {
@@ -184,16 +218,37 @@ func (c *compactor) compact(dir string, blocks ...Block) (err error) {
 	if err = indexw.Close(); err != nil {
 		return errors.Wrap(err, "close index writer")
 	}
+
+	// Block successfully written, make visible and remove old ones.
+	if err := renameFile(tmp, dir); err != nil {
+		return errors.Wrap(err, "rename block dir")
+	}
+	for _, b := range blocks[1:] {
+		if err := os.RemoveAll(b.Dir()); err != nil {
+			return err
+		}
+	}
+	// Properly sync parent dir to ensure changes are visible.
+	df, err := fileutil.OpenDir(dir)
+	if err != nil {
+		return errors.Wrap(err, "sync block dir")
+	}
+	if err := fileutil.Fsync(df); err != nil {
+		return errors.Wrap(err, "sync block dir")
+	}
+
 	return nil
 }
 
-func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw ChunkWriter) error {
+// populate fills the index and chunk writers with new data gathered as the union
+// of the provided blocks. It returns meta information for the new block.
+func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
 	var set compactionSet
 
 	for i, b := range blocks {
 		all, err := b.Index().Postings("", "")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// TODO(fabxc): find more transparent way of handling this.
 		if hb, ok := b.(*headBlock); ok {
@@ -207,7 +262,7 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 		}
 		set, err = newCompactionMerger(set, s)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -222,7 +277,7 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 	for set.Next() {
 		lset, chunks := set.At()
 		if err := chunkw.WriteChunks(chunks...); err != nil {
-			return err
+			return nil, err
 		}
 
 		indexw.AddSeries(i, lset, chunks...)
@@ -243,7 +298,7 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 		i++
 	}
 	if set.Err() != nil {
-		return set.Err()
+		return nil, set.Err()
 	}
 
 	s := make([]string, 0, 256)
@@ -254,13 +309,13 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 			s = append(s, x)
 		}
 		if err := indexw.WriteLabelIndex([]string{n}, s); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	for t := range postings.m {
 		if err := indexw.WritePostings(t.name, t.value, postings.get(t)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// Write a postings list containing all series.
@@ -269,10 +324,10 @@ func (c *compactor) write(dir string, blocks []Block, indexw IndexWriter, chunkw
 		all[i] = uint32(i)
 	}
 	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
-		return err
+		return nil, err
 	}
 
-	return writeMetaFile(dir, &meta)
+	return &meta, nil
 }
 
 type compactionSet interface {

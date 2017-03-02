@@ -47,7 +47,9 @@ type querier struct {
 func (s *DB) Querier(mint, maxt int64) Querier {
 	s.mtx.RLock()
 
+	s.headmtx.RLock()
 	blocks := s.blocksForInterval(mint, maxt)
+	s.headmtx.RUnlock()
 
 	sq := &querier{
 		blocks: make([]Querier, 0, len(blocks)),
