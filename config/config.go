@@ -945,9 +945,6 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
 	}
-	if len(c.BearerToken) == 0 && len(c.BearerTokenFile) == 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
 
 	return nil
 }
