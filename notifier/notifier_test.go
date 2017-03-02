@@ -64,6 +64,7 @@ func TestPostPath(t *testing.T) {
 
 func TestHandlerNextBatch(t *testing.T) {
 	h := New(&Options{}, prometheus.DefaultRegisterer)
+	defer unregisterMetrics()
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &model.Alert{
@@ -119,6 +120,14 @@ func alertsEqual(a, b model.Alerts) bool {
 	return true
 }
 
+func unregisterMetrics() {
+	m := newAlertMetrics(nil, &Options{})
+	prometheus.DefaultRegisterer.Unregister(m.latency)
+	prometheus.DefaultRegisterer.Unregister(m.errors)
+	prometheus.DefaultRegisterer.Unregister(m.sent)
+	prometheus.DefaultRegisterer.Unregister(m.dropped)
+}
+
 func TestHandlerSendAll(t *testing.T) {
 	var (
 		expected         model.Alerts
@@ -151,6 +160,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server2.Close()
 
 	h := New(&Options{}, prometheus.DefaultRegisterer)
+	defer unregisterMetrics()
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -218,6 +228,7 @@ func TestCustomDo(t *testing.T) {
 			}, nil
 		},
 	}, prometheus.DefaultRegisterer)
+	defer unregisterMetrics()
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
@@ -240,6 +251,7 @@ func TestExternalLabels(t *testing.T) {
 			},
 		},
 	}, prometheus.DefaultRegisterer)
+	defer unregisterMetrics()
 
 	// This alert should get the external label attached.
 	h.Send(&model.Alert{
@@ -293,7 +305,8 @@ func TestHandlerRelabel(t *testing.T) {
 				Replacement:  "renamed",
 			},
 		},
-	})
+	}, prometheus.DefaultRegisterer)
+	defer unregisterMetrics()
 
 	// This alert should be dropped due to the configuration
 	h.Send(&model.Alert{
@@ -347,7 +360,8 @@ func TestHandlerQueueing(t *testing.T) {
 
 	h := New(&Options{
 		QueueCapacity: 3 * maxBatchSize,
-	})
+	}, prometheus.DefaultRegisterer)
+	defer unregisterMetrics()
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -357,7 +371,7 @@ func TestHandlerQueueing(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	}, prometheus.DefaultRegisterer)
+	})
 
 	var alerts model.Alerts
 	for i := range make([]struct{}, 20*maxBatchSize) {
