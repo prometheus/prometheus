@@ -229,6 +229,7 @@ func (db *DB) compact() error {
 
 			select {
 			case <-db.stopc:
+				db.mtx.RUnlock()
 				return nil
 			default:
 			}

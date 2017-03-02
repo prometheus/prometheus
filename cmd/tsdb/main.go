@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +23,9 @@ import (
 )
 
 func main() {
+	// Start HTTP server for pprof endpoint.
+	go http.ListenAndServe(":9999", nil)
+
 	root := &cobra.Command{
 		Use:   "tsdb",
 		Short: "CLI tool for tsdb",
