@@ -193,6 +193,8 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 		return err
 	}
 
+	// Populate chunk and index files into temporary directory with
+	// data of all blocks.
 	chunkw, err := newChunkWriter(chunkDir(tmp))
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
@@ -217,6 +219,7 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 		return errors.Wrap(err, "close index writer")
 	}
 
+	// Block successfully written, make visible and remove old ones.
 	if err := renameFile(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}
@@ -224,6 +227,14 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 		if err := os.RemoveAll(b.Dir()); err != nil {
 			return err
 		}
+	}
+	// Properly sync parent dir to ensure changes are visible.
+	df, err := fileutil.OpenDir(dir)
+	if err != nil {
+		return errors.Wrap(err, "sync block dir")
+	}
+	if err := fileutil.Fsync(df); err != nil {
+		return errors.Wrap(err, "sync block dir")
 	}
 
 	return nil
