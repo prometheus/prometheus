@@ -117,7 +117,7 @@ func (c *compactor) Plan(dir string) ([][]string, error) {
 	}
 
 	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(bs)-compactionBlocksLen+1; i += compactionBlocksLen {
+	for i := 0; i < len(bs)-compactionBlocksLen+1; i++ {
 		if c.match(bs[i : i+3]) {
 			return sliceDirs(i, i+compactionBlocksLen), nil
 		}
