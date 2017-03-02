@@ -264,7 +264,7 @@ func (db *DB) compact() error {
 			db.logger.Log("msg", "compact blocks", "seq", fmt.Sprintf("%v", p))
 
 			if err := db.compactor.Compact(p...); err != nil {
-				return errors.Wrapf(err, "compact", p)
+				return errors.Wrapf(err, "compact %s", p)
 			}
 			changes = true
 		}
