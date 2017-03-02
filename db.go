@@ -172,7 +172,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:    make(chan struct{}),
 		stopc:    make(chan struct{}),
 	}
-	db.compactor = newCompactor(dir, r, &compactorOptions{
+	db.compactor = newCompactor(r, &compactorOptions{
 		maxBlockRange: opts.MaxBlockDuration,
 	})
 
@@ -245,7 +245,7 @@ func (db *DB) compact() error {
 
 	// Check for compactions of multiple blocks.
 	for {
-		plans, err := db.compactor.Plan()
+		plans, err := db.compactor.Plan(db.dir)
 		if err != nil {
 			return errors.Wrap(err, "plan compaction")
 		}
@@ -363,7 +363,7 @@ func (db *DB) reloadBlocks() error {
 	for seq, b := range db.seqBlocks {
 		if _, ok := seqBlocks[seq]; !ok {
 			if err := b.Close(); err != nil {
-				return err
+				return errors.Wrapf(err, "closing removed block %d", b.Meta().Sequence)
 			}
 		}
 	}

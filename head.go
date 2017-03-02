@@ -149,8 +149,11 @@ func (h *headBlock) Close() error {
 		return err
 	}
 	// Check whether the head block still exists in the underlying dir
-	// or has already been replaced with a compacted version
+	// or has already been replaced with a compacted version or removed.
 	meta, err := readMetaFile(h.dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
