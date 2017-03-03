@@ -6,7 +6,7 @@
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats pull-right"></div>
-                <img src="{{ pathPrefix }}/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+                <img src="{{ pathPrefix }}/static/img/ajax-loader.gif?v={{ buildVersion }}" class="spinner" alt="ajax_spinner">
               </div>
             </div>
             <div class="row">
