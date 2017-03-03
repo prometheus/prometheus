@@ -58,7 +58,7 @@ type WAL struct {
 
 const (
 	walDirName          = "wal"
-	walSegmentSizeBytes = 64 * 1000 * 1000 // 64 MB
+	walSegmentSizeBytes = 256 * 1024 * 1024 // 256 MB
 )
 
 // OpenWAL opens or creates a write ahead log in the given directory.

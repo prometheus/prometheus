@@ -63,7 +63,10 @@ type headBlock struct {
 }
 
 func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*headBlock, error) {
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	// Make head block creation appear atomic.
+	tmp := dir + ".tmp"
+
+	if err := os.MkdirAll(tmp, 0777); err != nil {
 		return nil, err
 	}
 	ulid, err := ulid.New(ulid.Now(), entropy)
@@ -71,12 +74,15 @@ func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*head
 		return nil, err
 	}
 
-	if err := writeMetaFile(dir, &BlockMeta{
+	if err := writeMetaFile(tmp, &BlockMeta{
 		ULID:     ulid,
 		Sequence: seq,
 		MinTime:  mint,
 		MaxTime:  maxt,
 	}); err != nil {
+		return nil, err
+	}
+	if err := renameFile(tmp, dir); err != nil {
 		return nil, err
 	}
 	return openHeadBlock(dir, l)
@@ -143,8 +149,11 @@ func (h *headBlock) Close() error {
 		return err
 	}
 	// Check whether the head block still exists in the underlying dir
-	// or has already been replaced with a compacted version
+	// or has already been replaced with a compacted version or removed.
 	meta, err := readMetaFile(h.dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
