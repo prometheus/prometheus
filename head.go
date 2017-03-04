@@ -145,6 +145,10 @@ func (h *headBlock) inBounds(t int64) bool {
 
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
+	// Lock mutex and leave it locked so we panic if there's a bug causing
+	// the block to be used afterwards.
+	h.mtx.Lock()
+
 	if err := h.wal.Close(); err != nil {
 		return err
 	}

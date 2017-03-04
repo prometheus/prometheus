@@ -265,8 +265,9 @@ func (w *WAL) Close() error {
 	close(w.stopc)
 	<-w.donec
 
+	// Lock mutex and leave it locked so we panic if there's a bug causing
+	// the block to be used afterwards.
 	w.mtx.Lock()
-	defer w.mtx.Unlock()
 
 	if err := w.sync(); err != nil {
 		return err
