@@ -21,14 +21,13 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/storage"
 )
 
 // TargetManager maintains a set of targets, starts and stops their scraping and
 // creates the new targets based on the target groups it receives from various
 // target providers.
 type TargetManager struct {
-	appender      storage.SampleAppender
+	scraperFn     ScraperFn
 	scrapeConfigs []*config.ScrapeConfig
 
 	mtx    sync.RWMutex
@@ -49,9 +48,9 @@ type targetSet struct {
 }
 
 // NewTargetManager creates a new TargetManager.
-func NewTargetManager(app storage.SampleAppender) *TargetManager {
+func NewTargetManager(scraperFn ScraperFn) *TargetManager {
 	return &TargetManager{
-		appender:   app,
+		scraperFn:  scraperFn,
 		targetSets: map[string]*targetSet{},
 	}
 }
@@ -100,7 +99,7 @@ func (tm *TargetManager) reload() {
 			ts = &targetSet{
 				ctx:    ctx,
 				cancel: cancel,
-				sp:     newScrapePool(ctx, scfg, tm.appender),
+				sp:     newScrapePool(ctx, scfg, tm.scraperFn),
 			}
 			ts.ts = discovery.NewTargetSet(ts.sp)
 

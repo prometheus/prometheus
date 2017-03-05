@@ -29,19 +29,15 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/storage"
 )
 
 func TestNewScrapePool(t *testing.T) {
 	var (
-		app = &nopAppender{}
-		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(context.Background(), cfg, app)
+		scraperFn = NewTargetScraperFn(&nopAppender{})
+		cfg       = &config.ScrapeConfig{}
+		sp        = newScrapePool(context.Background(), cfg, scraperFn)
 	)
 
-	if a, ok := sp.appender.(*nopAppender); !ok || a != app {
-		t.Fatalf("Wrong sample appender")
-	}
 	if sp.config != cfg {
 		t.Fatalf("Wrong scrape config")
 	}
@@ -139,7 +135,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app storage.SampleAppender, tl model.LabelSet, cfg *config.ScrapeConfig) loop {
+	newLoop := func(ctx context.Context, s Scraper) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -157,9 +153,10 @@ func TestScrapePoolReload(t *testing.T) {
 		return l
 	}
 	sp := &scrapePool{
-		targets: map[uint64]*Target{},
-		loops:   map[uint64]loop{},
-		newLoop: newLoop,
+		targets:   map[uint64]*Target{},
+		loops:     map[uint64]loop{},
+		newLoop:   newLoop,
+		scraperFn: NewTargetScraperFn(&nopAppender{}),
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -240,19 +237,11 @@ func TestScrapeLoopWrapSampleAppender(t *testing.T) {
 
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppender{}
-
-	sp := newScrapePool(context.Background(), cfg, app)
+	scraperFn := NewTargetScraperFn(app)
 
 	cfg.HonorLabels = false
-
-	sl := sp.newLoop(
-		sp.ctx,
-		&targetScraper{Target: target, client: sp.client},
-		sp.appender,
-		target.Labels(),
-		sp.config,
-	).(*scrapeLoop)
-	wrapped, _ := sl.wrapAppender(sl.appender)
+	scraper := scraperFn(target, nil, target.Labels(), cfg).(*targetScraper)
+	wrapped, _ := scraper.wrapAppender(scraper.appender)
 
 	rl, ok := wrapped.(ruleLabelsAppender)
 	if !ok {
@@ -271,14 +260,8 @@ func TestScrapeLoopWrapSampleAppender(t *testing.T) {
 	}
 
 	cfg.HonorLabels = true
-	sl = sp.newLoop(
-		sp.ctx,
-		&targetScraper{Target: target, client: sp.client},
-		sp.appender,
-		target.Labels(),
-		sp.config,
-	).(*scrapeLoop)
-	wrapped, _ = sl.wrapAppender(sl.appender)
+	scraper = scraperFn(target, nil, target.Labels(), cfg).(*targetScraper)
+	wrapped, _ = scraper.wrapAppender(scraper.appender)
 
 	hl, ok := wrapped.(honorLabelsAppender)
 	if !ok {
@@ -428,13 +411,11 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 
 	for i, test := range testCases {
 		ingestedSamples := &bufferAppender{buffer: model.Samples{}}
-
 		target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+		scraper := NewTargetScraperFn(ingestedSamples)(target, nil, target.Labels(), test.scrapeConfig).(*targetScraper)
 
-		scraper := &testScraper{}
-		sl := newScrapeLoop(context.Background(), scraper, ingestedSamples, target.Labels(), test.scrapeConfig).(*scrapeLoop)
-		num, err := sl.append(test.scrapedSamples)
-		sl.report(time.Unix(0, 0), 42*time.Second, len(test.scrapedSamples), num, err)
+		num, err := scraper.append(test.scrapedSamples)
+		scraper.report(time.Unix(0, 0), 42*time.Second, len(test.scrapedSamples), num, err)
 		reportedSamples := ingestedSamples.buffer
 		if err == nil {
 			reportedSamples = reportedSamples[num:]
@@ -454,7 +435,7 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 
 func TestScrapeLoopStop(t *testing.T) {
 	scraper := &testScraper{}
-	sl := newScrapeLoop(context.Background(), scraper, nil, nil, &config.ScrapeConfig{})
+	sl := newScrapeLoop(context.Background(), scraper)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
 	// loops are started asynchronously. Thus it's possible, that a loop is stopped
@@ -475,9 +456,9 @@ func TestScrapeLoopStop(t *testing.T) {
 	}
 
 	// Running the scrape loop must exit before calling the scraper even once.
-	scraper.scrapeFunc = func(context.Context, time.Time) (model.Samples, error) {
+	scraper.scrapeFunc = func(context.Context) error {
 		t.Fatalf("scraper was called for terminated scrape loop")
-		return nil, nil
+		return nil
 	}
 
 	runDone := make(chan struct{})
@@ -505,12 +486,11 @@ func TestScrapeLoopRun(t *testing.T) {
 		errc   = make(chan error)
 
 		scraper = &testScraper{}
-		app     = &nopAppender{}
 	)
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, nil, &config.ScrapeConfig{})
+	sl := newScrapeLoop(ctx, scraper)
 
 	// The loop must terminate during the initial offset if the context
 	// is canceled.
@@ -538,17 +518,17 @@ func TestScrapeLoopRun(t *testing.T) {
 	scraper.offsetDur = 0
 
 	block := make(chan struct{})
-	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (model.Samples, error) {
+	scraper.scrapeFunc = func(ctx context.Context) error {
 		select {
 		case <-block:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
-		return nil, nil
+		return nil
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
-	sl = newScrapeLoop(ctx, scraper, app, nil, &config.ScrapeConfig{})
+	sl = newScrapeLoop(ctx, scraper)
 
 	go func() {
 		sl.run(time.Second, 100*time.Millisecond, errc)
@@ -718,28 +698,17 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 type testScraper struct {
 	offsetDur time.Duration
 
-	lastStart    time.Time
-	lastDuration time.Duration
-	lastError    error
-
-	samples    model.Samples
 	scrapeErr  error
-	scrapeFunc func(context.Context, time.Time) (model.Samples, error)
+	scrapeFunc func(context.Context) error
 }
 
-func (ts *testScraper) offset(interval time.Duration) time.Duration {
+func (ts *testScraper) Offset(interval time.Duration) time.Duration {
 	return ts.offsetDur
 }
 
-func (ts *testScraper) report(start time.Time, duration time.Duration, err error) {
-	ts.lastStart = start
-	ts.lastDuration = duration
-	ts.lastError = err
-}
-
-func (ts *testScraper) scrape(ctx context.Context, t time.Time) (model.Samples, error) {
+func (ts *testScraper) Scrape(ctx context.Context) error {
 	if ts.scrapeFunc != nil {
-		return ts.scrapeFunc(ctx, t)
+		return ts.scrapeFunc(ctx)
 	}
-	return ts.samples, ts.scrapeErr
+	return ts.scrapeErr
 }
