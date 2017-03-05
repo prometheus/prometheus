@@ -337,12 +337,13 @@ func (sl *scrapeLoop) stop() {
 	<-sl.done
 }
 
-// A Scraper retrieves samples and accepts a status report at the end.
+// A Scraper scrapes a Target.
 type Scraper interface {
 	Scrape(ctx context.Context) error
 	Offset(time.Duration) time.Duration
 }
 
+// ScraperFn returns a new Scraper for a given Target.
 type ScraperFn func(*Target, *http.Client, model.LabelSet, *config.ScrapeConfig) Scraper
 
 // targetScraper implements the scraper interface for a target.
@@ -360,6 +361,7 @@ type targetScraper struct {
 	last     time.Time
 }
 
+// NewTargetScraperFn makes a new ScraperFn, which makes Scrapers that appends samples to the supplied appender.
 func NewTargetScraperFn(appender storage.SampleAppender) ScraperFn {
 	return func(target *Target, client *http.Client, targetLabels model.LabelSet, config *config.ScrapeConfig) Scraper {
 		return &targetScraper{
