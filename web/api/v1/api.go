@@ -169,12 +169,24 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		ts = api.now()
 	}
 
+	ctx := api.context(r)
+	if to := r.FormValue("timeout"); to != "" {
+		var cancel context.CancelFunc
+		timeout, err := parseDuration(to)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	qry, err := api.QueryEngine.NewInstantQuery(r.FormValue("query"), ts)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec(api.context(r))
+	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -221,12 +233,24 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
+	ctx := api.context(r)
+	if to := r.FormValue("timeout"); to != "" {
+		var cancel context.CancelFunc
+		timeout, err := parseDuration(to)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	qry, err := api.QueryEngine.NewRangeQuery(r.FormValue("query"), start, end, step)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec(api.context(r))
+	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
