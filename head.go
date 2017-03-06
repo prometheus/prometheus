@@ -223,10 +223,8 @@ type refdSample struct {
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
-	return a.hashedAdd(lset.Hash(), lset, t, v)
-}
+	hash := lset.Hash()
 
-func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if ms := a.get(hash, lset); ms != nil {
 		return uint64(ms.ref), a.AddFast(uint64(ms.ref), t, v)
 	}

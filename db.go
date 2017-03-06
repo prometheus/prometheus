@@ -459,19 +459,6 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error)
 	return ref | (uint64(h.generation) << 40), nil
 }
 
-func (a *dbAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
-	h, err := a.appenderFor(t)
-	if err != nil {
-		return 0, err
-	}
-	ref, err := h.hashedAdd(hash, lset, t, v)
-	if err != nil {
-		return 0, err
-	}
-	a.samples++
-	return ref | (uint64(h.generation) << 40), nil
-}
-
 func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
 	// We store the head generation in the 4th byte and use it to reject
 	// stale references.
@@ -809,7 +796,7 @@ func (a *partitionedAppender) Add(lset labels.Labels, t int64, v float64) (uint6
 	h := lset.Hash()
 	p := h >> (64 - a.db.partitionPow)
 
-	ref, err := a.partitions[p].hashedAdd(h, lset, t, v)
+	ref, err := a.partitions[p].Add(lset, t, v)
 	if err != nil {
 		return 0, err
 	}
