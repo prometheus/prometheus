@@ -358,9 +358,6 @@ func (db *DB) reloadBlocks() error {
 
 	for i, meta := range metas {
 		b, ok := db.seqBlocks[meta.Sequence]
-		// if !ok {
-		// 	return errors.Errorf("missing block for sequence %d", meta.Sequence)
-		// }
 
 		if meta.Compaction.Generation == 0 {
 			if ok && meta.ULID != b.Meta().ULID {
