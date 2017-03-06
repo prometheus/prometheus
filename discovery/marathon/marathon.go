@@ -222,6 +222,9 @@ func fetchApps(client *http.Client, url, token string) (*AppList, error) {
 		return nil, err
 	}
 
+	// According to  https://dcos.io/docs/1.8/administration/id-and-access-mgt/managing-authentication
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this implicitly here
 	if token != "" {
 		request.Header.Set("Authorization", "token="+token)
 	}
