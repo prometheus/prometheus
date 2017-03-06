@@ -407,15 +407,18 @@ func (db *DB) Close() error {
 	// the block to be used afterwards.
 	db.mtx.Lock()
 
-	var merr MultiError
+	var g errgroup.Group
 
 	for _, pb := range db.persisted {
-		merr.Add(pb.Close())
+		g.Go(pb.Close)
 	}
 	for _, hb := range db.heads {
-		merr.Add(hb.Close())
+		g.Go(hb.Close)
 	}
 
+	var merr MultiError
+
+	merr.Add(g.Wait())
 	merr.Add(db.lockf.Unlock())
 
 	return merr.Err()
@@ -526,10 +529,9 @@ func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
 	return nil, ErrNotFound
 }
 
+// ensureHead makes sure that there is a head block for the timestamp t if
+// it is within or after the currently appendable window.
 func (db *DB) ensureHead(t int64) error {
-	// db.mtx.Lock()
-	// defer db.mtx.Unlock()
-
 	// Initial case for a new database: we must create the first
 	// AppendableBlocks-1 front padding heads.
 	if len(db.heads) == 0 {
@@ -585,17 +587,17 @@ func (db *DB) appendable() []*headBlock {
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	if bmin >= amin && bmin <= amax {
+	if bmin >= amin && bmin < amax {
 		return true
 	}
-	if amin >= bmin && amin <= bmax {
+	if amin >= bmin && amin < bmax {
 		return true
 	}
 	return false
 }
 
 func intervalContains(min, max, t int64) bool {
-	return t >= min && t <= max
+	return t >= min && t < max
 }
 
 // blocksForInterval returns all blocks within the partition that may contain
