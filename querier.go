@@ -233,69 +233,6 @@ func (q *blockQuerier) Close() error {
 	return nil
 }
 
-// partitionedQuerier merges query results from a set of partition querieres.
-type partitionedQuerier struct {
-	mint, maxt int64
-	partitions []Querier
-}
-
-// Querier returns a new querier over the database for the given
-// time range.
-func (db *PartitionedDB) Querier(mint, maxt int64) Querier {
-	q := &partitionedQuerier{
-		mint: mint,
-		maxt: maxt,
-	}
-	for _, s := range db.Partitions {
-		q.partitions = append(q.partitions, s.Querier(mint, maxt))
-	}
-
-	return q
-}
-
-func (q *partitionedQuerier) Select(ms ...labels.Matcher) SeriesSet {
-	// We gather the non-overlapping series from every partition and simply
-	// return their union.
-	r := &mergedSeriesSet{}
-
-	for _, s := range q.partitions {
-		r.sets = append(r.sets, s.Select(ms...))
-	}
-	if len(r.sets) == 0 {
-		return nopSeriesSet{}
-	}
-	return r
-}
-
-func (q *partitionedQuerier) LabelValues(n string) ([]string, error) {
-	res, err := q.partitions[0].LabelValues(n)
-	if err != nil {
-		return nil, err
-	}
-	for _, sq := range q.partitions[1:] {
-		pr, err := sq.LabelValues(n)
-		if err != nil {
-			return nil, err
-		}
-		// Merge new values into deduplicated result.
-		res = mergeStrings(res, pr)
-	}
-	return res, nil
-}
-
-func (q *partitionedQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (q *partitionedQuerier) Close() error {
-	var merr MultiError
-
-	for _, sq := range q.partitions {
-		merr.Add(sq.Close())
-	}
-	return merr.Err()
-}
-
 func mergeStrings(a, b []string) []string {
 	maxl := len(a)
 	if len(b) > len(a) {

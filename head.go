@@ -584,7 +584,7 @@ type memSeries struct {
 	lastValue float64
 	sampleBuf [4]sample
 
-	app chunks.Appender // Current appender for the chunkdb.
+	app chunks.Appender // Current appender for the chunk.
 }
 
 func (s *memSeries) cut() *memChunk {

@@ -122,13 +122,6 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 		}
 	})
 
-	defer func() {
-		reportSize(dir)
-		if b.cleanup {
-			os.RemoveAll(b.outPath)
-		}
-	}()
-
 	var total uint64
 
 	dur := measureTime("ingestScrapes", func() {
@@ -279,22 +272,6 @@ func (b *writeBenchmark) stopProfiling() {
 		b.blockprof.Close()
 		b.blockprof = nil
 		runtime.SetBlockProfileRate(0)
-	}
-}
-
-func reportSize(dir string) {
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || path == dir {
-			return err
-		}
-		if info.Size() < 10*1024*1024 {
-			return nil
-		}
-		fmt.Printf(" > file=%s size=%.04fGiB\n", path[len(dir):], float64(info.Size())/1024/1024/1024)
-		return nil
-	})
-	if err != nil {
-		exitWithError(err)
 	}
 }
 
