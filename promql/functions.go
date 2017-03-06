@@ -875,7 +875,7 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) model.Sample
 	}
 	for _, el := range v {
 		el.Metric.Del(model.MetricNameLabel)
-		t := time.Unix(int64(el.Value), 0).UTC()
+		t := time.Unix(int64(el.Timestamp)/int64(time.Second/time.Millisecond), 0).UTC()
 		el.Value = f(t)
 	}
 	return v
