@@ -86,11 +86,7 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 		children: map[string]*zookeeperTreeCacheNode{},
 		stopped:  true,
 	}
-	err := tc.recursiveNodeUpdate(path, tc.head)
-	if err != nil {
-		log.Errorf("Error during initial read of Zookeeper: %s", err)
-	}
-	go tc.loop(err != nil)
+	go tc.loop(path)
 	return tc
 }
 
@@ -98,7 +94,8 @@ func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
 }
 
-func (tc *ZookeeperTreeCache) loop(failureMode bool) {
+func (tc *ZookeeperTreeCache) loop(path string) {
+	failureMode := false
 	retryChan := make(chan struct{})
 
 	failure := func() {
@@ -108,7 +105,10 @@ func (tc *ZookeeperTreeCache) loop(failureMode bool) {
 			retryChan <- struct{}{}
 		})
 	}
-	if failureMode {
+
+	err := tc.recursiveNodeUpdate(path, tc.head)
+	if err != nil {
+		log.Errorf("Error during initial read of Zookeeper: %s", err)
 		failure()
 	}
 
