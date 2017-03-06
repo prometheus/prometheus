@@ -345,6 +345,7 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 	return res, nil
 }
 
+// Target has the information for 1 target.
 type Target struct {
 	// Labels before any processing.
 	DiscoveredLabels model.LabelSet `json:"discoveredLabels"`
@@ -358,6 +359,7 @@ type Target struct {
 	Health     retrieval.TargetHealth `json:"health"`
 }
 
+// TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
 	ActiveTargets []*Target `json:"activeTargets"`
 }
@@ -386,10 +388,12 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	return res, nil
 }
 
+// AlertmanagerDiscovery has all the active alert-managers
 type AlertmanagerDiscovery struct {
 	ActiveAlertmanagers []*AlertmanagerTarget `json:"activeAlertmanagers"`
 }
 
+// AlertmanagerTarget has info on 1 AM
 type AlertmanagerTarget struct {
 	URL string `json:"url"`
 }
