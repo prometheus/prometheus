@@ -334,6 +334,9 @@ func (db *DB) reloadBlocks() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
+	db.headmtx.Lock()
+	defer db.headmtx.Unlock()
+
 	dirs, err := blockDirs(db.dir)
 	if err != nil {
 		return errors.Wrap(err, "find blocks")
@@ -355,17 +358,17 @@ func (db *DB) reloadBlocks() error {
 
 	for i, meta := range metas {
 		b, ok := db.seqBlocks[meta.Sequence]
-		if !ok {
-			return errors.Errorf("missing block for sequence %d", meta.Sequence)
-		}
+		// if !ok {
+		// 	return errors.Errorf("missing block for sequence %d", meta.Sequence)
+		// }
 
 		if meta.Compaction.Generation == 0 {
-			if meta.ULID != b.Meta().ULID {
+			if ok && meta.ULID != b.Meta().ULID {
 				return errors.Errorf("head block ULID changed unexpectedly")
 			}
 			heads = append(heads, b.(*headBlock))
 		} else {
-			if meta.ULID != b.Meta().ULID {
+			if ok && meta.ULID != b.Meta().ULID {
 				if err := b.Close(); err != nil {
 					return err
 				}
