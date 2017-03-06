@@ -98,7 +98,7 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 func TestMarathonSDSendGroup(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(client *http.Client, url string) (*AppList, error) {
+		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 	)
@@ -147,7 +147,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 		t.Fatalf("Got error on first update: %s", err)
 	}
 
-	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
+	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
 	if err := md.updateServices(context.Background(), ch); err != nil {
