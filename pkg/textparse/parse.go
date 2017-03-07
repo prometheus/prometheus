@@ -7,7 +7,6 @@ package textparse
 import (
 	"errors"
 	"io"
-	"reflect"
 	"sort"
 	"unsafe"
 
@@ -106,11 +105,5 @@ func (p *Parser) Metric(l *labels.Labels) {
 }
 
 func yoloString(b []byte) string {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-
-	h := reflect.StringHeader{
-		Data: sh.Data,
-		Len:  sh.Len,
-	}
-	return *((*string)(unsafe.Pointer(&h)))
+	return *((*string)(unsafe.Pointer(&b)))
 }
