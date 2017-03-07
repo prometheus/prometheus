@@ -4,12 +4,54 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"sort"
 	"testing"
 
-	"sort"
-
+	"github.com/fabxc/tsdb/chunks"
+	"github.com/fabxc/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
+
+type mockIndexReader struct {
+	labelValues  func(...string) (StringTuples, error)
+	postings     func(string, string) (Postings, error)
+	series       func(uint32) (labels.Labels, []ChunkMeta, error)
+	labelIndices func() ([][]string, error)
+	close        func() error
+}
+
+func (ir *mockIndexReader) LabelValues(names ...string) (StringTuples, error) {
+	return ir.labelValues(names...)
+}
+
+func (ir *mockIndexReader) Postings(name, value string) (Postings, error) {
+	return ir.postings(name, value)
+}
+
+func (ir *mockIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
+	return ir.series(ref)
+}
+
+func (ir *mockIndexReader) LabelIndices() ([][]string, error) {
+	return ir.labelIndices()
+}
+
+func (ir *mockIndexReader) Close() error {
+	return ir.close()
+}
+
+type mockChunkReader struct {
+	chunk func(ref uint64) (chunks.Chunk, error)
+	close func() error
+}
+
+func (cr *mockChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
+	return cr.chunk(ref)
+}
+
+func (cr *mockChunkReader) Close() error {
+	return cr.close()
+}
 
 func TestPersistence_index_e2e(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
