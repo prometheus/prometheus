@@ -16,6 +16,7 @@ package consul
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -24,9 +25,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/httputil"
+	"golang.org/x/net/context"
 )
 
 const (
@@ -92,6 +93,13 @@ type Discovery struct {
 
 // NewDiscovery returns a new Discovery for the given config.
 func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
+	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
+	if err != nil {
+		return nil, err
+	}
+	transport := &http.Transport{TLSClientConfig: tls}
+	wrapper := &http.Client{Transport: transport}
+
 	clientConf := &consul.Config{
 		Address:    conf.Server,
 		Scheme:     conf.Scheme,
@@ -101,6 +109,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 			Username: conf.Username,
 			Password: conf.Password,
 		},
+		HttpClient: wrapper,
 	}
 	client, err := consul.NewClient(clientConf)
 	if err != nil {
