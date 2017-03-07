@@ -40,18 +40,6 @@ func (ir *mockIndexReader) Close() error {
 	return ir.close()
 }
 
-type mockChunkReader struct {
-	chunk func(ref uint64) (chunks.Chunk, error)
-	close func() error
-}
-
-func (cr *mockChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
-	return cr.chunk(ref)
-}
-
-func (cr *mockChunkReader) Close() error {
-	return cr.close()
-}
 
 func TestPersistence_index_e2e(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
@@ -151,9 +139,5 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	require.NoError(t, ir.Close())
-
-}
-
-func BenchmarkPersistence_index_write(b *testing.B) {
 
 }
