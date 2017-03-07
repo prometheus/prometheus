@@ -569,17 +569,17 @@ func (db *DB) appendable() []*headBlock {
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	if bmin >= amin && bmin < amax {
+	if bmin >= amin && bmin <= amax {
 		return true
 	}
-	if amin >= bmin && amin < bmax {
+	if amin >= bmin && amin <= bmax {
 		return true
 	}
 	return false
 }
 
 func intervalContains(min, max, t int64) bool {
-	return t >= min && t < max
+	return t >= min && t <= max
 }
 
 // blocksForInterval returns all blocks within the partition that may contain
