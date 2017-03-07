@@ -46,7 +46,10 @@ Prometheus.Graph.prototype.initialize = function() {
 
   // Draw graph controls and container from Handlebars template.
 
-  var options = {'pathPrefix': PATH_PREFIX};
+  var options = {
+    'pathPrefix': PATH_PREFIX,
+    'buildVersion': BUILD_VERSION
+  };
   jQuery.extend(options, self.options);
   self.graphHTML = $(Mustache.render(graphTemplate, options));
   self.el.append(self.graphHTML);
@@ -819,7 +822,7 @@ function init() {
   });
 
   $.ajax({
-    url: PATH_PREFIX + "/static/js/graph_template.handlebar",
+    url: PATH_PREFIX + "/static/js/graph_template.handlebar?v=" + BUILD_VERSION,
     success: function(data) {
 
       graphTemplate = data;

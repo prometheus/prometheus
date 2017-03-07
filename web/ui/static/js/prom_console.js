@@ -578,7 +578,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   }
 
   var loadingImg = document.createElement("img");
-  loadingImg.src = PATH_PREFIX + '/static/img/ajax-loader.gif';
+  loadingImg.src = PATH_PREFIX + '/static/img/ajax-loader.gif?v=' + BUILD_VERSION;
   loadingImg.alt = 'Loading...';
   loadingImg.className = 'prom_graph_loading';
   this.graphTd.appendChild(loadingImg);

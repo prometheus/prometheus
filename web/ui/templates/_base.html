@@ -3,15 +3,16 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Prometheus Time Series Collection and Processing Server</title>
-    <link rel="shortcut icon" href="{{ pathPrefix }}/static/img/favicon.ico">
-    <script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js"></script>
-    <script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+    <link rel="shortcut icon" href="{{ pathPrefix }}/static/img/favicon.ico?v={{ buildVersion }}">
+    <script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js?v={{ buildVersion }}"></script>
+    <script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js?v={{ buildVersion }}"></script>
 
-    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
-    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prometheus.css">
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css?v={{ buildVersion }}">
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prometheus.css?v={{ buildVersion }}">
 
     <script>
       var PATH_PREFIX = "{{ pathPrefix }}";
+      var BUILD_VERSION = "{{ buildVersion }}";
       $(function () {
         $('[data-toggle="tooltip"]').tooltip()
       })
