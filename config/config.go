@@ -920,6 +920,7 @@ type MarathonSDConfig struct {
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	TokenEnvName    string         `yaml:"token_env_name,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

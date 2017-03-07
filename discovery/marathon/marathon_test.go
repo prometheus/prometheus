@@ -44,7 +44,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 	var (
 		errTesting = errors.New("testing failure")
 		ch         = make(chan []*config.TargetGroup, 1)
-		client     = func(client *http.Client, url string) (*AppList, error) { return nil, errTesting }
+		client     = func(client *http.Client, url, token string) (*AppList, error) { return nil, errTesting }
 	)
 	if err := testUpdateServices(client, ch); err != errTesting {
 		t.Fatalf("Expected error: %s", err)
@@ -59,7 +59,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 func TestMarathonSDEmptyList(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(client *http.Client, url string) (*AppList, error) { return &AppList{}, nil }
+		client = func(client *http.Client, url, token string) (*AppList, error) { return &AppList{}, nil }
 	)
 	if err := testUpdateServices(client, ch); err != nil {
 		t.Fatalf("Got error: %s", err)
@@ -98,7 +98,7 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 func TestMarathonSDSendGroup(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(client *http.Client, url string) (*AppList, error) {
+		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 	)
@@ -130,7 +130,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
-	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
+	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
 	go func() {
@@ -147,7 +147,7 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 		t.Fatalf("Got error on first update: %s", err)
 	}
 
-	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
+	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
 	if err := md.updateServices(context.Background(), ch); err != nil {
@@ -165,7 +165,7 @@ func TestMarathonSDRunAndStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
-	md.appsClient = func(client *http.Client, url string) (*AppList, error) {
+	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -213,7 +213,7 @@ func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int)
 func TestMarathonZeroTaskPorts(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
-		client = func(client *http.Client, url string) (*AppList, error) {
+		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 		}
 	)
