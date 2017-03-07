@@ -114,6 +114,12 @@ scrape_configs:
   consul_sd_configs:
   - server: 'localhost:1234'
     services: ['nginx', 'cache', 'mysql']
+    scheme: https
+    tls_config:
+      ca_file: valid_ca_file
+      cert_file: valid_cert_file
+      key_file:  valid_key_file
+      insecure_skip_verify: false
 
   relabel_configs:
   - source_labels: [__meta_sd_consul_tags]
