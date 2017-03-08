@@ -368,22 +368,22 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "L/5bfnMJXzbLXj+vN7Ph1F23+T4=",
+			"checksumSHA1": "Aj4Cn1RClamxluIri/LQMnK/yB4=",
 			"path": "github.com/fabxc/tsdb",
-			"revision": "cc0a7c82793515d6311801b7eb3ef8562e61f4c3",
-			"revisionTime": "2017-03-02T20:54:30Z"
+			"revision": "ca1bc920b795cfc670002e7643471b0277e79a9b",
+			"revisionTime": "2017-03-08T15:54:13Z"
 		},
 		{
 			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
 			"path": "github.com/fabxc/tsdb/chunks",
-			"revision": "012cf4ef254e34a10befd0b592bcfa5b1794e92b",
-			"revisionTime": "2017-02-04T10:53:52Z"
+			"revision": "ca1bc920b795cfc670002e7643471b0277e79a9b",
+			"revisionTime": "2017-03-08T15:54:13Z"
 		},
 		{
 			"checksumSHA1": "0Nl+7XBhC+XLpkgkWc6cEtW37aE=",
 			"path": "github.com/fabxc/tsdb/labels",
-			"revision": "012cf4ef254e34a10befd0b592bcfa5b1794e92b",
-			"revisionTime": "2017-02-04T10:53:52Z"
+			"revision": "ca1bc920b795cfc670002e7643471b0277e79a9b",
+			"revisionTime": "2017-03-08T15:54:13Z"
 		},
 		{
 			"checksumSHA1": "ww7LVo7jNJ1o6sfRcromEHKyY+o=",
@@ -572,6 +572,12 @@
 			"path": "github.com/nightlyone/lockfile",
 			"revision": "1d49c987357a327b5b03aa84cbddd582c328615d",
 			"revisionTime": "2016-09-28T00:14:32Z"
+		},
+		{
+			"checksumSHA1": "B1iGaUz7NrjEmCjVdIgH5pvkTe8=",
+			"path": "github.com/oklog/ulid",
+			"revision": "66bb6560562feca7045b23db1ae85b01260f87c5",
+			"revisionTime": "2017-01-17T20:06:51Z"
 		},
 		{
 			"checksumSHA1": "3YJklSuzSE1Rt8A+2dhiWSmf/fw=",

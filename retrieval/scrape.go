@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 	"sync"
 	"time"
 	"unsafe"
@@ -586,13 +585,7 @@ loop:
 }
 
 func yoloString(b []byte) string {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-
-	h := reflect.StringHeader{
-		Data: sh.Data,
-		Len:  sh.Len,
-	}
-	return *((*string)(unsafe.Pointer(&h)))
+	return *((*string)(unsafe.Pointer(&b)))
 }
 
 func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended int, err error) error {
