@@ -448,7 +448,11 @@ func (r *WALReader) nextEntry() (WALEntryType, byte, []byte, error) {
 	cr := r.rs[r.cur]
 
 	et, flag, b, err := r.entry(cr)
-	if err == io.EOF {
+	// If we reached the end of the reader, advance to the next one
+	// and close.
+	// Do not close on the last one as it will still be appended to.
+	// XXX(fabxc): leaky abstraction.
+	if err == io.EOF && r.cur < len(r.rs)-1 {
 		// Current reader completed, close and move to the next one.
 		if err := cr.Close(); err != nil {
 			return 0, 0, nil, err

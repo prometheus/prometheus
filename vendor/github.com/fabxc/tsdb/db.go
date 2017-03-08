@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -334,6 +332,9 @@ func (db *DB) reloadBlocks() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
+	db.headmtx.Lock()
+	defer db.headmtx.Unlock()
+
 	dirs, err := blockDirs(db.dir)
 	if err != nil {
 		return errors.Wrap(err, "find blocks")
@@ -355,17 +356,20 @@ func (db *DB) reloadBlocks() error {
 
 	for i, meta := range metas {
 		b, ok := db.seqBlocks[meta.Sequence]
-		if !ok {
-			return errors.Errorf("missing block for sequence %d", meta.Sequence)
-		}
 
 		if meta.Compaction.Generation == 0 {
+			if !ok {
+				b, err = openHeadBlock(dirs[i], db.logger)
+				if err != nil {
+					return errors.Wrapf(err, "load head at %s", dirs[i])
+				}
+			}
 			if meta.ULID != b.Meta().ULID {
 				return errors.Errorf("head block ULID changed unexpectedly")
 			}
 			heads = append(heads, b.(*headBlock))
 		} else {
-			if meta.ULID != b.Meta().ULID {
+			if ok && meta.ULID != b.Meta().ULID {
 				if err := b.Close(); err != nil {
 					return err
 				}
@@ -404,15 +408,18 @@ func (db *DB) Close() error {
 	// the block to be used afterwards.
 	db.mtx.Lock()
 
-	var merr MultiError
+	var g errgroup.Group
 
 	for _, pb := range db.persisted {
-		merr.Add(pb.Close())
+		g.Go(pb.Close)
 	}
 	for _, hb := range db.heads {
-		merr.Add(hb.Close())
+		g.Go(hb.Close)
 	}
 
+	var merr MultiError
+
+	merr.Add(g.Wait())
 	merr.Add(db.lockf.Unlock())
 
 	return merr.Err()
@@ -446,19 +453,6 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error)
 		return 0, err
 	}
 	ref, err := h.Add(lset, t, v)
-	if err != nil {
-		return 0, err
-	}
-	a.samples++
-	return ref | (uint64(h.generation) << 40), nil
-}
-
-func (a *dbAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
-	h, err := a.appenderFor(t)
-	if err != nil {
-		return 0, err
-	}
-	ref, err := h.hashedAdd(hash, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
@@ -523,10 +517,9 @@ func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
 	return nil, ErrNotFound
 }
 
+// ensureHead makes sure that there is a head block for the timestamp t if
+// it is within or after the currently appendable window.
 func (db *DB) ensureHead(t int64) error {
-	// db.mtx.Lock()
-	// defer db.mtx.Unlock()
-
 	// Initial case for a new database: we must create the first
 	// AppendableBlocks-1 front padding heads.
 	if len(db.heads) == 0 {
@@ -717,123 +710,6 @@ func nextSequenceFile(dir, prefix string) (string, int, error) {
 	return filepath.Join(dir, fmt.Sprintf("%s%0.6d", prefix, i+1)), int(i + 1), nil
 }
 
-// PartitionedDB is a time series storage.
-type PartitionedDB struct {
-	logger log.Logger
-	dir    string
-
-	partitionPow uint
-	Partitions   []*DB
-}
-
-func isPowTwo(x int) bool {
-	return x > 0 && (x&(x-1)) == 0
-}
-
-// OpenPartitioned or create a new DB.
-func OpenPartitioned(dir string, n int, l log.Logger, r prometheus.Registerer, opts *Options) (*PartitionedDB, error) {
-	if !isPowTwo(n) {
-		return nil, errors.Errorf("%d is not a power of two", n)
-	}
-	if opts == nil {
-		opts = DefaultOptions
-	}
-	if l == nil {
-		l = log.NewLogfmtLogger(os.Stdout)
-		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-	}
-
-	if err := os.MkdirAll(dir, 0777); err != nil {
-		return nil, err
-	}
-	c := &PartitionedDB{
-		logger:       l,
-		dir:          dir,
-		partitionPow: uint(math.Log2(float64(n))),
-	}
-
-	// Initialize vertical partitiondb.
-	// TODO(fabxc): validate partition number to be power of 2, which is required
-	// for the bitshift-modulo when finding the right partition.
-	for i := 0; i < n; i++ {
-		l := log.NewContext(l).With("partition", i)
-		d := partitionDir(dir, i)
-
-		s, err := Open(d, l, r, opts)
-		if err != nil {
-			return nil, fmt.Errorf("initializing partition %q failed: %s", d, err)
-		}
-
-		c.Partitions = append(c.Partitions, s)
-	}
-
-	return c, nil
-}
-
-func partitionDir(base string, i int) string {
-	return filepath.Join(base, fmt.Sprintf("p-%0.4d", i))
-}
-
-// Close the database.
-func (db *PartitionedDB) Close() error {
-	var g errgroup.Group
-
-	for _, partition := range db.Partitions {
-		g.Go(partition.Close)
-	}
-
-	return g.Wait()
-}
-
-// Appender returns a new appender against the database.
-func (db *PartitionedDB) Appender() Appender {
-	app := &partitionedAppender{db: db}
-
-	for _, p := range db.Partitions {
-		app.partitions = append(app.partitions, p.Appender().(*dbAppender))
-	}
-	return app
-}
-
-type partitionedAppender struct {
-	db         *PartitionedDB
-	partitions []*dbAppender
-}
-
-func (a *partitionedAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
-	h := lset.Hash()
-	p := h >> (64 - a.db.partitionPow)
-
-	ref, err := a.partitions[p].hashedAdd(h, lset, t, v)
-	if err != nil {
-		return 0, err
-	}
-	return ref | (p << 48), nil
-}
-
-func (a *partitionedAppender) AddFast(ref uint64, t int64, v float64) error {
-	p := uint8((ref << 8) >> 56)
-	return a.partitions[p].AddFast(ref, t, v)
-}
-
-func (a *partitionedAppender) Commit() error {
-	var merr MultiError
-
-	for _, p := range a.partitions {
-		merr.Add(p.Commit())
-	}
-	return merr.Err()
-}
-
-func (a *partitionedAppender) Rollback() error {
-	var merr MultiError
-
-	for _, p := range a.partitions {
-		merr.Add(p.Rollback())
-	}
-	return merr.Err()
-}
-
 // The MultiError type implements the error interface, and contains the
 // Errors used to construct it.
 type MultiError []error
@@ -877,13 +753,7 @@ func (es MultiError) Err() error {
 }
 
 func yoloString(b []byte) string {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-
-	h := reflect.StringHeader{
-		Data: sh.Data,
-		Len:  sh.Len,
-	}
-	return *((*string)(unsafe.Pointer(&h)))
+	return *((*string)(unsafe.Pointer(&b)))
 }
 
 func closeAll(cs ...io.Closer) error {
