@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/fabxc/tsdb/labels"
+	"github.com/pkg/errors"
 
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -91,5 +92,11 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 		hashes[h] = struct{}{}
 		i++
 	}
-	return mets, p.Err()
+	if err := p.Err(); err != nil {
+		return nil, err
+	}
+	if i != n {
+		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
+	}
+	return mets, nil
 }
