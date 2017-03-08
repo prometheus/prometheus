@@ -141,7 +141,8 @@ func TestPopulateLabels(t *testing.T) {
 		},
 	}
 	for i, c := range cases {
-		in := c.in.Clone()
+		in := c.in.Copy()
+
 		res, orig, err := populateLabels(c.in, c.cfg)
 		if err != nil {
 			t.Fatalf("case %d: %s", i, err)

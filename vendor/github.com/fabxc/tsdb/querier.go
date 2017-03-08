@@ -47,7 +47,9 @@ type querier struct {
 func (s *DB) Querier(mint, maxt int64) Querier {
 	s.mtx.RLock()
 
+	s.headmtx.RLock()
 	blocks := s.blocksForInterval(mint, maxt)
+	s.headmtx.RUnlock()
 
 	sq := &querier{
 		blocks: make([]Querier, 0, len(blocks)),
@@ -74,6 +76,9 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 }
 
 func (q *querier) LabelValues(n string) ([]string, error) {
+	if len(q.blocks) == 0 {
+		return nil, nil
+	}
 	res, err := q.blocks[0].LabelValues(n)
 	if err != nil {
 		return nil, err
@@ -161,12 +166,16 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	}
 
 	return &blockSeriesSet{
-		index:  q.index,
-		chunks: q.chunks,
-		it:     p,
-		absent: absent,
-		mint:   q.mint,
-		maxt:   q.maxt,
+		set: &populatedChunkSeries{
+			set: &baseChunkSeries{
+				p:      p,
+				index:  q.index,
+				absent: absent,
+			},
+			chunks: q.chunks,
+			mint:   q.mint,
+			maxt:   q.maxt,
+		},
 	}
 }
 
@@ -229,69 +238,6 @@ func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 
 func (q *blockQuerier) Close() error {
 	return nil
-}
-
-// partitionedQuerier merges query results from a set of partition querieres.
-type partitionedQuerier struct {
-	mint, maxt int64
-	partitions []Querier
-}
-
-// Querier returns a new querier over the database for the given
-// time range.
-func (db *PartitionedDB) Querier(mint, maxt int64) Querier {
-	q := &partitionedQuerier{
-		mint: mint,
-		maxt: maxt,
-	}
-	for _, s := range db.Partitions {
-		q.partitions = append(q.partitions, s.Querier(mint, maxt))
-	}
-
-	return q
-}
-
-func (q *partitionedQuerier) Select(ms ...labels.Matcher) SeriesSet {
-	// We gather the non-overlapping series from every partition and simply
-	// return their union.
-	r := &mergedSeriesSet{}
-
-	for _, s := range q.partitions {
-		r.sets = append(r.sets, s.Select(ms...))
-	}
-	if len(r.sets) == 0 {
-		return nopSeriesSet{}
-	}
-	return r
-}
-
-func (q *partitionedQuerier) LabelValues(n string) ([]string, error) {
-	res, err := q.partitions[0].LabelValues(n)
-	if err != nil {
-		return nil, err
-	}
-	for _, sq := range q.partitions[1:] {
-		pr, err := sq.LabelValues(n)
-		if err != nil {
-			return nil, err
-		}
-		// Merge new values into deduplicated result.
-		res = mergeStrings(res, pr)
-	}
-	return res, nil
-}
-
-func (q *partitionedQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (q *partitionedQuerier) Close() error {
-	var merr MultiError
-
-	for _, sq := range q.partitions {
-		merr.Add(sq.Close())
-	}
-	return merr.Err()
 }
 
 func mergeStrings(a, b []string) []string {
@@ -422,23 +368,31 @@ func (s *partitionSeriesSet) Next() bool {
 	return true
 }
 
-// blockSeriesSet is a set of series from an inverted index query.
-type blockSeriesSet struct {
-	index      IndexReader
-	chunks     ChunkReader
-	it         Postings // postings list referencing series
-	absent     []string // labels that must not be set for result series
-	mint, maxt int64    // considered time range
-
-	err error
-	cur Series
+type chunkSeriesSet interface {
+	Next() bool
+	At() (labels.Labels, []ChunkMeta)
+	Err() error
 }
 
-func (s *blockSeriesSet) Next() bool {
-	// Step through the postings iterator to find potential series.
-outer:
-	for s.it.Next() {
-		lset, chunks, err := s.index.Series(s.it.At())
+// baseChunkSeries loads the label set and chunk references for a postings
+// list from an index. It filters out series that have labels set that should be unset.
+type baseChunkSeries struct {
+	p      Postings
+	index  IndexReader
+	absent []string // labels that must be unset in results.
+
+	lset labels.Labels
+	chks []ChunkMeta
+	err  error
+}
+
+func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta) { return s.lset, s.chks }
+func (s *baseChunkSeries) Err() error                       { return s.err }
+
+func (s *baseChunkSeries) Next() bool {
+Outer:
+	for s.p.Next() {
+		lset, chunks, err := s.index.Series(s.p.At())
 		if err != nil {
 			s.err = err
 			return false
@@ -447,35 +401,87 @@ outer:
 		// If a series contains a label that must be absent, it is skipped as well.
 		for _, abs := range s.absent {
 			if lset.Get(abs) != "" {
-				continue outer
+				continue Outer
 			}
 		}
 
-		ser := &chunkSeries{
-			labels: lset,
-			chunks: make([]ChunkMeta, 0, len(chunks)),
-			chunk:  s.chunks.Chunk,
-		}
-		// Only use chunks that fit the time range.
-		for _, c := range chunks {
+		s.lset = lset
+		s.chks = chunks
+
+		return true
+	}
+	if err := s.p.Err(); err != nil {
+		s.err = err
+	}
+	return false
+}
+
+// populatedChunkSeries loads chunk data from a store for a set of series
+// with known chunk references. It filters out chunks that do not fit the
+// given time range.
+type populatedChunkSeries struct {
+	set        chunkSeriesSet
+	chunks     ChunkReader
+	mint, maxt int64
+
+	err  error
+	chks []ChunkMeta
+	lset labels.Labels
+}
+
+func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta) { return s.lset, s.chks }
+func (s *populatedChunkSeries) Err() error                       { return s.err }
+
+func (s *populatedChunkSeries) Next() bool {
+	for s.set.Next() {
+		lset, chks := s.set.At()
+
+		for i := range chks {
+			c := &chks[i]
+
 			if c.MaxTime < s.mint {
+				chks = chks[1:]
 				continue
 			}
 			if c.MinTime > s.maxt {
+				chks = chks[:i]
 				break
 			}
-			ser.chunks = append(ser.chunks, c)
+			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
+			if s.err != nil {
+				return false
+			}
 		}
-		// If no chunks of the series apply to the time range, skip it.
-		if len(ser.chunks) == 0 {
+		if len(chks) == 0 {
 			continue
 		}
 
-		s.cur = ser
+		s.lset = lset
+		s.chks = chks
+
 		return true
 	}
-	if s.it.Err() != nil {
-		s.err = s.it.Err()
+	if err := s.set.Err(); err != nil {
+		s.err = err
+	}
+	return false
+}
+
+// blockSeriesSet is a set of series from an inverted index query.
+type blockSeriesSet struct {
+	set chunkSeriesSet
+	err error
+	cur Series
+}
+
+func (s *blockSeriesSet) Next() bool {
+	for s.set.Next() {
+		lset, chunks := s.set.At()
+		s.cur = &chunkSeries{labels: lset, chunks: chunks}
+		return true
+	}
+	if s.set.Err() != nil {
+		s.err = s.set.Err()
 	}
 	return false
 }
@@ -488,10 +494,6 @@ func (s *blockSeriesSet) Err() error { return s.err }
 type chunkSeries struct {
 	labels labels.Labels
 	chunks []ChunkMeta // in-order chunk refs
-
-	// chunk is a function that retrieves chunks based on a reference
-	// number contained in the chunk meta information.
-	chunk func(ref uint64) (chunks.Chunk, error)
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -499,21 +501,7 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 func (s *chunkSeries) Iterator() SeriesIterator {
-	var cs []chunks.Chunk
-	var mints []int64
-
-	for _, co := range s.chunks {
-		c, err := s.chunk(co.Ref)
-		if err != nil {
-			panic(err) // TODO(fabxc): add error series iterator.
-		}
-		cs = append(cs, c)
-		mints = append(mints, co.MinTime)
-	}
-
-	// TODO(fabxc): consider pushing chunk retrieval further down. In practice, we
-	// probably have to touch all chunks anyway and it doesn't matter.
-	return newChunkSeriesIterator(mints, cs)
+	return newChunkSeriesIterator(s.chunks)
 }
 
 // SeriesIterator iterates over the data of a time series.
@@ -599,43 +587,38 @@ func (it *chainedSeriesIterator) Err() error {
 // chunkSeriesIterator implements a series iterator on top
 // of a list of time-sorted, non-overlapping chunks.
 type chunkSeriesIterator struct {
-	mints  []int64 // minimum timestamps for each iterator
-	chunks []chunks.Chunk
+	chunks []ChunkMeta
 
 	i   int
 	cur chunks.Iterator
 }
 
-func newChunkSeriesIterator(mints []int64, cs []chunks.Chunk) *chunkSeriesIterator {
-	if len(mints) != len(cs) {
-		panic("chunk references and chunks length don't match")
-	}
+func newChunkSeriesIterator(cs []ChunkMeta) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
-		mints:  mints,
 		chunks: cs,
 		i:      0,
-		cur:    cs[0].Iterator(),
+		cur:    cs[0].Chunk.Iterator(),
 	}
 }
 
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	// Only do binary search forward to stay in line with other iterators
 	// that can only move forward.
-	x := sort.Search(len(it.mints[it.i:]), func(i int) bool { return it.mints[i] >= t })
+	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool { return it.chunks[i].MinTime >= t })
 	x += it.i
 
 	// If the timestamp was not found, it might be in the last chunk.
-	if x == len(it.mints) {
+	if x == len(it.chunks) {
 		x--
 	}
 	// Go to previous chunk if the chunk doesn't exactly start with t.
 	// If we are already at the first chunk, we use it as it's the best we have.
-	if x > 0 && it.mints[x] > t {
+	if x > 0 && it.chunks[x].MinTime > t {
 		x--
 	}
 
 	it.i = x
-	it.cur = it.chunks[x].Iterator()
+	it.cur = it.chunks[x].Chunk.Iterator()
 
 	for it.cur.Next() {
 		t0, _ := it.cur.At()
@@ -662,7 +645,7 @@ func (it *chunkSeriesIterator) Next() bool {
 	}
 
 	it.i++
-	it.cur = it.chunks[it.i].Iterator()
+	it.cur = it.chunks[it.i].Chunk.Iterator()
 
 	return it.Next()
 }

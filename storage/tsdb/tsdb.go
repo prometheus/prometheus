@@ -13,7 +13,7 @@ import (
 
 // adapter implements a storage.Storage around TSDB.
 type adapter struct {
-	db *tsdb.PartitionedDB
+	db *tsdb.DB
 }
 
 // Options of the DB storage.
@@ -38,7 +38,7 @@ type Options struct {
 
 // Open returns a new storage backed by a tsdb database.
 func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage, error) {
-	db, err := tsdb.OpenPartitioned(path, 1, nil, r, &tsdb.Options{
+	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
 		WALFlushInterval: 10 * time.Second,
 		MinBlockDuration: uint64(opts.MinBlockDuration.Seconds() * 1000),
 		MaxBlockDuration: uint64(opts.MaxBlockDuration.Seconds() * 1000),
