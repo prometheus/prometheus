@@ -163,6 +163,8 @@ func (c *compactor) Compact(dirs ...string) (err error) {
 		if err != nil {
 			return err
 		}
+		defer b.Close()
+
 		blocks = append(blocks, b)
 	}
 

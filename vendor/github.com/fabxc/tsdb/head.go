@@ -44,7 +44,6 @@ type headBlock struct {
 
 	activeWriters uint64
 
-	symbols map[string]struct{}
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	series []*memSeries
@@ -150,7 +149,7 @@ func (h *headBlock) Close() error {
 	h.mtx.Lock()
 
 	if err := h.wal.Close(); err != nil {
-		return err
+		return errors.Wrapf(err, "close WAL for head %s", h.dir)
 	}
 	// Check whether the head block still exists in the underlying dir
 	// or has already been replaced with a compacted version or removed.
@@ -223,10 +222,8 @@ type refdSample struct {
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
-	return a.hashedAdd(lset.Hash(), lset, t, v)
-}
+	hash := lset.Hash()
 
-func (a *headAppender) hashedAdd(hash uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if ms := a.get(hash, lset); ms != nil {
 		return uint64(ms.ref), a.AddFast(uint64(ms.ref), t, v)
 	}
@@ -530,13 +527,6 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	return s
 }
 
-func (h *headBlock) fullness() float64 {
-	h.metamtx.RLock()
-	defer h.metamtx.RUnlock()
-
-	return float64(h.meta.Stats.NumSamples) / float64(h.meta.Stats.NumSeries+1) / 250
-}
-
 func (h *headBlock) updateMapping() {
 	h.mtx.RLock()
 
@@ -586,7 +576,7 @@ type memSeries struct {
 	lastValue float64
 	sampleBuf [4]sample
 
-	app chunks.Appender // Current appender for the chunkdb.
+	app chunks.Appender // Current appender for the chunk.
 }
 
 func (s *memSeries) cut() *memChunk {
