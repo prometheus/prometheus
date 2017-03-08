@@ -358,7 +358,13 @@ func (db *DB) reloadBlocks() error {
 		b, ok := db.seqBlocks[meta.Sequence]
 
 		if meta.Compaction.Generation == 0 {
-			if ok && meta.ULID != b.Meta().ULID {
+			if !ok {
+				b, err = openHeadBlock(dirs[i], db.logger)
+				if err != nil {
+					return errors.Wrapf(err, "load head at %s", dirs[i])
+				}
+			}
+			if meta.ULID != b.Meta().ULID {
 				return errors.Errorf("head block ULID changed unexpectedly")
 			}
 			heads = append(heads, b.(*headBlock))

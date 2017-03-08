@@ -44,7 +44,6 @@ type headBlock struct {
 
 	activeWriters uint64
 
-	symbols map[string]struct{}
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	series []*memSeries
@@ -150,7 +149,7 @@ func (h *headBlock) Close() error {
 	h.mtx.Lock()
 
 	if err := h.wal.Close(); err != nil {
-		return err
+		return errors.Wrapf(err, "close WAL for head %s", h.dir)
 	}
 	// Check whether the head block still exists in the underlying dir
 	// or has already been replaced with a compacted version or removed.
@@ -526,13 +525,6 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	h.postings.add(s.ref, term{})
 
 	return s
-}
-
-func (h *headBlock) fullness() float64 {
-	h.metamtx.RLock()
-	defer h.metamtx.RUnlock()
-
-	return float64(h.meta.Stats.NumSamples) / float64(h.meta.Stats.NumSeries+1) / 250
 }
 
 func (h *headBlock) updateMapping() {
