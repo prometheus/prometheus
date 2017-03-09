@@ -62,6 +62,51 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestIndexRW_Postings(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_index_postings")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	iw, err := newIndexWriter(dir)
+	require.NoError(t, err, "create index writer")
+
+	series := []labels.Labels{
+		labels.FromStrings("a", "1", "b", "1"),
+		labels.FromStrings("a", "1", "b", "2"),
+		labels.FromStrings("a", "1", "b", "3"),
+		labels.FromStrings("a", "1", "b", "4"),
+	}
+
+	// Postings lists are only written if a series with the respective
+	// reference was added before.
+	require.NoError(t, iw.AddSeries(1, series[0]))
+	require.NoError(t, iw.AddSeries(3, series[2]))
+	require.NoError(t, iw.AddSeries(2, series[1]))
+	require.NoError(t, iw.AddSeries(4, series[3]))
+
+	err = iw.WritePostings("a", "1", newListPostings([]uint32{1, 2, 3, 4}))
+	require.NoError(t, err)
+
+	require.NoError(t, iw.Close())
+
+	ir, err := newIndexReader(dir)
+	require.NoError(t, err, "open index reader")
+
+	p, err := ir.Postings("a", "1")
+	require.NoError(t, err)
+
+	for i := 0; p.Next(); i++ {
+		l, c, err := ir.Series(p.At())
+
+		require.NoError(t, err)
+		require.Equal(t, 0, len(c))
+		require.Equal(t, l, series[i])
+	}
+	require.NoError(t, p.Err())
+
+	require.NoError(t, ir.Close())
+}
+
 // func TestPersistence_index_e2e(t *testing.T) {
 // 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
 // 	require.NoError(t, err)
