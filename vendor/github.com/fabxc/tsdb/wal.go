@@ -299,6 +299,8 @@ func (w *WAL) entry(et WALEntryType, flag byte, buf []byte) error {
 		sz    = int64(6 + 4 + len(buf))
 		newsz = w.curN + sz
 	)
+	// XXX(fabxc): this currently cuts a new file whenever the WAL was newly opened.
+	// Probably fine in general but may yield a lot of short files in some cases.
 	if w.cur == nil || w.curN > w.segmentSize || newsz > w.segmentSize && sz <= w.segmentSize {
 		if err := w.cut(); err != nil {
 			return err
@@ -431,6 +433,8 @@ func NewWALReader(rs ...io.ReadCloser) *WALReader {
 }
 
 // At returns the last decoded entry of labels or samples.
+// The returned slices are only valid until the next call to Next(). Their elements
+// have to be copied to preserve them.
 func (r *WALReader) At() ([]labels.Labels, []refdSample) {
 	return r.labels, r.samples
 }

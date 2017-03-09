@@ -345,10 +345,16 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	prepareTimer.Stop()
 	queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
 
+	// XXX(fabxc): the querier returned by populateIterators might be instantiated
+	// we must not return without closing irrespective of the error.
+	// TODO: make this semantically saner.
+	if querier != nil {
+		defer querier.Close()
+	}
+
 	if err != nil {
 		return nil, err
 	}
-	defer querier.Close()
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
 	// Instant evaluation.
