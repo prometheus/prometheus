@@ -369,10 +369,7 @@ func (db *DB) reloadBlocks() error {
 			}
 			heads = append(heads, b.(*headBlock))
 		} else {
-			if ok && meta.ULID != b.Meta().ULID {
-				if err := b.Close(); err != nil {
-					return err
-				}
+			if !ok || meta.ULID != b.Meta().ULID {
 				b, err = newPersistedBlock(dirs[i])
 				if err != nil {
 					return errors.Wrapf(err, "open persisted block %s", dirs[i])
@@ -385,7 +382,7 @@ func (db *DB) reloadBlocks() error {
 	}
 
 	for seq, b := range db.seqBlocks {
-		if _, ok := seqBlocks[seq]; !ok {
+		if nb, ok := seqBlocks[seq]; !ok || nb != b {
 			if err := b.Close(); err != nil {
 				return errors.Wrapf(err, "closing removed block %d", b.Meta().Sequence)
 			}
