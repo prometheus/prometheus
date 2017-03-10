@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/fanin"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
@@ -94,12 +95,18 @@ func Main() int {
 
 	remoteStorage := &remote.Storage{}
 	sampleAppender = append(sampleAppender, remoteStorage)
-	reloadables = append(reloadables, remoteStorage)
+	remoteReader := &remote.Reader{}
+	reloadables = append(reloadables, remoteStorage, remoteReader)
+
+	queryable := fanin.Queryable{
+		Local:  localStorage,
+		Remote: remoteReader,
+	}
 
 	var (
 		notifier       = notifier.New(&cfg.notifier)
 		targetManager  = retrieval.NewTargetManager(sampleAppender)
-		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
+		queryEngine    = promql.NewEngine(queryable, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
 

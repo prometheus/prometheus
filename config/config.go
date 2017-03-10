@@ -167,6 +167,11 @@ var (
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout: model.Duration(30 * time.Second),
 	}
+
+	// DefaultRemoteReadConfig is the default remote read configuration.
+	DefaultRemoteReadConfig = RemoteReadConfig{
+		RemoteTimeout: model.Duration(1 * time.Minute),
+	}
 )
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -205,6 +210,7 @@ type Config struct {
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1296,7 +1302,7 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
-// RemoteWriteConfig is the configuration for remote storage.
+// RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                 *URL             `yaml:"url,omitempty"`
 	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
@@ -1317,6 +1323,31 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 	if err := checkOverflow(c.XXX, "remote_write"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RemoteReadConfig is the configuration for reading from remote storage.
+type RemoteReadConfig struct {
+	URL           *URL           `yaml:"url,omitempty"`
+	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
+	BasicAuth     *BasicAuth     `yaml:"basic_auth,omitempty"`
+	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
+	ProxyURL      URL            `yaml:"proxy_url,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultRemoteReadConfig
+	type plain RemoteReadConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "remote_read"); err != nil {
 		return err
 	}
 	return nil
