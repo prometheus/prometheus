@@ -36,7 +36,13 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, rwConf)
+		c, err := NewClient(i, &clientConfig{
+			url:       rwConf.URL,
+			tlsConfig: rwConf.TLSConfig,
+			proxyURL:  &rwConf.ProxyURL,
+			basicAuth: rwConf.BasicAuth,
+			timeout:   rwConf.RemoteTimeout,
+		})
 		if err != nil {
 			return err
 		}

@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -26,20 +27,29 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
-// Client allows sending batches of Prometheus samples to an HTTP endpoint.
+// Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
 	index   int // Used to differentiate metrics.
-	url     config.URL
+	url     *config.URL
 	client  *http.Client
 	timeout time.Duration
 }
 
+type clientConfig struct {
+	url       *config.URL
+	tlsConfig config.TLSConfig
+	proxyURL  *config.URL
+	basicAuth *config.BasicAuth
+	timeout   model.Duration
+}
+
 // NewClient creates a new Client.
-func NewClient(index int, conf *config.RemoteWriteConfig) (*Client, error) {
-	tlsConfig, err := httputil.NewTLSConfig(conf.TLSConfig)
+func NewClient(index int, conf *clientConfig) (*Client, error) {
+	tlsConfig, err := httputil.NewTLSConfig(conf.tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -47,19 +57,19 @@ func NewClient(index int, conf *config.RemoteWriteConfig) (*Client, error) {
 	// The only timeout we care about is the configured push timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
-		Proxy:           http.ProxyURL(conf.ProxyURL.URL),
+		Proxy:           http.ProxyURL(conf.proxyURL.URL),
 		TLSClientConfig: tlsConfig,
 	}
 
-	if conf.BasicAuth != nil {
-		rt = httputil.NewBasicAuthRoundTripper(conf.BasicAuth.Username, conf.BasicAuth.Password, rt)
+	if conf.basicAuth != nil {
+		rt = httputil.NewBasicAuthRoundTripper(conf.basicAuth.Username, conf.basicAuth.Password, rt)
 	}
 
 	return &Client{
 		index:   index,
-		url:     *conf.URL,
+		url:     conf.url,
 		client:  httputil.NewClient(rt),
-		timeout: time.Duration(conf.RemoteTimeout),
+		timeout: time.Duration(conf.timeout),
 	}, nil
 }
 
@@ -119,4 +129,103 @@ func (c *Client) Store(samples model.Samples) error {
 // Name identifies the client.
 func (c Client) Name() string {
 	return fmt.Sprintf("%d:%s", c.index, c.url)
+}
+
+// Read reads from a remote endpoint.
+func (c *Client) Read(ctx context.Context, from, through model.Time, matchers metric.LabelMatchers) (model.Matrix, error) {
+	req := &ReadRequest{
+		// TODO: Support batching multiple queries into one read request,
+		// as the protobuf interface allows for it.
+		Queries: []*Query{{
+			StartTimestampMs: int64(from),
+			EndTimestampMs:   int64(through),
+			Matchers:         labelMatchersToProto(matchers),
+		}},
+	}
+
+	data, err := proto.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal read request: %v", err)
+	}
+
+	buf := bytes.Buffer{}
+	if _, err := snappy.NewWriter(&buf).Write(data); err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequest("POST", c.url.String(), &buf)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create request: %v", err)
+	}
+	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %v", err)
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("server returned HTTP status %s", httpResp.Status)
+	}
+
+	if data, err = ioutil.ReadAll(snappy.NewReader(httpResp.Body)); err != nil {
+		return nil, fmt.Errorf("error reading response: %v", err)
+	}
+
+	var resp ReadResponse
+	err = proto.Unmarshal(data, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
+	}
+
+	return matrixFromProto(resp.Timeseries), nil
+}
+
+func labelMatchersToProto(matchers metric.LabelMatchers) []*LabelMatcher {
+	pbMatchers := make([]*LabelMatcher, 0, len(matchers))
+	for _, m := range matchers {
+		var mType MatchType
+		switch m.Type {
+		case metric.Equal:
+			mType = MatchType_EQUAL
+		case metric.NotEqual:
+			mType = MatchType_NOT_EQUAL
+		case metric.RegexMatch:
+			mType = MatchType_REGEX_MATCH
+		case metric.RegexNoMatch:
+			mType = MatchType_REGEX_NO_MATCH
+		default:
+			panic("invalid matcher type")
+		}
+		pbMatchers = append(pbMatchers, &LabelMatcher{
+			Type:  mType,
+			Name:  string(m.Name),
+			Value: string(m.Value),
+		})
+	}
+	return pbMatchers
+}
+
+func matrixFromProto(seriesSet []*TimeSeries) model.Matrix {
+	m := make(model.Matrix, 0, len(seriesSet))
+	for _, ts := range seriesSet {
+		var ss model.SampleStream
+		ss.Metric = labelPairsToMetric(ts.Labels)
+		ss.Values = make([]model.SamplePair, 0, len(ts.Samples))
+		for _, s := range ts.Samples {
+			ss.Values = append(ss.Values, model.SamplePair{
+				Value:     model.SampleValue(s.Value),
+				Timestamp: model.Time(s.TimestampMs),
+			})
+		}
+		m = append(m, &ss)
+	}
+
+	return m
+}
+
+func labelPairsToMetric(labelPairs []*LabelPair) model.Metric {
+	metric := make(model.Metric, len(labelPairs))
+	for _, l := range labelPairs {
+		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	}
+	return metric
 }
