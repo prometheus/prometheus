@@ -257,9 +257,8 @@ func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]T
 
 			// Start listening for further updates.
 			for {
-				done := ctx.Done()
 				select {
-				case <-done:
+				case <-ctx.Done():
 					return
 				case tgs, ok := <-updates:
 					// Handle the case that a target provider exits and closes the channel
@@ -268,14 +267,8 @@ func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]T
 						return
 					}
 					for _, tg := range tgs {
-						select {
-						case <-done:
-							return
-						default:
-							ts.update(name, tg)
-						}
+						ts.update(name, tg)
 					}
-
 				}
 			}
 		}(name, prov)
