@@ -59,7 +59,7 @@ var (
 			Namespace:   namespace,
 			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
-			Help:        "Query timmings",
+			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
 		},
 	)
@@ -68,7 +68,7 @@ var (
 			Namespace:   namespace,
 			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
-			Help:        "Query timmings",
+			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
 		},
 	)
@@ -77,7 +77,7 @@ var (
 			Namespace:   namespace,
 			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
-			Help:        "Query timmings",
+			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_append"},
 		},
 	)
@@ -86,7 +86,7 @@ var (
 			Namespace:   namespace,
 			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
-			Help:        "Query timmings",
+			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_sort"},
 		},
 	)

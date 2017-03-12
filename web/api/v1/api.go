@@ -169,12 +169,24 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		ts = api.now()
 	}
 
+	ctx := api.context(r)
+	if to := r.FormValue("timeout"); to != "" {
+		var cancel context.CancelFunc
+		timeout, err := parseDuration(to)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	qry, err := api.QueryEngine.NewInstantQuery(r.FormValue("query"), ts)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec(api.context(r))
+	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -221,12 +233,24 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
+	ctx := api.context(r)
+	if to := r.FormValue("timeout"); to != "" {
+		var cancel context.CancelFunc
+		timeout, err := parseDuration(to)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	qry, err := api.QueryEngine.NewRangeQuery(r.FormValue("query"), start, end, step)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	res := qry.Exec(api.context(r))
+	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -345,6 +369,7 @@ func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
 	return res, nil
 }
 
+// Target has the information for one target.
 type Target struct {
 	// Labels before any processing.
 	DiscoveredLabels model.LabelSet `json:"discoveredLabels"`
@@ -358,6 +383,7 @@ type Target struct {
 	Health     retrieval.TargetHealth `json:"health"`
 }
 
+// TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
 	ActiveTargets []*Target `json:"activeTargets"`
 }
@@ -386,10 +412,12 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	return res, nil
 }
 
+// AlertmanagerDiscovery has all the active Alertmanagers.
 type AlertmanagerDiscovery struct {
 	ActiveAlertmanagers []*AlertmanagerTarget `json:"activeAlertmanagers"`
 }
 
+// AlertmanagerTarget has info on one AM.
 type AlertmanagerTarget struct {
 	URL string `json:"url"`
 }
