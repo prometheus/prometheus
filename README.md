@@ -50,11 +50,10 @@ Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
 Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus).
 
 You can launch a Prometheus container for trying it out with
-```
-docker run --name prometheus -d -p 127.0.0.1:9090:9090 quay.io/prometheus/prometheus
-```
-and you can reach it at http://127.0.0.1:9090
 
+    $ docker run --name prometheus -d -p 127.0.0.1:9090:9090 quay.io/prometheus/prometheus
+
+Prometheus will now be reachable at http://localhost:9090/.
 
 ### Building from source
 
