@@ -124,6 +124,33 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	require.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
+func BenchmarkBufferedSeriesIterator(b *testing.B) {
+	var (
+		samples []sample
+		lastT   int64
+	)
+	for i := 0; i < b.N; i++ {
+		lastT += 30
+
+		samples = append(samples, sample{
+			t: lastT,
+			v: 123, // doesn't matter
+		})
+	}
+
+	// Simulate a 5 minute rate.
+	it := NewBuffer(newListSeriesIterator(samples), 5*60)
+
+	b.SetBytes(int64(b.N * 16))
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for it.Next() {
+		// scan everything
+	}
+	require.NoError(b, it.Err())
+}
+
 type mockSeriesIterator struct {
 	seek   func(int64) bool
 	values func() (int64, float64)
