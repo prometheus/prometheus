@@ -13,11 +13,14 @@ type BufferedSeriesIterator struct {
 // NewBuffer returns a new iterator that buffers the values within the time range
 // of the current element and the duration of delta before.
 func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
-	return &BufferedSeriesIterator{
+	bit := &BufferedSeriesIterator{
 		it:       it,
 		buf:      newSampleRing(delta, 16),
 		lastTime: math.MinInt64,
 	}
+	it.Next()
+
+	return bit
 }
 
 // PeekBack returns the previous element of the iterator. If there is none buffered,
