@@ -574,10 +574,11 @@ func (h *headBlock) updateMapping() {
 	s := slice.SortInterface(series, func(i, j int) bool {
 		return labels.Compare(series[i].lset, series[j].lset) < 0
 	})
+	m := newPositionMapper(s)
 
-	h.mapper.mtx.Lock()
-	h.mapper.update(s)
-	h.mapper.mtx.Unlock()
+	h.mtx.Lock()
+	h.mapper = m
+	h.mtx.Unlock()
 }
 
 // remapPostings changes the order of the postings from their ID to the ordering
@@ -589,13 +590,10 @@ func (h *headBlock) remapPostings(p Postings) Postings {
 	// covers existing metrics.
 	ep := make([]uint32, 0, 64)
 
-	h.mapper.mtx.RLock()
-	defer h.mapper.mtx.RUnlock()
-
 	max := uint32(h.mapper.Len())
 
 	for p.Next() {
-		if p.At() > max {
+		if p.At() >= max {
 			break
 		}
 		ep = append(ep, p.At())
@@ -722,7 +720,6 @@ func (it *memSafeIterator) At() (int64, float64) {
 // positionMapper stores a position mapping from unsorted to
 // sorted indices of a sortable collection.
 type positionMapper struct {
-	mtx      sync.RWMutex
 	sortable sort.Interface
 	iv, fw   []int
 }
@@ -745,9 +742,7 @@ func (m *positionMapper) Swap(i, j int) {
 }
 
 func (m *positionMapper) Sort(l []uint32) {
-	slice.Sort(l, func(i, j int) bool {
-		return m.fw[l[i]] < m.fw[l[j]]
-	})
+	slice.Sort(l, func(i, j int) bool { return m.fw[l[i]] < m.fw[l[j]] })
 }
 
 func (m *positionMapper) update(s sort.Interface) {
