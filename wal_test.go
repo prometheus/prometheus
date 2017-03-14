@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/fabxc/tsdb/labels"
+	"github.com/go-kit/kit/log"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/stretchr/testify/require"
@@ -109,7 +110,7 @@ func TestWAL_cut(t *testing.T) {
 
 		// We cannot actually check for correct pre-allocation as it is
 		// optional per filesystem and handled transparently.
-		et, flag, b, err := NewWALReader(f).nextEntry()
+		et, flag, b, err := NewWALReader(nil, nil).entry(f)
 		require.NoError(t, err)
 		require.Equal(t, WALEntrySeries, et)
 		require.Equal(t, flag, byte(walSeriesSimple))
@@ -202,5 +203,141 @@ func TestWAL_Log_Restore(t *testing.T) {
 		}
 
 		require.NoError(t, w.Close())
+	}
+}
+
+// Test reading from a WAL that has been corrupted through various means.
+func TestWALRestoreCorrupted(t *testing.T) {
+	cases := []struct {
+		name string
+		f    func(*testing.T, *WAL)
+	}{
+		{
+			name: "truncate_checksum",
+			f: func(t *testing.T, w *WAL) {
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				require.NoError(t, err)
+				defer f.Close()
+
+				off, err := f.Seek(0, os.SEEK_END)
+				require.NoError(t, err)
+
+				require.NoError(t, f.Truncate(off-1))
+			},
+		},
+		{
+			name: "truncate_body",
+			f: func(t *testing.T, w *WAL) {
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				require.NoError(t, err)
+				defer f.Close()
+
+				off, err := f.Seek(0, os.SEEK_END)
+				require.NoError(t, err)
+
+				require.NoError(t, f.Truncate(off-8))
+			},
+		},
+		{
+			name: "body_content",
+			f: func(t *testing.T, w *WAL) {
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				require.NoError(t, err)
+				defer f.Close()
+
+				off, err := f.Seek(0, os.SEEK_END)
+				require.NoError(t, err)
+
+				// Write junk before checksum starts.
+				_, err = f.WriteAt([]byte{1, 2, 3, 4}, off-8)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "checksum",
+			f: func(t *testing.T, w *WAL) {
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				require.NoError(t, err)
+				defer f.Close()
+
+				off, err := f.Seek(0, os.SEEK_END)
+				require.NoError(t, err)
+
+				// Write junk into checksum
+				_, err = f.WriteAt([]byte{1, 2, 3, 4}, off-4)
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Generate testing data. It does not make semantical sense but
+			// for the purpose of this test.
+			dir, err := ioutil.TempDir("", "test_corrupted_checksum")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir)
+
+			w, err := OpenWAL(dir, nil, 0)
+			require.NoError(t, err)
+
+			require.NoError(t, w.Log(nil, []refdSample{{t: 1, v: 2}}))
+			require.NoError(t, w.Log(nil, []refdSample{{t: 2, v: 3}}))
+
+			require.NoError(t, w.cut())
+
+			require.NoError(t, w.Log(nil, []refdSample{{t: 3, v: 4}}))
+			require.NoError(t, w.Log(nil, []refdSample{{t: 5, v: 6}}))
+
+			require.NoError(t, w.Close())
+
+			// Corrupt the second entry in the first file.
+			// After re-opening we must be able to read the first entry
+			// and the rest, including the second file, must be truncated for clean further
+			// writes.
+			c.f(t, w)
+
+			logger := log.NewLogfmtLogger(os.Stderr)
+
+			w2, err := OpenWAL(dir, logger, 0)
+			require.NoError(t, err)
+
+			r := w2.Reader()
+
+			require.True(t, r.Next())
+			l, s := r.At()
+			require.Equal(t, 0, len(l))
+			require.Equal(t, []refdSample{{t: 1, v: 2}}, s)
+
+			// Truncation should happen transparently and now cause an error.
+			require.False(t, r.Next())
+			require.Nil(t, r.Err())
+
+			require.NoError(t, w2.Log(nil, []refdSample{{t: 99, v: 100}}))
+			require.NoError(t, w2.Close())
+
+			files, err := fileutil.ReadDir(dir)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(files))
+
+			// We should see the first valid entry and the new one, everything after
+			// is truncated.
+			w3, err := OpenWAL(dir, logger, 0)
+			require.NoError(t, err)
+
+			r = w3.Reader()
+
+			require.True(t, r.Next())
+			l, s = r.At()
+			require.Equal(t, 0, len(l))
+			require.Equal(t, []refdSample{{t: 1, v: 2}}, s)
+
+			require.True(t, r.Next())
+			l, s = r.At()
+			require.Equal(t, 0, len(l))
+			require.Equal(t, []refdSample{{t: 99, v: 100}}, s)
+
+			require.False(t, r.Next())
+			require.Nil(t, r.Err())
+		})
 	}
 }
