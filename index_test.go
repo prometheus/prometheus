@@ -121,10 +121,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	// Generate ChunkMetas for every label set.
 	for i, lset := range lbls {
-		var metas []ChunkMeta
+		var metas []*ChunkMeta
 
 		for j := 0; j <= (i % 20); j++ {
-			metas = append(metas, ChunkMeta{
+			metas = append(metas, &ChunkMeta{
 				MinTime: int64(j * 10000),
 				MaxTime: int64((j + 1) * 10000),
 				Ref:     rand.Uint64(),

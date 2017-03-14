@@ -345,7 +345,7 @@ func (s *mergedSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta)
+	At() (labels.Labels, []*ChunkMeta)
 	Err() error
 }
 
@@ -357,12 +357,12 @@ type baseChunkSeries struct {
 	absent []string // labels that must be unset in results.
 
 	lset labels.Labels
-	chks []ChunkMeta
+	chks []*ChunkMeta
 	err  error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta) { return s.lset, s.chks }
-func (s *baseChunkSeries) Err() error                       { return s.err }
+func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta) { return s.lset, s.chks }
+func (s *baseChunkSeries) Err() error                        { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 Outer:
@@ -400,20 +400,18 @@ type populatedChunkSeries struct {
 	mint, maxt int64
 
 	err  error
-	chks []ChunkMeta
+	chks []*ChunkMeta
 	lset labels.Labels
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta) { return s.lset, s.chks }
-func (s *populatedChunkSeries) Err() error                       { return s.err }
+func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta) { return s.lset, s.chks }
+func (s *populatedChunkSeries) Err() error                        { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
 		lset, chks := s.set.At()
 
-		for i := range chks {
-			c := &chks[i]
-
+		for i, c := range chks {
 			if c.MaxTime < s.mint {
 				chks = chks[1:]
 				continue
@@ -468,7 +466,7 @@ func (s *blockSeriesSet) Err() error { return s.err }
 // time series data.
 type chunkSeries struct {
 	labels labels.Labels
-	chunks []ChunkMeta // in-order chunk refs
+	chunks []*ChunkMeta // in-order chunk refs
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -562,13 +560,13 @@ func (it *chainedSeriesIterator) Err() error {
 // chunkSeriesIterator implements a series iterator on top
 // of a list of time-sorted, non-overlapping chunks.
 type chunkSeriesIterator struct {
-	chunks []ChunkMeta
+	chunks []*ChunkMeta
 
 	i   int
 	cur chunks.Iterator
 }
 
-func newChunkSeriesIterator(cs []ChunkMeta) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,

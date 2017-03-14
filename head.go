@@ -480,7 +480,7 @@ func (h *headIndexReader) Postings(name, value string) (Postings, error) {
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
+func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -488,13 +488,13 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error)
 		return nil, nil, ErrNotFound
 	}
 	s := h.series[ref]
-	metas := make([]ChunkMeta, 0, len(s.chunks))
+	metas := make([]*ChunkMeta, 0, len(s.chunks))
 
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
 	for i, c := range s.chunks {
-		metas = append(metas, ChunkMeta{
+		metas = append(metas, &ChunkMeta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     (uint64(ref) << 32) | uint64(i),
