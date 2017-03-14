@@ -750,6 +750,7 @@ type DNSSDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Type            string         `yaml:"type"`
 	Port            int            `yaml:"port"` // Ignored for SRV records
+	Lookup          bool           `yaml:"lookup"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }

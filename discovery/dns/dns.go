@@ -67,6 +67,7 @@ type Discovery struct {
 	m        sync.RWMutex
 	port     int
 	qtype    uint16
+	lookup   bool
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -85,6 +86,7 @@ func NewDiscovery(conf *config.DNSSDConfig) *Discovery {
 		interval: time.Duration(conf.RefreshInterval),
 		qtype:    qtype,
 		port:     conf.Port,
+		lookup:   conf.Lookup,
 	}
 }
 
@@ -136,26 +138,35 @@ func (dd *Discovery) refresh(ctx context.Context, name string, ch chan<- []*conf
 	}
 
 	for _, record := range response.Answer {
-		target := model.LabelValue("")
+		host, port := "", 0
 		switch addr := record.(type) {
 		case *dns.SRV:
 			// Remove the final dot from rooted DNS names to make them look more usual.
 			addr.Target = strings.TrimRight(addr.Target, ".")
 
-			target = hostPort(addr.Target, int(addr.Port))
+			host, port = addr.Target, int(addr.Port)
 		case *dns.A:
-			target = hostPort(addr.A.String(), dd.port)
+			host, port = addr.A.String(), dd.port
 		case *dns.AAAA:
-			target = hostPort(addr.AAAA.String(), dd.port)
+			host, port = addr.AAAA.String(), dd.port
 		default:
 			log.Warnf("%q is not a valid SRV record", record)
 			continue
 
 		}
-		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel: target,
+
+		// Try to reverse lookup for the host if it is ip addr.
+		if dd.lookup {
+			names, err := net.LookupAddr(host)
+			if err == nil && len(names) > 0 {
+				name = strings.TrimRight(names[0], ".")
+			}
+		}
+		target := model.LabelSet{
+			model.AddressLabel: hostPort(host, port),
 			dnsNameLabel:       model.LabelValue(name),
-		})
+		}
+		tg.Targets = append(tg.Targets, target)
 	}
 
 	tg.Source = name
