@@ -65,7 +65,7 @@ func (it *listSeriesIterator) Err() error {
 	return nil
 }
 
-func TestPartitionSeriesSet(t *testing.T) {
+func TestMergedSeriesSet(t *testing.T) {
 	newSeries := func(l map[string]string, s []sample) Series {
 		return &mockSeries{
 			labels:   func() labels.Labels { return labels.FromMap(l) },
@@ -170,7 +170,7 @@ func TestPartitionSeriesSet(t *testing.T) {
 
 Outer:
 	for _, c := range cases {
-		res := newPartitionSeriesSet(c.a, c.b)
+		res := newMergedSeriesSet(c.a, c.b)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()

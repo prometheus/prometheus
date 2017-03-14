@@ -109,7 +109,7 @@ func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
 	r := q.blocks[0].Select(ms...)
 
 	for _, s := range q.blocks[1:] {
-		r = newPartitionSeriesSet(r, s.Select(ms...))
+		r = newMergedSeriesSet(r, s.Select(ms...))
 	}
 	return r
 }
@@ -282,39 +282,14 @@ func (nopSeriesSet) At() Series { return nil }
 func (nopSeriesSet) Err() error { return nil }
 
 type mergedSeriesSet struct {
-	sets []SeriesSet
-
-	cur int
-	err error
-}
-
-func (s *mergedSeriesSet) At() Series { return s.sets[s.cur].At() }
-func (s *mergedSeriesSet) Err() error { return s.sets[s.cur].Err() }
-
-func (s *mergedSeriesSet) Next() bool {
-	// TODO(fabxc): We just emit the sets one after one. They are each
-	// lexicographically sorted. Should we emit their union sorted too?
-	if s.sets[s.cur].Next() {
-		return true
-	}
-
-	if s.cur == len(s.sets)-1 {
-		return false
-	}
-	s.cur++
-
-	return s.Next()
-}
-
-type partitionSeriesSet struct {
 	a, b SeriesSet
 
 	cur          Series
 	adone, bdone bool
 }
 
-func newPartitionSeriesSet(a, b SeriesSet) *partitionSeriesSet {
-	s := &partitionSeriesSet{a: a, b: b}
+func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
+	s := &mergedSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
 	s.adone = !s.a.Next()
@@ -323,18 +298,18 @@ func newPartitionSeriesSet(a, b SeriesSet) *partitionSeriesSet {
 	return s
 }
 
-func (s *partitionSeriesSet) At() Series {
+func (s *mergedSeriesSet) At() Series {
 	return s.cur
 }
 
-func (s *partitionSeriesSet) Err() error {
+func (s *mergedSeriesSet) Err() error {
 	if s.a.Err() != nil {
 		return s.a.Err()
 	}
 	return s.b.Err()
 }
 
-func (s *partitionSeriesSet) compare() int {
+func (s *mergedSeriesSet) compare() int {
 	if s.adone {
 		return 1
 	}
@@ -344,7 +319,7 @@ func (s *partitionSeriesSet) compare() int {
 	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
 }
 
-func (s *partitionSeriesSet) Next() bool {
+func (s *mergedSeriesSet) Next() bool {
 	if s.adone && s.bdone || s.Err() != nil {
 		return false
 	}
