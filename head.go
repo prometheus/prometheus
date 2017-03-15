@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bradfitz/slice"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
@@ -47,9 +46,6 @@ type headBlock struct {
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	series []*memSeries
-	// mapping maps a series ID to its position in an ordered list
-	// of all series. The orderDirty flag indicates that it has gone stale.
-	mapper *positionMapper
 	// hashes contains a collision map of label set hashes of chunks
 	// to their chunk descs.
 	hashes map[uint64][]*memSeries
@@ -109,11 +105,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		hashes:   map[uint64][]*memSeries{},
 		values:   map[string]stringset{},
 		postings: &memPostings{m: make(map[term][]uint32)},
-		mapper:   newPositionMapper(nil),
 		meta:     *meta,
-		updatec:  make(chan struct{}, 1),
-		stopc:    make(chan struct{}),
-		donec:    make(chan struct{}),
 	}
 
 	r := wal.Reader()
@@ -138,23 +130,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		return nil, errors.Wrap(err, "consume WAL")
 	}
 
-	go h.run()
-	h.updatec <- struct{}{}
-
 	return h, nil
-}
-
-func (h *headBlock) run() {
-	defer close(h.donec)
-
-	for {
-		select {
-		case <-h.stopc:
-			return
-		case <-h.updatec:
-			h.updateMapping()
-		}
-	}
 }
 
 // inBounds returns true if the given timestamp is within the valid
@@ -348,11 +324,6 @@ func (a *headAppender) createSeries() {
 
 	a.mtx.Unlock()
 	a.mtx.RLock()
-
-	select {
-	case a.updatec <- struct{}{}:
-	default:
-	}
 }
 
 func (a *headAppender) Commit() error {
@@ -556,31 +527,6 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	return s
 }
 
-func (h *headBlock) updateMapping() {
-	h.mtx.RLock()
-
-	// No need to rlock the mapper as this method is not run concurrently and
-	// the only one ever modifying the mapper.
-	if h.mapper.sortable != nil && h.mapper.Len() == len(h.series) {
-		h.mtx.RUnlock()
-		return
-	}
-
-	series := make([]*memSeries, len(h.series))
-	copy(series, h.series)
-
-	h.mtx.RUnlock()
-
-	s := slice.SortInterface(series, func(i, j int) bool {
-		return labels.Compare(series[i].lset, series[j].lset) < 0
-	})
-	m := newPositionMapper(s)
-
-	h.mtx.Lock()
-	h.mapper = m
-	h.mtx.Unlock()
-}
-
 // remapPostings changes the order of the postings from their ID to the ordering
 // of the series they reference.
 // Returned postings have no longer monotonic IDs and MUST NOT be used for regular
@@ -590,20 +536,16 @@ func (h *headBlock) remapPostings(p Postings) Postings {
 	// covers existing metrics.
 	ep := make([]uint32, 0, 64)
 
-	max := uint32(h.mapper.Len())
-
 	for p.Next() {
-		if p.At() >= max {
-			break
-		}
 		ep = append(ep, p.At())
 	}
 	if err := p.Err(); err != nil {
 		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
 
-	h.mapper.Sort(ep)
-
+	sort.Slice(ep, func(i, j int) bool {
+		return labels.Compare(h.series[i].lset, h.series[j].lset) < 0
+	})
 	return newListPostings(ep)
 }
 
@@ -715,48 +657,4 @@ func (it *memSafeIterator) At() (int64, float64) {
 	}
 	s := it.buf[4-(it.total-it.i)]
 	return s.t, s.v
-}
-
-// positionMapper stores a position mapping from unsorted to
-// sorted indices of a sortable collection.
-type positionMapper struct {
-	sortable sort.Interface
-	iv, fw   []int
-}
-
-func newPositionMapper(s sort.Interface) *positionMapper {
-	m := &positionMapper{}
-	if s != nil {
-		m.update(s)
-	}
-	return m
-}
-
-func (m *positionMapper) Len() int           { return m.sortable.Len() }
-func (m *positionMapper) Less(i, j int) bool { return m.sortable.Less(i, j) }
-
-func (m *positionMapper) Swap(i, j int) {
-	m.sortable.Swap(i, j)
-
-	m.iv[i], m.iv[j] = m.iv[j], m.iv[i]
-}
-
-func (m *positionMapper) Sort(l []uint32) {
-	slice.Sort(l, func(i, j int) bool { return m.fw[l[i]] < m.fw[l[j]] })
-}
-
-func (m *positionMapper) update(s sort.Interface) {
-	m.sortable = s
-
-	m.iv = make([]int, s.Len())
-	m.fw = make([]int, s.Len())
-
-	for i := range m.iv {
-		m.iv[i] = i
-	}
-	sort.Sort(m)
-
-	for i, k := range m.iv {
-		m.fw[k] = i
-	}
 }

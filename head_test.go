@@ -3,7 +3,6 @@ package tsdb
 import (
 	"io/ioutil"
 	"os"
-	"sort"
 	"testing"
 	"unsafe"
 
@@ -14,33 +13,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/stretchr/testify/require"
 )
-
-func TestPositionMapper(t *testing.T) {
-	cases := []struct {
-		in  []int
-		res []int
-	}{
-		{
-			in:  []int{5, 4, 3, 2, 1, 0},
-			res: []int{5, 4, 3, 2, 1, 0},
-		},
-		{
-			in:  []int{1, 2, 0, 3},
-			res: []int{1, 2, 0, 3},
-		},
-		{
-			in:  []int{1, 2, 0, 3, 10, 100, -10},
-			res: []int{2, 3, 1, 4, 5, 6, 0},
-		},
-	}
-
-	for _, c := range cases {
-		m := newPositionMapper(sort.IntSlice(c.in))
-
-		require.True(t, sort.IsSorted(m.sortable))
-		require.Equal(t, c.res, m.fw)
-	}
-}
 
 func BenchmarkCreateSeries(b *testing.B) {
 	lbls, err := readPrometheusLabels("cmd/tsdb/testdata.1m", 1e6)
