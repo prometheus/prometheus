@@ -221,7 +221,7 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
-		// Invalid step
+		// Invalid step.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
@@ -232,7 +232,7 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
-		// Start after end
+		// Start after end.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
@@ -243,7 +243,7 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
-		// Start overflows int64 internally
+		// Start overflows int64 internally.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
@@ -605,11 +605,11 @@ func TestParseTime(t *testing.T) {
 			input: "30s",
 			fail:  true,
 		}, {
-			// Internal int64 overflow
+			// Internal int64 overflow.
 			input: "-148966367200.372",
 			fail:  true,
 		}, {
-			// Internal int64 overflow
+			// Internal int64 overflow.
 			input: "148966367200.372",
 			fail:  true,
 		}, {
@@ -660,11 +660,11 @@ func TestParseDuration(t *testing.T) {
 			input: "2015-06-03T13:21:58.555Z",
 			fail:  true,
 		}, {
-			// Internal int64 overflow
+			// Internal int64 overflow.
 			input: "-148966367200.372",
 			fail:  true,
 		}, {
-			// Internal int64 overflow
+			// Internal int64 overflow.
 			input: "148966367200.372",
 			fail:  true,
 		}, {
