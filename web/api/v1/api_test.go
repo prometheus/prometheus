@@ -221,7 +221,7 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
-		// Invalid step
+		// Invalid step.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
@@ -232,13 +232,24 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
-		// Start after end
+		// Start after end.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
 				"start": []string{"2"},
 				"end":   []string{"1"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		// Start overflows int64 internally.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"148966367200.372"},
+				"end":   []string{"1489667272.372"},
 				"step":  []string{"1"},
 			},
 			errType: errorBadData,
@@ -594,11 +605,16 @@ func TestParseTime(t *testing.T) {
 			input: "30s",
 			fail:  true,
 		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
+			fail:  true,
+		}, {
 			input:  "123",
 			result: time.Unix(123, 0),
-		}, {
-			input:  "123.123",
-			result: time.Unix(123, 123000000),
 		}, {
 			input:  "123.123",
 			result: time.Unix(123, 123000000),
@@ -642,6 +658,14 @@ func TestParseDuration(t *testing.T) {
 			fail:  true,
 		}, {
 			input: "2015-06-03T13:21:58.555Z",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
 			fail:  true,
 		}, {
 			input:  "123",
