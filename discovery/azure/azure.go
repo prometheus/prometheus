@@ -16,11 +16,13 @@ package azure
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 	"github.com/Azure/azure-sdk-for-go/arm/network"
+	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/azure"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -109,8 +111,10 @@ func (ad *AzureDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGro
 
 // azureClient represents multiple Azure Resource Manager providers.
 type azureClient struct {
-	nic network.InterfacesClient
-	vm  compute.VirtualMachinesClient
+	nic    network.InterfacesClient
+	vm     compute.VirtualMachinesClient
+	vmss   compute.VirtualMachineScaleSetsClient
+	vmssvm compute.VirtualMachineScaleSetVMsClient
 }
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
@@ -131,6 +135,12 @@ func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
 	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
 	c.nic.Authorizer = spt
 
+	c.vmss = compute.NewVirtualMachineScaleSetsClient(cfg.SubscriptionID)
+	c.vmss.Authorizer = spt
+
+	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClient(cfg.SubscriptionID)
+	c.vmssvm.Authorizer = spt
+
 	return c, nil
 }
 
@@ -144,8 +154,10 @@ type azureResource struct {
 func newAzureResourceFromID(id string) (azureResource, error) {
 	// Resource IDs have the following format.
 	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME
+	// or if embeded resource then
+	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME/TYPE/NAME
 	s := strings.Split(id, "/")
-	if len(s) != 9 {
+	if len(s) != 9 && len(s) != 11 {
 		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource", id)
 		log.Error(err)
 		return azureResource{}, err
@@ -154,6 +166,15 @@ func newAzureResourceFromID(id string) (azureResource, error) {
 		Name:          strings.ToLower(s[8]),
 		ResourceGroup: strings.ToLower(s[4]),
 	}, nil
+}
+
+type virtualMachine struct {
+	ID             *string
+	Name           *string
+	Type           *string
+	Location       *string
+	Tags           *map[string]*string
+	NetworkProfile *compute.NetworkProfile
 }
 
 func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
@@ -170,22 +191,32 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 		return tg, fmt.Errorf("could not create Azure client: %s", err)
 	}
 
-	var machines []compute.VirtualMachine
-	result, err := client.vm.ListAll()
+	machines, err := client.getVMs()
 	if err != nil {
-		return tg, fmt.Errorf("could not list virtual machines: %s", err)
+		return tg, fmt.Errorf("could not get virtual machines: %s", err)
 	}
-	machines = append(machines, *result.Value...)
 
-	// If we still have results, keep going until we have no more.
-	for result.NextLink != nil {
-		result, err = client.vm.ListAllNextResults(result)
-		if err != nil {
-			return tg, fmt.Errorf("could not list virtual machines: %s", err)
-		}
-		machines = append(machines, *result.Value...)
-	}
 	log.Debugf("Found %d virtual machines during Azure discovery.", len(machines))
+
+	// Load the vms managed by scale sets
+	scaleSets, err := client.getScaleSets()
+	if err != nil {
+		return tg, fmt.Errorf("could not get virtual machine scale sets: %s", err)
+	}
+
+	log.Debugf("Found %d scale sets during Azure discovery.", len(scaleSets))
+
+	var scaleSetMachines []compute.VirtualMachineScaleSetVM
+
+	for _, scaleSet := range scaleSets {
+		scaleSetVms, err := client.getScaleSetVMs(&scaleSet)
+		if err != nil {
+			return tg, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
+		}
+		machines = append(machines, scaleSetVms...)
+	}
+
+	log.Debugf("Found %d scale set virtual machines during Azure discovery.", len(scaleSetMachines))
 
 	// We have the slice of machines. Now turn them into targets.
 	// Doing them in go routines because the network interface calls are slow.
@@ -196,7 +227,7 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 
 	ch := make(chan target, len(machines))
 	for i, vm := range machines {
-		go func(i int, vm compute.VirtualMachine) {
+		go func(i int, vm virtualMachine) {
 			r, err := newAzureResourceFromID(*vm.ID)
 			if err != nil {
 				ch <- target{labelSet: nil, err: err}
@@ -218,15 +249,10 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 			}
 
 			// Get the IP address information via separate call to the network provider.
-			for _, nic := range *vm.Properties.NetworkProfile.NetworkInterfaces {
-				r, err := newAzureResourceFromID(*nic.ID)
+			for _, nic := range *vm.NetworkProfile.NetworkInterfaces {
+				networkInterface, err := client.getNetworkInterfaceByID(*nic.ID)
 				if err != nil {
-					ch <- target{labelSet: nil, err: err}
-					return
-				}
-				networkInterface, err := client.nic.Get(r.ResourceGroup, r.Name, "")
-				if err != nil {
-					log.Errorf("Unable to get network interface %s: %s", r.Name, err)
+					log.Errorf("Unable to get network interface %s: %s", *nic.ID, err)
 					ch <- target{labelSet: nil, err: err}
 					// Get out of this routine because we cannot continue without a network interface.
 					return
@@ -274,4 +300,115 @@ func (ad *AzureDiscovery) refresh() (tg *config.TargetGroup, err error) {
 
 	log.Debugf("Azure discovery completed.")
 	return tg, nil
+}
+
+func (client *azureClient) getVMs() (vms []virtualMachine, err error) {
+	result, err := client.vm.ListAll()
+	if err != nil {
+		return vms, fmt.Errorf("could not list virtual machines: %s", err)
+	}
+
+	for _, vm := range *result.Value {
+		vms = append(vms, mapFromVM(&vm))
+	}
+
+	// If we still have results, keep going until we have no more.
+	for result.NextLink != nil {
+		result, err = client.vm.ListAllNextResults(result)
+		if err != nil {
+			return vms, fmt.Errorf("could not list virtual machines: %s", err)
+		}
+
+		for _, vm := range *result.Value {
+			vms = append(vms, mapFromVM(&vm))
+		}
+	}
+
+	return
+}
+
+func (client *azureClient) getScaleSets() (scaleSets []compute.VirtualMachineScaleSet, err error) {
+	result, err := client.vmss.ListAll()
+	if err != nil {
+		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+	}
+	scaleSets = append(scaleSets, *result.Value...)
+
+	for result.NextLink != nil {
+		result, err = client.vmss.ListAllNextResults(result)
+		if err != nil {
+			return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
+		}
+		scaleSets = append(scaleSets, *result.Value...)
+	}
+
+	return
+}
+
+func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) (vms []virtualMachine, err error) {
+	r, err := newAzureResourceFromID(*scaleSet.ID)
+
+	if err != nil {
+		return vms, fmt.Errorf("could not parse scale set ID: %s", err)
+	}
+
+	result, err := client.vmssvm.List(r.ResourceGroup, r.Name, "", "", "")
+	if err != nil {
+		return vms, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+	}
+
+	for _, vm := range *result.Value {
+		vms = append(vms, mapFromVMScaleSetVM(&vm))
+	}
+
+	for result.NextLink != nil {
+		result, err = client.vmssvm.ListNextResults(result)
+		if err != nil {
+			return vms, fmt.Errorf("could not list virtual machine scale set vms: %s", err)
+		}
+
+		for _, vm := range *result.Value {
+			vms = append(vms, mapFromVMScaleSetVM(&vm))
+		}
+	}
+
+	return
+}
+
+func mapFromVM(vm *compute.VirtualMachine) virtualMachine {
+	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, vm.Tags, vm.Properties.NetworkProfile}
+}
+
+func mapFromVMScaleSetVM(vm *compute.VirtualMachineScaleSetVM) virtualMachine {
+	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, vm.Tags, vm.Properties.NetworkProfile}
+}
+
+func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (result network.Interface, err error) {
+
+	queryParameters := map[string]interface{}{
+		"api-version": client.nic.APIVersion,
+	}
+
+	preparer := autorest.CreatePreparer(
+		autorest.AsGet(),
+		autorest.WithBaseURL(client.nic.BaseURI),
+		autorest.WithPath(networkInterfaceID),
+		autorest.WithQueryParameters(queryParameters))
+	req, err := preparer.Prepare(&http.Request{})
+	if err != nil {
+		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
+	}
+
+	resp, err := client.nic.GetSender(req)
+	if err != nil {
+		result.Response = autorest.Response{Response: resp}
+		return result, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
+	}
+
+	result, err = client.nic.GetResponder(resp)
+	if err != nil {
+		err = autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
+	}
+
+	return
 }
