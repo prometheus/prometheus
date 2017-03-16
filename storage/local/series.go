@@ -421,7 +421,7 @@ func (s *memorySeries) preloadChunksForInstant(
 	from model.Time, through model.Time,
 	mss *MemorySeriesStorage,
 ) (SeriesIterator, error) {
-	// If we have a lastSamplePair in the series, and thas last samplePair
+	// If we have a lastSamplePair in the series, and this last samplePair
 	// is in the interval, just take it in a singleSampleSeriesIterator. No
 	// need to pin or load anything.
 	lastSample := s.lastSamplePair()
