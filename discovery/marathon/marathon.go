@@ -310,11 +310,11 @@ func targetsForApp(app *App) []model.LabelSet {
 }
 
 func getPortIndex(app *App) int {
-	index := app.Labels["PROMETHEUS_PORT_INDEX"]
-	if index == "" {
+	index, exists := app.Labels["PROMETHEUS_PORT_INDEX"]
+	if !exists {
 		index = "0"
 	}
-	portIndex, err := strconv.ParseUint(index, 10, 32)
+	portIndex, err := strconv.Atoi(index)
 	if err != nil {
 		portIndex = 0
 	}
