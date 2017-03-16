@@ -257,11 +257,11 @@ func marathonTestTaskPortIndexAppList(labels map[string]string, runningTasks int
 	}
 }
 
-func TestMarathonTaskPortIndex0(t *testing.T) {
+func TestMarathonZeroTaskPortIndex0(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
 		labels = map[string]string{"prometheus": "yes", "PROMETHEUS_PORT_INDEX": "0"}
-		client = func(client *http.Client, url string) (*AppList, error) {
+		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestTaskPortIndexAppList(labels, 1), nil
 		}
 	)
@@ -287,11 +287,11 @@ func TestMarathonTaskPortIndex0(t *testing.T) {
 	}
 }
 
-func TestMarathonTaskPortIndex1(t *testing.T) {
+func TestMarathonZeroTaskPortIndex1(t *testing.T) {
 	var (
 		ch     = make(chan []*config.TargetGroup, 1)
 		labels = map[string]string{"prometheus": "yes", "PROMETHEUS_PORT_INDEX": "1"}
-		client = func(client *http.Client, url string) (*AppList, error) {
+		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestTaskPortIndexAppList(labels, 1), nil
 		}
 	)
@@ -310,6 +310,36 @@ func TestMarathonTaskPortIndex1(t *testing.T) {
 		}
 		tgt := tg.Targets[0]
 		if tgt[model.AddressLabel] != "mesos-slave-3:32000" {
+			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
+		}
+	default:
+		t.Fatal("Did not get a target group.")
+	}
+}
+
+func TestMarathonZeroTaskPortIndexWrong(t *testing.T) {
+	var (
+		ch     = make(chan []*config.TargetGroup, 1)
+		labels = map[string]string{"prometheus": "yes", "PROMETHEUS_PORT_INDEX": "0"}
+		client = func(client *http.Client, url, token string) (*AppList, error) {
+			return marathonTestTaskPortIndexAppList(labels, 1), nil
+		}
+	)
+	if err := testUpdateServices(client, ch); err != nil {
+		t.Fatalf("Got error: %s", err)
+	}
+	select {
+	case tgs := <-ch:
+		tg := tgs[0]
+
+		if tg.Source != "test-service-port-index" {
+			t.Fatalf("Wrong target group name: %s", tg.Source)
+		}
+		if len(tg.Targets) != 1 {
+			t.Fatalf("Wrong number of targets: %v", tg.Targets)
+		}
+		tgt := tg.Targets[0]
+		if tgt[model.AddressLabel] != "mesos-slave-3:31000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
 	default:
