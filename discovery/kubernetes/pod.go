@@ -124,6 +124,7 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 
 const (
 	podNameLabel                  = metaLabelPrefix + "pod_name"
+	podUIDLabel                   = metaLabelPrefix + "pod_uid"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
@@ -139,6 +140,7 @@ const (
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
 		podNameLabel:     lv(pod.ObjectMeta.Name),
+		podUIDLabel:      lv(string(pod.ObjectMeta.UID)),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
 		podNodeNameLabel: lv(pod.Spec.NodeName),
