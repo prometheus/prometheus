@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -477,8 +478,11 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 
 func parseTime(s string) (model.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		ts := int64(t * float64(time.Second))
-		return model.TimeFromUnixNano(ts), nil
+		ts := t * float64(time.Second)
+		if ts >= float64(math.MaxInt64) || ts <= float64(math.MinInt64) {
+			return 0, fmt.Errorf("cannot parse %q to a valid timestamp. It overflows int64", s)
+		}
+		return model.TimeFromUnixNano(int64(ts)), nil
 	}
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return model.TimeFromUnixNano(t.UnixNano()), nil
@@ -488,7 +492,11 @@ func parseTime(s string) (model.Time, error) {
 
 func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
-		return time.Duration(d * float64(time.Second)), nil
+		ts := d * float64(time.Second)
+		if ts >= float64(math.MaxInt64) || ts <= float64(math.MinInt64) {
+			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
+		}
+		return time.Duration(ts), nil
 	}
 	if d, err := model.ParseDuration(s); err == nil {
 		return time.Duration(d), nil
