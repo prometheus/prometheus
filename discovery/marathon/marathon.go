@@ -318,6 +318,9 @@ func getPortIndex(app *App) int {
 	if err != nil {
 		portIndex = 0
 	}
+	if portIndex < 0 {
+		portIndex = 0
+	}
 	return int(portIndex)
 }
 
