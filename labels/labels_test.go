@@ -2,14 +2,16 @@ package labels
 
 import (
 	"fmt"
-	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
+	"sort"
 	"testing"
+	"unsafe"
 
-	"github.com/bradfitz/slice"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
+	"github.com/pkg/errors"
+	promlabels "github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,59 +78,72 @@ func TestCompare(t *testing.T) {
 	}
 }
 
-func BenchmarkLabelsSliceSort(b *testing.B) {
-	f, err := os.Open("../cmd/tsdb/testdata.100k")
+func BenchmarkSliceSort(b *testing.B) {
+	lbls, err := readPrometheusLabels("../testdata/1m.series", 900000)
 	require.NoError(b, err)
 
-	lbls, err := readPrometheusLabels(f, 5000)
-	require.NoError(b, err)
+	for len(lbls) < 20e6 {
+		lbls = append(lbls, lbls...)
+	}
+	for i := range lbls {
+		j := rand.Intn(i + 1)
+		lbls[i], lbls[j] = lbls[j], lbls[i]
+	}
 
-	b.Run("", func(b *testing.B) {
-		clbls := make([]Labels, len(lbls))
-		copy(clbls, lbls)
+	for _, k := range []int{
+		100, 5000, 50000, 300000, 900000, 5e6, 20e6,
+	} {
+		b.Run(fmt.Sprintf("%d", k), func(b *testing.B) {
+			b.ReportAllocs()
 
-		for i := range clbls {
-			j := rand.Intn(i + 1)
-			clbls[i], clbls[j] = clbls[j], clbls[i]
-		}
-		b.ResetTimer()
-		b.ReportAllocs()
+			for a := 0; a < b.N; a++ {
+				b.StopTimer()
+				cl := make(Slice, k)
+				copy(cl, Slice(lbls[:k]))
+				b.StartTimer()
 
-		for i := 0; i < b.N; i++ {
-			slice.Sort(clbls, func(i, j int) bool {
-				return Compare(clbls[i], clbls[j]) < 0
-			})
-		}
-	})
+				sort.Sort(cl)
+			}
+		})
+	}
 }
 
-func readPrometheusLabels(r io.Reader, n int) ([]Labels, error) {
-	dec := expfmt.NewDecoder(r, expfmt.FmtProtoText)
-
-	var mets []Labels
-	var mf dto.MetricFamily
-
-	for i := 0; i < n; i++ {
-		if err := dec.Decode(&mf); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-
-		for _, m := range mf.GetMetric() {
-			met := make([]Label, 0, len(m.GetLabel())+1)
-			met = append(met, Label{"__name__", mf.GetName()})
-
-			for _, l := range m.GetLabel() {
-				met = append(met, Label{l.GetName(), l.GetValue()})
-			}
-			mets = append(mets, met)
-		}
+func readPrometheusLabels(fn string, n int) ([]Labels, error) {
+	f, err := os.Open(fn)
+	if err != nil {
+		return nil, err
 	}
-	fmt.Println("read metrics", len(mets[:n]))
+	defer f.Close()
 
-	return mets[:n], nil
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+
+	p := textparse.New(b)
+	i := 0
+	var mets []Labels
+	hashes := map[uint64]struct{}{}
+
+	for p.Next() && i < n {
+		m := make(Labels, 0, 10)
+		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
+
+		h := m.Hash()
+		if _, ok := hashes[h]; ok {
+			continue
+		}
+		mets = append(mets, m)
+		hashes[h] = struct{}{}
+		i++
+	}
+	if err := p.Err(); err != nil {
+		return nil, err
+	}
+	if i != n {
+		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
+	}
+	return mets, nil
 }
 
 func BenchmarkLabelSetFromMap(b *testing.B) {

@@ -141,3 +141,10 @@ func Compare(a, b Labels) int {
 	// If all labels so far were in common, the set with fewer labels comes first.
 	return len(a) - len(b)
 }
+
+// Slice is a sortable slice of label sets.
+type Slice []Labels
+
+func (s Slice) Len() int           { return len(s) }
+func (s Slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s Slice) Less(i, j int) bool { return Compare(s[i], s[j]) < 0 }
