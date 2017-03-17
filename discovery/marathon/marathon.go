@@ -47,9 +47,9 @@ const (
 	taskLabel model.LabelName = metaLabelPrefix + "task"
 
 	// portMappingsLabelPrefix is the prefix for the application portMappings labels.
-	portMappingsLabelPrefix = metaLabelPrefix + "port_mappings_"
+	portMappingsLabelPrefix = metaLabelPrefix + "port_mappings_label_"
 	// portDefinitionsLabelPrefix is the prefix for the application portDefinitions labels.
-	portDefinitionsLabelPrefix = metaLabelPrefix + "port_definitions_"
+	portDefinitionsLabelPrefix = metaLabelPrefix + "port_definitions_label_"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
