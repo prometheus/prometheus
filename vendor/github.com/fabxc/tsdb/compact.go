@@ -334,7 +334,7 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 
 type compactionSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta)
+	At() (labels.Labels, []*ChunkMeta)
 	Err() error
 }
 
@@ -344,7 +344,7 @@ type compactionSeriesSet struct {
 	chunks ChunkReader
 
 	l   labels.Labels
-	c   []ChunkMeta
+	c   []*ChunkMeta
 	err error
 }
 
@@ -365,9 +365,7 @@ func (c *compactionSeriesSet) Next() bool {
 	if c.err != nil {
 		return false
 	}
-	for i := range c.c {
-		chk := &c.c[i]
-
+	for _, chk := range c.c {
 		chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
 		if c.err != nil {
 			return false
@@ -384,7 +382,7 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta) {
+func (c *compactionSeriesSet) At() (labels.Labels, []*ChunkMeta) {
 	return c.l, c.c
 }
 
@@ -393,12 +391,12 @@ type compactionMerger struct {
 
 	aok, bok bool
 	l        labels.Labels
-	c        []ChunkMeta
+	c        []*ChunkMeta
 }
 
 type compactionSeries struct {
 	labels labels.Labels
-	chunks []ChunkMeta
+	chunks []*ChunkMeta
 }
 
 func newCompactionMerger(a, b compactionSet) (*compactionMerger, error) {
@@ -459,7 +457,7 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []ChunkMeta) {
+func (c *compactionMerger) At() (labels.Labels, []*ChunkMeta) {
 	return c.l, c.c
 }
 

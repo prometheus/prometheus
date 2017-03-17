@@ -33,7 +33,7 @@ type IndexWriter interface {
 	// of chunks that the index can reference.
 	// The reference number is used to resolve a series against the postings
 	// list iterator. It only has to be available during the write processing.
-	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta) error
+	AddSeries(ref uint32, l labels.Labels, chunks ...*ChunkMeta) error
 
 	// WriteLabelIndex serializes an index from label names to values.
 	// The passed in values chained tuples of strings of the length of names.
@@ -49,8 +49,8 @@ type IndexWriter interface {
 
 type indexWriterSeries struct {
 	labels labels.Labels
-	chunks []ChunkMeta // series file offset of chunks
-	offset uint32      // index file offset of series reference
+	chunks []*ChunkMeta // series file offset of chunks
+	offset uint32       // index file offset of series reference
 }
 
 // indexWriter implements the IndexWriter interface for the standard
@@ -142,7 +142,7 @@ func (w *indexWriter) writeMeta() error {
 	return w.write(w.bufw, b[:])
 }
 
-func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkMeta) error {
+func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...*ChunkMeta) error {
 	if _, ok := w.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -419,7 +419,7 @@ type IndexReader interface {
 	Postings(name, value string) (Postings, error)
 
 	// Series returns the series for the given reference.
-	Series(ref uint32) (labels.Labels, []ChunkMeta, error)
+	Series(ref uint32) (labels.Labels, []*ChunkMeta, error)
 
 	// LabelIndices returns the label pairs for which indices exist.
 	LabelIndices() ([][]string, error)
@@ -599,7 +599,7 @@ func (r *indexReader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-func (r *indexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
+func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 	k, n := binary.Uvarint(r.b[ref:])
 	if n < 1 {
 		return nil, nil, errors.Wrap(errInvalidSize, "number of labels")
@@ -642,7 +642,7 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 	}
 
 	b = b[n:]
-	chunks := make([]ChunkMeta, 0, k)
+	chunks := make([]*ChunkMeta, 0, k)
 
 	for i := 0; i < int(k); i++ {
 		firstTime, n := binary.Varint(b)
@@ -663,7 +663,7 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
 		}
 		b = b[n:]
 
-		chunks = append(chunks, ChunkMeta{
+		chunks = append(chunks, &ChunkMeta{
 			Ref:     o,
 			MinTime: firstTime,
 			MaxTime: lastTime,

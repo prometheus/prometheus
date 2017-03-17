@@ -34,15 +34,19 @@ type Options struct {
 	// After a new block is started for timestamp t0 or higher, appends with
 	// timestamps as early as t0 - (n-1) * MinBlockDuration are valid.
 	AppendableBlocks int
+
+	// Duration for how long to retain data.
+	Retention time.Duration
 }
 
 // Open returns a new storage backed by a tsdb database.
 func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage, error) {
 	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
-		WALFlushInterval: 10 * time.Second,
-		MinBlockDuration: uint64(opts.MinBlockDuration.Seconds() * 1000),
-		MaxBlockDuration: uint64(opts.MaxBlockDuration.Seconds() * 1000),
-		AppendableBlocks: opts.AppendableBlocks,
+		WALFlushInterval:  10 * time.Second,
+		MinBlockDuration:  uint64(opts.MinBlockDuration.Seconds() * 1000),
+		MaxBlockDuration:  uint64(opts.MaxBlockDuration.Seconds() * 1000),
+		AppendableBlocks:  opts.AppendableBlocks,
+		RetentionDuration: uint64(opts.Retention.Seconds() * 1000),
 	})
 	if err != nil {
 		return nil, err

@@ -66,6 +66,12 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 
 		// TODO(fabxc): find nicer solution.
 		if hb, ok := b.(*headBlock); ok {
+			// TODO(fabxc): temporary refactored.
+			hb.mtx.RLock()
+			if hb.closed {
+				panic(fmt.Sprintf("block %s already closed", hb.dir))
+			}
+			hb.mtx.RUnlock()
 			q.postingsMapper = hb.remapPostings
 		}
 
@@ -109,7 +115,7 @@ func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
 	r := q.blocks[0].Select(ms...)
 
 	for _, s := range q.blocks[1:] {
-		r = newPartitionSeriesSet(r, s.Select(ms...))
+		r = newMergedSeriesSet(r, s.Select(ms...))
 	}
 	return r
 }
@@ -133,15 +139,6 @@ type blockQuerier struct {
 	postingsMapper func(Postings) Postings
 
 	mint, maxt int64
-}
-
-func newBlockQuerier(ix IndexReader, c ChunkReader, mint, maxt int64) *blockQuerier {
-	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  ix,
-		chunks: c,
-	}
 }
 
 func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
@@ -282,39 +279,14 @@ func (nopSeriesSet) At() Series { return nil }
 func (nopSeriesSet) Err() error { return nil }
 
 type mergedSeriesSet struct {
-	sets []SeriesSet
-
-	cur int
-	err error
-}
-
-func (s *mergedSeriesSet) At() Series { return s.sets[s.cur].At() }
-func (s *mergedSeriesSet) Err() error { return s.sets[s.cur].Err() }
-
-func (s *mergedSeriesSet) Next() bool {
-	// TODO(fabxc): We just emit the sets one after one. They are each
-	// lexicographically sorted. Should we emit their union sorted too?
-	if s.sets[s.cur].Next() {
-		return true
-	}
-
-	if s.cur == len(s.sets)-1 {
-		return false
-	}
-	s.cur++
-
-	return s.Next()
-}
-
-type partitionSeriesSet struct {
 	a, b SeriesSet
 
 	cur          Series
 	adone, bdone bool
 }
 
-func newPartitionSeriesSet(a, b SeriesSet) *partitionSeriesSet {
-	s := &partitionSeriesSet{a: a, b: b}
+func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
+	s := &mergedSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
 	s.adone = !s.a.Next()
@@ -323,18 +295,18 @@ func newPartitionSeriesSet(a, b SeriesSet) *partitionSeriesSet {
 	return s
 }
 
-func (s *partitionSeriesSet) At() Series {
+func (s *mergedSeriesSet) At() Series {
 	return s.cur
 }
 
-func (s *partitionSeriesSet) Err() error {
+func (s *mergedSeriesSet) Err() error {
 	if s.a.Err() != nil {
 		return s.a.Err()
 	}
 	return s.b.Err()
 }
 
-func (s *partitionSeriesSet) compare() int {
+func (s *mergedSeriesSet) compare() int {
 	if s.adone {
 		return 1
 	}
@@ -344,7 +316,7 @@ func (s *partitionSeriesSet) compare() int {
 	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
 }
 
-func (s *partitionSeriesSet) Next() bool {
+func (s *mergedSeriesSet) Next() bool {
 	if s.adone && s.bdone || s.Err() != nil {
 		return false
 	}
@@ -370,7 +342,7 @@ func (s *partitionSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta)
+	At() (labels.Labels, []*ChunkMeta)
 	Err() error
 }
 
@@ -382,12 +354,12 @@ type baseChunkSeries struct {
 	absent []string // labels that must be unset in results.
 
 	lset labels.Labels
-	chks []ChunkMeta
+	chks []*ChunkMeta
 	err  error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta) { return s.lset, s.chks }
-func (s *baseChunkSeries) Err() error                       { return s.err }
+func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta) { return s.lset, s.chks }
+func (s *baseChunkSeries) Err() error                        { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 Outer:
@@ -425,20 +397,18 @@ type populatedChunkSeries struct {
 	mint, maxt int64
 
 	err  error
-	chks []ChunkMeta
+	chks []*ChunkMeta
 	lset labels.Labels
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta) { return s.lset, s.chks }
-func (s *populatedChunkSeries) Err() error                       { return s.err }
+func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta) { return s.lset, s.chks }
+func (s *populatedChunkSeries) Err() error                        { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
 		lset, chks := s.set.At()
 
-		for i := range chks {
-			c := &chks[i]
-
+		for i, c := range chks {
 			if c.MaxTime < s.mint {
 				chks = chks[1:]
 				continue
@@ -493,7 +463,7 @@ func (s *blockSeriesSet) Err() error { return s.err }
 // time series data.
 type chunkSeries struct {
 	labels labels.Labels
-	chunks []ChunkMeta // in-order chunk refs
+	chunks []*ChunkMeta // in-order chunk refs
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -587,13 +557,13 @@ func (it *chainedSeriesIterator) Err() error {
 // chunkSeriesIterator implements a series iterator on top
 // of a list of time-sorted, non-overlapping chunks.
 type chunkSeriesIterator struct {
-	chunks []ChunkMeta
+	chunks []*ChunkMeta
 
 	i   int
 	cur chunks.Iterator
 }
 
-func newChunkSeriesIterator(cs []ChunkMeta) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,
