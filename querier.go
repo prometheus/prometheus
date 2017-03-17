@@ -66,6 +66,12 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 
 		// TODO(fabxc): find nicer solution.
 		if hb, ok := b.(*headBlock); ok {
+			// TODO(fabxc): temporary refactored.
+			hb.mtx.RLock()
+			if hb.closed {
+				panic(fmt.Sprintf("block %s already closed", hb.dir))
+			}
+			hb.mtx.RUnlock()
 			q.postingsMapper = hb.remapPostings
 		}
 
@@ -133,15 +139,6 @@ type blockQuerier struct {
 	postingsMapper func(Postings) Postings
 
 	mint, maxt int64
-}
-
-func newBlockQuerier(ix IndexReader, c ChunkReader, mint, maxt int64) *blockQuerier {
-	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  ix,
-		chunks: c,
-	}
 }
 
 func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {

@@ -401,9 +401,8 @@ func (db *DB) Close() error {
 	close(db.stopc)
 	<-db.donec
 
-	// Lock mutex and leave it locked so we panic if there's a bug causing
-	// the block to be used afterwards.
 	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	var g errgroup.Group
 

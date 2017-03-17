@@ -42,6 +42,7 @@ type headBlock struct {
 	wal        *WAL
 
 	activeWriters uint64
+	closed        bool
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
@@ -137,9 +138,8 @@ func (h *headBlock) inBounds(t int64) bool {
 
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
-	// Lock mutex and leave it locked so we panic if there's a bug causing
-	// the block to be used afterwards.
 	h.mtx.Lock()
+	defer h.mtx.Unlock()
 
 	if err := h.wal.Close(); err != nil {
 		return errors.Wrapf(err, "close WAL for head %s", h.dir)
@@ -156,6 +156,8 @@ func (h *headBlock) Close() error {
 	if meta.ULID == h.meta.ULID {
 		return writeMetaFile(h.dir, &h.meta)
 	}
+
+	h.closed = true
 	return nil
 }
 
@@ -175,6 +177,10 @@ func (h *headBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 
 	h.mtx.RLock()
+
+	if h.closed {
+		panic(fmt.Sprintf("block %s already closed", h.dir))
+	}
 	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
 }
 
