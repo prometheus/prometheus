@@ -193,7 +193,7 @@ type Task struct {
 	Ports []uint32 `json:"ports"`
 }
 
-// PortMappings describes in which port the process are binding inside the docker container
+// PortMappings describes in which port the process are binding inside the docker container.
 type PortMappings struct {
 	Labels map[string]string `json:"labels"`
 }
@@ -209,7 +209,7 @@ type Container struct {
 	Docker DockerContainer `json:"docker"`
 }
 
-// PortDefinitions describes which load balancer port you should access to access the service
+// PortDefinitions describes which load balancer port you should access to access the service.
 type PortDefinitions struct {
 	Labels map[string]string `json:"labels"`
 }
