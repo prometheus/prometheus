@@ -227,11 +227,13 @@ func (db *DB) run() {
 }
 
 func (db *DB) retentionCutoff() (bool, error) {
-	db.headmtx.RLock()
-
 	if db.opts.RetentionDuration == 0 {
 		return false, nil
 	}
+
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
 	// We don't count the span covered by head blocks towards the
 	// retention time as it generally makes up a fraction of it.
 	if len(db.persisted) == 0 {
@@ -240,8 +242,6 @@ func (db *DB) retentionCutoff() (bool, error) {
 
 	last := db.persisted[len(db.persisted)-1]
 	mint := last.Meta().MaxTime - int64(db.opts.RetentionDuration)
-
-	db.headmtx.RUnlock()
 
 	return retentionCutoff(db.dir, mint)
 }
