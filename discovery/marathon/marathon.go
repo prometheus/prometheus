@@ -45,6 +45,11 @@ const (
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
 
+	// portMappingsLabelPrefix is the prefix for the application portMappings labels.
+	portMappingsLabelPrefix = metaLabelPrefix + "port_mappings_"
+	// portDefinitionsLabelPrefix is the prefix for the application portDefinitions labels.
+	portDefinitionsLabelPrefix = metaLabelPrefix + "port_definitions_"
+
 	// Constants for instrumentation.
 	namespace = "prometheus"
 )
@@ -188,9 +193,15 @@ type Task struct {
 	Ports []uint32 `json:"ports"`
 }
 
+// PortMappings describes in which port the process are binding inside the docker container
+type PortMappings struct {
+	Labels map[string]string `json:"labels"`
+}
+
 // DockerContainer describes a container which uses the docker runtime.
 type DockerContainer struct {
-	Image string `json:"image"`
+	Image        string         `json:"image"`
+	PortMappings []PortMappings `json:"portMappings"`
 }
 
 // Container describes the runtime an app in running in.
@@ -198,13 +209,19 @@ type Container struct {
 	Docker DockerContainer `json:"docker"`
 }
 
+// PortDefinitions describes which load balancer port you should access to access the service
+type PortDefinitions struct {
+	Labels map[string]string `json:"labels"`
+}
+
 // App describes a service running on Marathon.
 type App struct {
-	ID           string            `json:"id"`
-	Tasks        []Task            `json:"tasks"`
-	RunningTasks int               `json:"tasksRunning"`
-	Labels       map[string]string `json:"labels"`
-	Container    Container         `json:"container"`
+	ID              string            `json:"id"`
+	Tasks           []Task            `json:"tasks"`
+	RunningTasks    int               `json:"tasksRunning"`
+	Labels          map[string]string `json:"labels"`
+	Container       Container         `json:"container"`
+	PortDefinitions []PortDefinitions `json:"portDefinitions"`
 }
 
 // AppList is a list of Marathon apps.
@@ -298,15 +315,26 @@ func targetsForApp(app *App) []model.LabelSet {
 		if len(t.Ports) == 0 {
 			continue
 		}
-		target := targetForTask(&t)
-		targets = append(targets, model.LabelSet{
-			model.AddressLabel: model.LabelValue(target),
-			taskLabel:          model.LabelValue(t.ID),
-		})
+		for i := 0; i < len(t.Ports); i++ {
+			targetAddress := targetForTask(&t, i)
+			target := model.LabelSet{
+				model.AddressLabel: model.LabelValue(targetAddress),
+				taskLabel:          model.LabelValue(t.ID),
+			}
+			for ln, lv := range app.PortDefinitions[i].Labels {
+				ln = portDefinitionsLabelPrefix + ln
+				target[model.LabelName(ln)] = model.LabelValue(lv)
+			}
+			for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
+				ln = portMappingsLabelPrefix + ln
+				target[model.LabelName(ln)] = model.LabelValue(lv)
+			}
+			targets = append(targets, target)
+		}
 	}
 	return targets
 }
 
-func targetForTask(task *Task) string {
-	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[0]))
+func targetForTask(task *Task, index int) string {
+	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[index]))
 }

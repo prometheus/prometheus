@@ -78,9 +78,15 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 		task = Task{
 			ID:    "test-task-1",
 			Host:  "mesos-slave1",
-			Ports: []uint32{31000},
+			Ports: []uint32{31000, 32000},
 		}
-		docker    = DockerContainer{Image: "repo/image:tag"}
+		docker = DockerContainer{
+			Image: "repo/image:tag",
+			PortMappings: []PortMappings{
+				{Labels: labels},
+				{Labels: make(map[string]string)},
+			},
+		}
 		container = Container{Docker: docker}
 		app       = App{
 			ID:           "test-service",
@@ -88,6 +94,10 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 			RunningTasks: runningTasks,
 			Labels:       labels,
 			Container:    container,
+			PortDefinitions: []PortDefinitions{
+				{Labels: make(map[string]string)},
+				{Labels: labels},
+			},
 		}
 	)
 	return &AppList{
@@ -112,12 +122,28 @@ func TestMarathonSDSendGroup(t *testing.T) {
 		if tg.Source != "test-service" {
 			t.Fatalf("Wrong target group name: %s", tg.Source)
 		}
-		if len(tg.Targets) != 1 {
+		if len(tg.Targets) != 2 {
 			t.Fatalf("Wrong number of targets: %v", tg.Targets)
 		}
 		tgt := tg.Targets[0]
 		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
+		}
+		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "yes" {
+			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
+		}
+		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "" {
+			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
+		}
+		tgt = tg.Targets[1]
+		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
+			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
+		}
+		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "" {
+			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
+		}
+		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "yes" {
+			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
 		}
 	default:
 		t.Fatal("Did not get a target group.")
