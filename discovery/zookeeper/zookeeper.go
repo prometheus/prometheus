@@ -29,7 +29,9 @@ import (
 	"github.com/prometheus/prometheus/util/treecache"
 )
 
-type ZookeeperDiscovery struct {
+// Discovery implements the TargetProvider interface for discovering
+// targets from Zookeeper.
+type Discovery struct {
 	conn *zk.Conn
 
 	sources map[string]*config.TargetGroup
@@ -40,13 +42,13 @@ type ZookeeperDiscovery struct {
 	parse func(data []byte, path string) (model.LabelSet, error)
 }
 
-// NewNerveDiscovery returns a new NerveDiscovery for the given config.
-func NewNerveDiscovery(conf *config.NerveSDConfig) *ZookeeperDiscovery {
+// NewNerveDiscovery returns a new Discovery for the given Nerve config.
+func NewNerveDiscovery(conf *config.NerveSDConfig) *Discovery {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, parseNerveMember)
 }
 
-// NewServersetDiscovery returns a new ServersetDiscovery for the given config.
-func NewServersetDiscovery(conf *config.ServersetSDConfig) *ZookeeperDiscovery {
+// NewServersetDiscovery returns a new Discovery for the given serverset config.
+func NewServersetDiscovery(conf *config.ServersetSDConfig) *Discovery {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, parseServersetMember)
 }
 
@@ -57,14 +59,14 @@ func NewDiscovery(
 	timeout time.Duration,
 	paths []string,
 	pf func(data []byte, path string) (model.LabelSet, error),
-) *ZookeeperDiscovery {
-	conn, _, err := zk.Connect(srvs, time.Duration(timeout))
+) *Discovery {
+	conn, _, err := zk.Connect(srvs, timeout)
 	conn.SetLogger(treecache.ZookeeperLogger{})
 	if err != nil {
 		return nil
 	}
 	updates := make(chan treecache.ZookeeperTreeCacheEvent)
-	sd := &ZookeeperDiscovery{
+	sd := &Discovery{
 		conn:    conn,
 		updates: updates,
 		sources: map[string]*config.TargetGroup{},
@@ -77,34 +79,34 @@ func NewDiscovery(
 }
 
 // Run implements the TargetProvider interface.
-func (sd *ZookeeperDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	defer func() {
-		for _, tc := range sd.treeCaches {
+		for _, tc := range d.treeCaches {
 			tc.Stop()
 		}
 		// Drain event channel in case the treecache leaks goroutines otherwise.
-		for range sd.updates {
+		for range d.updates {
 		}
-		sd.conn.Close()
+		d.conn.Close()
 	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-		case event := <-sd.updates:
+		case event := <-d.updates:
 			tg := &config.TargetGroup{
 				Source: event.Path,
 			}
 			if event.Data != nil {
-				labelSet, err := sd.parse(*event.Data, event.Path)
+				labelSet, err := d.parse(*event.Data, event.Path)
 				if err == nil {
 					tg.Targets = []model.LabelSet{labelSet}
-					sd.sources[event.Path] = tg
+					d.sources[event.Path] = tg
 				} else {
-					delete(sd.sources, event.Path)
+					delete(d.sources, event.Path)
 				}
 			} else {
-				delete(sd.sources, event.Path)
+				delete(d.sources, event.Path)
 			}
 			select {
 			case <-ctx.Done():

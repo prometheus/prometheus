@@ -65,9 +65,9 @@ func init() {
 	prometheus.MustRegister(ec2SDRefreshDuration)
 }
 
-// EC2Discovery periodically performs EC2-SD requests. It implements
+// Discovery periodically performs EC2-SD requests. It implements
 // the TargetProvider interface.
-type EC2Discovery struct {
+type Discovery struct {
 	aws      *aws.Config
 	interval time.Duration
 	profile  string
@@ -75,12 +75,12 @@ type EC2Discovery struct {
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *config.EC2SDConfig) *EC2Discovery {
+func NewDiscovery(conf *config.EC2SDConfig) *Discovery {
 	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = nil
 	}
-	return &EC2Discovery{
+	return &Discovery{
 		aws: &aws.Config{
 			Region:      &conf.Region,
 			Credentials: creds,
@@ -92,12 +92,12 @@ func NewDiscovery(conf *config.EC2SDConfig) *EC2Discovery {
 }
 
 // Run implements the TargetProvider interface.
-func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	ticker := time.NewTicker(ed.interval)
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
 	// Get an initial set right away.
-	tg, err := ed.refresh()
+	tg, err := d.refresh()
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -111,7 +111,7 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 	for {
 		select {
 		case <-ticker.C:
-			tg, err := ed.refresh()
+			tg, err := d.refresh()
 			if err != nil {
 				log.Error(err)
 				continue
@@ -128,7 +128,7 @@ func (ed *EC2Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup
 	}
 }
 
-func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
+func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
 		ec2SDRefreshDuration.Observe(time.Since(t0).Seconds())
@@ -138,8 +138,8 @@ func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 	}()
 
 	sess, err := session.NewSessionWithOptions(session.Options{
-		Config:  *ed.aws,
-		Profile: ed.profile,
+		Config:  *d.aws,
+		Profile: d.profile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create aws session: %s", err)
@@ -147,7 +147,7 @@ func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 	ec2s := ec2.New(sess)
 	tg = &config.TargetGroup{
-		Source: *ed.aws.Region,
+		Source: *d.aws.Region,
 	}
 	if err = ec2s.DescribeInstancesPages(nil, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
@@ -159,7 +159,7 @@ func (ed *EC2Discovery) refresh() (tg *config.TargetGroup, err error) {
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", ed.port))
+				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.PublicIpAddress != nil {

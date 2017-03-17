@@ -81,7 +81,7 @@ type Discovery struct {
 	token           string
 }
 
-// Initialize sets up the discovery for usage.
+// NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
@@ -114,13 +114,13 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 }
 
 // Run implements the TargetProvider interface.
-func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(md.refreshInterval):
-			err := md.updateServices(ctx, ch)
+		case <-time.After(d.refreshInterval):
+			err := d.updateServices(ctx, ch)
 			if err != nil {
 				log.Errorf("Error while updating services: %s", err)
 			}
@@ -128,7 +128,7 @@ func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
-func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
+func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
 	t0 := time.Now()
 	defer func() {
 		refreshDuration.Observe(time.Since(t0).Seconds())
@@ -137,7 +137,7 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 		}
 	}()
 
-	targetMap, err := md.fetchTargetGroups()
+	targetMap, err := d.fetchTargetGroups()
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 	}
 
 	// Remove services which did disappear.
-	for source := range md.lastRefresh {
+	for source := range d.lastRefresh {
 		_, ok := targetMap[source]
 		if !ok {
 			select {
@@ -166,13 +166,13 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 		}
 	}
 
-	md.lastRefresh = targetMap
+	d.lastRefresh = targetMap
 	return nil
 }
 
-func (md *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
-	url := RandomAppsURL(md.servers)
-	apps, err := md.appsClient(md.client, url, md.token)
+func (d *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
+	url := RandomAppsURL(d.servers)
+	apps, err := d.appsClient(d.client, url, d.token)
 	if err != nil {
 		return nil, err
 	}
