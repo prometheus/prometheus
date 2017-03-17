@@ -329,6 +329,9 @@ Loop:
 // }
 
 func (db *DB) reloadBlocks() error {
+	var cs []io.Closer
+	defer closeAll(cs...)
+
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -381,11 +384,11 @@ func (db *DB) reloadBlocks() error {
 		seqBlocks[meta.Sequence] = b
 	}
 
+	// Close all blocks that we no longer need. They are closed after returning all
+	// locks to avoid questionable locking order.
 	for seq, b := range db.seqBlocks {
 		if nb, ok := seqBlocks[seq]; !ok || nb != b {
-			if err := b.Close(); err != nil {
-				return errors.Wrapf(err, "closing removed block %d", b.Meta().Sequence)
-			}
+			cs = append(cs, b)
 		}
 	}
 
@@ -426,13 +429,19 @@ func (db *DB) Appender() Appender {
 	db.mtx.RLock()
 	a := &dbAppender{db: db}
 
+	// Only instantiate appender after returning the headmtx to avoid
+	// questionable locking order.
 	db.headmtx.RLock()
 
-	for _, b := range db.appendable() {
-		a.heads = append(a.heads, b.Appender().(*headAppender))
-	}
+	app := db.appendable()
+	heads := make([]*headBlock, len(app))
+	copy(heads, app)
 
 	db.headmtx.RUnlock()
+
+	for _, b := range heads {
+		a.heads = append(a.heads, b.Appender().(*headAppender))
+	}
 
 	return a
 }
@@ -485,24 +494,30 @@ func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
 	if len(a.heads) == 0 || t >= a.heads[len(a.heads)-1].meta.MaxTime {
 		a.db.headmtx.Lock()
 
+		var newHeads []*headBlock
+
 		if err := a.db.ensureHead(t); err != nil {
 			a.db.headmtx.Unlock()
 			return nil, err
 		}
 		if len(a.heads) == 0 {
-			for _, b := range a.db.appendable() {
-				a.heads = append(a.heads, b.Appender().(*headAppender))
-			}
+			newHeads = append(newHeads, a.db.appendable()...)
 		} else {
 			maxSeq := a.heads[len(a.heads)-1].meta.Sequence
 			for _, b := range a.db.appendable() {
 				if b.meta.Sequence > maxSeq {
-					a.heads = append(a.heads, b.Appender().(*headAppender))
+					newHeads = append(newHeads, b)
 				}
 			}
 		}
 
 		a.db.headmtx.Unlock()
+
+		// Instantiate appenders after returning headmtx to avoid questionable
+		// locking order.
+		for _, b := range newHeads {
+			a.heads = append(a.heads, b.Appender().(*headAppender))
+		}
 	}
 	for i := len(a.heads) - 1; i >= 0; i-- {
 		if h := a.heads[i]; t >= h.meta.MinTime {
