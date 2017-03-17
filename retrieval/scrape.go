@@ -26,6 +26,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
+
+	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -360,6 +362,8 @@ type targetScraper struct {
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,*/*;q=0.1`
 
+var userAgentHeader = fmt.Sprintf("Prometheus/%s", version.Version)
+
 func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 	if s.req == nil {
 		req, err := http.NewRequest("GET", s.URL().String(), nil)
@@ -369,6 +373,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 		// Disable accept header to always negotiate for text format.
 		// req.Header.Add("Accept", acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
+		req.Header.Set("User-Agent", userAgentHeader)
 
 		s.req = req
 	}

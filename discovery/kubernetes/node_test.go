@@ -167,7 +167,7 @@ func makeNode(name, address string, labels map[string]string, annotations map[st
 		},
 		Status: v1.NodeStatus{
 			Addresses: []v1.NodeAddress{
-				v1.NodeAddress{
+				{
 					Type:    v1.NodeInternalIP,
 					Address: address,
 				},
@@ -197,9 +197,9 @@ func TestNodeDiscoveryInitial(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		expectedInitial: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						"__address__": "1.2.3.4:10250",
 						"instance":    "test",
 						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
@@ -223,9 +223,9 @@ func TestNodeDiscoveryAdd(t *testing.T) {
 		discovery:  n,
 		afterStart: func() { go func() { i.Add(makeEnumeratedNode(1)) }() },
 		expectedRes: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						"__address__": "1.2.3.4:10250",
 						"instance":    "test1",
 						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
@@ -248,9 +248,9 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 		discovery:  n,
 		afterStart: func() { go func() { i.Delete(makeEnumeratedNode(0)) }() },
 		expectedInitial: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						"__address__": "1.2.3.4:10250",
 						"instance":    "test0",
 						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
@@ -263,7 +263,7 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 			},
 		},
 		expectedRes: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Source: "node/test0",
 			},
 		},
@@ -278,9 +278,9 @@ func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
 		discovery:  n,
 		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makeEnumeratedNode(0)}) }() },
 		expectedInitial: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						"__address__": "1.2.3.4:10250",
 						"instance":    "test0",
 						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
@@ -293,7 +293,7 @@ func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
 			},
 		},
 		expectedRes: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Source: "node/test0",
 			},
 		},
@@ -319,9 +319,9 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 			}()
 		},
 		expectedInitial: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						"__address__": "1.2.3.4:10250",
 						"instance":    "test0",
 						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
@@ -334,9 +334,9 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 			},
 		},
 		expectedRes: []*config.TargetGroup{
-			&config.TargetGroup{
+			{
 				Targets: []model.LabelSet{
-					model.LabelSet{
+					{
 						"__address__": "1.2.3.4:10250",
 						"instance":    "test0",
 						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
