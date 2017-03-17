@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -302,7 +303,7 @@ func createTargetGroup(app *App) *config.TargetGroup {
 	}
 
 	for ln, lv := range app.Labels {
-		ln = appLabelPrefix + ln
+		ln = appLabelPrefix + strutil.SanitizeLabelName(ln)
 		tg.Labels[model.LabelName(ln)] = model.LabelValue(lv)
 	}
 
@@ -323,13 +324,13 @@ func targetsForApp(app *App) []model.LabelSet {
 			}
 			if i < len(app.PortDefinitions) {
 				for ln, lv := range app.PortDefinitions[i].Labels {
-					ln = portDefinitionsLabelPrefix + ln
+					ln = portDefinitionsLabelPrefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}
 			if i < len(app.Container.Docker.PortMappings) {
 				for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
-					ln = portMappingsLabelPrefix + ln
+					ln = portMappingsLabelPrefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}
