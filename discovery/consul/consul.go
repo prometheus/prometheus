@@ -117,12 +117,12 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 }
 
 // shouldWatch returns whether the service of the given name should be watched.
-func (cd *Discovery) shouldWatch(name string) bool {
+func (d *Discovery) shouldWatch(name string) bool {
 	// If there's no fixed set of watched services, we watch everything.
-	if len(cd.watchedServices) == 0 {
+	if len(d.watchedServices) == 0 {
 		return true
 	}
-	for _, sn := range cd.watchedServices {
+	for _, sn := range d.watchedServices {
 		if sn == name {
 			return true
 		}
@@ -131,13 +131,13 @@ func (cd *Discovery) shouldWatch(name string) bool {
 }
 
 // Run implements the TargetProvider interface.
-func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Watched services and their cancelation functions.
 	services := map[string]func(){}
 
 	var lastIndex uint64
 	for {
-		catalog := cd.client.Catalog()
+		catalog := d.client.Catalog()
 		t0 := time.Now()
 		srvs, meta, err := catalog.Services(&consul.QueryOptions{
 			WaitIndex: lastIndex,
@@ -167,19 +167,19 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 		// If the datacenter was not set from clientConf, let's get it from the local Consul agent
 		// (Consul default is to use local node's datacenter if one isn't given for a query).
-		if cd.clientDatacenter == "" {
-			info, err := cd.client.Agent().Self()
+		if d.clientDatacenter == "" {
+			info, err := d.client.Agent().Self()
 			if err != nil {
 				log.Errorf("Error retrieving datacenter name: %s", err)
 				time.Sleep(retryInterval)
 				continue
 			}
-			cd.clientDatacenter = info["Config"]["Datacenter"].(string)
+			d.clientDatacenter = info["Config"]["Datacenter"].(string)
 		}
 
 		// Check for new services.
 		for name := range srvs {
-			if !cd.shouldWatch(name) {
+			if !d.shouldWatch(name) {
 				continue
 			}
 			if _, ok := services[name]; ok {
@@ -187,13 +187,13 @@ func (cd *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			}
 
 			srv := &consulService{
-				client: cd.client,
+				client: d.client,
 				name:   name,
 				labels: model.LabelSet{
 					serviceLabel:    model.LabelValue(name),
-					datacenterLabel: model.LabelValue(cd.clientDatacenter),
+					datacenterLabel: model.LabelValue(d.clientDatacenter),
 				},
-				tagSeparator: cd.tagSeparator,
+				tagSeparator: d.tagSeparator,
 			}
 
 			wctx, cancel := context.WithCancel(ctx)
