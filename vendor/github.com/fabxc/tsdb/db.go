@@ -207,10 +207,13 @@ func (db *DB) run() {
 
 			var merr MultiError
 
-			changes, err := db.compact()
+			changes1, err := db.retentionCutoff()
 			merr.Add(err)
 
-			if changes {
+			changes2, err := db.compact()
+			merr.Add(err)
+
+			if changes1 || changes2 {
 				merr.Add(db.reloadBlocks())
 			}
 			if err := merr.Err(); err != nil {
@@ -223,11 +226,31 @@ func (db *DB) run() {
 	}
 }
 
+func (db *DB) retentionCutoff() (bool, error) {
+	if db.opts.RetentionDuration == 0 {
+		return false, nil
+	}
+
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	// We don't count the span covered by head blocks towards the
+	// retention time as it generally makes up a fraction of it.
+	if len(db.persisted) == 0 {
+		return false, nil
+	}
+
+	last := db.persisted[len(db.persisted)-1]
+	mint := last.Meta().MaxTime - int64(db.opts.RetentionDuration)
+
+	return retentionCutoff(db.dir, mint)
+}
+
 func (db *DB) compact() (changes bool, err error) {
-	// Check whether we have pending head blocks that are ready to be persisted.
-	// They have the highest priority.
 	db.headmtx.RLock()
 
+	// Check whether we have pending head blocks that are ready to be persisted.
+	// They have the highest priority.
 	var singles []*headBlock
 
 	// Collect head blocks that are ready for compaction. Write them after
@@ -297,38 +320,40 @@ Loop:
 	return changes, nil
 }
 
-// func (db *DB) retentionCutoff() error {
-// 	if db.opts.RetentionDuration == 0 {
-// 		return nil
-// 	}
-// 	h := db.heads[len(db.heads)-1]
-// 	t := h.meta.MinTime - int64(db.opts.RetentionDuration)
+// retentionCutoff deletes all directories of blocks in dir that are strictly
+// before mint.
+func retentionCutoff(dir string, mint int64) (bool, error) {
+	dirs, err := blockDirs(dir)
+	if err != nil {
+		return false, errors.Wrapf(err, "list block dirs %s", dir)
+	}
 
-// 	var (
-// 		blocks = db.blocks()
-// 		i      int
-// 		b      Block
-// 	)
-// 	for i, b = range blocks {
-// 		if b.Meta().MinTime >= t {
-// 			break
-// 		}
-// 	}
-// 	if i <= 1 {
-// 		return nil
-// 	}
-// 	db.logger.Log("msg", "retention cutoff", "idx", i-1)
-// 	db.removeBlocks(0, i)
+	changes := false
 
-// 	for _, b := range blocks[:i] {
-// 		if err := os.RemoveAll(b.Dir()); err != nil {
-// 			return errors.Wrap(err, "removing old block")
-// 		}
-// 	}
-// 	return nil
-// }
+	for _, dir := range dirs {
+		meta, err := readMetaFile(dir)
+		if err != nil {
+			return changes, errors.Wrapf(err, "read block meta %s", dir)
+		}
+		// The first block we encounter marks that we crossed the boundary
+		// of deletable blocks.
+		if meta.MaxTime >= mint {
+			break
+		}
+		changes = true
+
+		if err := os.RemoveAll(dir); err != nil {
+			return changes, err
+		}
+	}
+
+	return changes, nil
+}
 
 func (db *DB) reloadBlocks() error {
+	var cs []io.Closer
+	defer closeAll(cs...)
+
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -381,11 +406,11 @@ func (db *DB) reloadBlocks() error {
 		seqBlocks[meta.Sequence] = b
 	}
 
+	// Close all blocks that we no longer need. They are closed after returning all
+	// locks to avoid questionable locking order.
 	for seq, b := range db.seqBlocks {
 		if nb, ok := seqBlocks[seq]; !ok || nb != b {
-			if err := b.Close(); err != nil {
-				return errors.Wrapf(err, "closing removed block %d", b.Meta().Sequence)
-			}
+			cs = append(cs, b)
 		}
 	}
 
@@ -401,9 +426,8 @@ func (db *DB) Close() error {
 	close(db.stopc)
 	<-db.donec
 
-	// Lock mutex and leave it locked so we panic if there's a bug causing
-	// the block to be used afterwards.
 	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	var g errgroup.Group
 
@@ -427,13 +451,19 @@ func (db *DB) Appender() Appender {
 	db.mtx.RLock()
 	a := &dbAppender{db: db}
 
+	// Only instantiate appender after returning the headmtx to avoid
+	// questionable locking order.
 	db.headmtx.RLock()
 
-	for _, b := range db.appendable() {
-		a.heads = append(a.heads, b.Appender().(*headAppender))
-	}
+	app := db.appendable()
+	heads := make([]*headBlock, len(app))
+	copy(heads, app)
 
 	db.headmtx.RUnlock()
+
+	for _, b := range heads {
+		a.heads = append(a.heads, b.Appender().(*headAppender))
+	}
 
 	return a
 }
@@ -486,24 +516,30 @@ func (a *dbAppender) appenderFor(t int64) (*headAppender, error) {
 	if len(a.heads) == 0 || t >= a.heads[len(a.heads)-1].meta.MaxTime {
 		a.db.headmtx.Lock()
 
+		var newHeads []*headBlock
+
 		if err := a.db.ensureHead(t); err != nil {
 			a.db.headmtx.Unlock()
 			return nil, err
 		}
 		if len(a.heads) == 0 {
-			for _, b := range a.db.appendable() {
-				a.heads = append(a.heads, b.Appender().(*headAppender))
-			}
+			newHeads = append(newHeads, a.db.appendable()...)
 		} else {
 			maxSeq := a.heads[len(a.heads)-1].meta.Sequence
 			for _, b := range a.db.appendable() {
 				if b.meta.Sequence > maxSeq {
-					a.heads = append(a.heads, b.Appender().(*headAppender))
+					newHeads = append(newHeads, b)
 				}
 			}
 		}
 
 		a.db.headmtx.Unlock()
+
+		// Instantiate appenders after returning headmtx to avoid questionable
+		// locking order.
+		for _, b := range newHeads {
+			a.heads = append(a.heads, b.Appender().(*headAppender))
+		}
 	}
 	for i := len(a.heads) - 1; i >= 0; i-- {
 		if h := a.heads[i]; t >= h.meta.MinTime {

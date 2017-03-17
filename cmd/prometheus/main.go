@@ -70,13 +70,6 @@ func Main() int {
 		return 0
 	}
 
-	// go func() {
-	// 	for {
-	// 		time.Sleep(30 * time.Second)
-	// 		debug.FreeOSMemory()
-	// 	}
-	// }()
-
 	log.Infoln("Starting prometheus", version.Info())
 	log.Infoln("Build context", version.BuildContext())
 

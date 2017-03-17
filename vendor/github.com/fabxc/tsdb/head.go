@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bradfitz/slice"
 	"github.com/fabxc/tsdb/chunks"
 	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
@@ -43,13 +42,11 @@ type headBlock struct {
 	wal        *WAL
 
 	activeWriters uint64
+	closed        bool
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
 	series []*memSeries
-	// mapping maps a series ID to its position in an ordered list
-	// of all series. The orderDirty flag indicates that it has gone stale.
-	mapper *positionMapper
 	// hashes contains a collision map of label set hashes of chunks
 	// to their chunk descs.
 	hashes map[uint64][]*memSeries
@@ -105,7 +102,6 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		hashes:   map[uint64][]*memSeries{},
 		values:   map[string]stringset{},
 		postings: &memPostings{m: make(map[term][]uint32)},
-		mapper:   newPositionMapper(nil),
 		meta:     *meta,
 	}
 
@@ -131,8 +127,6 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		return nil, errors.Wrap(err, "consume WAL")
 	}
 
-	h.updateMapping()
-
 	return h, nil
 }
 
@@ -144,9 +138,8 @@ func (h *headBlock) inBounds(t int64) bool {
 
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
-	// Lock mutex and leave it locked so we panic if there's a bug causing
-	// the block to be used afterwards.
 	h.mtx.Lock()
+	defer h.mtx.Unlock()
 
 	if err := h.wal.Close(); err != nil {
 		return errors.Wrapf(err, "close WAL for head %s", h.dir)
@@ -163,6 +156,8 @@ func (h *headBlock) Close() error {
 	if meta.ULID == h.meta.ULID {
 		return writeMetaFile(h.dir, &h.meta)
 	}
+
+	h.closed = true
 	return nil
 }
 
@@ -182,6 +177,10 @@ func (h *headBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 
 	h.mtx.RLock()
+
+	if h.closed {
+		panic(fmt.Sprintf("block %s already closed", h.dir))
+	}
 	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
 }
 
@@ -451,7 +450,7 @@ func (h *headIndexReader) Postings(name, value string) (Postings, error) {
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error) {
+func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -459,13 +458,13 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []ChunkMeta, error)
 		return nil, nil, ErrNotFound
 	}
 	s := h.series[ref]
-	metas := make([]ChunkMeta, 0, len(s.chunks))
+	metas := make([]*ChunkMeta, 0, len(s.chunks))
 
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
 	for i, c := range s.chunks {
-		metas = append(metas, ChunkMeta{
+		metas = append(metas, &ChunkMeta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     (uint64(ref) << 32) | uint64(i),
@@ -527,43 +526,26 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	return s
 }
 
-func (h *headBlock) updateMapping() {
-	h.mtx.RLock()
-
-	if h.mapper.sortable != nil && h.mapper.Len() == len(h.series) {
-		h.mtx.RUnlock()
-		return
-	}
-
-	series := make([]*memSeries, len(h.series))
-	copy(series, h.series)
-
-	h.mtx.RUnlock()
-
-	s := slice.SortInterface(series, func(i, j int) bool {
-		return labels.Compare(series[i].lset, series[j].lset) < 0
-	})
-
-	h.mapper.update(s)
-}
-
 // remapPostings changes the order of the postings from their ID to the ordering
 // of the series they reference.
 // Returned postings have no longer monotonic IDs and MUST NOT be used for regular
 // postings set operations, i.e. intersect and merge.
 func (h *headBlock) remapPostings(p Postings) Postings {
-	list, err := expandPostings(p)
-	if err != nil {
-		return errPostings{err: err}
+	// Expand the postings but only up until the point where the mapper
+	// covers existing metrics.
+	ep := make([]uint32, 0, 64)
+
+	for p.Next() {
+		ep = append(ep, p.At())
+	}
+	if err := p.Err(); err != nil {
+		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
 
-	h.mapper.mtx.Lock()
-	defer h.mapper.mtx.Unlock()
-
-	h.updateMapping()
-	h.mapper.Sort(list)
-
-	return newListPostings(list)
+	sort.Slice(ep, func(i, j int) bool {
+		return labels.Compare(h.series[i].lset, h.series[j].lset) < 0
+	})
+	return newListPostings(ep)
 }
 
 type memSeries struct {
@@ -674,51 +656,4 @@ func (it *memSafeIterator) At() (int64, float64) {
 	}
 	s := it.buf[4-(it.total-it.i)]
 	return s.t, s.v
-}
-
-// positionMapper stores a position mapping from unsorted to
-// sorted indices of a sortable collection.
-type positionMapper struct {
-	mtx      sync.RWMutex
-	sortable sort.Interface
-	iv, fw   []int
-}
-
-func newPositionMapper(s sort.Interface) *positionMapper {
-	m := &positionMapper{}
-	if s != nil {
-		m.update(s)
-	}
-	return m
-}
-
-func (m *positionMapper) Len() int           { return m.sortable.Len() }
-func (m *positionMapper) Less(i, j int) bool { return m.sortable.Less(i, j) }
-
-func (m *positionMapper) Swap(i, j int) {
-	m.sortable.Swap(i, j)
-
-	m.iv[i], m.iv[j] = m.iv[j], m.iv[i]
-}
-
-func (m *positionMapper) Sort(l []uint32) {
-	slice.Sort(l, func(i, j int) bool {
-		return m.fw[l[i]] < m.fw[l[j]]
-	})
-}
-
-func (m *positionMapper) update(s sort.Interface) {
-	m.sortable = s
-
-	m.iv = make([]int, s.Len())
-	m.fw = make([]int, s.Len())
-
-	for i := range m.iv {
-		m.iv[i] = i
-	}
-	sort.Sort(m)
-
-	for i, k := range m.iv {
-		m.fw[k] = i
-	}
 }
