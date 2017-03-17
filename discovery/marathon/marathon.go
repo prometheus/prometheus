@@ -321,13 +321,17 @@ func targetsForApp(app *App) []model.LabelSet {
 				model.AddressLabel: model.LabelValue(targetAddress),
 				taskLabel:          model.LabelValue(t.ID),
 			}
-			for ln, lv := range app.PortDefinitions[i].Labels {
-				ln = portDefinitionsLabelPrefix + ln
-				target[model.LabelName(ln)] = model.LabelValue(lv)
+			if i < len(app.PortDefinitions) {
+				for ln, lv := range app.PortDefinitions[i].Labels {
+					ln = portDefinitionsLabelPrefix + ln
+					target[model.LabelName(ln)] = model.LabelValue(lv)
+				}
 			}
-			for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
-				ln = portMappingsLabelPrefix + ln
-				target[model.LabelName(ln)] = model.LabelValue(lv)
+			if i < len(app.Container.Docker.PortMappings) {
+				for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
+					ln = portMappingsLabelPrefix + ln
+					target[model.LabelName(ln)] = model.LabelValue(lv)
+				}
 			}
 			targets = append(targets, target)
 		}
