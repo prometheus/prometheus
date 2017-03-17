@@ -241,6 +241,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
 		}
 		for _, mcfg := range cfg.MarathonSDConfigs {
+			mcfg.BearerTokenFile = join(mcfg.BearerTokenFile)
 			mcfg.TLSConfig.CAFile = join(mcfg.TLSConfig.CAFile)
 			mcfg.TLSConfig.CertFile = join(mcfg.TLSConfig.CertFile)
 			mcfg.TLSConfig.KeyFile = join(mcfg.TLSConfig.KeyFile)
@@ -920,6 +921,8 @@ type MarathonSDConfig struct {
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	BearerToken     string         `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -938,6 +941,9 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	}
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
 	}
 
 	return nil

@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/net/context"
@@ -77,13 +78,23 @@ type Discovery struct {
 	refreshInterval time.Duration
 	lastRefresh     map[string]*config.TargetGroup
 	appsClient      AppListClient
+	token           string
 }
 
-// Initialize sets up the discovery for usage.
+// NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	token := conf.BearerToken
+	if conf.BearerTokenFile != "" {
+		bf, err := ioutil.ReadFile(conf.BearerTokenFile)
+		if err != nil {
+			return nil, err
+		}
+		token = strings.TrimSpace(string(bf))
 	}
 
 	client := &http.Client{
@@ -98,17 +109,18 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
+		token:           token,
 	}, nil
 }
 
 // Run implements the TargetProvider interface.
-func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(md.refreshInterval):
-			err := md.updateServices(ctx, ch)
+		case <-time.After(d.refreshInterval):
+			err := d.updateServices(ctx, ch)
 			if err != nil {
 				log.Errorf("Error while updating services: %s", err)
 			}
@@ -116,7 +128,7 @@ func (md *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
-func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
+func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
 	t0 := time.Now()
 	defer func() {
 		refreshDuration.Observe(time.Since(t0).Seconds())
@@ -125,7 +137,7 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 		}
 	}()
 
-	targetMap, err := md.fetchTargetGroups()
+	targetMap, err := d.fetchTargetGroups()
 	if err != nil {
 		return err
 	}
@@ -142,7 +154,7 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 	}
 
 	// Remove services which did disappear.
-	for source := range md.lastRefresh {
+	for source := range d.lastRefresh {
 		_, ok := targetMap[source]
 		if !ok {
 			select {
@@ -154,13 +166,13 @@ func (md *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Tar
 		}
 	}
 
-	md.lastRefresh = targetMap
+	d.lastRefresh = targetMap
 	return nil
 }
 
-func (md *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
-	url := RandomAppsURL(md.servers)
-	apps, err := md.appsClient(md.client, url)
+func (d *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
+	url := RandomAppsURL(d.servers)
+	apps, err := d.appsClient(d.client, url, d.token)
 	if err != nil {
 		return nil, err
 	}
@@ -201,11 +213,23 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url string) (*AppList, error)
+type AppListClient func(client *http.Client, url, token string) (*AppList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url string) (*AppList, error) {
-	resp, err := client.Get(url)
+func fetchApps(client *http.Client, url, token string) (*AppList, error) {
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// According to  https://dcos.io/docs/1.8/administration/id-and-access-mgt/managing-authentication
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this implicitly here
+	if token != "" {
+		request.Header.Set("Authorization", "token="+token)
+	}
+
+	resp, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
