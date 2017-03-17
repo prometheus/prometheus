@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -294,11 +295,12 @@ func createTargetGroup(app *App) *config.TargetGroup {
 
 func targetsForApp(app *App) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Tasks))
+	portIndex := getPortIndex(app)
 	for _, t := range app.Tasks {
 		if len(t.Ports) == 0 {
 			continue
 		}
-		target := targetForTask(&t)
+		target := targetForTask(&t, portIndex)
 		targets = append(targets, model.LabelSet{
 			model.AddressLabel: model.LabelValue(target),
 			taskLabel:          model.LabelValue(t.ID),
@@ -307,6 +309,25 @@ func targetsForApp(app *App) []model.LabelSet {
 	return targets
 }
 
-func targetForTask(task *Task) string {
-	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[0]))
+func getPortIndex(app *App) int {
+	index, exists := app.Labels["PROMETHEUS_PORT_INDEX"]
+	if !exists {
+		index = "0"
+	}
+	portIndex, err := strconv.Atoi(index)
+	if err != nil {
+		portIndex = 0
+	}
+	if portIndex < 0 {
+		portIndex = 0
+	}
+	return int(portIndex)
+}
+
+func targetForTask(task *Task, portIndex int) string {
+	// fallback: if the port index is wrong, use the first port
+	if portIndex >= len(task.Ports) {
+		portIndex = 0
+	}
+	return net.JoinHostPort(task.Host, fmt.Sprintf("%d", task.Ports[portIndex]))
 }
