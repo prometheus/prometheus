@@ -55,10 +55,6 @@ type headBlock struct {
 
 	metamtx sync.RWMutex
 	meta    BlockMeta
-
-	updatec chan struct{}
-	stopc   chan struct{}
-	donec   chan struct{}
 }
 
 func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*headBlock, error) {
@@ -141,9 +137,6 @@ func (h *headBlock) inBounds(t int64) bool {
 
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
-	close(h.stopc)
-	<-h.donec
-
 	// Lock mutex and leave it locked so we panic if there's a bug causing
 	// the block to be used afterwards.
 	h.mtx.Lock()
