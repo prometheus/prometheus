@@ -1229,6 +1229,17 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
+
+	if c.Action == RelabelLabelDrop || c.Action == RelabelLabelKeep {
+		if c.SourceLabels != nil ||
+			c.TargetLabel != DefaultRelabelConfig.TargetLabel ||
+			c.Modulus != DefaultRelabelConfig.Modulus ||
+			c.Separator != DefaultRelabelConfig.Separator ||
+			c.Replacement != DefaultRelabelConfig.Replacement {
+			return fmt.Errorf("%s action requires only 'regex', and no other fields", c.Action)
+		}
+	}
+
 	return nil
 }
 
