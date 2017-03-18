@@ -584,7 +584,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	return nil
 }
 
-// AlertmanagersConfig configures how Alertmanagers can be discovered and communicated with.
+// AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
 type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -949,8 +949,10 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return nil
 }
 
+// KubernetesRole is role of the service in Kubernetes.
 type KubernetesRole string
 
+// The valid options for KubernetesRole.
 const (
 	KubernetesRoleNode     = "node"
 	KubernetesRolePod      = "pod"
@@ -958,6 +960,7 @@ const (
 	KubernetesRoleEndpoint = "endpoints"
 )
 
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
