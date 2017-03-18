@@ -228,7 +228,9 @@ func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]T
 	// (Re-)create a fresh tgroups map to not keep stale targets around. We
 	// will retrieve all targets below anyway, so cleaning up everything is
 	// safe and doesn't inflict any additional cost.
+	ts.mtx.Lock()
 	ts.tgroups = map[string]*config.TargetGroup{}
+	ts.mtx.Unlock()
 
 	for name, prov := range providers {
 		wg.Add(1)
