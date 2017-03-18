@@ -46,10 +46,10 @@ const (
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
 
-	// portMappingsLabelPrefix is the prefix for the application portMappings labels.
-	portMappingsLabelPrefix = metaLabelPrefix + "port_mappings_label_"
-	// portDefinitionsLabelPrefix is the prefix for the application portDefinitions labels.
-	portDefinitionsLabelPrefix = metaLabelPrefix + "port_definitions_label_"
+	// portMappingLabelPrefix is the prefix for the application portMappings labels.
+	portMappingLabelPrefix = metaLabelPrefix + "port_mapping_label_"
+	// portDefinitionLabelPrefix is the prefix for the application portDefinitions labels.
+	portDefinitionLabelPrefix = metaLabelPrefix + "port_definition_label_"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -324,13 +324,13 @@ func targetsForApp(app *App) []model.LabelSet {
 			}
 			if i < len(app.PortDefinitions) {
 				for ln, lv := range app.PortDefinitions[i].Labels {
-					ln = portDefinitionsLabelPrefix + strutil.SanitizeLabelName(ln)
+					ln = portDefinitionLabelPrefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}
 			if i < len(app.Container.Docker.PortMappings) {
 				for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
-					ln = portMappingsLabelPrefix + strutil.SanitizeLabelName(ln)
+					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}

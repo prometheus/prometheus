@@ -127,10 +127,10 @@ func TestMarathonSDSendGroup(t *testing.T) {
 		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "yes" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
 			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
 		}
 	default:
@@ -259,20 +259,20 @@ func TestMarathonSDSendGroupWithMutiplePort(t *testing.T) {
 		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "yes" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
 			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
 		}
 		tgt = tg.Targets[1]
 		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "yes" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "yes" {
 			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
 		}
 	default:
@@ -379,20 +379,20 @@ func TestMarathonSDSendGroupWithoutPortMappings(t *testing.T) {
 		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
 		}
 		tgt = tg.Targets[1]
 		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "yes" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "yes" {
 			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
 		}
 	default:
@@ -452,20 +452,20 @@ func TestMarathonSDSendGroupWithoutPortDefinitions(t *testing.T) {
 		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "yes" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
 			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
 		}
 		tgt = tg.Targets[1]
 		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
 			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portMappingsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
 		}
-		if tgt[model.LabelName(portDefinitionsLabelPrefix+"prometheus")] != "" {
+		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
 			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
 		}
 	default:
