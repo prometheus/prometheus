@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: prometheus
+    relabel_configs:
+      - target_label: yolo
+        action: labelkeep
