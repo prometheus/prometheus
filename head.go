@@ -86,7 +86,7 @@ func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*head
 
 // openHeadBlock creates a new empty head block.
 func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
-	wal, err := OpenWAL(dir, log.NewContext(l).With("component", "wal"), 5*time.Second)
+	wal, err := OpenWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
 	if err != nil {
 		return nil, err
 	}

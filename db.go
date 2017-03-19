@@ -157,7 +157,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	if l == nil {
 		l = log.NewLogfmtLogger(os.Stdout)
-		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+		l = log.With(l, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	}
 
 	if opts == nil {
