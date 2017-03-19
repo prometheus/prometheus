@@ -237,21 +237,21 @@ func (b *writeBenchmark) startProfiling() {
 	// Start CPU profiling.
 	b.cpuprof, err = os.Create(filepath.Join(b.outPath, "cpu.prof"))
 	if err != nil {
-		exitWithError(fmt.Errorf("bench: could not create cpu profile: %v\n", err))
+		exitWithError(fmt.Errorf("bench: could not create cpu profile: %v", err))
 	}
 	pprof.StartCPUProfile(b.cpuprof)
 
 	// Start memory profiling.
 	b.memprof, err = os.Create(filepath.Join(b.outPath, "mem.prof"))
 	if err != nil {
-		exitWithError(fmt.Errorf("bench: could not create memory profile: %v\n", err))
+		exitWithError(fmt.Errorf("bench: could not create memory profile: %v", err))
 	}
 	runtime.MemProfileRate = 4096
 
 	// Start fatal profiling.
 	b.blockprof, err = os.Create(filepath.Join(b.outPath, "block.prof"))
 	if err != nil {
-		exitWithError(fmt.Errorf("bench: could not create block profile: %v\n", err))
+		exitWithError(fmt.Errorf("bench: could not create block profile: %v", err))
 	}
 	runtime.SetBlockProfileRate(1)
 }

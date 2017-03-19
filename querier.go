@@ -480,7 +480,7 @@ type SeriesIterator interface {
 	// If there's no value exactly at ts, it advances to the last value
 	// before tt.
 	Seek(t int64) bool
-	// Values returns the current timestamp/value pair.
+	// At returns the current timestamp/value pair.
 	At() (t int64, v float64)
 	// Next advances the iterator by one.
 	Next() bool
@@ -693,7 +693,7 @@ func (b *BufferedSeriesIterator) Next() bool {
 	return ok
 }
 
-// Values returns the current element of the iterator.
+// At returns the current element of the iterator.
 func (b *BufferedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }

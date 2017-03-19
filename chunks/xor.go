@@ -19,6 +19,7 @@ func NewXORChunk() *XORChunk {
 	return &XORChunk{b: &bstream{stream: b, count: 0}}
 }
 
+// Encoding returns the encoding type.
 func (c *XORChunk) Encoding() Encoding {
 	return EncXOR
 }

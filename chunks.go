@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// MagicSeries 4 bytes at the head of series file.
+	// MagicChunks is 4 bytes at the head of series file.
 	MagicChunks = 0x85BD40DD
 )
 
