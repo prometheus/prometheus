@@ -205,19 +205,20 @@ func (db *DB) run() {
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
-			var merr MultiError
-
 			changes1, err := db.retentionCutoff()
-			merr.Add(err)
+			if err != nil {
+				db.logger.Log("msg", "retention cutoff failed", "err", err)
+			}
 
 			changes2, err := db.compact()
-			merr.Add(err)
+			if err != nil {
+				db.logger.Log("msg", "compaction failed", "err", err)
+			}
 
 			if changes1 || changes2 {
-				merr.Add(db.reloadBlocks())
-			}
-			if err := merr.Err(); err != nil {
-				db.logger.Log("msg", "compaction failed", "err", err)
+				if err := db.reloadBlocks(); err != nil {
+					db.logger.Log("msg", "reloading blocks failed", "err", err)
+				}
 			}
 
 		case <-db.stopc:
@@ -323,6 +324,10 @@ Loop:
 // retentionCutoff deletes all directories of blocks in dir that are strictly
 // before mint.
 func retentionCutoff(dir string, mint int64) (bool, error) {
+	df, err := fileutil.OpenDir(dir)
+	if err != nil {
+		return false, errors.Wrapf(err, "open directory")
+	}
 	dirs, err := blockDirs(dir)
 	if err != nil {
 		return false, errors.Wrapf(err, "list block dirs %s", dir)
@@ -347,7 +352,7 @@ func retentionCutoff(dir string, mint int64) (bool, error) {
 		}
 	}
 
-	return changes, nil
+	return changes, fileutil.Fsync(df)
 }
 
 func (db *DB) reloadBlocks() error {
