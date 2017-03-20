@@ -27,8 +27,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
@@ -40,35 +40,22 @@ type Client struct {
 }
 
 type clientConfig struct {
-	url       *config.URL
-	tlsConfig config.TLSConfig
-	proxyURL  *config.URL
-	basicAuth *config.BasicAuth
-	timeout   model.Duration
+	url              *config.URL
+	timeout          model.Duration
+	httpClientConfig config.HTTPClientConfig
 }
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *clientConfig) (*Client, error) {
-	tlsConfig, err := httputil.NewTLSConfig(conf.tlsConfig)
+	httpClient, err := retrieval.NewHTTPClient(conf.httpClientConfig)
 	if err != nil {
 		return nil, err
-	}
-
-	// The only timeout we care about is the configured push timeout.
-	// It is applied on request. So we leave out any timings here.
-	var rt http.RoundTripper = &http.Transport{
-		Proxy:           http.ProxyURL(conf.proxyURL.URL),
-		TLSClientConfig: tlsConfig,
-	}
-
-	if conf.basicAuth != nil {
-		rt = httputil.NewBasicAuthRoundTripper(conf.basicAuth.Username, conf.basicAuth.Password, rt)
 	}
 
 	return &Client{
 		index:   index,
 		url:     conf.url,
-		client:  httputil.NewClient(rt),
+		client:  httpClient,
 		timeout: time.Duration(conf.timeout),
 	}, nil
 }

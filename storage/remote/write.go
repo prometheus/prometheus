@@ -37,11 +37,9 @@ func (w *Writer) ApplyConfig(conf *config.Config) error {
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
 		c, err := NewClient(i, &clientConfig{
-			url:       rwConf.URL,
-			tlsConfig: rwConf.TLSConfig,
-			proxyURL:  &rwConf.ProxyURL,
-			basicAuth: rwConf.BasicAuth,
-			timeout:   rwConf.RemoteTimeout,
+			url:              rwConf.URL,
+			timeout:          rwConf.RemoteTimeout,
+			httpClientConfig: rwConf.HTTPClientConfig,
 		})
 		if err != nil {
 			return err
