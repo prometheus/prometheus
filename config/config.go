@@ -246,6 +246,11 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			mcfg.TLSConfig.CertFile = join(mcfg.TLSConfig.CertFile)
 			mcfg.TLSConfig.KeyFile = join(mcfg.TLSConfig.KeyFile)
 		}
+		for _, consulcfg := range cfg.ConsulSDConfigs {
+			consulcfg.TLSConfig.CAFile = join(consulcfg.TLSConfig.CAFile)
+			consulcfg.TLSConfig.CertFile = join(consulcfg.TLSConfig.CertFile)
+			consulcfg.TLSConfig.KeyFile = join(consulcfg.TLSConfig.KeyFile)
+		}
 	}
 
 	for _, cfg := range cfg.ScrapeConfigs {
@@ -824,6 +829,7 @@ type ConsulSDConfig struct {
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
 
+	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
