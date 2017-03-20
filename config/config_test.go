@@ -247,7 +247,13 @@ var expectedConf = &Config{
 						Server:       "localhost:1234",
 						Services:     []string{"nginx", "cache", "mysql"},
 						TagSeparator: DefaultConsulSDConfig.TagSeparator,
-						Scheme:       DefaultConsulSDConfig.Scheme,
+						Scheme:       "https",
+						TLSConfig: TLSConfig{
+							CertFile:           "testdata/valid_cert_file",
+							KeyFile:            "testdata/valid_key_file",
+							CAFile:             "testdata/valid_ca_file",
+							InsecureSkipVerify: false,
+						},
 					},
 				},
 			},
@@ -538,6 +544,36 @@ var expectedErrors = []struct {
 	}, {
 		filename: "modulus_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod requires non-zero modulus",
+	}, {
+		filename: "labelkeep.bad.yml",
+		errMsg:   "labelkeep action requires only 'regex', and no other fields",
+	}, {
+		filename: "labelkeep2.bad.yml",
+		errMsg:   "labelkeep action requires only 'regex', and no other fields",
+	}, {
+		filename: "labelkeep3.bad.yml",
+		errMsg:   "labelkeep action requires only 'regex', and no other fields",
+	}, {
+		filename: "labelkeep4.bad.yml",
+		errMsg:   "labelkeep action requires only 'regex', and no other fields",
+	}, {
+		filename: "labelkeep5.bad.yml",
+		errMsg:   "labelkeep action requires only 'regex', and no other fields",
+	}, {
+		filename: "labeldrop.bad.yml",
+		errMsg:   "labeldrop action requires only 'regex', and no other fields",
+	}, {
+		filename: "labeldrop2.bad.yml",
+		errMsg:   "labeldrop action requires only 'regex', and no other fields",
+	}, {
+		filename: "labeldrop3.bad.yml",
+		errMsg:   "labeldrop action requires only 'regex', and no other fields",
+	}, {
+		filename: "labeldrop4.bad.yml",
+		errMsg:   "labeldrop action requires only 'regex', and no other fields",
+	}, {
+		filename: "labeldrop5.bad.yml",
+		errMsg:   "labeldrop action requires only 'regex', and no other fields",
 	}, {
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
