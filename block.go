@@ -11,8 +11,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Block handles reads against a Block of time series data.
-type Block interface {
+// DiskBlock handles reads against a Block of time series data.
+type DiskBlock interface {
 	// Directory where block data is stored.
 	Dir() string
 
@@ -27,6 +27,32 @@ type Block interface {
 
 	// Close releases all underlying resources of the block.
 	Close() error
+}
+
+// Block is an interface to a DiskBlock that can also be queried.
+type Block interface {
+	DiskBlock
+	// Queryable
+}
+
+// HeadBlock is a regular block that can still be appended to.
+type HeadBlock interface {
+	DiskBlock
+	Appendable
+}
+
+// Appendable defines an entity to which data can be appended.
+type Appendable interface {
+	// Appender returns a new Appender against an underlying store.
+	Appender() Appender
+
+	// Busy returns whether there are any currently active appenders.
+	Busy() bool
+}
+
+// Queryable defines an entity which provides a Querier.
+type Queryable interface {
+	Queryable() Querier
 }
 
 // BlockMeta provides meta information about a block.

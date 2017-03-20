@@ -36,10 +36,9 @@ var (
 
 // headBlock handles reads and writes of time series data within a time window.
 type headBlock struct {
-	mtx        sync.RWMutex
-	dir        string
-	generation uint8
-	wal        *WAL
+	mtx sync.RWMutex
+	dir string
+	wal *WAL
 
 	activeWriters uint64
 	closed        bool
@@ -184,6 +183,10 @@ func (h *headBlock) Appender() Appender {
 	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
 }
 
+func (h *headBlock) Busy() bool {
+	return atomic.LoadUint64(&h.activeWriters) > 0
+}
+
 var headPool = sync.Pool{}
 
 func getHeadAppendBuffer() []refdSample {
@@ -265,6 +268,8 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		// sample sequence is valid.
 		// We also have to revalidate it as we switch locks an create
 		// the new series.
+	} else if ref > uint64(len(a.series)) {
+		return ErrNotFound
 	} else {
 		ms := a.series[int(ref)]
 		if ms == nil {
