@@ -567,7 +567,10 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	key := strings.Join(names, string(sep))
 	off, ok := r.labels[key]
 	if !ok {
-		return nil, fmt.Errorf("label index doesn't exist")
+		// XXX(fabxc): hot fix. Should return a partial data error and handle cases
+		// where the entire block has no data gracefully.
+		return emptyStringTuples{}, nil
+		//return nil, fmt.Errorf("label index doesn't exist")
 	}
 
 	flag, b, err := r.section(off)
@@ -589,6 +592,11 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	}
 	return st, nil
 }
+
+type emptyStringTuples struct{}
+
+func (emptyStringTuples) At(i int) ([]string, error) { return nil, nil }
+func (emptyStringTuples) Len() int                   { return 0 }
 
 func (r *indexReader) LabelIndices() ([][]string, error) {
 	res := [][]string{}

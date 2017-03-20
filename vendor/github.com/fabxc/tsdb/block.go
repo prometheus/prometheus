@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -11,8 +12,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Block handles reads against a Block of time series data.
-type Block interface {
+// DiskBlock handles reads against a Block of time series data.
+type DiskBlock interface {
 	// Directory where block data is stored.
 	Dir() string
 
@@ -27,6 +28,32 @@ type Block interface {
 
 	// Close releases all underlying resources of the block.
 	Close() error
+}
+
+// Block is an interface to a DiskBlock that can also be queried.
+type Block interface {
+	DiskBlock
+	Queryable
+}
+
+// HeadBlock is a regular block that can still be appended to.
+type HeadBlock interface {
+	Block
+	Appendable
+}
+
+// Appendable defines an entity to which data can be appended.
+type Appendable interface {
+	// Appender returns a new Appender against an underlying store.
+	Appender() Appender
+
+	// Busy returns whether there are any currently active appenders.
+	Busy() bool
+}
+
+// Queryable defines an entity which provides a Querier.
+type Queryable interface {
+	Querier(mint, maxt int64) Querier
 }
 
 // BlockMeta provides meta information about a block.
@@ -59,14 +86,6 @@ const (
 	flagNone = 0
 	flagStd  = 1
 )
-
-type persistedBlock struct {
-	dir  string
-	meta BlockMeta
-
-	chunkr *chunkReader
-	indexr *indexReader
-}
 
 type blockMeta struct {
 	Version int `json:"version"`
@@ -115,6 +134,14 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	return renameFile(tmp, path)
 }
 
+type persistedBlock struct {
+	dir  string
+	meta BlockMeta
+
+	chunkr *chunkReader
+	indexr *indexReader
+}
+
 func newPersistedBlock(dir string) (*persistedBlock, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
@@ -146,6 +173,19 @@ func (pb *persistedBlock) Close() error {
 	merr.Add(pb.indexr.Close())
 
 	return merr.Err()
+}
+
+func (pb *persistedBlock) String() string {
+	return fmt.Sprintf("(%d, %s)", pb.meta.Sequence, pb.meta.ULID)
+}
+
+func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
+	return &blockQuerier{
+		mint:   mint,
+		maxt:   maxt,
+		index:  pb.Index(),
+		chunks: pb.Chunks(),
+	}
 }
 
 func (pb *persistedBlock) Dir() string         { return pb.dir }

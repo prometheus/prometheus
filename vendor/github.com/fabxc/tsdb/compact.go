@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/fabxc/tsdb/labels"
+	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,6 +34,7 @@ type Compactor interface {
 // compactor implements the Compactor interface.
 type compactor struct {
 	metrics *compactorMetrics
+	logger  log.Logger
 	opts    *compactorOptions
 }
 
@@ -71,9 +74,10 @@ type compactorOptions struct {
 	maxBlockRange uint64
 }
 
-func newCompactor(r prometheus.Registerer, opts *compactorOptions) *compactor {
+func newCompactor(r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
 	return &compactor{
 		opts:    opts,
+		logger:  l,
 		metrics: newCompactorMetrics(r),
 	}
 }
@@ -178,6 +182,8 @@ func (c *compactor) Write(dir string, b Block) error {
 // write creates a new block that is the union of the provided blocks into dir.
 // It cleans up all files of the old blocks after completing successfully.
 func (c *compactor) write(dir string, blocks ...Block) (err error) {
+	c.logger.Log("msg", "compact blocks", "blocks", fmt.Sprintf("%v", blocks))
+
 	defer func(t time.Time) {
 		if err != nil {
 			c.metrics.failed.Inc()
