@@ -368,10 +368,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "JeYYg27cZpCWZYwYOm7r+UnUR2o=",
+			"checksumSHA1": "8wTICzej/k4pCcYtSw+fmD6oZZE=",
 			"path": "github.com/fabxc/tsdb",
-			"revision": "863d38dfeebaceb69ce57cbba862102e10222256",
-			"revisionTime": "2017-03-17T14:56:19Z"
+			"revision": "2ef3682560a31bd03f0ba70eb6ec509512ad0de8",
+			"revisionTime": "2017-03-20T10:37:06Z"
 		},
 		{
 			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
