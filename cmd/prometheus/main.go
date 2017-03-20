@@ -93,10 +93,10 @@ func Main() int {
 		return 1
 	}
 
-	remoteStorage := &remote.Storage{}
-	sampleAppender = append(sampleAppender, remoteStorage)
+	remoteAppender := &remote.Writer{}
+	sampleAppender = append(sampleAppender, remoteAppender)
 	remoteReader := &remote.Reader{}
-	reloadables = append(reloadables, remoteStorage, remoteReader)
+	reloadables = append(reloadables, remoteAppender, remoteReader)
 
 	queryable := fanin.Queryable{
 		Local:  localStorage,
@@ -185,7 +185,7 @@ func Main() int {
 		}
 	}()
 
-	defer remoteStorage.Stop()
+	defer remoteAppender.Stop()
 
 	// The storage has to be fully initialized before registering.
 	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
