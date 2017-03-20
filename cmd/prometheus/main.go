@@ -114,7 +114,7 @@ func Main() int {
 		SampleAppender: sampleAppender,
 		Notifier:       notifier,
 		QueryEngine:    queryEngine,
-		Context:        ctx,
+		Context:        fanin.WithLocalOnly(ctx),
 		ExternalURL:    cfg.web.ExternalURL,
 	})
 

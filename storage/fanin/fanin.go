@@ -26,6 +26,20 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
+type contextKey string
+
+const ctxLocalOnly contextKey = "local-only"
+
+// WithLocalOnly decorates a context to indicate that a query should
+// only be executed against local data.
+func WithLocalOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxLocalOnly, struct{}{})
+}
+
+func localOnly(ctx context.Context) bool {
+	return ctx.Value(ctxLocalOnly) == struct{}{}
+}
+
 // Queryable is a local.Queryable that reads from local and remote storage.
 type Queryable struct {
 	Local  promql.Queryable
@@ -52,25 +66,24 @@ type querier struct {
 }
 
 func (q querier) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return q.query(func(q local.Querier) ([]local.SeriesIterator, error) {
+	return q.query(ctx, func(q local.Querier) ([]local.SeriesIterator, error) {
 		return q.QueryRange(ctx, from, through, matchers...)
 	})
 }
 
 func (q querier) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return q.query(func(q local.Querier) ([]local.SeriesIterator, error) {
+	return q.query(ctx, func(q local.Querier) ([]local.SeriesIterator, error) {
 		return q.QueryInstant(ctx, ts, stalenessDelta, matchers...)
 	})
 }
 
-func (q querier) query(qFn func(q local.Querier) ([]local.SeriesIterator, error)) ([]local.SeriesIterator, error) {
+func (q querier) query(ctx context.Context, qFn func(q local.Querier) ([]local.SeriesIterator, error)) ([]local.SeriesIterator, error) {
 	localIts, err := qFn(q.local)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(q.remotes) == 0 {
-		// Skip merge logic if there are no remote queriers.
+	if len(q.remotes) == 0 || localOnly(ctx) {
 		return localIts, nil
 	}
 
