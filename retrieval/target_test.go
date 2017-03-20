@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -154,7 +155,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +182,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +211,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +239,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +273,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +302,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +331,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := NewHTTPClient(cfg)
+	c, err := httputil.NewClientFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +370,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := NewHTTPClient(cfg)
+	_, err := httputil.NewClientFromConfig(cfg)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}

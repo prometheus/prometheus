@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/config"
@@ -31,10 +32,42 @@ func NewClient(rt http.RoundTripper) *http.Client {
 	return &http.Client{Transport: rt}
 }
 
-// NewDeadlineClient returns a new http.Client which will time out long running
-// requests.
-func NewDeadlineClient(timeout time.Duration, proxyURL *url.URL) *http.Client {
-	return NewClient(NewDeadlineRoundTripper(timeout, proxyURL))
+// NewClientFromConfig returns a new HTTP client configured for the
+// given config.HTTPClientConfig.
+func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
+	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
+	if err != nil {
+		return nil, err
+	}
+	// The only timeout we care about is the configured scrape timeout.
+	// It is applied on request. So we leave out any timings here.
+	var rt http.RoundTripper = &http.Transport{
+		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
+		DisableKeepAlives: true,
+		TLSClientConfig:   tlsConfig,
+	}
+
+	// If a bearer token is provided, create a round tripper that will set the
+	// Authorization header correctly on each request.
+	bearerToken := cfg.BearerToken
+	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
+		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
+		}
+		bearerToken = strings.TrimSpace(string(b))
+	}
+
+	if len(bearerToken) > 0 {
+		rt = NewBearerAuthRoundTripper(bearerToken, rt)
+	}
+
+	if cfg.BasicAuth != nil {
+		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
+	}
+
+	// Return a new client with the configured round tripper.
+	return NewClient(rt), nil
 }
 
 // NewDeadlineRoundTripper returns a new http.RoundTripper which will time out
@@ -119,6 +152,7 @@ func cloneRequest(r *http.Request) *http.Request {
 	return r2
 }
 
+// NewTLSConfig creates a new tls.Config from the given config.TLSConfig.
 func NewTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 

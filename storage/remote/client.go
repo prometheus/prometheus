@@ -27,8 +27,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
@@ -47,7 +47,7 @@ type clientConfig struct {
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *clientConfig) (*Client, error) {
-	httpClient, err := retrieval.NewHTTPClient(conf.httpClientConfig)
+	httpClient, err := httputil.NewClientFromConfig(conf.httpClientConfig)
 	if err != nil {
 		return nil, err
 	}
