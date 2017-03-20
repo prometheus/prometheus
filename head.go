@@ -172,6 +172,22 @@ func (h *headBlock) Persisted() bool     { return false }
 func (h *headBlock) Index() IndexReader  { return &headIndexReader{h} }
 func (h *headBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
+func (h *headBlock) Querier(mint, maxt int64) Querier {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	if h.closed {
+		panic(fmt.Sprintf("block %s already closed", h.dir))
+	}
+	return &blockQuerier{
+		mint:           mint,
+		maxt:           maxt,
+		index:          h.Index(),
+		chunks:         h.Chunks(),
+		postingsMapper: h.remapPostings,
+	}
+}
+
 func (h *headBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 

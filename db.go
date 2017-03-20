@@ -95,7 +95,6 @@ type DB struct {
 	// block layout.
 	mtx    sync.RWMutex
 	blocks []Block
-	// seqBlocks map[int]Block
 
 	// Mutex that must be held when modifying just the head blocks
 	// or the general layout.
@@ -270,9 +269,10 @@ func (db *DB) compact() (changes bool, err error) {
 
 	db.headmtx.RUnlock()
 
+	db.logger.Log("msg", "picked singles", "singles", fmt.Sprintf("%v", singles))
 Loop:
 	for _, h := range singles {
-		db.logger.Log("msg", "write head", "seq", h.Meta().Sequence)
+		db.logger.Log("msg", "write head", "seq", h.Meta().Sequence, "dir", h.Dir(), "ulid", h.Meta().ULID)
 
 		select {
 		case <-db.stopc:
@@ -660,7 +660,7 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (db *DB) cut(mint int64) (*headBlock, error) {
+func (db *DB) cut(mint int64) (HeadBlock, error) {
 	maxt := mint + int64(db.opts.MinBlockDuration)
 
 	dir, seq, err := nextSequenceFile(db.dir, "b-")

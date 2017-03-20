@@ -55,27 +55,8 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 		blocks: make([]Querier, 0, len(blocks)),
 		db:     s,
 	}
-
 	for _, b := range blocks {
-		q := &blockQuerier{
-			mint:   mint,
-			maxt:   maxt,
-			index:  b.Index(),
-			chunks: b.Chunks(),
-		}
-
-		// TODO(fabxc): find nicer solution.
-		if hb, ok := b.(*headBlock); ok {
-			// TODO(fabxc): temporary refactored.
-			hb.mtx.RLock()
-			if hb.closed {
-				panic(fmt.Sprintf("block %s already closed", hb.dir))
-			}
-			hb.mtx.RUnlock()
-			q.postingsMapper = hb.remapPostings
-		}
-
-		sq.blocks = append(sq.blocks, q)
+		sq.blocks = append(sq.blocks, b.Querier(mint, maxt))
 	}
 
 	return sq
