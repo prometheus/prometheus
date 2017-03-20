@@ -135,6 +135,10 @@ func (h *headBlock) inBounds(t int64) bool {
 	return t >= h.meta.MinTime && t <= h.meta.MaxTime
 }
 
+func (h *headBlock) String() string {
+	return fmt.Sprintf("(%d, %s)", h.meta.Sequence, h.meta.ULID)
+}
+
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
 	h.mtx.Lock()

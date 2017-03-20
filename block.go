@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -172,6 +173,10 @@ func (pb *persistedBlock) Close() error {
 	merr.Add(pb.indexr.Close())
 
 	return merr.Err()
+}
+
+func (pb *persistedBlock) String() string {
+	return fmt.Sprintf("(%d, %s)", pb.meta.Sequence, pb.meta.ULID)
 }
 
 func (pb *persistedBlock) Querier(mint, maxt int64) Querier {

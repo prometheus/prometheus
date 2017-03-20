@@ -174,7 +174,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:    make(chan struct{}),
 		stopc:    make(chan struct{}),
 	}
-	db.compactor = newCompactor(r, &compactorOptions{
+	db.compactor = newCompactor(r, l, &compactorOptions{
 		maxBlockRange: opts.MaxBlockDuration,
 	})
 
@@ -269,14 +269,10 @@ func (db *DB) compact() (changes bool, err error) {
 
 	db.headmtx.RUnlock()
 
-	db.logger.Log("msg", "picked singles", "singles", fmt.Sprintf("%v", singles))
-Loop:
 	for _, h := range singles {
-		db.logger.Log("msg", "write head", "seq", h.Meta().Sequence, "dir", h.Dir(), "ulid", h.Meta().ULID)
-
 		select {
 		case <-db.stopc:
-			break Loop
+			return changes, nil
 		default:
 		}
 
@@ -295,16 +291,15 @@ Loop:
 
 		select {
 		case <-db.stopc:
-			return false, nil
+			return changes, nil
 		default:
 		}
+
 		// We just execute compactions sequentially to not cause too extreme
 		// CPU and memory spikes.
 		// TODO(fabxc): return more descriptive plans in the future that allow
 		// estimation of resource usage and conditional parallelization?
 		for _, p := range plans {
-			db.logger.Log("msg", "compact blocks", "seq", fmt.Sprintf("%v", p))
-
 			if err := db.compactor.Compact(p...); err != nil {
 				return changes, errors.Wrapf(err, "compact %s", p)
 			}
