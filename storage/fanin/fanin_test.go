@@ -111,9 +111,10 @@ func (q testQuerier) Close() error {
 
 func TestQueryRange(t *testing.T) {
 	type query struct {
-		from    model.Time
-		through model.Time
-		out     model.Matrix
+		from      model.Time
+		through   model.Time
+		out       model.Matrix
+		localOnly bool
 	}
 
 	tests := []struct {
@@ -485,6 +486,105 @@ func TestQueryRange(t *testing.T) {
 				},
 			},
 		},
+
+		{
+			name: "context value to indicate only local querying is set",
+			local: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						model.MetricNameLabel: "testmetric",
+					},
+					Values: []model.SamplePair{
+						{
+							Timestamp: 2,
+							Value:     2,
+						},
+						{
+							Timestamp: 3,
+							Value:     3,
+						},
+					},
+				},
+			},
+			remote: []model.Matrix{
+				model.Matrix{
+					&model.SampleStream{
+						Metric: model.Metric{
+							model.MetricNameLabel: "testmetric",
+						},
+						Values: []model.SamplePair{
+							{
+								Timestamp: 0,
+								Value:     0,
+							},
+							{
+								Timestamp: 1,
+								Value:     1,
+							},
+							{
+								Timestamp: 2,
+								Value:     2,
+							},
+						},
+					},
+				},
+			},
+			queries: []query{
+				{
+					from:      0,
+					through:   3,
+					localOnly: true,
+					out: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{
+								model.MetricNameLabel: "testmetric",
+							},
+							Values: []model.SamplePair{
+								{
+									Timestamp: 2,
+									Value:     2,
+								},
+								{
+									Timestamp: 3,
+									Value:     3,
+								},
+							},
+						},
+					},
+				},
+				{
+					from:      1,
+					through:   1,
+					localOnly: true,
+					out: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{
+								model.MetricNameLabel: "testmetric",
+							},
+							Values: []model.SamplePair{model.ZeroSamplePair},
+						},
+					},
+				},
+				{
+					from:      2,
+					through:   2,
+					localOnly: true,
+					out: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{
+								model.MetricNameLabel: "testmetric",
+							},
+							Values: []model.SamplePair{
+								{
+									Timestamp: 2,
+									Value:     2,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	matcher, err := metric.NewLabelMatcher(metric.Equal, model.MetricNameLabel, "testmetric")
@@ -501,12 +601,16 @@ func TestQueryRange(t *testing.T) {
 		}
 
 		for i, query := range test.queries {
+			ctx := context.Background()
+			if query.localOnly {
+				ctx = WithLocalOnly(ctx)
+			}
 			var its []local.SeriesIterator
 			var err error
 			if query.from == query.through {
-				its, err = q.QueryInstant(context.Background(), query.from, 5*time.Minute, matcher)
+				its, err = q.QueryInstant(ctx, query.from, 5*time.Minute, matcher)
 			} else {
-				its, err = q.QueryRange(context.Background(), query.from, query.through, matcher)
+				its, err = q.QueryRange(ctx, query.from, query.through, matcher)
 			}
 			if err != nil {
 				t.Fatal(err)
