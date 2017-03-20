@@ -246,6 +246,11 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			mcfg.TLSConfig.CertFile = join(mcfg.TLSConfig.CertFile)
 			mcfg.TLSConfig.KeyFile = join(mcfg.TLSConfig.KeyFile)
 		}
+		for _, consulcfg := range cfg.ConsulSDConfigs {
+			consulcfg.TLSConfig.CAFile = join(consulcfg.TLSConfig.CAFile)
+			consulcfg.TLSConfig.CertFile = join(consulcfg.TLSConfig.CertFile)
+			consulcfg.TLSConfig.KeyFile = join(consulcfg.TLSConfig.KeyFile)
+		}
 	}
 
 	for _, cfg := range cfg.ScrapeConfigs {
@@ -584,7 +589,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	return nil
 }
 
-// AlertmanagersConfig configures how Alertmanagers can be discovered and communicated with.
+// AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
 type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -824,6 +829,7 @@ type ConsulSDConfig struct {
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
 
+	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -949,8 +955,10 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return nil
 }
 
+// KubernetesRole is role of the service in Kubernetes.
 type KubernetesRole string
 
+// The valid options for KubernetesRole.
 const (
 	KubernetesRoleNode     = "node"
 	KubernetesRolePod      = "pod"
@@ -958,6 +966,7 @@ const (
 	KubernetesRoleEndpoint = "endpoints"
 )
 
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
@@ -1226,6 +1235,17 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
+
+	if c.Action == RelabelLabelDrop || c.Action == RelabelLabelKeep {
+		if c.SourceLabels != nil ||
+			c.TargetLabel != DefaultRelabelConfig.TargetLabel ||
+			c.Modulus != DefaultRelabelConfig.Modulus ||
+			c.Separator != DefaultRelabelConfig.Separator ||
+			c.Replacement != DefaultRelabelConfig.Replacement {
+			return fmt.Errorf("%s action requires only 'regex', and no other fields", c.Action)
+		}
+	}
+
 	return nil
 }
 
