@@ -16,9 +16,7 @@ package retrieval
 import (
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
 	"net"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -29,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // TargetHealth describes the health state of a target.
@@ -65,43 +62,6 @@ func NewTarget(labels, discoveredLabels model.LabelSet, params url.Values) *Targ
 		params:           params,
 		health:           HealthUnknown,
 	}
-}
-
-// NewHTTPClient returns a new HTTP client configured for the given scrape configuration.
-func NewHTTPClient(cfg config.HTTPClientConfig) (*http.Client, error) {
-	tlsConfig, err := httputil.NewTLSConfig(cfg.TLSConfig)
-	if err != nil {
-		return nil, err
-	}
-	// The only timeout we care about is the configured scrape timeout.
-	// It is applied on request. So we leave out any timings here.
-	var rt http.RoundTripper = &http.Transport{
-		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
-		DisableKeepAlives: true,
-		TLSClientConfig:   tlsConfig,
-	}
-
-	// If a bearer token is provided, create a round tripper that will set the
-	// Authorization header correctly on each request.
-	bearerToken := cfg.BearerToken
-	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
-		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
-		}
-		bearerToken = strings.TrimSpace(string(b))
-	}
-
-	if len(bearerToken) > 0 {
-		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
-	}
-
-	if cfg.BasicAuth != nil {
-		rt = httputil.NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
-	}
-
-	// Return a new client with the configured round tripper.
-	return httputil.NewClient(rt), nil
 }
 
 func (t *Target) String() string {

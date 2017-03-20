@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/relabel"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -435,7 +435,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig) (*alertmanagerSet, error) {
-	client, err := retrieval.NewHTTPClient(cfg.HTTPClientConfig)
+	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		return nil, err
 	}
