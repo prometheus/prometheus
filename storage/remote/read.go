@@ -36,11 +36,9 @@ func (r *Reader) ApplyConfig(conf *config.Config) error {
 	clients := []*Client{}
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &clientConfig{
-			url:       rrConf.URL,
-			tlsConfig: rrConf.TLSConfig,
-			proxyURL:  &rrConf.ProxyURL,
-			basicAuth: rrConf.BasicAuth,
-			timeout:   rrConf.RemoteTimeout,
+			url:              rrConf.URL,
+			timeout:          rrConf.RemoteTimeout,
+			httpClientConfig: rrConf.HTTPClientConfig,
 		})
 		if err != nil {
 			return err

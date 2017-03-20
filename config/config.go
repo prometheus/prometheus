@@ -1306,10 +1306,11 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 type RemoteWriteConfig struct {
 	URL                 *URL             `yaml:"url,omitempty"`
 	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
-	BasicAuth           *BasicAuth       `yaml:"basic_auth,omitempty"`
-	TLSConfig           TLSConfig        `yaml:"tls_config,omitempty"`
-	ProxyURL            URL              `yaml:"proxy_url,omitempty"`
 	WriteRelabelConfigs []*RelabelConfig `yaml:"write_relabel_configs,omitempty"`
+
+	// We cannot do proper Go type embedding below as the parser will then parse
+	// values arbitrarily into the overflow maps of further-down types.
+	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1332,9 +1333,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 type RemoteReadConfig struct {
 	URL           *URL           `yaml:"url,omitempty"`
 	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
-	BasicAuth     *BasicAuth     `yaml:"basic_auth,omitempty"`
-	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
-	ProxyURL      URL            `yaml:"proxy_url,omitempty"`
+
+	// We cannot do proper Go type embedding below as the parser will then parse
+	// values arbitrarily into the overflow maps of further-down types.
+	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
