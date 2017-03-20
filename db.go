@@ -232,6 +232,9 @@ func (db *DB) retentionCutoff() (bool, error) {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
+	db.headmtx.RLock()
+	defer db.headmtx.RUnlock()
+
 	// We don't count the span covered by head blocks towards the
 	// retention time as it generally makes up a fraction of it.
 	if len(db.blocks)-len(db.heads) == 0 {

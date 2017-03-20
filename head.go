@@ -64,6 +64,9 @@ func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*head
 	if err := os.MkdirAll(tmp, 0777); err != nil {
 		return nil, err
 	}
+
+	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	ulid, err := ulid.New(ulid.Now(), entropy)
 	if err != nil {
 		return nil, err
@@ -556,8 +559,6 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 // Returned postings have no longer monotonic IDs and MUST NOT be used for regular
 // postings set operations, i.e. intersect and merge.
 func (h *headBlock) remapPostings(p Postings) Postings {
-	// Expand the postings but only up until the point where the mapper
-	// covers existing metrics.
 	ep := make([]uint32, 0, 64)
 
 	for p.Next() {
@@ -603,6 +604,9 @@ func (s *memSeries) cut() *memChunk {
 }
 
 func (s *memSeries) append(t int64, v float64) bool {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	var c *memChunk
 
 	if s.app == nil || s.head().samples > 2000 {
