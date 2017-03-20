@@ -101,7 +101,9 @@ func (c *Client) Store(samples model.Samples) error {
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 
-	ctx, _ := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
 	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
 	if err != nil {
 		return err
@@ -144,6 +146,10 @@ func (c *Client) Read(ctx context.Context, from, through model.Time, matchers me
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %v", err)
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
 	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %v", err)
