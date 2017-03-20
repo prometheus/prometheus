@@ -73,14 +73,15 @@ type querier struct {
 }
 
 func (q *querier) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return matrixToIterators(q.client.Read(ctx, from, through, matchers))
+	return MatrixToIterators(q.client.Read(ctx, from, through, matchers))
 }
 
 func (q *querier) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return matrixToIterators(q.client.Read(ctx, ts.Add(-stalenessDelta), ts, matchers))
+	return MatrixToIterators(q.client.Read(ctx, ts.Add(-stalenessDelta), ts, matchers))
 }
 
-func matrixToIterators(m model.Matrix, err error) ([]local.SeriesIterator, error) {
+// MatrixToIterators returns series iterators for a given matrix.
+func MatrixToIterators(m model.Matrix, err error) ([]local.SeriesIterator, error) {
 	if err != nil {
 		return nil, err
 	}
