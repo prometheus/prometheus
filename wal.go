@@ -214,6 +214,7 @@ func (w *WAL) tail() *os.File {
 	return w.files[len(w.files)-1]
 }
 
+// Sync flushes the changes to disk.
 func (w *WAL) Sync() error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
