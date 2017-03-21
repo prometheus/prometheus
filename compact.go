@@ -258,10 +258,6 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 		if err != nil {
 			return nil, err
 		}
-		// TODO(fabxc): find more transparent way of handling this.
-		if hb, ok := b.(*headBlock); ok {
-			all = hb.remapPostings(all)
-		}
 		s := newCompactionSeriesSet(b.Index(), b.Chunks(), all)
 
 		if i == 0 {

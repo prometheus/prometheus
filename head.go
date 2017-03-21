@@ -186,12 +186,30 @@ func (h *headBlock) Querier(mint, maxt int64) Querier {
 	if h.closed {
 		panic(fmt.Sprintf("block %s already closed", h.dir))
 	}
+
+	// Reference on the original slice to use for postings mapping.
+	series := h.series[:]
+
 	return &blockQuerier{
-		mint:           mint,
-		maxt:           maxt,
-		index:          h.Index(),
-		chunks:         h.Chunks(),
-		postingsMapper: h.remapPostings,
+		mint:   mint,
+		maxt:   maxt,
+		index:  h.Index(),
+		chunks: h.Chunks(),
+		postingsMapper: func(p Postings) Postings {
+			ep := make([]uint32, 0, 64)
+
+			for p.Next() {
+				ep = append(ep, p.At())
+			}
+			if err := p.Err(); err != nil {
+				return errPostings{err: errors.Wrap(err, "expand postings")}
+			}
+
+			sort.Slice(ep, func(i, j int) bool {
+				return labels.Compare(series[ep[i]].lset, series[ep[j]].lset) < 0
+			})
+			return newListPostings(ep)
+		},
 	}
 }
 
@@ -552,30 +570,6 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	h.postings.add(s.ref, term{})
 
 	return s
-}
-
-// remapPostings changes the order of the postings from their ID to the ordering
-// of the series they reference.
-// Returned postings have no longer monotonic IDs and MUST NOT be used for regular
-// postings set operations, i.e. intersect and merge.
-func (h *headBlock) remapPostings(p Postings) Postings {
-	ep := make([]uint32, 0, 64)
-
-	for p.Next() {
-		ep = append(ep, p.At())
-	}
-	if err := p.Err(); err != nil {
-		return errPostings{err: errors.Wrap(err, "expand postings")}
-	}
-
-	sort.Slice(ep, func(i, j int) bool {
-		return labels.Compare(h.series[i].lset, h.series[j].lset) < 0
-	})
-	// TODO(fabxc): this is a race! have to either rlock head through entire
-	// query or make access to h.series atomic. Potentially reference sub Slice
-	// in querier?
-
-	return newListPostings(ep)
 }
 
 type memSeries struct {
