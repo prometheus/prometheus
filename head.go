@@ -36,10 +36,9 @@ var (
 
 // headBlock handles reads and writes of time series data within a time window.
 type headBlock struct {
-	mtx        sync.RWMutex
-	dir        string
-	generation uint8
-	wal        *WAL
+	mtx sync.RWMutex
+	dir string
+	wal *WAL
 
 	activeWriters uint64
 	closed        bool
@@ -86,7 +85,7 @@ func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*head
 
 // openHeadBlock creates a new empty head block.
 func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
-	wal, err := OpenWAL(dir, log.NewContext(l).With("component", "wal"), 5*time.Second)
+	wal, err := OpenWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +135,10 @@ func (h *headBlock) inBounds(t int64) bool {
 	return t >= h.meta.MinTime && t <= h.meta.MaxTime
 }
 
+func (h *headBlock) String() string {
+	return fmt.Sprintf("(%d, %s)", h.meta.Sequence, h.meta.ULID)
+}
+
 // Close syncs all data and closes underlying resources of the head block.
 func (h *headBlock) Close() error {
 	h.mtx.Lock()
@@ -173,6 +176,22 @@ func (h *headBlock) Persisted() bool     { return false }
 func (h *headBlock) Index() IndexReader  { return &headIndexReader{h} }
 func (h *headBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
+func (h *headBlock) Querier(mint, maxt int64) Querier {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	if h.closed {
+		panic(fmt.Sprintf("block %s already closed", h.dir))
+	}
+	return &blockQuerier{
+		mint:           mint,
+		maxt:           maxt,
+		index:          h.Index(),
+		chunks:         h.Chunks(),
+		postingsMapper: h.remapPostings,
+	}
+}
+
 func (h *headBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 
@@ -182,6 +201,10 @@ func (h *headBlock) Appender() Appender {
 		panic(fmt.Sprintf("block %s already closed", h.dir))
 	}
 	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
+}
+
+func (h *headBlock) Busy() bool {
+	return atomic.LoadUint64(&h.activeWriters) > 0
 }
 
 var headPool = sync.Pool{}
@@ -265,6 +288,8 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		// sample sequence is valid.
 		// We also have to revalidate it as we switch locks an create
 		// the new series.
+	} else if ref > uint64(len(a.series)) {
+		return ErrNotFound
 	} else {
 		ms := a.series[int(ref)]
 		if ms == nil {
