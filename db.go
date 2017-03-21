@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -285,6 +286,7 @@ func (db *DB) compact() (changes bool, err error) {
 			return changes, errors.Wrap(err, "persist head block")
 		}
 		changes = true
+		runtime.GC()
 	}
 
 	// Check for compactions of multiple blocks.
@@ -292,6 +294,9 @@ func (db *DB) compact() (changes bool, err error) {
 		plans, err := db.compactor.Plan(db.dir)
 		if err != nil {
 			return changes, errors.Wrap(err, "plan compaction")
+		}
+		if len(plans) == 0 {
+			break
 		}
 
 		select {
@@ -309,10 +314,7 @@ func (db *DB) compact() (changes bool, err error) {
 				return changes, errors.Wrapf(err, "compact %s", p)
 			}
 			changes = true
-		}
-		// If we didn't compact anything, there's nothing left to do.
-		if len(plans) == 0 {
-			break
+			runtime.GC()
 		}
 	}
 
