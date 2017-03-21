@@ -23,11 +23,15 @@ type Matcher interface {
 	Matches(v string) bool
 }
 
+// EqualMatcher matches on equality.
 type EqualMatcher struct {
 	name, value string
 }
 
-func (m *EqualMatcher) Name() string          { return m.name }
+// Name implements Matcher interface.
+func (m *EqualMatcher) Name() string { return m.name }
+
+// Matches implements Matcher interface.
 func (m *EqualMatcher) Matches(v string) bool { return v == m.value }
 
 // NewEqualMatcher returns a new matcher matching an exact label value.
