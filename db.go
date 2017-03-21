@@ -98,6 +98,7 @@ type DB struct {
 
 	// Mutex that must be held when modifying just the head blocks
 	// or the general layout.
+	// Must never be held when acquiring a blocks's mutex!
 	headmtx sync.RWMutex
 	heads   []HeadBlock
 
@@ -232,16 +233,17 @@ func (db *DB) retentionCutoff() (bool, error) {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
+	// We only consider the already persisted blocks. Head blocks generally
+	// only account for a fraction of the total data.
 	db.headmtx.RLock()
-	defer db.headmtx.RUnlock()
+	lenp := len(db.blocks) - len(db.heads)
+	db.headmtx.RUnlock()
 
-	// We don't count the span covered by head blocks towards the
-	// retention time as it generally makes up a fraction of it.
-	if len(db.blocks)-len(db.heads) == 0 {
+	if lenp == 0 {
 		return false, nil
 	}
 
-	last := db.blocks[len(db.blocks)-len(db.heads)-1]
+	last := db.blocks[lenp-1]
 	mint := last.Meta().MaxTime - int64(db.opts.RetentionDuration)
 
 	return retentionCutoff(db.dir, mint)
@@ -670,7 +672,7 @@ func (db *DB) cut(mint int64) (HeadBlock, error) {
 		return nil, err
 	}
 
-	db.blocks = append(db.blocks, newHead)
+	db.blocks = append(db.blocks, newHead) // TODO(fabxc): this is a race!
 	db.heads = append(db.heads, newHead)
 
 	select {

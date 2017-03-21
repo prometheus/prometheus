@@ -19,7 +19,7 @@ import (
 
 var (
 	// ErrNotFound is returned if a looked up resource was not found.
-	ErrNotFound = fmt.Errorf("not found")
+	ErrNotFound = errors.Errorf("not found")
 
 	// ErrOutOfOrderSample is returned if an appended sample has a
 	// timestamp larger than the most recent sample.
@@ -571,6 +571,10 @@ func (h *headBlock) remapPostings(p Postings) Postings {
 	sort.Slice(ep, func(i, j int) bool {
 		return labels.Compare(h.series[i].lset, h.series[j].lset) < 0
 	})
+	// TODO(fabxc): this is a race! have to either rlock head through entire
+	// query or make access to h.series atomic. Potentially reference sub Slice
+	// in querier?
+
 	return newListPostings(ep)
 }
 
