@@ -35,14 +35,15 @@
 // idea to log simple values without formatting them. This practice allows
 // the chosen logger to encode values in the most appropriate way.
 //
-// Log Context
+// Contextual Loggers
 //
-// A log context stores keyvals that it includes in all log events. Building
-// appropriate log contexts reduces repetition and aids consistency in the
-// resulting log output. We can use a context to improve the RunTask example.
+// A contextual logger stores keyvals that it includes in all log events.
+// Building appropriate contextual loggers reduces repetition and aids
+// consistency in the resulting log output. With and WithPrefix add context to
+// a logger. We can use With to improve the RunTask example.
 //
 //    func RunTask(task Task, logger log.Logger) string {
-//        logger = log.NewContext(logger).With("taskID", task.ID)
+//        logger = log.With(logger, "taskID", task.ID)
 //        logger.Log("event", "starting task")
 //        ...
 //        taskHelper(task.Cmd, logger)
@@ -51,19 +52,18 @@
 //    }
 //
 // The improved version emits the same log events as the original for the
-// first and last calls to Log. The call to taskHelper highlights that a
-// context may be passed as a logger to other functions. Each log event
-// created by the called function will include the task.ID even though the
-// function does not have access to that value. Using log contexts this way
-// simplifies producing log output that enables tracing the life cycle of
-// individual tasks. (See the Context example for the full code of the
-// above snippet.)
+// first and last calls to Log. Passing the contextual logger to taskHelper
+// enables each log event created by taskHelper to include the task.ID even
+// though taskHelper does not have access to that value. Using contextual
+// loggers this way simplifies producing log output that enables tracing the
+// life cycle of individual tasks. (See the Contextual example for the full
+// code of the above snippet.)
 //
-// Dynamic Context Values
+// Dynamic Contextual Values
 //
-// A Valuer function stored in a log context generates a new value each time
-// the context logs an event. The Valuer example demonstrates how this
-// feature works.
+// A Valuer function stored in a contextual logger generates a new value each
+// time an event is logged. The Valuer example demonstrates how this feature
+// works.
 //
 // Valuers provide the basis for consistently logging timestamps and source
 // code location. The log package defines several valuers for that purpose.
@@ -72,7 +72,7 @@
 // entries contain a timestamp and source location looks like this:
 //
 //    logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
-//    logger = log.NewContext(logger).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+//    logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 //
 // Concurrent Safety
 //
@@ -90,4 +90,27 @@
 // handled atomically within the wrapped logger, but it typically serializes
 // both the formatting and output logic. Use a SyncLogger if the formatting
 // logger may perform multiple writes per log event.
+//
+// Error Handling
+//
+// This package relies on the practice of wrapping or decorating loggers with
+// other loggers to provide composable pieces of functionality. It also means
+// that Logger.Log must return an error because some
+// implementations—especially those that output log data to an io.Writer—may
+// encounter errors that cannot be handled locally. This in turn means that
+// Loggers that wrap other loggers should return errors from the wrapped
+// logger up the stack.
+//
+// Fortunately, the decorator pattern also provides a way to avoid the
+// necessity to check for errors every time an application calls Logger.Log.
+// An application required to panic whenever its Logger encounters
+// an error could initialize its logger as follows.
+//
+//    fmtlogger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+//    logger := log.LoggerFunc(func(keyvals ...interface{}) error {
+//        if err := fmtlogger.Log(keyvals...); err != nil {
+//            panic(err)
+//        }
+//        return nil
+//    })
 package log

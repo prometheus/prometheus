@@ -1,20 +1,22 @@
 # package log
 
 `package log` provides a minimal interface for structured logging in services.
-It may be wrapped to encode conventions, enforce type-safety, provide leveled logging, and so on.
-It can be used for both typical application log events, and log-structured data streams.
+It may be wrapped to encode conventions, enforce type-safety, provide leveled
+logging, and so on. It can be used for both typical application log events,
+and log-structured data streams.
 
 ## Structured logging
 
-Structured logging is, basically, conceding to the reality that logs are _data_,
- and warrant some level of schematic rigor.
-Using a stricter, key/value-oriented message format for our logs,
- containing contextual and semantic information,
- makes it much easier to get insight into the operational activity of the systems we build.
-Consequently, `package log` is of the strong belief that
- "[the benefits of structured logging outweigh the minimal effort involved](https://www.thoughtworks.com/radar/techniques/structured-logging)".
+Structured logging is, basically, conceding to the reality that logs are
+_data_, and warrant some level of schematic rigor. Using a stricter,
+key/value-oriented message format for our logs, containing contextual and
+semantic information, makes it much easier to get insight into the
+operational activity of the systems we build. Consequently, `package log` is
+of the strong belief that "[the benefits of structured logging outweigh the
+minimal effort involved](https://www.thoughtworks.com/radar/techniques/structured-logging)".
 
-Migrating from unstructured to structured logging is probably a lot easier than you'd expect.
+Migrating from unstructured to structured logging is probably a lot easier
+than you'd expect.
 
 ```go
 // Unstructured
@@ -37,17 +39,17 @@ logger.Log("question", "what is the meaning of life?", "answer", 42)
 // question="what is the meaning of life?" answer=42
 ```
 
-### Log contexts
+### Contextual Loggers
 
 ```go
 func main() {
 	var logger log.Logger
 	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	logger = log.NewContext(logger).With("instance_id", 123)
+	logger = log.With(logger, "instance_id", 123)
 
 	logger.Log("msg", "starting")
-	NewWorker(log.NewContext(logger).With("component", "worker")).Run()
-	NewSlacker(log.NewContext(logger).With("component", "slacker")).Run()
+	NewWorker(log.With(logger, "component", "worker")).Run()
+	NewSlacker(log.With(logger, "component", "slacker")).Run()
 }
 
 // Output:
@@ -77,9 +79,8 @@ func main() {
 // {"msg":"I sure like pie","ts":"2016/01/01 12:34:56"}
 ```
 
-Or, if, for legacy reasons,
- you need to pipe all of your logging through the stdlib log package,
- you can redirect Go kit logger to the stdlib logger.
+Or, if, for legacy reasons, you need to pipe all of your logging through the
+stdlib log package, you can redirect Go kit logger to the stdlib logger.
 
 ```go
 logger := kitlog.NewLogfmtLogger(kitlog.StdlibWriter{})
@@ -94,7 +95,7 @@ logger.Log("legacy", true, "msg", "at least it's something")
 ```go
 var logger log.Logger
 logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-logger = log.NewContext(logger).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 
 logger.Log("msg", "hello")
 
@@ -104,7 +105,7 @@ logger.Log("msg", "hello")
 
 ## Supported output formats
 
-- [Logfmt](https://brandur.org/logfmt)
+- [Logfmt](https://brandur.org/logfmt) ([see also](https://blog.codeship.com/logfmt-a-log-format-thats-easy-to-read-and-write))
 - JSON
 
 ## Enhancements
@@ -117,27 +118,25 @@ type Logger interface {
 }
 ```
 
-This interface, and its supporting code like [log.Context](https://godoc.org/github.com/go-kit/kit/log#Context),
- is the product of much iteration and evaluation.
-For more details on the evolution of the Logger interface,
- see [The Hunt for a Logger Interface](http://go-talks.appspot.com/github.com/ChrisHines/talks/structured-logging/structured-logging.slide#1),
- a talk by [Chris Hines](https://github.com/ChrisHines).
+This interface, and its supporting code like is the product of much iteration
+and evaluation. For more details on the evolution of the Logger interface,
+see [The Hunt for a Logger Interface](http://go-talks.appspot.com/github.com/ChrisHines/talks/structured-logging/structured-logging.slide#1),
+a talk by [Chris Hines](https://github.com/ChrisHines).
 Also, please see
- [#63](https://github.com/go-kit/kit/issues/63),
- [#76](https://github.com/go-kit/kit/pull/76),
- [#131](https://github.com/go-kit/kit/issues/131),
- [#157](https://github.com/go-kit/kit/pull/157),
- [#164](https://github.com/go-kit/kit/issues/164), and
- [#252](https://github.com/go-kit/kit/pull/252)
- to review historical conversations about package log and the Logger interface.
+[#63](https://github.com/go-kit/kit/issues/63),
+[#76](https://github.com/go-kit/kit/pull/76),
+[#131](https://github.com/go-kit/kit/issues/131),
+[#157](https://github.com/go-kit/kit/pull/157),
+[#164](https://github.com/go-kit/kit/issues/164), and
+[#252](https://github.com/go-kit/kit/pull/252)
+to review historical conversations about package log and the Logger interface.
 
 Value-add packages and suggestions,
- like improvements to [the leveled logger](https://godoc.org/github.com/go-kit/kit/log/levels),
- are of course welcome.
-Good proposals should
+like improvements to [the leveled logger](https://godoc.org/github.com/go-kit/kit/log/level),
+are of course welcome. Good proposals should
 
-- Be composable with [log.Context](https://godoc.org/github.com/go-kit/kit/log#Context),
-- Not break the behavior of [log.Caller](https://godoc.org/github.com/go-kit/kit/log#Caller) in any wrapped context, and
+- Be composable with [contextual loggers](https://godoc.org/github.com/go-kit/kit/log#With),
+- Not break the behavior of [log.Caller](https://godoc.org/github.com/go-kit/kit/log#Caller) in any wrapped contextual loggers, and
 - Be friendly to packages that accept only an unadorned log.Logger.
 
 ## Benchmarks & comparisons

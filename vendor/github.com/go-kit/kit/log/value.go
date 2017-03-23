@@ -6,9 +6,9 @@ import (
 	"github.com/go-stack/stack"
 )
 
-// A Valuer generates a log value. When passed to Context.With in a value
-// element (odd indexes), it represents a dynamic value which is re-evaluated
-// with each log event.
+// A Valuer generates a log value. When passed to With or WithPrefix in a
+// value element (odd indexes), it represents a dynamic value which is re-
+// evaluated with each log event.
 type Valuer func() interface{}
 
 // bindValues replaces all value elements (odd indexes) containing a Valuer
@@ -39,16 +39,6 @@ func Timestamp(t func() time.Time) Valuer {
 	return func() interface{} { return t() }
 }
 
-var (
-	// DefaultTimestamp is a Valuer that returns the current wallclock time,
-	// respecting time zones, when bound.
-	DefaultTimestamp Valuer = func() interface{} { return time.Now().Format(time.RFC3339) }
-
-	// DefaultTimestampUTC is a Valuer that returns the current time in UTC
-	// when bound.
-	DefaultTimestampUTC Valuer = func() interface{} { return time.Now().UTC().Format(time.RFC3339) }
-)
-
 // Caller returns a Valuer that returns a file and line from a specified depth
 // in the callstack. Users will probably want to use DefaultCaller.
 func Caller(depth int) Valuer {
@@ -56,6 +46,18 @@ func Caller(depth int) Valuer {
 }
 
 var (
+	// DefaultTimestamp is a Valuer that returns the current wallclock time,
+	// respecting time zones, when bound.
+	DefaultTimestamp = Valuer(func() interface{} {
+		return time.Now().Format(time.RFC3339Nano)
+	})
+
+	// DefaultTimestampUTC is a Valuer that returns the current time in UTC
+	// when bound.
+	DefaultTimestampUTC = Valuer(func() interface{} {
+		return time.Now().UTC().Format(time.RFC3339Nano)
+	})
+
 	// DefaultCaller is a Valuer that returns the file and line where the Log
 	// method was invoked. It can only be used with log.With.
 	DefaultCaller = Caller(3)
