@@ -141,10 +141,10 @@ func (c *compactor) match(bs []*BlockMeta) bool {
 	return uint64(bs[len(bs)-1].MaxTime-bs[0].MinTime) <= c.opts.maxBlockRange
 }
 
-var entropy = rand.New(rand.NewSource(time.Now().UnixNano()))
-
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	m0 := blocks[0].Meta()
+
+	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	res.Sequence = m0.Sequence
 	res.MinTime = m0.MinTime
@@ -257,10 +257,6 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 		all, err := b.Index().Postings("", "")
 		if err != nil {
 			return nil, err
-		}
-		// TODO(fabxc): find more transparent way of handling this.
-		if hb, ok := b.(*headBlock); ok {
-			all = hb.remapPostings(all)
 		}
 		s := newCompactionSeriesSet(b.Index(), b.Chunks(), all)
 

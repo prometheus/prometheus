@@ -61,6 +61,15 @@ const (
 	walSegmentSizeBytes = 256 * 1024 * 1024 // 256 MB
 )
 
+// The table gets initialized with sync.Once but may still cause a race
+// with any other use of the crc32 package anywhere. Thus we initialize it
+// before.
+var castagnoliTable *crc32.Table
+
+func init() {
+	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+}
+
 // OpenWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenWAL(dir string, logger log.Logger, flushInterval time.Duration) (*WAL, error) {
@@ -84,7 +93,7 @@ func OpenWAL(dir string, logger log.Logger, flushInterval time.Duration) (*WAL, 
 		donec:         make(chan struct{}),
 		stopc:         make(chan struct{}),
 		segmentSize:   walSegmentSizeBytes,
-		crc32:         crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+		crc32:         crc32.New(castagnoliTable),
 	}
 	if err := w.initSegments(); err != nil {
 		return nil, err
@@ -214,6 +223,7 @@ func (w *WAL) tail() *os.File {
 	return w.files[len(w.files)-1]
 }
 
+// Sync flushes the changes to disk.
 func (w *WAL) Sync() error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()

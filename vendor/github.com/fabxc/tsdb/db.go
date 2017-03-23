@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,6 +99,7 @@ type DB struct {
 
 	// Mutex that must be held when modifying just the head blocks
 	// or the general layout.
+	// Must never be held when acquiring a blocks's mutex!
 	headmtx sync.RWMutex
 	heads   []HeadBlock
 
@@ -154,7 +156,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	if l == nil {
 		l = log.NewLogfmtLogger(os.Stdout)
-		l = log.NewContext(l).With("ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+		l = log.With(l, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
 	}
 
 	if opts == nil {
@@ -232,16 +234,17 @@ func (db *DB) retentionCutoff() (bool, error) {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
 
+	// We only consider the already persisted blocks. Head blocks generally
+	// only account for a fraction of the total data.
 	db.headmtx.RLock()
-	defer db.headmtx.RUnlock()
+	lenp := len(db.blocks) - len(db.heads)
+	db.headmtx.RUnlock()
 
-	// We don't count the span covered by head blocks towards the
-	// retention time as it generally makes up a fraction of it.
-	if len(db.blocks)-len(db.heads) == 0 {
+	if lenp == 0 {
 		return false, nil
 	}
 
-	last := db.blocks[len(db.blocks)-len(db.heads)-1]
+	last := db.blocks[lenp-1]
 	mint := last.Meta().MaxTime - int64(db.opts.RetentionDuration)
 
 	return retentionCutoff(db.dir, mint)
@@ -283,6 +286,7 @@ func (db *DB) compact() (changes bool, err error) {
 			return changes, errors.Wrap(err, "persist head block")
 		}
 		changes = true
+		runtime.GC()
 	}
 
 	// Check for compactions of multiple blocks.
@@ -290,6 +294,9 @@ func (db *DB) compact() (changes bool, err error) {
 		plans, err := db.compactor.Plan(db.dir)
 		if err != nil {
 			return changes, errors.Wrap(err, "plan compaction")
+		}
+		if len(plans) == 0 {
+			break
 		}
 
 		select {
@@ -307,10 +314,7 @@ func (db *DB) compact() (changes bool, err error) {
 				return changes, errors.Wrapf(err, "compact %s", p)
 			}
 			changes = true
-		}
-		// If we didn't compact anything, there's nothing left to do.
-		if len(plans) == 0 {
-			break
+			runtime.GC()
 		}
 	}
 
@@ -362,7 +366,7 @@ func (db *DB) seqBlock(i int) (Block, bool) {
 
 func (db *DB) reloadBlocks() error {
 	var cs []io.Closer
-	defer closeAll(cs...)
+	defer func() { closeAll(cs...) }()
 
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
@@ -419,7 +423,7 @@ func (db *DB) reloadBlocks() error {
 	// Close all blocks that we no longer need. They are closed after returning all
 	// locks to avoid questionable locking order.
 	for _, b := range db.blocks {
-		if nb := seqBlocks[b.Meta().Sequence]; nb != b {
+		if nb, ok := seqBlocks[b.Meta().Sequence]; !ok || nb != b {
 			cs = append(cs, b)
 		}
 	}
@@ -670,7 +674,7 @@ func (db *DB) cut(mint int64) (HeadBlock, error) {
 		return nil, err
 	}
 
-	db.blocks = append(db.blocks, newHead)
+	db.blocks = append(db.blocks, newHead) // TODO(fabxc): this is a race!
 	db.heads = append(db.heads, newHead)
 
 	select {

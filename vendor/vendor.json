@@ -368,10 +368,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "8wTICzej/k4pCcYtSw+fmD6oZZE=",
+			"checksumSHA1": "L4bnnz4uVgDueUvcTKkZJ+IqPbw=",
 			"path": "github.com/fabxc/tsdb",
-			"revision": "2ef3682560a31bd03f0ba70eb6ec509512ad0de8",
-			"revisionTime": "2017-03-20T10:37:06Z"
+			"revision": "70909ca8ad875aa6f01e1801d185b3f3bab2fda3",
+			"revisionTime": "2017-03-21T11:21:02Z"
 		},
 		{
 			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
@@ -399,10 +399,10 @@
 			"revisionTime": "2016-08-27T06:11:18Z"
 		},
 		{
-			"checksumSHA1": "7Ta13bcuAlF1esPxSPljmpsSUwc=",
+			"checksumSHA1": "ZSRtnAM/vH1sl0jxr4HztYI/4vs=",
 			"path": "github.com/go-kit/kit/log",
-			"revision": "3db037d8577b40174b37b73b62469aa9363020f6",
-			"revisionTime": "2017-01-10T08:27:22Z"
+			"revision": "04dd4f741c6e76cc170a4d7913f4c625952e6f58",
+			"revisionTime": "2017-03-20T09:05:36Z"
 		},
 		{
 			"checksumSHA1": "KxX/Drph+byPXBFIXaCZaCOAnrU=",
