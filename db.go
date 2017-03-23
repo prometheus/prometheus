@@ -366,7 +366,7 @@ func (db *DB) seqBlock(i int) (Block, bool) {
 
 func (db *DB) reloadBlocks() error {
 	var cs []io.Closer
-	defer closeAll(cs...)
+	defer func() { closeAll(cs...) }()
 
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
@@ -423,7 +423,7 @@ func (db *DB) reloadBlocks() error {
 	// Close all blocks that we no longer need. They are closed after returning all
 	// locks to avoid questionable locking order.
 	for _, b := range db.blocks {
-		if nb := seqBlocks[b.Meta().Sequence]; nb != b {
+		if nb, ok := seqBlocks[b.Meta().Sequence]; !ok || nb != b {
 			cs = append(cs, b)
 		}
 	}
