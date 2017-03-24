@@ -100,6 +100,8 @@ func (c *Client) Store(samples model.Samples) error {
 		return err
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.0.1")
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -146,6 +148,8 @@ func (c *Client) Read(ctx context.Context, from, through model.Time, matchers me
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %v", err)
 	}
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.0.1")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
