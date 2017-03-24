@@ -587,6 +587,11 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	return s
 }
 
+type sample struct {
+	t int64
+	v float64
+}
+
 type memSeries struct {
 	mtx sync.RWMutex
 
