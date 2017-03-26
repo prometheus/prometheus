@@ -698,20 +698,11 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 		return nil, errors.Wrapf(errInvalidFlag, "section at %d", off)
 	}
 
-	// TODO(fabxc): just read into memory as an intermediate solution.
-	// Add iterator over serialized data.
-	var l []uint32
-
-	for len(b) > 0 {
-		if len(b) < 4 {
-			return nil, errors.Wrap(errInvalidSize, "plain postings entry")
-		}
-		l = append(l, binary.BigEndian.Uint32(b[:4]))
-
-		b = b[4:]
+	// Add iterator over the bytes.
+	if len(b)%4 != 0 {
+		return nil, errors.Wrap(errInvalidSize, "plain postings entry")
 	}
-
-	return &listPostings{list: l, idx: -1}, nil
+	return newBytePostings(b), nil
 }
 
 type stringTuples struct {
