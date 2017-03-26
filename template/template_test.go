@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
@@ -165,6 +166,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "Aa Bb CC",
 		},
 		{
+			// toUpper.
+			text:   "{{ \"aa bb CC\" | toUpper }}",
+			output: "AA BB CC",
+		},
+		{
+			// toLower.
+			text:   "{{ \"aA bB CC\" | toLower }}",
+			output: "aa bb cc",
+		},
+		{
 			// Match.
 			text:   "{{ match \"a+\" \"aa\" }} {{ match \"a+\" \"b\" }}",
 			output: "true false",
@@ -172,12 +183,12 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// graphLink.
 			text:   "{{ graphLink \"up\" }}",
-			output: "/graph#%5B%7B%22expr%22%3A%22up%22%2C%22tab%22%3A0%7D%5D",
+			output: "/graph?g0.expr=up&g0.tab=0",
 		},
 		{
 			// tableLink.
 			text:   "{{ tableLink \"up\" }}",
-			output: "/graph#%5B%7B%22expr%22%3A%22up%22%2C%22tab%22%3A1%7D%5D",
+			output: "/graph?g0.expr=up&g0.tab=1",
 		},
 		{
 			// tmpl.
@@ -210,7 +221,7 @@ func TestTemplateExpansion(t *testing.T) {
 	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(s.text, "test", s.input, time, engine, "")
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, time, engine, "")
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {

@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -26,11 +27,13 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/index"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -42,21 +45,46 @@ var cfg = struct {
 	printVersion bool
 	configFile   string
 
-	storage     local.MemorySeriesStorageOptions
-	notifier    notifier.Options
-	queryEngine promql.EngineOptions
-	web         web.Options
-	remote      remote.Options
+	storage            local.MemorySeriesStorageOptions
+	localStorageEngine string
+	notifier           notifier.Options
+	notifierTimeout    time.Duration
+	queryEngine        promql.EngineOptions
+	web                web.Options
 
-	prometheusURL string
-	influxdbURL   string
-}{}
+	alertmanagerURLs stringset
+	prometheusURL    string
+}{
+	alertmanagerURLs: stringset{},
+}
+
+// Value type for flags that are now unused, but which are kept around to
+// fulfill 1.0 stability guarantees.
+type unusedFlag struct {
+	name  string
+	value string
+	help  string
+}
+
+func (f *unusedFlag) Set(v string) error {
+	f.value = v
+	log.Warnf("Flag %q is unused, but set to %q! See the flag's help message: %s", f.name, f.value, f.help)
+	return nil
+}
+
+func (f unusedFlag) String() string {
+	return f.value
+}
+
+func registerUnusedFlags(fs *flag.FlagSet, help string, flags []string) {
+	for _, name := range flags {
+		fs.Var(&unusedFlag{name: name, help: help}, name, help)
+	}
+}
 
 func init() {
-	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
-	flag.CommandLine.Usage = usage
-
-	cfg.fs = flag.CommandLine
+	cfg.fs = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	cfg.fs.Usage = usage
 
 	// Set additional defaults.
 	cfg.storage.SyncStrategy = local.Adaptive
@@ -75,9 +103,21 @@ func init() {
 		&cfg.web.ListenAddress, "web.listen-address", ":9090",
 		"Address to listen on for the web interface, API, and telemetry.",
 	)
+	cfg.fs.DurationVar(
+		&cfg.web.ReadTimeout, "web.read-timeout", 30*time.Second,
+		"Maximum duration before timing out read of the request, and closing idle connections.",
+	)
+	cfg.fs.IntVar(
+		&cfg.web.MaxConnections, "web.max-connections", 512,
+		"Maximum number of simultaneous connections.",
+	)
 	cfg.fs.StringVar(
 		&cfg.prometheusURL, "web.external-url", "",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
+	)
+	cfg.fs.StringVar(
+		&cfg.web.RoutePrefix, "web.route-prefix", "",
+		"Prefix for the internal routes of web endpoints. Defaults to path of -web.external-url.",
 	)
 	cfg.fs.StringVar(
 		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
@@ -142,7 +182,7 @@ func init() {
 		"If set, a crash recovery will perform checks on each series file. This might take a very long time.",
 	)
 	cfg.fs.Var(
-		&local.DefaultChunkEncoding, "storage.local.chunk-encoding-version",
+		&chunk.DefaultEncoding, "storage.local.chunk-encoding-version",
 		"Which chunk encoding version to use for newly created chunks. Currently supported is 0 (delta encoding), 1 (double-delta encoding), and 2 (double-delta encoding with variable bit-width).",
 	)
 	// Index cache sizes.
@@ -162,56 +202,40 @@ func init() {
 		&index.LabelPairFingerprintsCacheSize, "storage.local.index-cache-size.label-pair-to-fingerprints", index.LabelPairFingerprintsCacheSize,
 		"The size in bytes for the label pair to fingerprints index cache.",
 	)
+	cfg.fs.IntVar(
+		&cfg.storage.NumMutexes, "storage.local.num-fingerprint-mutexes", 4096,
+		"The number of mutexes used for fingerprint locking.",
+	)
+	cfg.fs.StringVar(
+		&cfg.localStorageEngine, "storage.local.engine", "persisted",
+		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
+	)
 
-	// Remote storage.
-	cfg.fs.StringVar(
-		&cfg.remote.GraphiteAddress, "storage.remote.graphite-address", "",
-		"The host:port of the remote Graphite server to send samples to. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.GraphiteTransport, "storage.remote.graphite-transport", "tcp",
-		"Transport protocol to use to communicate with Graphite. 'tcp', if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.GraphitePrefix, "storage.remote.graphite-prefix", "",
-		"The prefix to prepend to all metrics exported to Graphite. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.OpentsdbURL, "storage.remote.opentsdb-url", "",
-		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.influxdbURL, "storage.remote.influxdb-url", "",
-		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbRetentionPolicy, "storage.remote.influxdb.retention-policy", "default",
-		"The InfluxDB retention policy to use.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbUsername, "storage.remote.influxdb.username", "",
-		"The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.",
-	)
-	cfg.fs.StringVar(
-		&cfg.remote.InfluxdbDatabase, "storage.remote.influxdb.database", "prometheus",
-		"The name of the database to use for storing samples in InfluxDB.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.remote.StorageTimeout, "storage.remote.timeout", 30*time.Second,
-		"The timeout to use when sending samples to the remote storage.",
-	)
+	// Unused flags for removed remote storage code.
+	const remoteStorageFlagsHelp = "WARNING: THIS FLAG IS UNUSED! Built-in support for InfluxDB, Graphite, and OpenTSDB has been removed. Use Prometheus's generic remote write feature for building remote storage integrations. See https://prometheus.io/docs/operating/configuration/#<remote_write>"
+	registerUnusedFlags(cfg.fs, remoteStorageFlagsHelp, []string{
+		"storage.remote.graphite-address",
+		"storage.remote.graphite-transport",
+		"storage.remote.graphite-prefix",
+		"storage.remote.opentsdb-url",
+		"storage.remote.influxdb-url",
+		"storage.remote.influxdb.retention-policy",
+		"storage.remote.influxdb.username",
+		"storage.remote.influxdb.database",
+		"storage.remote.timeout",
+	})
 
 	// Alertmanager.
-	cfg.fs.StringVar(
-		&cfg.notifier.AlertmanagerURL, "alertmanager.url", "",
-		"The URL of the alert manager to send notifications to.",
+	cfg.fs.Var(
+		&cfg.alertmanagerURLs, "alertmanager.url",
+		"Comma-separated list of Alertmanager URLs to send notifications to.",
 	)
 	cfg.fs.IntVar(
 		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
 		"The capacity of the queue for pending alert manager notifications.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.notifier.Timeout, "alertmanager.timeout", 10*time.Second,
+		&cfg.notifierTimeout, "alertmanager.timeout", 10*time.Second,
 		"Alert manager HTTP API timeout.",
 	)
 
@@ -228,28 +252,42 @@ func init() {
 		&cfg.queryEngine.MaxConcurrentQueries, "query.max-concurrency", 20,
 		"Maximum number of queries executed concurrently.",
 	)
+
+	// Flags from the log package have to be added explicitly to our custom flag set.
+	log.AddFlags(cfg.fs)
 }
 
 func parse(args []string) error {
 	err := cfg.fs.Parse(args)
-	if err != nil {
+	if err != nil || len(cfg.fs.Args()) != 0 {
 		if err != flag.ErrHelp {
 			log.Errorf("Invalid command line arguments. Help: %s -h", os.Args[0])
 		}
+		if err == nil {
+			err = fmt.Errorf("Non-flag argument on command line: %q", cfg.fs.Args()[0])
+		}
 		return err
+	}
+
+	if promql.StalenessDelta < 0 {
+		return fmt.Errorf("negative staleness delta: %s", promql.StalenessDelta)
 	}
 
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
-	if err := parseInfluxdbURL(); err != nil {
-		return err
+	// Default -web.route-prefix to path of -web.external-url.
+	if cfg.web.RoutePrefix == "" {
+		cfg.web.RoutePrefix = cfg.web.ExternalURL.Path
 	}
-	if err := validateAlertmanagerURL(); err != nil {
-		return err
-	}
+	// RoutePrefix must always be at least '/'.
+	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
-	cfg.remote.InfluxdbPassword = os.Getenv("INFLUXDB_PW")
+	for u := range cfg.alertmanagerURLs {
+		if err := validateAlertmanagerURL(u); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -285,39 +323,58 @@ func parsePrometheusURL() error {
 	return nil
 }
 
-func parseInfluxdbURL() error {
-	if cfg.influxdbURL == "" {
+func validateAlertmanagerURL(u string) error {
+	if u == "" {
 		return nil
 	}
-
-	if ok := govalidator.IsURL(cfg.influxdbURL); !ok {
-		return fmt.Errorf("invalid InfluxDB URL: %s", cfg.influxdbURL)
+	if ok := govalidator.IsURL(u); !ok {
+		return fmt.Errorf("invalid Alertmanager URL: %s", u)
 	}
-
-	url, err := url.Parse(cfg.influxdbURL)
-	if err != nil {
-		return err
-	}
-
-	cfg.remote.InfluxdbURL = url
-	return nil
-}
-
-func validateAlertmanagerURL() error {
-	if cfg.notifier.AlertmanagerURL == "" {
-		return nil
-	}
-	if ok := govalidator.IsURL(cfg.notifier.AlertmanagerURL); !ok {
-		return fmt.Errorf("invalid Alertmanager URL: %s", cfg.notifier.AlertmanagerURL)
-	}
-	url, err := url.Parse(cfg.notifier.AlertmanagerURL)
+	url, err := url.Parse(u)
 	if err != nil {
 		return err
 	}
 	if url.Scheme == "" {
-		return fmt.Errorf("missing scheme in Alertmanager URL: %s", cfg.notifier.AlertmanagerURL)
+		return fmt.Errorf("missing scheme in Alertmanager URL: %s", u)
 	}
 	return nil
+}
+
+func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error) {
+	u, err := url.Parse(us)
+	if err != nil {
+		return nil, err
+	}
+	acfg := &config.AlertmanagerConfig{
+		Scheme:     u.Scheme,
+		PathPrefix: u.Path,
+		Timeout:    cfg.notifierTimeout,
+		ServiceDiscoveryConfig: config.ServiceDiscoveryConfig{
+			StaticConfigs: []*config.TargetGroup{
+				{
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel: model.LabelValue(u.Host),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if u.User != nil {
+		acfg.HTTPClientConfig = config.HTTPClientConfig{
+			BasicAuth: &config.BasicAuth{
+				Username: u.User.Username(),
+			},
+		}
+
+		if password, isSet := u.User.Password(); isSet {
+			acfg.HTTPClientConfig.BasicAuth.Password = password
+		}
+	}
+
+	return acfg, nil
 }
 
 var helpTmpl = `
@@ -379,4 +436,29 @@ func usage() {
 	if err := t.Execute(os.Stdout, groups); err != nil {
 		panic(fmt.Errorf("error executing usage template: %s", err))
 	}
+}
+
+type stringset map[string]struct{}
+
+func (ss stringset) Set(s string) error {
+	for _, v := range strings.Split(s, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			ss[v] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (ss stringset) String() string {
+	return strings.Join(ss.slice(), ",")
+}
+
+func (ss stringset) slice() []string {
+	slice := make([]string, 0, len(ss))
+	for k := range ss {
+		slice = append(slice, k)
+	}
+	sort.Strings(slice)
+	return slice
 }

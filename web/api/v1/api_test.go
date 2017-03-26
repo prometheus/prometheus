@@ -30,7 +30,20 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/retrieval"
 )
+
+type targetRetrieverFunc func() []*retrieval.Target
+
+func (f targetRetrieverFunc) Targets() []*retrieval.Target {
+	return f()
+}
+
+type alertmanagerRetrieverFunc func() []string
+
+func (f alertmanagerRetrieverFunc) Alertmanagers() []string {
+	return f()
+}
 
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
@@ -49,10 +62,31 @@ func TestEndpoints(t *testing.T) {
 	}
 
 	now := model.Now()
+
+	tr := targetRetrieverFunc(func() []*retrieval.Target {
+		return []*retrieval.Target{
+			retrieval.NewTarget(
+				model.LabelSet{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+				},
+				model.LabelSet{},
+				url.Values{},
+			),
+		}
+	})
+
+	ar := alertmanagerRetrieverFunc(func() []string {
+		return []string{"http://alertmanager.example.com:8080/api/v1/alerts"}
+	})
+
 	api := &API{
-		Storage:     suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
-		now:         func() model.Time { return now },
+		Storage:               suite.Storage(),
+		QueryEngine:           suite.QueryEngine(),
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		now: func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -187,6 +221,39 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
+		// Invalid step.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"1"},
+				"end":   []string{"2"},
+				"step":  []string{"0"},
+			},
+			errType: errorBadData,
+		},
+		// Start after end.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"2"},
+				"end":   []string{"1"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		// Start overflows int64 internally.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"148966367200.372"},
+				"end":   []string{"1489667272.372"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
 		{
 			endpoint: api.labelValues,
 			params: map[string]string{
@@ -263,6 +330,86 @@ func TestEndpoints(t *testing.T) {
 				},
 			},
 		},
+		// Start and end before series starts.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-2"},
+				"end":     []string{"-1"},
+			},
+			response: []model.Metric{},
+		},
+		// Start and end after series ends.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"100000"},
+				"end":     []string{"100001"},
+			},
+			response: []model.Metric{},
+		},
+		// Start before series starts, end after series ends.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-1"},
+				"end":     []string{"100000"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start and end within series.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"1"},
+				"end":     []string{"100"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start within series, end after.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"1"},
+				"end":     []string{"100000"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
+		// Start before series, end within series.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`test_metric2`},
+				"start":   []string{"-1"},
+				"end":     []string{"1"},
+			},
+			response: []model.Metric{
+				{
+					"__name__": "test_metric2",
+					"foo":      "boo",
+				},
+			},
+		},
 		// Missing match[] query params in series requests.
 		{
 			endpoint: api.series,
@@ -302,6 +449,27 @@ func TestEndpoints(t *testing.T) {
 			response: struct {
 				NumDeleted int `json:"numDeleted"`
 			}{2},
+		}, {
+			endpoint: api.targets,
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					&Target{
+						DiscoveredLabels: model.LabelSet{},
+						Labels:           model.LabelSet{},
+						ScrapeURL:        "http://example.com:8080/metrics",
+						Health:           "unknown",
+					},
+				},
+			},
+		}, {
+			endpoint: api.alertmanagers,
+			response: &AlertmanagerDiscovery{
+				ActiveAlertmanagers: []*AlertmanagerTarget{
+					&AlertmanagerTarget{
+						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
+			},
 		},
 	}
 
@@ -437,11 +605,16 @@ func TestParseTime(t *testing.T) {
 			input: "30s",
 			fail:  true,
 		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
+			fail:  true,
+		}, {
 			input:  "123",
 			result: time.Unix(123, 0),
-		}, {
-			input:  "123.123",
-			result: time.Unix(123, 123000000),
 		}, {
 			input:  "123.123",
 			result: time.Unix(123, 123000000),
@@ -487,6 +660,14 @@ func TestParseDuration(t *testing.T) {
 			input: "2015-06-03T13:21:58.555Z",
 			fail:  true,
 		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
+			fail:  true,
+		}, {
 			input:  "123",
 			result: 123 * time.Second,
 		}, {
@@ -518,7 +699,7 @@ func TestParseDuration(t *testing.T) {
 }
 
 func TestOptionsMethod(t *testing.T) {
-	r := route.New()
+	r := route.New(nil)
 	api := &API{}
 	api.Register(r)
 

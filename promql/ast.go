@@ -101,11 +101,12 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a vector.
 type AggregateExpr struct {
-	Op              itemType         // The used aggregation operation.
-	Expr            Expr             // The vector expression over which is aggregated.
-	Grouping        model.LabelNames // The labels by which to group the vector.
-	Without         bool             // Whether to drop the given labels rather than keep them.
-	KeepExtraLabels bool             // Whether to keep extra labels common among result elements.
+	Op               itemType         // The used aggregation operation.
+	Expr             Expr             // The vector expression over which is aggregated.
+	Param            Expr             // Parameter used by some aggregators.
+	Grouping         model.LabelNames // The labels by which to group the vector.
+	Without          bool             // Whether to drop the given labels rather than keep them.
+	KeepCommonLabels bool             // Whether to keep common labels among result elements.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -134,9 +135,8 @@ type MatrixSelector struct {
 	Offset        time.Duration
 	LabelMatchers metric.LabelMatchers
 
-	// The series iterators are populated at query analysis time.
-	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]metric.Metric
+	// The series iterators are populated at query preparation time.
+	iterators []local.SeriesIterator
 }
 
 // NumberLiteral represents a number.
@@ -168,9 +168,8 @@ type VectorSelector struct {
 	Offset        time.Duration
 	LabelMatchers metric.LabelMatchers
 
-	// The series iterators are populated at query analysis time.
-	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]metric.Metric
+	// The series iterators are populated at query preparation time.
+	iterators []local.SeriesIterator
 }
 
 func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
@@ -228,11 +227,14 @@ func (vmc VectorMatchCardinality) String() string {
 type VectorMatching struct {
 	// The cardinality of the two vectors.
 	Card VectorMatchCardinality
-	// On contains the labels which define equality of a pair
-	// of elements from the vectors.
-	On model.LabelNames
+	// MatchingLabels contains the labels which define equality of a pair of
+	// elements from the vectors.
+	MatchingLabels model.LabelNames
+	// On includes the given label names from matching,
+	// rather than excluding them.
+	On bool
 	// Include contains additional labels that should be included in
-	// the result from the side with the higher cardinality.
+	// the result from the side with the lower cardinality.
 	Include model.LabelNames
 }
 

@@ -21,3 +21,8 @@ th.job_header {
 .cursor-pointer {
   cursor: pointer;
 }
+
+.tooltip-inner {
+  max-width: none;
+  text-align: left;
+}

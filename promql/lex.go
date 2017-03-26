@@ -56,6 +56,12 @@ func (i itemType) isOperator() bool { return i > operatorsStart && i < operators
 // Returns false otherwise
 func (i itemType) isAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
+// isAggregator returns true if the item is an aggregator that takes a parameter.
+// Returns false otherwise
+func (i itemType) isAggregatorWithParam() bool {
+	return i == itemTopK || i == itemBottomK || i == itemCountValues || i == itemQuantile
+}
+
 // isKeyword returns true if the item corresponds to a keyword.
 // Returns false otherwise.
 func (i itemType) isKeyword() bool { return i > keywordsStart && i < keywordsEnd }
@@ -80,8 +86,7 @@ func (i itemType) isSetOperator() bool {
 	return false
 }
 
-// Constants for operator precedence in expressions.
-//
+// LowestPrec is a constant for operator precedence in expressions.
 const LowestPrec = 0 // Non-operators.
 
 // Precedence returns the operator precedence of the binary
@@ -99,9 +104,21 @@ func (i itemType) precedence() int {
 		return 4
 	case itemMUL, itemDIV, itemMOD:
 		return 5
+	case itemPOW:
+		return 6
 	default:
 		return LowestPrec
 	}
+}
+
+func (i itemType) isRightAssociative() bool {
+	switch i {
+	case itemPOW:
+		return true
+	default:
+		return false
+	}
+
 }
 
 type itemType int
@@ -145,6 +162,7 @@ const (
 	itemGTR
 	itemEQLRegex
 	itemNEQRegex
+	itemPOW
 	operatorsEnd
 
 	aggregatorsStart
@@ -156,6 +174,10 @@ const (
 	itemMax
 	itemStddev
 	itemStdvar
+	itemTopK
+	itemBottomK
+	itemCountValues
+	itemQuantile
 	aggregatorsEnd
 
 	keywordsStart
@@ -170,6 +192,7 @@ const (
 	itemBy
 	itemWithout
 	itemOn
+	itemIgnoring
 	itemGroupLeft
 	itemGroupRight
 	itemBool
@@ -183,29 +206,33 @@ var key = map[string]itemType{
 	"unless": itemLUnless,
 
 	// Aggregators.
-	"sum":    itemSum,
-	"avg":    itemAvg,
-	"count":  itemCount,
-	"min":    itemMin,
-	"max":    itemMax,
-	"stddev": itemStddev,
-	"stdvar": itemStdvar,
+	"sum":          itemSum,
+	"avg":          itemAvg,
+	"count":        itemCount,
+	"min":          itemMin,
+	"max":          itemMax,
+	"stddev":       itemStddev,
+	"stdvar":       itemStdvar,
+	"topk":         itemTopK,
+	"bottomk":      itemBottomK,
+	"count_values": itemCountValues,
+	"quantile":     itemQuantile,
 
 	// Keywords.
-	"alert":         itemAlert,
-	"if":            itemIf,
-	"for":           itemFor,
-	"labels":        itemLabels,
-	"annotations":   itemAnnotations,
-	"offset":        itemOffset,
-	"by":            itemBy,
-	"without":       itemWithout,
-	"keeping_extra": itemKeepCommon,
-	"keep_common":   itemKeepCommon,
-	"on":            itemOn,
-	"group_left":    itemGroupLeft,
-	"group_right":   itemGroupRight,
-	"bool":          itemBool,
+	"alert":       itemAlert,
+	"if":          itemIf,
+	"for":         itemFor,
+	"labels":      itemLabels,
+	"annotations": itemAnnotations,
+	"offset":      itemOffset,
+	"by":          itemBy,
+	"without":     itemWithout,
+	"keep_common": itemKeepCommon,
+	"on":          itemOn,
+	"ignoring":    itemIgnoring,
+	"group_left":  itemGroupLeft,
+	"group_right": itemGroupRight,
+	"bool":        itemBool,
 }
 
 // These are the default string representations for common items. It does not
@@ -236,6 +263,7 @@ var itemTypeStr = map[itemType]string{
 	itemGTR:      ">",
 	itemEQLRegex: "=~",
 	itemNEQRegex: "!~",
+	itemPOW:      "^",
 }
 
 func init() {
@@ -451,6 +479,8 @@ func lexStatements(l *lexer) stateFn {
 		l.emit(itemADD)
 	case r == '-':
 		l.emit(itemSUB)
+	case r == '^':
+		l.emit(itemPOW)
 	case r == '=':
 		if t := l.peek(); t == '=' {
 			l.next()
@@ -858,4 +888,17 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+// isLabel reports whether the string can be used as label.
+func isLabel(s string) bool {
+	if len(s) == 0 || !isAlpha(rune(s[0])) {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !isAlphaNumeric(c) {
+			return false
+		}
+	}
+	return true
 }

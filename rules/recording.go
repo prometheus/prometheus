@@ -18,6 +18,7 @@ import (
 	"html/template"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -44,15 +45,15 @@ func (rule RecordingRule) Name() string {
 	return rule.name
 }
 
-// eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) eval(timestamp model.Time, engine *promql.Engine) (model.Vector, error) {
+// Eval evaluates the rule and then overrides the metric names and labels accordingly.
+func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ string) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		result = query.Exec()
+		result = query.Exec(ctx)
 		vector model.Vector
 	)
 	if result.Err != nil {
@@ -106,7 +107,7 @@ func (rule RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
 		pathPrefix+strutil.GraphLinkForExpression(rule.name),
 		rule.name,
-		rule.labels,
+		template.HTMLEscapeString(rule.labels.String()),
 		pathPrefix+strutil.GraphLinkForExpression(ruleExpr),
-		ruleExpr))
+		template.HTMLEscapeString(ruleExpr)))
 }

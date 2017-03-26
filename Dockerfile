@@ -1,18 +1,13 @@
-FROM        sdurrheimer/alpine-glibc
+FROM        quay.io/prometheus/busybox:latest
 MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
 
-WORKDIR /gopath/src/github.com/prometheus/prometheus
-COPY    . /gopath/src/github.com/prometheus/prometheus
+COPY prometheus                             /bin/prometheus
+COPY promtool                               /bin/promtool
+COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
+COPY console_libraries/                     /usr/share/prometheus/console_libraries/
+COPY consoles/                              /usr/share/prometheus/consoles/
 
-RUN apk add --update -t build-deps tar openssl git make bash \
-    && source ./scripts/goenv.sh /go /gopath \
-    && make build \
-    && cp prometheus promtool /bin/ \
-    && mkdir -p /etc/prometheus \
-    && mv ./documentation/examples/prometheus.yml /etc/prometheus/prometheus.yml \
-    && mv ./console_libraries/ ./consoles/ /etc/prometheus/ \
-    && apk del --purge build-deps \
-    && rm -rf /go /gopath /var/cache/apk/*
+RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
 
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]
@@ -20,5 +15,5 @@ WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "-config.file=/etc/prometheus/prometheus.yml", \
              "-storage.local.path=/prometheus", \
-             "-web.console.libraries=/etc/prometheus/console_libraries", \
-             "-web.console.templates=/etc/prometheus/consoles" ]
+             "-web.console.libraries=/usr/share/prometheus/console_libraries", \
+             "-web.console.templates=/usr/share/prometheus/consoles" ]

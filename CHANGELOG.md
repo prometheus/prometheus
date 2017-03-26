@@ -1,6 +1,252 @@
-## 0.18.0rc1 / 2016-04-07
+## 1.5.2 / 2017-02-10
+
+* [BUGFIX] Fix series corruption in a special case of series maintenance where
+  the minimum series-file-shrink-ratio kicks in.
+* [BUGFIX] Fix two panic conditions both related to processing a series
+  scheduled to be quarantined.
+* [ENHANCEMENT] Binaries built with Go1.7.5.
+
+## 1.5.1 / 2017-02-07
+
+* [BUGFIX] Don't lose fully persisted memory series during checkpointing.
+* [BUGFIX] Fix intermittently failing relabeling.
+* [BUGFIX] Make `-storage.local.series-file-shrink-ratio` work.
+* [BUGFIX] Remove race condition from TestLoop.
+
+## 1.5.0 / 2017-01-23
+
+* [CHANGE] Use lexicographic order to sort alerts by name.
+* [FEATURE] Add Joyent Triton discovery.
+* [FEATURE] Add scrape targets and alertmanager targets API.
+* [FEATURE] Add various persistence related metrics.
+* [FEATURE] Add various query engine related metrics.
+* [FEATURE] Add ability to limit scrape samples, and related metrics.
+* [FEATURE] Add labeldrop and labelkeep relabelling actions.
+* [FEATURE] Display current working directory on status-page.
+* [ENHANCEMENT] Strictly use ServiceAccount for in cluster configuration on Kubernetes.
+* [ENHANCEMENT] Various performance and memory-management improvements.
+* [BUGFIX] Fix basic auth for alertmanagers configured via flag.
+* [BUGFIX] Don't panic on decoding corrupt data.
+* [BUGFIX] Ignore dotfiles in data directory.
+* [BUGFIX] Abort on intermediate federation errors.
+
+## 1.4.1 / 2016-11-28
+
+* [BUGFIX] Fix Consul service discovery
+
+## 1.4.0 / 2016-11-25
+
+* [FEATURE] Allow configuring Alertmanagers via service discovery
+* [FEATURE] Display used Alertmanagers on runtime page in the UI
+* [FEATURE] Support profiles in AWS EC2 service discovery configuration
+* [ENHANCEMENT] Remove duplicated logging of Kubernetes client errors
+* [ENHANCEMENT] Add metrics about Kubernetes service discovery
+* [BUGFIX] Update alert annotations on re-evaluation
+* [BUGFIX] Fix export of group modifier in PromQL queries
+* [BUGFIX] Remove potential deadlocks in several service discovery implementations
+* [BUGFIX] Use proper float64 modulo in PromQL `%` binary operations
+* [BUGFIX] Fix crash bug in Kubernetes service discovery
+
+## 1.3.1 / 2016-11-04
+
+This bug-fix release pulls in the fixes from the 1.2.3 release.
+
+* [BUGFIX] Correctly handle empty Regex entry in relabel config.
+* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
+* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
+* [ENHANCEMENT] Improved DNS error reporting.
+
+## 1.2.3 / 2016-11-04
+
+Note that this release is chronologically after 1.3.0.
+
+* [BUGFIX] Correctly handle end time before start time in range queries.
+* [BUGFIX] Error on negative `-storage.staleness-delta`
+* [BUGFIX] Correctly handle empty Regex entry in relabel config.
+* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
+* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
+* [ENHANCEMENT] Improved DNS error reporting.
+
+## 1.3.0 / 2016-11-01
+
+This is a breaking change to the Kubernetes service discovery.
+
+* [CHANGE] Rework Kubernetes SD.
+* [FEATURE] Add support for interpolating `target_label`.
+* [FEATURE] Add GCE metadata as Prometheus meta labels.
+* [ENHANCEMENT] Add EC2 SD metrics.
+* [ENHANCEMENT] Add Azure SD metrics.
+* [ENHANCEMENT] Add fuzzy search to `/graph` textarea.
+* [ENHANCEMENT] Always show instance labels on target page.
+* [BUGFIX] Validate query end time is not before start time.
+* [BUGFIX] Error on negative `-storage.staleness-delta`
+
+## 1.2.2 / 2016-10-30
+
+* [BUGFIX] Correctly handle on() in alerts.
+* [BUGFIX] UI: Deal properly with aborted requests.
+* [BUGFIX] UI: Decode URL query parameters properly.
+* [BUGFIX] Storage: Deal better with data corruption (non-monotonic timestamps).
+* [BUGFIX] Remote storage: Re-add accidentally removed timeout flag.
+* [BUGFIX] Updated a number of vendored packages to pick up upstream bug fixes.
+
+## 1.2.1 / 2016-10-10
+
+* [BUGFIX] Count chunk evictions properly so that the server doesn't
+  assume it runs out of memory and subsequencly throttles ingestion.
+* [BUGFIX] Use Go1.7.1 for prebuilt binaries to fix issues on MacOS Sierra.
+
+## 1.2.0 / 2016-10-07
+
+* [FEATURE] Cleaner encoding of query parameters in `/graph` URLs.
+* [FEATURE] PromQL: Add `minute()` function.
+* [FEATURE] Add GCE service discovery.
+* [FEATURE] Allow any valid UTF-8 string as job name.
+* [FEATURE] Allow disabling local storage.
+* [FEATURE] EC2 service discovery: Expose `ec2_instance_state`.
+* [ENHANCEMENT] Various performance improvements in local storage.
+* [BUGFIX] Zookeeper service discovery: Remove deleted nodes.
+* [BUGFIX] Zookeeper service discovery: Resync state after Zookeeper failure.
+* [BUGFIX] Remove JSON from HTTP Accept header.
+* [BUGFIX] Fix flag validation of Alertmanager URL.
+* [BUGFIX] Fix race condition on shutdown.
+* [BUGFIX] Do not fail Consul discovery on Prometheus startup when Consul
+  is down.
+* [BUGFIX] Handle NaN in `changes()` correctly.
+* [CHANGE] **Experimental** remote write path: Remove use of gRPC.
+* [CHANGE] **Experimental** remote write path: Configuration via config file
+  rather than command line flags.
+* [FEATURE] **Experimental** remote write path: Add HTTP basic auth and TLS.
+* [FEATURE] **Experimental** remote write path: Support for relabelling.
+
+## 1.1.3 / 2016-09-16
+
+* [ENHANCEMENT] Use golang-builder base image for tests in CircleCI.
+* [ENHANCEMENT] Added unit tests for federation.
+* [BUGFIX] Correctly de-dup metric families in federation output.
+
+## 1.1.2 / 2016-09-08
+
+* [BUGFIX] Allow label names that coincide with keywords.
+
+## 1.1.1 / 2016-09-07
+
+* [BUGFIX] Fix IPv6 escaping in service discovery integrations
+* [BUGFIX] Fix default scrape port assignment for IPv6
+
+## 1.1.0 / 2016-09-03
+
+* [FEATURE] Add `quantile` and `quantile_over_time`.
+* [FEATURE] Add `stddev_over_time` and `stdvar_over_time`.
+* [FEATURE] Add various time and date functions.
+* [FEATURE] Added `toUpper` and `toLower` formatting to templates.
+* [FEATURE] Allow relabeling of alerts.
+* [FEATURE] Allow URLs in targets defined via a JSON file.
+* [FEATURE] Add idelta function.
+* [FEATURE] 'Remove graph' button on the /graph page.
+* [FEATURE] Kubernetes SD: Add node name and host IP to pod discovery.
+* [FEATURE] New remote storage write path. EXPERIMENTAL!
+* [ENHANCEMENT] Improve time-series index lookups.
+* [ENHANCEMENT] Forbid invalid relabel configurations.
+* [ENHANCEMENT] Improved various tests.
+* [ENHANCEMENT] Add crash recovery metric 'started_dirty'.
+* [ENHANCEMENT] Fix (and simplify) populating series iterators.
+* [ENHANCEMENT] Add job link on target page.
+* [ENHANCEMENT] Message on empty Alerts page.
+* [ENHANCEMENT] Various internal code refactorings and clean-ups.
+* [ENHANCEMENT] Various improvements in the build system.
+* [BUGFIX] Catch errors when unmarshalling delta/doubleDelta encoded chunks.
+* [BUGFIX] Fix data race in lexer and lexer test.
+* [BUGFIX] Trim stray whitespace from bearer token file.
+* [BUGFIX] Avoid divide-by-zero panic on query_range?step=0.
+* [BUGFIX] Detect invalid rule files at startup.
+* [BUGFIX] Fix counter reset treatment in PromQL.
+* [BUGFIX] Fix rule HTML escaping issues.
+* [BUGFIX] Remove internal labels from alerts sent to AM.
+
+## 1.0.2 / 2016-08-24
+
+* [BUGFIX] Clean up old targets after config reload.
+
+## 1.0.1 / 2016-07-21
+
+* [BUGFIX] Exit with error on non-flag command-line arguments.
+* [BUGFIX] Update example console templates to new HTTP API.
+* [BUGFIX] Re-add logging flags.
+
+## 1.0.0 / 2016-07-18
+
+* [CHANGE] Remove deprecated query language keywords
+* [CHANGE] Change Kubernetes SD to require specifying Kubernetes role
+* [CHANGE] Use service address in Consul SD if available
+* [CHANGE] Standardize all Prometheus internal metrics to second units
+* [CHANGE] Remove unversioned legacy HTTP API
+* [CHANGE] Remove legacy ingestion of JSON metric format
+* [CHANGE] Remove deprecated `target_groups` configuration
+* [FEATURE] Add binary power operation to PromQL
+* [FEATURE] Add `count_values` aggregator
+* [FEATURE] Add `-web.route-prefix` flag
+* [FEATURE] Allow `on()`, `by()`, `without()` in PromQL with empty label sets
+* [ENHANCEMENT] Make `topk/bottomk` query functions aggregators
+* [BUGFIX] Fix annotations in alert rule printing
+* [BUGFIX] Expand alert templating at evaluation time
+* [BUGFIX] Fix edge case handling in crash recovery
+* [BUGFIX] Hide testing package flags from help output
+
+## 0.20.0 / 2016-06-15
+
+This release contains multiple breaking changes to the configuration schema.
+
+* [FEATURE] Allow configuring multiple Alertmanagers
+* [FEATURE] Add server name to TLS configuration
+* [FEATURE] Add labels for all node addresses and discover node port if available in Kubernetes SD
+* [ENHANCEMENT] More meaningful configuration errors
+* [ENHANCEMENT] Round scraping timestamps to milliseconds in web UI
+* [ENHANCEMENT] Make number of storage fingerprint locks configurable
+* [BUGFIX] Fix date parsing in console template graphs
+* [BUGFIX] Fix static console files in Docker images
+* [BUGFIX] Fix console JS XHR requests for IE11
+* [BUGFIX] Add missing path prefix in new status page
+* [CHANGE] Rename `target_groups` to `static_configs` in config files
+* [CHANGE] Rename `names` to `files` in file SD configuration
+* [CHANGE] Remove kubelet port config option in Kubernetes SD configuration
+
+## 0.19.3 / 2016-06-14
+
+* [BUGFIX] Handle Marathon apps with zero ports
+* [BUGFIX] Fix startup panic in retrieval layer
+
+## 0.19.2 / 2016-05-29
+
+* [BUGFIX] Correctly handle `GROUP_LEFT` and `GROUP_RIGHT` without labels in
+  string representation of expressions and in rules.
+* [BUGFIX] Use `-web.external-url` for new status endpoints.
+
+## 0.19.1 / 2016-05-25
+
+* [BUGFIX] Handle service discovery panic affecting Kubernetes SD
+* [BUGFIX] Fix web UI display issue in some browsers
+
+## 0.19.0 / 2016-05-24
+
+This version contains a breaking change to the query language. Please read
+the documentation on the grouping behavior of vector matching:
+
+https://prometheus.io/docs/querying/operators/#vector-matching
+
+* [FEATURE] Add experimental Microsoft Azure service discovery
+* [FEATURE] Add `ignoring` modifier for binary operations
+* [FEATURE] Add pod discovery to Kubernetes service discovery
+* [CHANGE] Vector matching takes grouping labels from one-side
+* [ENHANCEMENT] Support time range on /api/v1/series endpoint
+* [ENHANCEMENT] Partition status page into individual pages
+* [BUGFIX] Fix issue of hanging target scrapes
+
+## 0.18.0 / 2016-04-18
 
 * [BUGFIX] Fix operator precedence in PromQL
+* [BUGFIX] Never drop still open head chunk
+* [BUGFIX] Fix missing 'keep_common' when printing AST node
 * [CHANGE/BUGFIX] Target identity considers path and parameters additionally to host and port
 * [CHANGE] Rename metric `prometheus_local_storage_invalid_preload_requests_total` to `prometheus_local_storage_non_existent_series_matches_total`
 * [CHANGE] Support for old alerting rule syntax dropped

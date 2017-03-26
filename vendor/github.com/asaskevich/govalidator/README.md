@@ -1,7 +1,6 @@
 govalidator
 ===========
-[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/asaskevich/govalidator?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![GoDoc](https://godoc.org/github.com/asaskevich/govalidator?status.png)](https://godoc.org/github.com/asaskevich/govalidator) [![Coverage Status](https://img.shields.io/coveralls/asaskevich/govalidator.svg)](https://coveralls.io/r/asaskevich/govalidator?branch=master) [![views](https://sourcegraph.com/api/repos/github.com/asaskevich/govalidator/.counters/views.png)](https://sourcegraph.com/github.com/asaskevich/govalidator)
-[![wercker status](https://app.wercker.com/status/1ec990b09ea86c910d5f08b0e02c6043/s "wercker status")](https://app.wercker.com/project/bykey/1ec990b09ea86c910d5f08b0e02c6043)
+[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/asaskevich/govalidator?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![GoDoc](https://godoc.org/github.com/asaskevich/govalidator?status.png)](https://godoc.org/github.com/asaskevich/govalidator) [![Coverage Status](https://img.shields.io/coveralls/asaskevich/govalidator.svg)](https://coveralls.io/r/asaskevich/govalidator?branch=master) [![wercker status](https://app.wercker.com/status/1ec990b09ea86c910d5f08b0e02c6043/s "wercker status")](https://app.wercker.com/project/bykey/1ec990b09ea86c910d5f08b0e02c6043)
 [![Build Status](https://travis-ci.org/asaskevich/govalidator.svg?branch=master)](https://travis-ci.org/asaskevich/govalidator)
 
 A package of validators and sanitizers for strings, structs and collections. Based on [validator.js](https://github.com/chriso/validator.js).
@@ -12,18 +11,84 @@ Type the following command in your terminal:
 
 	go get github.com/asaskevich/govalidator
 
+or you can get specified release of the package with `gopkg.in`:
+
+	go get gopkg.in/asaskevich/govalidator.v4
+
 After it the package is ready to use.
+
 
 #### Import package in your project
 Add following line in your `*.go` file:
 ```go
 import "github.com/asaskevich/govalidator"
 ```
-If you unhappy to use long `govalidator`, you can do something like this:
+If you are unhappy to use long `govalidator`, you can do something like this:
 ```go
 import (
-	valid "github.com/asaskevich/govalidator"
+  valid "github.com/asaskevich/govalidator"
 )
+```
+
+#### Activate behavior to require all fields have a validation tag by default
+`SetFieldsRequiredByDefault` causes validation to fail when struct fields do not include validations or are not explicitly marked as exempt (using `valid:"-"` or `valid:"email,optional"`). A good place to activate this is a package init function or the main() function.
+
+```go
+import "github.com/asaskevich/govalidator"
+
+func init() {
+  govalidator.SetFieldsRequiredByDefault(true)
+}
+```
+
+Here's some code to explain it:
+```go
+// this struct definition will fail govalidator.ValidateStruct() (and the field values do not matter):
+type exampleStruct struct {
+  Name  string ``
+  Email string `valid:"email"`
+}
+
+// this, however, will only fail when Email is empty or an invalid email address:
+type exampleStruct2 struct {
+  Name  string `valid:"-"`
+  Email string `valid:"email"`
+}
+
+// lastly, this will only fail when Email is an invalid email address but not when it's empty:
+type exampleStruct2 struct {
+  Name  string `valid:"-"`
+  Email string `valid:"email,optional"`
+}
+```
+
+#### Recent breaking changes (see [#123](https://github.com/asaskevich/govalidator/pull/123))
+##### Custom validator function signature
+A context was added as the second parameter, for structs this is the object being validated – this makes dependent validation possible.
+```go
+import "github.com/asaskevich/govalidator"
+
+// old signature
+func(i interface{}) bool
+
+// new signature
+func(i interface{}, o interface{}) bool
+```
+
+##### Adding a custom validator
+This was changed to prevent data races when accessing custom validators.
+```go
+import "github.com/asaskevich/govalidator"
+
+// before
+govalidator.CustomTypeTagMap["customByteArrayValidator"] = CustomTypeValidator(func(i interface{}, o interface{}) bool {
+  // ...
+})
+
+// after
+govalidator.CustomTypeTagMap.Set("customByteArrayValidator", CustomTypeValidator(func(i interface{}, o interface{}) bool {
+  // ...
+}))
 ```
 
 #### List of functions:
@@ -42,6 +107,7 @@ func Filter(array []interface{}, iterator ConditionIterator) []interface{}
 func Find(array []interface{}, iterator ConditionIterator) interface{}
 func GetLine(s string, index int) (string, error)
 func GetLines(s string) []string
+func IsHost(s string) bool
 func InRange(value, left, right float64) bool
 func IsASCII(str string) bool
 func IsAlpha(str string) bool
@@ -50,6 +116,8 @@ func IsBase64(str string) bool
 func IsByteLength(str string, min, max int) bool
 func IsCreditCard(str string) bool
 func IsDataURI(str string) bool
+func IsDialString(str string) bool
+func IsDNSName(str string) bool
 func IsDivisibleBy(str, num string) bool
 func IsEmail(str string) bool
 func IsFilePath(str string) (bool, int)
@@ -80,6 +148,7 @@ func IsNonNegative(value float64) bool
 func IsNonPositive(value float64) bool
 func IsNull(str string) bool
 func IsNumeric(str string) bool
+func IsPort(str string) bool
 func IsPositive(value float64) bool
 func IsPrintableASCII(str string) bool
 func IsRGBcolor(str string) bool
@@ -146,7 +215,7 @@ type User struct {
 	LastName string
 }
 
-str, _ := govalidator.ToString(&User{"John", "Juan"})
+str := govalidator.ToString(&User{"John", "Juan"})
 println(str)
 ```
 ###### Each, Map, Filter, Count for slices
@@ -180,6 +249,8 @@ govalidator.TagMap["duck"] = govalidator.Validator(func(str string) bool {
 	return str == "duck"
 })
 ```
+For completely custom validators (interface-based), see below.
+
 Here is a list of available validators for struct fields (validator - used function):
 ```go
 "alpha":          IsAlpha,
@@ -188,12 +259,15 @@ Here is a list of available validators for struct fields (validator - used funct
 "base64":         IsBase64,
 "creditcard":     IsCreditCard,
 "datauri":        IsDataURI,
+"dialstring":     IsDialString,
+"dns":            IsDNSName,
 "email":          IsEmail,
 "float":          IsFloat,
 "fullwidth":      IsFullWidth,
 "halfwidth":      IsHalfWidth,
 "hexadecimal":    IsHexadecimal,
 "hexcolor":       IsHexcolor,
+"host":           IsHost,
 "int":            IsInt,
 "ip":             IsIP,
 "ipv4":           IsIPv4,
@@ -208,6 +282,7 @@ Here is a list of available validators for struct fields (validator - used funct
 "multibyte":      IsMultibyte,
 "null":           IsNull,
 "numeric":        IsNumeric,
+"port":           IsPort,
 "printableascii": IsPrintableASCII,
 "requri":         IsRequestURI,
 "requrl":         IsRequestURL,
@@ -264,6 +339,49 @@ println(result)
 println(govalidator.WhiteList("a3a43a5a4a3a2a23a4a5a4a3a4", "a-z") == "aaaaaaaaaaaa")
 ```
 
+###### Custom validation functions
+Custom validation using your own domain specific validators is also available - here's an example of how to use it:
+```go
+import "github.com/asaskevich/govalidator"
+
+type CustomByteArray [6]byte // custom types are supported and can be validated
+
+type StructWithCustomByteArray struct {
+  ID              CustomByteArray `valid:"customByteArrayValidator,customMinLengthValidator"` // multiple custom validators are possible as well and will be evaluated in sequence
+  Email           string          `valid:"email"`
+  CustomMinLength int             `valid:"-"`
+}
+
+govalidator.CustomTypeTagMap.Set("customByteArrayValidator", CustomTypeValidator(func(i interface{}, context interface{}) bool {
+  switch v := context.(type) { // you can type switch on the context interface being validated
+  case StructWithCustomByteArray:
+    // you can check and validate against some other field in the context,
+    // return early or not validate against the context at all – your choice
+  case SomeOtherType:
+    // ...
+  default:
+    // expecting some other type? Throw/panic here or continue
+  }
+
+  switch v := i.(type) { // type switch on the struct field being validated
+  case CustomByteArray:
+    for _, e := range v { // this validator checks that the byte array is not empty, i.e. not all zeroes
+      if e != 0 {
+        return true
+      }
+    }
+  }
+  return false
+}))
+govalidator.CustomTypeTagMap.Set("customMinLengthValidator", CustomTypeValidator(func(i interface{}, context interface{}) bool {
+  switch v := context.(type) { // this validates a field against the value in another field, i.e. dependent validation
+  case StructWithCustomByteArray:
+    return len(v.ID) >= v.CustomMinLength
+  }
+  return false
+}))
+```
+
 #### Notes
 Documentation is available here: [godoc.org](https://godoc.org/github.com/asaskevich/govalidator).
 Full information about code coverage is also available here: [govalidator on gocover.io](http://gocover.io/github.com/asaskevich/govalidator).
@@ -272,6 +390,7 @@ Full information about code coverage is also available here: [govalidator on goc
 If you do have a contribution for the package feel free to put up a Pull Request or open Issue.
 
 #### Special thanks to [contributors](https://github.com/asaskevich/govalidator/graphs/contributors)
+* [Daniel Lohse](https://github.com/annismckenzie)
 * [Attila Oláh](https://github.com/attilaolah)
 * [Daniel Korner](https://github.com/Dadie)
 * [Steven Wilkin](https://github.com/stevenwilkin)
@@ -280,6 +399,3 @@ If you do have a contribution for the package feel free to put up a Pull Request
 * [Nathan Davies](https://github.com/nathj07)
 * [Matt Sanford](https://github.com/mzsanford)
 * [Simon ccl1115](https://github.com/ccl1115)
-
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/asaskevich/govalidator/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
-

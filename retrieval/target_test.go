@@ -31,6 +31,10 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+const (
+	caCertPath = "testdata/ca.cer"
+)
+
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, model.LabelSet{"job": "some_job", "foo": "bar"})
 	want := model.LabelSet{
@@ -118,7 +122,7 @@ func TestTargetURL(t *testing.T) {
 	}
 
 	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
-		t.Fatalf("Expected URL %q but got %q", expectedURL, u)
+		t.Fatalf("Expected URL %q, but got %q", expectedURL.String(), u.String())
 	}
 }
 
@@ -147,11 +151,10 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
-		BearerToken:   "1234",
+	cfg := config.HTTPClientConfig{
+		BearerToken: "1234",
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,11 +178,10 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout:   model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,14 +204,13 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		BasicAuth: &config.BasicAuth{
 			Username: "user",
 			Password: "password123",
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,17 +229,16 @@ func TestNewHTTPCACert(t *testing.T) {
 			},
 		),
 	)
-	server.TLS = newTLSConfig(t)
+	server.TLS = newTLSConfig("server", t)
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
-			CAFile: "testdata/ca.cer",
+			CAFile: caCertPath,
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			},
 		),
 	)
-	tlsConfig := newTLSConfig(t)
+	tlsConfig := newTLSConfig("server", t)
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	tlsConfig.ClientCAs = tlsConfig.RootCAs
 	tlsConfig.BuildNameToCertificate()
@@ -265,15 +265,14 @@ func TestNewHTTPClientCert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
-			CAFile:   "testdata/ca.cer",
+			CAFile:   caCertPath,
 			CertFile: "testdata/client.cer",
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := newHTTPClient(cfg)
+	c, err := NewHTTPClient(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,19 +282,79 @@ func TestNewHTTPClientCert(t *testing.T) {
 	}
 }
 
-func newTLSConfig(t *testing.T) *tls.Config {
+func TestNewHTTPWithServerName(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+	server.TLS = newTLSConfig("servername", t)
+	server.StartTLS()
+	defer server.Close()
+
+	cfg := config.HTTPClientConfig{
+		TLSConfig: config.TLSConfig{
+			CAFile:     caCertPath,
+			ServerName: "prometheus.rocks",
+		},
+	}
+	c, err := NewHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHTTPWithBadServerName(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+	server.TLS = newTLSConfig("servername", t)
+	server.StartTLS()
+	defer server.Close()
+
+	cfg := config.HTTPClientConfig{
+		TLSConfig: config.TLSConfig{
+			CAFile:     caCertPath,
+			ServerName: "badname",
+		},
+	}
+	c, err := NewHTTPClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Get(server.URL)
+	if err == nil {
+		t.Fatal("Expected error, got nil.")
+	}
+}
+
+func newTLSConfig(certName string, t *testing.T) *tls.Config {
 	tlsConfig := &tls.Config{}
 	caCertPool := x509.NewCertPool()
-	caCert, err := ioutil.ReadFile("testdata/ca.cer")
+	caCert, err := ioutil.ReadFile(caCertPath)
 	if err != nil {
 		t.Fatalf("Couldn't set up TLS server: %v", err)
 	}
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig.RootCAs = caCertPool
 	tlsConfig.ServerName = "127.0.0.1"
-	cert, err := tls.LoadX509KeyPair("testdata/server.cer", "testdata/server.key")
+	certPath := fmt.Sprintf("testdata/%s.cer", certName)
+	keyPath := fmt.Sprintf("testdata/%s.key", certName)
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
-		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", "testdata/server.cer", "testdata/server.key", err)
+		t.Errorf("Unable to use specified server cert (%s) & key (%v): %s", certPath, keyPath, err)
 	}
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	tlsConfig.BuildNameToCertificate()
@@ -303,15 +362,14 @@ func newTLSConfig(t *testing.T) *tls.Config {
 }
 
 func TestNewClientWithBadTLSConfig(t *testing.T) {
-	cfg := &config.ScrapeConfig{
-		ScrapeTimeout: model.Duration(1 * time.Second),
+	cfg := config.HTTPClientConfig{
 		TLSConfig: config.TLSConfig{
 			CAFile:   "testdata/nonexistent_ca.cer",
 			CertFile: "testdata/nonexistent_client.cer",
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := newHTTPClient(cfg)
+	_, err := NewHTTPClient(cfg)
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}

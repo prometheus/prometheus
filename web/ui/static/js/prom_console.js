@@ -109,7 +109,7 @@ PromConsole.TimeControl = function() {
 
   this.durationElement.value = PromConsole.TimeControl.prototype.getHumanDuration(
     PromConsole.TimeControl._initialValues.duration);
-  if (PromConsole.TimeControl._initialValues.endTimeNow === undefined) {
+  if (!PromConsole.TimeControl._initialValues.endTimeNow) {
     this.endElement.value = PromConsole.TimeControl.prototype.getHumanDate(
       new Date(PromConsole.TimeControl._initialValues.endTime * 1000));
   }
@@ -138,10 +138,17 @@ PromConsole.TimeControl.prototype._setHash = function() {
 
 PromConsole.TimeControl._initialValues = function() {
   var hash = window.location.hash;
+  var values;
   if (hash.indexOf('#pctc') === 0) {
-    return JSON.parse(decodeURIComponent(hash.substring(5)));
+    values = JSON.parse(decodeURIComponent(hash.substring(5)));
+  } else {
+    values = {duration: 3600, endTime: 0};
   }
-  return {duration: 3600, endTime: new Date().getTime() / 1000, endTimeNow: true};
+  if (values.endTime == 0) {
+    values.endTime = new Date().getTime() / 1000;
+    values.endTimeNow = true;
+  }
+  return values;
 }();
 
 PromConsole.TimeControl.prototype.parseDuration = function(durationText) {
@@ -198,7 +205,8 @@ PromConsole.TimeControl.prototype.getEndDate = function() {
   if (this.endElement.value === '') {
     return null;
   }
-  return new Date(this.endElement.value).getTime();
+  var dateParts = this.endElement.value.split(/[- :]/)
+  return Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2], dateParts[3], dateParts[4]);
 };
 
 PromConsole.TimeControl.prototype.getOrSetEndDate = function() {
@@ -208,13 +216,13 @@ PromConsole.TimeControl.prototype.getOrSetEndDate = function() {
   }
   date = new Date();
   this.setEndDate(date);
-  return date;
+  return date.getTime();
 };
 
 PromConsole.TimeControl.prototype.getHumanDate = function(date) {
-  var hours = date.getHours() < 10 ? '0' + date.getHours() : date.getHours();
-  var minutes = date.getMinutes() < 10 ? '0' + date.getMinutes() : date.getMinutes();
-  return date.getFullYear() + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " +
+  var hours = date.getUTCHours() < 10 ? '0' + date.getUTCHours() : date.getUTCHours();
+  var minutes = date.getUTCMinutes() < 10 ? '0' + date.getUTCMinutes() : date.getUTCMinutes();
+  return date.getUTCFullYear() + "-" + (date.getUTCMonth()+1) + "-" + date.getUTCDate() + " " +
       hours + ":" + minutes;
 };
 
@@ -324,6 +332,9 @@ PromConsole.Graph = function(params) {
 
   this.params = params;
   this.rendered_data = null;
+  // Keep a reference so that further updates (e.g. annotations) can be made
+  // by the user in their templates.
+  this.rickshawGraph = null;
   PromConsole._graph_registry.push(this);
 
   /*
@@ -437,11 +448,11 @@ PromConsole.Graph.prototype._render = function(data) {
   // Get the data into the right format.
   var seriesLen = 0;
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].value.length; i++) {
+    for (var i = 0; i < data[e].data.result.length; i++) {
       series[seriesLen++] = {
-            data: data[e].value[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
+            data: data[e].data.result[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
             color: palette.color(),
-            name: self._escapeHTML(nameFuncs[e](data[e].value[i].metric)),
+            name: self._escapeHTML(nameFuncs[e](data[e].data.result[i].metric)),
       };
     }
   }
@@ -496,6 +507,8 @@ PromConsole.Graph.prototype._render = function(data) {
   xAxis.render();
   yAxis.render();
   graph.render();
+
+  this.rickshawGraph = graph;
 };
 
 PromConsole.Graph.prototype._clearGraph = function() {
@@ -505,9 +518,18 @@ PromConsole.Graph.prototype._clearGraph = function() {
   while (this.legendDiv.lastChild) {
     this.legendDiv.removeChild(this.legendDiv.lastChild);
   }
+  this.rickshawGraph = null;
 };
 
 PromConsole.Graph.prototype._xhrs = [];
+
+PromConsole.Graph.prototype.buildQueryUrl = function(expr) {
+  var p = this.params;
+  return PATH_PREFIX + "/api/v1/query_range?query=" +
+    encodeURIComponent(expr) +
+    "&step=" + p.duration / this.graphTd.offsetWidth +
+    "&start=" + (p.endTime - p.duration) + "&end=" + p.endTime;
+};
 
 PromConsole.Graph.prototype.dispatch = function() {
   for (var j = 0; j < this._xhrs.length; j++) {
@@ -518,9 +540,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   var pending_requests = this.params.expr.length;
   for (var i = 0; i < this.params.expr.length; ++i) {
     var endTime = this.params.endTime;
-    var url = PATH_PREFIX + "/api/query_range?expr=" + encodeURIComponent(this.params.expr[i]) +
-      "&step=" + this.params.duration / this.graphTd.offsetWidth + 
-      "&range=" + this.params.duration + "&end=" + endTime;
+    var url = this.buildQueryUrl(this.params.expr[i]);
     var xhr = new XMLHttpRequest();
     xhr.open('get', url, true);
     xhr.responseType = 'json';
@@ -543,6 +563,9 @@ PromConsole.Graph.prototype.dispatch = function() {
         return;
       }
       var data = xhr.response;
+      if (typeof data !== "object") {
+        data = JSON.parse(xhr.responseText);
+      }
       pending_requests -= 1;
       all_data[i] = data;
       if (pending_requests === 0) {
@@ -555,7 +578,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   }
 
   var loadingImg = document.createElement("img");
-  loadingImg.src = PATH_PREFIX + '/static/img/ajax-loader.gif';
+  loadingImg.src = PATH_PREFIX + '/static/img/ajax-loader.gif?v=' + BUILD_VERSION;
   loadingImg.alt = 'Loading...';
   loadingImg.className = 'prom_graph_loading';
   this.graphTd.appendChild(loadingImg);
@@ -592,12 +615,12 @@ PromConsole._chooseNameFunction = function(data) {
   // If only one label varies, use that value.
   var labelValues = {};
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].value.length; i++) {
-      for (var label in data[e].value[i].metric) {
+    for (var i = 0; i < data[e].data.result.length; i++) {
+      for (var label in data[e].data.result[i].metric) {
         if (!(label in labelValues)) {
           labelValues[label] = {};
         }
-        labelValues[label][data[e].value[i].metric[label]] = 1;
+        labelValues[label][data[e].data.result[i].metric[label]] = 1;
       }
     }
   }

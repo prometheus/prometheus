@@ -21,10 +21,10 @@ import (
 
 // tFile holds basic information about a table.
 type tFile struct {
-	file       storage.File
+	fd         storage.FileDesc
 	seekLeft   int32
-	size       uint64
-	imin, imax iKey
+	size       int64
+	imin, imax internalKey
 }
 
 // Returns true if given key is after largest key of this table.
@@ -48,9 +48,9 @@ func (t *tFile) consumeSeek() int32 {
 }
 
 // Creates new tFile.
-func newTableFile(file storage.File, size uint64, imin, imax iKey) *tFile {
+func newTableFile(fd storage.FileDesc, size int64, imin, imax internalKey) *tFile {
 	f := &tFile{
-		file: file,
+		fd:   fd,
 		size: size,
 		imin: imin,
 		imax: imax,
@@ -77,6 +77,10 @@ func newTableFile(file storage.File, size uint64, imin, imax iKey) *tFile {
 	return f
 }
 
+func tableFileFromRecord(r atRecord) *tFile {
+	return newTableFile(storage.FileDesc{storage.TypeTable, r.num}, r.size, r.imin, r.imax)
+}
+
 // tFiles hold multiple tFile.
 type tFiles []*tFile
 
@@ -89,7 +93,7 @@ func (tf tFiles) nums() string {
 		if i != 0 {
 			x += ", "
 		}
-		x += fmt.Sprint(f.file.Num())
+		x += fmt.Sprint(f.fd.Num)
 	}
 	x += " ]"
 	return x
@@ -101,7 +105,7 @@ func (tf tFiles) lessByKey(icmp *iComparer, i, j int) bool {
 	a, b := tf[i], tf[j]
 	n := icmp.Compare(a.imin, b.imin)
 	if n == 0 {
-		return a.file.Num() < b.file.Num()
+		return a.fd.Num < b.fd.Num
 	}
 	return n < 0
 }
@@ -109,7 +113,7 @@ func (tf tFiles) lessByKey(icmp *iComparer, i, j int) bool {
 // Returns true if i file number is greater than j.
 // This used for sort by file number in descending order.
 func (tf tFiles) lessByNum(i, j int) bool {
-	return tf[i].file.Num() > tf[j].file.Num()
+	return tf[i].fd.Num > tf[j].fd.Num
 }
 
 // Sorts tables by key in ascending order.
@@ -123,7 +127,7 @@ func (tf tFiles) sortByNum() {
 }
 
 // Returns sum of all tables size.
-func (tf tFiles) size() (sum uint64) {
+func (tf tFiles) size() (sum int64) {
 	for _, t := range tf {
 		sum += t.size
 	}
@@ -132,7 +136,7 @@ func (tf tFiles) size() (sum uint64) {
 
 // Searches smallest index of tables whose its smallest
 // key is after or equal with given key.
-func (tf tFiles) searchMin(icmp *iComparer, ikey iKey) int {
+func (tf tFiles) searchMin(icmp *iComparer, ikey internalKey) int {
 	return sort.Search(len(tf), func(i int) bool {
 		return icmp.Compare(tf[i].imin, ikey) >= 0
 	})
@@ -140,7 +144,7 @@ func (tf tFiles) searchMin(icmp *iComparer, ikey iKey) int {
 
 // Searches smallest index of tables whose its largest
 // key is after or equal with given key.
-func (tf tFiles) searchMax(icmp *iComparer, ikey iKey) int {
+func (tf tFiles) searchMax(icmp *iComparer, ikey internalKey) int {
 	return sort.Search(len(tf), func(i int) bool {
 		return icmp.Compare(tf[i].imax, ikey) >= 0
 	})
@@ -162,7 +166,7 @@ func (tf tFiles) overlaps(icmp *iComparer, umin, umax []byte, unsorted bool) boo
 	i := 0
 	if len(umin) > 0 {
 		// Find the earliest possible internal key for min.
-		i = tf.searchMax(icmp, newIkey(umin, kMaxSeq, ktSeek))
+		i = tf.searchMax(icmp, makeInternalKey(nil, umin, keyMaxSeq, keyTypeSeek))
 	}
 	if i >= len(tf) {
 		// Beginning of range is after all files, so no overlap.
@@ -205,7 +209,7 @@ func (tf tFiles) getOverlaps(dst tFiles, icmp *iComparer, umin, umax []byte, ove
 }
 
 // Returns tables key range.
-func (tf tFiles) getRange(icmp *iComparer) (imin, imax iKey) {
+func (tf tFiles) getRange(icmp *iComparer) (imin, imax internalKey) {
 	for i, t := range tf {
 		if i == 0 {
 			imin, imax = t.imin, t.imax
@@ -227,10 +231,10 @@ func (tf tFiles) newIndexIterator(tops *tOps, icmp *iComparer, slice *util.Range
 	if slice != nil {
 		var start, limit int
 		if slice.Start != nil {
-			start = tf.searchMax(icmp, iKey(slice.Start))
+			start = tf.searchMax(icmp, internalKey(slice.Start))
 		}
 		if slice.Limit != nil {
-			limit = tf.searchMin(icmp, iKey(slice.Limit))
+			limit = tf.searchMin(icmp, internalKey(slice.Limit))
 		} else {
 			limit = tf.Len()
 		}
@@ -255,7 +259,7 @@ type tFilesArrayIndexer struct {
 }
 
 func (a *tFilesArrayIndexer) Search(key []byte) int {
-	return a.searchMax(a.icmp, iKey(key))
+	return a.searchMax(a.icmp, internalKey(key))
 }
 
 func (a *tFilesArrayIndexer) Get(i int) iterator.Iterator {
@@ -295,16 +299,16 @@ type tOps struct {
 
 // Creates an empty table and returns table writer.
 func (t *tOps) create() (*tWriter, error) {
-	file := t.s.getTableFile(t.s.allocFileNum())
-	fw, err := file.Create()
+	fd := storage.FileDesc{storage.TypeTable, t.s.allocFileNum()}
+	fw, err := t.s.stor.Create(fd)
 	if err != nil {
 		return nil, err
 	}
 	return &tWriter{
-		t:    t,
-		file: file,
-		w:    fw,
-		tw:   table.NewWriter(fw, t.s.o.Options),
+		t:  t,
+		fd: fd,
+		w:  fw,
+		tw: table.NewWriter(fw, t.s.o.Options),
 	}, nil
 }
 
@@ -340,21 +344,20 @@ func (t *tOps) createFrom(src iterator.Iterator) (f *tFile, n int, err error) {
 // Opens table. It returns a cache handle, which should
 // be released after use.
 func (t *tOps) open(f *tFile) (ch *cache.Handle, err error) {
-	num := f.file.Num()
-	ch = t.cache.Get(0, num, func() (size int, value cache.Value) {
+	ch = t.cache.Get(0, uint64(f.fd.Num), func() (size int, value cache.Value) {
 		var r storage.Reader
-		r, err = f.file.Open()
+		r, err = t.s.stor.Open(f.fd)
 		if err != nil {
 			return 0, nil
 		}
 
-		var bcache *cache.CacheGetter
+		var bcache *cache.NamespaceGetter
 		if t.bcache != nil {
-			bcache = &cache.CacheGetter{Cache: t.bcache, NS: num}
+			bcache = &cache.NamespaceGetter{Cache: t.bcache, NS: uint64(f.fd.Num)}
 		}
 
 		var tr *table.Reader
-		tr, err = table.NewReader(r, int64(f.size), storage.NewFileInfo(f.file), bcache, t.bpool, t.s.o.Options)
+		tr, err = table.NewReader(r, f.size, f.fd, bcache, t.bpool, t.s.o.Options)
 		if err != nil {
 			r.Close()
 			return 0, nil
@@ -390,14 +393,13 @@ func (t *tOps) findKey(f *tFile, key []byte, ro *opt.ReadOptions) (rkey []byte, 
 }
 
 // Returns approximate offset of the given key.
-func (t *tOps) offsetOf(f *tFile, key []byte) (offset uint64, err error) {
+func (t *tOps) offsetOf(f *tFile, key []byte) (offset int64, err error) {
 	ch, err := t.open(f)
 	if err != nil {
 		return
 	}
 	defer ch.Release()
-	offset_, err := ch.Value().(*table.Reader).OffsetOf(key)
-	return uint64(offset_), err
+	return ch.Value().(*table.Reader).OffsetOf(key)
 }
 
 // Creates an iterator from the given table.
@@ -414,15 +416,14 @@ func (t *tOps) newIterator(f *tFile, slice *util.Range, ro *opt.ReadOptions) ite
 // Removes table from persistent storage. It waits until
 // no one use the the table.
 func (t *tOps) remove(f *tFile) {
-	num := f.file.Num()
-	t.cache.Delete(0, num, func() {
-		if err := f.file.Remove(); err != nil {
-			t.s.logf("table@remove removing @%d %q", num, err)
+	t.cache.Delete(0, uint64(f.fd.Num), func() {
+		if err := t.s.stor.Remove(f.fd); err != nil {
+			t.s.logf("table@remove removing @%d %q", f.fd.Num, err)
 		} else {
-			t.s.logf("table@remove removed @%d", num)
+			t.s.logf("table@remove removed @%d", f.fd.Num)
 		}
 		if t.bcache != nil {
-			t.bcache.EvictNS(num)
+			t.bcache.EvictNS(uint64(f.fd.Num))
 		}
 	})
 }
@@ -433,7 +434,7 @@ func (t *tOps) close() {
 	t.bpool.Close()
 	t.cache.Close()
 	if t.bcache != nil {
-		t.bcache.Close()
+		t.bcache.CloseWeak()
 	}
 }
 
@@ -471,9 +472,9 @@ func newTableOps(s *session) *tOps {
 type tWriter struct {
 	t *tOps
 
-	file storage.File
-	w    storage.Writer
-	tw   *table.Writer
+	fd storage.FileDesc
+	w  storage.Writer
+	tw *table.Writer
 
 	first, last []byte
 }
@@ -513,16 +514,15 @@ func (w *tWriter) finish() (f *tFile, err error) {
 			return
 		}
 	}
-	f = newTableFile(w.file, uint64(w.tw.BytesLen()), iKey(w.first), iKey(w.last))
+	f = newTableFile(w.fd, int64(w.tw.BytesLen()), internalKey(w.first), internalKey(w.last))
 	return
 }
 
 // Drops the table.
 func (w *tWriter) drop() {
 	w.close()
-	w.file.Remove()
-	w.t.s.reuseFileNum(w.file.Num())
-	w.file = nil
+	w.t.s.stor.Remove(w.fd)
+	w.t.s.reuseFileNum(w.fd.Num)
 	w.tw = nil
 	w.first = nil
 	w.last = nil

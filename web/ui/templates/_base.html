@@ -3,14 +3,16 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Prometheus Time Series Collection and Processing Server</title>
-    <script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js"></script>
-    <script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"></script>
+    <link rel="shortcut icon" href="{{ pathPrefix }}/static/img/favicon.ico?v={{ buildVersion }}">
+    <script src="{{ pathPrefix }}/static/vendor/js/jquery.min.js?v={{ buildVersion }}"></script>
+    <script src="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js?v={{ buildVersion }}"></script>
 
-    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css">
-    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prometheus.css">
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css?v={{ buildVersion }}">
+    <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/prometheus.css?v={{ buildVersion }}">
 
     <script>
       var PATH_PREFIX = "{{ pathPrefix }}";
+      var BUILD_VERSION = "{{ buildVersion }}";
       $(function () {
         $('[data-toggle="tooltip"]').tooltip()
       })
@@ -39,7 +41,16 @@
             {{ end }}
             <li><a href="{{ pathPrefix }}/alerts">Alerts</a></li>
             <li><a href="{{ pathPrefix }}/graph">Graph</a></li>
-            <li><a href="{{ pathPrefix }}/status">Status</a></li>
+            <li class="dropdown">
+              <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Status <span class="caret"></span></a>
+              <ul class="dropdown-menu">
+                <li><a href="{{ pathPrefix }}/status">Runtime &amp; Build Information</a></li>
+                <li><a href="{{ pathPrefix }}/flags">Command-Line Flags</a></li>
+                <li><a href="{{ pathPrefix }}/config">Configuration</a></li>
+                <li><a href="{{ pathPrefix }}/rules">Rules</a></li>
+                <li><a href="{{ pathPrefix }}/targets">Targets</a></li>
+              </ul>
+            </li>
             <li>
               <a href="https://prometheus.io" target="_blank">Help</a>
             </li>

@@ -1,6 +1,6 @@
 {{define "head"}}
-  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/alerts.css">
-  <script src="{{ pathPrefix }}/static/js/alerts.js"></script>
+  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/alerts.css?v={{ buildVersion }}">
+  <script src="{{ pathPrefix }}/static/js/alerts.js?v={{ buildVersion }}"></script>
 {{end}}
 
 {{define "content"}}
@@ -26,7 +26,6 @@
               <th>State</th>
               <th>Active Since</th>
               <th>Value</th>
-              <th>Silence</th>
             </tr>
             {{range $activeAlerts}}
             <tr>
@@ -42,6 +41,12 @@
             {{end}}
           </table>
           {{end}}
+        </td>
+      </tr>
+    {{else}}
+      <tr class="alert_header">
+        <td>
+            No alerting rules defined
         </td>
       </tr>
     {{end}}

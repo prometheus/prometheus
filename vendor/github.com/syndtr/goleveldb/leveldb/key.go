@@ -11,132 +11,133 @@ import (
 	"fmt"
 
 	"github.com/syndtr/goleveldb/leveldb/errors"
+	"github.com/syndtr/goleveldb/leveldb/storage"
 )
 
-type ErrIkeyCorrupted struct {
+// ErrInternalKeyCorrupted records internal key corruption.
+type ErrInternalKeyCorrupted struct {
 	Ikey   []byte
 	Reason string
 }
 
-func (e *ErrIkeyCorrupted) Error() string {
-	return fmt.Sprintf("leveldb: iKey %q corrupted: %s", e.Ikey, e.Reason)
+func (e *ErrInternalKeyCorrupted) Error() string {
+	return fmt.Sprintf("leveldb: internal key %q corrupted: %s", e.Ikey, e.Reason)
 }
 
-func newErrIkeyCorrupted(ikey []byte, reason string) error {
-	return errors.NewErrCorrupted(nil, &ErrIkeyCorrupted{append([]byte{}, ikey...), reason})
+func newErrInternalKeyCorrupted(ikey []byte, reason string) error {
+	return errors.NewErrCorrupted(storage.FileDesc{}, &ErrInternalKeyCorrupted{append([]byte{}, ikey...), reason})
 }
 
-type kType int
+type keyType uint
 
-func (kt kType) String() string {
+func (kt keyType) String() string {
 	switch kt {
-	case ktDel:
+	case keyTypeDel:
 		return "d"
-	case ktVal:
+	case keyTypeVal:
 		return "v"
 	}
-	return "x"
+	return fmt.Sprintf("<invalid:%#x>", uint(kt))
 }
 
 // Value types encoded as the last component of internal keys.
 // Don't modify; this value are saved to disk.
 const (
-	ktDel kType = iota
-	ktVal
+	keyTypeDel = keyType(0)
+	keyTypeVal = keyType(1)
 )
 
-// ktSeek defines the kType that should be passed when constructing an
+// keyTypeSeek defines the keyType that should be passed when constructing an
 // internal key for seeking to a particular sequence number (since we
 // sort sequence numbers in decreasing order and the value type is
 // embedded as the low 8 bits in the sequence number in internal keys,
 // we need to use the highest-numbered ValueType, not the lowest).
-const ktSeek = ktVal
+const keyTypeSeek = keyTypeVal
 
 const (
 	// Maximum value possible for sequence number; the 8-bits are
 	// used by value type, so its can packed together in single
 	// 64-bit integer.
-	kMaxSeq uint64 = (uint64(1) << 56) - 1
+	keyMaxSeq = (uint64(1) << 56) - 1
 	// Maximum value possible for packed sequence number and type.
-	kMaxNum uint64 = (kMaxSeq << 8) | uint64(ktSeek)
+	keyMaxNum = (keyMaxSeq << 8) | uint64(keyTypeSeek)
 )
 
 // Maximum number encoded in bytes.
-var kMaxNumBytes = make([]byte, 8)
+var keyMaxNumBytes = make([]byte, 8)
 
 func init() {
-	binary.LittleEndian.PutUint64(kMaxNumBytes, kMaxNum)
+	binary.LittleEndian.PutUint64(keyMaxNumBytes, keyMaxNum)
 }
 
-type iKey []byte
+type internalKey []byte
 
-func newIkey(ukey []byte, seq uint64, kt kType) iKey {
-	if seq > kMaxSeq {
+func makeInternalKey(dst, ukey []byte, seq uint64, kt keyType) internalKey {
+	if seq > keyMaxSeq {
 		panic("leveldb: invalid sequence number")
-	} else if kt > ktVal {
+	} else if kt > keyTypeVal {
 		panic("leveldb: invalid type")
 	}
 
-	ik := make(iKey, len(ukey)+8)
-	copy(ik, ukey)
-	binary.LittleEndian.PutUint64(ik[len(ukey):], (seq<<8)|uint64(kt))
-	return ik
+	dst = ensureBuffer(dst, len(ukey)+8)
+	copy(dst, ukey)
+	binary.LittleEndian.PutUint64(dst[len(ukey):], (seq<<8)|uint64(kt))
+	return internalKey(dst)
 }
 
-func parseIkey(ik []byte) (ukey []byte, seq uint64, kt kType, err error) {
+func parseInternalKey(ik []byte) (ukey []byte, seq uint64, kt keyType, err error) {
 	if len(ik) < 8 {
-		return nil, 0, 0, newErrIkeyCorrupted(ik, "invalid length")
+		return nil, 0, 0, newErrInternalKeyCorrupted(ik, "invalid length")
 	}
 	num := binary.LittleEndian.Uint64(ik[len(ik)-8:])
-	seq, kt = uint64(num>>8), kType(num&0xff)
-	if kt > ktVal {
-		return nil, 0, 0, newErrIkeyCorrupted(ik, "invalid type")
+	seq, kt = uint64(num>>8), keyType(num&0xff)
+	if kt > keyTypeVal {
+		return nil, 0, 0, newErrInternalKeyCorrupted(ik, "invalid type")
 	}
 	ukey = ik[:len(ik)-8]
 	return
 }
 
-func validIkey(ik []byte) bool {
-	_, _, _, err := parseIkey(ik)
+func validInternalKey(ik []byte) bool {
+	_, _, _, err := parseInternalKey(ik)
 	return err == nil
 }
 
-func (ik iKey) assert() {
+func (ik internalKey) assert() {
 	if ik == nil {
-		panic("leveldb: nil iKey")
+		panic("leveldb: nil internalKey")
 	}
 	if len(ik) < 8 {
-		panic(fmt.Sprintf("leveldb: iKey %q, len=%d: invalid length", []byte(ik), len(ik)))
+		panic(fmt.Sprintf("leveldb: internal key %q, len=%d: invalid length", []byte(ik), len(ik)))
 	}
 }
 
-func (ik iKey) ukey() []byte {
+func (ik internalKey) ukey() []byte {
 	ik.assert()
 	return ik[:len(ik)-8]
 }
 
-func (ik iKey) num() uint64 {
+func (ik internalKey) num() uint64 {
 	ik.assert()
 	return binary.LittleEndian.Uint64(ik[len(ik)-8:])
 }
 
-func (ik iKey) parseNum() (seq uint64, kt kType) {
+func (ik internalKey) parseNum() (seq uint64, kt keyType) {
 	num := ik.num()
-	seq, kt = uint64(num>>8), kType(num&0xff)
-	if kt > ktVal {
-		panic(fmt.Sprintf("leveldb: iKey %q, len=%d: invalid type %#x", []byte(ik), len(ik), kt))
+	seq, kt = uint64(num>>8), keyType(num&0xff)
+	if kt > keyTypeVal {
+		panic(fmt.Sprintf("leveldb: internal key %q, len=%d: invalid type %#x", []byte(ik), len(ik), kt))
 	}
 	return
 }
 
-func (ik iKey) String() string {
+func (ik internalKey) String() string {
 	if ik == nil {
 		return "<nil>"
 	}
 
-	if ukey, seq, kt, err := parseIkey(ik); err == nil {
+	if ukey, seq, kt, err := parseInternalKey(ik); err == nil {
 		return fmt.Sprintf("%s,%s%d", shorten(string(ukey)), kt, seq)
-	} else {
-		return "<invalid>"
 	}
+	return fmt.Sprintf("<invalid:%#x>", []byte(ik))
 }

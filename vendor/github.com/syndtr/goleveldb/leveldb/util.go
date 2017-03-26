@@ -72,20 +72,27 @@ func maxInt(a, b int) int {
 	return b
 }
 
-type files []storage.File
+type fdSorter []storage.FileDesc
 
-func (p files) Len() int {
+func (p fdSorter) Len() int {
 	return len(p)
 }
 
-func (p files) Less(i, j int) bool {
-	return p[i].Num() < p[j].Num()
+func (p fdSorter) Less(i, j int) bool {
+	return p[i].Num < p[j].Num
 }
 
-func (p files) Swap(i, j int) {
+func (p fdSorter) Swap(i, j int) {
 	p[i], p[j] = p[j], p[i]
 }
 
-func (p files) sort() {
-	sort.Sort(p)
+func sortFds(fds []storage.FileDesc) {
+	sort.Sort(fdSorter(fds))
+}
+
+func ensureBuffer(b []byte, n int) []byte {
+	if cap(b) < n {
+		return make([]byte, n)
+	}
+	return b[:n]
 }

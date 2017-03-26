@@ -1,15 +1,16 @@
 var Prometheus = Prometheus || {};
-var graphs = [];
 var graphTemplate;
 
 var SECOND = 1000;
 
-Handlebars.registerHelper('pathPrefix', function() { return PATH_PREFIX; });
-
-Prometheus.Graph = function(element, options) {
+Prometheus.Graph = function(element, options, handleChange, handleRemove) {
   this.el = element;
+  this.graphHTML = null;
   this.options = options;
-  this.changeHandler = null;
+  this.handleChange = handleChange;
+  this.handleRemove = function() {
+    handleRemove(this);
+  };
   this.rickshawGraph = null;
   this.data = [];
 
@@ -45,8 +46,13 @@ Prometheus.Graph.prototype.initialize = function() {
 
   // Draw graph controls and container from Handlebars template.
 
-  var graphHtml = graphTemplate(self.options);
-  self.el.append(graphHtml);
+  var options = {
+    'pathPrefix': PATH_PREFIX,
+    'buildVersion': BUILD_VERSION
+  };
+  jQuery.extend(options, self.options);
+  self.graphHTML = $(Mustache.render(graphTemplate, options));
+  self.el.append(self.graphHTML);
 
   // Get references to all the interesting elements in the graph container and
   // bind event handlers.
@@ -68,7 +74,7 @@ Prometheus.Graph.prototype.initialize = function() {
     };
     $(this).on('keyup input', function() { resizeTextarea(this); });
   });
-  self.expr.change(storeGraphOptionsInURL);
+  self.expr.change(self.handleChange);
 
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stackedBtn = self.queryForm.find(".stacked_btn");
@@ -84,12 +90,12 @@ Prometheus.Graph.prototype.initialize = function() {
   self.tabs.on("shown.bs.tab", function(e) {
     var target = $(e.target);
     self.options.tab = target.parent().index();
-    storeGraphOptionsInURL();
+    self.handleChange();
     if ($("#" + target.attr("aria-controls")).hasClass("reload")) {
       self.submitQuery();
     }
   });
-  
+
   // Return moves focus back to expr instead of submitting.
   self.insertMetric.bind("keydown", "return", function(e) {
     self.expr.focus();
@@ -107,13 +113,18 @@ Prometheus.Graph.prototype.initialize = function() {
 
   self.endDate = graphWrapper.find("input[name=end_input]");
   self.endDate.datetimepicker({
-    language: 'en',
-    pickSeconds: false,
+    locale: 'en',
+    format: 'YYYY-MM-DD HH:mm',
+    toolbarPlacement: 'bottom',
+    sideBySide: true,
+    showTodayButton: true,
+    showClear: true,
+    showClose: true,
   });
   if (self.options.end_input) {
-    self.endDate.data('datetimepicker').setValue(self.options.end_input);
+    self.endDate.data('DateTimePicker').date(self.options.end_input);
   }
-  self.endDate.change(function() { self.submitQuery(); });
+  self.endDate.on("dp.change", function() { self.submitQuery(); });
   self.refreshInterval.change(function() { self.updateRefresh(); });
 
   self.isStacked = function() {
@@ -164,6 +175,12 @@ Prometheus.Graph.prototype.initialize = function() {
     self.expr.focus(); // refocusing
   });
 
+  var removeBtn = graphWrapper.find("[name=remove]");
+  removeBtn.click(function() {
+    self.remove();
+    return false;
+  });
+
   self.populateInsertableMetrics();
 
   if (self.expr.val()) {
@@ -181,15 +198,49 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
         if (json.status !== "success") {
           self.showError("Error loading available metrics!");
           return;
-        } 
+        }
         var metrics = json.data;
         for (var i = 0; i < metrics.length; i++) {
           self.insertMetric[0].options.add(new Option(metrics[i], metrics[i]));
         }
 
+        self.fuzzyResult = {
+          query: null,
+          result: null,
+          map: {}
+        }
+
         self.expr.typeahead({
           source: metrics,
-          items: "all"
+          items: "all",
+          matcher: function(item) {
+            // If we have result for current query, skip
+            if (self.fuzzyResult.query !== this.query) {
+              self.fuzzyResult.query = this.query;
+              self.fuzzyResult.map = {};
+              self.fuzzyResult.result = fuzzy.filter(this.query.replace(/ /g, ''), metrics, {
+                pre: '<strong>',
+                post: '</strong>'
+              });
+              self.fuzzyResult.result.forEach(function(r) {
+                self.fuzzyResult.map[r.original] = r;
+              });
+            }
+
+            return item in self.fuzzyResult.map;
+          },
+
+          sorter: function(items) {
+            items.sort(function(a,b) {
+              var i = self.fuzzyResult.map[b].score - self.fuzzyResult.map[a].score;
+              return i === 0 ? a.localeCompare(b) : i;
+            });
+            return items;
+          },
+
+          highlighter: function (item) {
+            return $('<div>' + self.fuzzyResult.map[item].string + '</div>')
+          },
         });
         // This needs to happen after attaching the typeahead plugin, as it
         // otherwise breaks the typeahead functionality.
@@ -199,10 +250,6 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
         self.showError("Error loading available metrics!");
       },
   });
-};
-
-Prometheus.Graph.prototype.onChange = function(handler) {
-  this.changeHandler = handler;
 };
 
 Prometheus.Graph.prototype.getOptions = function() {
@@ -219,7 +266,9 @@ Prometheus.Graph.prototype.getOptions = function() {
   self.queryForm.find("input").each(function(index, element) {
     var name = element.name;
     if ($.inArray(name, optionInputs) >= 0) {
-      options[name] = element.value;
+      if (element.value.length > 0) {
+        options[name] = element.value;
+      }
     }
   });
   options.expr = self.expr.val();
@@ -270,9 +319,9 @@ Prometheus.Graph.prototype.decreaseRange = function() {
 Prometheus.Graph.prototype.getEndDate = function() {
   var self = this;
   if (!self.endDate || !self.endDate.val()) {
-    return new Date();
+    return moment();
   }
-  return self.endDate.data('datetimepicker').getDate().getTime();
+  return self.endDate.data('DateTimePicker').date();
 };
 
 Prometheus.Graph.prototype.getOrSetEndDate = function() {
@@ -284,18 +333,22 @@ Prometheus.Graph.prototype.getOrSetEndDate = function() {
 
 Prometheus.Graph.prototype.setEndDate = function(date) {
   var self = this;
-  self.endDate.data('datetimepicker').setValue(date);
+  self.endDate.data('DateTimePicker').date(date);
 };
 
 Prometheus.Graph.prototype.increaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() + self.parseDuration(self.rangeInput.val()) * 1000/2 )); // increase by 1/2 range & convert ms in s
+  var newDate = moment(self.getOrSetEndDate());
+  newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+  self.setEndDate(newDate);
   self.submitQuery();
 };
 
 Prometheus.Graph.prototype.decreaseEnd = function() {
   var self = this;
-  self.setEndDate(new Date(self.getOrSetEndDate() - self.parseDuration(self.rangeInput.val()) * 1000/2 ));
+  var newDate = moment(self.getOrSetEndDate());
+  newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+  self.setEndDate(newDate);
   self.submitQuery();
 };
 
@@ -357,7 +410,10 @@ Prometheus.Graph.prototype.submitQuery = function() {
           self.showError("Error executing query: " + err);
         }
       },
-      complete: function() {
+      complete: function(xhr, resp) {
+        if (resp == "abort") {
+          return;
+        }
         var duration = new Date().getTime() - startTime;
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s");
         self.spinner.hide();
@@ -513,9 +569,10 @@ Prometheus.Graph.prototype.updateGraph = function() {
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
+      var date = '<span class="date">' + new Date(x * 1000).toUTCString() + '</span>';
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-      var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong><br>';
-      return content + self.renderLabels(series.labels);
+      var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong>';
+      return date + '<br>' + content + '<br>' + self.renderLabels(series.labels);
     }
   });
 
@@ -534,7 +591,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
     legend: legend
   });
 
-  self.changeHandler();
+  self.handleChange();
 };
 
 Prometheus.Graph.prototype.resizeGraph = function() {
@@ -609,36 +666,12 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
   }
 };
 
-function parseGraphOptionsFromURL() {
-  var hashOptions = window.location.hash.slice(1);
-  if (!hashOptions) {
-    return [];
-  }
-  var optionsJSON = decodeURIComponent(window.location.hash.slice(1));
-  options = JSON.parse(optionsJSON);
-  return options;
-}
-
-// NOTE: This needs to be kept in sync with rules/helpers.go:GraphLinkForExpression!
-function storeGraphOptionsInURL() {
-  var allGraphsOptions = [];
-  for (var i = 0; i < graphs.length; i++) {
-    allGraphsOptions.push(graphs[i].getOptions());
-  }
-  var optionsJSON = JSON.stringify(allGraphsOptions);
-  window.location.hash = encodeURIComponent(optionsJSON);
-}
-
-function addGraph(options) {
-  var graph = new Prometheus.Graph($("#graph_container"), options);
-  graphs.push(graph);
-  graph.onChange(function() {
-    storeGraphOptionsInURL();
-  });
-  $(window).resize(function() {
-    graph.resizeGraph();
-  });
-}
+Prometheus.Graph.prototype.remove = function() {
+  var self = this;
+  $(self.graphHTML).remove();
+  self.handleRemove();
+  self.handleChange();
+};
 
 function escapeHTML(string) {
   var entityMap = {
@@ -655,25 +688,186 @@ function escapeHTML(string) {
   });
 }
 
+Prometheus.Page = function() {
+  this.graphs = [];
+};
+
+Prometheus.Page.prototype.init = function() {
+  var graphOptions = this.parseURL();
+  if (graphOptions.length === 0) {
+    graphOptions.push({});
+  }
+
+  graphOptions.forEach(this.addGraph, this);
+
+  $("#add_graph").click(this.addGraph.bind(this, {}));
+};
+
+Prometheus.Page.prototype.parseURL = function() {
+  if (window.location.search == "") {
+    return [];
+  }
+
+  var queryParams = window.location.search.substring(1).split('&');
+  var queryParamHelper = new Prometheus.Page.QueryParamHelper();
+  return queryParamHelper.parseQueryParams(queryParams);
+};
+
+Prometheus.Page.prototype.addGraph = function(options) {
+  var graph = new Prometheus.Graph(
+    $("#graph_container"),
+    options,
+    this.updateURL.bind(this),
+    this.removeGraph.bind(this)
+  );
+
+  this.graphs.push(graph);
+  $(window).resize(function() {
+    graph.resizeGraph();
+  });
+};
+
+// NOTE: This needs to be kept in sync with /util/strutil/strconv.go:GraphLinkForExpression
+Prometheus.Page.prototype.updateURL = function() {
+  var queryString = this.graphs.map(function(graph, index) {
+    var graphOptions = graph.getOptions();
+    var queryParamHelper = new Prometheus.Page.QueryParamHelper();
+    var queryObject = queryParamHelper.generateQueryObject(graphOptions, index);
+    return $.param(queryObject);
+  }, this).join("&");
+
+  history.pushState({}, "", "graph?" + queryString);
+};
+
+Prometheus.Page.prototype.removeGraph = function(graph) {
+  this.graphs = this.graphs.filter(function(g) {return g !== graph});
+};
+
+Prometheus.Page.QueryParamHelper = function() {};
+
+Prometheus.Page.QueryParamHelper.prototype.parseQueryParams = function(queryParams) {
+  var orderedQueryParams = this.filterInvalidParams(queryParams).sort();
+  return this.fetchOptionsFromOrderedParams(orderedQueryParams, 0);
+};
+
+Prometheus.Page.QueryParamHelper.queryParamFormat = /^g\d+\..+=.+$/;
+
+Prometheus.Page.QueryParamHelper.prototype.filterInvalidParams = function(paramTuples) {
+  return paramTuples.filter(function(paramTuple) {
+    return Prometheus.Page.QueryParamHelper.queryParamFormat.test(paramTuple);
+  });
+};
+
+Prometheus.Page.QueryParamHelper.prototype.fetchOptionsFromOrderedParams = function(queryParams, graphIndex) {
+  if (queryParams.length == 0) {
+    return [];
+  }
+
+  var prefixOfThisIndex = this.queryParamPrefix(graphIndex);
+  var numberOfParamsForThisGraph = queryParams.filter(function(paramTuple) {
+    return paramTuple.startsWith(prefixOfThisIndex);
+  }).length;
+
+  if (numberOfParamsForThisGraph == 0) {
+    return [];
+  }
+
+  var paramsForThisGraph = queryParams.splice(0, numberOfParamsForThisGraph);
+
+  paramsForThisGraph = paramsForThisGraph.map(function(paramTuple) {
+    return paramTuple.substring(prefixOfThisIndex.length);
+  });
+
+  var options = this.parseQueryParamsOfOneGraph(paramsForThisGraph);
+  var optionAccumulator = this.fetchOptionsFromOrderedParams(queryParams, graphIndex + 1);
+  optionAccumulator.unshift(options);
+
+  return optionAccumulator;
+};
+
+Prometheus.Page.QueryParamHelper.prototype.parseQueryParamsOfOneGraph = function(queryParams) {
+  var options = {};
+  queryParams.forEach(function(tuple) {
+    var optionNameAndValue = tuple.split('=');
+    var optionName = optionNameAndValue[0];
+
+    var optionValue = decodeURIComponent(optionNameAndValue[1].replace(/\+/g, " "));
+
+    if (optionName == "tab") {
+      optionValue = parseInt(optionValue); // tab is integer
+    }
+
+    options[optionName] = optionValue;
+  });
+
+  return options;
+};
+
+Prometheus.Page.QueryParamHelper.prototype.queryParamPrefix = function(index) {
+  return "g" + index + ".";
+};
+
+Prometheus.Page.QueryParamHelper.prototype.generateQueryObject = function(graphOptions, index) {
+  var prefix = this.queryParamPrefix(index);
+  var queryObject = {};
+  Object.keys(graphOptions).forEach(function(key) {
+    queryObject[prefix + key] = graphOptions[key];
+  });
+  return queryObject;
+};
+
 function init() {
   $.ajaxSetup({
     cache: false
   });
 
   $.ajax({
-    url: PATH_PREFIX + "/static/js/graph_template.handlebar",
+    url: PATH_PREFIX + "/static/js/graph_template.handlebar?v=" + BUILD_VERSION,
     success: function(data) {
-      graphTemplate = Handlebars.compile(data);
-      var options = parseGraphOptionsFromURL();
-      if (options.length === 0) {
-        options.push({});
+
+      graphTemplate = data;
+      Mustache.parse(data);
+      if (isDeprecatedGraphURL()) {
+        redirectToMigratedURL();
+      } else {
+        var Page = new Prometheus.Page();
+        Page.init();
       }
-      for (var i = 0; i < options.length; i++) {
-        addGraph(options[i]);
-      }
-      $("#add_graph").click(function() { addGraph({}); });
     }
   });
+}
+
+
+
+// These two methods (isDeprecatedGraphURL and redirectToMigratedURL)
+// are added only for backward compatibility to old query format.
+function isDeprecatedGraphURL() {
+  if (window.location.hash.length == 0) {
+    return false;
+  }
+
+  var decodedFragment = decodeURIComponent(window.location.hash);
+  try {
+      JSON.parse(decodedFragment.substr(1)); // drop the hash #
+  } catch (e) {
+      return false;
+  }
+  return true;
+}
+
+function redirectToMigratedURL() {
+  var decodedFragment = decodeURIComponent(window.location.hash);
+  var graphOptions = JSON.parse(decodedFragment.substr(1)); // drop the hash #
+  var queryObject = {};
+
+  graphOptions.map(function(options, index){
+    var prefix = "g" + index + ".";
+    Object.keys(options).forEach(function(key) {
+      queryObject[prefix + key] = options[key];
+    });
+  });
+  var query = $.param(queryObject);
+  window.location = "/graph?" + query;
 }
 
 $(init);

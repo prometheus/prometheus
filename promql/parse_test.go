@@ -144,7 +144,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 		},
@@ -154,7 +154,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 		},
@@ -237,11 +237,11 @@ var testExpr = []struct {
 	}, {
 		input:  `-"string"`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or vector, got "string"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "string"`,
 	}, {
 		input:  `-test[5m]`,
 		fail:   true,
-		errMsg: `unary expression only allowed on expressions of type scalar or vector, got "matrix"`,
+		errMsg: `unary expression only allowed on expressions of type scalar or instant vector, got "range vector"`,
 	}, {
 		input:  `*test`,
 		fail:   true,
@@ -250,6 +250,10 @@ var testExpr = []struct {
 		input:  "1 offset 1d",
 		fail:   true,
 		errMsg: "offset modifier must be preceded by an instant or range selector",
+	}, {
+		input:  "a - on(b) ignoring(c) d",
+		fail:   true,
+		errMsg: "parse error at char 11: no valid expression found",
 	},
 	// Vector binary operations.
 	{
@@ -259,13 +263,13 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{Card: CardOneToOne},
@@ -277,7 +281,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &NumberLiteral{1},
@@ -289,7 +293,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS:        &NumberLiteral{1},
@@ -303,7 +307,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 		},
@@ -314,13 +318,13 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -332,13 +336,13 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -350,13 +354,13 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -371,13 +375,13 @@ var testExpr = []struct {
 				LHS: &VectorSelector{
 					Name: "foo",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 					},
 				},
 				RHS: &VectorSelector{
 					Name: "bar",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 					},
 				},
 				VectorMatching: &VectorMatching{Card: CardOneToOne},
@@ -387,13 +391,13 @@ var testExpr = []struct {
 				LHS: &VectorSelector{
 					Name: "bla",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bla"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bla"),
 					},
 				},
 				RHS: &VectorSelector{
 					Name: "blub",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "blub"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "blub"),
 					},
 				},
 				VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -412,13 +416,13 @@ var testExpr = []struct {
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: metric.LabelMatchers{
-							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+							mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 						},
 					},
 					RHS: &VectorSelector{
 						Name: "bar",
 						LabelMatchers: metric.LabelMatchers{
-							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+							mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 						},
 					},
 					VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -426,7 +430,7 @@ var testExpr = []struct {
 				RHS: &VectorSelector{
 					Name: "baz",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "baz"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "baz"),
 					},
 				},
 				VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -434,7 +438,7 @@ var testExpr = []struct {
 			RHS: &VectorSelector{
 				Name: "qux",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "qux"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "qux"),
 				},
 			},
 			VectorMatching: &VectorMatching{Card: CardManyToMany},
@@ -447,7 +451,7 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			RHS: &BinaryExpr{
@@ -455,24 +459,26 @@ var testExpr = []struct {
 				LHS: &VectorSelector{
 					Name: "bla",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bla"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bla"),
 					},
 				},
 				RHS: &VectorSelector{
 					Name: "blub",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "blub"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "blub"),
 					},
 				},
 				VectorMatching: &VectorMatching{
-					Card:    CardOneToMany,
-					On:      model.LabelNames{"baz", "buz"},
-					Include: model.LabelNames{"test"},
+					Card:           CardOneToMany,
+					MatchingLabels: model.LabelNames{"baz", "buz"},
+					On:             true,
+					Include:        model.LabelNames{"test"},
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardOneToOne,
-				On:   model.LabelNames{"foo"},
+				Card:           CardOneToOne,
+				MatchingLabels: model.LabelNames{"foo"},
+				On:             true,
 			},
 		},
 	}, {
@@ -482,18 +488,41 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardOneToOne,
-				On:   model.LabelNames{"test", "blub"},
+				Card:           CardOneToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
+			},
+		},
+	}, {
+		input: "foo * on(test,blub) group_left bar",
+		expected: &BinaryExpr{
+			Op: itemMUL,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
 			},
 		},
 	}, {
@@ -503,18 +532,83 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardManyToMany,
-				On:   model.LabelNames{"test", "blub"},
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
+			},
+		},
+	}, {
+		input: "foo and on() bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{},
+				On:             true,
+			},
+		},
+	}, {
+		input: "foo and ignoring(test,blub) bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+			},
+		},
+	}, {
+		input: "foo and ignoring() bar",
+		expected: &BinaryExpr{
+			Op: itemLAND,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{},
 			},
 		},
 	}, {
@@ -524,18 +618,19 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "baz",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "baz"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "baz"),
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card: CardManyToMany,
-				On:   model.LabelNames{"bar"},
+				Card:           CardManyToMany,
+				MatchingLabels: model.LabelNames{"bar"},
+				On:             true,
 			},
 		},
 	}, {
@@ -545,19 +640,64 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card:    CardManyToOne,
-				On:      model.LabelNames{"test", "blub"},
-				Include: model.LabelNames{"bar"},
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				On:             true,
+				Include:        model.LabelNames{"bar"},
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(blub) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"blub"},
+			},
+		},
+	}, {
+		input: "foo / ignoring(test,blub) group_left(bar) bar",
+		expected: &BinaryExpr{
+			Op: itemDIV,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToOne,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar"},
 			},
 		},
 	}, {
@@ -567,19 +707,42 @@ var testExpr = []struct {
 			LHS: &VectorSelector{
 				Name: "foo",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 				},
 			},
 			RHS: &VectorSelector{
 				Name: "bar",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 				},
 			},
 			VectorMatching: &VectorMatching{
-				Card:    CardOneToMany,
-				On:      model.LabelNames{"test", "blub"},
-				Include: model.LabelNames{"bar", "foo"},
+				Card:           CardOneToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar", "foo"},
+				On:             true,
+			},
+		},
+	}, {
+		input: "foo - ignoring(test,blub) group_right(bar,foo) bar",
+		expected: &BinaryExpr{
+			Op: itemSUB,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardOneToMany,
+				MatchingLabels: model.LabelNames{"test", "blub"},
+				Include:        model.LabelNames{"bar", "foo"},
 			},
 		},
 	}, {
@@ -609,11 +772,11 @@ var testExpr = []struct {
 	}, {
 		input:  "1 or on(bar) foo",
 		fail:   true,
-		errMsg: "vector matching only allowed between vectors",
+		errMsg: "vector matching only allowed between instant vectors",
 	}, {
 		input:  "foo == on(bar) 10",
 		fail:   true,
-		errMsg: "vector matching only allowed between vectors",
+		errMsg: "vector matching only allowed between instant vectors",
 	}, {
 		input:  "foo and on(bar) group_left(baz) bar",
 		fail:   true,
@@ -639,13 +802,9 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "no grouping allowed for \"unless\" operation",
 	}, {
-		input:  `http_requests{group="production"} / on(instance) group_left cpu_count{type="smp"}`,
-		fail:   true,
-		errMsg: "unexpected identifier \"cpu_count\" in grouping opts, expected \"(\"",
-	}, {
 		input:  `http_requests{group="production"} + on(instance) group_left(job,instance) cpu_count{type="smp"}`,
 		fail:   true,
-		errMsg: "label \"instance\" must not occur in ON and INCLUDE clause at once",
+		errMsg: "label \"instance\" must not occur in ON and GROUP clause at once",
 	}, {
 		input:  "foo + bool bar",
 		fail:   true,
@@ -666,7 +825,7 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 			},
 		},
 	}, {
@@ -675,7 +834,7 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 5 * time.Minute,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 			},
 		},
 	}, {
@@ -684,8 +843,8 @@ var testExpr = []struct {
 			Name:   "foo:bar",
 			Offset: 0,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: "a", Value: "bc"},
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo:bar"},
+				mustLabelMatcher(metric.Equal, "a", "bc"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo:bar"),
 			},
 		},
 	}, {
@@ -694,8 +853,8 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: "NaN", Value: "bc"},
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				mustLabelMatcher(metric.Equal, "NaN", "bc"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 			},
 		},
 	}, {
@@ -704,11 +863,11 @@ var testExpr = []struct {
 			Name:   "foo",
 			Offset: 0,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: "a", Value: "b"},
-				{Type: metric.NotEqual, Name: "foo", Value: "bar"},
+				mustLabelMatcher(metric.Equal, "a", "b"),
+				mustLabelMatcher(metric.NotEqual, "foo", "bar"),
 				mustLabelMatcher(metric.RegexMatch, "test", "test"),
 				mustLabelMatcher(metric.RegexNoMatch, "bar", "baz"),
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 			},
 		},
 	}, {
@@ -790,7 +949,7 @@ var testExpr = []struct {
 			Offset: 0,
 			Range:  5 * time.Second,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "test"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "test"),
 			},
 		},
 	}, {
@@ -800,7 +959,7 @@ var testExpr = []struct {
 			Offset: 0,
 			Range:  5 * time.Minute,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "test"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "test"),
 			},
 		},
 	}, {
@@ -810,7 +969,7 @@ var testExpr = []struct {
 			Offset: 5 * time.Minute,
 			Range:  5 * time.Hour,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "test"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "test"),
 			},
 		},
 	}, {
@@ -820,7 +979,7 @@ var testExpr = []struct {
 			Offset: 10 * time.Second,
 			Range:  5 * 24 * time.Hour,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "test"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "test"),
 			},
 		},
 	}, {
@@ -830,7 +989,7 @@ var testExpr = []struct {
 			Offset: 14 * 24 * time.Hour,
 			Range:  5 * 7 * 24 * time.Hour,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "test"},
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "test"),
 			},
 		},
 	}, {
@@ -840,8 +999,8 @@ var testExpr = []struct {
 			Offset: 3 * 24 * time.Hour,
 			Range:  5 * 365 * 24 * time.Hour,
 			LabelMatchers: metric.LabelMatchers{
-				{Type: metric.Equal, Name: "a", Value: "b"},
-				{Type: metric.Equal, Name: model.MetricNameLabel, Value: "test"},
+				mustLabelMatcher(metric.Equal, "a", "b"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "test"),
 			},
 		},
 	}, {
@@ -900,7 +1059,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
@@ -908,12 +1067,12 @@ var testExpr = []struct {
 	}, {
 		input: "sum by (foo) keep_common (some_metric)",
 		expected: &AggregateExpr{
-			Op:              itemSum,
-			KeepExtraLabels: true,
+			Op:               itemSum,
+			KeepCommonLabels: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
@@ -921,12 +1080,12 @@ var testExpr = []struct {
 	}, {
 		input: "sum (some_metric) by (foo,bar) keep_common",
 		expected: &AggregateExpr{
-			Op:              itemSum,
-			KeepExtraLabels: true,
+			Op:               itemSum,
+			KeepCommonLabels: true,
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo", "bar"},
@@ -938,7 +1097,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
@@ -950,11 +1109,11 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
-			Grouping:        model.LabelNames{"foo"},
-			KeepExtraLabels: true,
+			Grouping:         model.LabelNames{"foo"},
+			KeepCommonLabels: true,
 		},
 	}, {
 		input: "MIN (some_metric) by (foo) keep_common",
@@ -963,11 +1122,11 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
-			Grouping:        model.LabelNames{"foo"},
-			KeepExtraLabels: true,
+			Grouping:         model.LabelNames{"foo"},
+			KeepCommonLabels: true,
 		},
 	}, {
 		input: "max by (foo)(some_metric)",
@@ -976,7 +1135,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
@@ -989,7 +1148,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
@@ -1002,7 +1161,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
@@ -1014,7 +1173,7 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 		},
@@ -1025,11 +1184,65 @@ var testExpr = []struct {
 			Expr: &VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: metric.LabelMatchers{
-					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 				},
 			},
 			Grouping: model.LabelNames{"foo"},
 		},
+	}, {
+		input: "sum by ()(some_metric)",
+		expected: &AggregateExpr{
+			Op: itemSum,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
+				},
+			},
+			Grouping: model.LabelNames{},
+		},
+	}, {
+		input: "topk(5, some_metric)",
+		expected: &AggregateExpr{
+			Op: itemTopK,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
+				},
+			},
+			Param: &NumberLiteral{5},
+		},
+	}, {
+		input: "count_values(\"value\", some_metric)",
+		expected: &AggregateExpr{
+			Op: itemCountValues,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
+				},
+			},
+			Param: &StringLiteral{"value"},
+		},
+	}, {
+		// Test usage of keywords as label names.
+		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
+		expected: &AggregateExpr{
+			Op:      itemSum,
+			Without: true,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: metric.LabelMatchers{
+					mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
+				},
+			},
+			Grouping: model.LabelNames{"and", "by", "avg", "count", "alert", "annotations"},
+		},
+	}, {
+		input:  "sum without(==)(some_metric)",
+		fail:   true,
+		errMsg: "unexpected <op:==> in grouping opts, expected label",
 	}, {
 		input:  `sum some_metric by (test)`,
 		fail:   true,
@@ -1038,10 +1251,6 @@ var testExpr = []struct {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
 		errMsg: "unexpected identifier \"test\" in grouping opts, expected \"(\"",
-	}, {
-		input:  `sum (some_metric) by ()`,
-		fail:   true,
-		errMsg: "unexpected \")\" in grouping opts, expected identifier",
 	}, {
 		input:  `sum (some_metric) by test`,
 		fail:   true,
@@ -1070,6 +1279,18 @@ var testExpr = []struct {
 		input:  `sum without (test) (some_metric) by (test)`,
 		fail:   true,
 		errMsg: "could not parse remaining input \"by (test)\"...",
+	}, {
+		input:  `topk(some_metric)`,
+		fail:   true,
+		errMsg: "parse error at char 17: unexpected \")\" in aggregation, expected \",\"",
+	}, {
+		input:  `topk(some_metric, other_metric)`,
+		fail:   true,
+		errMsg: "parse error at char 32: expected type scalar in aggregation parameter, got instant vector",
+	}, {
+		input:  `count_values(5, other_metric)`,
+		fail:   true,
+		errMsg: "parse error at char 30: expected type string in aggregation parameter, got scalar",
 	},
 	// Test function calls.
 	{
@@ -1085,8 +1306,8 @@ var testExpr = []struct {
 				&VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.NotEqual, Name: "foo", Value: "bar"},
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+						mustLabelMatcher(metric.NotEqual, "foo", "bar"),
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 					},
 				},
 			},
@@ -1099,7 +1320,7 @@ var testExpr = []struct {
 				&MatrixSelector{
 					Name: "some_metric",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 					},
 					Range: 5 * time.Minute,
 				},
@@ -1113,7 +1334,7 @@ var testExpr = []struct {
 				&VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 					},
 				},
 			},
@@ -1126,7 +1347,7 @@ var testExpr = []struct {
 				&VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 					},
 				},
 				&NumberLiteral{5},
@@ -1143,15 +1364,15 @@ var testExpr = []struct {
 	}, {
 		input:  "floor(1)",
 		fail:   true,
-		errMsg: "expected type vector in call to function \"floor\", got scalar",
+		errMsg: "expected type instant vector in call to function \"floor\", got scalar",
 	}, {
-		input:  "non_existant_function_far_bar()",
+		input:  "non_existent_function_far_bar()",
 		fail:   true,
-		errMsg: "unknown function with name \"non_existant_function_far_bar\"",
+		errMsg: "unknown function with name \"non_existent_function_far_bar\"",
 	}, {
 		input:  "rate(some_metric)",
 		fail:   true,
-		errMsg: "expected type matrix in call to function \"rate\", got vector",
+		errMsg: "expected type range vector in call to function \"rate\", got instant vector",
 	},
 	// Fuzzing regression tests.
 	{
@@ -1334,7 +1555,7 @@ var testStatement = []struct {
 							&MatrixSelector{
 								Name: "http_request_count",
 								LabelMatchers: metric.LabelMatchers{
-									{Type: metric.Equal, Name: model.MetricNameLabel, Value: "http_request_count"},
+									mustLabelMatcher(metric.Equal, model.MetricNameLabel, "http_request_count"),
 								},
 								Range: 5 * time.Minute,
 							},
@@ -1350,7 +1571,7 @@ var testStatement = []struct {
 					LHS: &VectorSelector{
 						Name: "dc:http_request:rate5m",
 						LabelMatchers: metric.LabelMatchers{
-							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "dc:http_request:rate5m"},
+							mustLabelMatcher(metric.Equal, model.MetricNameLabel, "dc:http_request:rate5m"),
 						},
 					},
 					RHS: &NumberLiteral{10000},
@@ -1367,8 +1588,8 @@ var testStatement = []struct {
 				Expr: &VectorSelector{
 					Name: "bar",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: "label1", Value: "value1"},
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+						mustLabelMatcher(metric.Equal, "label1", "value1"),
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 					},
 				},
 				Labels: nil,
@@ -1380,7 +1601,7 @@ var testStatement = []struct {
 					LHS: &VectorSelector{
 						Name: "foo",
 						LabelMatchers: metric.LabelMatchers{
-							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "foo"},
+							mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 						},
 					},
 					RHS: &NumberLiteral{10},
@@ -1401,9 +1622,9 @@ var testStatement = []struct {
 				Expr: &VectorSelector{
 					Name: "bar",
 					LabelMatchers: metric.LabelMatchers{
-						{Type: metric.Equal, Name: "a", Value: "b"},
+						mustLabelMatcher(metric.Equal, "a", "b"),
 						mustLabelMatcher(metric.RegexMatch, "x", "y"),
-						{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+						mustLabelMatcher(metric.Equal, model.MetricNameLabel, "bar"),
 					},
 				},
 				Labels: model.LabelSet{"x": "", "a": "z"},
@@ -1425,7 +1646,7 @@ var testStatement = []struct {
 					LHS: &VectorSelector{
 						Name: "some_metric",
 						LabelMatchers: metric.LabelMatchers{
-							{Type: metric.Equal, Name: model.MetricNameLabel, Value: "some_metric"},
+							mustLabelMatcher(metric.Equal, model.MetricNameLabel, "some_metric"),
 						},
 					},
 					RHS: &NumberLiteral{1},

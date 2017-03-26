@@ -21,19 +21,10 @@ type QueryTiming int
 const (
 	TotalEvalTime QueryTiming = iota
 	ResultSortTime
-	JSONEncodeTime
-	PreloadTime
-	TotalQueryPreparationTime
-	InnerViewBuildingTime
+	QueryPreparationTime
 	InnerEvalTime
 	ResultAppendTime
-	QueryAnalysisTime
-	GetValueAtTimeTime
-	GetRangeValuesTime
 	ExecQueueTime
-	ViewDiskPreparationTime
-	ViewDataExtractionTime
-	ViewDiskExtractionTime
 )
 
 // Return a string representation of a QueryTiming identifier.
@@ -43,32 +34,14 @@ func (s QueryTiming) String() string {
 		return "Total eval time"
 	case ResultSortTime:
 		return "Result sorting time"
-	case JSONEncodeTime:
-		return "JSON encoding time"
-	case PreloadTime:
-		return "Query preloading time"
-	case TotalQueryPreparationTime:
-		return "Total query preparation time"
-	case InnerViewBuildingTime:
-		return "Inner view building time"
+	case QueryPreparationTime:
+		return "Query preparation time"
 	case InnerEvalTime:
 		return "Inner eval time"
 	case ResultAppendTime:
 		return "Result append time"
-	case QueryAnalysisTime:
-		return "Query analysis time"
-	case GetValueAtTimeTime:
-		return "GetValueAtTime() time"
-	case GetRangeValuesTime:
-		return "GetRangeValues() time"
 	case ExecQueueTime:
 		return "Exec queue wait time"
-	case ViewDiskPreparationTime:
-		return "View building disk preparation time"
-	case ViewDataExtractionTime:
-		return "Total view data extraction time"
-	case ViewDiskExtractionTime:
-		return "View disk data extraction time"
 	default:
 		return "Unknown query timing"
 	}

@@ -43,6 +43,8 @@ func (s *session) setOptions(o *opt.Options) {
 	s.o.cache()
 }
 
+const optCachedLevel = 7
+
 type cachedOptions struct {
 	*opt.Options
 
@@ -54,15 +56,13 @@ type cachedOptions struct {
 }
 
 func (co *cachedOptions) cache() {
-	numLevel := co.Options.GetNumLevel()
+	co.compactionExpandLimit = make([]int, optCachedLevel)
+	co.compactionGPOverlaps = make([]int, optCachedLevel)
+	co.compactionSourceLimit = make([]int, optCachedLevel)
+	co.compactionTableSize = make([]int, optCachedLevel)
+	co.compactionTotalSize = make([]int64, optCachedLevel)
 
-	co.compactionExpandLimit = make([]int, numLevel)
-	co.compactionGPOverlaps = make([]int, numLevel)
-	co.compactionSourceLimit = make([]int, numLevel)
-	co.compactionTableSize = make([]int, numLevel)
-	co.compactionTotalSize = make([]int64, numLevel)
-
-	for level := 0; level < numLevel; level++ {
+	for level := 0; level < optCachedLevel; level++ {
 		co.compactionExpandLimit[level] = co.Options.GetCompactionExpandLimit(level)
 		co.compactionGPOverlaps[level] = co.Options.GetCompactionGPOverlaps(level)
 		co.compactionSourceLimit[level] = co.Options.GetCompactionSourceLimit(level)
@@ -72,21 +72,36 @@ func (co *cachedOptions) cache() {
 }
 
 func (co *cachedOptions) GetCompactionExpandLimit(level int) int {
-	return co.compactionExpandLimit[level]
+	if level < optCachedLevel {
+		return co.compactionExpandLimit[level]
+	}
+	return co.Options.GetCompactionExpandLimit(level)
 }
 
 func (co *cachedOptions) GetCompactionGPOverlaps(level int) int {
-	return co.compactionGPOverlaps[level]
+	if level < optCachedLevel {
+		return co.compactionGPOverlaps[level]
+	}
+	return co.Options.GetCompactionGPOverlaps(level)
 }
 
 func (co *cachedOptions) GetCompactionSourceLimit(level int) int {
-	return co.compactionSourceLimit[level]
+	if level < optCachedLevel {
+		return co.compactionSourceLimit[level]
+	}
+	return co.Options.GetCompactionSourceLimit(level)
 }
 
 func (co *cachedOptions) GetCompactionTableSize(level int) int {
-	return co.compactionTableSize[level]
+	if level < optCachedLevel {
+		return co.compactionTableSize[level]
+	}
+	return co.Options.GetCompactionTableSize(level)
 }
 
 func (co *cachedOptions) GetCompactionTotalSize(level int) int64 {
-	return co.compactionTotalSize[level]
+	if level < optCachedLevel {
+		return co.compactionTotalSize[level]
+	}
+	return co.Options.GetCompactionTotalSize(level)
 }

@@ -1,16 +1,10 @@
 *#
-*.[568ao]
-*.a[568o]
-*.cgo*.c
-*.cgo*.go
+.#*
+*-stamp
 /*.yaml
 /*.yml
 /*.rules
 *.exe
-*.orig
-*.pyc
-*.rej
-*.so
 
 # Editor files #
 ################
@@ -20,20 +14,14 @@
 *.iml
 .idea
 
-.DS_Store
-.nfs.*
-[568a].out
-core
-
-*-stamp
 /prometheus
 /promtool
 benchmark.txt
 /data
 /.build
+/.release
+/.tarballs
 
-.#*
-command-line-arguments.test
-*BACKUP*
-*LOCAL*
-*REMOTE*
+!/circle.yml
+!/.travis.yml
+!/.promu.yml

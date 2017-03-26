@@ -15,20 +15,18 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"text/template"
 	"time"
 
-	"github.com/prometheus/common/log"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/version"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -38,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/version"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -59,6 +56,10 @@ var (
 	})
 )
 
+func init() {
+	prometheus.MustRegister(version.NewCollector("prometheus"))
+}
+
 // Main manages the startup and shutdown lifecycle of the entire Prometheus server.
 func Main() int {
 	if err := parse(os.Args[1:]); err != nil {
@@ -66,53 +67,77 @@ func Main() int {
 		return 2
 	}
 
-	printVersion()
 	if cfg.printVersion {
+		fmt.Fprintln(os.Stdout, version.Print("prometheus"))
 		return 0
 	}
 
-	var reloadables []Reloadable
+	log.Infoln("Starting prometheus", version.Info())
+	log.Infoln("Build context", version.BuildContext())
 
 	var (
-		memStorage     = local.NewMemorySeriesStorage(&cfg.storage)
-		remoteStorage  = remote.New(&cfg.remote)
-		sampleAppender = storage.Fanout{memStorage}
+		sampleAppender = storage.Fanout{}
+		reloadables    []Reloadable
 	)
-	if remoteStorage != nil {
-		sampleAppender = append(sampleAppender, remoteStorage)
-		reloadables = append(reloadables, remoteStorage)
+
+	var localStorage local.Storage
+	switch cfg.localStorageEngine {
+	case "persisted":
+		localStorage = local.NewMemorySeriesStorage(&cfg.storage)
+		sampleAppender = storage.Fanout{localStorage}
+	case "none":
+		localStorage = &local.NoopStorage{}
+	default:
+		log.Errorf("Invalid local storage engine %q", cfg.localStorageEngine)
+		return 1
 	}
 
+	remoteStorage := &remote.Storage{}
+	sampleAppender = append(sampleAppender, remoteStorage)
+	reloadables = append(reloadables, remoteStorage)
+
 	var (
-		notifier      = notifier.New(&cfg.notifier)
-		targetManager = retrieval.NewTargetManager(sampleAppender)
-		queryEngine   = promql.NewEngine(memStorage, &cfg.queryEngine)
+		notifier       = notifier.New(&cfg.notifier)
+		targetManager  = retrieval.NewTargetManager(sampleAppender)
+		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
+		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		SampleAppender: sampleAppender,
 		Notifier:       notifier,
 		QueryEngine:    queryEngine,
+		Context:        ctx,
 		ExternalURL:    cfg.web.ExternalURL,
 	})
 
-	flags := map[string]string{}
-	cfg.fs.VisitAll(func(f *flag.Flag) {
-		flags[f.Name] = f.Value.String()
-	})
+	cfg.web.Context = ctx
+	cfg.web.Storage = localStorage
+	cfg.web.QueryEngine = queryEngine
+	cfg.web.TargetManager = targetManager
+	cfg.web.RuleManager = ruleManager
+	cfg.web.Notifier = notifier
 
-	status := &web.PrometheusStatus{
-		TargetPools: targetManager.Pools,
-		Rules:       ruleManager.Rules,
-		Flags:       flags,
-		Birth:       time.Now(),
+	cfg.web.Version = &web.PrometheusVersion{
+		Version:   version.Version,
+		Revision:  version.Revision,
+		Branch:    version.Branch,
+		BuildUser: version.BuildUser,
+		BuildDate: version.BuildDate,
+		GoVersion: version.GoVersion,
 	}
 
-	webHandler := web.New(memStorage, queryEngine, ruleManager, status, &cfg.web)
+	cfg.web.Flags = map[string]string{}
+	cfg.fs.VisitAll(func(f *flag.Flag) {
+		cfg.web.Flags[f.Name] = f.Value.String()
+	})
 
-	reloadables = append(reloadables, status, targetManager, ruleManager, webHandler, notifier)
+	webHandler := web.New(&cfg.web)
 
-	if !reloadConfig(cfg.configFile, reloadables...) {
+	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
+
+	if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
+		log.Errorf("Error loading config: %s", err)
 		return 1
 	}
 
@@ -127,37 +152,43 @@ func Main() int {
 		for {
 			select {
 			case <-hup:
-			case <-webHandler.Reload():
+				if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
+					log.Errorf("Error reloading config: %s", err)
+				}
+			case rc := <-webHandler.Reload():
+				if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
+					log.Errorf("Error reloading config: %s", err)
+					rc <- err
+				} else {
+					rc <- nil
+				}
 			}
-			reloadConfig(cfg.configFile, reloadables...)
 		}
 	}()
 
 	// Start all components. The order is NOT arbitrary.
 
-	if err := memStorage.Start(); err != nil {
+	if err := localStorage.Start(); err != nil {
 		log.Errorln("Error opening memory series storage:", err)
 		return 1
 	}
 	defer func() {
-		if err := memStorage.Stop(); err != nil {
+		if err := localStorage.Stop(); err != nil {
 			log.Errorln("Error stopping storage:", err)
 		}
 	}()
 
-	if remoteStorage != nil {
-		prometheus.MustRegister(remoteStorage)
+	defer remoteStorage.Stop()
 
-		go remoteStorage.Run()
-		defer remoteStorage.Stop()
-	}
 	// The storage has to be fully initialized before registering.
-	prometheus.MustRegister(memStorage)
+	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
+		prometheus.MustRegister(instrumentedStorage)
+	}
 	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
-	// The notifieris a dependency of the rule manager. It has to be
+	// The notifier is a dependency of the rule manager. It has to be
 	// started before and torn down afterwards.
 	go notifier.Run()
 	defer notifier.Stop()
@@ -170,7 +201,7 @@ func Main() int {
 
 	// Shutting down the query engine before the rule manager will cause pending queries
 	// to be canceled and ensures a quick shutdown of the rule manager.
-	defer queryEngine.Stop()
+	defer cancelCtx()
 
 	go webHandler.Run()
 
@@ -195,13 +226,13 @@ func Main() int {
 // Reloadable things can change their internal state to match a new config
 // and handle failure gracefully.
 type Reloadable interface {
-	ApplyConfig(*config.Config) bool
+	ApplyConfig(*config.Config) error
 }
 
-func reloadConfig(filename string, rls ...Reloadable) (success bool) {
+func reloadConfig(filename string, rls ...Reloadable) (err error) {
 	log.Infof("Loading configuration file %s", filename)
 	defer func() {
-		if success {
+		if err == nil {
 			configSuccess.Set(1)
 			configSuccessTime.Set(float64(time.Now().Unix()))
 		} else {
@@ -211,30 +242,27 @@ func reloadConfig(filename string, rls ...Reloadable) (success bool) {
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		log.Errorf("Couldn't load configuration (-config.file=%s): %v", filename, err)
-		return false
+		return fmt.Errorf("couldn't load configuration (-config.file=%s): %v", filename, err)
 	}
-	success = true
 
+	// Add AlertmanagerConfigs for legacy Alertmanager URL flags.
+	for us := range cfg.alertmanagerURLs {
+		acfg, err := parseAlertmanagerURLToConfig(us)
+		if err != nil {
+			return err
+		}
+		conf.AlertingConfig.AlertmanagerConfigs = append(conf.AlertingConfig.AlertmanagerConfigs, acfg)
+	}
+
+	failed := false
 	for _, rl := range rls {
-		success = success && rl.ApplyConfig(conf)
+		if err := rl.ApplyConfig(conf); err != nil {
+			log.Error("Failed to apply configuration: ", err)
+			failed = true
+		}
 	}
-	return success
-}
-
-var versionInfoTmpl = `
-prometheus, version {{.version}} (branch: {{.branch}}, revision: {{.revision}})
-  build user:       {{.buildUser}}
-  build date:       {{.buildDate}}
-  go version:       {{.goVersion}}
-`
-
-func printVersion() {
-	t := template.Must(template.New("version").Parse(versionInfoTmpl))
-
-	var buf bytes.Buffer
-	if err := t.ExecuteTemplate(&buf, "version", version.Map); err != nil {
-		panic(err)
+	if failed {
+		return fmt.Errorf("one or more errors occurred while applying the new configuration (-config.file=%s)", filename)
 	}
-	fmt.Fprintln(os.Stdout, strings.TrimSpace(buf.String()))
+	return nil
 }

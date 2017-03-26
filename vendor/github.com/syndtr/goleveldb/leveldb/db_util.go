@@ -21,14 +21,16 @@ type Reader interface {
 	NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator
 }
 
-type Sizes []uint64
+// Sizes is list of size.
+type Sizes []int64
 
 // Sum returns sum of the sizes.
-func (p Sizes) Sum() (n uint64) {
-	for _, s := range p {
-		n += s
+func (sizes Sizes) Sum() int64 {
+	var sum int64
+	for _, size := range sizes {
+		sum += size
 	}
-	return n
+	return sum
 }
 
 // Logging.
@@ -40,59 +42,59 @@ func (db *DB) checkAndCleanFiles() error {
 	v := db.s.version()
 	defer v.release()
 
-	tablesMap := make(map[uint64]bool)
-	for _, tables := range v.tables {
+	tmap := make(map[int64]bool)
+	for _, tables := range v.levels {
 		for _, t := range tables {
-			tablesMap[t.file.Num()] = false
+			tmap[t.fd.Num] = false
 		}
 	}
 
-	files, err := db.s.getFiles(storage.TypeAll)
+	fds, err := db.s.stor.List(storage.TypeAll)
 	if err != nil {
 		return err
 	}
 
-	var nTables int
-	var rem []storage.File
-	for _, f := range files {
+	var nt int
+	var rem []storage.FileDesc
+	for _, fd := range fds {
 		keep := true
-		switch f.Type() {
+		switch fd.Type {
 		case storage.TypeManifest:
-			keep = f.Num() >= db.s.manifestFile.Num()
+			keep = fd.Num >= db.s.manifestFd.Num
 		case storage.TypeJournal:
-			if db.frozenJournalFile != nil {
-				keep = f.Num() >= db.frozenJournalFile.Num()
+			if !db.frozenJournalFd.Zero() {
+				keep = fd.Num >= db.frozenJournalFd.Num
 			} else {
-				keep = f.Num() >= db.journalFile.Num()
+				keep = fd.Num >= db.journalFd.Num
 			}
 		case storage.TypeTable:
-			_, keep = tablesMap[f.Num()]
+			_, keep = tmap[fd.Num]
 			if keep {
-				tablesMap[f.Num()] = true
-				nTables++
+				tmap[fd.Num] = true
+				nt++
 			}
 		}
 
 		if !keep {
-			rem = append(rem, f)
+			rem = append(rem, fd)
 		}
 	}
 
-	if nTables != len(tablesMap) {
-		var missing []*storage.FileInfo
-		for num, present := range tablesMap {
+	if nt != len(tmap) {
+		var mfds []storage.FileDesc
+		for num, present := range tmap {
 			if !present {
-				missing = append(missing, &storage.FileInfo{Type: storage.TypeTable, Num: num})
+				mfds = append(mfds, storage.FileDesc{storage.TypeTable, num})
 				db.logf("db@janitor table missing @%d", num)
 			}
 		}
-		return errors.NewErrCorrupted(nil, &errors.ErrMissingFiles{Files: missing})
+		return errors.NewErrCorrupted(storage.FileDesc{}, &errors.ErrMissingFiles{Fds: mfds})
 	}
 
-	db.logf("db@janitor F·%d G·%d", len(files), len(rem))
-	for _, f := range rem {
-		db.logf("db@janitor removing %s-%d", f.Type(), f.Num())
-		if err := f.Remove(); err != nil {
+	db.logf("db@janitor F·%d G·%d", len(fds), len(rem))
+	for _, fd := range rem {
+		db.logf("db@janitor removing %s-%d", fd.Type, fd.Num)
+		if err := db.s.stor.Remove(fd); err != nil {
 			return err
 		}
 	}

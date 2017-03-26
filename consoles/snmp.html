@@ -27,10 +27,10 @@
   <td {{ if eq (. | value) 1.0 }}>Yes{{ else }} class="alert-danger">No{{ end }}</td>
   <td class="text-right">{{ query (printf "ifOperStatus{job='snmp',instance='%s'} == 1" .Labels.instance) | len }}</td>
   <td class="text-right">{{ template "prom_query_drilldown" (args (printf "count(ifOperStatus{job='snmp',instance='%s'})" .Labels.instance) ) }}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifHCInOctets{job='snmp',instance='%s'}[5m]) or rate(ifInOctets{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "b/s" "humanize")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifHCOutOctets{job='snmp',instance='%s'}[5m]) or rate(ifOutOctets{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "b/s" "humanize")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifInDiscards{job='snmp',instance='%s'}[5m]) or rate(ifOutDiscards{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "/s" "humanizeNoSmallPrefix")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifInErrors{job='snmp',instance='%s'}[5m]) or rate(ifOutErrors{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "/s" "humanizeNoSmallPrefix")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifHCInOctets{job='snmp',instance='%s'}[5m]) or irate(ifInOctets{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "b/s" "humanize")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifHCOutOctets{job='snmp',instance='%s'}[5m]) or irate(ifOutOctets{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "b/s" "humanize")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifInDiscards{job='snmp',instance='%s'}[5m]) or irate(ifOutDiscards{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "/s" "humanizeNoSmallPrefix")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "8 * sum by (instance)(irate(ifInErrors{job='snmp',instance='%s'}[5m]) or irate(ifOutErrors{job='snmp',instance='%s'}[5m]))" .Labels.instance .Labels.instance) "/s" "humanizeNoSmallPrefix")}}</td>
 </tr>
 {{ else }}
 <tr><td colspan=4>No devices found.</td></tr>

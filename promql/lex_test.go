@@ -209,6 +209,9 @@ var tests = []struct {
 		input:    `/`,
 		expected: []item{{itemDIV, 0, `/`}},
 	}, {
+		input:    `^`,
+		expected: []item{{itemPOW, 0, `^`}},
+	}, {
 		input:    `%`,
 		expected: []item{{itemMOD, 0, `%`}},
 	}, {
@@ -249,9 +252,6 @@ var tests = []struct {
 		input:    "alert",
 		expected: []item{{itemAlert, 0, "alert"}},
 	}, {
-		input:    "keeping_extra",
-		expected: []item{{itemKeepCommon, 0, "keeping_extra"}},
-	}, {
 		input:    "keep_common",
 		expected: []item{{itemKeepCommon, 0, "keep_common"}},
 	}, {
@@ -278,6 +278,9 @@ var tests = []struct {
 	}, {
 		input:    "on",
 		expected: []item{{itemOn, 0, "on"}},
+	}, {
+		input:    "ignoring",
+		expected: []item{{itemIgnoring, 0, "ignoring"}},
 	}, {
 		input:    "group_left",
 		expected: []item{{itemGroupLeft, 0, "group_left"}},
@@ -435,8 +438,12 @@ var tests = []struct {
 // for the parser to avoid duplicated effort.
 func TestLexer(t *testing.T) {
 	for i, test := range tests {
-		l := lex(test.input)
-		l.seriesDesc = test.seriesDesc
+		l := &lexer{
+			input:      test.input,
+			items:      make(chan item),
+			seriesDesc: test.seriesDesc,
+		}
+		go l.run()
 
 		out := []item{}
 		for it := range l.items {

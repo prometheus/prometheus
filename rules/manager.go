@@ -26,12 +26,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -105,7 +106,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	eval(model.Time, *promql.Engine) (model.Vector, error)
+	Eval(context.Context, model.Time, *promql.Engine, string) (model.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -124,9 +125,12 @@ type Group struct {
 	terminated chan struct{}
 }
 
-func newGroup(name string, opts *ManagerOptions) *Group {
+// NewGroup makes a new Group with the given name, options, and rules.
+func NewGroup(name string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
 		name:       name,
+		interval:   interval,
+		rules:      rules,
 		opts:       opts,
 		done:       make(chan struct{}),
 		terminated: make(chan struct{}),
@@ -150,9 +154,9 @@ func (g *Group) run() {
 			return
 		}
 		start := time.Now()
-		g.eval()
+		g.Eval()
 
-		iterationDuration.Observe(float64(time.Since(start)) / float64(time.Second))
+		iterationDuration.Observe(time.Since(start).Seconds())
 	}
 	iter()
 
@@ -233,10 +237,10 @@ func typeForRule(r Rule) ruleType {
 	panic(fmt.Errorf("unknown rule type: %T", r))
 }
 
-// eval runs a single evaluation cycle in which all rules are evaluated in parallel.
+// Eval runs a single evaluation cycle in which all rules are evaluated in parallel.
 // In the future a single group will be evaluated sequentially to properly handle
 // rule dependency.
-func (g *Group) eval() {
+func (g *Group) Eval() {
 	var (
 		now = model.Now()
 		wg  sync.WaitGroup
@@ -251,12 +255,12 @@ func (g *Group) eval() {
 			defer wg.Done()
 
 			defer func(t time.Time) {
-				evalDuration.WithLabelValues(rtyp).Observe(float64(time.Since(t)) / float64(time.Second))
+				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
 			}(time.Now())
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.eval(now, g.opts.QueryEngine)
+			vector, err := rule.Eval(g.opts.Context, now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -270,8 +274,29 @@ func (g *Group) eval() {
 			if ar, ok := rule.(*AlertingRule); ok {
 				g.sendAlerts(ar, now)
 			}
+			var (
+				numOutOfOrder = 0
+				numDuplicates = 0
+			)
 			for _, s := range vector {
-				g.opts.SampleAppender.Append(s)
+				if err := g.opts.SampleAppender.Append(s); err != nil {
+					switch err {
+					case local.ErrOutOfOrderSample:
+						numOutOfOrder++
+						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
+					case local.ErrDuplicateSampleForTimestamp:
+						numDuplicates++
+						log.With("sample", s).With("error", err).Debug("Rule evaluation result discarded")
+					default:
+						log.With("sample", s).With("error", err).Warn("Rule evaluation result discarded")
+					}
+				}
+			}
+			if numOutOfOrder > 0 {
+				log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order result from rule evaluation")
+			}
+			if numDuplicates > 0 {
+				log.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
 			}
 		}(rule)
 	}
@@ -288,55 +313,10 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 			continue
 		}
 
-		// Provide the alert information to the template.
-		l := make(map[string]string, len(alert.Labels))
-		for k, v := range alert.Labels {
-			l[string(k)] = string(v)
-		}
-
-		tmplData := struct {
-			Labels map[string]string
-			Value  float64
-		}{
-			Labels: l,
-			Value:  float64(alert.Value),
-		}
-		// Inject some convenience variables that are easier to remember for users
-		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
-
-		expand := func(text model.LabelValue) model.LabelValue {
-			tmpl := template.NewTemplateExpander(
-				defs+string(text),
-				"__alert_"+rule.Name(),
-				tmplData,
-				timestamp,
-				g.opts.QueryEngine,
-				g.opts.ExternalURL.Path,
-			)
-			result, err := tmpl.Expand()
-			if err != nil {
-				result = fmt.Sprintf("<error expanding template: %s>", err)
-				log.Warnf("Error expanding alert template %v with data '%v': %s", rule.Name(), tmplData, err)
-			}
-			return model.LabelValue(result)
-		}
-
-		labels := make(model.LabelSet, len(alert.Labels)+1)
-		for ln, lv := range alert.Labels {
-			labels[ln] = expand(lv)
-		}
-		labels[model.AlertNameLabel] = model.LabelValue(rule.Name())
-
-		annotations := make(model.LabelSet, len(rule.annotations))
-		for an, av := range rule.annotations {
-			annotations[an] = expand(av)
-		}
-
 		a := &model.Alert{
 			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
-			Labels:       labels,
-			Annotations:  annotations,
+			Labels:       alert.Labels,
+			Annotations:  alert.Annotations,
 			GeneratorURL: g.opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
 		}
 		if alert.ResolvedAt != 0 {
@@ -365,6 +345,7 @@ type Manager struct {
 type ManagerOptions struct {
 	ExternalURL    *url.URL
 	QueryEngine    *promql.Engine
+	Context        context.Context
 	Notifier       *notifier.Notifier
 	SampleAppender storage.SampleAppender
 }
@@ -387,6 +368,9 @@ func (m *Manager) Run() {
 
 // Stop the rule manager's rule evaluation cycles.
 func (m *Manager) Stop() {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
 	log.Info("Stopping rule manager...")
 
 	for _, eg := range m.groups {
@@ -397,8 +381,8 @@ func (m *Manager) Stop() {
 }
 
 // ApplyConfig updates the rule manager's state as the config requires. If
-// loading the new rules failed the old rule set is restored. Returns true on success.
-func (m *Manager) ApplyConfig(conf *config.Config) bool {
+// loading the new rules failed the old rule set is restored.
+func (m *Manager) ApplyConfig(conf *config.Config) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -408,24 +392,20 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
 			// The only error can be a bad pattern.
-			log.Errorf("Error retrieving rule files for %s: %s", pat, err)
-			return false
+			return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
 		}
 		files = append(files, fs...)
 	}
 
-	groups, err := m.loadGroups(files...)
+	// To be replaced with a configurable per-group interval.
+	groups, err := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
 	if err != nil {
-		log.Errorf("Error loading rules, previous rule set restored: %s", err)
-		return false
+		return fmt.Errorf("error loading rules, previous rule set restored: %s", err)
 	}
 
 	var wg sync.WaitGroup
 
 	for _, newg := range groups {
-		// To be replaced with a configurable per-group interval.
-		newg.interval = time.Duration(conf.GlobalConfig.EvaluationInterval)
-
 		wg.Add(1)
 
 		// If there is an old group with the same identifier, stop it and wait for
@@ -457,20 +437,14 @@ func (m *Manager) ApplyConfig(conf *config.Config) bool {
 	wg.Wait()
 	m.groups = groups
 
-	return true
+	return nil
 }
 
 // loadGroups reads groups from a list of files.
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
-func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
-	groups := map[string]*Group{}
-
-	// Currently there is no group syntax implemented. Thus all rules
-	// are read into a single default group.
-	g := newGroup("default", m.opts)
-	groups[g.name] = g
-
+func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, error) {
+	rules := []Rule{}
 	for _, fn := range filenames {
 		content, err := ioutil.ReadFile(fn)
 		if err != nil {
@@ -494,10 +468,14 @@ func (m *Manager) loadGroups(filenames ...string) (map[string]*Group, error) {
 			default:
 				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
 			}
-			g.rules = append(g.rules, rule)
+			rules = append(rules, rule)
 		}
 	}
 
+	// Currently there is no group syntax implemented. Thus all rules
+	// are read into a single default group.
+	g := NewGroup("default", interval, rules, m.opts)
+	groups := map[string]*Group{g.name: g}
 	return groups, nil
 }
 

@@ -36,17 +36,18 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"golang.org/x/net/context"
+	"golang.org/x/net/netutil"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/version"
-	"github.com/prometheus/prometheus/web/api/legacy"
-	"github.com/prometheus/prometheus/web/api/v1"
+	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -54,66 +55,68 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
-	ruleManager *rules.Manager
-	queryEngine *promql.Engine
-	storage     local.Storage
+	targetManager *retrieval.TargetManager
+	ruleManager   *rules.Manager
+	queryEngine   *promql.Engine
+	context       context.Context
+	storage       local.Storage
+	notifier      *notifier.Notifier
 
-	apiV1     *v1.API
-	apiLegacy *legacy.API
+	apiV1 *api_v1.API
 
-	router      *route.Router
-	listenErrCh chan error
-	quitCh      chan struct{}
-	reloadCh    chan struct{}
-	options     *Options
-	statusInfo  *PrometheusStatus
+	router       *route.Router
+	listenErrCh  chan error
+	quitCh       chan struct{}
+	reloadCh     chan chan error
+	options      *Options
+	configString string
+	versionInfo  *PrometheusVersion
+	birth        time.Time
+	cwd          string
+	flagsMap     map[string]string
 
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
+	now            func() model.Time
 }
 
 // ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (h *Handler) ApplyConfig(conf *config.Config) bool {
+func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
 	h.externalLabels = conf.GlobalConfig.ExternalLabels
+	h.configString = conf.String()
 
-	return true
+	return nil
 }
 
-// PrometheusStatus contains various information about the status
-// of the running Prometheus process.
-type PrometheusStatus struct {
-	Birth  time.Time
-	Flags  map[string]string
-	Config string
-
-	// A function that returns the current scrape targets pooled
-	// by their job name.
-	TargetPools func() map[string]retrieval.Targets
-	// A function that returns all loaded rules.
-	Rules func() []rules.Rule
-
-	mu sync.RWMutex
-}
-
-// ApplyConfig updates the status state as the new config requires.
-// Returns true on success.
-func (s *PrometheusStatus) ApplyConfig(conf *config.Config) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Config = conf.String()
-
-	return true
+// PrometheusVersion contains build information about Prometheus.
+type PrometheusVersion struct {
+	Version   string `json:"version"`
+	Revision  string `json:"revision"`
+	Branch    string `json:"branch"`
+	BuildUser string `json:"buildUser"`
+	BuildDate string `json:"buildDate"`
+	GoVersion string `json:"goVersion"`
 }
 
 // Options for the web Handler.
 type Options struct {
+	Context       context.Context
+	Storage       local.Storage
+	QueryEngine   *promql.Engine
+	TargetManager *retrieval.TargetManager
+	RuleManager   *rules.Manager
+	Notifier      *notifier.Notifier
+	Version       *PrometheusVersion
+	Flags         map[string]string
+
 	ListenAddress        string
+	ReadTimeout          time.Duration
+	MaxConnections       int
 	ExternalURL          *url.URL
+	RoutePrefix          string
 	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
@@ -123,35 +126,45 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *PrometheusStatus, o *Options) *Handler {
-	router := route.New()
+func New(o *Options) *Handler {
+	router := route.New(func(r *http.Request) (context.Context, error) {
+		return o.Context, nil
+	})
+
+	cwd, err := os.Getwd()
+
+	if err != nil {
+		cwd = "<error retrieving current working directory>"
+	}
 
 	h := &Handler{
 		router:      router,
 		listenErrCh: make(chan error),
 		quitCh:      make(chan struct{}),
-		reloadCh:    make(chan struct{}),
+		reloadCh:    make(chan chan error),
 		options:     o,
-		statusInfo:  status,
+		versionInfo: o.Version,
+		birth:       time.Now(),
+		cwd:         cwd,
+		flagsMap:    o.Flags,
 
-		ruleManager: rm,
-		queryEngine: qe,
-		storage:     st,
+		context:       o.Context,
+		targetManager: o.TargetManager,
+		ruleManager:   o.RuleManager,
+		queryEngine:   o.QueryEngine,
+		storage:       o.Storage,
+		notifier:      o.Notifier,
 
-		apiV1: v1.NewAPI(qe, st),
-		apiLegacy: &legacy.API{
-			QueryEngine: qe,
-			Storage:     st,
-			Now:         model.Now,
-		},
+		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager, o.Notifier),
+		now:   model.Now,
 	}
 
-	if o.ExternalURL.Path != "" {
+	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, o.ExternalURL.Path, http.StatusFound)
+			http.Redirect(w, r, o.RoutePrefix, http.StatusFound)
 		})
-		router = router.WithPrefix(o.ExternalURL.Path)
+		router = router.WithPrefix(o.RoutePrefix)
 	}
 
 	instrh := prometheus.InstrumentHandler
@@ -160,10 +173,14 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		router.Redirect(w, r, "/graph", http.StatusFound)
 	})
-	router.Get("/graph", instrf("graph", h.graph))
 
-	router.Get("/status", instrf("status", h.status))
 	router.Get("/alerts", instrf("alerts", h.alerts))
+	router.Get("/graph", instrf("graph", h.graph))
+	router.Get("/status", instrf("status", h.status))
+	router.Get("/flags", instrf("flags", h.flags))
+	router.Get("/config", instrf("config", h.config))
+	router.Get("/rules", instrf("rules", h.rules))
+	router.Get("/targets", instrf("targets", h.targets))
 	router.Get("/version", instrf("version", h.version))
 
 	router.Get("/heap", instrf("heap", dumpHeap))
@@ -174,7 +191,6 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 		Handler: http.HandlerFunc(h.federation),
 	}))
 
-	h.apiLegacy.Register(router.WithPrefix("/api"))
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
 
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
@@ -190,6 +206,10 @@ func New(st local.Storage, qe *promql.Engine, rm *rules.Manager, status *Prometh
 	}
 
 	router.Post("/-/reload", h.reload)
+	router.Get("/-/reload", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, "This endpoint requires a POST request.\n")
+	})
 
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
@@ -230,19 +250,31 @@ func (h *Handler) Quit() <-chan struct{} {
 }
 
 // Reload returns the receive-only channel that signals configuration reload requests.
-func (h *Handler) Reload() <-chan struct{} {
+func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
-	h.listenErrCh <- http.ListenAndServe(h.options.ListenAddress, h.router)
+	server := &http.Server{
+		Addr:        h.options.ListenAddress,
+		Handler:     h.router,
+		ErrorLog:    log.NewErrorLogger(),
+		ReadTimeout: h.options.ReadTimeout,
+	}
+	listener, err := net.Listen("tcp", h.options.ListenAddress)
+	if err != nil {
+		h.listenErrCh <- err
+	} else {
+		limitedListener := netutil.LimitListener(listener, h.options.MaxConnections)
+		h.listenErrCh <- server.Serve(limitedListener)
+	}
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 	alerts := h.ruleManager.AlertingRules()
-	alertsSorter := byAlertStateSorter{alerts: alerts}
+	alertsSorter := byAlertStateAndNameSorter{alerts: alerts}
 	sort.Sort(alertsSorter)
 
 	alertStatus := AlertStatus{
@@ -292,7 +324,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(string(text), "__console_"+name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, string(text), "__console_"+name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -311,21 +343,52 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	h.statusInfo.mu.RLock()
-	defer h.statusInfo.mu.RUnlock()
-
 	h.executeTemplate(w, "status.html", struct {
-		Status *PrometheusStatus
-		Info   map[string]string
+		Birth         time.Time
+		CWD           string
+		Version       *PrometheusVersion
+		Alertmanagers []string
 	}{
-		Status: h.statusInfo,
-		Info:   version.Map,
+		Birth:         h.birth,
+		CWD:           h.cwd,
+		Version:       h.versionInfo,
+		Alertmanagers: h.notifier.Alertmanagers(),
+	})
+}
+
+func (h *Handler) flags(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "flags.html", h.flagsMap)
+}
+
+func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	h.executeTemplate(w, "config.html", h.configString)
+}
+
+func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "rules.html", h.ruleManager)
+}
+
+func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
+	// Bucket targets by job label
+	tps := map[string][]*retrieval.Target{}
+	for _, t := range h.targetManager.Targets() {
+		job := string(t.Labels()[model.JobLabel])
+		tps[job] = append(tps[job], t)
+	}
+
+	h.executeTemplate(w, "targets.html", struct {
+		TargetPools map[string][]*retrieval.Target
+	}{
+		TargetPools: tps,
 	})
 }
 
 func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewEncoder(w)
-	if err := dec.Encode(version.Map); err != nil {
+	if err := dec.Encode(h.versionInfo); err != nil {
 		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
 	}
 }
@@ -336,8 +399,11 @@ func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Reloading configuration file...")
-	h.reloadCh <- struct{}{}
+	rc := make(chan error)
+	h.reloadCh <- rc
+	if err := <-rc; err != nil {
+		http.Error(w, fmt.Sprintf("failed to reload config: %s", err), http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) consolesPath() string {
@@ -354,9 +420,12 @@ func (h *Handler) consolesPath() string {
 
 func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
-		"since":        time.Since,
+		"since": func(t time.Time) time.Duration {
+			return time.Since(t) / time.Millisecond * time.Millisecond
+		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {
 			for _, ln := range labels {
 				delete(lset, ln)
@@ -444,7 +513,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(text, name, data, model.Now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, text, name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)
@@ -473,18 +542,20 @@ type AlertStatus struct {
 	AlertStateToRowClass map[rules.AlertState]string
 }
 
-type byAlertStateSorter struct {
+type byAlertStateAndNameSorter struct {
 	alerts []*rules.AlertingRule
 }
 
-func (s byAlertStateSorter) Len() int {
+func (s byAlertStateAndNameSorter) Len() int {
 	return len(s.alerts)
 }
 
-func (s byAlertStateSorter) Less(i, j int) bool {
-	return s.alerts[i].State() > s.alerts[j].State()
+func (s byAlertStateAndNameSorter) Less(i, j int) bool {
+	return s.alerts[i].State() > s.alerts[j].State() ||
+		(s.alerts[i].State() == s.alerts[j].State() &&
+			s.alerts[i].Name() < s.alerts[j].Name())
 }
 
-func (s byAlertStateSorter) Swap(i, j int) {
+func (s byAlertStateAndNameSorter) Swap(i, j int) {
 	s.alerts[i], s.alerts[j] = s.alerts[j], s.alerts[i]
 }
