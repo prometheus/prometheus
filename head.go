@@ -34,10 +34,6 @@ var (
 	ErrOutOfBounds = errors.New("out of bounds")
 )
 
-// func init() {
-// 	deadlock.Opts.OnPotentialDeadlock = func() { fmt.Println("found deadlock") }
-// }
-
 // headBlock handles reads and writes of time series data within a time window.
 type headBlock struct {
 	mtx sync.RWMutex
