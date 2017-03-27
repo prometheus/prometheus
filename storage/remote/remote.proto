@@ -34,3 +34,30 @@ message TimeSeries {
 message WriteRequest {
   repeated TimeSeries timeseries = 1;
 }
+
+message ReadRequest {
+  repeated Query queries = 1;
+}
+
+message ReadResponse {
+  repeated TimeSeries timeseries = 1;
+}
+
+message Query {
+  int64 start_timestamp_ms = 1;
+  int64 end_timestamp_ms = 2;
+  repeated LabelMatcher matchers = 3;
+}
+
+enum MatchType {
+  EQUAL = 0;
+  NOT_EQUAL = 1;
+  REGEX_MATCH = 2;
+  REGEX_NO_MATCH = 3;
+}
+
+message LabelMatcher {
+  MatchType type = 1;
+  string name = 2;
+  string value = 3;
+}

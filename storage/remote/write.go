@@ -21,22 +21,26 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
-// Storage allows queueing samples for remote writes.
-type Storage struct {
+// Writer allows queueing samples for remote writes.
+type Writer struct {
 	mtx    sync.RWMutex
 	queues []*QueueManager
 }
 
 // ApplyConfig updates the state as the new config requires.
-func (s *Storage) ApplyConfig(conf *config.Config) error {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+func (w *Writer) ApplyConfig(conf *config.Config) error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
 
 	newQueues := []*QueueManager{}
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, rwConf)
+		c, err := NewClient(i, &clientConfig{
+			url:              rwConf.URL,
+			timeout:          rwConf.RemoteTimeout,
+			httpClientConfig: rwConf.HTTPClientConfig,
+		})
 		if err != nil {
 			return err
 		}
@@ -47,30 +51,30 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		}))
 	}
 
-	for _, q := range s.queues {
+	for _, q := range w.queues {
 		q.Stop()
 	}
 
-	s.queues = newQueues
-	for _, q := range s.queues {
+	w.queues = newQueues
+	for _, q := range w.queues {
 		q.Start()
 	}
 	return nil
 }
 
 // Stop the background processing of the storage queues.
-func (s *Storage) Stop() {
-	for _, q := range s.queues {
+func (w *Writer) Stop() {
+	for _, q := range w.queues {
 		q.Stop()
 	}
 }
 
 // Append implements storage.SampleAppender. Always returns nil.
-func (s *Storage) Append(smpl *model.Sample) error {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+func (w *Writer) Append(smpl *model.Sample) error {
+	w.mtx.RLock()
+	defer w.mtx.RUnlock()
 
-	for _, q := range s.queues {
+	for _, q := range w.queues {
 		q.Append(smpl)
 	}
 	return nil
@@ -79,6 +83,6 @@ func (s *Storage) Append(smpl *model.Sample) error {
 // NeedsThrottling implements storage.SampleAppender. It will always return
 // false as a remote storage drops samples on the floor if backlogging instead
 // of asking for throttling.
-func (s *Storage) NeedsThrottling() bool {
+func (w *Writer) NeedsThrottling() bool {
 	return false
 }

@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/fanin"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/web"
@@ -92,14 +93,20 @@ func Main() int {
 		return 1
 	}
 
-	remoteStorage := &remote.Storage{}
-	sampleAppender = append(sampleAppender, remoteStorage)
-	reloadables = append(reloadables, remoteStorage)
+	remoteAppender := &remote.Writer{}
+	sampleAppender = append(sampleAppender, remoteAppender)
+	remoteReader := &remote.Reader{}
+	reloadables = append(reloadables, remoteAppender, remoteReader)
+
+	queryable := fanin.Queryable{
+		Local:  localStorage,
+		Remote: remoteReader,
+	}
 
 	var (
 		notifier       = notifier.New(&cfg.notifier)
 		targetManager  = retrieval.NewTargetManager(sampleAppender)
-		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
+		queryEngine    = promql.NewEngine(queryable, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
 
@@ -107,7 +114,7 @@ func Main() int {
 		SampleAppender: sampleAppender,
 		Notifier:       notifier,
 		QueryEngine:    queryEngine,
-		Context:        ctx,
+		Context:        fanin.WithLocalOnly(ctx),
 		ExternalURL:    cfg.web.ExternalURL,
 	})
 
@@ -178,7 +185,7 @@ func Main() int {
 		}
 	}()
 
-	defer remoteStorage.Stop()
+	defer remoteAppender.Stop()
 
 	// The storage has to be fully initialized before registering.
 	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
