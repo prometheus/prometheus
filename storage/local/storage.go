@@ -18,6 +18,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"sort"
 	"sync"
@@ -419,11 +420,9 @@ func (s *MemorySeriesStorage) Start() (err error) {
 
 	log.Info("Loading series map and head chunks...")
 	s.fpToSeries, s.numChunksToPersist, err = p.loadSeriesMapAndHeads()
-	for fp := range s.fpToSeries.fpIter() {
-		if series, ok := s.fpToSeries.get(fp); ok {
-			if !series.headChunkClosed {
-				s.headChunks.Inc()
-			}
+	for _, series := range s.fpToSeries.m {
+		if !series.headChunkClosed {
+			s.headChunks.Inc()
 		}
 	}
 
@@ -1330,16 +1329,8 @@ func (s *MemorySeriesStorage) waitForNextFP(numberOfFPs int, maxWaitDurationFact
 func (s *MemorySeriesStorage) cycleThroughMemoryFingerprints() chan model.Fingerprint {
 	memoryFingerprints := make(chan model.Fingerprint)
 	go func() {
-		var fpIter <-chan model.Fingerprint
-
-		defer func() {
-			if fpIter != nil {
-				for range fpIter {
-					// Consume the iterator.
-				}
-			}
-			close(memoryFingerprints)
-		}()
+		defer close(memoryFingerprints)
+		firstPass := true
 
 		for {
 			// Initial wait, also important if there are no FPs yet.
@@ -1347,9 +1338,15 @@ func (s *MemorySeriesStorage) cycleThroughMemoryFingerprints() chan model.Finger
 				return
 			}
 			begin := time.Now()
-			fpIter = s.fpToSeries.fpIter()
+			fps := s.fpToSeries.sortedFPs()
+			if firstPass {
+				// Start first pass at a random location in the
+				// key space to cover the whole key space even
+				// in the case of frequent restarts.
+				fps = fps[rand.Intn(len(fps)):]
+			}
 			count := 0
-			for fp := range fpIter {
+			for _, fp := range fps {
 				select {
 				case memoryFingerprints <- fp:
 				case <-s.loopStopping:
@@ -1364,11 +1361,16 @@ func (s *MemorySeriesStorage) cycleThroughMemoryFingerprints() chan model.Finger
 				count++
 			}
 			if count > 0 {
+				msg := "full"
+				if firstPass {
+					msg = "initial partial"
+				}
 				log.Infof(
-					"Completed maintenance sweep through %d in-memory fingerprints in %v.",
-					count, time.Since(begin),
+					"Completed %s maintenance sweep through %d in-memory fingerprints in %v.",
+					msg, count, time.Since(begin),
 				)
 			}
+			firstPass = false
 		}
 	}()
 
