@@ -272,6 +272,9 @@ func parse(args []string) error {
 	if promql.StalenessDelta < 0 {
 		return fmt.Errorf("negative staleness delta: %s", promql.StalenessDelta)
 	}
+	// The staleness delta is also a reasonable head chunk timeout. Thus, we
+	// don't expose it as a separate flag but set it here.
+	cfg.storage.HeadChunkTimeout = promql.StalenessDelta
 
 	if err := parsePrometheusURL(); err != nil {
 		return err
