@@ -85,7 +85,16 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			Untyped: &dto.Untyped{},
 		}
 
-		for ln, lv := range s.Metric {
+		// Sort labelnames for unittest consistency.
+		labelnames := make([]string, 0, len(s.Metric))
+		for ln := range s.Metric {
+			labelnames = append(labelnames, string(ln))
+		}
+		sort.Strings(labelnames)
+
+		for _, labelname := range labelnames {
+			ln := model.LabelName(labelname)
+			lv := s.Metric[ln]
 			if lv == "" {
 				// No value means unset. Never consider those labels.
 				// This is also important to protect against nameless metrics.
