@@ -59,72 +59,72 @@ var scenarios = map[string]struct {
 		params: "match[]=test_metric1",
 		code:   200,
 		body: `# TYPE test_metric1 untyped
-test_metric1{foo="bar"} 10000 6000000
-test_metric1{foo="boo"} 1 6000000
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
 `,
 	},
 	"test_metric2": {
 		params: "match[]=test_metric2",
 		code:   200,
 		body: `# TYPE test_metric2 untyped
-test_metric2{foo="boo"} 1 6000000
+test_metric2{foo="boo",instance="i"} 1 6000000
 `,
 	},
 	"test_metric_without_labels": {
 		params: "match[]=test_metric_without_labels",
 		code:   200,
 		body: `# TYPE test_metric_without_labels untyped
-test_metric_without_labels 1001 6000000
+test_metric_without_labels{instance=""} 1001 6000000
 `,
 	},
 	"{foo='boo'}": {
 		params: "match[]={foo='boo'}",
 		code:   200,
 		body: `# TYPE test_metric1 untyped
-test_metric1{foo="boo"} 1 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric2 untyped
-test_metric2{foo="boo"} 1 6000000
+test_metric2{foo="boo",instance="i"} 1 6000000
 `,
 	},
 	"two matchers": {
 		params: "match[]=test_metric1&match[]=test_metric2",
 		code:   200,
 		body: `# TYPE test_metric1 untyped
-test_metric1{foo="bar"} 10000 6000000
-test_metric1{foo="boo"} 1 6000000
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric2 untyped
-test_metric2{foo="boo"} 1 6000000
+test_metric2{foo="boo",instance="i"} 1 6000000
 `,
 	},
 	"everything": {
 		params: "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
 		code:   200,
 		body: `# TYPE test_metric1 untyped
-test_metric1{foo="bar"} 10000 6000000
-test_metric1{foo="boo"} 1 6000000
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric2 untyped
-test_metric2{foo="boo"} 1 6000000
+test_metric2{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric_without_labels untyped
-test_metric_without_labels 1001 6000000
+test_metric_without_labels{instance=""} 1001 6000000
 `,
 	},
 	"empty label value matches everything that doesn't have that label": {
 		params: "match[]={foo='',__name__=~'.%2b'}",
 		code:   200,
 		body: `# TYPE test_metric_without_labels untyped
-test_metric_without_labels 1001 6000000
+test_metric_without_labels{instance=""} 1001 6000000
 `,
 	},
 	"empty label value for a label that doesn't exist at all, matches everything": {
 		params: "match[]={bar='',__name__=~'.%2b'}",
 		code:   200,
 		body: `# TYPE test_metric1 untyped
-test_metric1{foo="bar"} 10000 6000000
-test_metric1{foo="boo"} 1 6000000
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric2 untyped
-test_metric2{foo="boo"} 1 6000000
+test_metric2{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric_without_labels untyped
-test_metric_without_labels 1001 6000000
+test_metric_without_labels{instance=""} 1001 6000000
 `,
 	},
 	"external labels are added if not already present": {
@@ -132,12 +132,27 @@ test_metric_without_labels 1001 6000000
 		externalLabels: model.LabelSet{"zone": "ie", "foo": "baz"},
 		code:           200,
 		body: `# TYPE test_metric1 untyped
-test_metric1{foo="bar",zone="ie"} 10000 6000000
-test_metric1{foo="boo",zone="ie"} 1 6000000
+test_metric1{foo="bar",instance="i",zone="ie"} 10000 6000000
+test_metric1{foo="boo",instance="i",zone="ie"} 1 6000000
 # TYPE test_metric2 untyped
-test_metric2{foo="boo",zone="ie"} 1 6000000
+test_metric2{foo="boo",instance="i",zone="ie"} 1 6000000
 # TYPE test_metric_without_labels untyped
-test_metric_without_labels{zone="ie",foo="baz"} 1001 6000000
+test_metric_without_labels{foo="baz",instance="",zone="ie"} 1001 6000000
+`,
+	},
+	"instance is an external label": {
+		// This makes no sense as a configuration, but we should
+		// know what it does anyway.
+		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
+		externalLabels: model.LabelSet{"instance": "baz"},
+		code:           200,
+		body: `# TYPE test_metric1 untyped
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
+# TYPE test_metric2 untyped
+test_metric2{foo="boo",instance="i"} 1 6000000
+# TYPE test_metric_without_labels untyped
+test_metric_without_labels{instance="baz"} 1001 6000000
 `,
 	},
 }
@@ -145,9 +160,9 @@ test_metric_without_labels{zone="ie",foo="baz"} 1001 6000000
 func TestFederation(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
-			test_metric1{foo="bar"}    0+100x100
-			test_metric1{foo="boo"}    1+0x100
-			test_metric2{foo="boo"}    1+0x100
+			test_metric1{foo="bar",instance="i"}    0+100x100
+			test_metric1{foo="boo",instance="i"}    1+0x100
+			test_metric2{foo="boo",instance="i"}    1+0x100
 			test_metric_without_labels 1+10x100
 	`)
 	if err != nil {
@@ -189,7 +204,7 @@ func TestFederation(t *testing.T) {
 			t.Errorf("Scenario %q: got code %d, want %d", name, got, want)
 		}
 		if got, want := normalizeBody(res.Body), scenario.body; got != want {
-			t.Errorf("Scenario %q: got body %q, want %q", name, got, want)
+			t.Errorf("Scenario %q: got body %s, want %s", name, got, want)
 		}
 	}
 }
