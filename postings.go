@@ -241,26 +241,28 @@ func (it *listPostings) Err() error {
 	return nil
 }
 
-type bytePostings struct {
+// bigEndianPostings implements the Postings interface over a byte stream of
+// big endian numbers.
+type bigEndianPostings struct {
 	list []byte
 	idx  int
 }
 
-func newBytePostings(list []byte) *bytePostings {
-	return &bytePostings{list: list, idx: -1}
+func newBigEndianPostings(list []byte) *bigEndianPostings {
+	return &bigEndianPostings{list: list, idx: -1}
 }
 
-func (it *bytePostings) At() uint32 {
+func (it *bigEndianPostings) At() uint32 {
 	idx := 4 * it.idx
 	return binary.BigEndian.Uint32(it.list[idx : idx+4])
 }
 
-func (it *bytePostings) Next() bool {
+func (it *bigEndianPostings) Next() bool {
 	it.idx++
 	return it.idx*4 < len(it.list)
 }
 
-func (it *bytePostings) Seek(x uint32) bool {
+func (it *bigEndianPostings) Seek(x uint32) bool {
 	num := len(it.list) / 4
 	// Do binary search between current position and end.
 	it.idx += sort.Search(num-it.idx, func(i int) bool {
@@ -271,7 +273,7 @@ func (it *bytePostings) Seek(x uint32) bool {
 	return it.idx*4 < len(it.list)
 }
 
-func (it *bytePostings) Err() error {
+func (it *bigEndianPostings) Err() error {
 	return nil
 }
 

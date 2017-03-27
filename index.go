@@ -702,7 +702,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 	if len(b)%4 != 0 {
 		return nil, errors.Wrap(errInvalidSize, "plain postings entry")
 	}
-	return newBytePostings(b), nil
+	return newBigEndianPostings(b), nil
 }
 
 type stringTuples struct {
