@@ -25,10 +25,6 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
-const (
-	headChunkTimeout = time.Hour // Close head chunk if not touched for that long.
-)
-
 // fingerprintSeriesPair pairs a fingerprint with a memorySeries pointer.
 type fingerprintSeriesPair struct {
 	fp     model.Fingerprint
@@ -259,15 +255,15 @@ func (s *memorySeries) add(v model.SamplePair) (int, error) {
 }
 
 // maybeCloseHeadChunk closes the head chunk if it has not been touched for the
-// duration of headChunkTimeout. It returns whether the head chunk was closed.
-// If the head chunk is already closed, the method is a no-op and returns false.
+// provided duration. It returns whether the head chunk was closed.  If the head
+// chunk is already closed, the method is a no-op and returns false.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) maybeCloseHeadChunk() (bool, error) {
+func (s *memorySeries) maybeCloseHeadChunk(timeout time.Duration) (bool, error) {
 	if s.headChunkClosed {
 		return false, nil
 	}
-	if time.Now().Sub(s.lastTime.Time()) > headChunkTimeout {
+	if time.Now().Sub(s.lastTime.Time()) > timeout {
 		s.headChunkClosed = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.

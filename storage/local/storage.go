@@ -164,6 +164,7 @@ type MemorySeriesStorage struct {
 	logThrottlingStopped       chan struct{}
 	maxMemoryChunks            int
 	dropAfter                  time.Duration
+	headChunkTimeout           time.Duration
 	checkpointInterval         time.Duration
 	checkpointDirtySeriesLimit int
 
@@ -199,6 +200,7 @@ type MemorySeriesStorageOptions struct {
 	MaxChunksToPersist         int           // Max number of chunks waiting to be persisted.
 	PersistenceStoragePath     string        // Location of persistence files.
 	PersistenceRetentionPeriod time.Duration // Chunks at least that old are dropped.
+	HeadChunkTimeout           time.Duration // Head chunks idle for at least that long may be closed.
 	CheckpointInterval         time.Duration // How often to checkpoint the series map and head chunks.
 	CheckpointDirtySeriesLimit int           // How many dirty series will trigger an early checkpoint.
 	Dirty                      bool          // Force the storage to consider itself dirty on startup.
@@ -222,9 +224,10 @@ func NewMemorySeriesStorage(o *MemorySeriesStorageOptions) *MemorySeriesStorage 
 		throttled:                  make(chan struct{}, 1),
 		maxMemoryChunks:            o.MemoryChunks,
 		dropAfter:                  o.PersistenceRetentionPeriod,
+		headChunkTimeout:           o.HeadChunkTimeout,
 		checkpointInterval:         o.CheckpointInterval,
 		checkpointDirtySeriesLimit: o.CheckpointDirtySeriesLimit,
-		archiveHighWatermark:       model.Now().Add(-headChunkTimeout),
+		archiveHighWatermark:       model.Now().Add(-o.HeadChunkTimeout),
 
 		maxChunksToPersist: o.MaxChunksToPersist,
 
@@ -1394,7 +1397,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 
 	defer s.seriesOps.WithLabelValues(memoryMaintenance).Inc()
 
-	closed, err := series.maybeCloseHeadChunk()
+	closed, err := series.maybeCloseHeadChunk(s.headChunkTimeout)
 	if err != nil {
 		s.quarantineSeries(fp, series.metric, err)
 		s.persistErrors.Inc()
@@ -1421,7 +1424,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 
 	// Archive if all chunks are evicted. Also make sure the last sample has
 	// an age of at least headChunkTimeout (which is very likely anyway).
-	if iOldestNotEvicted == -1 && model.Now().Sub(series.lastTime) > headChunkTimeout {
+	if iOldestNotEvicted == -1 && model.Now().Sub(series.lastTime) > s.headChunkTimeout {
 		s.fpToSeries.del(fp)
 		s.numSeries.Dec()
 		s.persistence.archiveMetric(fp, series.metric, series.firstTime(), series.lastTime)
