@@ -37,6 +37,8 @@ check_license:
 	@./scripts/check_license.sh
 
 test:
+	@echo ">> installing consul binary used in tests"
+	$(GO) get -u github.com/hashicorp/consul
 	@echo ">> running short tests"
 	@$(GO) test -short $(pkgs)
 

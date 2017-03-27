@@ -116,6 +116,7 @@ var (
 	DefaultConsulSDConfig = ConsulSDConfig{
 		TagSeparator: ",",
 		Scheme:       "http",
+		WatchTimeout: 30 * time.Second,
 	}
 
 	// DefaultServersetSDConfig is the default Serverset SD configuration.
@@ -837,7 +838,8 @@ type ConsulSDConfig struct {
 
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
+	XXX          map[string]interface{} `yaml:",inline"`
+	WatchTimeout time.Duration          `yaml:"watchtimeout,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

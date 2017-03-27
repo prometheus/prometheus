@@ -31,7 +31,6 @@ import (
 )
 
 const (
-	watchTimeout  = 30 * time.Second
 	retryInterval = 15 * time.Second
 
 	// addressLabel is the name for the label containing a target's address.
@@ -89,6 +88,7 @@ type Discovery struct {
 	clientDatacenter string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
+	watchTimeout     time.Duration
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -110,6 +110,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 			Password: conf.Password,
 		},
 		HttpClient: wrapper,
+		WaitTime:   conf.WatchTimeout,
 	}
 	client, err := consul.NewClient(clientConf)
 	if err != nil {
@@ -121,6 +122,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		tagSeparator:     conf.TagSeparator,
 		watchedServices:  conf.Services,
 		clientDatacenter: clientConf.Datacenter,
+		watchTimeout:     conf.WatchTimeout,
 	}
 	return cd, nil
 }
@@ -150,7 +152,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		t0 := time.Now()
 		srvs, meta, err := catalog.Services(&consul.QueryOptions{
 			WaitIndex: lastIndex,
-			WaitTime:  watchTimeout,
+			WaitTime:  d.watchTimeout,
+			//WaitTime:  d.WatchTimeout,
 		})
 		rpcDuration.WithLabelValues("catalog", "services").Observe(time.Since(t0).Seconds())
 
@@ -203,6 +206,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 					datacenterLabel: model.LabelValue(d.clientDatacenter),
 				},
 				tagSeparator: d.tagSeparator,
+				watchTimeout: d.watchTimeout,
 			}
 
 			wctx, cancel := context.WithCancel(ctx)
@@ -235,6 +239,7 @@ type consulService struct {
 	labels       model.LabelSet
 	client       *consul.Client
 	tagSeparator string
+	watchTimeout time.Duration
 }
 
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetGroup) {
@@ -245,7 +250,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 		t0 := time.Now()
 		nodes, meta, err := catalog.Service(srv.name, "", &consul.QueryOptions{
 			WaitIndex: lastIndex,
-			WaitTime:  watchTimeout,
+			WaitTime:  srv.watchTimeout,
 		})
 		rpcDuration.WithLabelValues("catalog", "service").Observe(time.Since(t0).Seconds())
 

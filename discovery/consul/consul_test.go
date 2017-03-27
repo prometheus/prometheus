@@ -14,7 +14,12 @@
 package consul
 
 import (
+	"context"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/consul/consul/structs"
+	"github.com/hashicorp/consul/testutil"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -44,5 +49,36 @@ func TestNonConfiguredService(t *testing.T) {
 	}
 	if !consulDiscovery.shouldWatch("nonConfiguredServiceName") {
 		t.Errorf("Expected service %s to be watched", "nonConfiguredServiceName")
+	}
+}
+
+func TestConsulDiscovery(t *testing.T) {
+	srv1, err := testutil.NewTestServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv1.Stop()
+
+	srv1.AddService(t, "testService", structs.HealthPassing, []string{"master"})
+	srv1.AddCheck(t, "service:testService", "testService", structs.HealthPassing)
+
+	conf := &config.ConsulSDConfig{
+		Server:       srv1.HTTPAddr,
+		Services:     []string{"testService"},
+		WatchTimeout: 3 * time.Second,
+	}
+	consulDiscovery, err := NewDiscovery(conf)
+	ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
+	ch := make(chan []*config.TargetGroup, 1)
+
+	consulDiscovery.Run(ctx, ch)
+
+	select {
+	case tg := <-ch:
+		if tg[0].Source != "testService" {
+			t.Errorf("Expected service %s to be watched", tg)
+		}
+	default:
+		t.Errorf("Could not retrieve target group from embedded consul")
 	}
 }
