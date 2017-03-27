@@ -34,6 +34,11 @@ var (
 	ErrOutOfBounds = errors.New("out of bounds")
 )
 
+type sample struct {
+	t int64
+	v float64
+}
+
 // headBlock handles reads and writes of time series data within a time window.
 type headBlock struct {
 	mtx sync.RWMutex
