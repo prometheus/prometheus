@@ -1,8 +1,12 @@
 package tsdb
 
 import (
+	"encoding/binary"
+	"math/rand"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type mockPostings struct {
@@ -180,4 +184,82 @@ func TestMerge(t *testing.T) {
 			t.Fatalf("Expected %v but got %v", c.res, res)
 		}
 	}
+}
+
+func TestBigEndian(t *testing.T) {
+	num := 1000
+	// mock a list as postings
+	ls := make([]uint32, num)
+	ls[0] = 2
+	for i := 1; i < num; i++ {
+		ls[i] = ls[i-1] + uint32(rand.Int31n(25)) + 2
+	}
+
+	beLst := make([]byte, num*4)
+	for i := 0; i < num; i++ {
+		b := beLst[i*4 : i*4+4]
+		binary.BigEndian.PutUint32(b, ls[i])
+	}
+
+	t.Run("Iteration", func(t *testing.T) {
+		bep := newBigEndianPostings(beLst)
+		for i := 0; i < num; i++ {
+			require.True(t, bep.Next())
+			require.Equal(t, ls[i], bep.At())
+		}
+
+		require.False(t, bep.Next())
+		require.Nil(t, bep.Err())
+	})
+
+	t.Run("Seek", func(t *testing.T) {
+		table := []struct {
+			seek  uint32
+			val   uint32
+			found bool
+		}{
+			{
+				ls[0] - 1, ls[0], true,
+			},
+			{
+				ls[4], ls[4], true,
+			},
+			{
+				ls[500] - 1, ls[500], true,
+			},
+			{
+				ls[600] + 1, ls[601], true,
+			},
+			{
+				ls[600] + 1, ls[601], true,
+			},
+			{
+				ls[600] + 1, ls[601], true,
+			},
+			{
+				ls[0], ls[601], true,
+			},
+			{
+				ls[600], ls[601], true,
+			},
+			{
+				ls[999], ls[999], true,
+			},
+			{
+				ls[999] + 10, ls[999], false,
+			},
+		}
+
+		bep := newBigEndianPostings(beLst)
+		bep.Next()
+
+		for _, v := range table {
+			require.Equal(t, v.found, bep.Seek(v.seek))
+			// Once you seek beyond, At() will panic.
+			if v.found {
+				require.Equal(t, v.val, bep.At())
+				require.Nil(t, bep.Err())
+			}
+		}
+	})
 }
