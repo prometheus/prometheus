@@ -83,18 +83,8 @@ func init() {
 	prometheus.MustRegister(NumMemDescs)
 }
 
-var (
-	// NumMemChunks is the total number of chunks in memory. This is a
-	// global counter, also used internally, so not implemented as
-	// metrics. Collected in MemorySeriesStorage.Collect.
-	// TODO(beorn7): As it is used internally, it is actually very bad style
-	// to have it as a global variable.
-	NumMemChunks int64
-
-	// NumMemChunksDesc is the metric descriptor for the above.
-	NumMemChunksDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, subsystem, "memory_chunks"),
-		"The current number of chunks in memory, excluding cloned chunks (i.e. chunks without a descriptor).",
-		nil, nil,
-	)
-)
+// NumMemChunks is the total number of chunks in memory. This is a global
+// counter, also used internally, so not implemented as metrics. Collected in
+// MemorySeriesStorage.
+// TODO(beorn7): Having this as an exported global variable is really bad.
+var NumMemChunks int64

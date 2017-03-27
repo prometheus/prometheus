@@ -54,6 +54,10 @@ var cfg = struct {
 
 	alertmanagerURLs stringset
 	prometheusURL    string
+
+	// Deprecated storage flags, kept for backwards compatibility.
+	deprecatedMemoryChunks       uint64
+	deprecatedMaxChunksToPersist uint64
 }{
 	alertmanagerURLs: stringset{},
 }
@@ -145,17 +149,21 @@ func init() {
 		&cfg.storage.PersistenceStoragePath, "storage.local.path", "data",
 		"Base path for metrics storage.",
 	)
-	cfg.fs.IntVar(
-		&cfg.storage.MemoryChunks, "storage.local.memory-chunks", 1024*1024,
-		"How many chunks to keep in memory. While the size of a chunk is 1kiB, the total memory usage will be significantly higher than this value * 1kiB. Furthermore, for various reasons, more chunks might have to be kept in memory temporarily. Sample ingestion will be throttled if the configured value is exceeded by more than 10%.",
+	cfg.fs.Uint64Var(
+		&cfg.storage.TargetHeapSize, "storage.local.target-heap-size", 2*1024*1024*1024,
+		"The metrics storage attempts to limit its own memory usage such that the total heap size approaches this value. Note that this is not a hard limit. Actual heap size might be temporarily or permanently higher for a variety of reasons. The default value is a relatively safe setting to not use more than 3 GiB physical memory.",
+	)
+	cfg.fs.Uint64Var(
+		&cfg.deprecatedMemoryChunks, "storage.local.memory-chunks", 0,
+		"Deprecated. If set, -storage.local.target-heap-size will be set to this value times 3072.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.PersistenceRetentionPeriod, "storage.local.retention", 15*24*time.Hour,
 		"How long to retain samples in the local storage.",
 	)
-	cfg.fs.IntVar(
-		&cfg.storage.MaxChunksToPersist, "storage.local.max-chunks-to-persist", 512*1024,
-		"How many chunks can be waiting for persistence before sample ingestion will be throttled. Many chunks waiting to be persisted will increase the checkpoint size.",
+	cfg.fs.Uint64Var(
+		&cfg.deprecatedMaxChunksToPersist, "storage.local.max-chunks-to-persist", 0,
+		"Deprecated. This flag has no effect anymore.",
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.CheckpointInterval, "storage.local.checkpoint-interval", 5*time.Minute,
@@ -276,6 +284,10 @@ func parse(args []string) error {
 	// don't expose it as a separate flag but set it here.
 	cfg.storage.HeadChunkTimeout = promql.StalenessDelta
 
+	if cfg.storage.TargetHeapSize < 1024*1024 {
+		return fmt.Errorf("target heap size smaller than %d: %d", 1024*1024, cfg.storage.TargetHeapSize)
+	}
+
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
@@ -290,6 +302,15 @@ func parse(args []string) error {
 		if err := validateAlertmanagerURL(u); err != nil {
 			return err
 		}
+	}
+
+	// Deal with deprecated storage flags.
+	if cfg.deprecatedMaxChunksToPersist > 0 {
+		log.Warn("Flag -storage.local.max-chunks-to-persist is deprecated. It has no effect.")
+	}
+	if cfg.deprecatedMemoryChunks > 0 {
+		cfg.storage.TargetHeapSize = cfg.deprecatedMemoryChunks * 3072
+		log.Warnf("Flag -storage.local.memory-chunks is deprecated. Its value %d is used to override -storage.local.target-heap-size to %d.", cfg.deprecatedMemoryChunks, cfg.storage.TargetHeapSize)
 	}
 
 	return nil

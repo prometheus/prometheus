@@ -176,7 +176,7 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 	// Try to drop one chunk, which must be prevented by the shrink
 	// ratio. Since we do not pass in any chunks to persist, the offset
 	// should be the number of chunks in the file.
-	for fp, _ := range fpToChunks {
+	for fp := range fpToChunks {
 		firstTime, offset, numDropped, allDropped, err := p.dropAndPersistChunks(fp, 1, nil)
 		if err != nil {
 			t.Fatal(err)
