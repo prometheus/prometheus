@@ -27,10 +27,11 @@ import (
 )
 
 var scenarios = map[string]struct {
-	params string
-	accept string
-	code   int
-	body   string
+	params         string
+	accept         string
+	externalLabels model.LabelSet
+	code           int
+	body           string
 }{
 	"empty": {
 		params: "",
@@ -126,6 +127,19 @@ test_metric2{foo="boo"} 1 6000000
 test_metric_without_labels 1001 6000000
 `,
 	},
+	"external labels are added if not already present": {
+		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
+		externalLabels: model.LabelSet{"zone": "ie", "foo": "baz"},
+		code:           200,
+		body: `# TYPE test_metric1 untyped
+test_metric1{foo="bar",zone="ie"} 10000 6000000
+test_metric1{foo="boo",zone="ie"} 1 6000000
+# TYPE test_metric2 untyped
+test_metric2{foo="boo",zone="ie"} 1 6000000
+# TYPE test_metric_without_labels untyped
+test_metric_without_labels{zone="ie",foo="baz"} 1001 6000000
+`,
+	},
 }
 
 func TestFederation(t *testing.T) {
@@ -152,6 +166,7 @@ func TestFederation(t *testing.T) {
 	}
 
 	for name, scenario := range scenarios {
+		h.externalLabels = scenario.externalLabels
 		req, err := http.ReadRequest(bufio.NewReader(strings.NewReader(
 			"GET http://example.org/federate?" + scenario.params + " HTTP/1.0\r\n\r\n",
 		)))
