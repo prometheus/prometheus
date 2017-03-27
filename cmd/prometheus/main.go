@@ -98,7 +98,7 @@ func Main() int {
 
 	var (
 		notifier       = notifier.New(&cfg.notifier)
-		targetManager  = retrieval.NewTargetManager(sampleAppender)
+		targetManager  = retrieval.NewTargetManager(retrieval.NewTargetScraperFn(sampleAppender))
 		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
