@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"encoding/binary"
 	"sort"
 	"strings"
 )
@@ -237,6 +238,42 @@ func (it *listPostings) Seek(x uint32) bool {
 }
 
 func (it *listPostings) Err() error {
+	return nil
+}
+
+// bigEndianPostings implements the Postings interface over a byte stream of
+// big endian numbers.
+type bigEndianPostings struct {
+	list []byte
+	idx  int
+}
+
+func newBigEndianPostings(list []byte) *bigEndianPostings {
+	return &bigEndianPostings{list: list, idx: -1}
+}
+
+func (it *bigEndianPostings) At() uint32 {
+	idx := 4 * it.idx
+	return binary.BigEndian.Uint32(it.list[idx : idx+4])
+}
+
+func (it *bigEndianPostings) Next() bool {
+	it.idx++
+	return it.idx*4 < len(it.list)
+}
+
+func (it *bigEndianPostings) Seek(x uint32) bool {
+	num := len(it.list) / 4
+	// Do binary search between current position and end.
+	it.idx += sort.Search(num-it.idx, func(i int) bool {
+		idx := 4 * (it.idx + i)
+		val := binary.BigEndian.Uint32(it.list[idx : idx+4])
+		return val >= x
+	})
+	return it.idx*4 < len(it.list)
+}
+
+func (it *bigEndianPostings) Err() error {
 	return nil
 }
 
