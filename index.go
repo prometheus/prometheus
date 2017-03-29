@@ -40,9 +40,10 @@ type IndexWriter interface {
 	WriteLabelIndex(names []string, values []string) error
 
 	// WritePostings writes a postings list for a single label pair.
+	// The Postings here contain refs to the series that were added.
 	WritePostings(name, value string, it Postings) error
 
-	// Close writes any finalization and closes theresources associated with
+	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
 	Close() error
 }
@@ -416,6 +417,7 @@ type IndexReader interface {
 	LabelValues(names ...string) (StringTuples, error)
 
 	// Postings returns the postings list iterator for the label pair.
+	// The Postings here contain the offsets to the series inside the index.
 	Postings(name, value string) (Postings, error)
 
 	// Series returns the series for the given reference.
