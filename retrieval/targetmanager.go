@@ -131,7 +131,7 @@ func (tm *TargetManager) reload() {
 	}
 }
 
-// Targets returns the targets currently being scraped bucketed by their job name.
+// Targets returns the targets currently being scraped.
 func (tm *TargetManager) Targets() []*Target {
 	tm.mtx.RLock()
 	defer tm.mtx.RUnlock()
