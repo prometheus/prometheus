@@ -83,11 +83,11 @@ type alertMetrics struct {
 	errors        *prometheus.CounterVec
 	sent          *prometheus.CounterVec
 	dropped       prometheus.Counter
-	queueLength   prometheus.Gauge
-	queueCapacity prometheus.Metric
+	queueLength   prometheus.GaugeFunc
+	queueCapacity prometheus.Gauge
 }
 
-func newAlertMetrics(r prometheus.Registerer, o *Options) *alertMetrics {
+func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: namespace,
@@ -119,22 +119,21 @@ func newAlertMetrics(r prometheus.Registerer, o *Options) *alertMetrics {
 			Name:      "dropped_total",
 			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
 		}),
-		queueLength: prometheus.NewGauge(prometheus.GaugeOpts{
+		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_length",
 			Help:      "The number of alert notifications in the queue.",
+		}, queueLen),
+		queueCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queue_capacity",
+			Help:      "The capacity of the alert notifications queue.",
 		}),
-		queueCapacity: prometheus.MustNewConstMetric(
-			prometheus.NewDesc(
-				prometheus.BuildFQName(namespace, subsystem, "queue_capacity"),
-				"The capacity of the alert notifications queue.",
-				nil, nil,
-			),
-			prometheus.GaugeValue,
-			float64(o.QueueCapacity),
-		),
 	}
+
+	m.queueCapacity.Set(float64(queueCap))
 
 	if r != nil {
 		r.MustRegister(
@@ -142,6 +141,8 @@ func newAlertMetrics(r prometheus.Registerer, o *Options) *alertMetrics {
 			m.errors,
 			m.sent,
 			m.dropped,
+			m.queueLength,
+			m.queueCapacity,
 		)
 	}
 
@@ -156,14 +157,17 @@ func New(o *Options) *Notifier {
 		o.Do = ctxhttp.Do
 	}
 
-	return &Notifier{
-		queue:   make(model.Alerts, 0, o.QueueCapacity),
-		ctx:     ctx,
-		cancel:  cancel,
-		more:    make(chan struct{}, 1),
-		opts:    o,
-		metrics: newAlertMetrics(o.Registerer, o),
+	n := &Notifier{
+		queue:  make(model.Alerts, 0, o.QueueCapacity),
+		ctx:    ctx,
+		cancel: cancel,
+		more:   make(chan struct{}, 1),
+		opts:   o,
 	}
+
+	queueLenFunc := func() float64 { return float64(n.queueLen()) }
+	n.metrics = newAlertMetrics(o.Registerer, o.QueueCapacity, queueLenFunc)
+	return n
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -404,20 +408,6 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 func (n *Notifier) Stop() {
 	log.Info("Stopping notification handler...")
 	n.cancel()
-}
-
-// Describe implements prometheus.Collector.
-func (n *Notifier) Describe(ch chan<- *prometheus.Desc) {
-	ch <- n.metrics.queueCapacity.Desc()
-	ch <- n.metrics.queueLength.Desc()
-}
-
-// Collect implements prometheus.Collector.
-func (n *Notifier) Collect(ch chan<- prometheus.Metric) {
-	n.metrics.queueLength.Set(float64(n.queueLen()))
-
-	ch <- n.metrics.queueLength
-	ch <- n.metrics.queueCapacity
 }
 
 // alertmanager holds Alertmanager endpoint information.
