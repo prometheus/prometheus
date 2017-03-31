@@ -379,6 +379,12 @@ func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 		tps[job] = append(tps[job], t)
 	}
 
+	for _, targets := range tps {
+		sort.Slice(targets, func(i, j int) bool {
+			return targets[i].Labels()[model.InstanceLabel] < targets[j].Labels()[model.InstanceLabel]
+		})
+	}
+
 	h.executeTemplate(w, "targets.html", struct {
 		TargetPools map[string][]*retrieval.Target
 	}{
