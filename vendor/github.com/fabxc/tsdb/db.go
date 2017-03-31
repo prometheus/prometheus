@@ -462,18 +462,22 @@ func (db *DB) Appender() Appender {
 	db.mtx.RLock()
 	a := &dbAppender{db: db}
 
-	// Only instantiate appender after returning the headmtx to avoid
-	// questionable locking order.
-	db.headmtx.RLock()
-	app := db.appendable()
-	db.headmtx.RUnlock()
+	// XXX(fabxc): turn off creating initial appender as it will happen on-demand
+	// anyway. For now this, with combination of only having a single timestamp per batch,
+	// prevents opening more than one appender and hitting an unresolved deadlock (#11).
+	//
+	// // Only instantiate appender after returning the headmtx to avoid
+	// // questionable locking order.
+	// db.headmtx.RLock()
+	// app := db.appendable()
+	// db.headmtx.RUnlock()
 
-	for _, b := range app {
-		a.heads = append(a.heads, &metaAppender{
-			meta: b.Meta(),
-			app:  b.Appender().(*headAppender),
-		})
-	}
+	// for _, b := range app {
+	// 	a.heads = append(a.heads, &metaAppender{
+	// 		meta: b.Meta(),
+	// 		app:  b.Appender().(*headAppender),
+	// 	})
+	// }
 
 	return a
 }
@@ -551,14 +555,27 @@ func (a *dbAppender) appenderFor(t int64) (*metaAppender, error) {
 
 		a.db.headmtx.Unlock()
 
-		// Instantiate appenders after returning headmtx to avoid questionable
-		// locking order.
+		// XXX(fabxc): temporary workaround. See comment on instantiating DB.Appender.
 		for _, b := range newHeads {
+			// Only get appender for the block with the specific timestamp.
+			if t >= b.Meta().MaxTime {
+				continue
+			}
 			a.heads = append(a.heads, &metaAppender{
 				app:  b.Appender(),
 				meta: b.Meta(),
 			})
+			break
 		}
+
+		// // Instantiate appenders after returning headmtx to avoid questionable
+		// // locking order.
+		// for _, b := range newHeads {
+		// 	a.heads = append(a.heads, &metaAppender{
+		// 		app:  b.Appender(),
+		// 		meta: b.Meta(),
+		// 	})
+		// }
 	}
 	for i := len(a.heads) - 1; i >= 0; i-- {
 		if h := a.heads[i]; t >= h.meta.MinTime {

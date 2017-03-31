@@ -40,9 +40,10 @@ type IndexWriter interface {
 	WriteLabelIndex(names []string, values []string) error
 
 	// WritePostings writes a postings list for a single label pair.
+	// The Postings here contain refs to the series that were added.
 	WritePostings(name, value string, it Postings) error
 
-	// Close writes any finalization and closes theresources associated with
+	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
 	Close() error
 }
@@ -416,6 +417,7 @@ type IndexReader interface {
 	LabelValues(names ...string) (StringTuples, error)
 
 	// Postings returns the postings list iterator for the label pair.
+	// The Postings here contain the offsets to the series inside the index.
 	Postings(name, value string) (Postings, error)
 
 	// Series returns the series for the given reference.
@@ -698,20 +700,11 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 		return nil, errors.Wrapf(errInvalidFlag, "section at %d", off)
 	}
 
-	// TODO(fabxc): just read into memory as an intermediate solution.
-	// Add iterator over serialized data.
-	var l []uint32
-
-	for len(b) > 0 {
-		if len(b) < 4 {
-			return nil, errors.Wrap(errInvalidSize, "plain postings entry")
-		}
-		l = append(l, binary.BigEndian.Uint32(b[:4]))
-
-		b = b[4:]
+	// Add iterator over the bytes.
+	if len(b)%4 != 0 {
+		return nil, errors.Wrap(errInvalidSize, "plain postings entry")
 	}
-
-	return &listPostings{list: l, idx: -1}, nil
+	return newBigEndianPostings(b), nil
 }
 
 type stringTuples struct {
