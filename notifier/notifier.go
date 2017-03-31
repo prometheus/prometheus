@@ -74,6 +74,8 @@ type Options struct {
 	RelabelConfigs []*config.RelabelConfig
 	// Used for sending HTTP requests to the Alertmanager.
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
+
+	Registerer prometheus.Registerer
 }
 
 type alertMetrics struct {
@@ -147,7 +149,7 @@ func newAlertMetrics(r prometheus.Registerer, o *Options) *alertMetrics {
 }
 
 // New constructs a new Notifier.
-func New(o *Options, r prometheus.Registerer) *Notifier {
+func New(o *Options) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if o.Do == nil {
@@ -160,7 +162,7 @@ func New(o *Options, r prometheus.Registerer) *Notifier {
 		cancel:  cancel,
 		more:    make(chan struct{}, 1),
 		opts:    o,
-		metrics: newAlertMetrics(r, o),
+		metrics: newAlertMetrics(o.Registerer, o),
 	}
 }
 

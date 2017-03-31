@@ -26,6 +26,7 @@ import (
 	"unicode"
 
 	"github.com/asaskevich/govalidator"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -56,6 +57,9 @@ var cfg = struct {
 	prometheusURL    string
 }{
 	alertmanagerURLs: stringset{},
+	notifier: notifier.Options{
+		Registerer: prometheus.DefaultRegisterer,
+	},
 }
 
 // Value type for flags that are now unused, but which are kept around to
