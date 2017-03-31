@@ -63,7 +63,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{}, prometheus.DefaultRegisterer)
+	h := New(&Options{})
 	defer unregisterMetrics()
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
@@ -159,7 +159,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{}, prometheus.DefaultRegisterer)
+	h := New(&Options{})
 	defer unregisterMetrics()
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
@@ -227,7 +227,7 @@ func TestCustomDo(t *testing.T) {
 				Body: ioutil.NopCloser(nil),
 			}, nil
 		},
-	}, prometheus.DefaultRegisterer)
+	})
 	defer unregisterMetrics()
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
@@ -250,7 +250,7 @@ func TestExternalLabels(t *testing.T) {
 				Replacement:  "c",
 			},
 		},
-	}, prometheus.DefaultRegisterer)
+	})
 	defer unregisterMetrics()
 
 	// This alert should get the external label attached.
@@ -305,7 +305,7 @@ func TestHandlerRelabel(t *testing.T) {
 				Replacement:  "renamed",
 			},
 		},
-	}, prometheus.DefaultRegisterer)
+	})
 	defer unregisterMetrics()
 
 	// This alert should be dropped due to the configuration
@@ -360,7 +360,7 @@ func TestHandlerQueueing(t *testing.T) {
 
 	h := New(&Options{
 		QueueCapacity: 3 * maxBatchSize,
-	}, prometheus.DefaultRegisterer)
+	})
 	defer unregisterMetrics()
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
