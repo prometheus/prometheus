@@ -183,10 +183,6 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
-		for _, am := range ams.ams {
-			n.metrics.errors.WithLabelValues(am.url())
-			n.metrics.sent.WithLabelValues(am.url())
-		}
 		ams.metrics = n.metrics
 
 		amSets = append(amSets, ams)
@@ -495,6 +491,7 @@ func (s *alertmanagerSet) Sync(tgs []*config.TargetGroup) {
 			continue
 		}
 
+		// This will initialise the Counters for the AM to 0.
 		s.metrics.sent.WithLabelValues(us)
 		s.metrics.errors.WithLabelValues(us)
 
