@@ -228,12 +228,6 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "NHQfiS8m+veKimFRVXgomeNq5vo=",
-			"path": "github.com/bradfitz/slice",
-			"revision": "d9036e2120b5ddfa53f3ebccd618c4af275f47da",
-			"revisionTime": "2016-08-23T17:19:49Z"
-		},
-		{
 			"checksumSHA1": "ki4pYDh/uURZV90biC7in/HIBsc=",
 			"path": "github.com/cespare/xxhash",
 			"revision": "4a94f899c20bc44d4f5f807cb14529e72aca99d6",
@@ -368,10 +362,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "L4bnnz4uVgDueUvcTKkZJ+IqPbw=",
+			"checksumSHA1": "bBLYUZL/ZfgLqOPlBCkA88QahFQ=",
 			"path": "github.com/fabxc/tsdb",
-			"revision": "70909ca8ad875aa6f01e1801d185b3f3bab2fda3",
-			"revisionTime": "2017-03-21T11:21:02Z"
+			"revision": "1afd8080f78b4925d2d6824eb8b6df333e549160",
+			"revisionTime": "2017-03-31T11:53:02Z"
 		},
 		{
 			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
@@ -684,12 +678,6 @@
 			"path": "github.com/ugorji/go/codec",
 			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
 			"revisionTime": "2016-09-30T00:14:02Z"
-		},
-		{
-			"checksumSHA1": "yy0yzurpFpQZS31Tj1WjBxLVCSE=",
-			"path": "go4.org/reflectutil",
-			"revision": "09d86de304dc27e636298361bbfee4ac6ab04f21",
-			"revisionTime": "2016-11-18T21:00:15Z"
 		},
 		{
 			"checksumSHA1": "9jjO5GjLa0XF/nfWihF02RoH4qc=",

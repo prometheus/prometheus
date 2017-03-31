@@ -17,10 +17,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// func init() {
-// 	deadlock.Opts.OnPotentialDeadlock = func() { fmt.Println("found deadlock") }
-// }
-
 var (
 	// ErrNotFound is returned if a looked up resource was not found.
 	ErrNotFound = errors.Errorf("not found")
@@ -589,6 +585,11 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	h.postings.add(s.ref, term{})
 
 	return s
+}
+
+type sample struct {
+	t int64
+	v float64
 }
 
 type memSeries struct {
