@@ -32,6 +32,8 @@ import (
 	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
+	"github.com/opentracing-contrib/go-stdlib/nethttp"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -109,6 +111,7 @@ type Options struct {
 	TargetManager *retrieval.TargetManager
 	RuleManager   *rules.Manager
 	Notifier      *notifier.Notifier
+	TraceHandler  http.Handler
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
@@ -202,6 +205,15 @@ func New(o *Options) *Handler {
 		router.Post("/-/quit", h.quit)
 	}
 
+	if o.TraceHandler != nil {
+		router.Get("/traces", func(w http.ResponseWriter, r *http.Request) {
+			o.TraceHandler.ServeHTTP(w, r)
+		})
+		router.Get("/traces/:id", func(w http.ResponseWriter, r *http.Request) {
+			o.TraceHandler.ServeHTTP(w, r)
+		})
+	}
+
 	router.Post("/-/reload", h.reload)
 	router.Get("/-/reload", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -254,9 +266,12 @@ func (h *Handler) Reload() <-chan chan error {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
+	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
+		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+	})
 	server := &http.Server{
 		Addr:        h.options.ListenAddress,
-		Handler:     h.router,
+		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), h.router, operationName),
 		ErrorLog:    log.NewErrorLogger(),
 		ReadTimeout: h.options.ReadTimeout,
 	}
