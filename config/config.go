@@ -173,6 +173,7 @@ var (
 		RemoteTimeout: model.Duration(1 * time.Minute),
 	}
 
+	// DefaultRemoteQueueConfig is the default remote queue configuration.
 	DefaultRemoteQueueConfig = RemoteQueueConfig{
 		// With a maximum of 1000 shards, assuming an average of 100ms remote write
 		// time and 100 samples per batch, we will be able to push 1M samples/s.
@@ -1319,6 +1320,8 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
+// RemoteQueueConfig is the configuration for the queue used to write to remote
+// storage.
 type RemoteQueueConfig struct {
 	// Number of samples to buffer per shard before we start dropping them.
 	QueueCapacity int
