@@ -172,6 +172,23 @@ var (
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout: model.Duration(1 * time.Minute),
 	}
+
+	DefaultRemoteQueueConfig = RemoteQueueConfig{
+		// With a maximum of 1000 shards, assuming an average of 100ms remote write
+		// time and 100 samples per batch, we will be able to push 1M samples/s.
+		MaxShards:         1000,
+		MaxSamplesPerSend: 100,
+
+		// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
+		// 1000 shards, this will buffer 100M samples total.
+		QueueCapacity:     100 * 1000,
+		BatchSendDeadline: 5 * time.Second,
+
+		// Max number of times to retry a batch on recoverable errors.
+		MaxRetries: 10,
+		MinBackoff: 30 * time.Second,
+		MaxBackoff: 100 * time.Millisecond,
+	}
 )
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -1302,6 +1319,38 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
+type RemoteQueueConfig struct {
+	// Number of samples to buffer per shard before we start dropping them.
+	QueueCapacity int
+	// Max number of shards, i.e. amount of concurrency.
+	MaxShards int
+	// Maximum number of samples per send.
+	MaxSamplesPerSend int
+	// Maximum time sample will wait in buffer.
+	BatchSendDeadline time.Duration
+	// Max number of times to retry a batch on recoverable errors.
+	MaxRetries int
+	// On recoverable errors, backoff exponentially.
+	MinBackoff time.Duration
+	MaxBackoff time.Duration
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *RemoteQueueConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultRemoteQueueConfig
+	type plain RemoteQueueConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "remote_queue"); err != nil {
+		return err
+	}
+	return nil
+}
+
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                 *URL             `yaml:"url,omitempty"`
@@ -1311,6 +1360,8 @@ type RemoteWriteConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
+
+	RemoteQueueConfig RemoteQueueConfig `yaml:",inline"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
