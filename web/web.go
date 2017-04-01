@@ -127,10 +127,7 @@ type Options struct {
 
 // New initializes a new web Handler.
 func New(o *Options) *Handler {
-	router := route.New(func(r *http.Request) (context.Context, error) {
-		return o.Context, nil
-	})
-
+	router := route.New()
 	cwd, err := os.Getwd()
 
 	if err != nil {
@@ -218,7 +215,7 @@ func New(o *Options) *Handler {
 }
 
 func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
-	fp := route.Param(route.Context(req), "filepath")
+	fp := route.Param(req.Context(), "filepath")
 	fp = filepath.Join("web/ui/static", fp)
 
 	info, err := ui.AssetInfo(fp)
@@ -289,7 +286,7 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
-	ctx := route.Context(r)
+	ctx := r.Context()
 	name := route.Param(ctx, "filepath")
 
 	file, err := http.Dir(h.options.ConsoleTemplatesPath).Open(name)

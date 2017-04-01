@@ -483,15 +483,12 @@ func TestEndpoints(t *testing.T) {
 		for p, v := range test.params {
 			ctx = route.WithParam(ctx, p, v)
 		}
-		api.context = func(r *http.Request) context.Context {
-			return ctx
-		}
 
 		req, err := http.NewRequest("ANY", fmt.Sprintf("http://example.com?%s", test.query.Encode()), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp, apiErr := test.endpoint(req)
+		resp, apiErr := test.endpoint(req.WithContext(ctx))
 		if apiErr != nil {
 			if test.errType == errorNone {
 				t.Fatalf("Unexpected error: %s", apiErr)
@@ -703,7 +700,7 @@ func TestParseDuration(t *testing.T) {
 }
 
 func TestOptionsMethod(t *testing.T) {
-	r := route.New(nil)
+	r := route.New()
 	api := &API{}
 	api.Register(r)
 
