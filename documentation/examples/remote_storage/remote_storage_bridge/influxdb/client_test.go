@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	influx "github.com/influxdb/influxdb/client"
+	influx "github.com/influxdata/influxdb/client/v2"
 
 	"github.com/prometheus/common/model"
 )
@@ -68,8 +68,8 @@ func TestClient(t *testing.T) {
 		},
 	}
 
-	expectedBody := `testmetric,test_label=test_label_value1 value=1.23 123456789123000000
-testmetric,test_label=test_label_value2 value=5.1234 123456789123000000
+	expectedBody := `testmetric,test_label=test_label_value1 value=1.23 123456789123
+testmetric,test_label=test_label_value2 value=5.1234 123456789123
 `
 
 	server := httptest.NewServer(http.HandlerFunc(
@@ -97,15 +97,15 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123000000
 		t.Fatalf("Unable to parse server URL %s: %s", server.URL, err)
 	}
 
-	conf := influx.Config{
-		URL:      *serverURL,
+	conf := influx.HTTPConfig{
+		Addr:     serverURL.String(),
 		Username: "testuser",
 		Password: "testpass",
 		Timeout:  time.Minute,
 	}
 	c := NewClient(conf, "test_db", "default")
 
-	if err := c.Store(samples); err != nil {
+	if err := c.Write(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)
 	}
 }
