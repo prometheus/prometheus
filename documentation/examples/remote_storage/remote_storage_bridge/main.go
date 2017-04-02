@@ -16,6 +16,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
@@ -30,7 +31,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
-	influx "github.com/influxdb/influxdb/client"
+	influx "github.com/influxdata/influxdb/client/v2"
 
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/influxdb"
@@ -95,8 +96,8 @@ func main() {
 	cfg := parseFlags()
 	http.Handle(cfg.telemetryPath, prometheus.Handler())
 
-	clients := buildClients(cfg)
-	serve(cfg.listenAddr, clients)
+	writers, readers := buildClients(cfg)
+	serve(cfg.listenAddr, writers, readers)
 }
 
 func parseFlags() *config {
@@ -119,7 +120,7 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.influxdbURL, "influxdb-url", "",
 		"The URL of the remote InfluxDB server to send samples to. None, if empty.",
 	)
-	flag.StringVar(&cfg.influxdbRetentionPolicy, "influxdb.retention-policy", "default",
+	flag.StringVar(&cfg.influxdbRetentionPolicy, "influxdb.retention-policy", "autogen",
 		"The InfluxDB retention policy to use.",
 	)
 	flag.StringVar(&cfg.influxdbUsername, "influxdb.username", "",
@@ -139,38 +140,50 @@ func parseFlags() *config {
 	return cfg
 }
 
-func buildClients(cfg *config) []remote.StorageClient {
-	var clients []remote.StorageClient
+type writer interface {
+	Write(samples model.Samples) error
+	Name() string
+}
+
+type reader interface {
+	Read(req *remote.ReadRequest) (*remote.ReadResponse, error)
+	Name() string
+}
+
+func buildClients(cfg *config) ([]writer, []reader) {
+	var writers []writer
+	var readers []reader
 	if cfg.graphiteAddress != "" {
 		c := graphite.NewClient(
 			cfg.graphiteAddress, cfg.graphiteTransport,
 			cfg.remoteTimeout, cfg.graphitePrefix)
-		clients = append(clients, c)
+		writers = append(writers, c)
 	}
 	if cfg.opentsdbURL != "" {
 		c := opentsdb.NewClient(cfg.opentsdbURL, cfg.remoteTimeout)
-		clients = append(clients, c)
+		writers = append(writers, c)
 	}
 	if cfg.influxdbURL != "" {
 		url, err := url.Parse(cfg.influxdbURL)
 		if err != nil {
 			log.Fatalf("Failed to parse InfluxDB URL %q: %v", cfg.influxdbURL, err)
 		}
-		conf := influx.Config{
-			URL:      *url,
+		conf := influx.HTTPConfig{
+			Addr:     url.String(),
 			Username: cfg.influxdbUsername,
 			Password: cfg.influxdbPassword,
 			Timeout:  cfg.remoteTimeout,
 		}
 		c := influxdb.NewClient(conf, cfg.influxdbDatabase, cfg.influxdbRetentionPolicy)
 		prometheus.MustRegister(c)
-		clients = append(clients, c)
+		writers = append(writers, c)
+		readers = append(readers, c)
 	}
-	return clients
+	return writers, readers
 }
 
-func serve(addr string, clients []remote.StorageClient) error {
-	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
+func serve(addr string, writers []writer, readers []reader) error {
+	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		reqBuf, err := ioutil.ReadAll(snappy.NewReader(r.Body))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -187,14 +200,55 @@ func serve(addr string, clients []remote.StorageClient) error {
 		receivedSamples.Add(float64(len(samples)))
 
 		var wg sync.WaitGroup
-		for _, c := range clients {
+		for _, w := range writers {
 			wg.Add(1)
-			go func(rc remote.StorageClient) {
-				sendSamples(rc, samples)
+			go func(rw writer) {
+				sendSamples(rw, samples)
 				wg.Done()
-			}(c)
+			}(w)
 		}
 		wg.Wait()
+	})
+
+	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
+		reqBuf, err := ioutil.ReadAll(snappy.NewReader(r.Body))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req remote.ReadRequest
+		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// TODO: Support reading from more than one reader and merging the results.
+		if len(readers) != 1 {
+			http.Error(w, fmt.Sprintf("expected exactly one reader, found %d readers", len(readers)), http.StatusInternalServerError)
+			return
+		}
+		reader := readers[0]
+
+		var resp *remote.ReadResponse
+		resp, err = reader.Read(&req)
+		if err != nil {
+			log.With("query", req).With("storage", reader.Name()).With("err", err).Warnf("Error executing query")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		if _, err := snappy.NewWriter(w).Write(data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	return http.ListenAndServe(addr, nil)
@@ -219,14 +273,14 @@ func protoToSamples(req *remote.WriteRequest) model.Samples {
 	return samples
 }
 
-func sendSamples(c remote.StorageClient, samples model.Samples) {
+func sendSamples(w writer, samples model.Samples) {
 	begin := time.Now()
-	err := c.Store(samples)
+	err := w.Write(samples)
 	duration := time.Since(begin).Seconds()
 	if err != nil {
-		log.Warnf("Error sending %d samples to remote storage %q: %v", len(samples), c.Name(), err)
-		failedSamples.WithLabelValues(c.Name()).Add(float64(len(samples)))
+		log.With("num_samples", len(samples)).With("storage", w.Name()).With("err", err).Warnf("Error sending samples to remote storage")
+		failedSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
 	}
-	sentSamples.WithLabelValues(c.Name()).Add(float64(len(samples)))
-	sentBatchDuration.WithLabelValues(c.Name()).Observe(duration)
+	sentSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
+	sentBatchDuration.WithLabelValues(w.Name()).Observe(duration)
 }
