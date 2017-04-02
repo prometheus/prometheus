@@ -27,8 +27,9 @@ import (
 
 // Reader allows reading from multiple remote sources.
 type Reader struct {
-	mtx     sync.Mutex
-	clients []*Client
+	mtx            sync.Mutex
+	clients        []*Client
+	externalLabels model.LabelSet
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -50,6 +51,7 @@ func (r *Reader) ApplyConfig(conf *config.Config) error {
 	defer r.mtx.Unlock()
 
 	r.clients = clients
+	r.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	return nil
 }
@@ -62,22 +64,68 @@ func (r *Reader) Queriers() []local.Querier {
 
 	queriers := make([]local.Querier, 0, len(r.clients))
 	for _, c := range r.clients {
-		queriers = append(queriers, &querier{client: c})
+		queriers = append(queriers, &querier{
+			client:         c,
+			externalLabels: r.externalLabels,
+		})
 	}
 	return queriers
 }
 
 // querier is an adapter to make a Client usable as a promql.Querier.
 type querier struct {
-	client *Client
+	client         *Client
+	externalLabels model.LabelSet
 }
 
 func (q *querier) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return MatrixToIterators(q.client.Read(ctx, from, through, matchers))
+	return MatrixToIterators(q.read(ctx, from, through, matchers))
 }
 
 func (q *querier) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]local.SeriesIterator, error) {
-	return MatrixToIterators(q.client.Read(ctx, ts.Add(-stalenessDelta), ts, matchers))
+	return MatrixToIterators(q.read(ctx, ts.Add(-stalenessDelta), ts, matchers))
+}
+
+func (q *querier) read(ctx context.Context, from, through model.Time, matchers metric.LabelMatchers) (model.Matrix, error) {
+	m, added := q.addExternalLabels(matchers)
+
+	res, err := q.client.Read(ctx, from, through, m)
+	if err != nil {
+		return nil, err
+	}
+
+	removeExternalLabels(res, added)
+	return res, err
+}
+
+func (q *querier) addExternalLabels(matchers metric.LabelMatchers) (metric.LabelMatchers, model.LabelSet) {
+	el := make(model.LabelSet, len(q.externalLabels))
+	for k, v := range q.externalLabels {
+		el[k] = v
+	}
+	for _, m := range matchers {
+		if _, ok := el[m.Name]; ok {
+			delete(el, m.Name)
+		}
+	}
+
+	for k, v := range el {
+		m, err := metric.NewLabelMatcher(metric.Equal, k, v)
+		if err != nil {
+			panic(err)
+		}
+		matchers = append(matchers, m)
+	}
+
+	return matchers, el
+}
+
+func removeExternalLabels(m model.Matrix, added model.LabelSet) {
+	for _, ss := range m {
+		for k := range added {
+			delete(ss.Metric, k)
+		}
+	}
 }
 
 // MatrixToIterators returns series iterators for a given matrix.
