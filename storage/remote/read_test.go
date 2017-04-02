@@ -40,37 +40,37 @@ func TestAddExternalLabels(t *testing.T) {
 		{
 			el: model.LabelSet{},
 			inMatchers: metric.LabelMatchers{
-				mustNewLabelMatcher(metric.Equal, "foo", "bar"),
+				mustNewLabelMatcher(metric.Equal, "job", "api-server"),
 			},
 			outMatchers: metric.LabelMatchers{
-				mustNewLabelMatcher(metric.Equal, "foo", "bar"),
+				mustNewLabelMatcher(metric.Equal, "job", "api-server"),
 			},
 			added: model.LabelSet{},
 		},
 		{
-			el: model.LabelSet{"biz": "buz", "baz": "boz"},
+			el: model.LabelSet{"region": "europe", "dc": "berlin-01"},
 			inMatchers: metric.LabelMatchers{
-				mustNewLabelMatcher(metric.Equal, "foo", "bar"),
+				mustNewLabelMatcher(metric.Equal, "job", "api-server"),
 			},
 			outMatchers: metric.LabelMatchers{
-				mustNewLabelMatcher(metric.Equal, "foo", "bar"),
-				mustNewLabelMatcher(metric.Equal, "biz", "buz"),
-				mustNewLabelMatcher(metric.Equal, "baz", "boz"),
+				mustNewLabelMatcher(metric.Equal, "job", "api-server"),
+				mustNewLabelMatcher(metric.Equal, "region", "europe"),
+				mustNewLabelMatcher(metric.Equal, "dc", "berlin-01"),
 			},
-			added: model.LabelSet{"biz": "buz", "baz": "boz"},
+			added: model.LabelSet{"region": "europe", "dc": "berlin-01"},
 		},
 		{
-			el: model.LabelSet{"biz": "buz", "baz": "boz"},
+			el: model.LabelSet{"region": "europe", "dc": "berlin-01"},
 			inMatchers: metric.LabelMatchers{
-				mustNewLabelMatcher(metric.Equal, "foo", "bar"),
-				mustNewLabelMatcher(metric.Equal, "biz", "xyz"),
+				mustNewLabelMatcher(metric.Equal, "job", "api-server"),
+				mustNewLabelMatcher(metric.Equal, "dc", "munich-02"),
 			},
 			outMatchers: metric.LabelMatchers{
-				mustNewLabelMatcher(metric.Equal, "foo", "bar"),
-				mustNewLabelMatcher(metric.Equal, "biz", "xyz"),
-				mustNewLabelMatcher(metric.Equal, "baz", "boz"),
+				mustNewLabelMatcher(metric.Equal, "job", "api-server"),
+				mustNewLabelMatcher(metric.Equal, "region", "europe"),
+				mustNewLabelMatcher(metric.Equal, "dc", "munich-02"),
 			},
-			added: model.LabelSet{"baz": "boz"},
+			added: model.LabelSet{"region": "europe"},
 		},
 	}
 
