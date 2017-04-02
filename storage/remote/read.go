@@ -94,10 +94,16 @@ func (q *querier) read(ctx context.Context, from, through model.Time, matchers m
 		return nil, err
 	}
 
-	removeExternalLabels(res, added)
+	removeLabels(res, added)
 	return res, err
 }
 
+// addExternalLabels adds matchers for each external label. External labels
+// that already have a corresponding user-supplied matcher are skipped, as we
+// assume that the user explicitly wants to select a different value for them.
+// We return the new set of matchers, along with a map of labels for which
+// matchers were added, so that these can later be removed from the result
+// time series again.
 func (q *querier) addExternalLabels(matchers metric.LabelMatchers) (metric.LabelMatchers, model.LabelSet) {
 	el := make(model.LabelSet, len(q.externalLabels))
 	for k, v := range q.externalLabels {
@@ -120,7 +126,7 @@ func (q *querier) addExternalLabels(matchers metric.LabelMatchers) (metric.Label
 	return matchers, el
 }
 
-func removeExternalLabels(m model.Matrix, added model.LabelSet) {
+func removeLabels(m model.Matrix, added model.LabelSet) {
 	for _, ss := range m {
 		for k := range added {
 			delete(ss.Metric, k)
