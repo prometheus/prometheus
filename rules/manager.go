@@ -94,6 +94,7 @@ func init() {
 	evalFailures.WithLabelValues(string(ruleTypeRecording))
 
 	prometheus.MustRegister(iterationDuration)
+	prometheus.MustRegister(iterationsScheduled)
 	prometheus.MustRegister(iterationsSkipped)
 	prometheus.MustRegister(iterationsMissed)
 	prometheus.MustRegister(evalFailures)
