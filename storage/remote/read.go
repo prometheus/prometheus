@@ -126,9 +126,9 @@ func (q *querier) addExternalLabels(matchers metric.LabelMatchers) (metric.Label
 	return matchers, el
 }
 
-func removeLabels(m model.Matrix, added model.LabelSet) {
+func removeLabels(m model.Matrix, labels model.LabelSet) {
 	for _, ss := range m {
-		for k := range added {
+		for k := range labels {
 			delete(ss.Metric, k)
 		}
 	}
