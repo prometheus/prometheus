@@ -698,6 +698,9 @@ func TestMetricsForLabelMatchersIgnoresRemoteData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sort.Slice(got, func(i, j int) bool {
+		return got[i].Metric.Before(got[j].Metric)
+	})
 
 	want := []metric.Metric{
 		{
