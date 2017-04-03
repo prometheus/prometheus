@@ -72,8 +72,8 @@ func pathFromMetric(m model.Metric, prefix string) string {
 	return buffer.String()
 }
 
-// Store sends a batch of samples to Graphite.
-func (c *Client) Store(samples model.Samples) error {
+// Write sends a batch of samples to Graphite.
+func (c *Client) Write(samples model.Samples) error {
 	conn, err := net.DialTimeout(c.transport, c.address, c.timeout)
 	if err != nil {
 		return err

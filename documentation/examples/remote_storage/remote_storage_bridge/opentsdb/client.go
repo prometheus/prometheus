@@ -69,8 +69,8 @@ func tagsFromMetric(m model.Metric) map[string]TagValue {
 	return tags
 }
 
-// Store sends a batch of samples to OpenTSDB via its HTTP API.
-func (c *Client) Store(samples model.Samples) error {
+// Write sends a batch of samples to OpenTSDB via its HTTP API.
+func (c *Client) Write(samples model.Samples) error {
 	reqs := make([]StoreSamplesRequest, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
