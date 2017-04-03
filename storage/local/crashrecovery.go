@@ -304,6 +304,8 @@ func (p *persistence) sanitizeSeries(
 			}
 			s.persistWatermark = len(cds)
 			s.modTime = modTime
+			// Finally, evict again all chunk.Descs except the latest one to save memory.
+			s.evictChunkDescs(len(cds) - 1)
 			return fp, true
 		}
 		// This is the tricky one: We have chunks from heads.db, but
@@ -356,6 +358,8 @@ func (p *persistence) sanitizeSeries(
 			atomic.AddInt64(&chunk.NumMemChunks, int64(-len(s.chunkDescs)))
 			s.chunkDescs = cds
 			s.headChunkClosed = true
+			// Finally, evict again all chunk.Descs except the latest one to save memory.
+			s.evictChunkDescs(len(cds) - 1)
 			return fp, true
 		}
 		log.Warnf(
@@ -364,11 +368,15 @@ func (p *persistence) sanitizeSeries(
 		)
 		chunk.NumMemDescs.Sub(float64(keepIdx))
 		atomic.AddInt64(&chunk.NumMemChunks, int64(-keepIdx))
+		chunkDescsToEvict := len(cds)
 		if keepIdx == len(s.chunkDescs) {
 			// No chunks from series file left, head chunk is evicted, so declare it closed.
 			s.headChunkClosed = true
+			chunkDescsToEvict-- // Keep one chunk.Desc in this case to avoid a series with zero chunk.Descs.
 		}
 		s.chunkDescs = append(cds, s.chunkDescs[keepIdx:]...)
+		// Finally, evict again chunk.Descs without chunk to save memory.
+		s.evictChunkDescs(chunkDescsToEvict)
 		return fp, true
 	}
 	// This series is supposed to be archived.
@@ -458,6 +466,8 @@ func (p *persistence) cleanUpArchiveIndexes(
 			return err
 		}
 		fpToSeries[model.Fingerprint(fp)] = series
+		// Evict all but one chunk.Desc to save memory.
+		series.evictChunkDescs(len(cds) - 1)
 		return nil
 	}); err != nil {
 		return err
