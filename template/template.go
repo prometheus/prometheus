@@ -111,7 +111,7 @@ type Expander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(ctx context.Context, text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) *Expander {
+func NewTemplateExpander(ctx context.Context, text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine) *Expander {
 	return &Expander{
 		text: text,
 		name: name,
@@ -245,9 +245,6 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 				}
 				t := model.TimeFromUnixNano(int64(v * 1e9)).Time().UTC()
 				return fmt.Sprint(t)
-			},
-			"pathPrefix": func() string {
-				return pathPrefix
 			},
 		},
 	}

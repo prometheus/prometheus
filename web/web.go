@@ -324,7 +324,8 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(h.context, string(text), "__console_"+name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, string(text), "__console_"+name, data, h.now(), h.queryEngine)
+	tmpl.Funcs(sharedTmplFuncs(h.options))
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -424,14 +425,13 @@ func (h *Handler) consolesPath() string {
 	return ""
 }
 
-func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
+// uiTmplFuncs returns template functions for the built-in UI.
+func uiTmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	return template_text.FuncMap{
 		"since": func(t time.Time) time.Duration {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
 		"consolesPath": func() string { return consolesPath },
-		"pathPrefix":   func() string { return opts.ExternalURL.Path },
-		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset model.LabelSet, labels ...model.LabelName) model.LabelSet {
 			for _, ln := range labels {
 				delete(lset, ln)
@@ -501,6 +501,15 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 	}
 }
 
+// sharedFuncs returns template functions shared between user-defined
+// console templates and built-in templates.
+func sharedTmplFuncs(opts *Options) template_text.FuncMap {
+	return template_text.FuncMap{
+		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"buildVersion": func() string { return opts.Version.Revision },
+	}
+}
+
 func (h *Handler) getTemplate(name string) (string, error) {
 	baseTmpl, err := ui.Asset("web/ui/templates/_base.html")
 	if err != nil {
@@ -519,8 +528,9 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(h.context, text, name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
-	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
+	tmpl := template.NewTemplateExpander(h.context, text, name, data, h.now(), h.queryEngine)
+	tmpl.Funcs(uiTmplFuncs(h.consolesPath(), h.options))
+	tmpl.Funcs(sharedTmplFuncs(h.options))
 
 	result, err := tmpl.ExpandHTML(nil)
 	if err != nil {
