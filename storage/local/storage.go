@@ -1587,7 +1587,7 @@ func (s *MemorySeriesStorage) maintainMemorySeries(
 		}
 		return
 	}
-	// If we are here, the series is not archived, so check for Chunk.Desc
+	// If we are here, the series is not archived, so check for chunk.Desc
 	// eviction next.
 	series.evictChunkDescs(iOldestNotEvicted)
 
