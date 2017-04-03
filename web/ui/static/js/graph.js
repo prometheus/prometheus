@@ -415,8 +415,8 @@ Prometheus.Graph.prototype.submitQuery = function() {
           return;
         }
         var duration = new Date().getTime() - startTime;
-        var totalElements = xhr.responseJSON.data.result.length;
-        self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total elements: " + totalElements);
+        var totalTimeSeries = xhr.responseJSON.data.result.length;
+        self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total time series: " + totalTimeSeries);
         self.spinner.hide();
       }
   });
