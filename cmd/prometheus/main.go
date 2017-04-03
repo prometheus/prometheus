@@ -203,7 +203,6 @@ func Main() int {
 	if instrumentedStorage, ok := localStorage.(prometheus.Collector); ok {
 		prometheus.MustRegister(instrumentedStorage)
 	}
-	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 

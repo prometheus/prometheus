@@ -74,6 +74,16 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	sort.Sort(byName(vector))
 
+	externalLabels := h.externalLabels.Clone()
+	if _, ok := externalLabels[model.InstanceLabel]; !ok {
+		externalLabels[model.InstanceLabel] = ""
+	}
+	externalLabelNames := make(model.LabelNames, 0, len(externalLabels))
+	for ln := range externalLabels {
+		externalLabelNames = append(externalLabelNames, ln)
+	}
+	sort.Sort(externalLabelNames)
+
 	var (
 		lastMetricName model.LabelValue
 		protMetricFam  *dto.MetricFamily
@@ -85,7 +95,15 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			Untyped: &dto.Untyped{},
 		}
 
-		for ln, lv := range s.Metric {
+		// Sort labelnames for unittest consistency.
+		labelNames := make(model.LabelNames, 0, len(s.Metric))
+		for ln := range s.Metric {
+			labelNames = append(labelNames, ln)
+		}
+		sort.Sort(labelNames)
+
+		for _, ln := range labelNames {
+			lv := s.Metric[ln]
 			if lv == "" {
 				// No value means unset. Never consider those labels.
 				// This is also important to protect against nameless metrics.
@@ -118,7 +136,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				Name:  proto.String(string(ln)),
 				Value: proto.String(string(lv)),
 			})
-			if _, ok := h.externalLabels[ln]; ok {
+			if _, ok := externalLabels[ln]; ok {
 				globalUsed[ln] = struct{}{}
 			}
 		}
@@ -127,7 +145,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 		// Attach global labels if they do not exist yet.
-		for ln, lv := range h.externalLabels {
+		for _, ln := range externalLabelNames {
+			lv := externalLabels[ln]
 			if _, ok := globalUsed[ln]; !ok {
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
 					Name:  proto.String(string(ln)),
