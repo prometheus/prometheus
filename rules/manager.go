@@ -74,10 +74,15 @@ var (
 		Name:      "evaluator_iterations_skipped_total",
 		Help:      "The total number of rule group evaluations skipped due to throttled metric storage.",
 	})
+	iterationsMissed = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "evaluator_iterations_missed_total",
+		Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
+	})
 	iterationsScheduled = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "evaluator_iterations_total",
-		Help:      "The total number of scheduled rule group evaluations, whether skipped or executed.",
+		Help:      "The total number of scheduled rule group evaluations, whether executed, missed or skipped.",
 	})
 )
 
@@ -88,7 +93,9 @@ func init() {
 	evalFailures.WithLabelValues(string(ruleTypeRecording))
 
 	prometheus.MustRegister(iterationDuration)
+	prometheus.MustRegister(iterationsScheduled)
 	prometheus.MustRegister(iterationsSkipped)
+	prometheus.MustRegister(iterationsMissed)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
 }
@@ -154,6 +161,7 @@ func (g *Group) run() {
 
 		iterationDuration.Observe(time.Since(start).Seconds())
 	}
+	lastTriggered := time.Now()
 	iter()
 
 	tick := time.NewTicker(g.interval)
@@ -168,6 +176,12 @@ func (g *Group) run() {
 			case <-g.done:
 				return
 			case <-tick.C:
+				missed := (time.Since(lastTriggered).Nanoseconds() / g.interval.Nanoseconds()) - 1
+				if missed > 0 {
+					iterationsMissed.Add(float64(missed))
+					iterationsScheduled.Add(float64(missed))
+				}
+				lastTriggered = time.Now()
 				iter()
 			}
 		}

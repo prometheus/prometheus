@@ -113,6 +113,16 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	sort.Sort(byName(vec))
 
+	externalLabels := h.externalLabels.Clone()
+	if _, ok := externalLabels[model.InstanceLabel]; !ok {
+		externalLabels[model.InstanceLabel] = ""
+	}
+	externalLabelNames := make(model.LabelNames, 0, len(externalLabels))
+	for ln := range externalLabels {
+		externalLabelNames = append(externalLabelNames, ln)
+	}
+	sort.Sort(externalLabelNames)
+
 	var (
 		lastMetricName string
 		protMetricFam  *dto.MetricFamily

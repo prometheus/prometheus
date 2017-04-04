@@ -20,6 +20,7 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -40,6 +41,13 @@ import (
 func main() {
 	os.Exit(Main())
 }
+
+// defaultGCPercent is the value used to to call SetGCPercent if the GOGC
+// environment variable is not set or empty. The value here is intended to hit
+// the sweet spot between memory utilization and GC effort. It is lower than the
+// usual default of 100 as a lot of the heap in Prometheus is used to cache
+// memory chunks, which have a lifetime of hours if not days or weeks.
+const defaultGCPercent = 40
 
 var (
 	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -68,6 +76,10 @@ func Main() int {
 	if cfg.printVersion {
 		fmt.Fprintln(os.Stdout, version.Print("prometheus"))
 		return 0
+	}
+
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(defaultGCPercent)
 	}
 
 	log.Infoln("Starting prometheus", version.Info())
@@ -167,7 +179,6 @@ func Main() int {
 
 	// defer remoteStorage.Stop()
 
-	prometheus.MustRegister(notifier)
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 

@@ -26,6 +26,7 @@ import (
 	"unicode"
 
 	"github.com/asaskevich/govalidator"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -53,8 +54,15 @@ var cfg = struct {
 
 	alertmanagerURLs stringset
 	prometheusURL    string
+
+	// Deprecated storage flags, kept for backwards compatibility.
+	deprecatedMemoryChunks       uint64
+	deprecatedMaxChunksToPersist uint64
 }{
 	alertmanagerURLs: stringset{},
+	notifier: notifier.Options{
+		Registerer: prometheus.DefaultRegisterer,
+	},
 }
 
 func init() {
