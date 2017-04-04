@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/coreos/etcd/pkg/fileutil"
-	"github.com/fabxc/tsdb/chunks"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunks"
 )
 
 const (
