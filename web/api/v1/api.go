@@ -340,11 +340,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	var set storage.SeriesSet
 
 	for _, mset := range matcherSets {
-		if set == nil {
-			set = q.Select(mset...)
-		} else {
-			set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
-		}
+		set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
 	}
 
 	metrics := []labels.Labels{}

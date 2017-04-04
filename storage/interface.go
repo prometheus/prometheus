@@ -104,6 +104,13 @@ type dedupedSeriesSet struct {
 // DeduplicateSeriesSet merges two SeriesSet and removes duplicates.
 // If two series exist in both sets, their datapoints must be equal.
 func DeduplicateSeriesSet(a, b SeriesSet) SeriesSet {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+
 	s := &dedupedSeriesSet{a: a, b: b}
 	s.adone = !s.a.Next()
 	s.bdone = !s.b.Next()
