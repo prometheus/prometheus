@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fabxc/tsdb/chunks"
-	"github.com/fabxc/tsdb/labels"
+	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // Querier provides querying access over time series data of a fixed

@@ -18,11 +18,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/coreos/etcd/pkg/fileutil"
-	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
 	"github.com/nightlyone/lockfile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // DefaultOptions used for the DB. They are sane for setups using

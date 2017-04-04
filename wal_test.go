@@ -8,10 +8,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/fabxc/tsdb/labels"
-	"github.com/go-kit/kit/log"
-
 	"github.com/coreos/etcd/pkg/fileutil"
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
 

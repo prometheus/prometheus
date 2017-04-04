@@ -6,8 +6,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"

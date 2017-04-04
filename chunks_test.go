@@ -1,6 +1,6 @@
 package tsdb
 
-import "github.com/fabxc/tsdb/chunks"
+import "github.com/prometheus/tsdb/chunks"
 
 type mockChunkReader struct {
 	chunk func(ref uint64) (chunks.Chunk, error)

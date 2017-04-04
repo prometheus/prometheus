@@ -15,10 +15,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/fabxc/tsdb"
-	"github.com/fabxc/tsdb/labels"
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/tsdb"
+	"github.com/prometheus/tsdb/labels"
 	"github.com/spf13/cobra"
 )
 

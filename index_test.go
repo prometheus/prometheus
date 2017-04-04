@@ -8,8 +8,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
 

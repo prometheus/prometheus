@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/pkg/fileutil"
-	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
