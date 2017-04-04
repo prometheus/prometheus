@@ -69,42 +69,46 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	defer q.Close()
 
-	// TODO(fabxc): expose merge functionality in storage interface.
-	// We just concatenate results for all sets of matchers, which may produce
-	// duplicated results.
 	vec := make(promql.Vector, 0, 8000)
 
+	var set storage.SeriesSet
+
 	for _, mset := range matcherSets {
-		series := q.Select(mset...)
-		for series.Next() {
-			s := series.At()
-			// TODO(fabxc): allow fast path for most recent sample either
-			// in the storage itself or caching layer in Prometheus.
-			it := storage.NewBuffer(s.Iterator(), int64(promql.StalenessDelta/1e6))
+		set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
+	}
+	if set == nil {
+		return
+	}
 
-			var t int64
-			var v float64
+	for set.Next() {
+		s := set.At()
 
-			ok := it.Seek(maxt)
-			if ok {
-				t, v = it.Values()
-			} else {
-				t, v, ok = it.PeekBack()
-				if !ok {
-					continue
-				}
+		// TODO(fabxc): allow fast path for most recent sample either
+		// in the storage itself or caching layer in Prometheus.
+		it := storage.NewBuffer(s.Iterator(), int64(promql.StalenessDelta/1e6))
+
+		var t int64
+		var v float64
+
+		ok := it.Seek(maxt)
+		if ok {
+			t, v = it.Values()
+		} else {
+			t, v, ok = it.PeekBack()
+			if !ok {
+				continue
 			}
+		}
 
-			vec = append(vec, promql.Sample{
-				Metric: s.Labels(),
-				Point:  promql.Point{T: t, V: v},
-			})
-		}
-		if series.Err() != nil {
-			federationErrors.Inc()
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		vec = append(vec, promql.Sample{
+			Metric: s.Labels(),
+			Point:  promql.Point{T: t, V: v},
+		})
+	}
+	if set.Err() != nil {
+		federationErrors.Inc()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	sort.Sort(byName(vec))
