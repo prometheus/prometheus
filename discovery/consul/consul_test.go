@@ -68,7 +68,8 @@ func TestConsulDiscovery(t *testing.T) {
 		WatchTimeout: 10 * time.Millisecond,
 	}
 	consulDiscovery, err := NewDiscovery(conf)
-	ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond*10)
+	defer cancelFunc()
 	ch := make(chan []*config.TargetGroup, 1)
 
 	consulDiscovery.Run(ctx, ch)
