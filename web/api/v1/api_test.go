@@ -310,7 +310,6 @@ func TestEndpoints(t *testing.T) {
 			},
 			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
-				labels.FromStrings("__name__", "test_metric1", "foo", "boo"), // TODO(fabxc): see comment in implementation.
 			},
 		},
 		{
