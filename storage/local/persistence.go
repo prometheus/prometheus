@@ -609,6 +609,9 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 // (4.8.2.1) A byte defining the chunk type.
 // (4.8.2.2) The chunk itself, marshaled with the Marshal() method.
 //
+// NOTE: Above, varint encoding is used consistently although uvarint would have
+// made more sense in many cases. This was simply a glitch while designing the
+// format.
 func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
 	log.Info("Checkpointing in-memory metrics and chunks...")
 	p.checkpointing.Set(1)
