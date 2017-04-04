@@ -4,11 +4,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/fabxc/tsdb"
-	tsdbLabels "github.com/fabxc/tsdb/labels"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 // adapter implements a storage.Storage around TSDB.

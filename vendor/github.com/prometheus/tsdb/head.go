@@ -10,11 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/fabxc/tsdb/chunks"
-	"github.com/fabxc/tsdb/labels"
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/labels"
 )
 
 var (

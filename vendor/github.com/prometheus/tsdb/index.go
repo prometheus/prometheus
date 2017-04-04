@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/coreos/etcd/pkg/fileutil"
-	"github.com/fabxc/tsdb/labels"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 )
 
 const (
