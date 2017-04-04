@@ -14,6 +14,8 @@
 package retrieval
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -434,7 +436,7 @@ func TestScrapeLoopSampleProcessing(t *testing.T) {
 		scraper := &testScraper{}
 		sl := newScrapeLoop(context.Background(), scraper, ingestedSamples, target.Labels(), test.scrapeConfig).(*scrapeLoop)
 		num, err := sl.append(test.scrapedSamples)
-		sl.report(time.Unix(0, 0), 42*time.Second, len(test.scrapedSamples), num, err)
+		sl.report(time.Unix(0, 0), 42*time.Second, len(test.scrapedSamples), num, nil, err)
 		reportedSamples := ingestedSamples.buffer
 		if err == nil {
 			reportedSamples = reportedSamples[num:]
@@ -475,9 +477,9 @@ func TestScrapeLoopStop(t *testing.T) {
 	}
 
 	// Running the scrape loop must exit before calling the scraper even once.
-	scraper.scrapeFunc = func(context.Context, time.Time) (model.Samples, error) {
+	scraper.scrapeFunc = func(context.Context, time.Time) (model.Samples, *scrapeStats, error) {
 		t.Fatalf("scraper was called for terminated scrape loop")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	runDone := make(chan struct{})
@@ -538,13 +540,13 @@ func TestScrapeLoopRun(t *testing.T) {
 	scraper.offsetDur = 0
 
 	block := make(chan struct{})
-	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (model.Samples, error) {
+	scraper.scrapeFunc = func(ctx context.Context, ts time.Time) (model.Samples, *scrapeStats, error) {
 		select {
 		case <-block:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
@@ -605,7 +607,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	}
 	now := time.Now()
 
-	samples, err := ts.scrape(context.Background(), now)
+	samples, _, err := ts.scrape(context.Background(), now)
 	if err != nil {
 		t.Fatalf("Unexpected scrape error: %s", err)
 	}
@@ -666,7 +668,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		if _, err := ts.scrape(ctx, time.Now()); err != context.Canceled {
+		if _, _, err := ts.scrape(ctx, time.Now()); err != context.Canceled {
 			errc <- fmt.Errorf("Expected context cancelation error but got: %s", err)
 		}
 		close(errc)
@@ -708,8 +710,65 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 		client: http.DefaultClient,
 	}
 
-	if _, err := ts.scrape(context.Background(), time.Now()); !strings.Contains(err.Error(), "404") {
+	if _, _, err := ts.scrape(context.Background(), time.Now()); !strings.Contains(err.Error(), "404") {
 		t.Fatalf("Expected \"404 NotFound\" error but got: %s", err)
+	}
+}
+
+func TestTargetScraperScrapeStats(t *testing.T) {
+	server := httptest.NewTLSServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			w.Write([]byte("metric_a 1\n"))
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	cert, err := x509.ParseCertificate(server.TLS.Certificates[0].Certificate[0])
+	if err != nil {
+		panic(err)
+	}
+	certpool := x509.NewCertPool()
+	certpool.AddCert(cert)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: certpool,
+			},
+		},
+	}
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: model.LabelSet{
+				model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+				model.AddressLabel: model.LabelValue(serverURL.Host),
+			},
+		},
+		client: client,
+	}
+	now := time.Now()
+
+	_, stats, err := ts.scrape(context.Background(), now)
+	if err != nil {
+		t.Fatalf("Unexpected scrape error: %s", err)
+	}
+
+	if stats == nil {
+		t.Fatalf("Expected scrape statistics, got nil")
+	}
+
+	if !stats.isSSL {
+		t.Errorf("Expected isSSL=true, got false")
+	}
+	if stats.earliestCertExpiry.IsZero() {
+		t.Errorf("Expected earliestCertExpiry != 0, got zero")
 	}
 }
 
@@ -724,7 +783,7 @@ type testScraper struct {
 
 	samples    model.Samples
 	scrapeErr  error
-	scrapeFunc func(context.Context, time.Time) (model.Samples, error)
+	scrapeFunc func(context.Context, time.Time) (model.Samples, *scrapeStats, error)
 }
 
 func (ts *testScraper) offset(interval time.Duration) time.Duration {
@@ -737,9 +796,9 @@ func (ts *testScraper) report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(ctx context.Context, t time.Time) (model.Samples, error) {
+func (ts *testScraper) scrape(ctx context.Context, t time.Time) (model.Samples, *scrapeStats, error) {
 	if ts.scrapeFunc != nil {
 		return ts.scrapeFunc(ctx, t)
 	}
-	return ts.samples, ts.scrapeErr
+	return ts.samples, &scrapeStats{}, ts.scrapeErr
 }

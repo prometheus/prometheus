@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,10 +36,12 @@ import (
 )
 
 const (
-	scrapeHealthMetricName       = "up"
-	scrapeDurationMetricName     = "scrape_duration_seconds"
-	scrapeSamplesMetricName      = "scrape_samples_scraped"
-	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling"
+	scrapeHealthMetricName            = "up"
+	scrapeDurationMetricName          = "scrape_duration_seconds"
+	scrapeSamplesMetricName           = "scrape_samples_scraped"
+	samplesPostRelabelMetricName      = "scrape_samples_post_metric_relabeling"
+	scrapeSSLMetricName               = "scrape_ssl"
+	scrapeSSLEarliestExpiryMetricName = "scrape_ssl_earliest_cert_expiry"
 )
 
 var (
@@ -275,9 +278,15 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 // A scraper retrieves samples and accepts a status report at the end.
 type scraper interface {
-	scrape(ctx context.Context, ts time.Time) (model.Samples, error)
+	scrape(ctx context.Context, ts time.Time) (model.Samples, *scrapeStats, error)
 	report(start time.Time, dur time.Duration, err error)
 	offset(interval time.Duration) time.Duration
+}
+
+// scrapeStats holds additional statistics about the scrape.
+type scrapeStats struct {
+	isSSL              bool
+	earliestCertExpiry time.Time
 }
 
 // targetScraper implements the scraper interface for a target.
@@ -290,22 +299,28 @@ const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client
 
 var userAgentHeader = fmt.Sprintf("Prometheus/%s", version.Version)
 
-func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples, error) {
+func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples, *scrapeStats, error) {
 	req, err := http.NewRequest("GET", s.URL().String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Add("Accept", acceptHeader)
 	req.Header.Set("User-Agent", userAgentHeader)
 
 	resp, err := ctxhttp.Do(ctx, s.client, req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
+	stats := new(scrapeStats)
+	if resp.TLS != nil {
+		stats.isSSL = true
+		stats.earliestCertExpiry = getEarliestCertExpiry(resp.TLS)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
+		return nil, stats, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	var (
@@ -331,7 +346,7 @@ func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples
 		// Set err to nil since it is used in the scrape health recording.
 		err = nil
 	}
-	return allSamples, err
+	return allSamples, stats, err
 }
 
 // A loop can run and be stopped again. It must not be reused after it was stopped.
@@ -413,14 +428,14 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 				)
 			}
 
-			samples, err := sl.scraper.scrape(scrapeCtx, start)
+			samples, stats, err := sl.scraper.scrape(scrapeCtx, start)
 			if err == nil {
 				numPostRelabelSamples, err = sl.append(samples)
 			}
 			if err != nil && errc != nil {
 				errc <- err
 			}
-			sl.report(start, time.Since(start), len(samples), numPostRelabelSamples, err)
+			sl.report(start, time.Since(start), len(samples), numPostRelabelSamples, stats, err)
 			last = start
 		} else {
 			targetSkippedScrapes.Inc()
@@ -527,7 +542,7 @@ func (sl *scrapeLoop) append(samples model.Samples) (int, error) {
 	return countingApp.count, nil
 }
 
-func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples, postRelabelSamples int, err error) {
+func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSamples, postRelabelSamples int, stats *scrapeStats, err error) {
 	sl.scraper.report(start, duration, err)
 
 	ts := model.TimeFromUnixNano(start.UnixNano())
@@ -583,4 +598,48 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scrapedSam
 	if err := reportAppender.Append(postRelabelSample); err != nil {
 		log.With("sample", durationSample).With("error", err).Warn("Scrape sample count post-relabeling sample discarded")
 	}
+
+	if stats != nil {
+		isSSL := float64(0)
+		if stats.isSSL {
+			isSSL = 1
+		}
+		sslSample := &model.Sample{
+			Metric: model.Metric{
+				model.MetricNameLabel: scrapeSSLMetricName,
+			},
+			Timestamp: ts,
+			Value:     model.SampleValue(isSSL),
+		}
+		if err := reportAppender.Append(sslSample); err != nil {
+			log.With("sample", sslSample).With("error", err).Warn("Scrape ssl sample discarded")
+		}
+
+		if stats.isSSL {
+			sslEarliestExpiry := float64(0)
+			if !stats.earliestCertExpiry.IsZero() {
+				sslEarliestExpiry = float64(stats.earliestCertExpiry.UnixNano()) / 1e9
+			}
+			sslEarliestExpirySample := &model.Sample{
+				Metric: model.Metric{
+					model.MetricNameLabel: scrapeSSLEarliestExpiryMetricName,
+				},
+				Timestamp: ts,
+				Value:     model.SampleValue(sslEarliestExpiry),
+			}
+			if err := reportAppender.Append(sslEarliestExpirySample); err != nil {
+				log.With("sample", sslEarliestExpirySample).With("error", err).Warn("Scrape ssl earliest expiry sample discarded")
+			}
+		}
+	}
+}
+
+func getEarliestCertExpiry(state *tls.ConnectionState) time.Time {
+	earliest := time.Time{}
+	for _, cert := range state.PeerCertificates {
+		if (earliest.IsZero() || cert.NotAfter.Before(earliest)) && !cert.NotAfter.IsZero() {
+			earliest = cert.NotAfter
+		}
+	}
+	return earliest
 }
