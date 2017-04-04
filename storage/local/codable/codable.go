@@ -123,6 +123,8 @@ func DecodeUint64(r io.Reader) (uint64, error) {
 // encodeString writes the varint encoded length followed by the bytes of s to
 // b.
 func encodeString(b *bytes.Buffer, s string) error {
+	// Note that this should have used EncodeUvarint but a glitch happened
+	// while designing the checkpoint format.
 	if _, err := EncodeVarint(b, int64(len(s))); err != nil {
 		return err
 	}
@@ -135,6 +137,9 @@ func encodeString(b *bytes.Buffer, s string) error {
 // decodeString decodes a string encoded by encodeString.
 func decodeString(b byteReader) (string, error) {
 	length, err := binary.ReadVarint(b)
+	if length < 0 {
+		err = fmt.Errorf("found negative string length during decoding: %d", length)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -155,6 +160,8 @@ type Metric model.Metric
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (m Metric) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
+	// Note that this should have used EncodeUvarint but a glitch happened
+	// while designing the checkpoint format.
 	if _, err := EncodeVarint(buf, int64(len(m))); err != nil {
 		return nil, err
 	}
@@ -180,6 +187,9 @@ func (m *Metric) UnmarshalBinary(buf []byte) error {
 // Metric.
 func (m *Metric) UnmarshalFromReader(r byteReader) error {
 	numLabelPairs, err := binary.ReadVarint(r)
+	if numLabelPairs < 0 {
+		err = fmt.Errorf("found negative numLabelPairs during unmarshaling: %d", numLabelPairs)
+	}
 	if err != nil {
 		return err
 	}
@@ -344,6 +354,8 @@ type LabelValueSet map[model.LabelValue]struct{}
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (vs LabelValueSet) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
+	// Note that this should have used EncodeUvarint but a glitch happened
+	// while designing the checkpoint format.
 	if _, err := EncodeVarint(buf, int64(len(vs))); err != nil {
 		return nil, err
 	}
@@ -359,6 +371,9 @@ func (vs LabelValueSet) MarshalBinary() ([]byte, error) {
 func (vs *LabelValueSet) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	numValues, err := binary.ReadVarint(r)
+	if numValues < 0 {
+		err = fmt.Errorf("found negative number of values during unmarshaling: %d", numValues)
+	}
 	if err != nil {
 		return err
 	}
@@ -382,6 +397,8 @@ type LabelValues model.LabelValues
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (vs LabelValues) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
+	// Note that this should have used EncodeUvarint but a glitch happened
+	// while designing the checkpoint format.
 	if _, err := EncodeVarint(buf, int64(len(vs))); err != nil {
 		return nil, err
 	}
@@ -397,6 +414,9 @@ func (vs LabelValues) MarshalBinary() ([]byte, error) {
 func (vs *LabelValues) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	numValues, err := binary.ReadVarint(r)
+	if numValues < 0 {
+		err = fmt.Errorf("found negative number of values during unmarshaling: %d", numValues)
+	}
 	if err != nil {
 		return err
 	}
