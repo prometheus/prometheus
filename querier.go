@@ -258,6 +258,9 @@ func (nopSeriesSet) Next() bool { return false }
 func (nopSeriesSet) At() Series { return nil }
 func (nopSeriesSet) Err() error { return nil }
 
+// mergedSeriesSet takes two series sets as a single series set. The input series sets
+// must be sorted and sequential in time, i.e. if they have the same label set,
+// the datapoints of a must be before the datapoints of b.
 type mergedSeriesSet struct {
 	a, b SeriesSet
 
@@ -307,11 +310,9 @@ func (s *mergedSeriesSet) Next() bool {
 	if d > 0 {
 		s.cur = s.b.At()
 		s.bdone = !s.b.Next()
-
 	} else if d < 0 {
 		s.cur = s.a.At()
 		s.adone = !s.a.Next()
-
 	} else {
 		s.cur = &chainedSeries{series: []Series{s.a.At(), s.b.At()}}
 		s.adone = !s.a.Next()
