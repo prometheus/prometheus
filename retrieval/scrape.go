@@ -178,8 +178,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 	for fp, oldLoop := range sp.loops {
 		var (
-			t       = sp.targets[fp]
-			s       = &targetScraper{Target: t, client: sp.client}
+			t = sp.targets[fp]
+			s = &targetScraper{
+				Target:  t,
+				client:  sp.client,
+				timeout: timeout,
+			}
 			newLoop = sp.newLoop(sp.ctx, s, sp.appender, t.Labels(), sp.config)
 		)
 		wg.Add(1)
@@ -240,7 +244,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 		uniqueTargets[hash] = struct{}{}
 
 		if _, ok := sp.targets[hash]; !ok {
-			s := &targetScraper{Target: t, client: sp.client}
+			s := &targetScraper{
+				Target:  t,
+				client:  sp.client,
+				timeout: timeout,
+			}
+
 			l := sp.newLoop(sp.ctx, s, sp.appender, t.Labels(), sp.config)
 
 			sp.targets[hash] = t
@@ -283,7 +292,8 @@ type scraper interface {
 // targetScraper implements the scraper interface for a target.
 type targetScraper struct {
 	*Target
-	client *http.Client
+	client  *http.Client
+	timeout time.Duration
 }
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,*/*;q=0.1`
@@ -297,6 +307,7 @@ func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples
 	}
 	req.Header.Add("Accept", acceptHeader)
 	req.Header.Set("User-Agent", userAgentHeader)
+	req.Header.Set("Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
 
 	resp, err := ctxhttp.Do(ctx, s.client, req)
 	if err != nil {
