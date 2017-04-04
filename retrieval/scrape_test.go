@@ -581,8 +581,20 @@ func TestScrapeLoopRun(t *testing.T) {
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {
+	const (
+		configTimeout   = 1500 * time.Millisecond
+		expectedTimeout = "1.500000"
+	)
+
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			timeout := r.Header.Get("Scrape-Timeout-Seconds")
+			if timeout != expectedTimeout {
+				t.Errorf("Scrape timeout did not match expected timeout")
+				t.Errorf("Expected: %v", expectedTimeout)
+				t.Fatalf("Got: %v", timeout)
+			}
+
 			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 			w.Write([]byte("metric_a 1\nmetric_b 2\n"))
 		}),
@@ -601,7 +613,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 				model.AddressLabel: model.LabelValue(serverURL.Host),
 			},
 		},
-		client: http.DefaultClient,
+		client:  http.DefaultClient,
+		timeout: configTimeout,
 	}
 	now := time.Now()
 
