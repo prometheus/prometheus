@@ -60,7 +60,7 @@ func NewClient(index int, conf *clientConfig) (*Client, error) {
 	}, nil
 }
 
-type recorerableError struct {
+type recoverableError struct {
 	error
 }
 
@@ -116,7 +116,7 @@ func (c *Client) Store(samples model.Samples) error {
 	if err != nil {
 		// Errors from client.Do are from (for example) network errors, so are
 		// recoverable.
-		return recorerableError{err}
+		return recoverableError{err}
 	}
 	defer httpResp.Body.Close()
 
@@ -124,7 +124,7 @@ func (c *Client) Store(samples model.Samples) error {
 		err = fmt.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
 	if httpResp.StatusCode/100 == 5 {
-		return recorerableError{err}
+		return recoverableError{err}
 	}
 	return nil
 }
