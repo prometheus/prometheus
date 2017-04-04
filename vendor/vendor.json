@@ -491,6 +491,21 @@
 			"revisionTime": "2016-10-07T00:41:22Z"
 		},
 		{
+			"path": "github.com/influxdata/influxdb/client/v2",
+			"revision": "15e594fc09f112cb696c084a20beaca25538a5fa",
+			"revisionTime": "2017-03-31T16:09:02-05:00"
+		},
+		{
+			"path": "github.com/influxdata/influxdb/models",
+			"revision": "15e594fc09f112cb696c084a20beaca25538a5fa",
+			"revisionTime": "2017-03-31T16:09:02-05:00"
+		},
+		{
+			"path": "github.com/influxdata/influxdb/pkg/escape",
+			"revision": "15e594fc09f112cb696c084a20beaca25538a5fa",
+			"revisionTime": "2017-03-31T16:09:02-05:00"
+		},
+		{
 			"checksumSHA1": "0ZrwvB6KoGPj2PoDNSEJwxQ6Mog=",
 			"path": "github.com/jmespath/go-jmespath",
 			"revision": "bd40a432e4c76585ef6b72d3fd96fb9b6dc7b68d",

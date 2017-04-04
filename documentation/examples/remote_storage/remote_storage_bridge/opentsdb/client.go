@@ -24,10 +24,9 @@ import (
 	"time"
 
 	"github.com/prometheus/common/log"
-
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/util/httputil"
+	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
 )
 
 const (
@@ -37,15 +36,15 @@ const (
 
 // Client allows sending batches of Prometheus samples to OpenTSDB.
 type Client struct {
-	url        string
-	httpClient *http.Client
+	url     string
+	timeout time.Duration
 }
 
 // NewClient creates a new Client.
 func NewClient(url string, timeout time.Duration) *Client {
 	return &Client{
-		url:        url,
-		httpClient: httputil.NewDeadlineClient(timeout, nil),
+		url:     url,
+		timeout: timeout,
 	}
 }
 
@@ -70,8 +69,8 @@ func tagsFromMetric(m model.Metric) map[string]TagValue {
 	return tags
 }
 
-// Store sends a batch of samples to OpenTSDB via its HTTP API.
-func (c *Client) Store(samples model.Samples) error {
+// Write sends a batch of samples to OpenTSDB via its HTTP API.
+func (c *Client) Write(samples model.Samples) error {
 	reqs := make([]StoreSamplesRequest, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
@@ -100,11 +99,10 @@ func (c *Client) Store(samples model.Samples) error {
 		return err
 	}
 
-	resp, err := c.httpClient.Post(
-		u.String(),
-		contentTypeJSON,
-		bytes.NewBuffer(buf),
-	)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	resp, err := ctxhttp.Post(ctx, http.DefaultClient, u.String(), contentTypeJSON, bytes.NewBuffer(buf))
 	if err != nil {
 		return err
 	}

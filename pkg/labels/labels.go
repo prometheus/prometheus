@@ -14,9 +14,10 @@ const sep = '\xff'
 
 // Well-known label names used by Prometheus components.
 const (
-	MetricName  = "__name__"
-	AlertName   = "alertname"
-	BucketLabel = "le"
+	MetricName   = "__name__"
+	AlertName    = "alertname"
+	BucketLabel  = "le"
+	InstanceName = "instance"
 )
 
 // Label is a key/value pair of strings.

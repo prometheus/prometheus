@@ -14,26 +14,30 @@
 package influxdb
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/remote"
 
-	influx "github.com/influxdb/influxdb/client"
+	influx "github.com/influxdata/influxdb/client/v2"
 )
 
 // Client allows sending batches of Prometheus samples to InfluxDB.
 type Client struct {
-	client          *influx.Client
+	client          influx.Client
 	database        string
 	retentionPolicy string
 	ignoredSamples  prometheus.Counter
 }
 
 // NewClient creates a new Client.
-func NewClient(conf influx.Config, db string, rp string) *Client {
-	c, err := influx.NewClient(conf)
+func NewClient(conf influx.HTTPConfig, db string, rp string) *Client {
+	c, err := influx.NewHTTPClient(conf)
 	// Currently influx.NewClient() *should* never return an error.
 	if err != nil {
 		log.Fatal(err)
@@ -63,9 +67,9 @@ func tagsFromMetric(m model.Metric) map[string]string {
 	return tags
 }
 
-// Store sends a batch of samples to InfluxDB via its HTTP API.
-func (c *Client) Store(samples model.Samples) error {
-	points := make([]influx.Point, 0, len(samples))
+// Write sends a batch of samples to InfluxDB via its HTTP API.
+func (c *Client) Write(samples model.Samples) error {
+	points := make([]*influx.Point, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
@@ -73,24 +77,221 @@ func (c *Client) Store(samples model.Samples) error {
 			c.ignoredSamples.Inc()
 			continue
 		}
-		points = append(points, influx.Point{
-			Measurement: string(s.Metric[model.MetricNameLabel]),
-			Tags:        tagsFromMetric(s.Metric),
-			Time:        s.Timestamp.Time(),
-			Precision:   "ms",
-			Fields: map[string]interface{}{
-				"value": v,
-			},
-		})
+		p, err := influx.NewPoint(
+			string(s.Metric[model.MetricNameLabel]),
+			tagsFromMetric(s.Metric),
+			map[string]interface{}{"value": v},
+			s.Timestamp.Time(),
+		)
+		if err != nil {
+			return err
+		}
+		points = append(points, p)
 	}
 
-	bps := influx.BatchPoints{
-		Points:          points,
+	bps, err := influx.NewBatchPoints(influx.BatchPointsConfig{
+		Precision:       "ms",
 		Database:        c.database,
 		RetentionPolicy: c.retentionPolicy,
+	})
+	if err != nil {
+		return err
 	}
-	_, err := c.client.Write(bps)
-	return err
+	bps.AddPoints(points)
+	return c.client.Write(bps)
+}
+
+func (c *Client) Read(req *remote.ReadRequest) (*remote.ReadResponse, error) {
+	labelsToSeries := map[string]*remote.TimeSeries{}
+	for _, q := range req.Queries {
+		command, err := buildCommand(q)
+		if err != nil {
+			return nil, err
+		}
+
+		query := influx.NewQuery(command, c.database, "ms")
+		resp, err := c.client.Query(query)
+		if err != nil {
+			return nil, err
+		}
+		if resp.Err != "" {
+			return nil, fmt.Errorf(resp.Err)
+		}
+
+		if err = mergeResult(labelsToSeries, resp.Results); err != nil {
+			return nil, err
+		}
+	}
+
+	resp := remote.ReadResponse{
+		Timeseries: make([]*remote.TimeSeries, 0, len(labelsToSeries)),
+	}
+	for _, ts := range labelsToSeries {
+		resp.Timeseries = append(resp.Timeseries, ts)
+	}
+	return &resp, nil
+}
+
+func buildCommand(q *remote.Query) (string, error) {
+	matchers := make([]string, 0, len(q.Matchers))
+	// If we don't find a metric name matcher, query all metrics
+	// (InfluxDB measurements) by default.
+	from := "FROM /.+/"
+	for _, m := range q.Matchers {
+		if m.Name == model.MetricNameLabel {
+			switch m.Type {
+			case remote.MatchType_EQUAL:
+				from = fmt.Sprintf("FROM %q", m.Value)
+			case remote.MatchType_REGEX_MATCH:
+				from = fmt.Sprintf("FROM /^%s$/", escapeSlashes(m.Value))
+			default:
+				// TODO: Figure out how to support these efficiently.
+				return "", fmt.Errorf("non-equal or regex-non-equal matchers are not supported on the metric name yet")
+			}
+			continue
+		}
+
+		switch m.Type {
+		case remote.MatchType_EQUAL:
+			matchers = append(matchers, fmt.Sprintf("%q = '%s'", m.Name, escapeSingleQuotes(m.Value)))
+		case remote.MatchType_NOT_EQUAL:
+			matchers = append(matchers, fmt.Sprintf("%q != '%s'", m.Name, escapeSingleQuotes(m.Value)))
+		case remote.MatchType_REGEX_MATCH:
+			matchers = append(matchers, fmt.Sprintf("%q =~ /^%s$/", m.Name, escapeSlashes(m.Value)))
+		case remote.MatchType_REGEX_NO_MATCH:
+			matchers = append(matchers, fmt.Sprintf("%q !~ /^%s$/", m.Name, escapeSlashes(m.Value)))
+		default:
+			return "", fmt.Errorf("unknown match type %v", m.Type)
+		}
+	}
+	matchers = append(matchers, fmt.Sprintf("time >= %vms", q.StartTimestampMs))
+	matchers = append(matchers, fmt.Sprintf("time <= %vms", q.EndTimestampMs))
+
+	return fmt.Sprintf("SELECT value %s WHERE %v GROUP BY *", from, strings.Join(matchers, " AND ")), nil
+}
+
+func escapeSingleQuotes(str string) string {
+	return strings.Replace(str, `'`, `\'`, -1)
+}
+
+func escapeSlashes(str string) string {
+	return strings.Replace(str, `/`, `\/`, -1)
+}
+
+func mergeResult(labelsToSeries map[string]*remote.TimeSeries, results []influx.Result) error {
+	for _, r := range results {
+		for _, s := range r.Series {
+			k := concatLabels(s.Tags)
+			ts, ok := labelsToSeries[k]
+			if !ok {
+				ts = &remote.TimeSeries{
+					Labels: tagsToLabelPairs(s.Name, s.Tags),
+				}
+				labelsToSeries[k] = ts
+			}
+
+			samples, err := valuesToSamples(s.Values)
+			if err != nil {
+				return err
+			}
+
+			ts.Samples = mergeSamples(ts.Samples, samples)
+		}
+	}
+	return nil
+}
+
+func concatLabels(labels map[string]string) string {
+	// 0xff cannot cannot occur in valid UTF-8 sequences, so use it
+	// as a separator here.
+	separator := "\xff"
+	pairs := make([]string, 0, len(labels))
+	for k, v := range labels {
+		pairs = append(pairs, k+separator+v)
+	}
+	return strings.Join(pairs, separator)
+}
+
+func tagsToLabelPairs(name string, tags map[string]string) []*remote.LabelPair {
+	pairs := make([]*remote.LabelPair, 0, len(tags))
+	for k, v := range tags {
+		if v == "" {
+			// If we select metrics with different sets of labels names,
+			// InfluxDB returns *all* possible tag names on all returned
+			// series, with empty tag values on series where they don't
+			// apply. In Prometheus, an empty label value is equivalent
+			// to a non-existent label, so we just skip empty ones here
+			// to make the result correct.
+			continue
+		}
+		pairs = append(pairs, &remote.LabelPair{
+			Name:  k,
+			Value: v,
+		})
+	}
+	pairs = append(pairs, &remote.LabelPair{
+		Name:  model.MetricNameLabel,
+		Value: name,
+	})
+	return pairs
+}
+
+func valuesToSamples(values [][]interface{}) ([]*remote.Sample, error) {
+	samples := make([]*remote.Sample, 0, len(values))
+	for _, v := range values {
+		if len(v) != 2 {
+			return nil, fmt.Errorf("bad sample tuple length, expected [<timestamp>, <value>], got %v", v)
+		}
+
+		jsonTimestamp, ok := v[0].(json.Number)
+		if !ok {
+			return nil, fmt.Errorf("bad timestamp: %v", v[0])
+		}
+
+		jsonValue, ok := v[1].(json.Number)
+		if !ok {
+			return nil, fmt.Errorf("bad sample value: %v", v[1])
+		}
+
+		timestamp, err := jsonTimestamp.Int64()
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert sample timestamp to int64: %v", err)
+		}
+
+		value, err := jsonValue.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert sample value to float64: %v", err)
+		}
+
+		samples = append(samples, &remote.Sample{
+			TimestampMs: timestamp,
+			Value:       value,
+		})
+	}
+	return samples, nil
+}
+
+// mergeSamples merges two lists of sample pairs and removes duplicate
+// timestamps. It assumes that both lists are sorted by timestamp.
+func mergeSamples(a, b []*remote.Sample) []*remote.Sample {
+	result := make([]*remote.Sample, 0, len(a)+len(b))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		if a[i].TimestampMs < b[j].TimestampMs {
+			result = append(result, a[i])
+			i++
+		} else if a[i].TimestampMs > b[j].TimestampMs {
+			result = append(result, b[j])
+			j++
+		} else {
+			result = append(result, a[i])
+			i++
+			j++
+		}
+	}
+	result = append(result, a[i:]...)
+	result = append(result, b[j:]...)
+	return result
 }
 
 // Name identifies the client as an InfluxDB client.

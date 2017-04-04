@@ -41,6 +41,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -377,6 +378,12 @@ func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	for _, t := range h.targetManager.Targets() {
 		job := t.Labels().Get(model.JobLabel)
 		tps[job] = append(tps[job], t)
+	}
+
+	for _, targets := range tps {
+		sort.Slice(targets, func(i, j int) bool {
+			return targets[i].Labels().Get(labels.InstanceName) < targets[j].Labels().Get(labels.InstanceName)
+		})
 	}
 
 	h.executeTemplate(w, "targets.html", struct {
