@@ -657,14 +657,18 @@ func TestMetricsForLabelMatchersIgnoresRemoteData(t *testing.T) {
 						model.MetricNameLabel: "testmetric",
 						"testlabel":           "testvalue1",
 					},
-					Values: []model.SamplePair{{1, 1}},
+					Values: []model.SamplePair{{
+						Timestamp: 1, Value: 1,
+					}},
 				},
 				&model.SampleStream{
 					Metric: model.Metric{
 						model.MetricNameLabel: "testmetric",
 						"testlabel":           "testvalue2",
 					},
-					Values: []model.SamplePair{{1, 1}},
+					Values: []model.SamplePair{{
+						Timestamp: 1, Value: 1,
+					}},
 				},
 			},
 		},
@@ -676,14 +680,18 @@ func TestMetricsForLabelMatchersIgnoresRemoteData(t *testing.T) {
 							model.MetricNameLabel: "testmetric",
 							"testlabel":           "testvalue2",
 						},
-						Values: []model.SamplePair{{1, 1}},
+						Values: []model.SamplePair{{
+							Timestamp: 1, Value: 1,
+						}},
 					},
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
 							"testlabel":           "testvalue3",
 						},
-						Values: []model.SamplePair{{1, 1}},
+						Values: []model.SamplePair{{
+							Timestamp: 1, Value: 1,
+						}},
 					},
 				},
 			},
