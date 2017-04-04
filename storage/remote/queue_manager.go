@@ -123,7 +123,7 @@ func init() {
 	prometheus.MustRegister(numShards)
 }
 
-// RemoteQueueConfig is the configuration for the queue used to write to remote
+// QueueManagerConfig is the configuration for the queue used to write to remote
 // storage.
 type QueueManagerConfig struct {
 	// Number of samples to buffer per shard before we start dropping them.
@@ -141,7 +141,7 @@ type QueueManagerConfig struct {
 	MaxBackoff time.Duration
 }
 
-// DefaultRemoteQueueConfig is the default remote queue configuration.
+// defaultQueueManagerConfig is the default remote queue configuration.
 var defaultQueueManagerConfig = QueueManagerConfig{
 	// With a maximum of 1000 shards, assuming an average of 100ms remote write
 	// time and 100 samples per batch, we will be able to push 1M samples/s.
