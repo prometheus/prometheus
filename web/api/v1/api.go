@@ -337,19 +337,23 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	}
 	defer q.Close()
 
-	// TODO(fabxc): expose merge functionality in storage interface.
-	// We just concatenate results for all sets of matchers, which may produce
-	// duplicated results.
-	metrics := []labels.Labels{}
+	var set storage.SeriesSet
 
 	for _, mset := range matcherSets {
-		series := q.Select(mset...)
-		for series.Next() {
-			metrics = append(metrics, series.At().Labels())
+		if set == nil {
+			set = q.Select(mset...)
+		} else {
+			set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
 		}
-		if series.Err() != nil {
-			return nil, &apiError{errorExec, series.Err()}
-		}
+	}
+
+	metrics := []labels.Labels{}
+
+	for set.Next() {
+		metrics = append(metrics, set.At().Labels())
+	}
+	if set.Err() != nil {
+		return nil, &apiError{errorExec, set.Err()}
 	}
 
 	return metrics, nil
