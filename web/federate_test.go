@@ -204,7 +204,7 @@ func TestFederation(t *testing.T) {
 			t.Errorf("Scenario %q: got code %d, want %d", name, got, want)
 		}
 		if got, want := normalizeBody(res.Body), scenario.body; got != want {
-			t.Errorf("Scenario %q: got body %s, want %s", name, got, want)
+			t.Errorf("Scenario %q: got body\n%s\n, want\n%s\n", name, got, want)
 		}
 	}
 }

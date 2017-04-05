@@ -167,7 +167,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				Name:  proto.String(l.Name),
 				Value: proto.String(l.Value),
 			})
-			if _, ok := h.externalLabels[model.LabelName(l.Name)]; ok {
+			if _, ok := externalLabels[model.LabelName(l.Name)]; ok {
 				globalUsed[l.Name] = struct{}{}
 			}
 		}
@@ -176,7 +176,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 		// Attach global labels if they do not exist yet.
-		for ln, lv := range h.externalLabels {
+		for _, ln := range externalLabelNames {
+			lv := externalLabels[ln]
 			if _, ok := globalUsed[string(ln)]; !ok {
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
 					Name:  proto.String(string(ln)),
