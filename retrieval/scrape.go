@@ -307,7 +307,7 @@ func (s *targetScraper) scrape(ctx context.Context, ts time.Time) (model.Samples
 	}
 	req.Header.Add("Accept", acceptHeader)
 	req.Header.Set("User-Agent", userAgentHeader)
-	req.Header.Set("Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
+	req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
 
 	resp, err := ctxhttp.Do(ctx, s.client, req)
 	if err != nil {
