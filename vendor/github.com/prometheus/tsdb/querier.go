@@ -157,6 +157,15 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 }
 
 func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
+	// Fast-path for equal matching.
+	if em, ok := m.(*labels.EqualMatcher); ok {
+		it, err := q.index.Postings(em.Name(), em.Value())
+		if err != nil {
+			return errPostings{err: err}
+		}
+		return it
+	}
+
 	tpls, err := q.index.LabelValues(m.Name())
 	if err != nil {
 		return errPostings{err: err}
@@ -174,7 +183,6 @@ func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
 			res = append(res, vals[0])
 		}
 	}
-
 	if len(res) == 0 {
 		return emptyPostings
 	}

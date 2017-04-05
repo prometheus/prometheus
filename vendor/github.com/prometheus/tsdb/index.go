@@ -688,7 +688,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 
 	off, ok := r.postings[key]
 	if !ok {
-		return nil, ErrNotFound
+		return emptyPostings, nil
 	}
 
 	flag, b, err := r.section(off)

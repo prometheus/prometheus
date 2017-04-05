@@ -34,6 +34,9 @@ func (m *EqualMatcher) Name() string { return m.name }
 // Matches implements Matcher interface.
 func (m *EqualMatcher) Matches(v string) bool { return v == m.value }
 
+// Value returns the matched value.
+func (m *EqualMatcher) Value() string { return m.value }
+
 // NewEqualMatcher returns a new matcher matching an exact label value.
 func NewEqualMatcher(name, value string) Matcher {
 	return &EqualMatcher{name: name, value: value}

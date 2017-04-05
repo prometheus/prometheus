@@ -627,7 +627,7 @@ func (s *memSeries) append(t int64, v float64) bool {
 
 	var c *memChunk
 
-	if s.app == nil || s.head().samples > 2000 {
+	if s.app == nil || s.head().samples > 130 {
 		c = s.cut()
 		c.minTime = t
 	} else {
