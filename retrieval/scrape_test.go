@@ -588,7 +588,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			timeout := r.Header.Get("Scrape-Timeout-Seconds")
+			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
 			if timeout != expectedTimeout {
 				t.Errorf("Scrape timeout did not match expected timeout")
 				t.Errorf("Expected: %v", expectedTimeout)
