@@ -565,6 +565,8 @@ func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
 		lset: lset,
 		ref:  uint32(len(h.series)),
 	}
+	// create the initial chunk and appender
+	s.cut()
 
 	// Allocate empty space until we can insert at the given index.
 	h.series = append(h.series, s)
@@ -627,7 +629,7 @@ func (s *memSeries) append(t int64, v float64) bool {
 
 	var c *memChunk
 
-	if s.app == nil || s.head().samples > 2000 {
+	if s.head().samples > 2000 {
 		c = s.cut()
 		c.minTime = t
 	} else {
