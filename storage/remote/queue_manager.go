@@ -477,12 +477,11 @@ func (s *shards) runShard(i int) {
 func (s *shards) sendSamples(samples model.Samples) {
 	begin := time.Now()
 	s.sendSamplesWithBackoff(samples)
-	duration := time.Since(begin)
 
 	// These counters are used to caclulate the dynamic sharding, as as such
-	// should be mainted irrespective of success or failure.
+	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
-	s.qm.samplesOutDuration.incr(int64(duration))
+	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -491,11 +490,8 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
 		err := s.qm.client.Store(samples)
-		duration := time.Since(begin)
 
-		// sentBatchDuration is used for monitoring.  As a historgram, is counts
-		// both the number of RPCs done and how long they took.
-		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(duration.Seconds())
+		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
 		if err == nil {
 			succeededSamplesTotal.WithLabelValues(s.qm.queueName).Add(float64(len(samples)))
 			return
