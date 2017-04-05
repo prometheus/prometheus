@@ -453,7 +453,7 @@ func TestEndpoints(t *testing.T) {
 			endpoint: api.targets,
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
-					&Target{
+					{
 						DiscoveredLabels: model.LabelSet{},
 						Labels:           model.LabelSet{},
 						ScrapeURL:        "http://example.com:8080/metrics",
@@ -465,7 +465,7 @@ func TestEndpoints(t *testing.T) {
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{
 				ActiveAlertmanagers: []*AlertmanagerTarget{
-					&AlertmanagerTarget{
+					{
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
 					},
 				},
