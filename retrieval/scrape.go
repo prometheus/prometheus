@@ -500,7 +500,7 @@ func (sl *scrapeLoop) append(samples model.Samples) (int, error) {
 		var wrappedBufApp storage.SampleAppender
 		wrappedBufApp, countingApp = sl.wrapAppender(bufApp)
 		for _, s := range samples {
-			// Ignore errors as bufferedAppender always succeds.
+			// Ignore errors as bufferedAppender always succeeds.
 			wrappedBufApp.Append(s)
 		}
 		samples = bufApp.buffer

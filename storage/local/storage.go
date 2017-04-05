@@ -1209,7 +1209,7 @@ func (s *MemorySeriesStorage) maybeEvict() {
 //   to 1 to signal that we want to evict chunk but have no evictable chunks
 //   available.
 //
-// - Otherwise, calulate the number of chunks to evict and return it:
+// - Otherwise, calculate the number of chunks to evict and return it:
 //
 //                                   MAX( h(nextGC), h(current) ) - h(target)
 //   n(toEvict) = MIN( n(evictable), ---------------------------------------- )
