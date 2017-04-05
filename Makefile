@@ -36,9 +36,10 @@ check_license:
 	@echo ">> checking license header"
 	@./scripts/check_license.sh
 
+# TODO(fabxc): example tests temporarily removed.
 test:
 	@echo ">> running short tests"
-	@$(GO) test -short $(pkgs)
+	@$(GO) test -short $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
 
 format:
 	@echo ">> formatting code"
