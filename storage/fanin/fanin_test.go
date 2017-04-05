@@ -143,7 +143,7 @@ func TestQueryRange(t *testing.T) {
 				},
 			},
 			remote: []model.Matrix{
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
@@ -164,7 +164,7 @@ func TestQueryRange(t *testing.T) {
 						},
 					},
 				},
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
@@ -231,7 +231,7 @@ func TestQueryRange(t *testing.T) {
 				},
 			},
 			remote: []model.Matrix{
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
@@ -252,7 +252,7 @@ func TestQueryRange(t *testing.T) {
 						},
 					},
 				},
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
@@ -323,7 +323,7 @@ func TestQueryRange(t *testing.T) {
 		{
 			name: "no local data",
 			remote: []model.Matrix{
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
@@ -345,7 +345,7 @@ func TestQueryRange(t *testing.T) {
 						},
 					},
 				},
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
@@ -507,7 +507,7 @@ func TestQueryRange(t *testing.T) {
 				},
 			},
 			remote: []model.Matrix{
-				model.Matrix{
+				{
 					&model.SampleStream{
 						Metric: model.Metric{
 							model.MetricNameLabel: "testmetric",
