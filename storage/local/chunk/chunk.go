@@ -33,7 +33,10 @@ const ChunkLen = 1024
 // DefaultEncoding can be changed via a flag.
 var DefaultEncoding = DoubleDelta
 
-var errChunkBoundsExceeded = errors.New("attempted access outside of chunk boundaries")
+var (
+	errChunkBoundsExceeded = errors.New("attempted access outside of chunk boundaries")
+	errAddedToEvictedChunk = errors.New("attempted to add sample to evicted chunk")
+)
 
 // EvictRequest is a request to evict a chunk from memory.
 type EvictRequest struct {
@@ -133,6 +136,9 @@ func NewDesc(c Chunk, firstTime model.Time) *Desc {
 // The chunk must be pinned, and the caller must have locked the fingerprint of
 // the series.
 func (d *Desc) Add(s model.SamplePair) ([]Chunk, error) {
+	if d.C == nil {
+		return nil, errAddedToEvictedChunk
+	}
 	return d.C.Add(s)
 }
 
