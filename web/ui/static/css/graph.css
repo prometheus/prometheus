@@ -44,21 +44,25 @@ body {
 .legend {
   display: inline-block;
   vertical-align: top;
-  margin: 0 0 0 40px;
+  margin: 0 0 0 60px;
 }
 
 .graph_area {
   position: relative;
   font-family: Arial, Helvetica, sans-serif;
-  margin: 5px 0 5px 0;
+  margin: 5px 0 5px 20px;
 }
 
 .y_axis {
-  overflow: hidden;
+  overflow: visible;
   position: absolute;
   top: 1px;
   bottom: 0;
   width: 40px;
+}
+
+.y_axis svg {
+  overflow: visible;
 }
 
 .graph .detail .item.active {
@@ -126,7 +130,7 @@ input[name="end_input"], input[name="range_input"] {
 }
 
 .prometheus_input_group.range_input {
-  margin-left: 39px;
+  margin-left: 59px;
 }
 
 .prometheus_input_group .btn {
