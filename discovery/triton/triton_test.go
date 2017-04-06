@@ -111,12 +111,14 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 		 	{
 				"server_uuid":"44454c4c-5000-104d-8037-b7c04f5a5131",
 				"vm_alias":"server01",
+				"vm_brand":"lx",
 				"vm_image_uuid":"7b27a514-89d7-11e6-bee6-3f96f367bee7",
 				"vm_uuid":"ad466fbf-46a2-4027-9b64-8d3cdb7e9072"
 			},
 			{
 				"server_uuid":"a5894692-bd32-4ca1-908a-e2dda3c3a5e6",
 				"vm_alias":"server02",
+				"vm_brand":"kvm",
 				"vm_image_uuid":"a5894692-bd32-4ca1-908a-e2dda3c3a5e6",
 				"vm_uuid":"7b27a514-89d7-11e6-bee6-3f96f367bee7"
 			}]
