@@ -38,6 +38,7 @@ var throttleCodes = map[string]struct{}{
 	"RequestThrottled":                       {},
 	"LimitExceededException":                 {}, // Deleting 10+ DynamoDb tables at once
 	"TooManyRequestsException":               {}, // Lambda functions
+	"PriorRequestNotComplete":                {}, // Route53
 }
 
 // credsExpiredCodes is a collection of error codes which signify the credentials

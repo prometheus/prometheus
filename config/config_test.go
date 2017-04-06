@@ -379,6 +379,27 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-ecs",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				ECSSDConfigs: []*ECSSDConfig{
+					{
+						Region:          "us-west-2",
+						AccessKey:       "access",
+						SecretKey:       "secret",
+						Profile:         "profile",
+						RefreshInterval: model.Duration(60 * time.Second),
+					},
+				},
+			},
+		},
+		{
 			JobName: "service-nerve",
 
 			ScrapeInterval: model.Duration(15 * time.Second),

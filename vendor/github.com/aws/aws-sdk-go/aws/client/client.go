@@ -11,9 +11,11 @@ import (
 
 // A Config provides configuration to a service client instance.
 type Config struct {
-	Config                  *aws.Config
-	Handlers                request.Handlers
-	Endpoint, SigningRegion string
+	Config        *aws.Config
+	Handlers      request.Handlers
+	Endpoint      string
+	SigningRegion string
+	SigningName   string
 }
 
 // ConfigProvider provides a generic way for a service client to receive

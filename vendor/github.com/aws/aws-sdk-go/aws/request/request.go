@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -55,6 +56,8 @@ type Operation struct {
 	HTTPMethod string
 	HTTPPath   string
 	*Paginator
+
+	BeforePresignFn func(r *Request) error
 }
 
 // Paginator keeps track of pagination configuration for an API operation.
@@ -149,6 +152,15 @@ func (r *Request) SetReaderBody(reader io.ReadSeeker) {
 func (r *Request) Presign(expireTime time.Duration) (string, error) {
 	r.ExpireTime = expireTime
 	r.NotHoist = false
+
+	if r.Operation.BeforePresignFn != nil {
+		r = r.copy()
+		err := r.Operation.BeforePresignFn(r)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	r.Sign()
 	if r.Error != nil {
 		return "", r.Error
@@ -234,7 +246,82 @@ func (r *Request) ResetBody() {
 	}
 
 	r.safeBody = newOffsetReader(r.Body, r.BodyStart)
-	r.HTTPRequest.Body = r.safeBody
+
+	// Go 1.8 tightened and clarified the rules code needs to use when building
+	// requests with the http package. Go 1.8 removed the automatic detection
+	// of if the Request.Body was empty, or actually had bytes in it. The SDK
+	// always sets the Request.Body even if it is empty and should not actually
+	// be sent. This is incorrect.
+	//
+	// Go 1.8 did add a http.NoBody value that the SDK can use to tell the http
+	// client that the request really should be sent without a body. The
+	// Request.Body cannot be set to nil, which is preferable, because the
+	// field is exported and could introduce nil pointer dereferences for users
+	// of the SDK if they used that field.
+	//
+	// Related golang/go#18257
+	l, err := computeBodyLength(r.Body)
+	if err != nil {
+		r.Error = awserr.New("SerializationError", "failed to compute request body size", err)
+		return
+	}
+
+	if l == 0 {
+		r.HTTPRequest.Body = noBodyReader
+	} else if l > 0 {
+		r.HTTPRequest.Body = r.safeBody
+	} else {
+		// Hack to prevent sending bodies for methods where the body
+		// should be ignored by the server. Sending bodies on these
+		// methods without an associated ContentLength will cause the
+		// request to socket timeout because the server does not handle
+		// Transfer-Encoding: chunked bodies for these methods.
+		//
+		// This would only happen if a aws.ReaderSeekerCloser was used with
+		// a io.Reader that was not also an io.Seeker.
+		switch r.Operation.HTTPMethod {
+		case "GET", "HEAD", "DELETE":
+			r.HTTPRequest.Body = noBodyReader
+		default:
+			r.HTTPRequest.Body = r.safeBody
+		}
+	}
+}
+
+// Attempts to compute the length of the body of the reader using the
+// io.Seeker interface. If the value is not seekable because of being
+// a ReaderSeekerCloser without an unerlying Seeker -1 will be returned.
+// If no error occurs the length of the body will be returned.
+func computeBodyLength(r io.ReadSeeker) (int64, error) {
+	seekable := true
+	// Determine if the seeker is actually seekable. ReaderSeekerCloser
+	// hides the fact that a io.Readers might not actually be seekable.
+	switch v := r.(type) {
+	case aws.ReaderSeekerCloser:
+		seekable = v.IsSeeker()
+	case *aws.ReaderSeekerCloser:
+		seekable = v.IsSeeker()
+	}
+	if !seekable {
+		return -1, nil
+	}
+
+	curOffset, err := r.Seek(0, 1)
+	if err != nil {
+		return 0, err
+	}
+
+	endOffset, err := r.Seek(0, 2)
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = r.Seek(curOffset, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	return endOffset - curOffset, nil
 }
 
 // GetBody will return an io.ReadSeeker of the Request's underlying
@@ -286,7 +373,7 @@ func (r *Request) Send() error {
 
 		r.Handlers.Send.Run(r)
 		if r.Error != nil {
-			if strings.Contains(r.Error.Error(), "net/http: request canceled") {
+			if !shouldRetryCancel(r) {
 				return r.Error
 			}
 
@@ -334,6 +421,17 @@ func (r *Request) Send() error {
 	return nil
 }
 
+// copy will copy a request which will allow for local manipulation of the
+// request.
+func (r *Request) copy() *Request {
+	req := &Request{}
+	*req = *r
+	req.Handlers = r.Handlers.Copy()
+	op := *r.Operation
+	req.Operation = &op
+	return req
+}
+
 // AddToUserAgent adds the string to the end of the request's current user agent.
 func AddToUserAgent(r *Request, s string) {
 	curUA := r.HTTPRequest.Header.Get("User-Agent")
@@ -341,4 +439,27 @@ func AddToUserAgent(r *Request, s string) {
 		s = curUA + " " + s
 	}
 	r.HTTPRequest.Header.Set("User-Agent", s)
+}
+
+func shouldRetryCancel(r *Request) bool {
+	awsErr, ok := r.Error.(awserr.Error)
+	timeoutErr := false
+	errStr := r.Error.Error()
+	if ok {
+		err := awsErr.OrigErr()
+		netErr, netOK := err.(net.Error)
+		timeoutErr = netOK && netErr.Temporary()
+		if urlErr, ok := err.(*url.Error); !timeoutErr && ok {
+			errStr = urlErr.Err.Error()
+		}
+	}
+
+	// There can be two types of canceled errors here.
+	// The first being a net.Error and the other being an error.
+	// If the request was timed out, we want to continue the retry
+	// process. Otherwise, return the canceled error.
+	return timeoutErr ||
+		(errStr != "net/http: request canceled" &&
+			errStr != "net/http: request canceled while waiting for connection")
+
 }
