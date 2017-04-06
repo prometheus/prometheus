@@ -40,7 +40,8 @@ message ReadRequest {
 }
 
 message ReadResponse {
-  repeated TimeSeries timeseries = 1;
+  // In same order as the request's queries.
+  repeated QueryResult results = 1;
 }
 
 message Query {
@@ -60,4 +61,8 @@ message LabelMatcher {
   MatchType type = 1;
   string name = 2;
   string value = 3;
+}
+
+message QueryResult {
+  repeated TimeSeries timeseries = 1;
 }

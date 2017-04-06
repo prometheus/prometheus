@@ -124,10 +124,12 @@ func (c *Client) Read(req *remote.ReadRequest) (*remote.ReadResponse, error) {
 	}
 
 	resp := remote.ReadResponse{
-		Timeseries: make([]*remote.TimeSeries, 0, len(labelsToSeries)),
+		Results: []*remote.QueryResult{
+			{Timeseries: make([]*remote.TimeSeries, 0, len(labelsToSeries))},
+		},
 	}
 	for _, ts := range labelsToSeries {
-		resp.Timeseries = append(resp.Timeseries, ts)
+		resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, ts)
 	}
 	return &resp, nil
 }
