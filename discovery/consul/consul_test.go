@@ -63,12 +63,12 @@ func TestConsulDiscovery(t *testing.T) {
 	srv1.AddCheck(t, "service:testService", "testService", structs.HealthPassing)
 
 	conf := &config.ConsulSDConfig{
-		Server:       srv1.HTTPAddr,
-		Services:     []string{"testService"},
-		WatchTimeout: 3 * time.Second,
+		Server:   srv1.HTTPAddr,
+		Services: []string{"testService"},
 	}
 	consulDiscovery, err := NewDiscovery(conf)
-	ctx, _ := context.WithTimeout(context.Background(), time.Millisecond*10)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond*10)
+	defer cancelFunc()
 	ch := make(chan []*config.TargetGroup, 1)
 
 	consulDiscovery.Run(ctx, ch)

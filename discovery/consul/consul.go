@@ -153,7 +153,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		srvs, meta, err := catalog.Services(&consul.QueryOptions{
 			WaitIndex: lastIndex,
 			WaitTime:  d.watchTimeout,
-			//WaitTime:  d.WatchTimeout,
 		})
 		rpcDuration.WithLabelValues("catalog", "services").Observe(time.Since(t0).Seconds())
 

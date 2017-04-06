@@ -254,6 +254,7 @@ var expectedConf = &Config{
 							CAFile:             "testdata/valid_ca_file",
 							InsecureSkipVerify: false,
 						},
+						WatchTimeout: 30 * time.Second,
 					},
 				},
 			},
