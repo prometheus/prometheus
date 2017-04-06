@@ -15,6 +15,7 @@ package local
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -547,6 +548,27 @@ func TestPersistLoadDropChunksType1(t *testing.T) {
 	testPersistLoadDropChunks(t, 1)
 }
 
+func TestCancelCheckpoint(t *testing.T) {
+	p, closer := newTestPersistence(t, 2)
+	defer closer.Close()
+
+	fpLocker := newFingerprintLocker(10)
+	sm := newSeriesMap()
+	s, _ := newMemorySeries(m1, nil, time.Time{})
+	sm.put(m1.FastFingerprint(), s)
+	sm.put(m2.FastFingerprint(), s)
+	sm.put(m3.FastFingerprint(), s)
+	sm.put(m4.FastFingerprint(), s)
+	sm.put(m5.FastFingerprint(), s)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel right now to avoid races.
+	cancel()
+	if err := p.checkpointSeriesMapAndHeads(ctx, sm, fpLocker); err != context.Canceled {
+		t.Fatalf("expected error %v, got %v", context.Canceled, err)
+	}
+}
+
 func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encoding) {
 	p, closer := newTestPersistence(t, encoding)
 	defer closer.Close()
@@ -584,7 +606,7 @@ func testCheckpointAndLoadSeriesMapAndHeads(t *testing.T, encoding chunk.Encodin
 	sm.put(m4.FastFingerprint(), s4)
 	sm.put(m5.FastFingerprint(), s5)
 
-	if err := p.checkpointSeriesMapAndHeads(sm, fpLocker); err != nil {
+	if err := p.checkpointSeriesMapAndHeads(context.Background(), sm, fpLocker); err != nil {
 		t.Fatal(err)
 	}
 

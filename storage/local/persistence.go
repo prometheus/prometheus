@@ -15,6 +15,7 @@ package local
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -626,7 +627,9 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 // NOTE: Above, varint encoding is used consistently although uvarint would have
 // made more sense in many cases. This was simply a glitch while designing the
 // format.
-func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker) (err error) {
+func (p *persistence) checkpointSeriesMapAndHeads(
+	ctx context.Context, fingerprintToSeries *seriesMap, fpLocker *fingerprintLocker,
+) (err error) {
 	log.Info("Checkpointing in-memory metrics and chunks...")
 	p.checkpointing.Set(1)
 	defer p.checkpointing.Set(0)
@@ -637,11 +640,16 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 	}
 
 	defer func() {
-		syncErr := f.Sync()
-		closeErr := f.Close()
+		defer os.Remove(p.headsTempFileName()) // Just in case it was left behind.
+
 		if err != nil {
+			// If we already had an error, do not bother to sync,
+			// just close, ignoring any further error.
+			f.Close()
 			return
 		}
+		syncErr := f.Sync()
+		closeErr := f.Close()
 		err = syncErr
 		if err != nil {
 			return
@@ -683,6 +691,11 @@ func (p *persistence) checkpointSeriesMapAndHeads(fingerprintToSeries *seriesMap
 
 	var realNumberOfSeries uint64
 	for m := range iter {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		func() { // Wrapped in function to use defer for unlocking the fp.
 			fpLocker.Lock(m.fp)
 			defer fpLocker.Unlock(m.fp)
