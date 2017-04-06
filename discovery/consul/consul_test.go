@@ -79,7 +79,7 @@ func TestConsulDiscovery(t *testing.T) {
 	for range services {
 		select {
 		case targetGroup := <-ch:
-			targetGroups[targetGroup[0].Source] = targetGroup //append(targetGroups, targetGroup[0])
+			targetGroups[targetGroup[0].Source] = targetGroup
 		default:
 			t.Errorf("Could not retrieve target group from embedded consul")
 		}
