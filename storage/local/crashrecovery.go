@@ -86,11 +86,12 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 	for fp, s := range fingerprintToSeries {
 		if _, seen := fpsSeen[fp]; !seen {
 			// fp exists in fingerprintToSeries, but has no representation on disk.
-			if s.persistWatermark == len(s.chunkDescs) {
+			if s.persistWatermark >= len(s.chunkDescs) {
 				// Oops, everything including the head chunk was
-				// already persisted, but nothing on disk.
-				// Thus, we lost that series completely. Clean
-				// up the remnants.
+				// already persisted, but nothing on disk. Or
+				// the persistWatermark is plainly wrong. Thus,
+				// we lost that series completely. Clean up the
+				// remnants.
 				delete(fingerprintToSeries, fp)
 				if err := p.purgeArchivedMetric(fp); err != nil {
 					// Purging the archived metric didn't work, so try
