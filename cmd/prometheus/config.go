@@ -171,11 +171,11 @@ func init() {
 	)
 	cfg.fs.DurationVar(
 		&cfg.storage.CheckpointInterval, "storage.local.checkpoint-interval", 5*time.Minute,
-		"The period at which the in-memory metrics and the chunks not yet persisted to series files are checkpointed.",
+		"The time to wait between checkpoints of in-memory metrics and chunks not yet persisted to series files. Note that a checkpoint is never triggered before at least as much time has passed as the last checkpoint took.",
 	)
 	cfg.fs.IntVar(
 		&cfg.storage.CheckpointDirtySeriesLimit, "storage.local.checkpoint-dirty-series-limit", 5000,
-		"If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints.",
+		"If approx. that many time series are in a state that would require a recovery operation after a crash, a checkpoint is triggered, even if the checkpoint interval hasn't passed yet. A recovery operation requires a disk seek. The default limit intends to keep the recovery time below 1min even on spinning disks. With SSD, recovery is much faster, so you might want to increase this value in that case to avoid overly frequent checkpoints. Also note that a checkpoint is never triggered before at least as much time has passed as the last checkpoint took.",
 	)
 	cfg.fs.Var(
 		&cfg.storage.SyncStrategy, "storage.local.series-sync-strategy",
