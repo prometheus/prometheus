@@ -478,7 +478,7 @@ func (s *shards) sendSamples(samples model.Samples) {
 	begin := time.Now()
 	s.sendSamplesWithBackoff(samples)
 
-	// These counters are used to caclulate the dynamic sharding, as as such
+	// These counters are used to caclulate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
@@ -499,7 +499,7 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 
 		log.Warnf("Error sending %d samples to remote storage: %s", len(samples), err)
 		if _, ok := err.(recoverableError); !ok {
-			return
+			break
 		}
 		time.Sleep(backoff)
 		backoff = backoff * 2
