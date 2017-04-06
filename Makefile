@@ -36,11 +36,11 @@ check_license:
 	@echo ">> checking license header"
 	@./scripts/check_license.sh
 
-test:
+test-short:
 	@echo ">> running short tests"
 	@$(GO) test -short $(pkgs)
 
-testall:
+test:
 	@echo ">> running all tests"
 	@$(GO) test $(pkgs)
 
