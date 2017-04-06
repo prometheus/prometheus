@@ -205,11 +205,25 @@ func newPersistence(
 
 	archivedFingerprintToMetrics, err := index.NewFingerprintMetricIndex(basePath)
 	if err != nil {
+		// At this point, we could simply blow away the archived
+		// fingerprint-to-metric index. However, then we would lose
+		// _all_ archived metrics. So better give the user an
+		// opportunity to repair the LevelDB with a 3rd party tool.
+		log.Errorf("Could not open the fingerprint-to-metric index for archived series. Please try a 3rd party tool to repair LevelDB in directory %q. If unsuccessful or undesired, delete the whole directory and restart Prometheus for crash recovery. You will lose all archived time series.", filepath.Join(basePath, index.FingerprintToMetricDir))
 		return nil, err
 	}
 	archivedFingerprintToTimeRange, err := index.NewFingerprintTimeRangeIndex(basePath)
 	if err != nil {
-		return nil, err
+		// We can recover the archived fingerprint-to-timerange index,
+		// so blow it away and set ourselves dirty. Then re-open the now
+		// empty index.
+		if err := index.DeleteFingerprintTimeRangeIndex(basePath); err != nil {
+			return nil, err
+		}
+		dirty = true
+		if archivedFingerprintToTimeRange, err = index.NewFingerprintTimeRangeIndex(basePath); err != nil {
+			return nil, err
+		}
 	}
 
 	p := &persistence{
