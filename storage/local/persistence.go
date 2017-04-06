@@ -1381,9 +1381,11 @@ func (p *persistence) processIndexingQueue() {
 
 		if err := p.labelPairToFingerprints.IndexBatch(pairToFPs); err != nil {
 			log.Error("Error indexing label pair to fingerprints batch: ", err)
+			p.setDirty(err)
 		}
 		if err := p.labelNameToLabelValues.IndexBatch(nameToValues); err != nil {
 			log.Error("Error indexing label name to label values batch: ", err)
+			p.setDirty(err)
 		}
 		batchSize = 0
 		nameToValues = index.LabelNameLabelValuesMapping{}
