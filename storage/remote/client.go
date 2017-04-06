@@ -173,7 +173,11 @@ func (c *Client) Read(ctx context.Context, from, through model.Time, matchers me
 		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
 	}
 
-	return matrixFromProto(resp.Timeseries), nil
+	if len(resp.Results) != len(req.Queries) {
+		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
+	}
+
+	return matrixFromProto(resp.Results[0].Timeseries), nil
 }
 
 func labelMatchersToProto(matchers metric.LabelMatchers) []*LabelMatcher {
