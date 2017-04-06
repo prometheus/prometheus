@@ -32,6 +32,7 @@ const (
 	tritonLabel             = model.MetaLabelPrefix + "triton_"
 	tritonLabelMachineId    = tritonLabel + "machine_id"
 	tritonLabelMachineAlias = tritonLabel + "machine_alias"
+	tritonLabelMachineBrand = tritonLabel + "machine_brand"
 	tritonLabelMachineImage = tritonLabel + "machine_image"
 	tritonLabelServerId     = tritonLabel + "server_id"
 	namespace               = "prometheus"
@@ -59,6 +60,7 @@ type DiscoveryResponse struct {
 	Containers []struct {
 		ServerUUID  string `json:"server_uuid"`
 		VMAlias     string `json:"vm_alias"`
+		VMBrand     string `json:"vm_brand"`
 		VMImageUUID string `json:"vm_image_uuid"`
 		VMUUID      string `json:"vm_uuid"`
 	} `json:"containers"`
@@ -157,6 +159,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		labels := model.LabelSet{
 			tritonLabelMachineId:    model.LabelValue(container.VMUUID),
 			tritonLabelMachineAlias: model.LabelValue(container.VMAlias),
+			tritonLabelMachineBrand: model.LabelValue(container.VMBrand),
 			tritonLabelMachineImage: model.LabelValue(container.VMImageUUID),
 			tritonLabelServerId:     model.LabelValue(container.ServerUUID),
 		}
