@@ -26,11 +26,12 @@ import (
 	"github.com/prometheus/prometheus/storage/local/codable"
 )
 
+// Directory names for LevelDB indices.
 const (
-	fingerprintToMetricDir     = "archived_fingerprint_to_metric"
-	fingerprintTimeRangeDir    = "archived_fingerprint_to_timerange"
-	labelNameToLabelValuesDir  = "labelname_to_labelvalues"
-	labelPairToFingerprintsDir = "labelpair_to_fingerprints"
+	FingerprintToMetricDir     = "archived_fingerprint_to_metric"
+	FingerprintTimeRangeDir    = "archived_fingerprint_to_timerange"
+	LabelNameToLabelValuesDir  = "labelname_to_labelvalues"
+	LabelPairToFingerprintsDir = "labelpair_to_fingerprints"
 )
 
 // LevelDB cache sizes, changeable via flags.
@@ -96,7 +97,7 @@ func (i *FingerprintMetricIndex) Lookup(fp model.Fingerprint) (metric model.Metr
 // ready to use.
 func NewFingerprintMetricIndex(basePath string) (*FingerprintMetricIndex, error) {
 	fingerprintToMetricDB, err := NewLevelDB(LevelDBOptions{
-		Path:           filepath.Join(basePath, fingerprintToMetricDir),
+		Path:           filepath.Join(basePath, FingerprintToMetricDir),
 		CacheSizeBytes: FingerprintMetricCacheSize,
 	})
 	if err != nil {
@@ -168,7 +169,7 @@ func (i *LabelNameLabelValuesIndex) LookupSet(l model.LabelName) (values map[mod
 // LabelNameLabelValuesIndex ready to use.
 func NewLabelNameLabelValuesIndex(basePath string) (*LabelNameLabelValuesIndex, error) {
 	labelNameToLabelValuesDB, err := NewLevelDB(LevelDBOptions{
-		Path:           filepath.Join(basePath, labelNameToLabelValuesDir),
+		Path:           filepath.Join(basePath, LabelNameToLabelValuesDir),
 		CacheSizeBytes: LabelNameLabelValuesCacheSize,
 	})
 	if err != nil {
@@ -182,7 +183,7 @@ func NewLabelNameLabelValuesIndex(basePath string) (*LabelNameLabelValuesIndex, 
 // DeleteLabelNameLabelValuesIndex deletes the LevelDB-backed
 // LabelNameLabelValuesIndex. Use only for a not yet opened index.
 func DeleteLabelNameLabelValuesIndex(basePath string) error {
-	return os.RemoveAll(path.Join(basePath, labelNameToLabelValuesDir))
+	return os.RemoveAll(path.Join(basePath, LabelNameToLabelValuesDir))
 }
 
 // LabelPairFingerprintsMapping is an in-memory map of label pairs to
@@ -246,7 +247,7 @@ func (i *LabelPairFingerprintIndex) LookupSet(p model.LabelPair) (fps map[model.
 // LabelPairFingerprintIndex ready to use.
 func NewLabelPairFingerprintIndex(basePath string) (*LabelPairFingerprintIndex, error) {
 	labelPairToFingerprintsDB, err := NewLevelDB(LevelDBOptions{
-		Path:           filepath.Join(basePath, labelPairToFingerprintsDir),
+		Path:           filepath.Join(basePath, LabelPairToFingerprintsDir),
 		CacheSizeBytes: LabelPairFingerprintsCacheSize,
 	})
 	if err != nil {
@@ -260,7 +261,7 @@ func NewLabelPairFingerprintIndex(basePath string) (*LabelPairFingerprintIndex, 
 // DeleteLabelPairFingerprintIndex deletes the LevelDB-backed
 // LabelPairFingerprintIndex. Use only for a not yet opened index.
 func DeleteLabelPairFingerprintIndex(basePath string) error {
-	return os.RemoveAll(path.Join(basePath, labelPairToFingerprintsDir))
+	return os.RemoveAll(path.Join(basePath, LabelPairToFingerprintsDir))
 }
 
 // FingerprintTimeRangeIndex models a database tracking the time ranges
@@ -284,7 +285,7 @@ func (i *FingerprintTimeRangeIndex) Lookup(fp model.Fingerprint) (firstTime, las
 // FingerprintTimeRangeIndex ready to use.
 func NewFingerprintTimeRangeIndex(basePath string) (*FingerprintTimeRangeIndex, error) {
 	fingerprintTimeRangeDB, err := NewLevelDB(LevelDBOptions{
-		Path:           filepath.Join(basePath, fingerprintTimeRangeDir),
+		Path:           filepath.Join(basePath, FingerprintTimeRangeDir),
 		CacheSizeBytes: FingerprintTimeRangeCacheSize,
 	})
 	if err != nil {
@@ -293,4 +294,10 @@ func NewFingerprintTimeRangeIndex(basePath string) (*FingerprintTimeRangeIndex, 
 	return &FingerprintTimeRangeIndex{
 		KeyValueStore: fingerprintTimeRangeDB,
 	}, nil
+}
+
+// DeleteFingerprintTimeRangeIndex deletes the LevelDB-backed
+// FingerprintTimeRangeIndex. Use only for a not yet opened index.
+func DeleteFingerprintTimeRangeIndex(basePath string) error {
+	return os.RemoveAll(path.Join(basePath, FingerprintTimeRangeDir))
 }
