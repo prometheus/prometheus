@@ -59,26 +59,36 @@ func TestConsulDiscovery(t *testing.T) {
 	}
 	defer srv1.Stop()
 
-	srv1.AddService(t, "testService", structs.HealthPassing, []string{"master"})
-	srv1.AddCheck(t, "service:testService", "testService", structs.HealthPassing)
+	services := []string{"testService", "testService2"}
+	for _, service := range services {
+		srv1.AddService(t, service, structs.HealthPassing, []string{"master"})
+	}
 
 	conf := &config.ConsulSDConfig{
-		Server:   srv1.HTTPAddr,
-		Services: []string{"testService"},
+		Server:       srv1.HTTPAddr,
+		Services:     services,
+		WatchTimeout: 1 * time.Second,
 	}
 	consulDiscovery, err := NewDiscovery(conf)
-	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond*10)
-	defer cancelFunc()
-	ch := make(chan []*config.TargetGroup, 1)
+	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	ch := make(chan []*config.TargetGroup, 2)
 
 	consulDiscovery.Run(ctx, ch)
 
-	select {
-	case tg := <-ch:
-		if tg[0].Source != "testService" {
-			t.Errorf("Expected service %s to be watched", tg)
+	targetGroups := make(map[string][]*config.TargetGroup)
+	for range services {
+		select {
+		case targetGroup := <-ch:
+			targetGroups[targetGroup[0].Source] = targetGroup //append(targetGroups, targetGroup[0])
+		default:
+			t.Errorf("Could not retrieve target group from embedded consul")
 		}
-	default:
-		t.Errorf("Could not retrieve target group from embedded consul")
+
+	}
+
+	for _, service := range services {
+		if targetGroups[service] == nil {
+			t.Errorf("Expected service %s to be watched", service)
+		}
 	}
 }
