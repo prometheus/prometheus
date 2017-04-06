@@ -44,11 +44,12 @@ func (w *Writer) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewQueueManager(QueueManagerConfig{
-			Client:         c,
-			ExternalLabels: conf.GlobalConfig.ExternalLabels,
-			RelabelConfigs: rwConf.WriteRelabelConfigs,
-		}))
+		newQueues = append(newQueues, NewQueueManager(
+			defaultQueueManagerConfig,
+			conf.GlobalConfig.ExternalLabels,
+			rwConf.WriteRelabelConfigs,
+			c,
+		))
 	}
 
 	for _, q := range w.queues {
