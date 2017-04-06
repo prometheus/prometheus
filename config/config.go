@@ -836,10 +836,10 @@ type ConsulSDConfig struct {
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
 
-	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig    TLSConfig     `yaml:"tls_config,omitempty"`
+	WatchTimeout time.Duration `yaml:"watch_timeout,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
-	XXX          map[string]interface{} `yaml:",inline"`
-	WatchTimeout time.Duration          `yaml:"watchtimeout,omitempty"`
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
