@@ -217,11 +217,6 @@ func (ts *TargetSet) UpdateProviders(p map[string]TargetProvider) {
 }
 
 func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]TargetProvider) {
-	// Lock for the entire time. This may mean up to 5 seconds until the full initial set
-	// is retrieved and applied.
-	// We could release earlier with some tweaks, but this is easier to reason about.
-	ts.mtx.Lock()
-	defer ts.mtx.Unlock()
 
 	// Stop all previous target providers of the target set.
 	if ts.cancelProviders != nil {
@@ -233,7 +228,9 @@ func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]T
 	// (Re-)create a fresh tgroups map to not keep stale targets around. We
 	// will retrieve all targets below anyway, so cleaning up everything is
 	// safe and doesn't inflict any additional cost.
+	ts.mtx.Lock()
 	ts.tgroups = map[string]*config.TargetGroup{}
+	ts.mtx.Unlock()
 
 	for name, prov := range providers {
 		wg.Add(1)
@@ -292,9 +289,6 @@ func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]T
 
 // update handles a target group update from a target provider identified by the name.
 func (ts *TargetSet) update(name string, tgroup *config.TargetGroup) {
-	ts.mtx.Lock()
-	defer ts.mtx.Unlock()
-
 	ts.setTargetGroup(name, tgroup)
 
 	select {
@@ -304,6 +298,9 @@ func (ts *TargetSet) update(name string, tgroup *config.TargetGroup) {
 }
 
 func (ts *TargetSet) setTargetGroup(name string, tg *config.TargetGroup) {
+	ts.mtx.Lock()
+	defer ts.mtx.Unlock()
+
 	if tg == nil {
 		return
 	}
