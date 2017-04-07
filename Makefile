@@ -44,7 +44,6 @@ test:
 	@echo ">> running all tests"
 	@$(GO) test $(pkgs)
 
-
 format:
 	@echo ">> formatting code"
 	@$(GO) fmt $(pkgs)
