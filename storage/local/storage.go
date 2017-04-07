@@ -462,7 +462,9 @@ func (s *MemorySeriesStorage) Stop() error {
 	<-s.evictStopped
 
 	// One final checkpoint of the series map and the head chunks.
-	if err := s.persistence.checkpointSeriesMapAndHeads(s.fpToSeries, s.fpLocker); err != nil {
+	if err := s.persistence.checkpointSeriesMapAndHeads(
+		context.Background(), s.fpToSeries, s.fpLocker,
+	); err != nil {
 		return err
 	}
 	if err := s.mapper.checkpoint(); err != nil {
@@ -1421,11 +1423,13 @@ func (s *MemorySeriesStorage) cycleThroughArchivedFingerprints() chan model.Fing
 
 func (s *MemorySeriesStorage) loop() {
 	checkpointTimer := time.NewTimer(s.checkpointInterval)
+	checkpointMinTimer := time.NewTimer(0)
 
 	var dirtySeriesCount int64
 
 	defer func() {
 		checkpointTimer.Stop()
+		checkpointMinTimer.Stop()
 		log.Info("Maintenance loop stopped.")
 		close(s.loopStopped)
 	}()
@@ -1433,32 +1437,57 @@ func (s *MemorySeriesStorage) loop() {
 	memoryFingerprints := s.cycleThroughMemoryFingerprints()
 	archivedFingerprints := s.cycleThroughArchivedFingerprints()
 
+	checkpointCtx, checkpointCancel := context.WithCancel(context.Background())
+	checkpointNow := make(chan struct{}, 1)
+
+	doCheckpoint := func() time.Duration {
+		start := time.Now()
+		// We clear this before the checkpoint so that dirtySeriesCount
+		// is an upper bound.
+		atomic.StoreInt64(&dirtySeriesCount, 0)
+		s.dirtySeries.Set(0)
+		select {
+		case <-checkpointNow:
+			// Signal cleared.
+		default:
+			// No signal pending.
+		}
+		err := s.persistence.checkpointSeriesMapAndHeads(
+			checkpointCtx, s.fpToSeries, s.fpLocker,
+		)
+		if err == context.Canceled {
+			log.Info("Checkpoint canceled.")
+		} else if err != nil {
+			s.persistErrors.Inc()
+			log.Errorln("Error while checkpointing:", err)
+		}
+		return time.Since(start)
+	}
+
 	// Checkpoints can happen concurrently with maintenance so even with heavy
 	// checkpointing there will still be sufficient progress on maintenance.
 	checkpointLoopStopped := make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-s.loopStopping:
+			case <-checkpointCtx.Done():
 				checkpointLoopStopped <- struct{}{}
 				return
-			case <-checkpointTimer.C:
-				// We clear this before the checkpoint so that dirtySeriesCount
-				// is an upper bound.
-				atomic.StoreInt64(&dirtySeriesCount, 0)
-				s.dirtySeries.Set(0)
-				err := s.persistence.checkpointSeriesMapAndHeads(s.fpToSeries, s.fpLocker)
-				if err != nil {
-					s.persistErrors.Inc()
-					log.Errorln("Error while checkpointing:", err)
-				}
-				// If a checkpoint takes longer than checkpointInterval, unluckily timed
-				// combination with the Reset(0) call below can lead to a case where a
-				// time is lurking in C leading to repeated checkpointing without break.
+			case <-checkpointMinTimer.C:
+				var took time.Duration
 				select {
-				case <-checkpointTimer.C: // Get rid of the lurking time.
-				default:
+				case <-checkpointCtx.Done():
+					checkpointLoopStopped <- struct{}{}
+					return
+				case <-checkpointTimer.C:
+					took = doCheckpoint()
+				case <-checkpointNow:
+					if !checkpointTimer.Stop() {
+						<-checkpointTimer.C
+					}
+					took = doCheckpoint()
 				}
+				checkpointMinTimer.Reset(took)
 				checkpointTimer.Reset(s.checkpointInterval)
 			}
 		}
@@ -1468,6 +1497,7 @@ loop:
 	for {
 		select {
 		case <-s.loopStopping:
+			checkpointCancel()
 			break loop
 		case fp := <-memoryFingerprints:
 			if s.maintainMemorySeries(fp, model.Now().Add(-s.dropAfter)) {
@@ -1478,10 +1508,15 @@ loop:
 				// would be counterproductive, as it would slow down chunk persisting even more,
 				// while in a situation like that, where we are clearly lacking speed of disk
 				// maintenance, the best we can do for crash recovery is to persist chunks as
-				// quickly as possible. So only checkpoint if the urgency score is < 1.
+				// quickly as possible. So only checkpoint if we are not in rushed mode.
 				if _, rushed := s.getPersistenceUrgencyScore(); !rushed &&
 					dirty >= int64(s.checkpointDirtySeriesLimit) {
-					checkpointTimer.Reset(0)
+					select {
+					case checkpointNow <- struct{}{}:
+						// Signal sent.
+					default:
+						// Signal already pending.
+					}
 				}
 			}
 		case fp := <-archivedFingerprints:
