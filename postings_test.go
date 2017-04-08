@@ -3,7 +3,6 @@ package tsdb
 import (
 	"encoding/binary"
 	"math/rand"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,17 +46,13 @@ func TestIntersect(t *testing.T) {
 		},
 	}
 
-	for i, c := range cases {
+	for _, c := range cases {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
 		res, err := expandPostings(Intersect(a, b))
-		if err != nil {
-			t.Fatalf("%d: Unexpected error: %s", i, err)
-		}
-		if !reflect.DeepEqual(res, c.res) {
-			t.Fatalf("%d: Expected %v but got %v", i, c.res, res)
-		}
+		require.NoError(t, err)
+		require.Equal(t, c.res, res)
 	}
 }
 
@@ -80,12 +75,9 @@ func TestMultiIntersect(t *testing.T) {
 		pc := newListPostings(c.c)
 
 		res, err := expandPostings(Intersect(pa, pb, pc))
-		if err != nil {
-			t.Fatalf("Unexpected error: %s", err)
-		}
-		if !reflect.DeepEqual(res, c.res) {
-			t.Fatalf("Expected %v but got %v", c.res, res)
-		}
+
+		require.NoError(t, err)
+		require.Equal(t, c.res, res)
 	}
 }
 
@@ -141,12 +133,8 @@ func TestMultiMerge(t *testing.T) {
 		i3 := newListPostings(c.c)
 
 		res, err := expandPostings(Merge(i1, i2, i3))
-		if err != nil {
-			t.Fatalf("Unexpected error: %s", err)
-		}
-		if !reflect.DeepEqual(res, c.res) {
-			t.Fatalf("Expected %v but got %v", c.res, res)
-		}
+		require.NoError(t, err)
+		require.Equal(t, c.res, res)
 	}
 }
 
@@ -176,14 +164,68 @@ func TestMerge(t *testing.T) {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
-		res, err := expandPostings(newMergePostings(a, b))
-		if err != nil {
-			t.Fatalf("Unexpected error: %s", err)
-		}
-		if !reflect.DeepEqual(res, c.res) {
-			t.Fatalf("Expected %v but got %v", c.res, res)
-		}
+		res, err := expandPostings(newMergedPostings(a, b))
+		require.NoError(t, err)
+		require.Equal(t, c.res, res)
 	}
+
+	t.Run("Seek", func(t *testing.T) {
+		var cases = []struct {
+			a, b []uint32
+
+			seek    uint32
+			success bool
+			res     []uint32
+		}{
+			{
+				a: []uint32{1, 2, 3, 4, 5},
+				b: []uint32{6, 7, 8, 9, 10},
+
+				seek:    0,
+				success: true,
+				res:     []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			},
+			{
+				a: []uint32{1, 2, 3, 4, 5},
+				b: []uint32{6, 7, 8, 9, 10},
+
+				seek:    2,
+				success: true,
+				res:     []uint32{2, 3, 4, 5, 6, 7, 8, 9, 10},
+			},
+			{
+				a: []uint32{1, 2, 3, 4, 5},
+				b: []uint32{4, 5, 6, 7, 8},
+
+				seek:    9,
+				success: false,
+				res:     nil,
+			},
+			{
+				a: []uint32{1, 2, 3, 4, 9, 10},
+				b: []uint32{1, 4, 5, 6, 7, 8, 10, 11},
+
+				seek:    10,
+				success: true,
+				res:     []uint32{10, 11},
+			},
+		}
+
+		for _, c := range cases {
+			a := newListPostings(c.a)
+			b := newListPostings(c.b)
+
+			p := newMergedPostings(a, b)
+
+			require.Equal(t, c.success, p.Seek(c.seek))
+
+			res, err := expandPostings(p)
+			require.NoError(t, err)
+			require.Equal(t, c.res, res)
+		}
+
+		return
+	})
 }
 
 func TestBigEndian(t *testing.T) {
