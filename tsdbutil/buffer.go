@@ -3,7 +3,7 @@ package tsdbutil
 import (
 	"math"
 
-	"github.com/fabxc/tsdb"
+	"github.com/prometheus/tsdb"
 )
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.

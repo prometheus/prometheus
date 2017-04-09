@@ -1,0 +1,13 @@
+sudo: false
+
+language: go
+
+go:
+- 1.8
+
+go_import_path: github.com/prometheus/tsdb
+
+script:
+- go test ./...
+
+

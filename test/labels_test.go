@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/fabxc/tsdb/labels"
+	"github.com/prometheus/tsdb/labels"
 )
 
 func BenchmarkMapClone(b *testing.B) {
