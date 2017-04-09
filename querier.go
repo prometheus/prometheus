@@ -466,8 +466,8 @@ func (s *chunkSeries) Iterator() SeriesIterator {
 // SeriesIterator iterates over the data of a time series.
 type SeriesIterator interface {
 	// Seek advances the iterator forward to the given timestamp.
-	// If there's no value exactly at ts, it advances to the last value
-	// before tt.
+	// If there's no value exactly at t, it advances to the first value
+	// after t.
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
 	At() (t int64, v float64)
@@ -488,7 +488,7 @@ func (s *chainedSeries) Labels() labels.Labels {
 }
 
 func (s *chainedSeries) Iterator() SeriesIterator {
-	return &chainedSeriesIterator{series: s.series}
+	return newChainedSeriesIterator(s.series...)
 }
 
 // chainedSeriesIterator implements a series iterater over a list
@@ -498,6 +498,14 @@ type chainedSeriesIterator struct {
 
 	i   int
 	cur SeriesIterator
+}
+
+func newChainedSeriesIterator(s ...Series) *chainedSeriesIterator {
+	return &chainedSeriesIterator{
+		series: s,
+		i:      0,
+		cur:    s[0].Iterator(),
+	}
 }
 
 func (it *chainedSeriesIterator) Seek(t int64) bool {
@@ -516,9 +524,6 @@ func (it *chainedSeriesIterator) Seek(t int64) bool {
 }
 
 func (it *chainedSeriesIterator) Next() bool {
-	if it.cur == nil {
-		it.cur = it.series[it.i].Iterator()
-	}
 	if it.cur.Next() {
 		return true
 	}
@@ -569,10 +574,10 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	// If the timestamp was not found, it might be in the last chunk.
 	if x == len(it.chunks) {
 		x--
-	}
-	// Go to previous chunk if the chunk doesn't exactly start with t.
-	// If we are already at the first chunk, we use it as it's the best we have.
-	if x > 0 && it.chunks[x].MinTime > t {
+
+		// Go to previous chunk if the chunk doesn't exactly start with t.
+		// If we are already at the first chunk, we use it as it's the best we have.
+	} else if x > 0 && it.chunks[x].MinTime > t {
 		x--
 	}
 
