@@ -201,30 +201,7 @@ func (it *mergedPostings) Seek(id uint32) bool {
 	it.aok = it.a.Seek(id)
 	it.bok = it.b.Seek(id)
 
-	if !it.aok && !it.bok {
-		return false
-	}
-
-	if !it.aok {
-		it.cur = it.b.At()
-
-		return true
-	}
-	if !it.bok {
-		it.cur = it.a.At()
-
-		return true
-	}
-
-	acur, bcur := it.a.At(), it.b.At()
-
-	if acur < bcur {
-		it.cur = acur
-	} else {
-		it.cur = bcur
-	}
-
-	return true
+	return it.Next()
 }
 
 func (it *mergedPostings) Err() error {

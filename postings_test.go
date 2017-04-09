@@ -219,9 +219,18 @@ func TestMerge(t *testing.T) {
 
 			require.Equal(t, c.success, p.Seek(c.seek))
 
-			res, err := expandPostings(p)
-			require.NoError(t, err)
-			require.Equal(t, c.res, res)
+			if c.success {
+				// check the current element and then proceed to check the rest.
+				i := 0
+				require.Equal(t, c.res[i], p.At())
+
+				for p.Next() {
+					i++
+					require.Equal(t, int(c.res[i]), int(p.At()))
+				}
+
+				require.Equal(t, len(c.res)-1, i)
+			}
 		}
 
 		return
