@@ -33,31 +33,21 @@ func (a nopAppender) Commit() error                                     { return
 func (a nopAppender) Rollback() error                                   { return nil }
 
 type collectResultAppender struct {
-	refs   map[uint64]labels.Labels
 	result []sample
 }
 
-func (a *collectResultAppender) SetSeries(l labels.Labels) (uint64, error) {
-	if a.refs == nil {
-		a.refs = map[uint64]labels.Labels{}
-	}
-	ref := uint64(len(a.refs))
-	a.refs[ref] = l
-	return ref, nil
+func (a *collectResultAppender) AddFast(ref uint64, t int64, v float64) error {
+	// Not implemented.
+	return nil
 }
 
-func (a *collectResultAppender) Add(ref uint64, t int64, v float64) error {
-	// for ln, lv := range s.Metric {
-	// 	if len(lv) == 0 {
-	// 		delete(s.Metric, ln)
-	// 	}
-	// }
+func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
 	a.result = append(a.result, sample{
-		metric: a.refs[ref],
+		metric: m,
 		t:      t,
 		v:      v,
 	})
-	return nil
+	return 0, nil
 }
 
 func (a *collectResultAppender) Commit() error   { return nil }
