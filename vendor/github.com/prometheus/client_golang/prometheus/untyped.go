@@ -20,6 +20,11 @@ package prometheus
 // no type information is implied.
 //
 // To create Untyped instances, use NewUntyped.
+//
+// Deprecated: The Untyped type is deprecated because it doesn't make sense in
+// direct instrumentation. If you need to mirror an external metric of unknown
+// type (usually while writing exporters), Use MustNewConstMetric to create an
+// untyped metric instance on the fly.
 type Untyped interface {
 	Metric
 	Collector
