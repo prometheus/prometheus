@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -432,6 +434,45 @@ func TestScrapeLoopRun(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatalf("Loop did not terminate on context cancelation")
 	}
+}
+
+func TestScrapeLoopAppend(t *testing.T) {
+	app := &collectResultAppender{}
+	sl := &scrapeLoop{
+		appender:       func() storage.Appender { return app },
+		reportAppender: func() storage.Appender { return nopAppender{} },
+		cache:          map[string]uint64{},
+	}
+
+	now := time.Now()
+	_, _, err := sl.append([]byte("metric_a 1\nmetric_b NaN\n"), now)
+	if err != nil {
+		t.Fatalf("Unexpected append error: %s", err)
+	}
+
+	ingestedNaN := math.Float64bits(app.result[1].v)
+	if ingestedNaN != normalNaN {
+		t.Fatalf("Appended NaN samples wasn't as expected. Wanted: %x Got: %x", normalNaN, ingestedNaN)
+	}
+
+	// DeepEqual will report NaNs as being different, so replace with a different value.
+	app.result[1].v = 42
+	want := []sample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now),
+			v:      1,
+		},
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_b"),
+			t:      timestamp.FromTime(now),
+			v:      42,
+		},
+	}
+	if !reflect.DeepEqual(want, app.result) {
+		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
+	}
+
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {
