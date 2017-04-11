@@ -19,6 +19,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -44,6 +45,11 @@ const (
 	scrapeDurationMetricName     = "scrape_duration_seconds"
 	scrapeSamplesMetricName      = "scrape_samples_scraped"
 	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling"
+)
+
+var (
+	normalNaN uint64 = 0x7ff8000000000001 // A quiet NaN. This is also math.NaN().
+	staleNaN  uint64 = 0x7ff4000000000000 // A signalling NaN, starting 01 to allow for expansion.
 )
 
 var (
@@ -536,6 +542,10 @@ loop:
 
 		t := defTime
 		met, tp, v := p.At()
+		// Normalise actual NaNs to one bit representation.
+		if math.IsNaN(v) {
+			v = math.Float64frombits(normalNaN)
+		}
 		if tp != nil {
 			t = *tp
 		}
