@@ -54,6 +54,9 @@ type Summary interface {
 }
 
 // DefObjectives are the default Summary quantile values.
+//
+// Deprecated: DefObjectives will not be used as the default objectives in
+// v0.10 of the library. The default Summary will have no quantiles then.
 var (
 	DefObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001}
 
@@ -113,9 +116,15 @@ type SummaryOpts struct {
 	ConstLabels Labels
 
 	// Objectives defines the quantile rank estimates with their respective
-	// absolute error. If Objectives[q] = e, then the value reported
-	// for q will be the φ-quantile value for some φ between q-e and q+e.
-	// The default value is DefObjectives.
+	// absolute error. If Objectives[q] = e, then the value reported for q
+	// will be the φ-quantile value for some φ between q-e and q+e.  The
+	// default value is DefObjectives. It is used if Objectives is left at
+	// its zero value (i.e. nil). To create a Summary without Objectives,
+	// set it to an empty map (i.e. map[float64]float64{}).
+	//
+	// Deprecated: Note that the current value of DefObjectives is
+	// deprecated. It will be replaced by an empty map in v0.10 of the
+	// library. Please explicitly set Objectives to the desired value.
 	Objectives map[float64]float64
 
 	// MaxAge defines the duration for which an observation stays relevant
@@ -183,7 +192,7 @@ func newSummary(desc *Desc, opts SummaryOpts, labelValues ...string) Summary {
 		}
 	}
 
-	if len(opts.Objectives) == 0 {
+	if opts.Objectives == nil {
 		opts.Objectives = DefObjectives
 	}
 
