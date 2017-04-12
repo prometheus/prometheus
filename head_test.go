@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"io/ioutil"
+	"math"
 	"os"
 	"testing"
 	"unsafe"
@@ -84,4 +85,79 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
 	}
 	return mets, nil
+}
+
+func TestAmendDatapointCausesError(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	if err != nil {
+		t.Fatalf("Error creating head block: %s", err)
+	}
+
+	app := hb.Appender()
+	_, err = app.Add(labels.Labels{}, 0, 0)
+	if err != nil {
+		t.Fatalf("Failed to add sample: %s", err)
+	}
+	if err = app.Commit(); err != nil {
+		t.Fatalf("Unexpected error committing appender: %s", err)
+	}
+
+	app = hb.Appender()
+	_, err = app.Add(labels.Labels{}, 0, 1)
+	if err != ErrAmendSample {
+		t.Fatalf("Expected error amending sample, got: %s", err)
+	}
+}
+
+func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	if err != nil {
+		t.Fatalf("Error creating head block: %s", err)
+	}
+
+	app := hb.Appender()
+	_, err = app.Add(labels.Labels{}, 0, math.NaN())
+	if err != nil {
+		t.Fatalf("Failed to add sample: %s", err)
+	}
+	if err = app.Commit(); err != nil {
+		t.Fatalf("Unexpected error committing appender: %s", err)
+	}
+
+	app = hb.Appender()
+	_, err = app.Add(labels.Labels{}, 0, math.NaN())
+	if err != nil {
+		t.Fatalf("Unexpected error adding duplicate NaN sample, got: %s", err)
+	}
+}
+
+func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	if err != nil {
+		t.Fatalf("Error creating head block: %s", err)
+	}
+
+	app := hb.Appender()
+	_, err = app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000001))
+	if err != nil {
+		t.Fatalf("Failed to add sample: %s", err)
+	}
+	if err = app.Commit(); err != nil {
+		t.Fatalf("Unexpected error committing appender: %s", err)
+	}
+
+	app = hb.Appender()
+	_, err = app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000002))
+	if err != ErrAmendSample {
+		t.Fatalf("Expected error amending sample, got: %s", err)
+	}
 }

@@ -357,7 +357,7 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		if t < c.maxTime {
 			return ErrOutOfOrderSample
 		}
-		if c.maxTime == t && ms.lastValue != v {
+		if c.maxTime == t && math.Float64bits(ms.lastValue) != math.Float64bits(v) {
 			return ErrAmendSample
 		}
 	}
