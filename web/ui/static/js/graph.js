@@ -556,6 +556,27 @@ Prometheus.Graph.prototype.updateGraph = function() {
     min: "auto",
   });
 
+  // Find and set graph's max/min
+  var min = Infinity;
+  var max = -Infinity;
+  self.data.forEach(function(timeSeries) {
+    timeSeries.data.forEach(function(dataPoint) {
+        if (dataPoint.y < min && dataPoint.y != null) {
+          min = dataPoint.y;
+        }
+        if (dataPoint.y > max && dataPoint.y != null) {
+          max = dataPoint.y;
+        }
+    });
+  });
+  if (min === max) {
+    self.rickshawGraph.max = max + 1;
+    self.rickshawGraph.min = min - 1;
+  } else {
+    self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
+    self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+  }
+
   var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });
 
   var yAxis = new Rickshaw.Graph.Axis.Y({
