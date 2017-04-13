@@ -1,16 +1,22 @@
 package tsdb
 
-import "github.com/prometheus/tsdb/chunks"
+import (
+	"errors"
 
-type mockChunkReader struct {
-	chunk func(ref uint64) (chunks.Chunk, error)
-	close func() error
+	"github.com/prometheus/tsdb/chunks"
+)
+
+type mockChunkReader map[uint64]chunks.Chunk
+
+func (cr mockChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
+	chk, ok := cr[ref]
+	if ok {
+		return chk, nil
+	}
+
+	return nil, errors.New("Chunk with ref not found")
 }
 
-func (cr *mockChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
-	return cr.chunk(ref)
-}
-
-func (cr *mockChunkReader) Close() error {
-	return cr.close()
+func (cr mockChunkReader) Close() error {
+	return nil
 }

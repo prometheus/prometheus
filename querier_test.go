@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"math/rand"
 	"sort"
 	"testing"
 
@@ -202,6 +203,159 @@ func expandSeriesIterator(it SeriesIterator) (r []sample, err error) {
 	return r, it.Err()
 }
 
+// Index: labels -> postings -> chunkMetas -> chunkRef
+// ChunkReader: ref -> vals
+func createIdxChkReaders(tc []struct {
+	lset   map[string]string
+	chunks [][]sample
+}) (IndexReader, ChunkReader) {
+	sort.Slice(tc, func(i, j int) bool {
+		return labels.Compare(labels.FromMap(tc[i].lset), labels.FromMap(tc[i].lset)) < 0
+	})
+
+	postings := &memPostings{m: make(map[term][]uint32, 512)}
+	chkReader := mockChunkReader(make(map[uint64]chunks.Chunk))
+	mi := newMockIndex()
+
+	for i, s := range tc {
+		metas := make([]*ChunkMeta, 0, len(s.chunks))
+		for _, chk := range s.chunks {
+			// Collisions can be there, but for tests, its fine.
+			ref := rand.Uint64()
+
+			metas = append(metas, &ChunkMeta{
+				MinTime: chk[0].t,
+				MaxTime: chk[len(chk)-1].t,
+				Ref:     ref,
+			})
+
+			chunk := chunks.NewXORChunk()
+			app, _ := chunk.Appender()
+			for _, smpl := range chk {
+				app.Append(smpl.t, smpl.v)
+			}
+			chkReader[ref] = chunk
+		}
+
+		mi.AddSeries(uint32(i), labels.FromMap(s.lset), metas...)
+
+		postings.add(uint32(i), term{})
+		for _, l := range labels.FromMap(s.lset) {
+			postings.add(uint32(i), term{l.Name, l.Value})
+		}
+	}
+
+	for tm := range postings.m {
+		mi.WritePostings(tm.name, tm.name, postings.get(tm))
+	}
+
+	return mi, chkReader
+}
+
+func TestBlockQuerier(t *testing.T) {
+	// Build the querier on data first. Then execute queries on it.
+
+	basedata := [][]struct {
+		lset   map[string]string
+		chunks [][]sample
+	}{
+		{
+			{
+				lset: map[string]string{
+					"a": "a",
+				},
+				chunks: [][]sample{
+					{
+						{1, 2}, {2, 3}, {3, 4},
+					},
+					{
+						{5, 2}, {6, 3}, {7, 4},
+					},
+				},
+			},
+			{
+				lset: map[string]string{
+					"a": "a",
+					"b": "b",
+				},
+				chunks: [][]sample{
+					{
+						{1, 1}, {2, 2}, {3, 3},
+					},
+					{
+						{5, 3}, {6, 6}, {7, 5},
+					},
+				},
+			},
+			{
+				lset: map[string]string{
+					"b": "b",
+				},
+				chunks: [][]sample{
+					{
+						{1, 3}, {2, 2}, {3, 6},
+					},
+					{
+						{5, 1}, {6, 7}, {7, 2},
+					},
+				},
+			},
+		},
+	}
+
+	cases := []struct {
+		dataIdx int
+
+		mint, maxt int64
+		ms         []labels.Matcher
+		exp        SeriesSet
+	}{
+		{
+			dataIdx: 0,
+
+			mint: 0,
+			maxt: 0,
+			ms:   []labels.Matcher{},
+			exp:  newListSeriesSet([]Series{}),
+		},
+	}
+
+Outer:
+	for _, c := range cases {
+		ir, cr := createIdxChkReaders(basedata[c.dataIdx])
+
+		querier := &blockQuerier{
+			index:  ir,
+			chunks: cr,
+
+			mint: c.mint,
+			maxt: c.maxt,
+		}
+
+		res := querier.Select(c.ms...)
+
+		for {
+			eok, rok := c.exp.Next(), res.Next()
+			require.Equal(t, eok, rok, "next")
+
+			if !eok {
+				continue Outer
+			}
+			sexp := c.exp.At()
+			sres := res.At()
+
+			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+
+			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
+			smplRes, errRes := expandSeriesIterator(sres.Iterator())
+
+			require.Equal(t, errExp, errRes, "samples error")
+			require.Equal(t, smplExp, smplRes, "samples")
+		}
+	}
+
+	return
+}
 
 func TestBaseChunkSeries(t *testing.T) {
 	type refdSeries struct {
