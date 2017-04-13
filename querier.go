@@ -582,8 +582,13 @@ func (it *chunkSeriesIterator) inBounds(t int64) bool {
 }
 
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
-	if t >= it.maxt || t <= it.mint {
+	if t > it.maxt {
 		return false
+	}
+
+	// Seek to the first valid value after t.
+	if t < it.mint {
+		t = it.mint
 	}
 
 	// Only do binary search forward to stay in line with other iterators

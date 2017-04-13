@@ -532,6 +532,8 @@ func TestSeriesIterator(t *testing.T) {
 	itcases := []struct {
 		a, b, c []sample
 		exp     []sample
+
+		mint, maxt int64
 	}{
 		{
 			a: []sample{},
@@ -539,77 +541,56 @@ func TestSeriesIterator(t *testing.T) {
 			c: []sample{},
 
 			exp: []sample{},
+
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 		},
 		{
 			a: []sample{
-				{1, 2},
-				{2, 3},
-				{3, 5},
-				{6, 1},
+				{1, 2}, {2, 3}, {3, 5}, {6, 1},
 			},
 			b: []sample{},
 			c: []sample{
-				{7, 89},
-				{9, 8},
+				{7, 89}, {9, 8},
 			},
 
 			exp: []sample{
-				{1, 2},
-				{2, 3},
-				{3, 5},
-				{6, 1},
-				{7, 89},
-				{9, 8},
+				{1, 2}, {2, 3}, {3, 5}, {6, 1}, {7, 89}, {9, 8},
 			},
+			mint: math.MinInt64,
+			maxt: math.MaxInt64,
 		},
 		{
 			a: []sample{},
 			b: []sample{
-				{1, 2},
-				{2, 3},
-				{3, 5},
-				{6, 1},
+				{1, 2}, {2, 3}, {3, 5}, {6, 1},
 			},
 			c: []sample{
-				{7, 89},
-				{9, 8},
+				{7, 89}, {9, 8},
 			},
 
 			exp: []sample{
-				{1, 2},
-				{2, 3},
-				{3, 5},
-				{6, 1},
-				{7, 89},
-				{9, 8},
+				{1, 2}, {2, 3}, {3, 5}, {6, 1}, {7, 89}, {9, 8},
 			},
+			mint: 2,
+			maxt: 8,
 		},
 		{
 			a: []sample{
-				{1, 2},
-				{2, 3},
-				{3, 5},
-				{6, 1},
+				{1, 2}, {2, 3}, {3, 5}, {6, 1},
 			},
 			b: []sample{
-				{7, 89},
-				{9, 8},
+				{7, 89}, {9, 8},
 			},
 			c: []sample{
-				{10, 22},
-				{203, 3493},
+				{10, 22}, {203, 3493},
 			},
 
 			exp: []sample{
-				{1, 2},
-				{2, 3},
-				{3, 5},
-				{6, 1},
-				{7, 89},
-				{9, 8},
-				{10, 22},
-				{203, 3493},
+				{1, 2}, {2, 3}, {3, 5}, {6, 1}, {7, 89}, {9, 8}, {10, 22}, {203, 3493},
 			},
+			mint: 6,
+			maxt: 10,
 		},
 	}
 
@@ -619,6 +600,8 @@ func TestSeriesIterator(t *testing.T) {
 		seek    int64
 		success bool
 		exp     []sample
+
+		mint, maxt int64
 	}{
 		{
 			a: []sample{},
@@ -635,34 +618,31 @@ func TestSeriesIterator(t *testing.T) {
 			},
 			b: []sample{},
 			c: []sample{
-				{7, 89},
-				{9, 8},
+				{7, 89}, {9, 8},
 			},
 
 			seek:    10,
 			success: false,
 			exp:     nil,
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
 		},
 		{
 			a: []sample{},
 			b: []sample{
-				{1, 2},
-				{3, 5},
-				{6, 1},
+				{1, 2}, {3, 5}, {6, 1},
 			},
 			c: []sample{
-				{7, 89},
-				{9, 8},
+				{7, 89}, {9, 8},
 			},
 
 			seek:    2,
 			success: true,
 			exp: []sample{
-				{3, 5},
-				{6, 1},
-				{7, 89},
-				{9, 8},
+				{3, 5}, {6, 1}, {7, 89}, {9, 8},
 			},
+			mint: 5,
+			maxt: 8,
 		},
 		{
 			a: []sample{
@@ -672,16 +652,16 @@ func TestSeriesIterator(t *testing.T) {
 				{9, 8},
 			},
 			c: []sample{
-				{10, 22},
-				{203, 3493},
+				{10, 22}, {203, 3493},
 			},
 
 			seek:    10,
 			success: true,
 			exp: []sample{
-				{10, 22},
-				{203, 3493},
+				{10, 22}, {203, 3493},
 			},
+			mint: 10,
+			maxt: 203,
 		},
 		{
 			a: []sample{
@@ -691,8 +671,7 @@ func TestSeriesIterator(t *testing.T) {
 				{9, 8},
 			},
 			c: []sample{
-				{10, 22},
-				{203, 3493},
+				{10, 22}, {203, 3493},
 			},
 
 			seek:    203,
@@ -700,6 +679,8 @@ func TestSeriesIterator(t *testing.T) {
 			exp: []sample{
 				{203, 3493},
 			},
+			mint: 7,
+			maxt: 203,
 		},
 	}
 
@@ -710,8 +691,15 @@ func TestSeriesIterator(t *testing.T) {
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
 			}
-			res := newChunkSeriesIterator(chkMetas, math.MinInt64, math.MaxInt64)
-			exp := newListSeriesIterator(tc.exp)
+			res := newChunkSeriesIterator(chkMetas, tc.mint, tc.maxt)
+
+			smplValid := make([]sample, 0)
+			for _, s := range tc.exp {
+				if s.t >= tc.mint && s.t <= tc.maxt {
+					smplValid = append(smplValid, s)
+				}
+			}
+			exp := newListSeriesIterator(smplValid)
 
 			smplExp, errExp := expandSeriesIterator(exp)
 			smplRes, errRes := expandSeriesIterator(res)
@@ -721,14 +709,68 @@ func TestSeriesIterator(t *testing.T) {
 		}
 
 		t.Run("Seek", func(t *testing.T) {
-			for _, tc := range seekcases {
+			extra := []struct {
+				a, b, c []sample
+
+				seek    int64
+				success bool
+				exp     []sample
+
+				mint, maxt int64
+			}{
+				{
+					a: []sample{
+						{6, 1},
+					},
+					b: []sample{
+						{9, 8},
+					},
+					c: []sample{
+						{10, 22}, {203, 3493},
+					},
+
+					seek:    203,
+					success: false,
+					exp:     nil,
+					mint:    2,
+					maxt:    202,
+				},
+				{
+					a: []sample{
+						{6, 1},
+					},
+					b: []sample{
+						{9, 8},
+					},
+					c: []sample{
+						{10, 22}, {203, 3493},
+					},
+
+					seek:    5,
+					success: true,
+					exp:     []sample{{10, 22}},
+					mint:    10,
+					maxt:    202,
+				},
+			}
+
+			seekcases2 := append(seekcases, extra...)
+
+			for _, tc := range seekcases2 {
 				chkMetas := []*ChunkMeta{
 					chunkFromSamples(tc.a),
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
 				}
-				res := newChunkSeriesIterator(chkMetas, math.MinInt64, math.MaxInt64)
-				exp := newListSeriesIterator(tc.exp)
+				res := newChunkSeriesIterator(chkMetas, tc.mint, tc.maxt)
+
+				smplValid := make([]sample, 0)
+				for _, s := range tc.exp {
+					if s.t >= tc.mint && s.t <= tc.maxt {
+						smplValid = append(smplValid, s)
+					}
+				}
+				exp := newListSeriesIterator(smplValid)
 
 				require.Equal(t, tc.success, res.Seek(tc.seek))
 
