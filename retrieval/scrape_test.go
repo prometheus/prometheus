@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -442,7 +442,8 @@ func TestScrapeLoopAppend(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		cache:          map[string]uint64{},
+		refCache:       map[string]uint64{},
+		lsetCache:      map[uint64]lsetCacheEntry{},
 	}
 
 	now := time.Now()
