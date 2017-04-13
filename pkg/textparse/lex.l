@@ -18,6 +18,8 @@ import (
         "fmt"
         "math"
         "strconv"
+
+        "github.com/prometheus/prometheus/pkg/value"
 )
 
 
@@ -85,8 +87,9 @@ M     [a-zA-Z_:]
                                       l.offsets = append(l.offsets, l.i-1)
 
 <lstateValue>[ \t]+                   l.vstart = l.i
-<lstateValue>(NaN)                    l.val = math.NaN()
+<lstateValue>(NaN)                    l.val = math.Float64frombits(value.NormalNaN)
                                       s = lstateTimestamp
+
 <lstateValue>[^\n \t\r]+              // We don't parse strictly correct floats as the conversion
                                       // repeats the effort anyway.
                                       l.val, l.err = strconv.ParseFloat(yoloString(l.b[l.vstart:l.i]), 64)

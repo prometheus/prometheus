@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -451,8 +452,8 @@ func TestScrapeLoopAppend(t *testing.T) {
 	}
 
 	ingestedNaN := math.Float64bits(app.result[1].v)
-	if ingestedNaN != normalNaN {
-		t.Fatalf("Appended NaN samples wasn't as expected. Wanted: %x Got: %x", normalNaN, ingestedNaN)
+	if ingestedNaN != value.NormalNaN {
+		t.Fatalf("Appended NaN samples wasn't as expected. Wanted: %x Got: %x", value.NormalNaN, ingestedNaN)
 	}
 
 	// DeepEqual will report NaNs as being different, so replace with a different value.

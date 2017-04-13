@@ -14,6 +14,6 @@
 package value
 
 var (
-	normalNaN uint64 = 0x7ff8000000000001 // A quiet NaN. This is also math.NaN().
-	staleNaN  uint64 = 0x7ff4000000000000 // A signalling NaN, starting 01 to allow for expansion.
+	NormalNaN uint64 = 0x7ff8000000000001 // A quiet NaN. This is also math.NaN().
+	StaleNaN  uint64 = 0x7ff4000000000000 // A signalling NaN, starting 01 to allow for expansion.
 )
