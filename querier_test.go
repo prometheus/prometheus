@@ -1,6 +1,7 @@
 package tsdb
 
 import (
+	"math"
 	"math/rand"
 	"sort"
 	"testing"
@@ -253,8 +254,14 @@ func createIdxChkReaders(tc []struct {
 }
 
 func TestBlockQuerier(t *testing.T) {
-	// Build the querier on data first. Then execute queries on it.
+	newSeries := func(l map[string]string, s []sample) Series {
+		return &mockSeries{
+			labels:   func() labels.Labels { return labels.FromMap(l) },
+			iterator: func() SeriesIterator { return newListSeriesIterator(s) },
+		}
+	}
 
+	// Build the querier on data first. Then execute queries on it.
 	basedata := [][]struct {
 		lset   map[string]string
 		chunks [][]sample
@@ -283,7 +290,7 @@ func TestBlockQuerier(t *testing.T) {
 						{1, 1}, {2, 2}, {3, 3},
 					},
 					{
-						{5, 3}, {6, 6}, {7, 5},
+						{5, 3}, {6, 6},
 					},
 				},
 			},
@@ -317,6 +324,42 @@ func TestBlockQuerier(t *testing.T) {
 			maxt: 0,
 			ms:   []labels.Matcher{},
 			exp:  newListSeriesSet([]Series{}),
+		},
+		{
+			dataIdx: 0,
+
+			mint: 0,
+			maxt: 0,
+			ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+			exp:  newListSeriesSet([]Series{}),
+		},
+		{
+			dataIdx: 0,
+
+			mint: 1,
+			maxt: 0,
+			ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+			exp:  newListSeriesSet([]Series{}),
+		},
+		{
+			dataIdx: 0,
+
+			mint: 2,
+			maxt: 6,
+			ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+			exp: newListSeriesSet([]Series{
+				newSeries(map[string]string{
+					"a": "a",
+				},
+					[]sample{{2, 3}, {3, 4}, {5, 2}, {6, 3}},
+				),
+				newSeries(map[string]string{
+					"a": "a",
+					"b": "b",
+				},
+					[]sample{{2, 2}, {3, 3}, {5, 3}, {6, 6}},
+				),
+			}),
 		},
 	}
 
@@ -667,7 +710,7 @@ func TestSeriesIterator(t *testing.T) {
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
 			}
-			res := newChunkSeriesIterator(chkMetas)
+			res := newChunkSeriesIterator(chkMetas, math.MinInt64, math.MaxInt64)
 			exp := newListSeriesIterator(tc.exp)
 
 			smplExp, errExp := expandSeriesIterator(exp)
@@ -684,7 +727,7 @@ func TestSeriesIterator(t *testing.T) {
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
 				}
-				res := newChunkSeriesIterator(chkMetas)
+				res := newChunkSeriesIterator(chkMetas, math.MinInt64, math.MaxInt64)
 				exp := newListSeriesIterator(tc.exp)
 
 				require.Equal(t, tc.success, res.Seek(tc.seek))

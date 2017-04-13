@@ -153,6 +153,9 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 			mint:   q.mint,
 			maxt:   q.maxt,
 		},
+
+		mint: q.mint,
+		maxt: q.maxt,
 	}
 }
 
@@ -431,12 +434,14 @@ type blockSeriesSet struct {
 	set chunkSeriesSet
 	err error
 	cur Series
+
+	mint, maxt int64
 }
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
 		lset, chunks := s.set.At()
-		s.cur = &chunkSeries{labels: lset, chunks: chunks}
+		s.cur = &chunkSeries{labels: lset, chunks: chunks, mint: s.mint, maxt: s.maxt}
 		return true
 	}
 	if s.set.Err() != nil {
@@ -453,6 +458,8 @@ func (s *blockSeriesSet) Err() error { return s.err }
 type chunkSeries struct {
 	labels labels.Labels
 	chunks []*ChunkMeta // in-order chunk refs
+
+	mint, maxt int64
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -460,7 +467,7 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 func (s *chunkSeries) Iterator() SeriesIterator {
-	return newChunkSeriesIterator(s.chunks)
+	return newChunkSeriesIterator(s.chunks, s.mint, s.maxt)
 }
 
 // SeriesIterator iterates over the data of a time series.
@@ -555,17 +562,30 @@ type chunkSeriesIterator struct {
 
 	i   int
 	cur chunks.Iterator
+
+	maxt, mint int64
 }
 
-func newChunkSeriesIterator(cs []*ChunkMeta) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta, mint, maxt int64) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,
 		cur:    cs[0].Chunk.Iterator(),
+
+		mint: mint,
+		maxt: maxt,
 	}
 }
 
+func (it *chunkSeriesIterator) inBounds(t int64) bool {
+	return t >= it.mint && t <= it.maxt
+}
+
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
+	if t >= it.maxt || t <= it.mint {
+		return false
+	}
+
 	// Only do binary search forward to stay in line with other iterators
 	// that can only move forward.
 	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool { return it.chunks[i].MinTime >= t })
@@ -598,9 +618,13 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *chunkSeriesIterator) Next() bool {
-	if it.cur.Next() {
-		return true
+	for it.cur.Next() {
+		t, _ := it.cur.At()
+		if it.inBounds(t) {
+			return true
+		}
 	}
+
 	if err := it.cur.Err(); err != nil {
 		return false
 	}
