@@ -251,3 +251,84 @@ thermometers_kelvin 0
 		})
 	}
 }
+
+func TestLintCounter(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		problems []promlint.Problem
+	}{
+		{
+			name: "counter without _total suffix",
+			in: `
+# HELP x_bytes Test metric.
+# TYPE x_bytes counter
+x_bytes 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes",
+				Text:   `counter metrics should have "_total" suffix`,
+			}},
+		},
+		{
+			name: "gauge with _total suffix",
+			in: `
+# HELP x_bytes_total Test metric.
+# TYPE x_bytes_total gauge
+x_bytes_total 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes_total",
+				Text:   `non-counter metrics should not have "_total" suffix`,
+			}},
+		},
+		{
+			name: "counter with _total suffix",
+			in: `
+# HELP x_bytes_total Test metric.
+# TYPE x_bytes_total counter
+x_bytes_total 10
+`,
+		},
+		{
+			name: "gauge without _total suffix",
+			in: `
+# HELP x_bytes Test metric.
+# TYPE x_bytes gauge
+x_bytes 10
+`,
+		},
+		{
+			name: "untyped with _total suffix",
+			in: `
+# HELP x_bytes_total Test metric.
+# TYPE x_bytes_total untyped
+x_bytes_total 10
+`,
+		},
+		{
+			name: "untyped without _total suffix",
+			in: `
+# HELP x_bytes Test metric.
+# TYPE x_bytes untyped
+x_bytes 10
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := promlint.New(strings.NewReader(tt.in))
+
+			problems, err := l.Lint()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if want, got := tt.problems, problems; !reflect.DeepEqual(want, got) {
+				t.Fatalf("unexpected problems:\n- want: %v\n-  got: %v",
+					want, got)
+			}
+		})
+	}
+}
