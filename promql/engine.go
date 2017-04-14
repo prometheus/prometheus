@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/net/context"
 
@@ -756,6 +757,9 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 				continue
 			}
 		}
+		if math.Float64bits(v) == value.StaleNaN {
+			continue
+		}
 		vec = append(vec, Sample{
 			Metric: node.series[i].Labels(),
 			Point:  Point{V: v, T: t},
@@ -826,6 +830,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		buf := it.Buffer()
 		for buf.Next() {
 			t, v := buf.At()
+			if math.Float64bits(v) == value.StaleNaN {
+				continue
+			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
 				allPoints = append(allPoints, Point{T: t, V: v})
@@ -833,7 +840,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		}
 		// The seeked sample might also be in the range.
 		t, v = it.Values()
-		if t == maxt {
+		if t == maxt && math.Float64bits(v) != value.StaleNaN {
 			allPoints = append(allPoints, Point{T: t, V: v})
 		}
 
