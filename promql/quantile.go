@@ -144,11 +144,12 @@ func bucketQuantile(q model.SampleValue, buckets buckets) float64 {
 
 func ensureMonotonic(buckets buckets) {
 	max := buckets[0].count
-	for i := range buckets {
-		if buckets[i].count < max {
-			buckets[i].count = max
-		} else if buckets[i].count > max {
+	for i := range buckets[1:] {
+		switch {
+		case buckets[i].count > max:
 			max = buckets[i].count
+		case buckets[i].count < max:
+			buckets[i].count = max
 		}
 	}
 }
