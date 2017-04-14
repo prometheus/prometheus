@@ -86,6 +86,7 @@ func lint(mf dto.MetricFamily) []Problem {
 	fns := []func(mf dto.MetricFamily) []Problem{
 		lintHelp,
 		lintMetricUnits,
+		lintCounter,
 	}
 
 	var problems []Problem
@@ -131,6 +132,31 @@ func lintMetricUnits(mf dto.MetricFamily) []Problem {
 		Metric: *mf.Name,
 		Text:   fmt.Sprintf("use base unit %q instead of %q", base, unit),
 	})
+
+	return problems
+}
+
+// lintCounter detects issues specific to counters, as well as patterns that should
+// only be used with counters.
+func lintCounter(mf dto.MetricFamily) []Problem {
+	var problems []Problem
+
+	isCounter := *mf.Type == dto.MetricType_COUNTER
+	isUntyped := *mf.Type == dto.MetricType_UNTYPED
+	hasTotalSuffix := strings.HasSuffix(*mf.Name, "_total")
+
+	switch {
+	case isCounter && !hasTotalSuffix:
+		problems = append(problems, Problem{
+			Metric: *mf.Name,
+			Text:   `counter metrics should have "_total" suffix`,
+		})
+	case !isUntyped && !isCounter && hasTotalSuffix:
+		problems = append(problems, Problem{
+			Metric: *mf.Name,
+			Text:   `non-counter metrics should not have "_total" suffix`,
+		})
+	}
 
 	return problems
 }
