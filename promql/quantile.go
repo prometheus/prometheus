@@ -115,12 +115,12 @@ func bucketQuantile(q model.SampleValue, buckets buckets) float64 {
 //   * Recording rule evaluation of histogram_quantile, especially when rate()
 //      has been applied to the underlying bucket timeseries.
 //   * Evaluation of histogram_quantile computed over federated bucket
-//      timeseries, especially when rate() has been applied
+//      timeseries, especially when rate() has been applied.
 //
-// This is because scraped data is not made available to RR evalution or
-// federation atomically, so some buckets are computed with data from the N
-// most recent scrapes, but the other buckets are missing the most recent
-// bucket.
+// This is because scraped data is not made available to rule evaluation or
+// federation atomically, so some buckets are computed with data from the
+// most recent scrapes, but the other buckets are missing data from the most
+// recent scrape.
 //
 // Monotonicity is usually guaranteed because if a bucket with upper bound
 // u1 has count c1, then any bucket with a higher upper bound u > u1 must
@@ -128,20 +128,19 @@ func bucketQuantile(q model.SampleValue, buckets buckets) float64 {
 //
 // Randomly interspersed partial sampling breaks that guarantee, and rate()
 // exacerbates it. Specifically, suppose bucket le=1000 has a count of 10 from
-// 4 samples but the bucket with le=2000 has a count of 7, from 3 samples. The
+// 4 samples but the bucket with le=2000 has a count of 7 from 3 samples. The
 // monotonicity is broken. It is exacerbated by rate() because under normal
 // operation, cumulative counting of buckets will cause the bucket counts to
 // diverge such that small differences from missing samples are not a problem.
 // rate() removes this divergence.)
 //
 // bucketQuantile depends on that monotonicity to do a binary search for the
-// bucket with the qth percentile count, so breaking the monotonicity
+// bucket with the φ-quantile count, so breaking the monotonicity
 // guarantee causes bucketQuantile() to return undefined (nonsense) results.
 //
-// As a somewhat hacky solution until the Prometheus project is ready to
-// accept the changes required to make scrapes atomic, we calculate the
-// "envelope" of the histogram buckets, essentially removing any decreases
-// in the count between successive buckets.
+// As a somewhat hacky solution until ingestion is atomic per scrape, we
+// calculate the "envelope" of the histogram buckets, essentially removing
+// any decreases in the count between successive buckets.
 
 func ensureMonotonic(buckets buckets) {
 	max := buckets[0].count
