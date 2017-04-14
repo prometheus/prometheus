@@ -332,3 +332,166 @@ x_bytes 10
 		})
 	}
 }
+
+func TestLintHistogramSummaryReserved(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		problems []promlint.Problem
+	}{
+		{
+			name: "gauge with _bucket suffix",
+			in: `
+# HELP x_bytes_bucket Test metric.
+# TYPE x_bytes_bucket gauge
+x_bytes_bucket 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes_bucket",
+				Text:   `non-histogram metrics should not have "_bucket" suffix`,
+			}},
+		},
+		{
+			name: "gauge with _count suffix",
+			in: `
+# HELP x_bytes_count Test metric.
+# TYPE x_bytes_count gauge
+x_bytes_count 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes_count",
+				Text:   `non-histogram and non-summary metrics should not have "_count" suffix`,
+			}},
+		},
+		{
+			name: "gauge with _sum suffix",
+			in: `
+# HELP x_bytes_sum Test metric.
+# TYPE x_bytes_sum gauge
+x_bytes_sum 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes_sum",
+				Text:   `non-histogram and non-summary metrics should not have "_sum" suffix`,
+			}},
+		},
+		{
+			name: "gauge with le label",
+			in: `
+# HELP x_bytes Test metric.
+# TYPE x_bytes gauge
+x_bytes{le="1"} 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes",
+				Text:   `non-histogram metrics should not have "le" label`,
+			}},
+		},
+		{
+			name: "gauge with quantile label",
+			in: `
+# HELP x_bytes Test metric.
+# TYPE x_bytes gauge
+x_bytes{quantile="1"} 10
+`,
+			problems: []promlint.Problem{{
+				Metric: "x_bytes",
+				Text:   `non-summary metrics should not have "quantile" label`,
+			}},
+		},
+		{
+			name: "histogram with quantile label",
+			in: `
+# HELP tsdb_compaction_duration Duration of compaction runs.
+# TYPE tsdb_compaction_duration histogram
+tsdb_compaction_duration_bucket{le="0.005",quantile="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.01",quantile="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.025",quantile="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.05",quantile="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.1",quantile="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.25",quantile="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.5",quantile="0.01"} 57
+tsdb_compaction_duration_bucket{le="1",quantile="0.01"} 68
+tsdb_compaction_duration_bucket{le="2.5",quantile="0.01"} 69
+tsdb_compaction_duration_bucket{le="5",quantile="0.01"} 69
+tsdb_compaction_duration_bucket{le="10",quantile="0.01"} 69
+tsdb_compaction_duration_bucket{le="+Inf",quantile="0.01"} 69
+tsdb_compaction_duration_sum 28.740810936000006
+tsdb_compaction_duration_count 69
+`,
+			problems: []promlint.Problem{{
+				Metric: "tsdb_compaction_duration",
+				Text:   `non-summary metrics should not have "quantile" label`,
+			}},
+		},
+		{
+			name: "summary with le label",
+			in: `
+# HELP go_gc_duration_seconds A summary of the GC invocation durations.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0",le="0.01"} 4.2365e-05
+go_gc_duration_seconds{quantile="0.25",le="0.01"} 8.1492e-05
+go_gc_duration_seconds{quantile="0.5",le="0.01"} 0.000100656
+go_gc_duration_seconds{quantile="0.75",le="0.01"} 0.000113913
+go_gc_duration_seconds{quantile="1",le="0.01"} 0.021754305
+go_gc_duration_seconds_sum 1.769429004
+go_gc_duration_seconds_count 5962
+`,
+			problems: []promlint.Problem{{
+				Metric: "go_gc_duration_seconds",
+				Text:   `non-histogram metrics should not have "le" label`,
+			}},
+		},
+		{
+			name: "histogram OK",
+			in: `
+# HELP tsdb_compaction_duration Duration of compaction runs.
+# TYPE tsdb_compaction_duration histogram
+tsdb_compaction_duration_bucket{le="0.005"} 0
+tsdb_compaction_duration_bucket{le="0.01"} 0
+tsdb_compaction_duration_bucket{le="0.025"} 0
+tsdb_compaction_duration_bucket{le="0.05"} 0
+tsdb_compaction_duration_bucket{le="0.1"} 0
+tsdb_compaction_duration_bucket{le="0.25"} 0
+tsdb_compaction_duration_bucket{le="0.5"} 57
+tsdb_compaction_duration_bucket{le="1"} 68
+tsdb_compaction_duration_bucket{le="2.5"} 69
+tsdb_compaction_duration_bucket{le="5"} 69
+tsdb_compaction_duration_bucket{le="10"} 69
+tsdb_compaction_duration_bucket{le="+Inf"} 69
+tsdb_compaction_duration_sum 28.740810936000006
+tsdb_compaction_duration_count 69
+`,
+		},
+		{
+			name: "summary OK",
+			in: `
+# HELP go_gc_duration_seconds A summary of the GC invocation durations.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 4.2365e-05
+go_gc_duration_seconds{quantile="0.25"} 8.1492e-05
+go_gc_duration_seconds{quantile="0.5"} 0.000100656
+go_gc_duration_seconds{quantile="0.75"} 0.000113913
+go_gc_duration_seconds{quantile="1"} 0.021754305
+go_gc_duration_seconds_sum 1.769429004
+go_gc_duration_seconds_count 5962
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := promlint.New(strings.NewReader(tt.in))
+
+			problems, err := l.Lint()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if want, got := tt.problems, problems; !reflect.DeepEqual(want, got) {
+				t.Fatalf("unexpected problems:\n- want: %v\n-  got: %v",
+					want, got)
+			}
+		})
+	}
+}
