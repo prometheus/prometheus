@@ -109,7 +109,7 @@ func TestLintMetricUnits(t *testing.T) {
 			name: "amperes",
 			in: `
 # HELP x_milliamperes Test metric.
-# TYPE x_milliamperes counter
+# TYPE x_milliamperes untyped
 x_milliamperes 10
 `,
 			problems: []promlint.Problem{{
@@ -121,7 +121,7 @@ x_milliamperes 10
 			name: "bytes",
 			in: `
 # HELP x_gigabytes Test metric.
-# TYPE x_gigabytes counter
+# TYPE x_gigabytes untyped
 x_gigabytes 10
 `,
 			problems: []promlint.Problem{{
@@ -133,7 +133,7 @@ x_gigabytes 10
 			name: "candela",
 			in: `
 # HELP x_kilocandela Test metric.
-# TYPE x_kilocandela counter
+# TYPE x_kilocandela untyped
 x_kilocandela 10
 `,
 			problems: []promlint.Problem{{
@@ -145,7 +145,7 @@ x_kilocandela 10
 			name: "grams",
 			in: `
 # HELP x_kilograms Test metric.
-# TYPE x_kilograms counter
+# TYPE x_kilograms untyped
 x_kilograms 10
 `,
 			problems: []promlint.Problem{{
@@ -157,7 +157,7 @@ x_kilograms 10
 			name: "kelvin",
 			in: `
 # HELP x_nanokelvin Test metric.
-# TYPE x_nanokelvin counter
+# TYPE x_nanokelvin untyped
 x_nanokelvin 10
 `,
 			problems: []promlint.Problem{{
@@ -169,7 +169,7 @@ x_nanokelvin 10
 			name: "kelvins",
 			in: `
 # HELP x_nanokelvins Test metric.
-# TYPE x_nanokelvins counter
+# TYPE x_nanokelvins untyped
 x_nanokelvins 10
 `,
 			problems: []promlint.Problem{{
@@ -181,7 +181,7 @@ x_nanokelvins 10
 			name: "meters",
 			in: `
 # HELP x_kilometers Test metric.
-# TYPE x_kilometers counter
+# TYPE x_kilometers untyped
 x_kilometers 10
 `,
 			problems: []promlint.Problem{{
@@ -193,7 +193,7 @@ x_kilometers 10
 			name: "metres",
 			in: `
 # HELP x_kilometres Test metric.
-# TYPE x_kilometres counter
+# TYPE x_kilometres untyped
 x_kilometres 10
 `,
 			problems: []promlint.Problem{{
@@ -205,7 +205,7 @@ x_kilometres 10
 			name: "moles",
 			in: `
 # HELP x_picomoles Test metric.
-# TYPE x_picomoles counter
+# TYPE x_picomoles untyped
 x_picomoles 10
 `,
 			problems: []promlint.Problem{{
@@ -217,7 +217,7 @@ x_picomoles 10
 			name: "seconds",
 			in: `
 # HELP x_microseconds Test metric.
-# TYPE x_microseconds counter
+# TYPE x_microseconds untyped
 x_microseconds 10
 `,
 			problems: []promlint.Problem{{
@@ -228,9 +228,9 @@ x_microseconds 10
 		{
 			name: "OK",
 			in: `
-# HELP thermometers_degrees_kelvin Test metric with name that looks like "meters".
-# TYPE thermometers_degrees_kelvin counter
-thermometers_degrees_kelvin 0
+# HELP thermometers_kelvin Test metric with name that looks like "meters".
+# TYPE thermometers_kelvin untyped
+thermometers_kelvin 0
 `,
 		},
 	}
