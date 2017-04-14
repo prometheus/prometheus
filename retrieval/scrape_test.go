@@ -474,6 +474,49 @@ func TestScrapeLoopAppend(t *testing.T) {
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
+}
+
+func TestScrapeLoopAppendStaleness(t *testing.T) {
+	app := &collectResultAppender{}
+	sl := &scrapeLoop{
+		appender:       func() storage.Appender { return app },
+		reportAppender: func() storage.Appender { return nopAppender{} },
+		refCache:       map[string]uint64{},
+		lsetCache:      map[uint64]lsetCacheEntry{},
+	}
+
+	now := time.Now()
+	_, _, err := sl.append([]byte("metric_a 1\n"), now)
+	if err != nil {
+		t.Fatalf("Unexpected append error: %s", err)
+	}
+	_, _, err = sl.append([]byte(""), now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Unexpected append error: %s", err)
+	}
+
+	ingestedNaN := math.Float64bits(app.result[1].v)
+	if ingestedNaN != value.StaleNaN {
+		t.Fatalf("Appended stale sample wasn't as expected. Wanted: %x Got: %x", value.StaleNaN, ingestedNaN)
+	}
+
+	// DeepEqual will report NaNs as being different, so replace with a different value.
+	app.result[1].v = 42
+	want := []sample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now),
+			v:      1,
+		},
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now.Add(time.Second)),
+			v:      42,
+		},
+	}
+	if !reflect.DeepEqual(want, app.result) {
+		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
+	}
 
 }
 
