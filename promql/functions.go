@@ -650,6 +650,18 @@ func funcLog10(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
+// === timestamp(Vector ValueTypeVector) Vector ===
+func funcTimestamp(ev *evaluator, args Expressions) Value {
+	vec := ev.evalVector(args[0])
+	for i := range vec {
+		el := &vec[i]
+
+		el.Metric = dropMetricName(el.Metric)
+		el.V = float64(el.T) / 1000.0
+	}
+	return vec
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -1207,6 +1219,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{},
 		ReturnType: ValueTypeScalar,
 		Call:       funcTime,
+	},
+	"timestamp": {
+		Name:       "timestamp",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+		Call:       funcTimestamp,
 	},
 	"vector": {
 		Name:       "vector",
