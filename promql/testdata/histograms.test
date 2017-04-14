@@ -139,3 +139,21 @@ eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket
 	{instance="ins2", job="job1"} 0.13333333333333333
 	{instance="ins1", job="job2"} 0.1
 	{instance="ins2", job="job2"} 0.11666666666666667
+
+# A histogram with nonmonotonic bucket counts. This may happen when recording
+# rule evaluation or federation races scrape ingestion, causing some buckets
+# counts to be derived from fewer samples. The wrong answer we want to avoid
+# is for histogram_quantile(0.99, nonmonotonic_bucket) to return ~1000 instead
+# of 1.
+
+load 5m
+    nonmonotonic_bucket{le="0.1"}   0+1x10
+    nonmonotonic_bucket{le="1"}     0+9x10
+    nonmonotonic_bucket{le="10"}    0+8x10
+    nonmonotonic_bucket{le="100"}   0+8x10
+    nonmonotonic_bucket{le="1000"}  0+9x10
+    nonmonotonic_bucket{le="+Inf"}  0+9x10
+
+# Nonmonotonic buckets
+eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
+    {} 0.989875
