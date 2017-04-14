@@ -39,6 +39,19 @@ type Problem struct {
 	Text string
 }
 
+// problems is a slice of Problems with a helper method to easily append
+// additional Problems to the slice.
+type problems []Problem
+
+// Add appends a new Problem to the slice for the specified metric, with
+// the specified issue text.
+func (p *problems) Add(mf dto.MetricFamily, text string) {
+	*p = append(*p, Problem{
+		Metric: mf.GetName(),
+		Text:   text,
+	})
+}
+
 // New creates a new Linter that reads an input stream of Prometheus metrics.
 // Only the text exposition format is supported.
 func New(r io.Reader) *Linter {
@@ -100,14 +113,11 @@ func lint(mf dto.MetricFamily) []Problem {
 
 // lintHelp detects issues related to the help text for a metric.
 func lintHelp(mf dto.MetricFamily) []Problem {
-	var problems []Problem
+	var problems problems
 
 	// Expect all metrics to have help text available.
 	if mf.Help == nil {
-		problems = append(problems, Problem{
-			Metric: *mf.Name,
-			Text:   "no help text",
-		})
+		problems.Add(mf, "no help text")
 	}
 
 	return problems
@@ -115,7 +125,7 @@ func lintHelp(mf dto.MetricFamily) []Problem {
 
 // lintMetricUnits detects issues with metric unit names.
 func lintMetricUnits(mf dto.MetricFamily) []Problem {
-	var problems []Problem
+	var problems problems
 
 	unit, base, ok := metricUnits(*mf.Name)
 	if !ok {
@@ -128,10 +138,7 @@ func lintMetricUnits(mf dto.MetricFamily) []Problem {
 		return nil
 	}
 
-	problems = append(problems, Problem{
-		Metric: *mf.Name,
-		Text:   fmt.Sprintf("use base unit %q instead of %q", base, unit),
-	})
+	problems.Add(mf, fmt.Sprintf("use base unit %q instead of %q", base, unit))
 
 	return problems
 }
@@ -139,23 +146,17 @@ func lintMetricUnits(mf dto.MetricFamily) []Problem {
 // lintCounter detects issues specific to counters, as well as patterns that should
 // only be used with counters.
 func lintCounter(mf dto.MetricFamily) []Problem {
-	var problems []Problem
+	var problems problems
 
-	isCounter := *mf.Type == dto.MetricType_COUNTER
-	isUntyped := *mf.Type == dto.MetricType_UNTYPED
-	hasTotalSuffix := strings.HasSuffix(*mf.Name, "_total")
+	isCounter := mf.GetType() == dto.MetricType_COUNTER
+	isUntyped := mf.GetType() == dto.MetricType_UNTYPED
+	hasTotalSuffix := strings.HasSuffix(mf.GetName(), "_total")
 
 	switch {
 	case isCounter && !hasTotalSuffix:
-		problems = append(problems, Problem{
-			Metric: *mf.Name,
-			Text:   `counter metrics should have "_total" suffix`,
-		})
+		problems.Add(mf, `counter metrics should have "_total" suffix`)
 	case !isUntyped && !isCounter && hasTotalSuffix:
-		problems = append(problems, Problem{
-			Metric: *mf.Name,
-			Text:   `non-counter metrics should not have "_total" suffix`,
-		})
+		problems.Add(mf, `non-counter metrics should not have "_total" suffix`)
 	}
 
 	return problems
