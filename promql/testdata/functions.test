@@ -223,14 +223,31 @@ eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
 
 clear
 
-# Tests for vector.
+# Tests for vector, time and timestamp.
+load 10s
+  metric 1 1
+
+eval instant at 0s timestamp(metric)
+  {} 0
+
+eval instant at 5s timestamp(metric)
+  {} 0
+
+eval instant at 10s timestamp(metric)
+  {} 10
+
 eval instant at 0m vector(1)
   {} 1
+
+eval instant at 0s vector(time())
+  {} 0
+
+eval instant at 5s vector(time())
+  {} 5
 
 eval instant at 60m vector(time())
   {} 3600
 
-clear
 
 # Tests for clamp_max and clamp_min().
 load 5m
@@ -436,3 +453,4 @@ eval instant at 0m days_in_month(vector(1454284800))
 # Febuary 1st 2017 not in leap year.
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
+
