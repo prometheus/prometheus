@@ -1,0 +1,24 @@
+load 10s
+  metric 0 1 stale 2
+
+# Instant vector doesn't return series when stale.
+eval instant at 10s metric
+  {__name__="metric"} 1
+
+eval instant at 20s metric
+
+eval instant at 30s metric
+  {__name__="metric"} 2
+
+
+# Range vector ignores stale sample.
+eval instant at 30s count_over_time(metric[1m])
+  {} 3
+
+eval instant at 10s count_over_time(metric[1s])
+  {} 1
+
+eval instant at 20s count_over_time(metric[1s])
+
+eval instant at 20s count_over_time(metric[10s])
+  {} 1

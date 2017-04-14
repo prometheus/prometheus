@@ -15,6 +15,7 @@ package promql
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sort"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/value"
 
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -201,17 +203,25 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 				sign = -1
 			}
 		}
-		k := sign * p.number(p.expect(itemNumber, ctx).val)
+		var k float64
+		if t := p.peek().typ; t == itemNumber {
+			k = sign * p.number(p.expect(itemNumber, ctx).val)
+		} else if t == itemIdentifier && p.peek().val == "stale" {
+			p.next()
+			k = math.Float64frombits(value.StaleNaN)
+		} else {
+			p.errorf("expected number or 'stale' in %s but got %s", ctx, t.desc())
+		}
 		vals = append(vals, sequenceValue{
 			value: k,
 		})
 
 		// If there are no offset repetitions specified, proceed with the next value.
-		if t := p.peek().typ; t == itemNumber || t == itemBlank {
+		if t := p.peek(); t.typ == itemNumber || t.typ == itemBlank || t.typ == itemIdentifier && t.val == "stale" {
 			continue
-		} else if t == itemEOF {
+		} else if t.typ == itemEOF {
 			break
-		} else if t != itemADD && t != itemSUB {
+		} else if t.typ != itemADD && t.typ != itemSUB {
 			p.errorf("expected next value or relative expansion in %s but got %s", ctx, t.desc())
 		}
 
