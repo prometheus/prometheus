@@ -100,6 +100,7 @@ func lint(mf dto.MetricFamily) []Problem {
 		lintHelp,
 		lintMetricUnits,
 		lintCounter,
+		lintHistogramSummaryReserved,
 	}
 
 	var problems []Problem
@@ -157,6 +158,48 @@ func lintCounter(mf dto.MetricFamily) []Problem {
 		problems.Add(mf, `counter metrics should have "_total" suffix`)
 	case !isUntyped && !isCounter && hasTotalSuffix:
 		problems.Add(mf, `non-counter metrics should not have "_total" suffix`)
+	}
+
+	return problems
+}
+
+// lintHistogramSummaryReserved detects when other types of metrics use names or labels
+// reserved for use by histograms and/or summaries.
+func lintHistogramSummaryReserved(mf dto.MetricFamily) []Problem {
+	// These rules do not apply to untyped metrics.
+	t := mf.GetType()
+	if t == dto.MetricType_UNTYPED {
+		return nil
+	}
+
+	var problems problems
+
+	isHistogram := t == dto.MetricType_HISTOGRAM
+	isSummary := t == dto.MetricType_SUMMARY
+
+	n := mf.GetName()
+
+	if !isHistogram && strings.HasSuffix(n, "_bucket") {
+		problems.Add(mf, `non-histogram metrics should not have "_bucket" suffix`)
+	}
+	if !isHistogram && !isSummary && strings.HasSuffix(n, "_count") {
+		problems.Add(mf, `non-histogram and non-summary metrics should not have "_count" suffix`)
+	}
+	if !isHistogram && !isSummary && strings.HasSuffix(n, "_sum") {
+		problems.Add(mf, `non-histogram and non-summary metrics should not have "_sum" suffix`)
+	}
+
+	for _, m := range mf.GetMetric() {
+		for _, l := range m.GetLabel() {
+			ln := l.GetName()
+
+			if !isHistogram && ln == "le" {
+				problems.Add(mf, `non-histogram metrics should not have "le" label`)
+			}
+			if !isSummary && ln == "quantile" {
+				problems.Add(mf, `non-summary metrics should not have "quantile" label`)
+			}
+		}
 	}
 
 	return problems
