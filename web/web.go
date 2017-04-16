@@ -476,6 +476,15 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			}
 			return u
 		},
+		"isHealthy": func(pool []*retrieval.Target) bool {
+			for _, p := range pool {
+				if p.Health() == retrieval.HealthBad {
+					return false
+				}
+			}
+
+			return true
+		},
 		"healthToClass": func(th retrieval.TargetHealth) string {
 			switch th {
 			case retrieval.HealthUnknown:

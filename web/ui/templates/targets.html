@@ -1,4 +1,6 @@
-{{define "head"}}<!-- nix -->{{end}}
+{{define "head"}}
+<script src="{{ pathPrefix }}/static/js/targets.js?v={{ buildVersion }}"></script>
+{{end}}
 
 {{define "content"}}
   <div class="container-fluid">
@@ -6,8 +8,16 @@
       <table class="table table-condensed table-bordered table-striped table-hover">
         {{range $job, $pool := .TargetPools }}
           <thead>
-            <tr><th colspan="5" class="job_header"><a id="job-{{$job}}" href="#job-{{$job}}">{{$job}}</a></th></tr>
             <tr>
+              <th colspan="5" class="job_header" data-toggle="collapse" data-target=".job-{{$job}}-collapse">
+                <a id="job-{{$job}}" href="#job-{{$job}}">{{$job}}</a>
+                {{$health := isHealthy $pool}}
+                {{if not $health}}
+                <span class="glyphicon glyphicon-exclamation-sign text-danger"></span>
+                {{ end }}
+              </th>
+            </tr>
+            <tr class = "job-{{$job}}-collapse collapse">
               <th>Endpoint</th>
               <th>State</th>
               <th>Labels</th>
@@ -15,7 +25,7 @@
               <th>Error</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class = "job-{{$job}}-collapse collapse">
           {{range $pool}}
             <tr>
               <td>
