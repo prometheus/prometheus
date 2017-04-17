@@ -518,7 +518,7 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error)
 		return 0, err
 	}
 	a.samples++
-	// Store last byte of sequence number in 3rd byte of refernece.
+	// Store last byte of sequence number in 3rd byte of reference.
 	return ref | (uint64(h.meta.Sequence^0xff) << 40), nil
 }
 
