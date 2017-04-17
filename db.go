@@ -73,6 +73,8 @@ type Options struct {
 
 // Appender allows appending a batch of data. It must be completed with a
 // call to Commit or Rollback and must not be reused afterwards.
+//
+// Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
 	// Add adds a sample pair for the given series. A reference number is
 	// returned which can be used to add further samples in the same or later
