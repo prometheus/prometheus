@@ -1341,7 +1341,7 @@ func (s *MemorySeriesStorage) cycleThroughMemoryFingerprints() chan model.Finger
 			}
 			begin := time.Now()
 			fps := s.fpToSeries.sortedFPs()
-			if firstPass {
+			if firstPass && len(fps) > 0 {
 				// Start first pass at a random location in the
 				// key space to cover the whole key space even
 				// in the case of frequent restarts.
