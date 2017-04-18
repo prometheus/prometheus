@@ -33,11 +33,12 @@ type Node struct {
 	logger   log.Logger
 	informer cache.SharedInformer
 	store    cache.Store
+	endport  int
 }
 
 // NewNode returns a new node discovery.
-func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
-	return &Node{logger: l, informer: inf, store: inf.GetStore()}
+func NewNode(l log.Logger, inf cache.SharedInformer, port int) *Node {
+	return &Node{logger: l, informer: inf, store: inf.GetStore(), endport: port}
 }
 
 // Run implements the TargetProvider interface.
@@ -153,7 +154,11 @@ func (n *Node) buildNode(node *apiv1.Node) *config.TargetGroup {
 		n.logger.With("err", err).Debugf("No node address found")
 		return nil
 	}
-	addr = net.JoinHostPort(addr, strconv.FormatInt(int64(node.Status.DaemonEndpoints.KubeletEndpoint.Port), 10))
+	port := n.endport
+	if port == 0 {
+		port = int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
+	}
+	addr = net.JoinHostPort(addr, strconv.Itoa(port))
 
 	t := model.LabelSet{
 		model.AddressLabel:  lv(addr),

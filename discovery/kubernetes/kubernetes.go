@@ -65,6 +65,7 @@ type Discovery struct {
 	client kubernetes.Interface
 	role   config.KubernetesRole
 	logger log.Logger
+	port   int
 }
 
 func init() {
@@ -140,6 +141,7 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
 		client: c,
 		logger: l,
 		role:   conf.Role,
+		port:   conf.Port,
 	}, nil
 }
 
@@ -206,6 +208,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		node := NewNode(
 			d.logger.With("kubernetes_sd", "node"),
 			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
+			d.port,
 		)
 		go node.informer.Run(ctx.Done())
 
