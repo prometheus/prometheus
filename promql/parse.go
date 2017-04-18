@@ -125,11 +125,7 @@ func (p *parser) parseStmts() (stmts Statements, err error) {
 		if p.peek().typ == itemComment {
 			continue
 		}
-		stmt, err := p.stmt()
-		if err != nil {
-			return nil, err
-		}
-		stmts = append(stmts, stmt)
+		stmts = append(stmts, p.stmt())
 	}
 	return
 }
@@ -145,7 +141,7 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 		if expr != nil {
 			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}
-		expr, _ = p.expr()
+		expr = p.expr()
 	}
 
 	if expr == nil {
@@ -347,19 +343,15 @@ func (p *parser) recover(errp *error) {
 //
 // 		alertStatement | recordStatement
 //
-func (p *parser) stmt() (Statement, error) {
+func (p *parser) stmt() Statement {
 	switch tok := p.peek(); tok.typ {
 	case itemAlert:
-		alertStmt, err := p.alertStmt()
-		if err != nil {
-			return nil, err
-		}
-		return alertStmt, nil
+		return p.alertStmt()
 	case itemIdentifier, itemMetricIdentifier:
-		return p.recordStmt(), nil
+		return p.recordStmt()
 	}
 	p.errorf("no valid statement detected")
-	return nil, nil
+	return nil
 }
 
 // alertStmt parses an alert rule.
@@ -368,21 +360,27 @@ func (p *parser) stmt() (Statement, error) {
 //			[LABELS label_set]
 //			[ANNOTATIONS label_set]
 //
-func (p *parser) alertStmt() (*AlertStmt, error) {
+func (p *parser) alertStmt() *AlertStmt {
 	const ctx = "alert statement"
 
+	p.expect(itemAlert, ctx)
+	name := p.expect(itemIdentifier, ctx)
+	// Alerts require a vector typed expression.
+	p.expect(itemIf, ctx)
+	expr := p.expr()
+	if expr.Type() != model.ValVector {
+		p.lex.lineBackup()
+		p.errorf("Invalid expression - expected vector got %s", expr.Type())
+	}
 	// Optional for clause.
 	var (
 		duration time.Duration
 		err      error
 	)
-	p.expect(itemAlert, ctx)
-	name := p.expect(itemIdentifier, ctx)
-	// Alerts require a vector typed expression.
-	p.expect(itemIf, ctx)
-	expr, err := p.expr()
+	err = p.typecheck(expr)
 	if err != nil {
-		return nil, err
+		p.lex.lineBackup()
+		p.errorf("Invalid expression")
 	}
 	if p.peek().typ == itemFor {
 		p.next()
@@ -411,7 +409,7 @@ func (p *parser) alertStmt() (*AlertStmt, error) {
 		Duration:    duration,
 		Labels:      labels,
 		Annotations: annotations,
-	}, nil
+	}
 }
 
 // recordStmt parses a recording rule.
@@ -426,7 +424,7 @@ func (p *parser) recordStmt() *RecordStmt {
 	}
 
 	p.expect(itemAssign, ctx)
-	expr, _ := p.expr()
+	expr := p.expr()
 
 	return &RecordStmt{
 		Name:   name,
@@ -436,7 +434,7 @@ func (p *parser) recordStmt() *RecordStmt {
 }
 
 // expr parses any expression.
-func (p *parser) expr() (Expr, error) {
+func (p *parser) expr() Expr {
 	// Parse the starting expression.
 	expr := p.unaryExpr()
 	// Loop through the operations and construct a binary operation tree based
@@ -445,7 +443,7 @@ func (p *parser) expr() (Expr, error) {
 		// If the next token is not an operator the expression is done.
 		op := p.peek().typ
 		if !op.isOperator() {
-			return expr, nil
+			return expr
 		}
 		p.next() // Consume operator.
 
@@ -500,10 +498,7 @@ func (p *parser) expr() (Expr, error) {
 
 		// Parse the next operand.
 		rhs := p.unaryExpr()
-		err := p.typecheck(expr)
-		if err != nil {
-			return nil, err
-		}
+
 		// Assign the new root based on the precedence of the LHS and RHS operators.
 		expr = p.balance(expr, op, rhs, vecMatching, returnBool)
 	}
@@ -559,7 +554,7 @@ func (p *parser) unaryExpr() Expr {
 
 	case itemLeftParen:
 		p.next()
-		e, _ := p.expr()
+		e := p.expr()
 		p.expect(itemRightParen, "paren expression")
 
 		return &ParenExpr{Expr: e}
@@ -734,10 +729,10 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	p.expect(itemLeftParen, ctx)
 	var param Expr
 	if agop.typ.isAggregatorWithParam() {
-		param, _ = p.expr()
+		param = p.expr()
 		p.expect(itemComma, ctx)
 	}
-	e, _ := p.expr()
+	e := p.expr()
 	p.expect(itemRightParen, ctx)
 
 	if !modifiersFirst {
@@ -792,7 +787,7 @@ func (p *parser) call(name string) *Call {
 
 	var args []Expr
 	for {
-		e, _ := p.expr()
+		e := p.expr()
 		args = append(args, e)
 
 		// Terminate if no more arguments.
