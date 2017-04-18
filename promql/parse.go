@@ -56,7 +56,6 @@ func ParseStmts(input string) (Statements, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = p.typecheck(stmts)
 	return stmts, err
 }
 
@@ -369,12 +368,20 @@ func (p *parser) alertStmt() *AlertStmt {
 	// Alerts require a vector typed expression.
 	p.expect(itemIf, ctx)
 	expr := p.expr()
-
+	if expr.Type() != model.ValVector {
+		p.lex.lineBackup()
+		p.errorf("Invalid expression - expected vector got %s", expr.Type())
+	}
 	// Optional for clause.
 	var (
 		duration time.Duration
 		err      error
 	)
+	err = p.typecheck(expr)
+	if err != nil {
+		p.lex.lineBackup()
+		p.errorf("Invalid expression")
+	}
 	if p.peek().typ == itemFor {
 		p.next()
 		dur := p.expect(itemDuration, ctx)
@@ -396,7 +403,6 @@ func (p *parser) alertStmt() *AlertStmt {
 		p.expect(itemAnnotations, ctx)
 		annotations = p.labelSet()
 	}
-
 	return &AlertStmt{
 		Name:        name.val,
 		Expr:        expr,
@@ -431,7 +437,6 @@ func (p *parser) recordStmt() *RecordStmt {
 func (p *parser) expr() Expr {
 	// Parse the starting expression.
 	expr := p.unaryExpr()
-
 	// Loop through the operations and construct a binary operation tree based
 	// on the operators' precedence.
 	for {
@@ -997,7 +1002,7 @@ func (p *parser) expectType(node Node, want model.ValueType, context string) {
 // check the types of the children of each node and raise an error
 // if they do not form a valid node.
 //
-// Some of these checks are redundant as the the parsing stage does not allow
+// Some of these checks are redundant as the parsing stage does not allow
 // them, but the costs are small and might reveal errors when making changes.
 func (p *parser) checkType(node Node) (typ model.ValueType) {
 	// For expressions the type is determined by their Type function.

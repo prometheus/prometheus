@@ -367,6 +367,20 @@ func (l *lexer) backup() {
 	l.pos -= l.width
 }
 
+// lineBackup brings the lexer back to the end of the previous line
+func (l *lexer) lineBackup() {
+	var lastNewLinePos int
+	for pos, char := range l.input {
+		if isEndOfLine(char) {
+			lastNewLinePos = pos
+		}
+		if Pos(pos) == l.lastPos {
+			l.lastPos = Pos(lastNewLinePos)
+			break
+		}
+	}
+}
+
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
 	l.items <- item{t, l.start, l.input[l.start:l.pos]}
