@@ -56,7 +56,6 @@ func ParseStmts(input string) (Statements, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = p.typecheck(stmts)
 	return stmts, err
 }
 
@@ -126,7 +125,11 @@ func (p *parser) parseStmts() (stmts Statements, err error) {
 		if p.peek().typ == itemComment {
 			continue
 		}
-		stmts = append(stmts, p.stmt())
+		stmt, err := p.stmt()
+		if err != nil {
+			return nil, err
+		}
+		stmts = append(stmts, stmt)
 	}
 	return
 }
@@ -142,7 +145,7 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 		if expr != nil {
 			p.errorf("could not parse remaining input %.15q...", p.lex.input[p.lex.lastPos:])
 		}
-		expr = p.expr()
+		expr, _ = p.expr()
 	}
 
 	if expr == nil {
@@ -344,15 +347,19 @@ func (p *parser) recover(errp *error) {
 //
 // 		alertStatement | recordStatement
 //
-func (p *parser) stmt() Statement {
+func (p *parser) stmt() (Statement, error) {
 	switch tok := p.peek(); tok.typ {
 	case itemAlert:
-		return p.alertStmt()
+		alertStmt, err := p.alertStmt()
+		if err != nil {
+			return nil, err
+		}
+		return alertStmt, nil
 	case itemIdentifier, itemMetricIdentifier:
-		return p.recordStmt()
+		return p.recordStmt(), nil
 	}
 	p.errorf("no valid statement detected")
-	return nil
+	return nil, nil
 }
 
 // alertStmt parses an alert rule.
@@ -361,20 +368,22 @@ func (p *parser) stmt() Statement {
 //			[LABELS label_set]
 //			[ANNOTATIONS label_set]
 //
-func (p *parser) alertStmt() *AlertStmt {
+func (p *parser) alertStmt() (*AlertStmt, error) {
 	const ctx = "alert statement"
-
-	p.expect(itemAlert, ctx)
-	name := p.expect(itemIdentifier, ctx)
-	// Alerts require a vector typed expression.
-	p.expect(itemIf, ctx)
-	expr := p.expr()
 
 	// Optional for clause.
 	var (
 		duration time.Duration
 		err      error
 	)
+	p.expect(itemAlert, ctx)
+	name := p.expect(itemIdentifier, ctx)
+	// Alerts require a vector typed expression.
+	p.expect(itemIf, ctx)
+	expr, err := p.expr()
+	if err != nil {
+		return nil, err
+	}
 	if p.peek().typ == itemFor {
 		p.next()
 		dur := p.expect(itemDuration, ctx)
@@ -396,14 +405,13 @@ func (p *parser) alertStmt() *AlertStmt {
 		p.expect(itemAnnotations, ctx)
 		annotations = p.labelSet()
 	}
-
 	return &AlertStmt{
 		Name:        name.val,
 		Expr:        expr,
 		Duration:    duration,
 		Labels:      labels,
 		Annotations: annotations,
-	}
+	}, nil
 }
 
 // recordStmt parses a recording rule.
@@ -418,7 +426,7 @@ func (p *parser) recordStmt() *RecordStmt {
 	}
 
 	p.expect(itemAssign, ctx)
-	expr := p.expr()
+	expr, _ := p.expr()
 
 	return &RecordStmt{
 		Name:   name,
@@ -428,17 +436,16 @@ func (p *parser) recordStmt() *RecordStmt {
 }
 
 // expr parses any expression.
-func (p *parser) expr() Expr {
+func (p *parser) expr() (Expr, error) {
 	// Parse the starting expression.
 	expr := p.unaryExpr()
-
 	// Loop through the operations and construct a binary operation tree based
 	// on the operators' precedence.
 	for {
 		// If the next token is not an operator the expression is done.
 		op := p.peek().typ
 		if !op.isOperator() {
-			return expr
+			return expr, nil
 		}
 		p.next() // Consume operator.
 
@@ -493,7 +500,10 @@ func (p *parser) expr() Expr {
 
 		// Parse the next operand.
 		rhs := p.unaryExpr()
-
+		err := p.typecheck(expr)
+		if err != nil {
+			return nil, err
+		}
 		// Assign the new root based on the precedence of the LHS and RHS operators.
 		expr = p.balance(expr, op, rhs, vecMatching, returnBool)
 	}
@@ -549,7 +559,7 @@ func (p *parser) unaryExpr() Expr {
 
 	case itemLeftParen:
 		p.next()
-		e := p.expr()
+		e, _ := p.expr()
 		p.expect(itemRightParen, "paren expression")
 
 		return &ParenExpr{Expr: e}
@@ -724,10 +734,10 @@ func (p *parser) aggrExpr() *AggregateExpr {
 	p.expect(itemLeftParen, ctx)
 	var param Expr
 	if agop.typ.isAggregatorWithParam() {
-		param = p.expr()
+		param, _ = p.expr()
 		p.expect(itemComma, ctx)
 	}
-	e := p.expr()
+	e, _ := p.expr()
 	p.expect(itemRightParen, ctx)
 
 	if !modifiersFirst {
@@ -782,7 +792,7 @@ func (p *parser) call(name string) *Call {
 
 	var args []Expr
 	for {
-		e := p.expr()
+		e, _ := p.expr()
 		args = append(args, e)
 
 		// Terminate if no more arguments.
@@ -997,7 +1007,7 @@ func (p *parser) expectType(node Node, want model.ValueType, context string) {
 // check the types of the children of each node and raise an error
 // if they do not form a valid node.
 //
-// Some of these checks are redundant as the the parsing stage does not allow
+// Some of these checks are redundant as the parsing stage does not allow
 // them, but the costs are small and might reveal errors when making changes.
 func (p *parser) checkType(node Node) (typ model.ValueType) {
 	// For expressions the type is determined by their Type function.
