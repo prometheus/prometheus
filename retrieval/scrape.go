@@ -423,6 +423,7 @@ type scrapeLoop struct {
 	appender       func() storage.Appender
 	reportAppender func() storage.Appender
 
+	// TODO: Keep only the values from the last scrape to avoid a memory leak.
 	refCache                map[string]uint64         // Parsed string to ref.
 	lsetCache               map[uint64]lsetCacheEntry // Ref to labelset and string
 	samplesInPreviousScrape map[string]labels.Labels
