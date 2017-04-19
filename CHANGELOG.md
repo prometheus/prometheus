@@ -1,3 +1,7 @@
+## 1.6.1 / 2017-04-19
+
+* [BUGFIX] Don't panic if storage has no FPs even after initial wait
+
 ## 1.6.0 / 2017-04-14
 
 * [CHANGE] Replaced the remote write implementations for various backends by a
