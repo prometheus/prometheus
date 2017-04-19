@@ -13,7 +13,15 @@
 
 package value
 
-var (
+import (
+	"math"
+)
+
+const (
 	NormalNaN uint64 = 0x7ff8000000000001 // A quiet NaN. This is also math.NaN().
 	StaleNaN  uint64 = 0x7ff4000000000000 // A signalling NaN, starting 01 to allow for expansion.
 )
+
+func IsStaleNaN(v float64) bool {
+	return math.Float64bits(v) == StaleNaN
+}
