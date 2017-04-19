@@ -12,3 +12,78 @@
 // limitations under the License.
 
 package tsdb
+
+import (
+	"io/ioutil"
+	"os"
+	"testing"
+
+	"github.com/prometheus/tsdb/labels"
+)
+
+func TestDataAvailableOnlyAfterCommit(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Error opening database: %q", err)
+	}
+	defer db.Close()
+
+	app := db.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	if err != nil {
+		t.Fatalf("Error adding sample: %q", err)
+	}
+
+	querier := db.Querier(0, 1)
+	defer querier.Close()
+	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	if seriesSet.Next() {
+		t.Fatalf("Error, was expecting no matching series.")
+	}
+
+	err = app.Commit()
+	if err != nil {
+		t.Fatalf("Error committing: %q", err)
+	}
+
+	querier = db.Querier(0, 1)
+	defer querier.Close()
+
+	seriesSet = querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	if !seriesSet.Next() {
+		t.Fatalf("Error, was expecting a matching series.")
+	}
+}
+
+func TestDataNotAvailableAfterRollback(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Error opening database: %q", err)
+	}
+	defer db.Close()
+
+	app := db.Appender()
+	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
+	if err != nil {
+		t.Fatalf("Error adding sample: %q", err)
+	}
+
+	err = app.Rollback()
+	if err != nil {
+		t.Fatalf("Error rolling back: %q", err)
+	}
+
+	querier := db.Querier(0, 1)
+	defer querier.Close()
+
+	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	if seriesSet.Next() {
+		t.Fatalf("Error, was expecting no matching series.")
+	}
+}

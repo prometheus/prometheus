@@ -656,7 +656,7 @@ func (a *dbAppender) Rollback() error {
 	var g errgroup.Group
 
 	for _, h := range a.heads {
-		g.Go(h.app.Commit)
+		g.Go(h.app.Rollback)
 	}
 
 	return g.Wait()
