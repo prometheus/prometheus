@@ -423,22 +423,11 @@ func (a *headAppender) Commit() error {
 		return err
 	}
 
-	var (
-		total = uint64(len(a.samples))
-		mint  = int64(math.MaxInt64)
-		maxt  = int64(math.MinInt64)
-	)
+	total := uint64(len(a.samples))
 
 	for _, s := range a.samples {
 		if !a.series[s.ref].append(s.t, s.v) {
 			total--
-		}
-
-		if s.t < mint {
-			mint = s.t
-		}
-		if s.t > maxt {
-			maxt = s.t
 		}
 	}
 
