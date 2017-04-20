@@ -272,6 +272,12 @@ func (q *query) Cancel() {
 
 // Exec implements the Query interface.
 func (q *query) Exec(ctx context.Context) *Result {
+	defer func(start time.Time) {
+		dur := time.Now().Sub(start)
+		if dur > q.ng.options.SlowThreshold {
+			log.Warnf("slow query '%s': %dms", q.q, dur/time.Millisecond)
+		}
+	}(time.Now())
 	res, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res}
 }
@@ -326,12 +332,14 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 type EngineOptions struct {
 	MaxConcurrentQueries int
 	Timeout              time.Duration
+	SlowThreshold        time.Duration
 }
 
 // DefaultEngineOptions are the default engine options.
 var DefaultEngineOptions = &EngineOptions{
 	MaxConcurrentQueries: 20,
 	Timeout:              2 * time.Minute,
+	SlowThreshold:        5 * time.Second,
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
