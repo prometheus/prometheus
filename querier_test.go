@@ -262,8 +262,6 @@ func TestBlockQuerier(t *testing.T) {
 	}
 
 	type query struct {
-		dataIdx int
-
 		mint, maxt int64
 		ms         []labels.Matcher
 		exp        SeriesSet
@@ -325,32 +323,24 @@ func TestBlockQuerier(t *testing.T) {
 
 		queries: []query{
 			{
-				dataIdx: 0,
-
 				mint: 0,
 				maxt: 0,
 				ms:   []labels.Matcher{},
 				exp:  newListSeriesSet([]Series{}),
 			},
 			{
-				dataIdx: 0,
-
 				mint: 0,
 				maxt: 0,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
 				exp:  newListSeriesSet([]Series{}),
 			},
 			{
-				dataIdx: 0,
-
 				mint: 1,
 				maxt: 0,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
 				exp:  newListSeriesSet([]Series{}),
 			},
 			{
-				dataIdx: 0,
-
 				mint: 2,
 				maxt: 6,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
