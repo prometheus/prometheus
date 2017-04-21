@@ -19,43 +19,59 @@ import (
 	"testing"
 
 	"github.com/prometheus/tsdb/labels"
+	"github.com/stretchr/testify/require"
 )
+
+// Convert a SeriesSet into a form useable with reflect.DeepEqual.
+func readSeriesSet(ss SeriesSet) (map[string][]sample, error) {
+	result := map[string][]sample{}
+
+	for ss.Next() {
+		series := ss.At()
+
+		samples := []sample{}
+		it := series.Iterator()
+		for it.Next() {
+			t, v := it.At()
+			samples = append(samples, sample{t: t, v: v})
+		}
+
+		name := series.Labels().String()
+		result[name] = samples
+		if err := ss.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
 	db, err := Open(tmpdir, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("Error opening database: %q", err)
-	}
+	require.NoError(t, err)
 	defer db.Close()
 
 	app := db.Appender()
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
-	if err != nil {
-		t.Fatalf("Error adding sample: %q", err)
-	}
+	require.NoError(t, err)
 
 	querier := db.Querier(0, 1)
 	defer querier.Close()
-	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
-	if seriesSet.Next() {
-		t.Fatalf("Error, was expecting no matching series.")
-	}
+	seriesSet, err := readSeriesSet(querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	require.NoError(t, err)
+	require.Equal(t, seriesSet, map[string][]sample{})
 
 	err = app.Commit()
-	if err != nil {
-		t.Fatalf("Error committing: %q", err)
-	}
+	require.NoError(t, err)
 
 	querier = db.Querier(0, 1)
 	defer querier.Close()
 
-	seriesSet = querier.Select(labels.NewEqualMatcher("foo", "bar"))
-	if !seriesSet.Next() {
-		t.Fatalf("Error, was expecting a matching series.")
-	}
+	seriesSet, err = readSeriesSet(querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	require.NoError(t, err)
+	require.Equal(t, seriesSet, map[string][]sample{`{foo="bar"}`: []sample{{t: 0, v: 0}}})
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
@@ -70,20 +86,15 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 
 	app := db.Appender()
 	_, err = app.Add(labels.FromStrings("foo", "bar"), 0, 0)
-	if err != nil {
-		t.Fatalf("Error adding sample: %q", err)
-	}
+	require.NoError(t, err)
 
 	err = app.Rollback()
-	if err != nil {
-		t.Fatalf("Error rolling back: %q", err)
-	}
+	require.NoError(t, err)
 
 	querier := db.Querier(0, 1)
 	defer querier.Close()
 
-	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
-	if seriesSet.Next() {
-		t.Fatalf("Error, was expecting no matching series.")
-	}
+	seriesSet, err := readSeriesSet(querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	require.NoError(t, err)
+	require.Equal(t, seriesSet, map[string][]sample{})
 }
