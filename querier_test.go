@@ -261,12 +261,26 @@ func TestBlockQuerier(t *testing.T) {
 		}
 	}
 
-	// Build the querier on data first. Then execute queries on it.
-	basedata := [][]struct {
-		lset   map[string]string
-		chunks [][]sample
+	type query struct {
+		dataIdx int
+
+		mint, maxt int64
+		ms         []labels.Matcher
+		exp        SeriesSet
+	}
+
+	cases := struct {
+		data []struct {
+			lset   map[string]string
+			chunks [][]sample
+		}
+
+		queries []query
 	}{
-		{
+		data: []struct {
+			lset   map[string]string
+			chunks [][]sample
+		}{
 			{
 				lset: map[string]string{
 					"a": "a",
@@ -308,65 +322,58 @@ func TestBlockQuerier(t *testing.T) {
 				},
 			},
 		},
-	}
 
-	cases := []struct {
-		dataIdx int
+		queries: []query{
+			{
+				dataIdx: 0,
 
-		mint, maxt int64
-		ms         []labels.Matcher
-		exp        SeriesSet
-	}{
-		{
-			dataIdx: 0,
+				mint: 0,
+				maxt: 0,
+				ms:   []labels.Matcher{},
+				exp:  newListSeriesSet([]Series{}),
+			},
+			{
+				dataIdx: 0,
 
-			mint: 0,
-			maxt: 0,
-			ms:   []labels.Matcher{},
-			exp:  newListSeriesSet([]Series{}),
-		},
-		{
-			dataIdx: 0,
+				mint: 0,
+				maxt: 0,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+				exp:  newListSeriesSet([]Series{}),
+			},
+			{
+				dataIdx: 0,
 
-			mint: 0,
-			maxt: 0,
-			ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-			exp:  newListSeriesSet([]Series{}),
-		},
-		{
-			dataIdx: 0,
+				mint: 1,
+				maxt: 0,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+				exp:  newListSeriesSet([]Series{}),
+			},
+			{
+				dataIdx: 0,
 
-			mint: 1,
-			maxt: 0,
-			ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-			exp:  newListSeriesSet([]Series{}),
-		},
-		{
-			dataIdx: 0,
-
-			mint: 2,
-			maxt: 6,
-			ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-			exp: newListSeriesSet([]Series{
-				newSeries(map[string]string{
-					"a": "a",
-				},
-					[]sample{{2, 3}, {3, 4}, {5, 2}, {6, 3}},
-				),
-				newSeries(map[string]string{
-					"a": "a",
-					"b": "b",
-				},
-					[]sample{{2, 2}, {3, 3}, {5, 3}, {6, 6}},
-				),
-			}),
+				mint: 2,
+				maxt: 6,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+				exp: newListSeriesSet([]Series{
+					newSeries(map[string]string{
+						"a": "a",
+					},
+						[]sample{{2, 3}, {3, 4}, {5, 2}, {6, 3}},
+					),
+					newSeries(map[string]string{
+						"a": "a",
+						"b": "b",
+					},
+						[]sample{{2, 2}, {3, 3}, {5, 3}, {6, 6}},
+					),
+				}),
+			},
 		},
 	}
 
 Outer:
-	for _, c := range cases {
-		ir, cr := createIdxChkReaders(basedata[c.dataIdx])
-
+	for _, c := range cases.queries {
+		ir, cr := createIdxChkReaders(cases.data)
 		querier := &blockQuerier{
 			index:  ir,
 			chunks: cr,

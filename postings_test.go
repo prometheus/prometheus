@@ -138,7 +138,7 @@ func TestMultiMerge(t *testing.T) {
 	}
 }
 
-func TestMerge(t *testing.T) {
+func TestMergedPostings(t *testing.T) {
 	var cases = []struct {
 		a, b []uint32
 		res  []uint32
@@ -169,72 +169,73 @@ func TestMerge(t *testing.T) {
 		require.Equal(t, c.res, res)
 	}
 
-	t.Run("Seek", func(t *testing.T) {
-		var cases = []struct {
-			a, b []uint32
+}
 
-			seek    uint32
-			success bool
-			res     []uint32
-		}{
-			{
-				a: []uint32{1, 2, 3, 4, 5},
-				b: []uint32{6, 7, 8, 9, 10},
+func TestMergedPostingsSeek(t *testing.T) {
+	var cases = []struct {
+		a, b []uint32
 
-				seek:    0,
-				success: true,
-				res:     []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-			},
-			{
-				a: []uint32{1, 2, 3, 4, 5},
-				b: []uint32{6, 7, 8, 9, 10},
+		seek    uint32
+		success bool
+		res     []uint32
+	}{
+		{
+			a: []uint32{1, 2, 3, 4, 5},
+			b: []uint32{6, 7, 8, 9, 10},
 
-				seek:    2,
-				success: true,
-				res:     []uint32{2, 3, 4, 5, 6, 7, 8, 9, 10},
-			},
-			{
-				a: []uint32{1, 2, 3, 4, 5},
-				b: []uint32{4, 5, 6, 7, 8},
+			seek:    0,
+			success: true,
+			res:     []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		},
+		{
+			a: []uint32{1, 2, 3, 4, 5},
+			b: []uint32{6, 7, 8, 9, 10},
 
-				seek:    9,
-				success: false,
-				res:     nil,
-			},
-			{
-				a: []uint32{1, 2, 3, 4, 9, 10},
-				b: []uint32{1, 4, 5, 6, 7, 8, 10, 11},
+			seek:    2,
+			success: true,
+			res:     []uint32{2, 3, 4, 5, 6, 7, 8, 9, 10},
+		},
+		{
+			a: []uint32{1, 2, 3, 4, 5},
+			b: []uint32{4, 5, 6, 7, 8},
 
-				seek:    10,
-				success: true,
-				res:     []uint32{10, 11},
-			},
-		}
+			seek:    9,
+			success: false,
+			res:     nil,
+		},
+		{
+			a: []uint32{1, 2, 3, 4, 9, 10},
+			b: []uint32{1, 4, 5, 6, 7, 8, 10, 11},
 
-		for _, c := range cases {
-			a := newListPostings(c.a)
-			b := newListPostings(c.b)
+			seek:    10,
+			success: true,
+			res:     []uint32{10, 11},
+		},
+	}
 
-			p := newMergedPostings(a, b)
+	for _, c := range cases {
+		a := newListPostings(c.a)
+		b := newListPostings(c.b)
 
-			require.Equal(t, c.success, p.Seek(c.seek))
+		p := newMergedPostings(a, b)
 
-			if c.success {
-				// check the current element and then proceed to check the rest.
-				i := 0
-				require.Equal(t, c.res[i], p.At())
+		require.Equal(t, c.success, p.Seek(c.seek))
 
-				for p.Next() {
-					i++
-					require.Equal(t, int(c.res[i]), int(p.At()))
-				}
+		if c.success {
+			// check the current element and then proceed to check the rest.
+			i := 0
+			require.Equal(t, c.res[i], p.At())
 
-				require.Equal(t, len(c.res)-1, i)
+			for p.Next() {
+				i++
+				require.Equal(t, int(c.res[i]), int(p.At()))
 			}
-		}
 
-		return
-	})
+			require.Equal(t, len(c.res)-1, i)
+		}
+	}
+
+	return
 }
 
 func TestBigEndian(t *testing.T) {

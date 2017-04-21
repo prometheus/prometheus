@@ -1,8 +1,7 @@
 package tsdb
 
 import (
-	"errors"
-
+	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
 )
 
