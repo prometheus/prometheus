@@ -23,8 +23,11 @@ var PATH_PREFIX = "{{ pathPrefix }}";
 {{ template "prom_console_head" }}
 </head>
 <body>
+<div class="prom_console_content">
+  <div class="container-fluid">
 {{ template "navbar" . }}
 {{ template "menu" . }}
+    <div class="row">
 {{ end }}
 
 {{ define "__prom_query_drilldown_noop" }}{{ . }}{{ end }}
@@ -49,7 +52,7 @@ renderTemplate is the name of the template to use to render the value.
 {{ define "prom_path" }}/consoles/{{ .Path }}?{{ range $param, $value := .Params }}{{ $param }}={{ $value }}&amp;{{ end }}{{ end }}"
 
 {{ define "prom_right_table_head" }}
-<div class="prom_console_rhs">
+<div class="col-md-3 col-md-push-9">
 <table class="table table-bordered table-hover table-condensed">
 {{ end }}
 {{ define "prom_right_table_tail" }}
@@ -75,12 +78,10 @@ renderTemplate is the name of the template to use to render the value.
 
 
 {{ define "prom_content_head" }}
-<div class="prom_console_content">
-  <div class="container">
+<div class="col-md-9 col-md-pull-3">
 {{ template "prom_graph_timecontrol" . }}
 {{ end }}
 {{ define "prom_content_tail" }}
-  </div>
 </div>
 {{ end }}
 
@@ -130,6 +131,9 @@ renderTemplate is the name of the template to use to render the value.
 
 {{/* Bottom of all pages. */}}
 {{ define "tail" }}
+    </div>
+  </div>
+</div>
 </body>
 </html>
 {{ end }}
