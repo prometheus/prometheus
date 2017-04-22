@@ -4,11 +4,11 @@
   <tr><th colspan="2">Overview</th></tr>
   <tr>
     <td>User CPU</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "sum(irate(node_cpu{job='node',instance='%s',mode='user'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(irate(node_cpu{job='node',instance='%s',mode='user'}[5m])) * 100 / count_scalar(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
   </tr>
   <tr>
     <td>System CPU</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "sum(irate(node_cpu{job='node',instance='%s',mode='system'}[5m])) * 100 / count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "sum(irate(node_cpu{job='node',instance='%s',mode='system'}[5m])) * 100 / count_scalar(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance .Params.instance) "%" "printf.1f") }}</td>
   </tr>
   <tr>
     <td>Memory Total</td>
@@ -72,7 +72,7 @@
     node: document.querySelector("#cpuGraph"),
     expr: "sum by (mode)(irate(node_cpu{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
     renderer: 'area',
-    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
+    max: {{ with printf "count_scalar(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yTitle: 'Cores'
