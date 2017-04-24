@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
@@ -50,10 +51,14 @@ func (m mockIndex) AddSeries(ref uint32, l labels.Labels, chunks ...*ChunkMeta) 
 		return errors.Errorf("series with reference %d already added", ref)
 	}
 
-	m.series[ref] = series{
-		l:      l,
-		chunks: chunks,
+	s := series{l: l}
+	// Actual chunk data is not stored in the index.
+	for _, c := range chunks {
+		cc := *c
+		cc.Chunk = nil
+		s.chunks = append(s.chunks, &cc)
 	}
+	m.series[ref] = s
 
 	return nil
 }
@@ -241,6 +246,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 				MinTime: int64(j * 10000),
 				MaxTime: int64((j + 1) * 10000),
 				Ref:     rand.Uint64(),
+				Chunk:   chunks.NewXORChunk(),
 			})
 		}
 		input = append(input, &indexWriterSeries{

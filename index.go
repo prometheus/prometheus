@@ -228,7 +228,8 @@ func (w *indexWriter) writeSeries() error {
 
 	for _, s := range series {
 		// Write label set symbol references.
-		s.offset = base + uint32(len(w.b))
+		start := len(w.b)
+		s.offset = base + uint32(start)
 
 		n := binary.PutUvarint(buf, uint64(len(s.labels)))
 		w.b = append(w.b, buf[:n]...)
@@ -253,6 +254,22 @@ func (w *indexWriter) writeSeries() error {
 			n = binary.PutUvarint(buf, uint64(c.Ref))
 			w.b = append(w.b, buf[:n]...)
 		}
+
+		// Write checksum over series index entry and all its chunk data.
+		w.crc32.Reset()
+		w.crc32.Write(w.b[start:])
+
+		for _, c := range s.chunks {
+			fmt.Println(c)
+			if _, err := w.crc32.Write([]byte{byte(c.Chunk.Encoding())}); err != nil {
+				return err
+			}
+			if _, err := w.crc32.Write(c.Chunk.Bytes()); err != nil {
+				return err
+			}
+		}
+
+		w.b = append(w.b, w.crc32.Sum(nil)...)
 	}
 
 	return w.section(len(w.b), flagStd, func(wr io.Writer) error {

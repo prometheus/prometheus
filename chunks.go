@@ -17,8 +17,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"hash"
-	"hash/crc32"
 	"io"
 	"os"
 
@@ -63,7 +61,6 @@ type chunkWriter struct {
 	files   []*os.File
 	wbuf    *bufio.Writer
 	n       int64
-	crc32   hash.Hash
 
 	segmentSize int64
 }
@@ -85,7 +82,6 @@ func newChunkWriter(dir string) (*chunkWriter, error) {
 	cw := &chunkWriter{
 		dirFile:     dirFile,
 		n:           0,
-		crc32:       crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 		segmentSize: defaultChunkSegmentSize,
 	}
 	return cw, nil
@@ -165,8 +161,8 @@ func (w *chunkWriter) cut() error {
 	return nil
 }
 
-func (w *chunkWriter) write(wr io.Writer, b []byte) error {
-	n, err := wr.Write(b)
+func (w *chunkWriter) write(b []byte) error {
+	n, err := w.wbuf.Write(b)
 	w.n += int64(n)
 	return err
 }
@@ -187,14 +183,10 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 		}
 	}
 
-	// Write chunks sequentially and set the reference field in the ChunkMeta.
-	w.crc32.Reset()
-	wr := io.MultiWriter(w.crc32, w.wbuf)
-
 	b := make([]byte, binary.MaxVarintLen32)
 	n := binary.PutUvarint(b, uint64(len(chks)))
 
-	if err := w.write(wr, b[:n]); err != nil {
+	if err := w.write(b[:n]); err != nil {
 		return err
 	}
 	seq := uint64(w.seq()) << 32
@@ -204,21 +196,17 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 
 		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
 
-		if err := w.write(wr, b[:n]); err != nil {
+		if err := w.write(b[:n]); err != nil {
 			return err
 		}
-		if err := w.write(wr, []byte{byte(chk.Chunk.Encoding())}); err != nil {
+		if err := w.write([]byte{byte(chk.Chunk.Encoding())}); err != nil {
 			return err
 		}
-		if err := w.write(wr, chk.Chunk.Bytes()); err != nil {
+		if err := w.write(chk.Chunk.Bytes()); err != nil {
 			return err
 		}
-		chk.Chunk = nil
 	}
 
-	if err := w.write(w.wbuf, w.crc32.Sum(nil)); err != nil {
-		return err
-	}
 	return nil
 }
 
