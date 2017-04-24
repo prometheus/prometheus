@@ -415,7 +415,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
           return;
         }
         var duration = new Date().getTime() - startTime;
-        var totalTimeSeries = xhr.responseJSON.data.result.length;
+        var totalTimeSeries = (xhr.responseJSON.data !== undefined) ? xhr.responseJSON.data.result.length : 0;
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total time series: " + totalTimeSeries);
         self.spinner.hide();
       }
