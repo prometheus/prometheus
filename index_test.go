@@ -277,6 +277,14 @@ func TestPersistence_index_e2e(t *testing.T) {
 		}
 		i++
 	}
+
+	for k, v := range values {
+		vals := v.slice()
+
+		require.NoError(t, iw.WriteLabelIndex([]string{k}, vals))
+		require.NoError(t, mi.WriteLabelIndex([]string{k}, vals))
+	}
+
 	all := make([]uint32, len(lbls))
 	for i := range all {
 		all[i] = uint32(i)
@@ -319,6 +327,24 @@ func TestPersistence_index_e2e(t *testing.T) {
 		require.NoError(t, gotp.Err())
 	}
 
-	require.NoError(t, ir.Close())
+	for k, v := range mi.labelIndex {
+		tplsExp, err := newStringTuples(v, 1)
+		require.NoError(t, err)
 
+		tplsRes, err := ir.LabelValues(k)
+		require.NoError(t, err)
+
+		require.Equal(t, tplsExp.Len(), tplsRes.Len())
+		for i := 0; i < tplsExp.Len(); i++ {
+			strsExp, err := tplsExp.At(i)
+			require.NoError(t, err)
+
+			strsRes, err := tplsRes.At(i)
+			require.NoError(t, err)
+
+			require.Equal(t, strsExp, strsRes)
+		}
+	}
+
+	require.NoError(t, ir.Close())
 }

@@ -166,6 +166,9 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 			mint:   q.mint,
 			maxt:   q.maxt,
 		},
+
+		mint: q.mint,
+		maxt: q.maxt,
 	}
 }
 
@@ -444,12 +447,14 @@ type blockSeriesSet struct {
 	set chunkSeriesSet
 	err error
 	cur Series
+
+	mint, maxt int64
 }
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
 		lset, chunks := s.set.At()
-		s.cur = &chunkSeries{labels: lset, chunks: chunks}
+		s.cur = &chunkSeries{labels: lset, chunks: chunks, mint: s.mint, maxt: s.maxt}
 		return true
 	}
 	if s.set.Err() != nil {
@@ -466,6 +471,8 @@ func (s *blockSeriesSet) Err() error { return s.err }
 type chunkSeries struct {
 	labels labels.Labels
 	chunks []*ChunkMeta // in-order chunk refs
+
+	mint, maxt int64
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -473,14 +480,14 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 func (s *chunkSeries) Iterator() SeriesIterator {
-	return newChunkSeriesIterator(s.chunks)
+	return newChunkSeriesIterator(s.chunks, s.mint, s.maxt)
 }
 
 // SeriesIterator iterates over the data of a time series.
 type SeriesIterator interface {
 	// Seek advances the iterator forward to the given timestamp.
-	// If there's no value exactly at ts, it advances to the last value
-	// before tt.
+	// If there's no value exactly at t, it advances to the first value
+	// after t.
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
 	At() (t int64, v float64)
@@ -501,7 +508,7 @@ func (s *chainedSeries) Labels() labels.Labels {
 }
 
 func (s *chainedSeries) Iterator() SeriesIterator {
-	return &chainedSeriesIterator{series: s.series}
+	return newChainedSeriesIterator(s.series...)
 }
 
 // chainedSeriesIterator implements a series iterater over a list
@@ -511,6 +518,14 @@ type chainedSeriesIterator struct {
 
 	i   int
 	cur SeriesIterator
+}
+
+func newChainedSeriesIterator(s ...Series) *chainedSeriesIterator {
+	return &chainedSeriesIterator{
+		series: s,
+		i:      0,
+		cur:    s[0].Iterator(),
+	}
 }
 
 func (it *chainedSeriesIterator) Seek(t int64) bool {
@@ -529,9 +544,6 @@ func (it *chainedSeriesIterator) Seek(t int64) bool {
 }
 
 func (it *chainedSeriesIterator) Next() bool {
-	if it.cur == nil {
-		it.cur = it.series[it.i].Iterator()
-	}
 	if it.cur.Next() {
 		return true
 	}
@@ -563,17 +575,35 @@ type chunkSeriesIterator struct {
 
 	i   int
 	cur chunks.Iterator
+
+	maxt, mint int64
 }
 
-func newChunkSeriesIterator(cs []*ChunkMeta) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta, mint, maxt int64) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,
 		cur:    cs[0].Chunk.Iterator(),
+
+		mint: mint,
+		maxt: maxt,
 	}
 }
 
+func (it *chunkSeriesIterator) inBounds(t int64) bool {
+	return t >= it.mint && t <= it.maxt
+}
+
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
+	if t > it.maxt {
+		return false
+	}
+
+	// Seek to the first valid value after t.
+	if t < it.mint {
+		t = it.mint
+	}
+
 	// Only do binary search forward to stay in line with other iterators
 	// that can only move forward.
 	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool { return it.chunks[i].MinTime >= t })
@@ -582,10 +612,10 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	// If the timestamp was not found, it might be in the last chunk.
 	if x == len(it.chunks) {
 		x--
-	}
-	// Go to previous chunk if the chunk doesn't exactly start with t.
-	// If we are already at the first chunk, we use it as it's the best we have.
-	if x > 0 && it.chunks[x].MinTime > t {
+
+		// Go to previous chunk if the chunk doesn't exactly start with t.
+		// If we are already at the first chunk, we use it as it's the best we have.
+	} else if x > 0 && it.chunks[x].MinTime > t {
 		x--
 	}
 
@@ -606,9 +636,13 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *chunkSeriesIterator) Next() bool {
-	if it.cur.Next() {
-		return true
+	for it.cur.Next() {
+		t, _ := it.cur.At()
+		if it.inBounds(t) {
+			return true
+		}
 	}
+
 	if err := it.cur.Err(); err != nil {
 		return false
 	}
