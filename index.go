@@ -334,25 +334,18 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 
 	sort.Sort(uint32slice(refs))
 
-	w.b = append(w.b[:0], flagStd, 0, 0, 0, 0)
-	buf := make([]byte, 4)
-
+	w.buf2.reset()
 	for _, r := range refs {
-		binary.BigEndian.PutUint32(buf, r)
-		w.b = append(w.b, buf...)
+		w.buf2.putBE32(r)
 	}
 
-	w.uint32s = refs[:0]
+	w.buf1.reset()
+	w.buf1.putUvarint(w.buf2.len())
 
-	binary.BigEndian.PutUint32(w.b[1:], uint32(len(w.b)-5))
+	w.buf2.putHash(w.crc32)
 
-	w.crc32.Reset()
-	if _, err := w.crc32.Write(w.b[5:]); err != nil {
-		return errors.Wrap(err, "calculate label index CRC32 checksum")
-	}
-	w.b = w.crc32.Sum(w.b)
-
-	return w.write(w.b)
+	err := w.write(w.buf1.get(), w.buf2.get())
+	return errors.Wrap(err, "write postings")
 }
 
 type uint32slice []uint32
@@ -580,6 +573,21 @@ func (r *indexReader) lookupSymbol(o uint32) (string, error) {
 	return yoloString(b), nil
 }
 
+func (r *indexReader) getSized(off uint32) ([]byte, error) {
+	if int(off) > len(r.b) {
+		return nil, errInvalidSize
+	}
+	b := r.b[off:]
+	l, n := binary.Uvarint(b)
+	if n < 1 {
+		return nil, errInvalidSize
+	}
+	if int(l) > len(b[n:]) {
+		return nil, errInvalidSize
+	}
+	return b[n : n+int(l)], nil
+}
+
 func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	key := strings.Join(names, string(sep))
 	off, ok := r.labels[key]
@@ -590,15 +598,10 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 		//return nil, fmt.Errorf("label index doesn't exist")
 	}
 
-	b := r.b[off:]
-	l, n := binary.Uvarint(b)
-	if n < 0 {
-		return nil, errors.New("reading symbol length failed")
+	b, err := r.getSized(off)
+	if err != nil {
+		return nil, errors.Wrapf(err, "get sized region at %d", off)
 	}
-	if int(l) > len(b[n:]) {
-		return nil, errInvalidSize
-	}
-	b = b[n : n+int(l)]
 
 	c, n := binary.Uvarint(b)
 	if n < 1 {
@@ -718,15 +721,10 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 		return emptyPostings, nil
 	}
 
-	flag, b, err := r.section(off)
+	b, err := r.getSized(off)
 	if err != nil {
-		return nil, errors.Wrapf(err, "section at %d", off)
+		return nil, errors.Wrapf(err, "get sized region at %d", off)
 	}
-
-	if flag != flagStd {
-		return nil, errors.Wrapf(errInvalidFlag, "section at %d", off)
-	}
-
 	// Add iterator over the bytes.
 	if len(b)%4 != 0 {
 		return nil, errors.Wrap(errInvalidSize, "plain postings entry")
