@@ -101,7 +101,25 @@ The CRC checksum is calculated over the series contents of the index concatenate
 
 ### Label Index
 
-The label index indexes holds lists of possible values for label names.
+The label index indexes holds lists of possible values for label names. A sequence of label index blocks follow on the series entries.
+
+```
+ ┌─────────────────────────────────────────────────────────┐
+ │ len <varint>                                            │
+ ├─────────────────────────────────────────────────────────┤
+ │ ┌──────────────────┬──────────────────────────────────┐ │
+ │ │                  │ ┌──────────────────────────┐     │ │
+ │ │                  │ │ ref(value[0]) <varint>   │     │ │
+ │ │                  │ ├──────────────────────────┤     │ │
+ │ │  n = len(names)  │ │ ...                      │ ... │ │
+ │ │     <varint>     │ ├──────────────────────────┤     │ │
+ │ │                  │ │ ref(value[n]) <varint>   │     │ │
+ │ │                  │ └──────────────────────────┘     │ │
+ │ └──────────────────┴──────────────────────────────────┘ │
+ ├─────────────────────────────────────────────────────────┤
+ │ CRC32 <4 byte>                                          │
+ └─────────────────────────────────────────────────────────┘
+```
 
 
 ### Postings

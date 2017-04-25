@@ -186,7 +186,6 @@ func (w *indexWriter) writeSymbols() error {
 	w.buf1.putBE32int(len(symbols))
 	w.buf1.putBE32int(w.buf2.len())
 
-	w.crc32.Reset()
 	w.buf2.putHash(w.crc32)
 
 	err := w.write(w.buf1.get(), w.buf2.get())
@@ -244,7 +243,6 @@ func (w *indexWriter) writeSeries() error {
 		w.buf1.reset()
 		w.buf1.putUvarint(w.buf2.len())
 
-		w.crc32.Reset()
 		w.buf2.putHash(w.crc32)
 
 		if err := w.write(w.buf1.get(), w.buf2.get()); err != nil {
@@ -267,11 +265,16 @@ func (w *indexWriter) init() error {
 	return nil
 }
 
+func (w *indexWriter) ensureStarted() error {
+	if w.started {
+		return nil
+	}
+	return w.init()
+}
+
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
-	if !w.started {
-		if err := w.init(); err != nil {
-			return err
-		}
+	if err := w.ensureStarted(); err != nil {
+		return errors.Wrap(err, "initialize")
 	}
 
 	valt, err := newStringTuples(values, len(names))
@@ -285,35 +288,25 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 		offset: uint32(w.pos),
 	})
 
-	buf := make([]byte, binary.MaxVarintLen32)
-	n := binary.PutUvarint(buf, uint64(len(names)))
-
-	l := n + len(values)*4
-
-	w.b = append(w.b[:0], flagStd, 0, 0, 0, 0)
-	binary.BigEndian.PutUint32(w.b[1:], uint32(l))
-
-	w.b = append(w.b, buf[:n]...)
+	w.buf2.reset()
+	w.buf2.putUvarint(len(names))
 
 	for _, v := range valt.s {
-		binary.BigEndian.PutUint32(buf, w.symbols[v])
-		w.b = append(w.b, buf[:4]...)
+		w.buf2.putBE32(w.symbols[v])
 	}
 
-	w.crc32.Reset()
-	if _, err := w.crc32.Write(w.b[5:]); err != nil {
-		return errors.Wrap(err, "calculate label index CRC32 checksum")
-	}
-	w.b = w.crc32.Sum(w.b)
+	w.buf1.reset()
+	w.buf1.putUvarint(w.buf2.len())
 
-	return w.write(w.b)
+	w.buf2.putHash(w.crc32)
+
+	err = w.write(w.buf1.get(), w.buf2.get())
+	return errors.Wrap(err, "write label index")
 }
 
 func (w *indexWriter) WritePostings(name, value string, it Postings) error {
-	if !w.started {
-		if err := w.init(); err != nil {
-			return err
-		}
+	if err := w.ensureStarted(); err != nil {
+		return errors.Wrap(err, "initialize")
 	}
 
 	key := name + string(sep) + value
@@ -597,20 +590,23 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 		//return nil, fmt.Errorf("label index doesn't exist")
 	}
 
-	flag, b, err := r.section(off)
-	if err != nil {
-		return nil, errors.Wrapf(err, "section at %d", off)
-	}
-	if flag != flagStd {
-		return nil, errInvalidFlag
-	}
+	b := r.b[off:]
 	l, n := binary.Uvarint(b)
+	if n < 0 {
+		return nil, errors.New("reading symbol length failed")
+	}
+	if int(l) > len(b[n:]) {
+		return nil, errInvalidSize
+	}
+	b = b[n : n+int(l)]
+
+	c, n := binary.Uvarint(b)
 	if n < 1 {
 		return nil, errors.Wrap(errInvalidSize, "read label index size")
 	}
 
 	st := &serializedStringTuples{
-		l:      int(l),
+		l:      int(c),
 		b:      b[n:],
 		lookup: r.lookupSymbol,
 	}
@@ -853,6 +849,7 @@ func (e *encbuf) putBytes(b []byte) {
 }
 
 func (e *encbuf) putHash(h hash.Hash) {
+	h.Reset()
 	_, err := h.Write(e.b)
 	if err != nil {
 		panic(err) // The CRC32 implementation does not error
