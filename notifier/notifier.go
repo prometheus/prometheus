@@ -316,13 +316,13 @@ func (n *Notifier) setMore() {
 	}
 }
 
-// Alertmanagers returns a list Alertmanager URLs.
-func (n *Notifier) Alertmanagers() []string {
+// Alertmanagers returns a slice of Alertmanager URLs.
+func (n *Notifier) Alertmanagers() []*url.URL {
 	n.mtx.RLock()
 	amSets := n.alertmanagers
 	n.mtx.RUnlock()
 
-	var res []string
+	var res []*url.URL
 
 	for _, ams := range amSets {
 		ams.mtx.RLock()
@@ -364,7 +364,7 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 			defer cancel()
 
 			go func(am alertmanager) {
-				u := am.url()
+				u := am.url().String()
 
 				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
 					log.With("alertmanager", u).With("count", len(alerts)).Errorf("Error sending alerts: %s", err)
@@ -412,20 +412,19 @@ func (n *Notifier) Stop() {
 
 // alertmanager holds Alertmanager endpoint information.
 type alertmanager interface {
-	url() string
+	url() *url.URL
 }
 
 type alertmanagerLabels model.LabelSet
 
 const pathLabel = "__alerts_path__"
 
-func (a alertmanagerLabels) url() string {
-	u := &url.URL{
+func (a alertmanagerLabels) url() *url.URL {
+	return &url.URL{
 		Scheme: string(a[model.SchemeLabel]),
 		Host:   string(a[model.AddressLabel]),
 		Path:   string(a[pathLabel]),
 	}
-	return u.String()
 }
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -476,7 +475,7 @@ func (s *alertmanagerSet) Sync(tgs []*config.TargetGroup) {
 	seen := map[string]struct{}{}
 
 	for _, am := range all {
-		us := am.url()
+		us := am.url().String()
 		if _, ok := seen[us]; ok {
 			continue
 		}
