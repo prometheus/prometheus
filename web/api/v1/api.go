@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"time"
@@ -74,7 +75,7 @@ type targetRetriever interface {
 }
 
 type alertmanagerRetriever interface {
-	Alertmanagers() []string
+	Alertmanagers() []*url.URL
 }
 
 type response struct {
@@ -430,8 +431,8 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 	urls := api.alertmanagerRetriever.Alertmanagers()
 	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls))}
 
-	for i := range urls {
-		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: urls[i]}
+	for i, url := range urls {
+		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
 	}
 
 	return ams, nil
