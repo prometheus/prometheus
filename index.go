@@ -78,6 +78,8 @@ type indexWriter struct {
 	started bool
 
 	// Reusable memory.
+	buf1    encbuf
+	buf2    encbuf
 	b       []byte
 	uint32s []uint32
 
@@ -108,6 +110,8 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 		pos:  0,
 
 		// Reusable memory.
+		buf1:    encbuf{b: make([]byte, 0, 1<<22)},
+		buf2:    encbuf{b: make([]byte, 0, 1<<22)},
 		b:       make([]byte, 0, 1<<23),
 		uint32s: make([]uint32, 0, 1<<15),
 
@@ -122,10 +126,15 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 	return iw, nil
 }
 
-func (w *indexWriter) write(b []byte) error {
-	n, err := w.fbuf.Write(b)
-	w.pos += n
-	return err
+func (w *indexWriter) write(bufs ...[]byte) error {
+	for _, b := range bufs {
+		n, err := w.fbuf.Write(b)
+		w.pos += n
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *indexWriter) writeMeta() error {
@@ -162,36 +171,26 @@ func (w *indexWriter) writeSymbols() error {
 	}
 	sort.Strings(symbols)
 
-	buf := make([]byte, 8)
+	const headerSize = 8
 
-	// 8 byte header of symbol count and serialization length.
-	binary.BigEndian.PutUint32(buf[:4], uint32(len(symbols)))
-
-	w.b = w.b[:0]
-	w.b = append(w.b, buf...)
+	w.buf1.reset()
+	w.buf2.reset()
 
 	for _, s := range symbols {
-		w.symbols[s] = uint32(w.pos + len(w.b))
+		w.symbols[s] = uint32(w.pos + headerSize + w.buf2.len())
 
-		n := binary.PutUvarint(buf, uint64(len(s)))
-		w.b = append(w.b, buf[:n]...)
-		w.b = append(w.b, s...)
+		w.buf2.putUvarint(len(s))
+		w.buf2.putString(s)
 	}
 
-	binary.BigEndian.PutUint32(buf[:4], uint32(len(w.b))-8)
-	copy(w.b[4:], buf[:4])
+	w.buf1.putBE32int(len(symbols))
+	w.buf1.putBE32int(w.buf2.len())
 
 	w.crc32.Reset()
-	// Write checksum over contents excluding the 8 byte header.
-	if _, err := w.crc32.Write(w.b[8:]); err != nil {
-		return errors.Wrap(err, "calculate symbols CRC32 checksum")
-	}
-	w.b = w.crc32.Sum(w.b)
+	w.buf2.putHash(w.crc32)
 
-	if err := w.write(w.b); err != nil {
-		return errors.Wrap(err, "write symbols")
-	}
-	return nil
+	err := w.write(w.buf1.get(), w.buf2.get())
+	return errors.Wrap(err, "write symbols")
 }
 
 type indexWriterSeriesSlice []*indexWriterSeries
@@ -825,4 +824,55 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 	}
 
 	return res, nil
+}
+
+type encbuf struct {
+	b []byte
+	c [8]byte
+}
+
+func (e *encbuf) reset() {
+	e.b = e.b[:0]
+}
+
+func (e *encbuf) putBE32(x uint32) {
+	binary.BigEndian.PutUint32(e.c[:], x)
+	e.b = append(e.b, e.c[:4]...)
+}
+
+func (e *encbuf) putBE32int(x int) {
+	e.putBE32(uint32(x))
+}
+
+func (e *encbuf) putUvarint32(x uint32) {
+	e.putUvarint64(uint64(x))
+}
+
+func (e *encbuf) putUvarint(x int) {
+	e.putUvarint64(uint64(x))
+}
+
+func (e *encbuf) putUvarint64(x uint64) {
+	n := binary.PutUvarint(e.c[:], x)
+	e.b = append(e.b, e.c[:n]...)
+}
+
+func (e *encbuf) putString(s string) {
+	e.b = append(e.b, s...)
+}
+
+func (e *encbuf) putHash(h hash.Hash) {
+	_, err := h.Write(e.b)
+	if err != nil {
+		panic(err) // The CRC32 implementation does not error
+	}
+	h.Sum(e.b)
+}
+
+func (e *encbuf) get() []byte {
+	return e.b
+}
+
+func (e *encbuf) len() int {
+	return len(e.b)
 }
