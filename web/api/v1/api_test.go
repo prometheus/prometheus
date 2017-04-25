@@ -39,9 +39,9 @@ func (f targetRetrieverFunc) Targets() []*retrieval.Target {
 	return f()
 }
 
-type alertmanagerRetrieverFunc func() []string
+type alertmanagerRetrieverFunc func() []*url.URL
 
-func (f alertmanagerRetrieverFunc) Alertmanagers() []string {
+func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
 	return f()
 }
 
@@ -77,8 +77,12 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
-	ar := alertmanagerRetrieverFunc(func() []string {
-		return []string{"http://alertmanager.example.com:8080/api/v1/alerts"}
+	ar := alertmanagerRetrieverFunc(func() []*url.URL {
+		return []*url.URL{{
+			Scheme: "http",
+			Host:   "alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		}}
 	})
 
 	api := &API{

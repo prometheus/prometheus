@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -415,8 +416,12 @@ type alertmanagerMock struct {
 	urlf func() string
 }
 
-func (a alertmanagerMock) url() string {
-	return a.urlf()
+func (a alertmanagerMock) url() *url.URL {
+	u, err := url.Parse(a.urlf())
+	if err != nil {
+		panic(err)
+	}
+	return u
 }
 
 func TestLabelSetNotReused(t *testing.T) {

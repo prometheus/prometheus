@@ -347,7 +347,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		Birth         time.Time
 		CWD           string
 		Version       *PrometheusVersion
-		Alertmanagers []string
+		Alertmanagers []*url.URL
 	}{
 		Birth:         h.birth,
 		CWD:           h.cwd,
