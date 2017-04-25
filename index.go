@@ -211,61 +211,43 @@ func (w *indexWriter) writeSeries() error {
 	}
 	sort.Sort(series)
 
-	buf := make([]byte, binary.MaxVarintLen64)
-
 	// Header holds number of series.
-	binary.BigEndian.PutUint32(buf, uint32(len(series)))
-	if err := w.write(buf[:4]); err != nil {
+	w.buf1.reset()
+	w.buf1.putBE32int(len(series))
+	if err := w.write(w.buf1.get()); err != nil {
 		return errors.Wrap(err, "write series count")
 	}
 
 	for _, s := range series {
-		w.b = w.b[:0]
-
-		n := binary.PutUvarint(buf, uint64(len(s.labels)))
-		w.b = append(w.b, buf[:n]...)
+		w.buf2.reset()
+		w.buf2.putUvarint(len(s.labels))
 
 		for _, l := range s.labels {
-			n = binary.PutUvarint(buf, uint64(w.symbols[l.Name]))
-			w.b = append(w.b, buf[:n]...)
-			n = binary.PutUvarint(buf, uint64(w.symbols[l.Value]))
-			w.b = append(w.b, buf[:n]...)
+			w.buf2.putUvarint32(w.symbols[l.Name])
+			w.buf2.putUvarint32(w.symbols[l.Value])
 		}
 
-		// Write chunks meta data including reference into chunk file.
-		n = binary.PutUvarint(buf, uint64(len(s.chunks)))
-		w.b = append(w.b, buf[:n]...)
+		w.buf2.putUvarint(len(s.chunks))
 
 		for _, c := range s.chunks {
-			n = binary.PutVarint(buf, c.MinTime)
-			w.b = append(w.b, buf[:n]...)
-			n = binary.PutVarint(buf, c.MaxTime)
-			w.b = append(w.b, buf[:n]...)
-
-			n = binary.PutUvarint(buf, uint64(c.Ref))
-			w.b = append(w.b, buf[:n]...)
+			w.buf2.putVarint64(c.MinTime)
+			w.buf2.putVarint64(c.MaxTime)
+			w.buf2.putUvarint64(c.Ref)
 
 			w.crc32.Reset()
-			if err := c.hash(w.crc32); err != nil {
-				return errors.Wrap(err, "calculate chunk CRC32")
-			}
-			w.b = w.crc32.Sum(w.b)
+			c.hash(w.crc32)
+			w.buf2.putBytes(w.crc32.Sum(nil))
 		}
 
 		s.offset = uint32(w.pos)
 
-		n = binary.PutUvarint(buf, uint64(len(w.b)))
-		if err := w.write(buf[:n]); err != nil {
-			return errors.Wrap(err, "write series data size")
-		}
+		w.buf1.reset()
+		w.buf1.putUvarint(w.buf2.len())
 
 		w.crc32.Reset()
-		if _, err := w.crc32.Write(w.b); err != nil {
-			return errors.Wrap(err, "calculate series CRC32")
-		}
-		w.b = w.crc32.Sum(w.b)
+		w.buf2.putHash(w.crc32)
 
-		if err := w.write(w.b); err != nil {
+		if err := w.write(w.buf1.get(), w.buf2.get()); err != nil {
 			return errors.Wrap(err, "write series data")
 		}
 	}
@@ -828,7 +810,7 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 
 type encbuf struct {
 	b []byte
-	c [8]byte
+	c [binary.MaxVarintLen64]byte
 }
 
 func (e *encbuf) reset() {
@@ -857,8 +839,17 @@ func (e *encbuf) putUvarint64(x uint64) {
 	e.b = append(e.b, e.c[:n]...)
 }
 
+func (e *encbuf) putVarint64(x int64) {
+	n := binary.PutVarint(e.c[:], x)
+	e.b = append(e.b, e.c[:n]...)
+}
+
 func (e *encbuf) putString(s string) {
 	e.b = append(e.b, s...)
+}
+
+func (e *encbuf) putBytes(b []byte) {
+	e.b = append(e.b, b...)
 }
 
 func (e *encbuf) putHash(h hash.Hash) {
