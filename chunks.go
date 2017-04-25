@@ -194,12 +194,12 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 	for _, chk := range chks {
 		chk.Ref = seq | uint64(w.n)
 
+		if err := w.write([]byte{byte(chk.Chunk.Encoding())}); err != nil {
+			return err
+		}
 		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
 
 		if err := w.write(b[:n]); err != nil {
-			return err
-		}
-		if err := w.write([]byte{byte(chk.Chunk.Encoding())}); err != nil {
 			return err
 		}
 		if err := w.write(chk.Chunk.Bytes()); err != nil {
@@ -283,16 +283,17 @@ func (s *chunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	if int(off) >= len(b) {
 		return nil, errors.Errorf("offset %d beyond data size %d", off, len(b))
 	}
-	b = b[off:]
+
+	enc := chunks.Encoding(b[off])
+	b = b[off+1:]
 
 	l, n := binary.Uvarint(b)
 	if n < 0 {
 		return nil, fmt.Errorf("reading chunk length failed")
 	}
 	b = b[n:]
-	enc := chunks.Encoding(b[0])
 
-	c, err := chunks.FromData(enc, b[1:1+l])
+	c, err := chunks.FromData(enc, b[0:l])
 	if err != nil {
 		return nil, err
 	}
