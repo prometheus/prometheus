@@ -111,7 +111,6 @@ type Options struct {
 	TargetManager *retrieval.TargetManager
 	RuleManager   *rules.Manager
 	Notifier      *notifier.Notifier
-	TraceHandler  http.Handler
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
@@ -203,15 +202,6 @@ func New(o *Options) *Handler {
 
 	if o.EnableQuit {
 		router.Post("/-/quit", h.quit)
-	}
-
-	if o.TraceHandler != nil {
-		router.Get("/traces", func(w http.ResponseWriter, r *http.Request) {
-			o.TraceHandler.ServeHTTP(w, r)
-		})
-		router.Get("/traces/:id", func(w http.ResponseWriter, r *http.Request) {
-			o.TraceHandler.ServeHTTP(w, r)
-		})
 	}
 
 	router.Post("/-/reload", h.reload)
