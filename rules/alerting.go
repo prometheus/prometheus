@@ -301,6 +301,8 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 
 	for _, a := range r.active {
 		anew := *a
+		anew.Labels = anew.Labels.Clone()
+		anew.Annotations = anew.Annotations.Clone()
 		alerts = append(alerts, &anew)
 	}
 	return alerts
