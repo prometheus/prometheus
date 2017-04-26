@@ -194,5 +194,7 @@ The table of contents serves as an entry point to the entire index. It's size is
 │ ref(postings) <8 byte>                      │
 ├─────────────────────────────────────────────┤
 │ ref(postings table) <8 byte>                │
+├─────────────────────────────────────────────┤
+│ CRC32 <4 byte>                              │
 └─────────────────────────────────────────────┘
 ```

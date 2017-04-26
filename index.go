@@ -636,36 +636,13 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 }
 
 func (r *indexReader) lookupSymbol(o uint32) (string, error) {
-	if int(o) > len(r.b) {
-		return "", errors.Errorf("invalid symbol offset %d", o)
-	}
-	l, n := binary.Uvarint(r.b[o:])
-	if n < 0 {
-		return "", errors.New("reading symbol length failed")
-	}
+	d := r.decbufAt(int(o))
 
-	end := int(o) + n + int(l)
-	if end > len(r.b) {
-		return "", errors.Errorf("invalid length %d", l)
+	s := d.uvarintStr()
+	if d.err() != nil {
+		return "", errors.Wrapf(d.err(), "read symbol at %d", o)
 	}
-	b := r.b[int(o)+n : end]
-
-	return yoloString(b), nil
-}
-
-func (r *indexReader) getSized(off uint32) ([]byte, error) {
-	if int(off) > len(r.b) {
-		return nil, errInvalidSize
-	}
-	b := r.b[off:]
-	l, n := binary.Uvarint(b)
-	if n < 1 {
-		return nil, errInvalidSize
-	}
-	if int(l) > len(b[n:]) {
-		return nil, errInvalidSize
-	}
-	return b[n : n+int(l)], nil
+	return s, nil
 }
 
 func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
@@ -770,24 +747,23 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 
 func (r *indexReader) Postings(name, value string) (Postings, error) {
 	const sep = "\xff"
-
-	key := name + string(sep) + value
+	key := strings.Join([]string{name, value}, sep)
 
 	off, ok := r.postings[key]
 	if !ok {
 		return emptyPostings, nil
 	}
 
-	b, err := r.getSized(off)
-	if err != nil {
-		return nil, errors.Wrapf(err, "get sized region at %d", off)
-	}
-	// Add iterator over the bytes.
-	if len(b)%4 != 0 {
-		return nil, errors.Wrap(errInvalidSize, "plain postings entry")
+	d1 := r.decbufAt(int(off))
+	d2 := d1.decbuf(d1.uvarint())
+
+	if d2.err() != nil {
+		return nil, errors.Wrap(d2.err(), "get postings bytes")
 	}
 
-	return newBigEndianPostings(b), nil
+	// TODO(fabxc): read checksum from 4 remainer bytes of d1 and verify.
+
+	return newBigEndianPostings(d2.get()), nil
 }
 
 type stringTuples struct {
