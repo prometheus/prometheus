@@ -373,7 +373,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 			return err
 		}
 		// Disable accept header to always negotiate for text format.
-		req.Header.Add("Accept", acceptHeader)
+		// req.Header.Add("Accept", acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
 		req.Header.Set("User-Agent", userAgentHeader)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
