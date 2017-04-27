@@ -28,6 +28,7 @@ func (l *lexer) Lex() int {
     const (
         lstateInit = iota
         lstateValue
+        lstateTimestamp
         lstateLabels
         lstateLName
         lstateLValue
@@ -39,6 +40,8 @@ func (l *lexer) Lex() int {
     }
     c := l.b[l.i]
 
+    l.ts = nil
+    l.mstart = l.nextMstart
     l.offsets = l.offsets[:0]
 %}
 
@@ -46,7 +49,7 @@ D     [0-9]
 L     [a-zA-Z_]
 M     [a-zA-Z_:]
 
-%x lstateValue lstateLabels lstateLName lstateLValue
+%x lstateValue lstateTimestamp lstateLabels lstateLName lstateLValue
 
 
 %yyc c
@@ -82,15 +85,27 @@ M     [a-zA-Z_:]
 
 <lstateValue>[ \t]+                   l.vstart = l.i
 <lstateValue>(NaN)                    l.val = math.NaN()
-                                      return 1
+                                      s = lstateTimestamp
 <lstateValue>[^\n \t\r]+              // We don't parse strictly correct floats as the conversion
                                       // repeats the effort anyway.
                                       l.val, l.err = strconv.ParseFloat(yoloString(l.b[l.vstart:l.i]), 64)
                                       if l.err != nil {
                                           return -1
                                       }
+                                      s = lstateTimestamp
+
+<lstateTimestamp>[ \t]+               l.tstart = l.i         
+<lstateTimestamp>{D}+                 ts, err := strconv.ParseInt(yoloString(l.b[l.tstart:l.i]), 10, 64)
+                                      if err != nil {
+                                          l.err = err
+                                          return -1
+                                      }
+                                      l.ts = &ts
+<lstateTimestamp>[\r\n]+              l.nextMstart = l.i
                                       return 1
+<lstateTimestamp>\0                   return 1              
    
 %%
+    l.err = fmt.Errorf("no token found")
     return -1
 }
