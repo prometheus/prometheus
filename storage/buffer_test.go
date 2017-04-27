@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/fabxc/tsdb/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
 )
 
