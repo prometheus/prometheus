@@ -152,38 +152,6 @@ func MustRegister(cs ...Collector) {
 	DefaultRegisterer.MustRegister(cs...)
 }
 
-// RegisterOrGet registers the provided Collector with the DefaultRegisterer and
-// returns the Collector, unless an equal Collector was registered before, in
-// which case that Collector is returned.
-//
-// Deprecated: RegisterOrGet is merely a convenience function for the
-// implementation as described in the documentation for
-// AlreadyRegisteredError. As the use case is relatively rare, this function
-// will be removed in a future version of this package to clean up the
-// namespace.
-func RegisterOrGet(c Collector) (Collector, error) {
-	if err := Register(c); err != nil {
-		if are, ok := err.(AlreadyRegisteredError); ok {
-			return are.ExistingCollector, nil
-		}
-		return nil, err
-	}
-	return c, nil
-}
-
-// MustRegisterOrGet behaves like RegisterOrGet but panics instead of returning
-// an error.
-//
-// Deprecated: This is deprecated for the same reason RegisterOrGet is. See
-// there for details.
-func MustRegisterOrGet(c Collector) Collector {
-	c, err := RegisterOrGet(c)
-	if err != nil {
-		panic(err)
-	}
-	return c
-}
-
 // Unregister removes the registration of the provided Collector from the
 // DefaultRegisterer.
 //
@@ -199,25 +167,6 @@ type GathererFunc func() ([]*dto.MetricFamily, error)
 // Gather implements Gatherer.
 func (gf GathererFunc) Gather() ([]*dto.MetricFamily, error) {
 	return gf()
-}
-
-// SetMetricFamilyInjectionHook replaces the DefaultGatherer with one that
-// gathers from the previous DefaultGatherers but then merges the MetricFamily
-// protobufs returned from the provided hook function with the MetricFamily
-// protobufs returned from the original DefaultGatherer.
-//
-// Deprecated: This function manipulates the DefaultGatherer variable. Consider
-// the implications, i.e. don't do this concurrently with any uses of the
-// DefaultGatherer. In the rare cases where you need to inject MetricFamily
-// protobufs directly, it is recommended to use a custom Registry and combine it
-// with a custom Gatherer using the Gatherers type (see
-// there). SetMetricFamilyInjectionHook only exists for compatibility reasons
-// with previous versions of this package.
-func SetMetricFamilyInjectionHook(hook func() []*dto.MetricFamily) {
-	DefaultGatherer = Gatherers{
-		DefaultGatherer,
-		GathererFunc(func() ([]*dto.MetricFamily, error) { return hook(), nil }),
-	}
 }
 
 // AlreadyRegisteredError is returned by the Register method if the Collector to
@@ -294,7 +243,7 @@ func (r *Registry) Register(c Collector) error {
 	}()
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	// Coduct various tests...
+	// Conduct various tests...
 	for desc := range descChan {
 
 		// Is the descriptor valid at all?
@@ -447,7 +396,7 @@ func (r *Registry) Gather() ([]*dto.MetricFamily, error) {
 
 	// Drain metricChan in case of premature return.
 	defer func() {
-		for _ = range metricChan {
+		for range metricChan {
 		}
 	}()
 
@@ -683,7 +632,7 @@ func (s metricSorter) Less(i, j int) bool {
 	return s[i].GetTimestampMs() < s[j].GetTimestampMs()
 }
 
-// normalizeMetricFamilies returns a MetricFamily slice whith empty
+// normalizeMetricFamilies returns a MetricFamily slice with empty
 // MetricFamilies pruned and the remaining MetricFamilies sorted by name within
 // the slice, with the contained Metrics sorted within each MetricFamily.
 func normalizeMetricFamilies(metricFamiliesByName map[string]*dto.MetricFamily) []*dto.MetricFamily {

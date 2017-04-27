@@ -41,9 +41,9 @@ func (f targetRetrieverFunc) Targets() []*retrieval.Target {
 	return f()
 }
 
-type alertmanagerRetrieverFunc func() []string
+type alertmanagerRetrieverFunc func() []*url.URL
 
-func (f alertmanagerRetrieverFunc) Alertmanagers() []string {
+func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
 	return f()
 }
 
@@ -79,8 +79,12 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
-	ar := alertmanagerRetrieverFunc(func() []string {
-		return []string{"http://alertmanager.example.com:8080/api/v1/alerts"}
+	ar := alertmanagerRetrieverFunc(func() []*url.URL {
+		return []*url.URL{{
+			Scheme: "http",
+			Host:   "alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		}}
 	})
 
 	api := &API{
@@ -430,15 +434,27 @@ func TestEndpoints(t *testing.T) {
 		// 	}{2},
 		// }, {
 		// 	endpoint: api.targets,
-		// 	response: []*Target{
-		// 		&Target{
-		// 			DiscoveredLabels: nil,
-		// 			Labels:           nil,
-		// 			ScrapeUrl:        "http://example.com:8080/metrics",
-		// 			Health:           "unknown",
+		// 	response: &TargetDiscovery{
+		// 		ActiveTargets: []*Target{
+		// 			{
+		// 				DiscoveredLabels: model.LabelSet{},
+		// 				Labels:           model.LabelSet{},
+		// 				ScrapeURL:        "http://example.com:8080/metrics",
+		// 				Health:           "unknown",
+		// 			},
 		// 		},
 		// 	},
 		// },
+		{
+			endpoint: api.alertmanagers,
+			response: &AlertmanagerDiscovery{
+				ActiveAlertmanagers: []*AlertmanagerTarget{
+					{
+						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {

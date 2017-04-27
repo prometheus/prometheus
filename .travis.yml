@@ -3,11 +3,9 @@ sudo: false
 language: go
 
 go:
-- 1.8
+- 1.8.x
 
 go_import_path: github.com/prometheus/prometheus
 
 script:
 - make check_license style test
-
-

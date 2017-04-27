@@ -81,6 +81,7 @@ The Makefile provides several targets:
 
   * *build*: build the `prometheus` and `promtool` binaries
   * *test*: run the tests
+  * *test-short*: run the short tests
   * *format*: format the source code
   * *vet*: check the source code for common errors
   * *assets*: rebuild the static assets

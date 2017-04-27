@@ -49,6 +49,7 @@ deployment:
     owner: prometheus
     commands:
       - promu crossbuild tarballs
+      - promu checksum .tarballs
       - promu release .tarballs
       - mkdir $CIRCLE_ARTIFACTS/releases/ && cp -a .tarballs/* $CIRCLE_ARTIFACTS/releases/
       - docker login -e $DOCKER_EMAIL -u $DOCKER_LOGIN -p $DOCKER_PASSWORD

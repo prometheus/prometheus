@@ -30,16 +30,8 @@ type Counter interface {
 	Metric
 	Collector
 
-	// Set is used to set the Counter to an arbitrary value. It is only used
-	// if you have to transfer a value from an external counter into this
-	// Prometheus metric. Do not use it for regular handling of a
-	// Prometheus counter (as it can be used to break the contract of
-	// monotonically increasing values).
-	//
-	// Deprecated: Use NewConstMetric to create a counter for an external
-	// value. A Counter should never be set.
-	Set(float64)
-	// Inc increments the counter by 1.
+	// Inc increments the counter by 1. Use Add to increment it by arbitrary
+	// non-negative values.
 	Inc()
 	// Add adds the given value to the counter. It panics if the value is <
 	// 0.
