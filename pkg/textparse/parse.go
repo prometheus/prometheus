@@ -30,11 +30,14 @@ type lexer struct {
 	b      []byte
 	i      int
 	vstart int
+	tstart int
 
 	err          error
 	val          float64
+	ts           *int64
 	offsets      []int
 	mstart, mend int
+	nextMstart   int
 }
 
 const eof = 0
@@ -70,7 +73,7 @@ func New(b []byte) *Parser {
 // more samples were read or an error occurred.
 func (p *Parser) Next() bool {
 	switch p.l.Lex() {
-	case 0, -1:
+	case -1, eof:
 		return false
 	case 1:
 		return true
@@ -81,7 +84,7 @@ func (p *Parser) Next() bool {
 // At returns the bytes of the metric, the timestamp if set, and the value
 // of the current sample.
 func (p *Parser) At() ([]byte, *int64, float64) {
-	return p.l.b[p.l.mstart:p.l.mend], nil, p.l.val
+	return p.l.b[p.l.mstart:p.l.mend], p.l.ts, p.l.val
 }
 
 // Err returns the current error.

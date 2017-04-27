@@ -36,11 +36,14 @@ go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds_count 99
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
-go_goroutines 33`
+go_goroutines 33  	123123`
+
+	int64p := func(x int64) *int64 { return &x }
 
 	exp := []struct {
 		lset labels.Labels
 		m    string
+		t    *int64
 		v    float64
 	}{
 		{
@@ -62,6 +65,7 @@ go_goroutines 33`
 		}, {
 			m:    `go_goroutines`,
 			v:    33,
+			t:    int64p(123123),
 			lset: labels.FromStrings("__name__", "go_goroutines"),
 		},
 	}
@@ -72,11 +76,12 @@ go_goroutines 33`
 	var res labels.Labels
 
 	for p.Next() {
-		m, _, v := p.At()
+		m, ts, v := p.At()
 
 		p.Metric(&res)
 
 		require.Equal(t, exp[i].m, string(m))
+		require.Equal(t, exp[i].t, ts)
 		require.Equal(t, exp[i].v, v)
 		require.Equal(t, exp[i].lset, res)
 
@@ -85,6 +90,7 @@ go_goroutines 33`
 	}
 
 	require.NoError(t, p.Err())
+	require.Equal(t, len(exp), i)
 
 }
 
