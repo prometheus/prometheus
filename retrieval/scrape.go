@@ -184,7 +184,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	for fp, oldLoop := range sp.loops {
 		var (
 			t       = sp.targets[fp]
-			s       = &targetScraper{Target: t, client: sp.client}
+			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			newLoop = sp.newLoop(sp.ctx, s,
 				func() storage.Appender {
 					return sp.sampleAppender(t)
@@ -253,7 +253,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		uniqueTargets[hash] = struct{}{}
 
 		if _, ok := sp.targets[hash]; !ok {
-			s := &targetScraper{Target: t, client: sp.client}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			l := sp.newLoop(sp.ctx, s,
 				func() storage.Appender {
 					return sp.sampleAppender(t)
@@ -354,8 +354,9 @@ type scraper interface {
 type targetScraper struct {
 	*Target
 
-	client *http.Client
-	req    *http.Request
+	client  *http.Client
+	req     *http.Request
+	timeout time.Duration
 
 	gzipr *gzip.Reader
 	buf   *bufio.Reader
@@ -372,13 +373,13 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 			return err
 		}
 		// Disable accept header to always negotiate for text format.
-		// req.Header.Add("Accept", acceptHeader)
+		req.Header.Add("Accept", acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
 		req.Header.Set("User-Agent", userAgentHeader)
+		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
 
 		s.req = req
 	}
-
 	resp, err := ctxhttp.Do(ctx, s.client, s.req)
 	if err != nil {
 		return err

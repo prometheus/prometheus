@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
+	"github.com/prometheus/prometheus/util/promlint"
 )
 
 // CheckConfigCmd validates configuration files.
@@ -182,6 +183,42 @@ func checkRules(t cli.Term, filename string) (int, error) {
 	return len(rules), nil
 }
 
+var checkMetricsUsage = strings.TrimSpace(`
+usage: promtool check-metrics
+
+Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+
+examples:
+
+$ cat metrics.prom | promtool check-metrics
+$ curl -s http://localhost:9090/metrics | promtool check-metrics
+`)
+
+// CheckMetricsCmd performs a linting pass on input metrics.
+func CheckMetricsCmd(t cli.Term, args ...string) int {
+	if len(args) != 0 {
+		t.Infof(checkMetricsUsage)
+		return 2
+	}
+
+	l := promlint.New(os.Stdin)
+	problems, err := l.Lint()
+	if err != nil {
+		t.Errorf("error while linting: %v", err)
+		return 1
+	}
+
+	for _, p := range problems {
+		t.Errorf("%s: %s", p.Metric, p.Text)
+	}
+
+	if len(problems) > 0 {
+		return 3
+	}
+
+	return 0
+}
+
 // VersionCmd prints the binaries version information.
 func VersionCmd(t cli.Term, _ ...string) int {
 	fmt.Fprintln(os.Stdout, version.Print("promtool"))
@@ -199,6 +236,11 @@ func main() {
 	app.Register("check-rules", &cli.Command{
 		Desc: "validate rule files for correctness",
 		Run:  CheckRulesCmd,
+	})
+
+	app.Register("check-metrics", &cli.Command{
+		Desc: "validate metrics for correctness",
+		Run:  CheckMetricsCmd,
 	})
 
 	app.Register("version", &cli.Command{

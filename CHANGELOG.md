@@ -1,3 +1,72 @@
+## 1.6.1 / 2017-04-19
+
+* [BUGFIX] Don't panic if storage has no FPs even after initial wait
+
+## 1.6.0 / 2017-04-14
+
+* [CHANGE] Replaced the remote write implementations for various backends by a
+  generic write interface with example adapter implementation for various
+  backends. Note that both the previous and the current remote write
+  implementations are **experimental**.
+* [FEATURE] New flag `-storage.local.target-heap-size` to tell Prometheus about
+  the desired heap size. This deprecates the flags
+  `-storage.local.memory-chunks` and `-storage.local.max-chunks-to-persist`,
+  which are kept for backward compatibility.
+* [FEATURE] Add `check-metrics` to `promtool` to lint metric names.
+* [FEATURE] Add Joyent Triton discovery.
+* [FEATURE] `X-Prometheus-Scrape-Timeout-Seconds` header in HTTP scrape
+  requests.
+* [FEATURE] Remote read interface, including example for InfluxDB. **Experimental.**
+* [FEATURE] Enable Consul SD to connect via TLS.
+* [FEATURE] Marathon SD supports multiple ports.
+* [FEATURE] Marathon SD supports bearer token for authentication.
+* [FEATURE] Custom timeout for queries.
+* [FEATURE] Expose `buildQueryUrl` in `graph.js`.
+* [FEATURE] Add `rickshawGraph` property to the graph object in console
+  templates.
+* [FEATURE] New metrics exported by Prometheus itself:
+  * Summary `prometheus_engine_query_duration_seconds`
+  * Counter `prometheus_evaluator_iterations_missed_total`
+  * Counter `prometheus_evaluator_iterations_total`
+  * Gauge `prometheus_local_storage_open_head_chunks`
+  * Gauge `prometheus_local_storage_target_heap_size`
+* [ENHANCEMENT] Reduce shut-down time by interrupting an ongoing checkpoint
+  before starting the final checkpoint.
+* [ENHANCEMENT] Auto-tweak times between checkpoints to limit time spent in
+  checkpointing to 50%.
+* [ENHANCEMENT] Improved crash recovery deals better with certain index
+  corruptions.
+* [ENHANCEMENT] Graphing deals better with constant time series.
+* [ENHANCEMENT] Retry remote writes on recoverable errors.
+* [ENHANCEMENT] Evict unused chunk descriptors during crash recovery to limit
+  memory usage.
+* [ENHANCEMENT] Smoother disk usage during series maintenance.
+* [ENHANCEMENT] Targets on targets page sorted by instance within a job.
+* [ENHANCEMENT] Sort labels in federation.
+* [ENHANCEMENT] Set `GOGC=40` by default, which results in much better memory
+  utilization at the price of slightly higher CPU usage. If `GOGC` is set by
+  the user, it is still honored as usual.
+* [ENHANCEMENT] Close head chunks after being idle for the duration of the
+  configured staleness delta. This helps to persist and evict head chunk of
+  stale series more quickly.
+* [ENHANCEMENT] Stricter checking of relabel config.
+* [ENHANCEMENT] Cache busters for static web content.
+* [ENHANCEMENT] Send Prometheus-specific user-agent header during scrapes.
+* [ENHANCEMENT] Improved performance of series retention cut-off.
+* [ENHANCEMENT] Mitigate impact of non-atomic sample ingestion on
+  `histogram_quantile` by enforcing buckets to be monotonic.
+* [ENHANCEMENT] Released binaries built with Go 1.8.1.
+* [BUGFIX] Send `instance=""` with federation if `instance` not set.
+* [BUGFIX] Update to new `client_golang` to get rid of unwanted quantile
+  metrics in summaries.
+* [BUGFIX] Introduce several additional guards against data corruption.
+* [BUGFIX] Mark storage dirty and increment
+  `prometheus_local_storage_persist_errors_total` on all relevant errors.
+* [BUGFIX] Propagate storage errors as 500 in the HTTP API.
+* [BUGFIX] Fix int64 overflow in timestamps in the HTTP API.
+* [BUGFIX] Fix deadlock in Zookeeper SD.
+* [BUGFIX] Fix fuzzy search problems in the web-UI auto-completion.
+
 ## 1.5.2 / 2017-02-10
 
 * [BUGFIX] Fix series corruption in a special case of series maintenance where
