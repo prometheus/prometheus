@@ -362,18 +362,6 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "uVzWuLvF646YjiKomsc2CR1ua58=",
-			"path": "github.com/fabxc/tsdb/chunks",
-			"revision": "ca1bc920b795cfc670002e7643471b0277e79a9b",
-			"revisionTime": "2017-03-08T15:54:13Z"
-		},
-		{
-			"checksumSHA1": "0Nl+7XBhC+XLpkgkWc6cEtW37aE=",
-			"path": "github.com/fabxc/tsdb/labels",
-			"revision": "ca1bc920b795cfc670002e7643471b0277e79a9b",
-			"revisionTime": "2017-03-08T15:54:13Z"
-		},
-		{
 			"checksumSHA1": "ww7LVo7jNJ1o6sfRcromEHKyY+o=",
 			"origin": "k8s.io/client-go/1.5/vendor/github.com/ghodss/yaml",
 			"path": "github.com/ghodss/yaml",
@@ -881,12 +869,6 @@
 			"path": "golang.org/x/text/width",
 			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
 			"revisionTime": "2016-09-30T00:14:02Z"
-		},
-		{
-			"checksumSHA1": "eFQDEix/mGnhwnFu/Hq63zMfrX8=",
-			"path": "golang.org/x/time/rate",
-			"revision": "f51c12702a4d776e4c1fa9b0fabab841babae631",
-			"revisionTime": "2016-10-28T04:02:39Z"
 		},
 		{
 			"checksumSHA1": "AjdmRXf0fiy6Bec9mNlsGsmZi1k=",
