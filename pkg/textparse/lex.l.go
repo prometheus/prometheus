@@ -28,6 +28,7 @@ func (l *lexer) Lex() int {
 	const (
 		lstateInit = iota
 		lstateValue
+		lstateTimestamp
 		lstateLabels
 		lstateLName
 		lstateLValue
@@ -39,6 +40,8 @@ func (l *lexer) Lex() int {
 	}
 	c := l.b[l.i]
 
+	l.ts = nil
+	l.mstart = l.nextMstart
 	l.offsets = l.offsets[:0]
 
 yystate0:
@@ -50,12 +53,14 @@ yystate0:
 		goto yystart1
 	case 1: // start condition: lstateValue
 		goto yystart8
-	case 2: // start condition: lstateLabels
+	case 2: // start condition: lstateTimestamp
 		goto yystart14
-	case 3: // start condition: lstateLName
-		goto yystart18
-	case 4: // start condition: lstateLValue
-		goto yystart21
+	case 3: // start condition: lstateLabels
+		goto yystart19
+	case 4: // start condition: lstateLName
+		goto yystart23
+	case 5: // start condition: lstateLValue
+		goto yystart26
 	}
 
 	goto yystate0 // silence unused label error
@@ -189,121 +194,169 @@ yystate14:
 yystart14:
 	switch {
 	default:
-		goto yyrule8
-	case c == ',':
-		goto yystate16
-	case c == '\t' || c == ' ':
-		goto yystate15
-	case c == '}':
+		goto yyabort
+	case c == '\n' || c == '\r':
 		goto yystate17
+	case c == '\t' || c == ' ':
+		goto yystate16
+	case c == '\x00':
+		goto yystate15
+	case c >= '0' && c <= '9':
+		goto yystate18
 	}
 
 yystate15:
+	c = l.next()
+	goto yyrule18
+
+yystate16:
+	c = l.next()
+	switch {
+	default:
+		goto yyrule15
+	case c == '\t' || c == ' ':
+		goto yystate16
+	}
+
+yystate17:
+	c = l.next()
+	switch {
+	default:
+		goto yyrule17
+	case c == '\n' || c == '\r':
+		goto yystate17
+	}
+
+yystate18:
+	c = l.next()
+	switch {
+	default:
+		goto yyrule16
+	case c >= '0' && c <= '9':
+		goto yystate18
+	}
+
+	goto yystate19 // silence unused label error
+yystate19:
+	c = l.next()
+yystart19:
+	switch {
+	default:
+		goto yyrule8
+	case c == ',':
+		goto yystate21
+	case c == '\t' || c == ' ':
+		goto yystate20
+	case c == '}':
+		goto yystate22
+	}
+
+yystate20:
 	c = l.next()
 	switch {
 	default:
 		goto yyrule6
 	case c == '\t' || c == ' ':
-		goto yystate15
+		goto yystate20
 	}
 
-yystate16:
+yystate21:
 	c = l.next()
 	goto yyrule8
 
-yystate17:
+yystate22:
 	c = l.next()
 	goto yyrule7
 
-	goto yystate18 // silence unused label error
-yystate18:
+	goto yystate23 // silence unused label error
+yystate23:
 	c = l.next()
-yystart18:
+yystart23:
 	switch {
 	default:
 		goto yyabort
 	case c == ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate19
-	}
-
-yystate19:
-	c = l.next()
-	switch {
-	default:
-		goto yyabort
-	case c == '=':
-		goto yystate20
-	case c >= '0' && c <= ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate19
-	}
-
-yystate20:
-	c = l.next()
-	goto yyrule9
-
-	goto yystate21 // silence unused label error
-yystate21:
-	c = l.next()
-yystart21:
-	switch {
-	default:
-		goto yyabort
-	case c == '"':
-		goto yystate22
-	case c == '\'':
-		goto yystate25
-	}
-
-yystate22:
-	c = l.next()
-	switch {
-	default:
-		goto yyabort
-	case c == '"':
-		goto yystate23
-	case c == '\\':
 		goto yystate24
-	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
-		goto yystate22
 	}
-
-yystate23:
-	c = l.next()
-	goto yyrule10
 
 yystate24:
 	c = l.next()
 	switch {
 	default:
 		goto yyabort
-	case c >= '\x01' && c <= '\t' || c >= '\v' && c <= 'ÿ':
-		goto yystate22
+	case c == '=':
+		goto yystate25
+	case c >= '0' && c <= ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate24
 	}
 
 yystate25:
 	c = l.next()
+	goto yyrule9
+
+	goto yystate26 // silence unused label error
+yystate26:
+	c = l.next()
+yystart26:
 	switch {
 	default:
 		goto yyabort
-	case c == '\'':
-		goto yystate26
-	case c == '\\':
+	case c == '"':
 		goto yystate27
-	case c >= '\x01' && c <= '&' || c >= '(' && c <= '[' || c >= ']' && c <= 'ÿ':
-		goto yystate25
+	case c == '\'':
+		goto yystate30
 	}
-
-yystate26:
-	c = l.next()
-	goto yyrule11
 
 yystate27:
 	c = l.next()
 	switch {
 	default:
 		goto yyabort
+	case c == '"':
+		goto yystate28
+	case c == '\\':
+		goto yystate29
+	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
+		goto yystate27
+	}
+
+yystate28:
+	c = l.next()
+	goto yyrule10
+
+yystate29:
+	c = l.next()
+	switch {
+	default:
+		goto yyabort
 	case c >= '\x01' && c <= '\t' || c >= '\v' && c <= 'ÿ':
-		goto yystate25
+		goto yystate27
+	}
+
+yystate30:
+	c = l.next()
+	switch {
+	default:
+		goto yyabort
+	case c == '\'':
+		goto yystate31
+	case c == '\\':
+		goto yystate32
+	case c >= '\x01' && c <= '&' || c >= '(' && c <= '[' || c >= ']' && c <= 'ÿ':
+		goto yystate30
+	}
+
+yystate31:
+	c = l.next()
+	goto yyrule11
+
+yystate32:
+	c = l.next()
+	switch {
+	default:
+		goto yyabort
+	case c >= '\x01' && c <= '\t' || c >= '\v' && c <= 'ÿ':
+		goto yystate30
 	}
 
 yyrule1: // \0
@@ -374,7 +427,8 @@ yyrule12: // [ \t]+
 yyrule13: // (NaN)
 	{
 		l.val = math.NaN()
-		return 1
+		s = lstateTimestamp
+		goto yystate0
 	}
 yyrule14: // [^\n \t\r]+
 	{
@@ -384,6 +438,31 @@ yyrule14: // [^\n \t\r]+
 		if l.err != nil {
 			return -1
 		}
+		s = lstateTimestamp
+		goto yystate0
+	}
+yyrule15: // [ \t]+
+	{
+		l.tstart = l.i
+		goto yystate0
+	}
+yyrule16: // {D}+
+	{
+		ts, err := strconv.ParseInt(yoloString(l.b[l.tstart:l.i]), 10, 64)
+		if err != nil {
+			l.err = err
+			return -1
+		}
+		l.ts = &ts
+		goto yystate0
+	}
+yyrule17: // [\r\n]+
+	{
+		l.nextMstart = l.i
+		return 1
+	}
+yyrule18: // \0
+	{
 		return 1
 
 	}
@@ -392,5 +471,6 @@ yyrule14: // [^\n \t\r]+
 	goto yyabort // silence unused label error
 
 yyabort: // no lexem recognized
+	l.err = fmt.Errorf("no token found")
 	return -1
 }
