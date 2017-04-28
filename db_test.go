@@ -98,3 +98,34 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, seriesSet, map[string][]sample{})
 }
+
+func TestDBAppenderAddRef(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	app := db.Appender()
+	defer app.Rollback()
+
+	ref, err := app.Add(labels.FromStrings("a", "b"), 0, 0)
+	require.NoError(t, err)
+
+	// Head sequence number should be in 3rd MSB and be greater than 0.
+	gen := (ref << 16) >> 56
+	require.True(t, gen > 1)
+
+	// Reference must be valid to add another sample.
+	err = app.AddFast(ref, 1, 1)
+	require.NoError(t, err)
+
+	// AddFast for the same timestamp must fail if the generation in the reference
+	// doesn't add up.
+	refBad := ref | ((gen + 1) << 4)
+	err = app.AddFast(refBad, 1, 1)
+	require.Error(t, err)
+
+	require.Equal(t, 2, app.(*dbAppender).samples)
+}
