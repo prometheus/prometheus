@@ -521,7 +521,7 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error)
 	}
 	a.samples++
 	// Store last byte of sequence number in 3rd byte of reference.
-	return ref | (uint64(h.meta.Sequence^0xff) << 40), nil
+	return ref | (uint64(h.meta.Sequence&0xff) << 40), nil
 }
 
 func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
@@ -534,7 +534,7 @@ func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
 		return err
 	}
 	// If the last byte of the sequence does not add up, the reference is not valid.
-	if uint64(h.meta.Sequence^0xff) != gen {
+	if uint64(h.meta.Sequence&0xff) != gen {
 		return ErrNotFound
 	}
 	if err := h.app.AddFast(ref, t, v); err != nil {
