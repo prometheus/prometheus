@@ -584,7 +584,10 @@ loop:
 			sl.refCache[mets] = ref
 			str := lset.String()
 			sl.lsetCache[ref] = lsetCacheEntry{lset: lset, str: str}
-			samplesScraped[str] = lset
+			if tp == nil {
+				// Bypass staleness logic if there is an explicit timestamp.
+				samplesScraped[str] = lset
+			}
 		}
 		added++
 	}

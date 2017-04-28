@@ -520,6 +520,38 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 
 }
 
+func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
+	app := &collectResultAppender{}
+	sl := &scrapeLoop{
+		appender:       func() storage.Appender { return app },
+		reportAppender: func() storage.Appender { return nopAppender{} },
+		refCache:       map[string]uint64{},
+		lsetCache:      map[uint64]lsetCacheEntry{},
+	}
+
+	now := time.Now()
+	_, _, err := sl.append([]byte("metric_a 1 1000\n"), now)
+	if err != nil {
+		t.Fatalf("Unexpected append error: %s", err)
+	}
+	_, _, err = sl.append([]byte(""), now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Unexpected append error: %s", err)
+	}
+
+	want := []sample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      1000,
+			v:      1,
+		},
+	}
+	if !reflect.DeepEqual(want, app.result) {
+		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
+	}
+
+}
+
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond
