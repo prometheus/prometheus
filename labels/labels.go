@@ -84,7 +84,7 @@ func (ls Labels) Equals(o Labels) bool {
 		return false
 	}
 	for i, l := range ls {
-		if l.Name != o[i].Name || l.Value != o[i].Value {
+		if o[i] != l {
 			return false
 		}
 	}

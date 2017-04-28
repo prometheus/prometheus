@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCompare(t *testing.T) {
+func TestCompareAndEquals(t *testing.T) {
 	cases := []struct {
 		a, b []Label
 		res  int
@@ -88,6 +88,7 @@ func TestCompare(t *testing.T) {
 		a, b := New(c.a...), New(c.b...)
 
 		require.Equal(t, c.res, Compare(a, b))
+		require.Equal(t, c.res == 0, a.Equals(b))
 	}
 }
 
