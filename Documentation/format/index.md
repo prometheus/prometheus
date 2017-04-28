@@ -5,7 +5,7 @@ It is terminated by a table of contents which serves as an entry point into the 
 
 ```
 ┌────────────────────────────┬─────────────────────┐
-│ magic(0xBAAAD700) <4b> │ version(1) <1 byte> │
+│ magic(0xBAAAD700) <4b>     │ version(1) <1 byte> │
 ├────────────────────────────┴─────────────────────┤
 │ ┌──────────────────────────────────────────────┐ │
 │ │                 Symbol Table                 │ │
@@ -33,6 +33,10 @@ It is terminated by a table of contents which serves as an entry point into the 
 └──────────────────────────────────────────────────┘
 ```
 
+When the index is written, an arbitrary number of padding bytes may be added between the lined out main sections above. When sequentially scanning through the file, any zero bytes after a section's specified length must be skipped.
+
+Most of the sections described below start with a `len` field. It always specifies the number of bytes after them up until the trailing CRC32 checksum. The checksum is always calculated over those `len` bytes.
+
 
 ### Symbol Table
 
@@ -40,8 +44,6 @@ The symbol table holds a sorted list of deduplicated strings that occurred in la
 
 The section contains a sequence of the string entries, each prefixed with the string's length in raw bytes.
 Strings are referenced by pointing to the beginning of their length field. The strings are sorted in lexicographically ascending order.
-
-The full list of strings is validated with a CRC32 checksum.
 
 ```
 ┌────────────────────┬─────────────────────┐
@@ -81,11 +83,10 @@ The file offset to the beginning of a series serves as the series' ID in all sub
 
 Every series entry first holds its number of labels, followed by tuples of symbol table references that resemble label name and value. The label pairs are lexicographically sorted.  
 After the labels, the number of indexed chunks is encoded, followed by a sequence of metadata entries containing the chunks minimum and maximum timestamp and a reference to its position in the chunk file. Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.  
-The series entry is prefixed with its length and terminated by a CRC32 checksum over its contents.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ len <varint>                                            │
+│ len <uvarint>                                           │
 ├─────────────────────────────────────────────────────────┤
 │ ┌──────────────────┬──────────────────────────────────┐ │
 │ │                  │ ┌──────────────────────────┐     │ │

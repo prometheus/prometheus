@@ -176,7 +176,7 @@ func (w *indexWriter) write(bufs ...[]byte) error {
 			return err
 		}
 		// For now the index file must not grow beyond 4GiB. Some of the fixed-sized
-		// offset references in v1 are only 4 byte large.
+		// offset references in v1 are only 4 bytes large.
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
 		if w.pos > math.MaxUint32 {
@@ -184,6 +184,15 @@ func (w *indexWriter) write(bufs ...[]byte) error {
 		}
 	}
 	return nil
+}
+
+// addPadding adds zero byte padding until the file size is a multiple of n.
+func (w *indexWriter) addPadding(n int) error {
+	p := n - (int(w.pos) % n)
+	if p == 0 {
+		return nil
+	}
+	return errors.Wrap(w.write(make([]byte, p)), "add padding")
 }
 
 // ensureStage handles transitions between write stages and ensures that IndexWriter
@@ -353,6 +362,11 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	}
 	sort.Sort(valt)
 
+	// Align beginning to 4 bytes for more efficient index list scans.
+	if err := w.addPadding(4); err != nil {
+		return err
+	}
+
 	w.labelIndexes = append(w.labelIndexes, hashEntry{
 		keys:   names,
 		offset: w.pos,
@@ -416,6 +430,11 @@ func (w *indexWriter) writeTOC() error {
 func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	if err := w.ensureStage(idxStagePostings); err != nil {
 		return errors.Wrap(err, "ensure stage")
+	}
+
+	// Align beginning to 4 bytes for more efficient postings list scans.
+	if err := w.addPadding(4); err != nil {
+		return err
 	}
 
 	w.postings = append(w.postings, hashEntry{
@@ -816,7 +835,6 @@ type serializedStringTuples struct {
 }
 
 func (t *serializedStringTuples) Len() int {
-	// TODO(fabxc): Cache this?
 	return len(t.b) / (4 * t.l)
 }
 
