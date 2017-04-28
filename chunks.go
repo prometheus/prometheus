@@ -125,7 +125,9 @@ func (w *chunkWriter) finalizeTail() error {
 
 func (w *chunkWriter) cut() error {
 	// Sync current tail to disk and close.
-	w.finalizeTail()
+	if err := w.finalizeTail(); err != nil {
+		return err
+	}
 
 	p, _, err := nextSequenceFile(w.dirFile.Name(), "")
 	if err != nil {
