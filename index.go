@@ -39,10 +39,10 @@ const (
 
 const compactionPageBytes = minSectorSize * 64
 
-// IndexWriter serialized the index for a block of series data.
-// The methods must generally be called in order they are specified.
+// IndexWriter serializes the index for a block of series data.
+// The methods must generally be called in the order they are specified in.
 type IndexWriter interface {
-	// AddSeries populates the index writer witha series and its offsets
+	// AddSeries populates the index writer with a series and its offsets
 	// of chunks that the index can reference.
 	// The reference number is used to resolve a series against the postings
 	// list iterator. It only has to be available during the write processing.

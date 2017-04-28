@@ -36,7 +36,7 @@ type DiskBlock interface {
 	// Index returns an IndexReader over the block's data.
 	Index() IndexReader
 
-	// Series returns a SeriesReader over the block's data.
+	// Chunks returns a ChunkReader over the block's data.
 	Chunks() ChunkReader
 
 	// Close releases all underlying resources of the block.
