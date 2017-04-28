@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	// MagicChunks is 4 bytes at the head of series file.
+	// MagicChunks is 4 bytes at the head of a series file.
 	MagicChunks = 0x85BD40DD
 )
 
@@ -45,10 +45,10 @@ type ChunkMeta struct {
 
 // ChunkWriter serializes a time block of chunked series data.
 type ChunkWriter interface {
-	// WriteChunks writes several chunks. The data field of the ChunkMetas
+	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
 	// must be populated.
 	// After returning successfully, the Ref fields in the ChunkMetas
-	// is set and can be used to retrieve the chunks from the written data.
+	// are set and can be used to retrieve the chunks from the written data.
 	WriteChunks(chunks ...*ChunkMeta) error
 
 	// Close writes any required finalization and closes the resources
@@ -174,9 +174,9 @@ func (w *chunkWriter) write(wr io.Writer, b []byte) error {
 func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
-	maxLen := int64(binary.MaxVarintLen32)
+	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
 	for _, c := range chks {
-		maxLen += binary.MaxVarintLen32 + 1
+		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
 		maxLen += int64(len(c.Chunk.Bytes()))
 	}
 	newsz := w.n + maxLen

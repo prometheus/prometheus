@@ -15,7 +15,7 @@ package chunks
 
 import "io"
 
-// bstream is a stream of bits
+// bstream is a stream of bits.
 type bstream struct {
 	stream []byte // the data stream
 	count  uint8  // how many bits are valid in current byte

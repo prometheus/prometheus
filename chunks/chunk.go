@@ -18,7 +18,7 @@ import (
 	"fmt"
 )
 
-// Encoding is the identifier for a chunk encoding
+// Encoding is the identifier for a chunk encoding.
 type Encoding uint8
 
 func (e Encoding) String() string {
