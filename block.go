@@ -138,8 +138,10 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "\t")
 
-	if err := enc.Encode(&blockMeta{Version: 1, BlockMeta: meta}); err != nil {
-		return err
+	var merr MultiError
+	if merr.Add(enc.Encode(&blockMeta{Version: 1, BlockMeta: meta})); merr.Err() != nil {
+		merr.Add(f.Close())
+		return merr
 	}
 	if err := f.Close(); err != nil {
 		return err
