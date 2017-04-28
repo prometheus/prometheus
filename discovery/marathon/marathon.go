@@ -85,10 +85,11 @@ type Discovery struct {
 	lastRefresh     map[string]*config.TargetGroup
 	appsClient      AppListClient
 	token           string
+	logger          log.Logger
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
+func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery, error) {
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -116,6 +117,7 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
 		token:           token,
+		logger:          logger,
 	}, nil
 }
 
@@ -128,7 +130,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-time.After(d.refreshInterval):
 			err := d.updateServices(ctx, ch)
 			if err != nil {
-				log.Errorf("Error while updating services: %s", err)
+				d.logger.Errorf("Error while updating services: %s", err)
 			}
 		}
 	}
@@ -167,7 +169,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Targ
 			case <-ctx.Done():
 				return ctx.Err()
 			case ch <- []*config.TargetGroup{{Source: source}}:
-				log.Debugf("Removing group for %s", source)
+				d.logger.Debugf("Removing group for %s", source)
 			}
 		}
 	}

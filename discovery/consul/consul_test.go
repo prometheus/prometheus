@@ -16,13 +16,14 @@ package consul
 import (
 	"testing"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/config"
 )
 
 func TestConfiguredService(t *testing.T) {
 	conf := &config.ConsulSDConfig{
 		Services: []string{"configuredServiceName"}}
-	consulDiscovery, err := NewDiscovery(conf)
+	consulDiscovery, err := NewDiscovery(conf, log.Base())
 
 	if err != nil {
 		t.Errorf("Unexpected error when initialising discovery %v", err)
@@ -37,7 +38,7 @@ func TestConfiguredService(t *testing.T) {
 
 func TestNonConfiguredService(t *testing.T) {
 	conf := &config.ConsulSDConfig{}
-	consulDiscovery, err := NewDiscovery(conf)
+	consulDiscovery, err := NewDiscovery(conf, log.Base())
 
 	if err != nil {
 		t.Errorf("Unexpected error when initialising discovery %v", err)
