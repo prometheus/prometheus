@@ -11,6 +11,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The code in this file was largely written by Damian Gryski and published
+// under the license below. It was modified to accomodate reading from byte
+// slice without modifying the underlying bytes, which would panick when reading
+// from mmaped read-only byte slices.
+
+// Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
+// All rights reserved.
+
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+
+// * Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// * Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 package chunks
 
 import (
@@ -21,10 +50,6 @@ import (
 )
 
 // XORChunk holds XOR encoded sample data.
-//
-// The implementation is largely by Damian Gryski (https://github.com/dgryski/go-tsz) and
-// was adjusted to accomodate non-destructive/non-writing reads from byte slices and to
-// fit timestamp ranges more common in Prometheus.
 type XORChunk struct {
 	b   *bstream
 	num uint16
