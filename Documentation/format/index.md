@@ -1,10 +1,11 @@
 # Index Disk Format
 
 The following describes the format of the `index` file found in each block directory.
+It is terminated by a table of contents which serves as an entry point into the index.
 
 ```
 ┌────────────────────────────┬─────────────────────┐
-│ magic(0xBAAAD700) <4 byte> │ version(1) <1 byte> │
+│ magic(0xBAAAD700) <4b> │ version(1) <1 byte> │
 ├────────────────────────────┴─────────────────────┤
 │ ┌──────────────────────────────────────────────┐ │
 │ │                 Symbol Table                 │ │
@@ -35,36 +36,38 @@ The following describes the format of the `index` file found in each block direc
 
 ### Symbol Table
 
-The symbol table holds all strings encountered in our index. All other index sections just reference strings in the table as they are highly repetitive.
+The symbol table holds a sorted list of deduplicated strings that occurred in label pairs of the stored series. They can be referenced from subsequent sections and significantly reduce the total index size.
 
-The section contains a sequence of the raw string data, each prefixed with the string's length.
+The section contains a sequence of the string entries, each prefixed with the string's length in raw bytes.
 Strings are referenced by pointing to the beginning of their length field. The strings are sorted in lexicographically ascending order.
 
+The full list of strings is validated with a CRC32 checksum.
+
 ```
-┌─────────────────────────┬───────────────┐
-│ count(symbols) <4 byte> │ len <4 byte>  │
-├─────────────────────────┴───────────────┤
-│ ┌─────────────────────┬───────────────┐ │
-│ │ len(str_1) <varint> │ str_1 <bytes> │ │
-│ ├─────────────────────┴───────────────┤ │
-│ │                . . .                │ │
-│ ├─────────────────────┬───────────────┤ │
-│ │ len(str_n) <varint> │ str_1 <bytes> │ │
-│ └─────────────────────┴───────────────┘ │
-├─────────────────────────────────────────┤
-│  CRC32 <4 byte>                         │
-└─────────────────────────────────────────┘
+┌────────────────────┬─────────────────────┐
+│ len <4b>           │ #symbols <4b>       │
+├────────────────────┴─────────────────────┤
+│ ┌──────────────────────┬───────────────┐ │
+│ │ len(str_1) <uvarint> │ str_1 <bytes> │ │
+│ ├──────────────────────┴───────────────┤ │
+│ │                . . .                 │ │
+│ ├──────────────────────┬───────────────┤ │
+│ │ len(str_n) <uvarint> │ str_1 <bytes> │ │
+│ └──────────────────────┴───────────────┘ │
+├──────────────────────────────────────────┤
+│ CRC32 <4b>                               │
+└──────────────────────────────────────────┘
 ```
 
 
 ### Series
 
-The section contains a sequence of series that hold the label set of the series as well as the chunks within the block. The series are sorted lexicographically by their label sets.  
+The section contains a sequence of series that hold the label set of the series as well as its chunks within the block. The series are sorted lexicographically by their label sets.  
 The file offset to the beginning of a series serves as the series' ID in all subsequent references. Thereby, a sorted list of series IDs implies a lexicographically sorted list of series label sets.
 
 ```
 ┌───────────────────────────────────────┐
-│  count(series) <4 byte>               │
+│  #series <4b>                         │
 ├───────────────────────────────────────┤
 │ ┌───────────────────────────────────┐ │
 │ │   series_1                        │ │
@@ -76,7 +79,9 @@ The file offset to the beginning of a series serves as the series' ID in all sub
 └───────────────────────────────────────┘
 ```
 
-Every series holds a list of label pairs and chunks. The label pairs reference the symbol table and the chunks an address in one of the block's chunk files.
+Every series entry first holds its number of labels, followed by tuples of symbol table references that resemble label name and value. The label pairs are lexicographically sorted.  
+After the labels, the number of indexed chunks is encoded, followed by a sequence of metadata entries containing the chunks minimum and maximum timestamp and a reference to its position in the chunk file. Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.  
+The series entry is prefixed with its length and terminated by a CRC32 checksum over its contents.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -84,117 +89,116 @@ Every series holds a list of label pairs and chunks. The label pairs reference t
 ├─────────────────────────────────────────────────────────┤
 │ ┌──────────────────┬──────────────────────────────────┐ │
 │ │                  │ ┌──────────────────────────┐     │ │
-│ │                  │ │ ref(l_i.name) <varint>   │     │ │
-│ │ #labels <varint> │ ├──────────────────────────┤ ... │ │
-│ │                  │ │ ref(l_i.value) <varint>  │     │ │
+│ │                  │ │ ref(l_i.name) <uvarint>  │     │ │
+│ │     #labels      │ ├──────────────────────────┤ ... │ │
+│ │    <uvarint>     │ │ ref(l_i.value) <uvarint> │     │ │
 │ │                  │ └──────────────────────────┘     │ │
 │ ├──────────────────┼──────────────────────────────────┤ │
 │ │                  │ ┌──────────────────────────┐     │ │
 │ │                  │ │ c_i.mint <varint>        │     │ │
 │ │                  │ ├──────────────────────────┤     │ │
-│ │                  │ │ c_i.maxt <varint>        │     │ │
-│ │ #chunks <varint> │ ├──────────────────────────┤ ... │ │
-│ │                  │ │ ref(c_i.data) <varint>   │     │ │
-│ │                  │ ├──────────────────────────┤     │ │
-│ │                  │ │ crc32(c_i.data) <varint> │     │ │
+│ │      #chunks     │ │ c_i.maxt <varint>        │     │ │
+│ │     <uvarint>    │ ├──────────────────────────┤ ... │ │
+│ │                  │ │ ref(c_i.data) <uvarint>  │     │ │
 │ │                  │ └──────────────────────────┘     │ │
 │ └──────────────────┴──────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
-│ CRC32 <4 byte>                                          │
+│ CRC32 <4b>                                              │
 └─────────────────────────────────────────────────────────┘
 ```
 
-The CRC checksum is calculated over the series contents of the index concatenated with the data of its chunks (with encoding byte, without length).
 
 
 ### Label Index
 
-The label index indexes holds lists of possible values for label names. A sequence of label index blocks follow on the series entries.
+The label index indexes holds lists of possible values for label names. Each label index can be a composite index over more than a single label name, which is tracked by `#names`, followed by the total number of entries.  
+The body holds `#entries` entries of possible values pointing back into the symbol table.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ len <varint>                                            │
-├─────────────────────────────────────────────────────────┤
-│ ┌──────────────────┬──────────────────────────────────┐ │
-│ │                  │ ┌──────────────────────────┐     │ │
-│ │                  │ │ ref(value[0]) <4 byte>   │     │ │
-│ │                  │ ├──────────────────────────┤     │ │
-│ │  n = len(names)  │ │ ...                      │ ... │ │
-│ │     <varint>     │ ├──────────────────────────┤     │ │
-│ │                  │ │ ref(value[n]) <4 byte>   │     │ │
-│ │                  │ └──────────────────────────┘     │ │
-│ └──────────────────┴──────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│ CRC32 <4 byte>                                          │
-└─────────────────────────────────────────────────────────┘
-```
-
-The sequence of label index blocks is finalized by a lookup table pointing to the beginning of each label index block. It is simply a list of entries that are read into an in-memory hashmap when the index is loaded.
-
-### Postings
-
-Postings are postings lists that map label pairs to series they occur in.
-
-```
-┌─────────────────────────────────────────────────┐
-│ len <varint>                                    │
-├─────────────────────────────────────────────────┤
+┌───────────────┬────────────────┬────────────────┐
+│ len <4b>      │ #names <4b>    │ #entries <4b>  │
+├───────────────┴────────────────┴────────────────┤
 │ ┌─────────────────────────────────────────────┐ │
-│ │ ref(series[0]) <4 byte>                     │ │
+│ │ ref(value_0) <4b>                           │ │
 │ ├─────────────────────────────────────────────┤ │
 │ │ ...                                         │ │
 │ ├─────────────────────────────────────────────┤ │
-│ │ ref(series[n]) <4 byte>                     │ │
+│ │ ref(value_n) <4b>                           │ │
 │ └─────────────────────────────────────────────┘ │
+│                      . . .                      │
 ├─────────────────────────────────────────────────┤
-│ CRC32 <4 byte>                                  │
+│ CRC32 <4b>                                      │
 └─────────────────────────────────────────────────┘
 ```
 
-### Offset Table
+The sequence of label index sections is finalized by an offset table pointing to the beginning of each label index section for a given set of label names.
 
+### Postings
+
+Postings sections store monotinically increasing lists of series references that contain a given label pair associated with the list.  
 
 ```
-┌─────────────────────────┬───────────────┐
-│ count(symbols) <4 byte> │ len <4 byte>  │
-├─────────────────────────┴───────────────┤
+┌────────────────────┬────────────────────┐
+│ len <4b>           │ #entries <4b>      │
+├────────────────────┴────────────────────┤
 │ ┌─────────────────────────────────────┐ │
-│ │  n = len(strs) <varint>             │ │
+│ │ ref(series_1) <4b>                  │ │
 │ ├─────────────────────────────────────┤ │
-│ │  len(strs[0])                       │ │
+│ │ ...                                 │ │
 │ ├─────────────────────────────────────┤ │
-│ │  ...                                │ │
-│ ├─────────────────────────────────────┤ │
-│ │  strs[n]                            │ │
-│ ├─────────────────────────────────────┤ │
-│ │  offset <varint>                    │ │
+│ │ ref(series_n) <4b>                  │ │
 │ └─────────────────────────────────────┘ │
-│                  . . .                  │
 ├─────────────────────────────────────────┤
-│  CRC32 <4 byte>                         │
+│ CRC32 <4b>                              │
 └─────────────────────────────────────────┘
 ```
 
+The sequence of postings sections is finalized by an offset table pointing to the beginning of each postings section for a given set of label names.
+
+### Offset Table
+
+An offset table stores a sequence of entries that maps a list of strings to an offset. They are used to track label index and postings sections. They are read into memory when an index file is loaded.
+
+```
+┌─────────────────────┬────────────────────┐
+│ len <4b>            │ #entries <4b>      │
+├─────────────────────┴────────────────────┤
+│ ┌──────────────────────────────────────┐ │
+│ │  n = #strs <uvarint>                 │ │
+│ ├──────────────────────┬───────────────┤ │
+│ │ len(str_1) <uvarint> │ str_1 <bytes> │ │
+│ ├──────────────────────┴───────────────┤ │
+│ │  ...                                 │ │
+│ ├──────────────────────┬───────────────┤ │
+│ │ len(str_n) <uvarint> │ str_n <bytes> │ │
+│ ├──────────────────────┴───────────────┤ │
+│ │  offset <uvarint>                    │ │
+│ └──────────────────────────────────────┘ │
+│                  . . .                   │
+├──────────────────────────────────────────┤
+│  CRC32 <4b>                              │
+└──────────────────────────────────────────┘
+```
 
 
 ### TOC
 
-The table of contents serves as an entry point to the entire index. It's size is fixed.
+The table of contents serves as an entry point to the entire index and points to various sections in the file.
 
 ```
-┌─────────────────────────────────────────────┐
-│ ref(symbols) <8 byte>                       │
-├─────────────────────────────────────────────┤
-│ ref(series) <8 byte>                        │
-├─────────────────────────────────────────────┤
-│ ref(label indices) <8 byte>                 │
-├─────────────────────────────────────────────┤
-│ ref(label indices table) <8 byte>           │
-├─────────────────────────────────────────────┤
-│ ref(postings) <8 byte>                      │
-├─────────────────────────────────────────────┤
-│ ref(postings table) <8 byte>                │
-├─────────────────────────────────────────────┤
-│ CRC32 <4 byte>                              │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ ref(symbols) <8b>                       │
+├─────────────────────────────────────────┤
+│ ref(series) <8b>                        │
+├─────────────────────────────────────────┤
+│ ref(label indices start) <8b>           │
+├─────────────────────────────────────────┤
+│ ref(label indices table) <8b>           │
+├─────────────────────────────────────────┤
+│ ref(postings start) <8b>                │
+├─────────────────────────────────────────┤
+│ ref(postings table) <8b>                │
+├─────────────────────────────────────────┤
+│ CRC32 <4b>                              │
+└─────────────────────────────────────────┘
 ```

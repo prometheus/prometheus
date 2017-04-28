@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"hash/crc32"
 	"io"
 	"os"
 
@@ -72,6 +73,7 @@ type chunkWriter struct {
 	files   []*os.File
 	wbuf    *bufio.Writer
 	n       int64
+	crc32   hash.Hash
 
 	segmentSize int64
 }
@@ -93,6 +95,7 @@ func newChunkWriter(dir string) (*chunkWriter, error) {
 	cw := &chunkWriter{
 		dirFile:     dirFile,
 		n:           0,
+		crc32:       crc32.New(crc32.MakeTable(crc32.Castagnoli)),
 		segmentSize: defaultChunkSegmentSize,
 	}
 	return cw, nil
@@ -214,6 +217,13 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 			return err
 		}
 		if err := w.write(chk.Chunk.Bytes()); err != nil {
+			return err
+		}
+
+		w.crc32.Reset()
+		w.crc32.Write([]byte{byte(chk.Chunk.Encoding())})
+		w.crc32.Write(chk.Chunk.Bytes())
+		if err := w.write(w.crc32.Sum(nil)); err != nil {
 			return err
 		}
 	}

@@ -267,10 +267,12 @@ func (w *indexWriter) writeSymbols() error {
 	}
 	sort.Strings(symbols)
 
-	const headerSize = 8
+	const headerSize = 4
 
 	w.buf1.reset()
 	w.buf2.reset()
+
+	w.buf2.putBE32int(len(symbols))
 
 	for _, s := range symbols {
 		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
@@ -281,9 +283,7 @@ func (w *indexWriter) writeSymbols() error {
 		w.buf2.putUvarintStr(s)
 	}
 
-	w.buf1.putBE32int(len(symbols))
 	w.buf1.putBE32int(w.buf2.len())
-
 	w.buf2.putHash(w.crc32)
 
 	err := w.write(w.buf1.get(), w.buf2.get())
@@ -302,11 +302,14 @@ func (w *indexWriter) writeSeries() error {
 	// Header holds number of series.
 	w.buf1.reset()
 	w.buf1.putBE32int(len(series))
+
 	if err := w.write(w.buf1.get()); err != nil {
 		return errors.Wrap(err, "write series count")
 	}
 
 	for _, s := range series {
+		s.offset = uint32(w.pos)
+
 		w.buf2.reset()
 		w.buf2.putUvarint(len(s.labels))
 
@@ -321,13 +324,7 @@ func (w *indexWriter) writeSeries() error {
 			w.buf2.putVarint64(c.MinTime)
 			w.buf2.putVarint64(c.MaxTime)
 			w.buf2.putUvarint64(c.Ref)
-
-			w.crc32.Reset()
-			c.hash(w.crc32)
-			w.buf2.putBytes(w.crc32.Sum(nil))
 		}
-
-		s.offset = uint32(w.pos)
 
 		w.buf1.reset()
 		w.buf1.putUvarint(w.buf2.len())
@@ -343,6 +340,9 @@ func (w *indexWriter) writeSeries() error {
 }
 
 func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
+	if len(values)%len(names) != 0 {
+		return errors.Errorf("invalid value list length %d for %d names", len(values), len(names))
+	}
 	if err := w.ensureStage(idxStageLabelIndex); err != nil {
 		return errors.Wrap(err, "ensure stage")
 	}
@@ -359,14 +359,15 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	})
 
 	w.buf2.reset()
-	w.buf2.putUvarint(len(names))
+	w.buf2.putBE32int(len(names))
+	w.buf2.putBE32int(valt.Len())
 
 	for _, v := range valt.s {
 		w.buf2.putBE32(w.symbols[v])
 	}
 
 	w.buf1.reset()
-	w.buf1.putUvarint(w.buf2.len())
+	w.buf1.putBE32int(w.buf2.len())
 
 	w.buf2.putHash(w.crc32)
 
@@ -437,16 +438,17 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	if err := it.Err(); err != nil {
 		return err
 	}
-
 	sort.Sort(uint32slice(refs))
 
 	w.buf2.reset()
+	w.buf2.putBE32int(len(refs))
+
 	for _, r := range refs {
 		w.buf2.putBE32(r)
 	}
 
 	w.buf1.reset()
-	w.buf1.putUvarint(w.buf2.len())
+	w.buf1.putBE32int(w.buf2.len())
 
 	w.buf2.putHash(w.crc32)
 
@@ -658,9 +660,10 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	}
 
 	d1 := r.decbufAt(int(off))
-	d2 := d1.decbuf(int(d1.uvarint()))
+	d2 := d1.decbuf(d1.be32int())
 
-	c := d2.uvarint()
+	nc := d2.be32int()
+	d2.be32() // consume unused value entry count.
 
 	if d2.err() != nil {
 		return nil, errors.Wrap(d2.err(), "read label value index")
@@ -669,7 +672,7 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 	// TODO(fabxc): verify checksum in 4 remaining bytes of d1.
 
 	st := &serializedStringTuples{
-		l:      int(c),
+		l:      nc,
 		b:      d2.get(),
 		lookup: r.lookupSymbol,
 	}
@@ -727,9 +730,6 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 		mint := d2.varint64()
 		maxt := d2.varint64()
 		off := d2.uvarint64()
-		_ = d2.be32()
-
-		// TODO(fabxc): verify CRC32
 
 		if d2.err() != nil {
 			return nil, nil, errors.Wrapf(d2.err(), "read meta for chunk %d", i)
@@ -741,6 +741,8 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 			MaxTime: maxt,
 		})
 	}
+
+	// TODO(fabxc): verify CRC32.
 
 	return lbls, chunks, nil
 }
@@ -755,7 +757,9 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 	}
 
 	d1 := r.decbufAt(int(off))
-	d2 := d1.decbuf(d1.uvarint())
+	d2 := d1.decbuf(d1.be32int())
+
+	d2.be32() // consume unused postings list length.
 
 	if d2.err() != nil {
 		return nil, errors.Wrap(d2.err(), "get postings bytes")
