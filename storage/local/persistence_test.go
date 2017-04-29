@@ -15,7 +15,7 @@ package local
 
 import (
 	"bufio"
-	"context"
+	"golang.org/x/net/context"
 	"errors"
 	"os"
 	"path/filepath"
