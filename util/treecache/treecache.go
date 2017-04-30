@@ -168,7 +168,7 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 				failureMode = false
 			}
 		case <-tc.stop:
-			close(tc.events)
+			tc.recursiveStop(tc.head)
 			return
 		}
 	}
@@ -262,5 +262,15 @@ func (tc *ZookeeperTreeCache) recursiveDelete(path string, node *zookeeperTreeCa
 	}
 	for name, childNode := range node.children {
 		tc.recursiveDelete(path+"/"+name, childNode)
+	}
+}
+
+func (tc *ZookeeperTreeCache) recursiveStop(node *zookeeperTreeCacheNode) {
+	if !node.stopped {
+		node.done <- struct{}{}
+		node.stopped = true
+	}
+	for _, childNode := range node.children {
+		tc.recursiveStop(childNode)
 	}
 }
