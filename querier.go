@@ -400,7 +400,7 @@ func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
 		lset, chks := s.set.At()
 
-		from := 0
+		from := -1
 		for i, c := range chks {
 			if c.MaxTime < s.mint {
 				from = i

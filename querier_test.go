@@ -862,11 +862,16 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 		set:    m,
 		chunks: cr,
 
-		mint: 6,
-		maxt: 9,
+		mint: 0,
+		maxt: 0,
 	}
 
 	require.False(t, p.Next())
+
+	p.mint = 6
+	p.maxt = 9
+	require.False(t, p.Next())
+
 	return
 }
 
