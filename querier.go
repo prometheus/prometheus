@@ -413,13 +413,14 @@ func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
 		lset, chks := s.set.At()
 
+		from := -1
 		for i, c := range chks {
 			if c.MaxTime < s.mint {
-				chks = chks[1:]
+				from = i
 				continue
 			}
 			if c.MinTime > s.maxt {
-				chks = chks[:i]
+				chks = chks[from+1 : i]
 				break
 			}
 			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
