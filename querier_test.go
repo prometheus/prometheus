@@ -838,3 +838,57 @@ func TestSeriesIterator(t *testing.T) {
 
 	return
 }
+
+func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
+	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
+	chunkMetas := [][]*ChunkMeta{
+		{
+			{MinTime: 1, MaxTime: 2, Ref: 1},
+			{MinTime: 3, MaxTime: 4, Ref: 2},
+			{MinTime: 10, MaxTime: 12, Ref: 3},
+		},
+	}
+
+	cr := mockChunkReader(
+		map[uint64]chunks.Chunk{
+			1: chunks.NewXORChunk(),
+			2: chunks.NewXORChunk(),
+			3: chunks.NewXORChunk(),
+		},
+	)
+
+	m := &mockChunkSeriesSet{l: lbls, cm: chunkMetas, i: -1}
+	p := &populatedChunkSeries{
+		set:    m,
+		chunks: cr,
+
+		mint: 6,
+		maxt: 9,
+	}
+
+	require.False(t, p.Next())
+	return
+}
+
+type mockChunkSeriesSet struct {
+	l  []labels.Labels
+	cm [][]*ChunkMeta
+
+	i int
+}
+
+func (m *mockChunkSeriesSet) Next() bool {
+	if len(m.l) != len(m.cm) {
+		return false
+	}
+	m.i++
+	return m.i < len(m.l)
+}
+
+func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta) {
+	return m.l[m.i], m.cm[m.i]
+}
+
+func (m *mockChunkSeriesSet) Err() error {
+	return nil
+}
