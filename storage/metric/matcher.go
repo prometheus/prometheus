@@ -55,6 +55,14 @@ func (lms LabelMatchers) Len() int           { return len(lms) }
 func (lms LabelMatchers) Swap(i, j int)      { lms[i], lms[j] = lms[j], lms[i] }
 func (lms LabelMatchers) Less(i, j int) bool { return lms[i].score < lms[j].score }
 
+func (lms LabelMatchers) String() string {
+	result := make([]string, 0, len(lms))
+	for _, lm := range lms {
+		result = append(result, lm.String())
+	}
+	return strings.Join(result, ",")
+}
+
 // LabelMatcher models the matching of a label. Create with NewLabelMatcher.
 type LabelMatcher struct {
 	Type  MatchType
