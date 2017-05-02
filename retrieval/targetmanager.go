@@ -60,15 +60,23 @@ func NewTargetManager(app storage.SampleAppender, logger log.Logger) *TargetMana
 
 // Run starts background processing to handle target updates.
 func (tm *TargetManager) Run() {
+	tm.Start()
+	tm.Wait()
+}
+
+// Start loads initial target updates
+func (tm *TargetManager) Start() {
 	tm.logger.Info("Starting target manager...")
 
 	tm.mtx.Lock()
+	defer tm.mtx.Unlock()
 
 	tm.ctx, tm.cancel = context.WithCancel(context.Background())
 	tm.reload()
+}
 
-	tm.mtx.Unlock()
-
+// Wait blocks until Stop
+func (tm *TargetManager) Wait() {
 	tm.wg.Wait()
 }
 
