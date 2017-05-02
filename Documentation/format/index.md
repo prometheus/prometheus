@@ -35,14 +35,14 @@ It is terminated by a table of contents which serves as an entry point into the 
 
 When the index is written, an arbitrary number of padding bytes may be added between the lined out main sections above. When sequentially scanning through the file, any zero bytes after a section's specified length must be skipped.
 
-Most of the sections described below start with a `len` field. It always specifies the number of bytes after them up until the trailing CRC32 checksum. The checksum is always calculated over those `len` bytes.
+Most of the sections described below start with a `len` field. It always specifies the number of bytes just before the trailing CRC32 checksum. The checksum is always calculated over those `len` bytes.
 
 
 ### Symbol Table
 
 The symbol table holds a sorted list of deduplicated strings that occurred in label pairs of the stored series. They can be referenced from subsequent sections and significantly reduce the total index size.
 
-The section contains a sequence of the string entries, each prefixed with the string's length in raw bytes.
+The section contains a sequence of the string entries, each prefixed with the string's length in raw bytes. All strings are utf-8 encoded.
 Strings are referenced by pointing to the beginning of their length field. The strings are sorted in lexicographically ascending order.
 
 ```
@@ -81,8 +81,8 @@ The file offset to the beginning of a series serves as the series' ID in all sub
 └───────────────────────────────────────┘
 ```
 
-Every series entry first holds its number of labels, followed by tuples of symbol table references that resemble label name and value. The label pairs are lexicographically sorted.  
-After the labels, the number of indexed chunks is encoded, followed by a sequence of metadata entries containing the chunks minimum and maximum timestamp and a reference to its position in the chunk file. Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.  
+Every series entry first holds its number of labels, followed by tuples of symbol table references that contain the label name and value. The label pairs are lexicographically sorted.  
+After the labels, the number of indexed chunks is encoded, followed by a sequence of metadata entries containing the chunks minimum and maximum timestamp and a reference to its position in the chunk file. Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -112,8 +112,8 @@ After the labels, the number of indexed chunks is encoded, followed by a sequenc
 
 ### Label Index
 
-The label index indexes holds lists of possible values for label names. Each label index can be a composite index over more than a single label name, which is tracked by `#names`, followed by the total number of entries.  
-The body holds `#entries` entries of possible values pointing back into the symbol table.
+A label index section indexes the existing (combined) values for one or more label names.  
+The `#names` field determines the number indexed label names, followed by the total number of entries in the `#entries` field. The body holds `#entries` symbol table reference tuples of length of length `#names`. The value tuples are sorted in lexicographically increasing order.
 
 ```
 ┌───────────────┬────────────────┬────────────────┐
@@ -185,6 +185,7 @@ An offset table stores a sequence of entries that maps a list of strings to an o
 ### TOC
 
 The table of contents serves as an entry point to the entire index and points to various sections in the file.
+If a reference is zero, it indicates the respective section does not exist and empty results should be returned upon lookup.
 
 ```
 ┌─────────────────────────────────────────┐

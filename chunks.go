@@ -43,7 +43,8 @@ type ChunkMeta struct {
 	MinTime, MaxTime int64 // time range the data covers
 }
 
-func (cm *ChunkMeta) hash(h hash.Hash) error {
+// writeHash writes the chunk encoding and raw data into the provided hash.
+func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
 		return err
 	}
@@ -221,8 +222,9 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 		}
 
 		w.crc32.Reset()
-		w.crc32.Write([]byte{byte(chk.Chunk.Encoding())})
-		w.crc32.Write(chk.Chunk.Bytes())
+		if err := chk.writeHash(w.crc32); err != nil {
+			return err
+		}
 		if err := w.write(w.crc32.Sum(nil)); err != nil {
 			return err
 		}
