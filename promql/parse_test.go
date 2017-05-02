@@ -838,6 +838,15 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: "foo offset -5m",
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: -5 * time.Minute,
+			LabelMatchers: metric.LabelMatchers{
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+			},
+		},
+	}, {
 		input: `foo:bar{a="bc"}`,
 		expected: &VectorSelector{
 			Name:   "foo:bar",
