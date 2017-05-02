@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The code in this file was largely written by Damian Gryski and published
-// under the license below. It was modified to accomodate reading from byte
-// slice without modifying the underlying bytes, which would panick when reading
-// from mmaped read-only byte slices.
+// The code in this file was largely written by Damian Gryski as part of
+// https://github.com/dgryski/go-tsz and published under the license below.
+// It was modified to accomodate reading from byte slices without modifying
+// the underlying bytes, which would panic when reading from mmaped
+// read-only byte slices.
 
 // Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
 // All rights reserved.
