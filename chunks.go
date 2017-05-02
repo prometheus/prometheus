@@ -43,6 +43,17 @@ type ChunkMeta struct {
 	MinTime, MaxTime int64 // time range the data covers
 }
 
+// writeHash writes the chunk encoding and raw data into the provided hash.
+func (cm *ChunkMeta) writeHash(h hash.Hash) error {
+	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
+		return err
+	}
+	if _, err := h.Write(cm.Chunk.Bytes()); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ChunkWriter serializes a time block of chunked series data.
 type ChunkWriter interface {
 	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
@@ -165,8 +176,8 @@ func (w *chunkWriter) cut() error {
 	return nil
 }
 
-func (w *chunkWriter) write(wr io.Writer, b []byte) error {
-	n, err := wr.Write(b)
+func (w *chunkWriter) write(b []byte) error {
+	n, err := w.wbuf.Write(b)
 	w.n += int64(n)
 	return err
 }
@@ -187,14 +198,10 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 		}
 	}
 
-	// Write chunks sequentially and set the reference field in the ChunkMeta.
-	w.crc32.Reset()
-	wr := io.MultiWriter(w.crc32, w.wbuf)
-
 	b := make([]byte, binary.MaxVarintLen32)
 	n := binary.PutUvarint(b, uint64(len(chks)))
 
-	if err := w.write(wr, b[:n]); err != nil {
+	if err := w.write(b[:n]); err != nil {
 		return err
 	}
 	seq := uint64(w.seq()) << 32
@@ -204,21 +211,25 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 
 		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
 
-		if err := w.write(wr, b[:n]); err != nil {
+		if err := w.write(b[:n]); err != nil {
 			return err
 		}
-		if err := w.write(wr, []byte{byte(chk.Chunk.Encoding())}); err != nil {
+		if err := w.write([]byte{byte(chk.Chunk.Encoding())}); err != nil {
 			return err
 		}
-		if err := w.write(wr, chk.Chunk.Bytes()); err != nil {
+		if err := w.write(chk.Chunk.Bytes()); err != nil {
 			return err
 		}
-		chk.Chunk = nil
+
+		w.crc32.Reset()
+		if err := chk.writeHash(w.crc32); err != nil {
+			return err
+		}
+		if err := w.write(w.crc32.Sum(nil)); err != nil {
+			return err
+		}
 	}
 
-	if err := w.write(w.wbuf, w.crc32.Sum(nil)); err != nil {
-		return err
-	}
 	return nil
 }
 

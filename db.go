@@ -95,8 +95,6 @@ type Appender interface {
 	Rollback() error
 }
 
-const sep = '\xff'
-
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
 type DB struct {
