@@ -357,6 +357,9 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		if t < c.maxTime {
 			return ErrOutOfOrderSample
 		}
+
+		// We are allowing exact duplicates as we can encounter them in valid cases
+		// like federation and erroring out at that time would be extremely noisy.
 		if c.maxTime == t && math.Float64bits(ms.lastValue) != math.Float64bits(v) {
 			return ErrAmendSample
 		}
@@ -634,8 +637,8 @@ func (s *memSeries) append(t int64, v float64) bool {
 		c.minTime = t
 	} else {
 		c = s.head()
-		// Skip duplicate samples.
-		if c.maxTime == t && s.lastValue != v {
+		// Skip duplicate and out of order samples.
+		if c.maxTime >= t {
 			return false
 		}
 	}
