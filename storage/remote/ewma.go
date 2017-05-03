@@ -29,8 +29,10 @@ type ewmaRate struct {
 	mutex     sync.Mutex
 }
 
-func newEWMARate(alpha float64, interval time.Duration) ewmaRate {
-	return ewmaRate{
+// newEWMARate always allocates a new ewmaRate, as this guarantees the atomically
+// accessed int64 will be aligned on ARM.  See prometheus#2666.
+func newEWMARate(alpha float64, interval time.Duration) *ewmaRate {
+	return &ewmaRate{
 		alpha:    alpha,
 		interval: interval,
 	}

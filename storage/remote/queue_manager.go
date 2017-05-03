@@ -185,7 +185,7 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	samplesIn, samplesOut, samplesOutDuration ewmaRate
+	samplesIn, samplesOut, samplesOutDuration *ewmaRate
 	integralAccumulator                       float64
 }
 
