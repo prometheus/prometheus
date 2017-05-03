@@ -653,6 +653,50 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 
 }
 
+type errorAppender struct {
+	collectResultAppender
+}
+
+func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	if lset.Get(model.MetricNameLabel) == "out_of_order" {
+		return 0, storage.ErrOutOfOrderSample
+	} else if lset.Get(model.MetricNameLabel) == "amend" {
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+	return app.collectResultAppender.Add(lset, t, v)
+}
+
+func (app *errorAppender) AddFast(ref uint64, t int64, v float64) error {
+	return app.collectResultAppender.AddFast(ref, t, v)
+}
+
+func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
+	app := &errorAppender{}
+	sl := &scrapeLoop{
+		appender:       func() storage.Appender { return app },
+		reportAppender: func() storage.Appender { return nopAppender{} },
+		refCache:       map[string]uint64{},
+		lsetCache:      map[uint64]lsetCacheEntry{},
+	}
+
+	now := time.Unix(1, 0)
+	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\n"), now)
+	if err != nil {
+		t.Fatalf("Unexpected append error: %s", err)
+	}
+	want := []sample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "normal"),
+			t:      timestamp.FromTime(now),
+			v:      1,
+		},
+	}
+	if !reflect.DeepEqual(want, app.result) {
+		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
+	}
+
+}
+
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond
