@@ -497,6 +497,11 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 		// we still call sl.append to trigger stale markers.
 		if total, added, err = sl.append(b, start); err != nil {
 			log.With("err", err).Error("append failed")
+			// The append failed, probably due to a parse error.
+			// Call sl.append again with an empty scrape to trigger stale markers.
+			if _, _, err = sl.append([]byte{}, start); err != nil {
+				log.With("err", err).Error("failure append failed")
+			}
 		}
 
 		sl.report(start, time.Since(start), total, added, err)
