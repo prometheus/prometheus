@@ -567,7 +567,7 @@ loop:
 				samplesScraped[sl.lsetCache[ref].str] = sl.lsetCache[ref].lset
 			case storage.ErrNotFound:
 				ok = false
-			case errSeriesDropped:
+			case errSeriesDropped, storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				continue
 			default:
 				break loop
@@ -581,7 +581,7 @@ loop:
 			// TODO(fabxc): also add a dropped-cache?
 			switch err {
 			case nil:
-			case errSeriesDropped:
+			case errSeriesDropped, storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				continue
 			default:
 				break loop
