@@ -420,7 +420,7 @@ func (s *populatedChunkSeries) Next() bool {
 				continue
 			}
 			if c.MinTime > s.maxt {
-				chks = chks[from+1 : i]
+				chks = chks[:i]
 				break
 			}
 			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
@@ -428,6 +428,8 @@ func (s *populatedChunkSeries) Next() bool {
 				return false
 			}
 		}
+
+		chks = chks[from+1:]
 		if len(chks) == 0 {
 			continue
 		}
