@@ -145,7 +145,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
 	require.NoError(t, err)
 
-	// Append AmendedValue
+	// Append AmendedValue.
 	app := hb.Appender()
 	_, err = app.Add(labels.Labels{{"a", "b"}}, 0, 1)
 	require.NoError(t, err)
@@ -157,17 +157,16 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	// Make sure the right value is stored.
 	q := hb.Querier(0, 10)
 	ss := q.Select(labels.NewEqualMatcher("a", "b"))
-	require.True(t, ss.Next())
-	it := ss.At().Iterator()
-	require.True(t, it.Next())
-	ts, v := it.At()
-	require.Equal(t, int64(0), ts)
-	require.Equal(t, float64(1), v)
-	require.False(t, it.Next())
-	require.False(t, ss.Next())
+	ssMap, err := readSeriesSet(ss)
+	require.NoError(t, err)
+
+	require.Equal(t, map[string][]sample{
+		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}},
+	}, ssMap)
+
 	require.NoError(t, q.Close())
 
-	// Append Out of Order Value
+	// Append Out of Order Value.
 	app = hb.Appender()
 	_, err = app.Add(labels.Labels{{"a", "b"}}, 10, 3)
 	require.NoError(t, err)
@@ -178,17 +177,11 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 
 	q = hb.Querier(0, 10)
 	ss = q.Select(labels.NewEqualMatcher("a", "b"))
-	require.True(t, ss.Next())
-	it = ss.At().Iterator()
-	require.True(t, it.Next())
-	ts, v = it.At()
-	require.Equal(t, int64(0), ts)
-	require.Equal(t, float64(1), v)
-	require.True(t, it.Next())
-	ts, v = it.At()
-	require.Equal(t, int64(10), ts)
-	require.Equal(t, float64(3), v)
-	require.False(t, it.Next())
-	require.False(t, ss.Next())
+	ssMap, err = readSeriesSet(ss)
+	require.NoError(t, err)
+
+	require.Equal(t, map[string][]sample{
+		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}, {10, 3}},
+	}, ssMap)
 	require.NoError(t, q.Close())
 }
