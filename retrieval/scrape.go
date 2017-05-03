@@ -487,14 +487,16 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 		err := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
+		var b []byte
 		if err == nil {
-			b := buf.Bytes()
-
-			if total, added, err = sl.append(b, start); err != nil {
-				log.With("err", err).Error("append failed")
-			}
+			b = buf.Bytes()
 		} else if errc != nil {
-			errc <- err
+      errc <- err
+    }
+		// A failed scrape is the same as an empty scrape,
+		// we still call sl.append to trigger stale markers.
+		if total, added, err = sl.append(b, start); err != nil {
+			log.With("err", err).Error("append failed")
 		}
 
 		sl.report(start, time.Since(start), total, added, err)
