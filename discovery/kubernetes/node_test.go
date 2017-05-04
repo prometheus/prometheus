@@ -155,7 +155,7 @@ func newFakeNodeInformer() *fakeInformer {
 
 func makeTestNodeDiscovery() (*Node, *fakeInformer) {
 	i := newFakeNodeInformer()
-	return NewNode(log.Base(), i), i
+	return NewNode(log.Base(), i, 0), i
 }
 
 func makeNode(name, address string, labels map[string]string, annotations map[string]string) *v1.Node {

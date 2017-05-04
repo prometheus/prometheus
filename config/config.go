@@ -993,6 +993,7 @@ type KubernetesSDConfig struct {
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
 	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	Port            int            `yaml:"port"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
