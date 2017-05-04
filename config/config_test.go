@@ -305,6 +305,30 @@ var expectedConf = &Config{
 							Username: "myusername",
 							Password: "mypassword",
 						},
+						NamespaceDiscovery: KubernetesNamespaceDiscovery{},
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-kubernetes-namespaces",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				KubernetesSDConfigs: []*KubernetesSDConfig{
+					{
+						APIServer: kubernetesSDHostURL(),
+						Role:      KubernetesRoleEndpoint,
+						NamespaceDiscovery: KubernetesNamespaceDiscovery{
+							Names: []string{
+								"default",
+							},
+						},
 					},
 				},
 			},
@@ -592,6 +616,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
+	}, {
+		filename: "kubernetes_namespace_discovery.bad.yml",
+		errMsg:   "unknown fields in namespaces",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
