@@ -554,6 +554,7 @@ loop:
 			case storage.ErrNotFound:
 				ok = false
 			case errSeriesDropped:
+				err = nil
 				continue
 			default:
 				break loop
@@ -568,6 +569,7 @@ loop:
 			switch err {
 			case nil:
 			case errSeriesDropped:
+				err = nil
 				continue
 			default:
 				break loop
