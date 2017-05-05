@@ -413,14 +413,17 @@ func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
 		lset, chks := s.set.At()
 
-		from := -1
-		for i, c := range chks {
-			if c.MaxTime < s.mint {
-				from = i
-				continue
+		for len(chks) > 0 {
+			if chks[0].MaxTime >= s.mint {
+				break
 			}
+			chks = chks[1:]
+		}
+
+		// Break out at the first chunk that has no overlap with mint, maxt.
+		for i, c := range chks {
 			if c.MinTime > s.maxt {
-				chks = chks[from+1 : i]
+				chks = chks[:i]
 				break
 			}
 			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
@@ -428,6 +431,7 @@ func (s *populatedChunkSeries) Next() bool {
 				return false
 			}
 		}
+
 		if len(chks) == 0 {
 			continue
 		}

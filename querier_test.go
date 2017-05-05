@@ -41,6 +41,12 @@ type mockSeries struct {
 	iterator func() SeriesIterator
 }
 
+func newSeries(l map[string]string, s []sample) Series {
+	return &mockSeries{
+		labels:   func() labels.Labels { return labels.FromMap(l) },
+		iterator: func() SeriesIterator { return newListSeriesIterator(s) },
+	}
+}
 func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
 func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
 
@@ -81,12 +87,6 @@ func (it *listSeriesIterator) Err() error {
 }
 
 func TestMergedSeriesSet(t *testing.T) {
-	newSeries := func(l map[string]string, s []sample) Series {
-		return &mockSeries{
-			labels:   func() labels.Labels { return labels.FromMap(l) },
-			iterator: func() SeriesIterator { return newListSeriesIterator(s) },
-		}
-	}
 
 	cases := []struct {
 		// The input sets in order (samples in series in b are strictly
@@ -885,6 +885,22 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	p.maxt = 9
 	require.False(t, p.Next())
 
+	// Test the case where 1 chunk could cause an unpopulated chunk to be returned.
+	chunkMetas = [][]*ChunkMeta{
+		{
+			{MinTime: 1, MaxTime: 2, Ref: 1},
+		},
+	}
+
+	m = &mockChunkSeriesSet{l: lbls, cm: chunkMetas, i: -1}
+	p = &populatedChunkSeries{
+		set:    m,
+		chunks: cr,
+
+		mint: 10,
+		maxt: 15,
+	}
+	require.False(t, p.Next())
 	return
 }
 

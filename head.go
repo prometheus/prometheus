@@ -296,6 +296,10 @@ type refdSample struct {
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	if !a.inBounds(t) {
+		return 0, ErrOutOfBounds
+	}
+
 	hash := lset.Hash()
 
 	if ms := a.get(hash, lset); ms != nil {
