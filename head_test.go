@@ -168,6 +168,8 @@ func TestHeadBlock_e2e(t *testing.T) {
 	numDatapoints := 1000
 	numRanges := 1000
 	timeInterval := int64(3)
+	maxTime := int64(2 * 1000)
+	minTime := int64(200)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
 	lbls := [][]labels.Label{
 		{
@@ -220,7 +222,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, minTime, maxTime)
 	require.NoError(t, err)
 	app := hb.Appender()
 
@@ -231,10 +233,16 @@ func TestHeadBlock_e2e(t *testing.T) {
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
-			series = append(series, sample{ts, v})
+			if ts >= minTime && ts <= maxTime {
+				series = append(series, sample{ts, v})
+			}
 
 			_, err := app.Add(ls, ts, v)
-			require.NoError(t, err)
+			if ts >= minTime && ts <= maxTime {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, ErrOutOfBounds, err)
+			}
 
 			ts += rand.Int63n(timeInterval) + 1
 		}
