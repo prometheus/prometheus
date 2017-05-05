@@ -226,7 +226,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 
 	for _, l := range lbls {
 		ls := labels.New(l...)
-		series := seriesMap[labels.New(l...).String()]
+		series := []sample{}
 
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
@@ -268,21 +268,15 @@ func TestHeadBlock_e2e(t *testing.T) {
 	}
 
 	for _, qry := range queries {
-		matched := []labels.Labels{}
-	Outer:
+		matched := labels.Slice{}
 		for _, ls := range lbls {
-			for _, m := range qry.ms {
-				if !matchLSet(m, ls) {
-					continue Outer
-				}
+			s := labels.Selector(qry.ms)
+			if s.Matches(ls) {
+				matched = append(matched, ls)
 			}
-
-			matched = append(matched, ls)
 		}
 
-		sort.Slice(matched, func(i, j int) bool {
-			return labels.Compare(matched[i], matched[j]) < 0
-		})
+		sort.Sort(matched)
 
 		for i := 0; i < numRanges; i++ {
 			mint := rand.Int63n(300)
@@ -312,7 +306,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 			for {
 				eok, rok := expSs.Next(), ss.Next()
 
-				// HACK: Skip a series if iterator is empty.
+				// Skip a series if iterator is empty.
 				if rok {
 					for !ss.At().Iterator().Next() {
 						rok = ss.Next()
@@ -345,37 +339,18 @@ func TestHeadBlock_e2e(t *testing.T) {
 }
 
 func boundedSamples(full []sample, mint, maxt int64) []sample {
-	start, end := -1, -1
+	for len(full) > 0 {
+		if full[0].t >= mint {
+			break
+		}
+		full = full[1:]
+	}
 	for i, s := range full {
-		if s.t >= mint {
-			start = i
-			break
-		}
-	}
-	if start == -1 {
-		start = len(full)
-	}
-
-	for i, s := range full[start:] {
+		// Terminate on the first sample larger than maxt.
 		if s.t > maxt {
-			end = start + i
-			break
+			return full[:i]
 		}
 	}
-
-	if end == -1 {
-		end = len(full)
-	}
-
-	return full[start:end]
-}
-
-func matchLSet(m labels.Matcher, ls labels.Labels) bool {
-	for _, l := range ls {
-		if m.Name() == l.Name && m.Matches(l.Value) {
-			return true
-		}
-	}
-
-	return false
+	// maxt is after highest sample.
+	return full
 }
