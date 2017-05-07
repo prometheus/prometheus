@@ -149,6 +149,12 @@ var (
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
+	// DefaultOpenstackSDConfig is the default OpenStack SD configuration.
+	DefaultOpenstackSDConfig = OpenstackSDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultAzureSDConfig is the default Azure SD configuration.
 	DefaultAzureSDConfig = AzureSDConfig{
 		Port:            80,
@@ -464,6 +470,8 @@ type ServiceDiscoveryConfig struct {
 	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	// List of OpenStack service discovery configurations.
+	OpenstackSDConfigs []*OpenstackSDConfig `yaml:"openstack_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
@@ -1129,6 +1137,35 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("EC2 SD configuration requires a region")
 	}
 	return nil
+}
+
+// OpenstackSDConfig is the configuration for OpenStack based service discovery.
+type OpenstackSDConfig struct {
+	IdentityEndpoint string         `yaml:"identity_endpoint"`
+	Username         string         `yaml:"username"`
+	UserID           string         `yaml:"userid"`
+	Password         string         `yaml:"password"`
+	TenantName       string         `yaml:"tenant_name"`
+	TenantID         string         `yaml:"tenant_id"`
+	DomainName       string         `yaml:"domain_name"`
+	DomainID         string         `yaml:"domain_id"`
+	Region           string         `yaml:"region"`
+	RefreshInterval  model.Duration `yaml:"refresh_interval,omitempty"`
+	Port             int            `yaml:"port"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OpenstackSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultOpenstackSDConfig
+	type plain OpenstackSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	return checkOverflow(c.XXX, "openstack_sd_config")
 }
 
 // AzureSDConfig is the configuration for Azure based service discovery.

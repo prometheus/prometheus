@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"golang.org/x/net/context"
@@ -96,6 +97,15 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig, logger log.Logger) m
 	for i, c := range cfg.EC2SDConfigs {
 		app("ec2", i, ec2.NewDiscovery(c, logger))
 	}
+	for i, c := range cfg.OpenstackSDConfigs {
+		openstackd, err := openstack.NewDiscovery(c)
+		if err != nil {
+			log.Errorf("Cannot initialize OpenStack discovery: %s", err)
+			continue
+		}
+		app("openstack", i, openstackd)
+	}
+
 	for i, c := range cfg.GCESDConfigs {
 		gced, err := gce.NewDiscovery(c, logger)
 		if err != nil {
