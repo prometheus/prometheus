@@ -927,6 +927,7 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 		s.discardedSamples.WithLabelValues(outOfOrderTimestamp).Inc()
 		return ErrOutOfOrderSample // Caused by the caller.
 	}
+	headChunkWasClosed := series.headChunkClosed
 	completedChunksCount, err := series.add(model.SamplePair{
 		Value:     sample.Value,
 		Timestamp: sample.Timestamp,
@@ -934,6 +935,11 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 	if err != nil {
 		s.quarantineSeries(fp, sample.Metric, err)
 		return err
+	}
+	if headChunkWasClosed {
+		// Appending to a series with a closed head chunk creates an
+		// additional open head chunk.
+		s.headChunks.Inc()
 	}
 	s.ingestedSamples.Inc()
 	s.incNumChunksToPersist(completedChunksCount)
