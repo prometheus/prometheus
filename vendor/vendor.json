@@ -366,6 +366,18 @@
 			"revisionTime": "2017-05-04T01:40:32Z"
 		},
 		{
+			"checksumSHA1": "4XWDCGMYqipwJymi9xJo9UffD7g=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions",
+			"revision": "caa61b3ca9f504196fd3b338f43cd99d830f7e2e",
+			"revisionTime": "2017-05-11T18:09:16Z"
+		},
+		{
+			"checksumSHA1": "e7AW3YDVYJPKUjpqsB4AL9RRlTw=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips",
+			"revision": "caa61b3ca9f504196fd3b338f43cd99d830f7e2e",
+			"revisionTime": "2017-05-11T18:09:16Z"
+		},
+		{
 			"checksumSHA1": "S1BV3o8Pa0aM5RaUuRYXY7LnPIc=",
 			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/flavors",
 			"revision": "0bf921da554eacc1552a70204be7a1201937c1e1",

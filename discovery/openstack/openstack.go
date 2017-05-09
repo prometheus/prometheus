@@ -20,6 +20,7 @@ import (
 
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,36 +33,38 @@ import (
 )
 
 const (
-	openstackLabel               = model.MetaLabelPrefix + "openstack_"
-	openstackLabelInstanceID     = openstackLabel + "instance_id"
-	openstackLabelInstanceName   = openstackLabel + "instance_name"
-	openstackLabelInstanceState  = openstackLabel + "instance_state"
-	openstackLabelInstanceFlavor = openstackLabel + "instance_flavor"
-	openstackLabelTag            = openstackLabel + "tag_"
+	openstackLabelPrefix         = model.MetaLabelPrefix + "openstack_"
+	openstackLabelInstanceID     = openstackLabelPrefix + "instance_id"
+	openstackLabelInstanceName   = openstackLabelPrefix + "instance_name"
+	openstackLabelInstanceStatus = openstackLabelPrefix + "instance_status"
+	openstackLabelInstanceFlavor = openstackLabelPrefix + "instance_flavor"
+	openstackLabelPublicIP       = openstackLabelPrefix + "public_ip"
+	openstackLabelPrivateIP      = openstackLabelPrefix + "private_ip"
+	openstackLabelTagPrefix      = openstackLabelPrefix + "tag_"
 )
 
 var (
-	openstackSDRefreshFailuresCount = prometheus.NewCounter(
+	refreshFailuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_openstack_refresh_failures_total",
 			Help: "The number of OpenStack-SD scrape failures.",
 		})
-	openstackSDRefreshDuration = prometheus.NewSummary(
+	refreshDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Name: "prometheus_sd_openstack_refresh_duration_seconds",
-			Help: "The duration of a OpenStack-SD refresh in seconds.",
+			Help: "The duration of an OpenStack-SD refresh in seconds.",
 		})
 )
 
 func init() {
-	prometheus.MustRegister(openstackSDRefreshFailuresCount)
-	prometheus.MustRegister(openstackSDRefreshDuration)
+	prometheus.MustRegister(refreshFailuresCount)
+	prometheus.MustRegister(refreshDuration)
 }
 
 // Discovery periodically performs OpenStack-SD requests. It implements
 // the TargetProvider interface.
 type Discovery struct {
-	os       *gophercloud.AuthOptions
+	authOpts *gophercloud.AuthOptions
 	region   string
 	interval time.Duration
 	port     int
@@ -81,7 +84,7 @@ func NewDiscovery(conf *config.OpenstackSDConfig) (*Discovery, error) {
 	}
 
 	return &Discovery{
-		os:       &opts,
+		authOpts: &opts,
 		region:   conf.Region,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
@@ -90,9 +93,6 @@ func NewDiscovery(conf *config.OpenstackSDConfig) (*Discovery, error) {
 
 // Run implements the TargetProvider interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	ticker := time.NewTicker(d.interval)
-	defer ticker.Stop()
-
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
@@ -104,6 +104,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			return
 		}
 	}
+
+	ticker := time.NewTicker(d.interval)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -128,28 +131,50 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
-		openstackSDRefreshDuration.Observe(time.Since(t0).Seconds())
+		refreshDuration.Observe(time.Since(t0).Seconds())
 		if err != nil {
-			openstackSDRefreshFailuresCount.Inc()
+			refreshFailuresCount.Inc()
 		}
 	}()
-	provider, err := openstack.AuthenticatedClient(*d.os)
+
+	tg = &config.TargetGroup{
+		Source: fmt.Sprintf("OS_%s", d.region),
+	}
+
+	provider, err := openstack.AuthenticatedClient(*d.authOpts)
 
 	if err != nil {
-		return nil, fmt.Errorf("could not create openstack session: %s", err)
+		return nil, fmt.Errorf("could not create OpenStack session: %s", err)
 	}
 	client, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
 		Region: d.region,
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("could not create openstack compute session: %s", err)
+		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)
 	}
 
 	opts := servers.ListOpts{}
 	pager := servers.List(client, opts)
 
 	tg = &config.TargetGroup{}
+
+	pagerFIP := floatingips.List(client)
+	floatingIPList := make(map[string][]string)
+
+	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
+		result, err := floatingips.ExtractFloatingIPs(page)
+		if err != nil {
+			log.Warn(err)
+		}
+		for _, ip := range result {
+			// Skip not associated ips
+			if ip.InstanceID != "" {
+				floatingIPList[ip.InstanceID] = append(floatingIPList[ip.InstanceID], ip.IP)
+			}
+		}
+		return true, nil
+	})
 
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
 		serverList, err := servers.ExtractServers(page)
@@ -164,29 +189,56 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 			for _, address := range s.Addresses {
 				md, ok := address.([]interface{})
+				if !ok {
+					log.Warn("Invalid type for addresses, excepted array")
+					continue
+				}
 
-				if !ok || len(md) < 1 {
+				if len(md) == 0 {
+					log.Debugf("Got no ip address for instance %s", s.ID)
 					continue
 				}
 
 				md1, ok := md[0].(map[string]interface{})
 				if !ok {
+					log.Warn("Invalid type for addresses, excepted dict")
 					continue
 				}
 
-				addr := net.JoinHostPort(md1["addr"].(string), fmt.Sprintf("%d", d.port))
+				addr, ok := md1["addr"].(string)
+				if !ok {
+					log.Warn("Invalid type for addresses, excepted string")
+					continue
+				}
+
+				labels[openstackLabelPrivateIP] = model.LabelValue(addr)
+
+				addr = net.JoinHostPort(addr, fmt.Sprintf("%d", d.port))
 
 				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				// Only use first private ip
 				break
 			}
 
-			labels[openstackLabelInstanceState] = model.LabelValue(s.Status)
+			if val, ok := floatingIPList[s.ID]; ok {
+				if len(val) > 0 {
+					labels[openstackLabelPublicIP] = model.LabelValue(val[0])
+				}
+			}
+
+			labels[openstackLabelInstanceStatus] = model.LabelValue(s.Status)
 			labels[openstackLabelInstanceName] = model.LabelValue(s.Name)
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(s.Flavor["id"].(string))
+			id, ok := s.Flavor["id"].(string)
+			if !ok {
+				log.Warn("Invalid type for instance id, excepted string")
+				continue
+			}
+			labels[openstackLabelInstanceFlavor] = model.LabelValue(id)
 
 			for k, v := range s.Metadata {
 				name := strutil.SanitizeLabelName(k)
-				labels[openstackLabelTag+model.LabelName(name)] = model.LabelValue(v)
+				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)
 			}
 
 			tg.Targets = append(tg.Targets, labels)
