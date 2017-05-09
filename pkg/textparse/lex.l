@@ -46,6 +46,7 @@ func (l *lexer) Lex() int {
 %}
 
 D     [0-9]
+S     [a-zA-Z]
 L     [a-zA-Z_]
 M     [a-zA-Z_:]
 
@@ -63,9 +64,9 @@ M     [a-zA-Z_:]
 #[^\r\n]*\n                           l.mstart = l.i
 [\r\n \t]+                            l.mstart = l.i
 
-{L}({L}|{D})*\{                       s = lstateLabels
+{S}({M}|{D})*\{                       s = lstateLabels
                                       l.offsets = append(l.offsets, l.i-1)
-{L}({L}|{D})*                         s = lstateValue
+{S}({M}|{D})*                         s = lstateValue
                                       l.mend = l.i
                                       l.offsets = append(l.offsets, l.i)
 
@@ -75,7 +76,7 @@ M     [a-zA-Z_:]
 <lstateLabels>,?                      s = lstateLName
                                       l.offsets = append(l.offsets, l.i)
 
-<lstateLName>{M}({M}|{D})*=           s = lstateLValue
+<lstateLName>{S}({L}|{D})*=           s = lstateLValue
                                       l.offsets = append(l.offsets, l.i-1)
 
 <lstateLValue>\"(\\.|[^\\"])*\"       s = lstateLabels
