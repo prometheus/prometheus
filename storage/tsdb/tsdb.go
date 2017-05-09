@@ -50,6 +50,9 @@ type Options struct {
 
 	// Duration for how long to retain data.
 	Retention time.Duration
+
+	// Disable creation and consideration of lockfile.
+	NoLockfile bool
 }
 
 // Open returns a new storage backed by a tsdb database.
@@ -60,6 +63,7 @@ func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage,
 		MaxBlockDuration:  uint64(opts.MaxBlockDuration.Seconds() * 1000),
 		AppendableBlocks:  opts.AppendableBlocks,
 		RetentionDuration: uint64(opts.Retention.Seconds() * 1000),
+		NoLockfile:        opts.NoLockfile,
 	})
 	if err != nil {
 		return nil, err
