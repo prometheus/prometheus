@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -6,7 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -23,7 +35,7 @@ type DiskBlock interface {
 	// Index returns an IndexReader over the block's data.
 	Index() IndexReader
 
-	// Series returns a SeriesReader over the block's data.
+	// Chunks returns a ChunkReader over the block's data.
 	Chunks() ChunkReader
 
 	// Close releases all underlying resources of the block.
@@ -125,8 +137,10 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "\t")
 
-	if err := enc.Encode(&blockMeta{Version: 1, BlockMeta: meta}); err != nil {
-		return err
+	var merr MultiError
+	if merr.Add(enc.Encode(&blockMeta{Version: 1, BlockMeta: meta})); merr.Err() != nil {
+		merr.Add(f.Close())
+		return merr
 	}
 	if err := f.Close(); err != nil {
 		return err
@@ -227,31 +241,4 @@ func (f *mmapFile) Close() error {
 		return err0
 	}
 	return err1
-}
-
-// A skiplist maps offsets to values. The values found in the data at an
-// offset are strictly greater than the indexed value.
-type skiplist interface {
-	// offset returns the offset to data containing values of x and lower.
-	offset(x int64) (uint32, bool)
-}
-
-// simpleSkiplist is a slice of plain value/offset pairs.
-type simpleSkiplist []skiplistPair
-
-type skiplistPair struct {
-	value  int64
-	offset uint32
-}
-
-func (sl simpleSkiplist) offset(x int64) (uint32, bool) {
-	// Search for the first offset that contains data greater than x.
-	i := sort.Search(len(sl), func(i int) bool { return sl[i].value >= x })
-
-	// If no element was found return false. If the first element is found,
-	// there's no previous offset actually containing values that are x or lower.
-	if i == len(sl) || i == 0 {
-		return 0, false
-	}
-	return sl[i-1].offset, true
 }
