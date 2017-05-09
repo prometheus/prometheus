@@ -125,6 +125,10 @@ func init() {
 		&cfg.localStoragePath, "storage.local.path", "data",
 		"Base path for metrics storage.",
 	)
+	cfg.fs.BoolVar(
+		&cfg.tsdb.NoLockfile, "storage.tsdb.no-lockfile", false,
+		"Disable lock file usage.",
+	)
 	cfg.fs.DurationVar(
 		&cfg.tsdb.MinBlockDuration, "storage.tsdb.min-block-duration", 2*time.Hour,
 		"Minimum duration of a data block before being persisted.",
