@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -15,7 +28,7 @@ import (
 )
 
 const (
-	// MagicChunks is 4 bytes at the head of series file.
+	// MagicChunks is 4 bytes at the head of a series file.
 	MagicChunks = 0x85BD40DD
 )
 
@@ -30,12 +43,23 @@ type ChunkMeta struct {
 	MinTime, MaxTime int64 // time range the data covers
 }
 
+// writeHash writes the chunk encoding and raw data into the provided hash.
+func (cm *ChunkMeta) writeHash(h hash.Hash) error {
+	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
+		return err
+	}
+	if _, err := h.Write(cm.Chunk.Bytes()); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ChunkWriter serializes a time block of chunked series data.
 type ChunkWriter interface {
-	// WriteChunks writes several chunks. The data field of the ChunkMetas
+	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
 	// must be populated.
 	// After returning successfully, the Ref fields in the ChunkMetas
-	// is set and can be used to retrieve the chunks from the written data.
+	// are set and can be used to retrieve the chunks from the written data.
 	WriteChunks(chunks ...*ChunkMeta) error
 
 	// Close writes any required finalization and closes the resources
@@ -112,7 +136,9 @@ func (w *chunkWriter) finalizeTail() error {
 
 func (w *chunkWriter) cut() error {
 	// Sync current tail to disk and close.
-	w.finalizeTail()
+	if err := w.finalizeTail(); err != nil {
+		return err
+	}
 
 	p, _, err := nextSequenceFile(w.dirFile.Name(), "")
 	if err != nil {
@@ -150,8 +176,8 @@ func (w *chunkWriter) cut() error {
 	return nil
 }
 
-func (w *chunkWriter) write(wr io.Writer, b []byte) error {
-	n, err := wr.Write(b)
+func (w *chunkWriter) write(b []byte) error {
+	n, err := w.wbuf.Write(b)
 	w.n += int64(n)
 	return err
 }
@@ -159,9 +185,9 @@ func (w *chunkWriter) write(wr io.Writer, b []byte) error {
 func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
-	maxLen := int64(binary.MaxVarintLen32)
+	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
 	for _, c := range chks {
-		maxLen += binary.MaxVarintLen32 + 1
+		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
 		maxLen += int64(len(c.Chunk.Bytes()))
 	}
 	newsz := w.n + maxLen
@@ -172,14 +198,10 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 		}
 	}
 
-	// Write chunks sequentially and set the reference field in the ChunkMeta.
-	w.crc32.Reset()
-	wr := io.MultiWriter(w.crc32, w.wbuf)
-
 	b := make([]byte, binary.MaxVarintLen32)
 	n := binary.PutUvarint(b, uint64(len(chks)))
 
-	if err := w.write(wr, b[:n]); err != nil {
+	if err := w.write(b[:n]); err != nil {
 		return err
 	}
 	seq := uint64(w.seq()) << 32
@@ -189,21 +211,25 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 
 		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
 
-		if err := w.write(wr, b[:n]); err != nil {
+		if err := w.write(b[:n]); err != nil {
 			return err
 		}
-		if err := w.write(wr, []byte{byte(chk.Chunk.Encoding())}); err != nil {
+		if err := w.write([]byte{byte(chk.Chunk.Encoding())}); err != nil {
 			return err
 		}
-		if err := w.write(wr, chk.Chunk.Bytes()); err != nil {
+		if err := w.write(chk.Chunk.Bytes()); err != nil {
 			return err
 		}
-		chk.Chunk = nil
+
+		w.crc32.Reset()
+		if err := chk.writeHash(w.crc32); err != nil {
+			return err
+		}
+		if err := w.write(w.crc32.Sum(nil)); err != nil {
+			return err
+		}
 	}
 
-	if err := w.write(w.wbuf, w.crc32.Sum(nil)); err != nil {
-		return err
-	}
 	return nil
 }
 
