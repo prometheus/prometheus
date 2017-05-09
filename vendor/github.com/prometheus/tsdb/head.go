@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -283,6 +296,10 @@ type refdSample struct {
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	if !a.inBounds(t) {
+		return 0, ErrOutOfBounds
+	}
+
 	hash := lset.Hash()
 
 	if ms := a.get(hash, lset); ms != nil {
@@ -344,7 +361,10 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		if t < c.maxTime {
 			return ErrOutOfOrderSample
 		}
-		if c.maxTime == t && ms.lastValue != v {
+
+		// We are allowing exact duplicates as we can encounter them in valid cases
+		// like federation and erroring out at that time would be extremely noisy.
+		if c.maxTime == t && math.Float64bits(ms.lastValue) != math.Float64bits(v) {
 			return ErrAmendSample
 		}
 	}
@@ -410,22 +430,11 @@ func (a *headAppender) Commit() error {
 		return err
 	}
 
-	var (
-		total = uint64(len(a.samples))
-		mint  = int64(math.MaxInt64)
-		maxt  = int64(math.MinInt64)
-	)
+	total := uint64(len(a.samples))
 
 	for _, s := range a.samples {
 		if !a.series[s.ref].append(s.t, s.v) {
 			total--
-		}
-
-		if s.t < mint {
-			mint = s.t
-		}
-		if s.t > maxt {
-			maxt = s.t
 		}
 	}
 
@@ -632,8 +641,8 @@ func (s *memSeries) append(t int64, v float64) bool {
 		c.minTime = t
 	} else {
 		c = s.head()
-		// Skip duplicate samples.
-		if c.maxTime == t && s.lastValue != v {
+		// Skip duplicate and out of order samples.
+		if c.maxTime >= t {
 			return false
 		}
 	}

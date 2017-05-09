@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package tsdb implements a time series storage for float64 sample data.
 package tsdb
 
@@ -33,6 +46,7 @@ var DefaultOptions = &Options{
 	MinBlockDuration:  3 * 60 * 60 * 1000,       // 2 hours in milliseconds
 	MaxBlockDuration:  24 * 60 * 60 * 1000,      // 1 days in milliseconds
 	AppendableBlocks:  2,
+	NoLockfile:        false,
 }
 
 // Options of the DB storage.
@@ -56,10 +70,15 @@ type Options struct {
 	// After a new block is started for timestamp t0 or higher, appends with
 	// timestamps as early as t0 - (n-1) * MinBlockDuration are valid.
 	AppendableBlocks int
+
+	// NoLockfile disables creation and consideration of a lock file.
+	NoLockfile bool
 }
 
 // Appender allows appending a batch of data. It must be completed with a
 // call to Commit or Rollback and must not be reused afterwards.
+//
+// Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
 	// Add adds a sample pair for the given series. A reference number is
 	// returned which can be used to add further samples in the same or later
@@ -80,13 +99,11 @@ type Appender interface {
 	Rollback() error
 }
 
-const sep = '\xff'
-
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
 type DB struct {
 	dir   string
-	lockf lockfile.Lockfile
+	lockf *lockfile.Lockfile
 
 	logger  log.Logger
 	metrics *dbMetrics
@@ -146,13 +163,6 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if err != nil {
 		return nil, err
 	}
-	lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
-	if err != nil {
-		return nil, err
-	}
-	if err := lockf.TryLock(); err != nil {
-		return nil, errors.Wrapf(err, "open DB in %s", dir)
-	}
 
 	if l == nil {
 		l = log.NewLogfmtLogger(os.Stdout)
@@ -168,7 +178,6 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	db = &DB{
 		dir:      dir,
-		lockf:    lockf,
 		logger:   l,
 		metrics:  newDBMetrics(r),
 		opts:     opts,
@@ -176,6 +185,17 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:    make(chan struct{}),
 		stopc:    make(chan struct{}),
 	}
+	if !opts.NoLockfile {
+		lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
+		if err != nil {
+			return nil, err
+		}
+		if err := lockf.TryLock(); err != nil {
+			return nil, errors.Wrapf(err, "open DB in %s", dir)
+		}
+		db.lockf = &lockf
+	}
+
 	db.compactor = newCompactor(r, l, &compactorOptions{
 		maxBlockRange: opts.MaxBlockDuration,
 	})
@@ -452,7 +472,9 @@ func (db *DB) Close() error {
 	var merr MultiError
 
 	merr.Add(g.Wait())
-	merr.Add(db.lockf.Unlock())
+	if db.lockf != nil {
+		merr.Add(db.lockf.Unlock())
+	}
 
 	return merr.Err()
 }
@@ -505,8 +527,8 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error)
 		return 0, err
 	}
 	a.samples++
-	// Store last byte of sequence number in 3rd byte of refernece.
-	return ref | (uint64(h.meta.Sequence^0xff) << 40), nil
+	// Store last byte of sequence number in 3rd byte of reference.
+	return ref | (uint64(h.meta.Sequence&0xff) << 40), nil
 }
 
 func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
@@ -519,7 +541,7 @@ func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
 		return err
 	}
 	// If the last byte of the sequence does not add up, the reference is not valid.
-	if uint64(h.meta.Sequence^0xff) != gen {
+	if uint64(h.meta.Sequence&0xff) != gen {
 		return ErrNotFound
 	}
 	if err := h.app.AddFast(ref, t, v); err != nil {
@@ -641,7 +663,7 @@ func (a *dbAppender) Rollback() error {
 	var g errgroup.Group
 
 	for _, h := range a.heads {
-		g.Go(h.app.Commit)
+		g.Go(h.app.Rollback)
 	}
 
 	return g.Wait()

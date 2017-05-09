@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -139,30 +152,30 @@ func Merge(its ...Postings) Postings {
 	a := its[0]
 
 	for _, b := range its[1:] {
-		a = newMergePostings(a, b)
+		a = newMergedPostings(a, b)
 	}
 	return a
 }
 
-type mergePostings struct {
+type mergedPostings struct {
 	a, b     Postings
 	aok, bok bool
 	cur      uint32
 }
 
-func newMergePostings(a, b Postings) *mergePostings {
-	it := &mergePostings{a: a, b: b}
+func newMergedPostings(a, b Postings) *mergedPostings {
+	it := &mergedPostings{a: a, b: b}
 	it.aok = it.a.Next()
 	it.bok = it.b.Next()
 
 	return it
 }
 
-func (it *mergePostings) At() uint32 {
+func (it *mergedPostings) At() uint32 {
 	return it.cur
 }
 
-func (it *mergePostings) Next() bool {
+func (it *mergedPostings) Next() bool {
 	if !it.aok && !it.bok {
 		return false
 	}
@@ -197,13 +210,14 @@ func (it *mergePostings) Next() bool {
 	return true
 }
 
-func (it *mergePostings) Seek(id uint32) bool {
+func (it *mergedPostings) Seek(id uint32) bool {
 	it.aok = it.a.Seek(id)
 	it.bok = it.b.Seek(id)
+
 	return it.Next()
 }
 
-func (it *mergePostings) Err() error {
+func (it *mergedPostings) Err() error {
 	if it.a.Err() != nil {
 		return it.a.Err()
 	}
