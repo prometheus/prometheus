@@ -77,7 +77,7 @@ yystart1:
 		goto yystate3
 	case c == '\x00':
 		goto yystate2
-	case c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+	case c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
 		goto yystate6
 	}
 
@@ -116,7 +116,7 @@ yystate6:
 		goto yyrule5
 	case c == '{':
 		goto yystate7
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+	case c >= '0' && c <= ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
 		goto yystate6
 	}
 
@@ -275,7 +275,7 @@ yystart23:
 	switch {
 	default:
 		goto yyabort
-	case c == ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+	case c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
 		goto yystate24
 	}
 
@@ -286,7 +286,7 @@ yystate24:
 		goto yyabort
 	case c == '=':
 		goto yystate25
-	case c >= '0' && c <= ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
 		goto yystate24
 	}
 
@@ -373,13 +373,13 @@ yyrule3: // [\r\n \t]+
 		l.mstart = l.i
 		goto yystate0
 	}
-yyrule4: // {L}({L}|{D})*\{
+yyrule4: // {S}({M}|{D})*\{
 	{
 		s = lstateLabels
 		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
-yyrule5: // {L}({L}|{D})*
+yyrule5: // {S}({M}|{D})*
 	{
 		s = lstateValue
 		l.mend = l.i
@@ -401,7 +401,7 @@ yyrule8: // ,?
 		l.offsets = append(l.offsets, l.i)
 		goto yystate0
 	}
-yyrule9: // {M}({M}|{D})*=
+yyrule9: // {S}({L}|{D})*=
 	{
 		s = lstateLValue
 		l.offsets = append(l.offsets, l.i-1)
