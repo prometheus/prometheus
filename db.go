@@ -46,6 +46,7 @@ var DefaultOptions = &Options{
 	MinBlockDuration:  3 * 60 * 60 * 1000,       // 2 hours in milliseconds
 	MaxBlockDuration:  24 * 60 * 60 * 1000,      // 1 days in milliseconds
 	AppendableBlocks:  2,
+	NoLockfile:        false,
 }
 
 // Options of the DB storage.
@@ -69,6 +70,9 @@ type Options struct {
 	// After a new block is started for timestamp t0 or higher, appends with
 	// timestamps as early as t0 - (n-1) * MinBlockDuration are valid.
 	AppendableBlocks int
+
+	// NoLockfile disables creation and consideration of a lock file.
+	NoLockfile bool
 }
 
 // Appender allows appending a batch of data. It must be completed with a
@@ -99,7 +103,7 @@ type Appender interface {
 // a hashed partition of a seriedb.
 type DB struct {
 	dir   string
-	lockf lockfile.Lockfile
+	lockf *lockfile.Lockfile
 
 	logger  log.Logger
 	metrics *dbMetrics
@@ -159,13 +163,6 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if err != nil {
 		return nil, err
 	}
-	lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
-	if err != nil {
-		return nil, err
-	}
-	if err := lockf.TryLock(); err != nil {
-		return nil, errors.Wrapf(err, "open DB in %s", dir)
-	}
 
 	if l == nil {
 		l = log.NewLogfmtLogger(os.Stdout)
@@ -181,7 +178,6 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	db = &DB{
 		dir:      dir,
-		lockf:    lockf,
 		logger:   l,
 		metrics:  newDBMetrics(r),
 		opts:     opts,
@@ -189,6 +185,17 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:    make(chan struct{}),
 		stopc:    make(chan struct{}),
 	}
+	if !opts.NoLockfile {
+		lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
+		if err != nil {
+			return nil, err
+		}
+		if err := lockf.TryLock(); err != nil {
+			return nil, errors.Wrapf(err, "open DB in %s", dir)
+		}
+		db.lockf = &lockf
+	}
+
 	db.compactor = newCompactor(r, l, &compactorOptions{
 		maxBlockRange: opts.MaxBlockDuration,
 	})
@@ -465,7 +472,9 @@ func (db *DB) Close() error {
 	var merr MultiError
 
 	merr.Add(g.Wait())
-	merr.Add(db.lockf.Unlock())
+	if db.lockf != nil {
+		merr.Add(db.lockf.Unlock())
+	}
 
 	return merr.Err()
 }
