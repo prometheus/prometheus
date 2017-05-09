@@ -34,6 +34,7 @@ go_gc_duration_seconds{quantile="0"} 4.9351e-05
 go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds_count 99
+some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
 go_goroutines 33  	123123`
@@ -62,6 +63,10 @@ go_goroutines 33  	123123`
 			m:    `go_gc_duration_seconds_count`,
 			v:    99,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
+		}, {
+			m:    `some:aggregate:rate5m{a_b="c"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
 		}, {
 			m:    `go_goroutines`,
 			v:    33,
