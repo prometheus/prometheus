@@ -35,7 +35,7 @@
                 {{end}}
               </td>
               <td><span class="alert alert-{{ .State | alertStateToClass }} state_indicator text-uppercase">{{.State}}</span></td>
-              <td>{{.ActiveAt.Time.UTC}}</td>
+              <td>{{.ActiveAt.UTC}}</td>
               <td>{{.Value}}</td>
             </tr>
             {{end}}
