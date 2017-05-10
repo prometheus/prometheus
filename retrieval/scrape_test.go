@@ -308,7 +308,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	}
 }
 
-func TestScrapeLoopStop(t *testing.T) {
+func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	scraper := &testScraper{}
 	sl := newScrapeLoop(context.Background(), scraper, nil, nil)
 
@@ -352,6 +352,51 @@ func TestScrapeLoopStop(t *testing.T) {
 	case <-stopDone:
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Stopping did not terminate after running exited")
+	}
+}
+
+func TestScrapeLoopStop(t *testing.T) {
+	appender := &collectResultAppender{}
+	var (
+		signal = make(chan struct{})
+
+		scraper    = &testScraper{}
+		app        = func() storage.Appender { return appender }
+		reportApp  = func() storage.Appender { return &nopAppender{} }
+		numScrapes = 0
+	)
+	defer close(signal)
+
+	sl := newScrapeLoop(context.Background(), scraper, app, reportApp)
+
+	// Succeed once, several failures, then stop.
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes += 1
+		if numScrapes == 2 {
+			go func() {
+				sl.stop()
+			}()
+		}
+		w.Write([]byte("metric_a 42\n"))
+		return nil
+	}
+
+	go func() {
+		sl.run(10*time.Millisecond, time.Hour, nil)
+		signal <- struct{}{}
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	if len(appender.result) < 2 {
+		t.Fatalf("Appended samples not as expected. Wanted: at least %d samples Got: %d", 2, len(appender.result))
+	}
+	if !value.IsStaleNaN(appender.result[len(appender.result)-1].v) {
+		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[len(appender.result)].v))
 	}
 }
 
