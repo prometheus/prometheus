@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blang/semver"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
@@ -185,8 +184,13 @@ func buildClients(cfg *config) ([]writer, []reader) {
 
 func serve(addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		shouldUseRawSnappy := shouldUseRawSnappy(r.Header.Get("X-Prometheus-Remote-Write-Version"))
-		reqBuf, err := decompressSnappyRequest(shouldUseRawSnappy, r)
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -213,8 +217,13 @@ func serve(addr string, writers []writer, readers []reader) error {
 	})
 
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
-		shouldUseRawSnappy := shouldUseRawSnappy(r.Header.Get("X-Prometheus-Remote-Read-Version"))
-		reqBuf, err := decompressSnappyRequest(shouldUseRawSnappy, r)
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -247,50 +256,17 @@ func serve(addr string, writers []writer, readers []reader) error {
 			return
 		}
 
-		if err := compressSnappyResponse(shouldUseRawSnappy, w, data); err != nil {
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
+
+		compressed = snappy.Encode(nil, data)
+		if _, err := w.Write(compressed); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})
 
 	return http.ListenAndServe(addr, nil)
-}
-
-func decompressSnappyRequest(shouldUseRawSnappy bool, r *http.Request) ([]byte, error) {
-	if !shouldUseRawSnappy {
-		return ioutil.ReadAll(snappy.NewReader(r.Body))
-	}
-
-	compressed, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return nil, err
-	}
-	return snappy.Decode(nil, compressed)
-}
-
-func compressSnappyResponse(shouldUseRawSnappy bool, w http.ResponseWriter, data []byte) error {
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Header().Set("Content-Encoding", "snappy")
-
-	if !shouldUseRawSnappy {
-		_, err := snappy.NewWriter(w).Write(data)
-		return err
-	}
-
-	compressed := snappy.Encode(nil, data)
-	_, err := w.Write(compressed)
-	return err
-}
-
-var rawSnappyFromVersion = semver.MustParse("0.1.0")
-
-func shouldUseRawSnappy(version string) bool {
-	ver, err := semver.Make(version)
-	if err != nil {
-		return true
-	}
-
-	return ver.GTE(rawSnappyFromVersion)
 }
 
 func protoToSamples(req *remote.WriteRequest) model.Samples {

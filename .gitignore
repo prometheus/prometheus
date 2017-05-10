@@ -25,3 +25,4 @@ benchmark.txt
 !/circle.yml
 !/.travis.yml
 !/.promu.yml
+/documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
