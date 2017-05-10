@@ -18,8 +18,14 @@ import (
 )
 
 const (
-	NormalNaN uint64 = 0x7ff8000000000001 // A quiet NaN. This is also math.NaN().
-	StaleNaN  uint64 = 0x7ff4000000000000 // A signalling NaN, starting 01 to allow for expansion.
+	// A quiet NaN. This is also math.NaN().
+	NormalNaN uint64 = 0x7ff8000000000001
+
+	// A signalling NaN, due to the MSB of the mantissa being 0.
+	// This value is chosen with many leading 0s, so we have scope to store more
+	// complicated values in the future. It is 2 rather than 1 to make
+	// it easier to distinguish from the NormalNaN by a human when debugging.
+	StaleNaN uint64 = 0x7ff0000000000002
 )
 
 func IsStaleNaN(v float64) bool {
