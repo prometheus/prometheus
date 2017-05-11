@@ -540,15 +540,27 @@ func TestLoadConfig(t *testing.T) {
 	if !reflect.DeepEqual(c, expectedConf) {
 		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
 	}
+}
 
-	// String method must not reveal authentication credentials.
-	s := c.String()
-	secretRe := regexp.MustCompile("<secret>")
-	matches := secretRe.FindAllStringIndex(s, -1)
-	if len(matches) != 6 || strings.Contains(s, "mysecret") {
-		t.Fatalf("config's String method reveals authentication credentials.")
+// YAML marshalling must not reveal authentication credentials.
+func TestElideSecrets(t *testing.T) {
+	c, err := LoadFile("testdata/conf.good.yml")
+	if err != nil {
+		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
 	}
 
+	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
+
+	config, err := yaml.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlConfig := string(config)
+
+	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
+	if len(matches) != 6 || strings.Contains(yamlConfig, "mysecret") {
+		t.Fatalf("yaml marshal reveals authentication credentials.")
+	}
 }
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {

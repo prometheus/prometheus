@@ -74,7 +74,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	sort.Sort(byName(vector))
 
-	externalLabels := h.externalLabels.Clone()
+	externalLabels := h.config.GlobalConfig.ExternalLabels.Clone()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
 		externalLabels[model.InstanceLabel] = ""
 	}
