@@ -1,4 +1,4 @@
-## 1.5.3 / 2017-05-11
+## 1.6.2 / 2017-05-11
 
 * [BUGFIX] Fix potential memory leak in Kubernetes service discovery
 
@@ -70,6 +70,10 @@
 * [BUGFIX] Fix int64 overflow in timestamps in the HTTP API.
 * [BUGFIX] Fix deadlock in Zookeeper SD.
 * [BUGFIX] Fix fuzzy search problems in the web-UI auto-completion.
+
+## 1.5.3 / 2017-05-11
+
+* [BUGFIX] Fix potential memory leak in Kubernetes service discovery
 
 ## 1.5.2 / 2017-02-10
 
