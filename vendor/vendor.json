@@ -228,6 +228,12 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "169ozjTWabpUS5xdRJAUcHHbJwI=",
+			"path": "github.com/cespare/xxhash",
+			"revision": "09e1e23aaa83fc6b47aa8aedbb62846c521ede77",
+			"revisionTime": "2017-03-30T21:27:15Z"
+		},
+		{
 			"checksumSHA1": "Z2AOGSmDKKvI6nuxa+UPjQWpIeM=",
 			"origin": "k8s.io/client-go/1.5/vendor/github.com/coreos/go-oidc/http",
 			"path": "github.com/coreos/go-oidc/http",
