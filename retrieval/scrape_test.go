@@ -357,12 +357,13 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 
 func TestScrapeLoopStop(t *testing.T) {
 	appender := &collectResultAppender{}
+	reportAppender := &collectResultAppender{}
 	var (
 		signal = make(chan struct{})
 
 		scraper    = &testScraper{}
 		app        = func() storage.Appender { return appender }
-		reportApp  = func() storage.Appender { return &nopAppender{} }
+		reportApp  = func() storage.Appender { return reportAppender }
 		numScrapes = 0
 	)
 	defer close(signal)
@@ -397,6 +398,20 @@ func TestScrapeLoopStop(t *testing.T) {
 	}
 	if !value.IsStaleNaN(appender.result[len(appender.result)-1].v) {
 		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[len(appender.result)].v))
+	}
+
+	if len(reportAppender.result) < 8 {
+		t.Fatalf("Appended samples not as expected. Wanted: at least %d samples Got: %d", 8, len(reportAppender.result))
+	}
+	if len(reportAppender.result)%4 != 0 {
+		t.Fatalf("Appended samples not as expected. Wanted: samples mod 4 == 0 Got: %d samples", len(reportAppender.result))
+	}
+	if !value.IsStaleNaN(reportAppender.result[len(reportAppender.result)-1].v) {
+		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(reportAppender.result[len(reportAppender.result)].v))
+	}
+
+	if reportAppender.result[len(reportAppender.result)-1].t != appender.result[len(appender.result)-1].t {
+		t.Fatalf("Expected last append and report sample to have same timestamp. Append: stale NaN Report: %x", appender.result[len(appender.result)-1].t, reportAppender.result[len(reportAppender.result)-1].t)
 	}
 }
 
