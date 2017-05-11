@@ -19,8 +19,9 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 func endpointsStoreKeyFunc(obj interface{}) (string, error) {
@@ -40,7 +41,7 @@ func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fa
 
 func makeEndpoints() *v1.Endpoints {
 	return &v1.Endpoints{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
 			Namespace: "default",
 		},
@@ -123,7 +124,7 @@ func TestEndpointsDiscoveryInitial(t *testing.T) {
 func TestEndpointsDiscoveryAdd(t *testing.T) {
 	n, _, eps, pods := makeTestEndpointsDiscovery()
 	pods.GetStore().Add(&v1.Pod{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
 		},
@@ -164,7 +165,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 			go func() {
 				eps.Add(
 					&v1.Endpoints{
-						ObjectMeta: v1.ObjectMeta{
+						ObjectMeta: metav1.ObjectMeta{
 							Name:      "testendpoints",
 							Namespace: "default",
 						},
@@ -273,7 +274,7 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 		afterStart: func() {
 			go func() {
 				eps.Update(&v1.Endpoints{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name:      "testendpoints",
 						Namespace: "default",
 					},
