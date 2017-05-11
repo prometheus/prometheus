@@ -23,12 +23,12 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	apiv1 "k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/util/runtime"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/cache"
+	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api"
+	apiv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -111,8 +111,8 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
 				CAFile:   conf.TLSConfig.CAFile,
 				CertFile: conf.TLSConfig.CertFile,
 				KeyFile:  conf.TLSConfig.KeyFile,
+				Insecure: conf.TLSConfig.InsecureSkipVerify,
 			},
-			Insecure: conf.TLSConfig.InsecureSkipVerify,
 		}
 		token := conf.BearerToken
 		if conf.BearerTokenFile != "" {
@@ -147,7 +147,7 @@ const resyncPeriod = 10 * time.Minute
 
 // Run implements the TargetProvider interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	rclient := d.client.Core().GetRESTClient()
+	rclient := d.client.Core().RESTClient()
 
 	switch d.role {
 	case "endpoints":
