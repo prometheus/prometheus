@@ -137,10 +137,6 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 	}()
 
-	tg = &config.TargetGroup{
-		Source: fmt.Sprintf("OS_%s", d.region),
-	}
-
 	provider, err := openstack.AuthenticatedClient(*d.authOpts)
 
 	if err != nil {
@@ -157,7 +153,9 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	opts := servers.ListOpts{}
 	pager := servers.List(client, opts)
 
-	tg = &config.TargetGroup{}
+	tg = &config.TargetGroup{
+		Source: fmt.Sprintf("OS_%s", d.region),
+	}
 
 	pagerFIP := floatingips.List(client)
 	floatingIPList := make(map[string][]string)
@@ -175,6 +173,10 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 		return true, nil
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("could not describe floating: %s", err)
+	}
 
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
 		serverList, err := servers.ExtractServers(page)
