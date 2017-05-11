@@ -1,3 +1,7 @@
+## 1.5.3 / 2017-05-11
+
+* [BUGFIX] Fix potential memory leak in Kubernetes service discovery
+
 ## 1.5.2 / 2017-02-10
 
 * [BUGFIX] Fix series corruption in a special case of series maintenance where
