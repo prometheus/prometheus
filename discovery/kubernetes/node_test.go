@@ -25,8 +25,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 type fakeInformer struct {
@@ -46,18 +47,21 @@ func newFakeInformer(f func(obj interface{}) (string, error)) *fakeInformer {
 	return i
 }
 
-func (i *fakeInformer) AddEventHandler(handler cache.ResourceEventHandler) error {
-	i.handlers = append(i.handlers, handler)
+func (i *fakeInformer) AddEventHandler(h cache.ResourceEventHandler) {
+	i.handlers = append(i.handlers, h)
 	// Only now that there is a registered handler, we are able to handle deltas.
 	i.blockDeltas.Unlock()
-	return nil
+}
+
+func (i *fakeInformer) AddEventHandlerWithResyncPeriod(h cache.ResourceEventHandler, _ time.Duration) {
+	i.AddEventHandler(h)
 }
 
 func (i *fakeInformer) GetStore() cache.Store {
 	return i.store
 }
 
-func (i *fakeInformer) GetController() cache.ControllerInterface {
+func (i *fakeInformer) GetController() cache.Controller {
 	return nil
 }
 
@@ -160,7 +164,7 @@ func makeTestNodeDiscovery() (*Node, *fakeInformer) {
 
 func makeNode(name, address string, labels map[string]string, annotations map[string]string) *v1.Node {
 	return &v1.Node{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Labels:      labels,
 			Annotations: annotations,

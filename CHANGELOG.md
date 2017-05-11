@@ -1,3 +1,7 @@
+## 1.5.3 / 2017-05-11
+
+* [BUGFIX] Fix potential memory leak in Kubernetes service discovery
+
 ## 1.6.1 / 2017-04-19
 
 * [BUGFIX] Don't panic if storage has no FPs even after initial wait
