@@ -19,8 +19,9 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 func podStoreKeyFunc(obj interface{}) (string, error) {
@@ -38,7 +39,7 @@ func makeTestPodDiscovery() (*Pod, *fakeInformer) {
 
 func makeMultiPortPod() *v1.Pod {
 	return &v1.Pod{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testpod",
 			Namespace:   "default",
 			Labels:      map[string]string{"testlabel": "testvalue"},
@@ -82,7 +83,7 @@ func makeMultiPortPod() *v1.Pod {
 
 func makePod() *v1.Pod {
 	return &v1.Pod{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
 		},
@@ -266,7 +267,7 @@ func TestPodDiscoveryDeleteUnknownCacheState(t *testing.T) {
 func TestPodDiscoveryUpdate(t *testing.T) {
 	n, i := makeTestPodDiscovery()
 	i.GetStore().Add(&v1.Pod{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
 		},
