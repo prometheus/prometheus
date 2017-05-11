@@ -469,9 +469,9 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 		}
 
 		var (
-			total, added int
-			start        = time.Now()
-			scrapeCtx, _ = context.WithTimeout(sl.ctx, timeout)
+			total, added      int
+			start             = time.Now()
+			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
 		)
 
 		// Only record after the first scrape.
@@ -482,6 +482,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 		}
 
 		err := sl.scraper.scrape(scrapeCtx, buf)
+		cancel()
 		if err == nil {
 			b := buf.Bytes()
 
