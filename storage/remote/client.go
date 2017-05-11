@@ -122,7 +122,7 @@ func (c *Client) Store(samples model.Samples) error {
 	if httpResp.StatusCode/100 == 5 {
 		return recoverableError{err}
 	}
-	return nil
+	return err
 }
 
 // Name identifies the client.
