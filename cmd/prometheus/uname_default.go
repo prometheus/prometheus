@@ -14,7 +14,9 @@
 
 package main
 
-// Uname for any platform other than linux
+import "runtime"
+
+// Uname for any platform other than linux.
 func Uname() string {
-	return "(Printing uname isn't yet supported on this platform)"
+	return "(Printing uname isn't yet supported on ", runtime.GOOS, ")"
 }

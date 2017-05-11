@@ -19,17 +19,13 @@ import (
 
 func charsToString(ca []int8) string {
 	s := make([]byte, len(ca))
-	var lens int
-	for ; lens < len(ca); lens++ {
-		if ca[lens] == 0 {
-			break
-		}
-		s[lens] = uint8(ca[lens])
+	for i, c := range ca {
+		s[i] = byte(c)
 	}
-	return string(s[0:lens])
+	return string(s[0:len(ca)])
 }
 
-// Uname returns the uname of the host machine
+// Uname returns the uname of the host machine.
 func Uname() string {
 	buf := syscall.Utsname{}
 	err := syscall.Uname(&buf)
