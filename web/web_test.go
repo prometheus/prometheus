@@ -59,7 +59,7 @@ func TestGlobalURL(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%d. Error parsing input URL: %s", i, err)
 		}
-		globalURL := tmplFuncs("", opts)["globalURL"].(func(u *url.URL) *url.URL)
+		globalURL := uiTmplFuncs("", opts)["globalURL"].(func(u *url.URL) *url.URL)
 		outURL := globalURL(inURL)
 
 		if outURL.String() != test.outURL {

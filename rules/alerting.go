@@ -191,7 +191,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts model.Time, engine *promql.E
 				tmplData,
 				ts,
 				engine,
-				externalURLPath,
 			)
 			result, err := tmpl.Expand()
 			if err != nil {
