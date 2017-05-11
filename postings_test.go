@@ -33,6 +33,13 @@ func (m *mockPostings) Seek(v uint32) bool { return m.seek(v) }
 func (m *mockPostings) Value() uint32      { return m.value() }
 func (m *mockPostings) Err() error         { return m.err() }
 
+func expandPostings(p Postings) (res []uint32, err error) {
+	for p.Next() {
+		res = append(res, p.At())
+	}
+	return res, p.Err()
+}
+
 func TestIntersect(t *testing.T) {
 	var cases = []struct {
 		a, b []uint32
@@ -233,19 +240,9 @@ func TestMergedPostingsSeek(t *testing.T) {
 		p := newMergedPostings(a, b)
 
 		require.Equal(t, c.success, p.Seek(c.seek))
-
-		if c.success {
-			// check the current element and then proceed to check the rest.
-			i := 0
-			require.Equal(t, c.res[i], p.At())
-
-			for p.Next() {
-				i++
-				require.Equal(t, int(c.res[i]), int(p.At()))
-			}
-
-			require.Equal(t, len(c.res)-1, i)
-		}
+		lst, err := expandPostings(p)
+		require.NoError(t, err)
+		require.Equal(t, c.res, lst)
 	}
 
 	return
@@ -296,16 +293,16 @@ func TestBigEndian(t *testing.T) {
 				ls[600] + 1, ls[601], true,
 			},
 			{
-				ls[600] + 1, ls[601], true,
+				ls[600] + 1, ls[602], true,
 			},
 			{
-				ls[600] + 1, ls[601], true,
+				ls[600] + 1, ls[603], true,
 			},
 			{
-				ls[0], ls[601], true,
+				ls[0], ls[604], true,
 			},
 			{
-				ls[600], ls[601], true,
+				ls[600], ls[605], true,
 			},
 			{
 				ls[999], ls[999], true,
@@ -316,15 +313,11 @@ func TestBigEndian(t *testing.T) {
 		}
 
 		bep := newBigEndianPostings(beLst)
-		bep.Next()
 
 		for _, v := range table {
 			require.Equal(t, v.found, bep.Seek(v.seek))
-			// Once you seek beyond, At() will panic.
-			if v.found {
-				require.Equal(t, v.val, bep.At())
-				require.Nil(t, bep.Err())
-			}
+			require.Equal(t, v.val, bep.At())
+			require.Nil(t, bep.Err())
 		}
 	})
 }
