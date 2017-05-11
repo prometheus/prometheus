@@ -413,7 +413,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 		if !sl.appender.NeedsThrottling() {
 			var (
 				start                 = time.Now()
-				scrapeCtx, _          = context.WithTimeout(sl.ctx, timeout)
+				scrapeCtx, cancel     = context.WithTimeout(sl.ctx, timeout)
 				numPostRelabelSamples = 0
 			)
 
@@ -425,6 +425,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 			}
 
 			samples, err := sl.scraper.scrape(scrapeCtx, start)
+			cancel()
 			if err == nil {
 				numPostRelabelSamples, err = sl.append(samples)
 			}
