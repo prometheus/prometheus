@@ -38,7 +38,7 @@ type collectResultAppender struct {
 
 func (a *collectResultAppender) AddFast(ref uint64, t int64, v float64) error {
 	// Not implemented.
-	return nil
+	return storage.ErrNotFound
 }
 
 func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {

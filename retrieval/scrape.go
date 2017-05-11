@@ -566,6 +566,9 @@ mainLoop:
 	if _, _, err := sl.append([]byte{}, staleTime); err != nil {
 		log.With("err", err).Error("stale append failed")
 	}
+	if err := sl.reportStale(staleTime); err != nil {
+		log.With("err", err).Error("stale report failed")
+	}
 }
 
 // Stop the scraping. May still write data and stale markers after it has
@@ -738,13 +741,45 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 	return app.Commit()
 }
 
+func (sl *scrapeLoop) reportStale(start time.Time) error {
+	ts := timestamp.FromTime(start)
+	app := sl.reportAppender()
+	stale := math.Float64frombits(value.StaleNaN)
+
+	if err := sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
+		app.Rollback()
+		return err
+	}
+	if err := sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
+		app.Rollback()
+		return err
+	}
+	if err := sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
+		app.Rollback()
+		return err
+	}
+	if err := sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
+		app.Rollback()
+		return err
+	}
+	return app.Commit()
+}
+
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
 	ref, ok := sl.refCache[s]
 
 	if ok {
-		if err := app.AddFast(ref, t, v); err == nil {
+		err := app.AddFast(ref, t, v)
+		switch err {
+		case nil:
 			return nil
-		} else if err != storage.ErrNotFound {
+		case storage.ErrNotFound:
+			// Try an Add.
+		case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+			// Do not log here, as this is expected if a target goes away and comes back
+			// again with a new scrape loop.
+			return nil
+		default:
 			return err
 		}
 	}
@@ -752,10 +787,13 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		labels.Label{Name: labels.MetricName, Value: s},
 	}
 	ref, err := app.Add(met, t, v)
-	if err != nil {
+	switch err {
+	case nil:
+		sl.refCache[s] = ref
+		return nil
+	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+		return nil
+	default:
 		return err
 	}
-	sl.refCache[s] = ref
-
-	return nil
 }
