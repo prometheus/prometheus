@@ -18,5 +18,5 @@ import "runtime"
 
 // Uname for any platform other than linux.
 func Uname() string {
-	return "(Printing uname isn't yet supported on ", runtime.GOOS, ")"
+	return "(" + runtime.GOOS + ")"
 }
