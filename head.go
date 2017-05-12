@@ -112,7 +112,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 	h := &headBlock{
 		dir:      dir,
 		wal:      wal,
-		series:   []*memSeries{},
+		series:   []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
 		hashes:   map[uint64][]*memSeries{},
 		values:   map[string]stringset{},
 		postings: &memPostings{m: make(map[term][]uint32)},

@@ -78,23 +78,39 @@ func TestIntersect(t *testing.T) {
 
 func TestMultiIntersect(t *testing.T) {
 	var cases = []struct {
-		a, b, c []uint32
-		res     []uint32
+		p   [][]uint32
+		res []uint32
 	}{
 		{
-			a:   []uint32{1, 2, 3, 4, 5, 6, 1000, 1001},
-			b:   []uint32{2, 4, 5, 6, 7, 8, 999, 1001},
-			c:   []uint32{1, 2, 5, 6, 7, 8, 1001, 1200},
+			p: [][]uint32{
+				{1, 2, 3, 4, 5, 6, 1000, 1001},
+				{2, 4, 5, 6, 7, 8, 999, 1001},
+				{1, 2, 5, 6, 7, 8, 1001, 1200},
+			},
 			res: []uint32{2, 5, 6, 1001},
+		},
+		// One of the reproduceable cases for:
+		// https://github.com/prometheus/prometheus/issues/2616
+		// The initialisation of intersectPostings was moving the iterator forward
+		// prematurely making us miss some postings.
+		{
+			p: [][]uint32{
+				{1, 2},
+				{1, 2},
+				{1, 2},
+				{2},
+			},
+			res: []uint32{2},
 		},
 	}
 
 	for _, c := range cases {
-		pa := newListPostings(c.a)
-		pb := newListPostings(c.b)
-		pc := newListPostings(c.c)
+		ps := make([]Postings, 0, len(c.p))
+		for _, postings := range c.p {
+			ps = append(ps, newListPostings(postings))
+		}
 
-		res, err := expandPostings(Intersect(pa, pb, pc))
+		res, err := expandPostings(Intersect(ps...))
 
 		require.NoError(t, err)
 		require.Equal(t, c.res, res)
@@ -200,12 +216,12 @@ func TestMergedPostingsSeek(t *testing.T) {
 		res     []uint32
 	}{
 		{
-			a: []uint32{1, 2, 3, 4, 5},
+			a: []uint32{2, 3, 4, 5},
 			b: []uint32{6, 7, 8, 9, 10},
 
-			seek:    0,
+			seek:    1,
 			success: true,
-			res:     []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			res:     []uint32{2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
 			a: []uint32{1, 2, 3, 4, 5},
@@ -240,9 +256,16 @@ func TestMergedPostingsSeek(t *testing.T) {
 		p := newMergedPostings(a, b)
 
 		require.Equal(t, c.success, p.Seek(c.seek))
-		lst, err := expandPostings(p)
-		require.NoError(t, err)
-		require.Equal(t, c.res, lst)
+
+		// After Seek(), At() should be called.
+		if c.success {
+			start := p.At()
+			lst, err := expandPostings(p)
+			require.NoError(t, err)
+
+			lst = append([]uint32{start}, lst...)
+			require.Equal(t, c.res, lst)
+		}
 	}
 
 	return
@@ -293,16 +316,16 @@ func TestBigEndian(t *testing.T) {
 				ls[600] + 1, ls[601], true,
 			},
 			{
-				ls[600] + 1, ls[602], true,
+				ls[600] + 1, ls[601], true,
 			},
 			{
-				ls[600] + 1, ls[603], true,
+				ls[600] + 1, ls[601], true,
 			},
 			{
-				ls[0], ls[604], true,
+				ls[0], ls[601], true,
 			},
 			{
-				ls[600], ls[605], true,
+				ls[600], ls[601], true,
 			},
 			{
 				ls[999], ls[999], true,
@@ -320,4 +343,21 @@ func TestBigEndian(t *testing.T) {
 			require.Nil(t, bep.Err())
 		}
 	})
+}
+
+func TestIntersectWithMerge(t *testing.T) {
+	// One of the reproduceable cases for:
+	// https://github.com/prometheus/prometheus/issues/2616
+	a := newListPostings([]uint32{21, 22, 23, 24, 25, 30})
+
+	b := newMergedPostings(
+		newListPostings([]uint32{10, 20, 30}),
+		newListPostings([]uint32{15, 26, 30}),
+	)
+
+	p := Intersect(a, b)
+	res, err := expandPostings(p)
+
+	require.NoError(t, err)
+	require.Equal(t, []uint32{30}, res)
 }

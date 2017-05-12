@@ -207,19 +207,15 @@ func (it *mergedPostings) Next() bool {
 }
 
 func (it *mergedPostings) Seek(id uint32) bool {
+	if it.cur >= id {
+		return true
+	}
+
 	it.aok = it.a.Seek(id)
 	it.bok = it.b.Seek(id)
 	it.initialized = true
-	acur, bcur := it.a.At(), it.b.At()
-	if acur < bcur {
-		it.cur = acur
-	} else if acur > bcur {
-		it.cur = bcur
-	} else {
-		it.cur = acur
-		it.bok = it.b.Next()
-	}
-	return it.aok && it.bok
+
+	return it.Next()
 }
 
 func (it *mergedPostings) Err() error {
@@ -249,10 +245,16 @@ func (it *listPostings) Next() bool {
 		it.list = it.list[1:]
 		return true
 	}
+	it.cur = 0
 	return false
 }
 
 func (it *listPostings) Seek(x uint32) bool {
+	// If the current value satisfies, then return.
+	if it.cur >= x {
+		return true
+	}
+
 	// Do binary search between current position and end.
 	i := sort.Search(len(it.list), func(i int) bool {
 		return it.list[i] >= x
@@ -295,6 +297,10 @@ func (it *bigEndianPostings) Next() bool {
 }
 
 func (it *bigEndianPostings) Seek(x uint32) bool {
+	if it.cur >= x {
+		return true
+	}
+
 	num := len(it.list) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
