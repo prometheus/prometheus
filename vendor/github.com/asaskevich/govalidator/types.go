@@ -29,15 +29,19 @@ type stringValues []reflect.Value
 // ParamTagMap is a map of functions accept variants parameters
 var ParamTagMap = map[string]ParamValidator{
 	"length":       ByteLength,
+	"runelength":   RuneLength,
 	"stringlength": StringLength,
 	"matches":      StringMatches,
+	"in":           isInRaw,
 }
 
 // ParamTagRegexMap maps param tags to their respective regexes.
 var ParamTagRegexMap = map[string]*regexp.Regexp{
 	"length":       regexp.MustCompile("^length\\((\\d+)\\|(\\d+)\\)$"),
+	"runelength":   regexp.MustCompile("^runelength\\((\\d+)\\|(\\d+)\\)$"),
 	"stringlength": regexp.MustCompile("^stringlength\\((\\d+)\\|(\\d+)\\)$"),
-	"matches":      regexp.MustCompile(`matches\(([^)]+)\)`),
+	"in":           regexp.MustCompile(`^in\((.*)\)`),
+	"matches":      regexp.MustCompile(`^matches\((.+)\)$`),
 }
 
 type customTypeTagMap struct {
@@ -113,6 +117,10 @@ var TagMap = map[string]Validator{
 	"longitude":      IsLongitude,
 	"ssn":            IsSSN,
 	"semver":         IsSemver,
+	"rfc3339":        IsRFC3339,
+	"ISO3166Alpha2":  IsISO3166Alpha2,
+	"ISO3166Alpha3":  IsISO3166Alpha3,
+	"ISO4217":        IsISO4217,
 }
 
 // ISO3166Entry stores country codes
@@ -375,4 +383,33 @@ var ISO3166List = []ISO3166Entry{
 	{"Samoa", "Samoa (le)", "WS", "WSM", "882"},
 	{"Yemen", "Yémen (le)", "YE", "YEM", "887"},
 	{"Zambia", "Zambie (la)", "ZM", "ZMB", "894"},
+}
+
+var ISO4217List = []string{
+	"AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN",
+	"BAM", "BBD", "BDT", "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BOV", "BRL", "BSD", "BTN", "BWP", "BYN", "BZD",
+	"CAD", "CDF", "CHE", "CHF", "CHW", "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CUC", "CUP", "CVE", "CZK",
+	"DJF", "DKK", "DOP", "DZD",
+	"EGP", "ERN", "ETB", "EUR",
+	"FJD", "FKP",
+	"GBP", "GEL", "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD",
+	"HKD", "HNL", "HRK", "HTG", "HUF",
+	"IDR", "ILS", "INR", "IQD", "IRR", "ISK",
+	"JMD", "JOD", "JPY",
+	"KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD", "KZT",
+	"LAK", "LBP", "LKR", "LRD", "LSL", "LYD",
+	"MAD", "MDL", "MGA", "MKD", "MMK", "MNT", "MOP", "MRO", "MUR", "MVR", "MWK", "MXN", "MXV", "MYR", "MZN",
+	"NAD", "NGN", "NIO", "NOK", "NPR", "NZD",
+	"OMR",
+	"PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG",
+	"QAR",
+	"RON", "RSD", "RUB", "RWF",
+	"SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLL", "SOS", "SRD", "SSP", "STD", "SVC", "SYP", "SZL",
+	"THB", "TJS", "TMT", "TND", "TOP", "TRY", "TTD", "TWD", "TZS",
+	"UAH", "UGX", "USD", "USN", "UYI", "UYU", "UZS",
+	"VEF", "VND", "VUV",
+	"WST",
+	"XAF", "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD", "XDR", "XOF", "XPD", "XPF", "XPT", "XSU", "XTS", "XUA", "XXX",
+	"YER",
+	"ZAR", "ZMW", "ZWL",
 }

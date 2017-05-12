@@ -135,6 +135,7 @@ func IsISBN13(str string) bool
 func IsISO3166Alpha2(str string) bool
 func IsISO3166Alpha3(str string) bool
 func IsInt(str string) bool
+func IsIn(str string, params ...string) bool
 func IsJSON(str string) bool
 func IsLatitude(str string) bool
 func IsLongitude(str string) bool
@@ -172,6 +173,9 @@ func LeftTrim(str, chars string) string
 func Map(array []interface{}, iterator ResultIterator) []interface{}
 func Matches(str, pattern string) bool
 func NormalizeEmail(str string) (string, error)
+func PadBoth(str string, padStr string, padLen int) string
+func PadLeft(str string, padStr string, padLen int)  string
+func PadRight(str string, padStr string, padLen int) string
 func RemoveTags(s string) string
 func ReplacePattern(str, pattern, replace string) string
 func Reverse(s string) string
@@ -253,59 +257,64 @@ For completely custom validators (interface-based), see below.
 
 Here is a list of available validators for struct fields (validator - used function):
 ```go
-"alpha":          IsAlpha,
-"alphanum":       IsAlphanumeric,
-"ascii":          IsASCII,
-"base64":         IsBase64,
-"creditcard":     IsCreditCard,
-"datauri":        IsDataURI,
-"dialstring":     IsDialString,
-"dns":            IsDNSName,
 "email":          IsEmail,
-"float":          IsFloat,
-"fullwidth":      IsFullWidth,
-"halfwidth":      IsHalfWidth,
+"url":            IsURL,
+"dialstring":     IsDialString,
+"requrl":         IsRequestURL,
+"requri":         IsRequestURI,
+"alpha":          IsAlpha,
+"utfletter":      IsUTFLetter,
+"alphanum":       IsAlphanumeric,
+"utfletternum":   IsUTFLetterNumeric,
+"numeric":        IsNumeric,
+"utfnumeric":     IsUTFNumeric,
+"utfdigit":       IsUTFDigit,
 "hexadecimal":    IsHexadecimal,
 "hexcolor":       IsHexcolor,
-"host":           IsHost,
-"int":            IsInt,
-"ip":             IsIP,
-"ipv4":           IsIPv4,
-"ipv6":           IsIPv6,
-"isbn10":         IsISBN10,
-"isbn13":         IsISBN13,
-"json":           IsJSON,
-"latitude":       IsLatitude,
-"longitude":      IsLongitude,
-"lowercase":      IsLowerCase,
-"mac":            IsMAC,
-"multibyte":      IsMultibyte,
-"null":           IsNull,
-"numeric":        IsNumeric,
-"port":           IsPort,
-"printableascii": IsPrintableASCII,
-"requri":         IsRequestURI,
-"requrl":         IsRequestURL,
 "rgbcolor":       IsRGBcolor,
-"ssn":            IsSSN,
-"semver":         IsSemver,
+"lowercase":      IsLowerCase,
 "uppercase":      IsUpperCase,
-"url":            IsURL,
-"utfdigit":       IsUTFDigit,
-"utfletter":      IsUTFLetter,
-"utfletternum":   IsUTFLetterNumeric,
-"utfnumeric":     IsUTFNumeric,
+"int":            IsInt,
+"float":          IsFloat,
+"null":           IsNull,
 "uuid":           IsUUID,
 "uuidv3":         IsUUIDv3,
 "uuidv4":         IsUUIDv4,
 "uuidv5":         IsUUIDv5,
+"creditcard":     IsCreditCard,
+"isbn10":         IsISBN10,
+"isbn13":         IsISBN13,
+"json":           IsJSON,
+"multibyte":      IsMultibyte,
+"ascii":          IsASCII,
+"printableascii": IsPrintableASCII,
+"fullwidth":      IsFullWidth,
+"halfwidth":      IsHalfWidth,
 "variablewidth":  IsVariableWidth,
+"base64":         IsBase64,
+"datauri":        IsDataURI,
+"ip":             IsIP,
+"port":           IsPort,
+"ipv4":           IsIPv4,
+"ipv6":           IsIPv6,
+"dns":            IsDNSName,
+"host":           IsHost,
+"mac":            IsMAC,
+"latitude":       IsLatitude,
+"longitude":      IsLongitude,
+"ssn":            IsSSN,
+"semver":         IsSemver,
+"rfc3339":        IsRFC3339,
+"ISO3166Alpha2":  IsISO3166Alpha2,
+"ISO3166Alpha3":  IsISO3166Alpha3,
 ```
 Validators with parameters
 
 ```go
 "length(min|max)": ByteLength,
+"runelength(min|max)": RuneLegth,
 "matches(pattern)": StringMatches,
+"in(string1|string2|...|stringN)": IsIn,
 ```
 
 And here is small example of usage:
