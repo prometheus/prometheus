@@ -131,13 +131,13 @@ Outer:
 			h.meta.Stats.NumSeries++
 		}
 		for _, s := range samples {
-			if int(s.ref) >= len(h.series) {
-				l.Log("msg", "unknown series reference, abort WAL restore", "got", s.ref, "max", len(h.series)-1)
+			if int(s.Ref) >= len(h.series) {
+				l.Log("msg", "unknown series reference, abort WAL restore", "got", s.Ref, "max", len(h.series)-1)
 				break Outer
 			}
-			h.series[s.ref].append(s.t, s.v)
+			h.series[s.Ref].append(s.T, s.V)
 
-			if !h.inBounds(s.t) {
+			if !h.inBounds(s.T) {
 				return nil, errors.Wrap(ErrOutOfBounds, "consume WAL")
 			}
 			h.meta.Stats.NumSamples++
@@ -262,15 +262,15 @@ func (h *HeadBlock) Busy() bool {
 
 var headPool = sync.Pool{}
 
-func getHeadAppendBuffer() []refdSample {
+func getHeadAppendBuffer() []RefSample {
 	b := headPool.Get()
 	if b == nil {
-		return make([]refdSample, 0, 512)
+		return make([]RefSample, 0, 512)
 	}
-	return b.([]refdSample)
+	return b.([]RefSample)
 }
 
-func putHeadAppendBuffer(b []refdSample) {
+func putHeadAppendBuffer(b []RefSample) {
 	headPool.Put(b[:0])
 }
 
@@ -282,18 +282,12 @@ type headAppender struct {
 	refmap    map[uint64]uint64
 	newLabels []labels.Labels
 
-	samples []refdSample
+	samples []RefSample
 }
 
 type hashedLabels struct {
 	hash   uint64
 	labels labels.Labels
-}
-
-type refdSample struct {
-	ref uint64
-	t   int64
-	v   float64
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -370,10 +364,10 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		}
 	}
 
-	a.samples = append(a.samples, refdSample{
-		ref: ref,
-		t:   t,
-		v:   v,
+	a.samples = append(a.samples, RefSample{
+		Ref: ref,
+		T:   t,
+		V:   v,
 	})
 	return nil
 }
@@ -419,8 +413,8 @@ func (a *headAppender) Commit() error {
 	for i := range a.samples {
 		s := &a.samples[i]
 
-		if s.ref&(1<<32) > 0 {
-			s.ref = a.refmap[s.ref]
+		if s.Ref&(1<<32) > 0 {
+			s.Ref = a.refmap[s.Ref]
 		}
 	}
 
@@ -434,7 +428,7 @@ func (a *headAppender) Commit() error {
 	total := uint64(len(a.samples))
 
 	for _, s := range a.samples {
-		if !a.series[s.ref].append(s.t, s.v) {
+		if !a.series[s.Ref].append(s.T, s.V) {
 			total--
 		}
 	}
