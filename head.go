@@ -47,8 +47,8 @@ var (
 	ErrOutOfBounds = errors.New("out of bounds")
 )
 
-// headBlock handles reads and writes of time series data within a time window.
-type headBlock struct {
+// HeadBlock handles reads and writes of time series data within a time window.
+type HeadBlock struct {
 	mtx sync.RWMutex
 	dir string
 	wal *WAL
@@ -69,7 +69,8 @@ type headBlock struct {
 	meta BlockMeta
 }
 
-func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*headBlock, error) {
+// CreateHeadBlock creates a new head block in dir that holds samples in the range [mint,maxt).
+func CreateHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*HeadBlock, error) {
 	// Make head block creation appear atomic.
 	tmp := dir + ".tmp"
 
@@ -95,11 +96,11 @@ func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*head
 	if err := renameFile(tmp, dir); err != nil {
 		return nil, err
 	}
-	return openHeadBlock(dir, l)
+	return OpenHeadBlock(dir, l)
 }
 
-// openHeadBlock creates a new empty head block.
-func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
+// OpenHeadBlock opens the head block in dir.
+func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
 	wal, err := OpenWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -109,7 +110,7 @@ func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
 		return nil, err
 	}
 
-	h := &headBlock{
+	h := &HeadBlock{
 		dir:      dir,
 		wal:      wal,
 		series:   []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
@@ -151,16 +152,16 @@ Outer:
 
 // inBounds returns true if the given timestamp is within the valid
 // time bounds of the block.
-func (h *headBlock) inBounds(t int64) bool {
+func (h *HeadBlock) inBounds(t int64) bool {
 	return t >= h.meta.MinTime && t <= h.meta.MaxTime
 }
 
-func (h *headBlock) String() string {
+func (h *HeadBlock) String() string {
 	return fmt.Sprintf("(%d, %s)", h.meta.Sequence, h.meta.ULID)
 }
 
 // Close syncs all data and closes underlying resources of the head block.
-func (h *headBlock) Close() error {
+func (h *HeadBlock) Close() error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
@@ -184,7 +185,7 @@ func (h *headBlock) Close() error {
 	return nil
 }
 
-func (h *headBlock) Meta() BlockMeta {
+func (h *HeadBlock) Meta() BlockMeta {
 	m := BlockMeta{
 		ULID:       h.meta.ULID,
 		Sequence:   h.meta.Sequence,
@@ -200,12 +201,12 @@ func (h *headBlock) Meta() BlockMeta {
 	return m
 }
 
-func (h *headBlock) Dir() string         { return h.dir }
-func (h *headBlock) Persisted() bool     { return false }
-func (h *headBlock) Index() IndexReader  { return &headIndexReader{h} }
-func (h *headBlock) Chunks() ChunkReader { return &headChunkReader{h} }
+func (h *HeadBlock) Dir() string         { return h.dir }
+func (h *HeadBlock) Persisted() bool     { return false }
+func (h *HeadBlock) Index() IndexReader  { return &headIndexReader{h} }
+func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
-func (h *headBlock) Querier(mint, maxt int64) Querier {
+func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -244,7 +245,7 @@ func (h *headBlock) Querier(mint, maxt int64) Querier {
 	}
 }
 
-func (h *headBlock) Appender() Appender {
+func (h *HeadBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 
 	h.mtx.RLock()
@@ -252,10 +253,10 @@ func (h *headBlock) Appender() Appender {
 	if h.closed {
 		panic(fmt.Sprintf("block %s already closed", h.dir))
 	}
-	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
+	return &headAppender{HeadBlock: h, samples: getHeadAppendBuffer()}
 }
 
-func (h *headBlock) Busy() bool {
+func (h *HeadBlock) Busy() bool {
 	return atomic.LoadUint64(&h.activeWriters) > 0
 }
 
@@ -274,7 +275,7 @@ func putHeadAppendBuffer(b []refdSample) {
 }
 
 type headAppender struct {
-	*headBlock
+	*HeadBlock
 
 	newSeries map[uint64]hashedLabels
 	newHashes map[uint64]uint64
@@ -454,7 +455,7 @@ func (a *headAppender) Rollback() error {
 }
 
 type headChunkReader struct {
-	*headBlock
+	*HeadBlock
 }
 
 // Chunk returns the chunk for the reference number.
@@ -490,7 +491,7 @@ func (c *safeChunk) Iterator() chunks.Iterator {
 // func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
 
 type headIndexReader struct {
-	*headBlock
+	*HeadBlock
 }
 
 // LabelValues returns the possible label values
@@ -558,7 +559,7 @@ func (h *headIndexReader) LabelIndices() ([][]string, error) {
 
 // get retrieves the chunk with the hash and label set and creates
 // a new one if it doesn't exist yet.
-func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
+func (h *HeadBlock) get(hash uint64, lset labels.Labels) *memSeries {
 	series := h.hashes[hash]
 
 	for _, s := range series {
@@ -569,7 +570,7 @@ func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
+func (h *HeadBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	s := &memSeries{
 		lset: lset,
 		ref:  uint32(len(h.series)),

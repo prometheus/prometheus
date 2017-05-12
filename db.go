@@ -118,7 +118,7 @@ type DB struct {
 	// or the general layout.
 	// Must never be held when acquiring a blocks's mutex!
 	headmtx sync.RWMutex
-	heads   []HeadBlock
+	heads   []headBlock
 
 	compactor Compactor
 
@@ -401,7 +401,7 @@ func (db *DB) reloadBlocks() error {
 	var (
 		metas     []*BlockMeta
 		blocks    []Block
-		heads     []HeadBlock
+		heads     []headBlock
 		seqBlocks = make(map[int]Block, len(dirs))
 	)
 
@@ -418,7 +418,7 @@ func (db *DB) reloadBlocks() error {
 
 		if meta.Compaction.Generation == 0 {
 			if !ok {
-				b, err = openHeadBlock(dirs[i], db.logger)
+				b, err = OpenHeadBlock(dirs[i], db.logger)
 				if err != nil {
 					return errors.Wrapf(err, "load head at %s", dirs[i])
 				}
@@ -426,7 +426,7 @@ func (db *DB) reloadBlocks() error {
 			if meta.ULID != b.Meta().ULID {
 				return errors.Errorf("head block ULID changed unexpectedly")
 			}
-			heads = append(heads, b.(HeadBlock))
+			heads = append(heads, b.(headBlock))
 		} else {
 			if !ok || meta.ULID != b.Meta().ULID {
 				b, err = newPersistedBlock(dirs[i])
@@ -559,7 +559,7 @@ func (a *dbAppender) appenderFor(t int64) (*metaAppender, error) {
 	if len(a.heads) == 0 || t >= a.heads[len(a.heads)-1].meta.MaxTime {
 		a.db.headmtx.Lock()
 
-		var newHeads []HeadBlock
+		var newHeads []headBlock
 
 		if err := a.db.ensureHead(t); err != nil {
 			a.db.headmtx.Unlock()
@@ -670,9 +670,9 @@ func (a *dbAppender) Rollback() error {
 }
 
 // appendable returns a copy of a slice of HeadBlocks that can still be appended to.
-func (db *DB) appendable() []HeadBlock {
+func (db *DB) appendable() []headBlock {
 	var i int
-	app := make([]HeadBlock, 0, db.opts.AppendableBlocks)
+	app := make([]headBlock, 0, db.opts.AppendableBlocks)
 
 	if len(db.heads) > db.opts.AppendableBlocks {
 		i = len(db.heads) - db.opts.AppendableBlocks
@@ -711,14 +711,14 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
-func (db *DB) cut(mint int64) (HeadBlock, error) {
+func (db *DB) cut(mint int64) (headBlock, error) {
 	maxt := mint + int64(db.opts.MinBlockDuration)
 
 	dir, seq, err := nextSequenceFile(db.dir, "b-")
 	if err != nil {
 		return nil, err
 	}
-	newHead, err := createHeadBlock(dir, seq, db.logger, mint, maxt)
+	newHead, err := CreateHeadBlock(dir, seq, db.logger, mint, maxt)
 	if err != nil {
 		return nil, err
 	}

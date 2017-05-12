@@ -39,7 +39,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 		require.NoError(b, err)
 		defer os.RemoveAll(dir)
 
-		h, err := createHeadBlock(dir, 0, nil, 0, 1)
+		h, err := CreateHeadBlock(dir, 0, nil, 0, 1)
 		require.NoError(b, err)
 
 		b.ReportAllocs()
@@ -93,7 +93,7 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	hb, err := CreateHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
 	require.NoError(t, err, "Error creating head block")
 
 	app := hb.Appender()
@@ -110,7 +110,7 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	hb, err := CreateHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
 	require.NoError(t, err, "Error creating head block")
 
 	app := hb.Appender()
@@ -127,7 +127,7 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	hb, err := CreateHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
 	require.NoError(t, err, "Error creating head block")
 
 	app := hb.Appender()
@@ -144,7 +144,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
+	hb, err := CreateHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
 	require.NoError(t, err)
 
 	// Append AmendedValue.
@@ -246,7 +246,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, minTime, maxTime)
+	hb, err := CreateHeadBlock(tmpdir+"/hb", 0, nil, minTime, maxTime)
 	require.NoError(t, err)
 	app := hb.Appender()
 
