@@ -134,8 +134,8 @@ func init() {
 		"Minimum duration of a data block before being persisted.",
 	)
 	cfg.fs.DurationVar(
-		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration", 36*time.Hour,
-		"Maximum duration compacted blocks may span.",
+		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration", 0,
+		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)",
 	)
 	cfg.fs.IntVar(
 		&cfg.tsdb.AppendableBlocks, "storage.tsdb.appendable-blocks", 2,
@@ -208,6 +208,10 @@ func parse(args []string) error {
 		if err := validateAlertmanagerURL(u); err != nil {
 			return err
 		}
+	}
+
+	if cfg.tsdb.MaxBlockDuration == 0 {
+		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
 	}
 
 	return nil
