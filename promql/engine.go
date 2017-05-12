@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -36,6 +37,7 @@ import (
 const (
 	namespace = "prometheus"
 	subsystem = "engine"
+	queryTag  = "query"
 
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 = 9223372036854774784
@@ -168,6 +170,10 @@ func (q *query) Cancel() {
 
 // Exec implements the Query interface.
 func (q *query) Exec(ctx context.Context) *Result {
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		span.SetTag(queryTag, q.stmt.String())
+	}
+
 	res, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res}
 }
