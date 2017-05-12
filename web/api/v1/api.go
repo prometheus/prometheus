@@ -103,8 +103,7 @@ type API struct {
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 
-	context func(r *http.Request) context.Context
-	now     func() time.Time
+	now func() time.Time
 }
 
 // NewAPI returns an initialized API type.
@@ -114,8 +113,7 @@ func NewAPI(qe *promql.Engine, st storage.Storage, tr targetRetriever, ar alertm
 		Storage:               st,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		context:               route.Context,
-		now:                   time.Now,
+		now: time.Now,
 	}
 }
 
@@ -172,7 +170,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		ts = api.now()
 	}
 
-	ctx := api.context(r)
+	ctx := r.Context()
 	if to := r.FormValue("timeout"); to != "" {
 		var cancel context.CancelFunc
 		timeout, err := parseDuration(to)
@@ -238,7 +236,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorBadData, err}
 	}
 
-	ctx := api.context(r)
+	ctx := r.Context()
 	if to := r.FormValue("timeout"); to != "" {
 		var cancel context.CancelFunc
 		timeout, err := parseDuration(to)
@@ -273,7 +271,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
-	name := route.Param(api.context(r), "name")
+	name := route.Param(r.Context(), "name")
 
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}

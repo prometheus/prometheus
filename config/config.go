@@ -987,12 +987,13 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
-	APIServer       URL            `yaml:"api_server"`
-	Role            KubernetesRole `yaml:"role"`
-	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
-	BearerToken     string         `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
-	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	APIServer          URL                          `yaml:"api_server"`
+	Role               KubernetesRole               `yaml:"role"`
+	BasicAuth          *BasicAuth                   `yaml:"basic_auth,omitempty"`
+	BearerToken        string                       `yaml:"bearer_token,omitempty"`
+	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
+	TLSConfig          TLSConfig                    `yaml:"tls_config,omitempty"`
+	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1022,6 +1023,28 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
 			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
 		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
+	}
+	return nil
+}
+
+// KubernetesNamespaceDiscovery is the configuration for discovering
+// Kubernetes namespaces.
+type KubernetesNamespaceDiscovery struct {
+	Names []string `yaml:"names"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = KubernetesNamespaceDiscovery{}
+	type plain KubernetesNamespaceDiscovery
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "namespaces"); err != nil {
+		return err
 	}
 	return nil
 }
