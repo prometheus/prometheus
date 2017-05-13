@@ -11,27 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build 386 amd64 arm64 mips64 mips64le mips mipsle
+// +build linux
 // +build !nouname
 
 package main
 
-import (
-	"log"
-	"syscall"
-)
-
-// Uname returns the uname of the host machine.
-func Uname() string {
-	buf := syscall.Utsname{}
-	err := syscall.Uname(&buf)
-	if err != nil {
-		log.Fatal("Error!")
+func charsToString(ca []int8) string {
+	s := make([]byte, len(ca))
+	for i, c := range ca {
+		s[i] = byte(c)
 	}
-	str := "(" + charsToString(buf.Sysname[:])
-	str += " " + charsToString(buf.Release[:])
-	str += " " + charsToString(buf.Version[:])
-	str += " " + charsToString(buf.Machine[:])
-	str += " " + charsToString(buf.Nodename[:])
-	str += " " + charsToString(buf.Domainname[:]) + ")"
-	return str
+	return string(s[0:len(ca)])
 }
