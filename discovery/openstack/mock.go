@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package openstack
 
 import (
@@ -7,46 +20,52 @@ import (
 	"testing"
 )
 
-type OpenstackSDMock struct {
+// SDMock is the interface for the OpenStack mock
+type SDMock struct {
 	t      *testing.T
 	Server *httptest.Server
 	Mux    *http.ServeMux
 }
 
-func NewOpenstackSDMock(t *testing.T) *OpenstackSDMock {
-	return &OpenstackSDMock{
+// NewSDMock returns a new SDMock.
+func NewSDMock(t *testing.T) *SDMock {
+	return &SDMock{
 		t: t,
 	}
 }
 
-func (m *OpenstackSDMock) Endpoint() string {
+// Endpoint returns the URI to the mock server
+func (m *SDMock) Endpoint() string {
 	return m.Server.URL + "/"
 }
 
-func (m *OpenstackSDMock) Setup() {
+// Setup creates the mock server
+func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
 }
 
-func (m *OpenstackSDMock) ShutdownServer() {
+// ShutdownServer creates the mock server
+func (m *SDMock) ShutdownServer() {
 	m.Server.Close()
 }
 
-const TokenID = "cbc36478b0bd8e67e89469c7749d4127"
+const tokenID = "cbc36478b0bd8e67e89469c7749d4127"
 
-func TestMethod(t *testing.T, r *http.Request, expected string) {
+func testMethod(t *testing.T, r *http.Request, expected string) {
 	if expected != r.Method {
 		t.Errorf("Request method = %v, expected %v", r.Method, expected)
 	}
 }
 
-func TestHeader(t *testing.T, r *http.Request, header string, expected string) {
+func testHeader(t *testing.T, r *http.Request, header string, expected string) {
 	if actual := r.Header.Get(header); expected != actual {
 		t.Errorf("Header %s = %s, expected %s", header, actual, expected)
 	}
 }
 
-func (m *OpenstackSDMock) HandleVersionsSuccessfully() {
+// HandleVersionsSuccessfully mocks version call
+func (m *SDMock) HandleVersionsSuccessfully() {
 	m.Mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `
                         {
@@ -73,9 +92,10 @@ func (m *OpenstackSDMock) HandleVersionsSuccessfully() {
 	})
 }
 
-func (m *OpenstackSDMock) HandleAuthSuccessfully() {
+// HandleAuthSuccessfully mocks auth call
+func (m *SDMock) HandleAuthSuccessfully() {
 	m.Mux.HandleFunc("/v3/auth/tokens", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("X-Subject-Token", TokenID)
+		w.Header().Add("X-Subject-Token", tokenID)
 
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintf(w, `
@@ -162,7 +182,7 @@ func (m *OpenstackSDMock) HandleAuthSuccessfully() {
 	})
 }
 
-const ServerListBody = `
+const serverListBody = `
 {
 	"servers": [
 		{
@@ -371,17 +391,18 @@ const ServerListBody = `
 }
 `
 
-func (s *OpenstackSDMock) HandleServerListSuccessfully() {
-	s.Mux.HandleFunc("/servers/detail", func(w http.ResponseWriter, r *http.Request) {
-		TestMethod(s.t, r, "GET")
-		TestHeader(s.t, r, "X-Auth-Token", TokenID)
+// HandleServerListSuccessfully mocks server detail call
+func (m *SDMock) HandleServerListSuccessfully() {
+	m.Mux.HandleFunc("/servers/detail", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(m.t, r, "GET")
+		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
-		fmt.Fprintf(w, ServerListBody)
+		fmt.Fprintf(w, serverListBody)
 	})
 }
 
-const ListOutput = `
+const listOutput = `
 {
     "floating_ips": [
         {
@@ -402,12 +423,13 @@ const ListOutput = `
 }
 `
 
-func (m *OpenstackSDMock) HandleFloatingIPListSuccessfully() {
+// HandleFloatingIPListSuccessfully mocks floating ips call
+func (m *SDMock) HandleFloatingIPListSuccessfully() {
 	m.Mux.HandleFunc("/os-floating-ips", func(w http.ResponseWriter, r *http.Request) {
-		TestMethod(m.t, r, "GET")
-		TestHeader(m.t, r, "X-Auth-Token", TokenID)
+		testMethod(m.t, r, "GET")
+		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
-		fmt.Fprintf(w, ListOutput)
+		fmt.Fprintf(w, listOutput)
 	})
 }
