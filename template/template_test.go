@@ -15,6 +15,7 @@ package template
 
 import (
 	"math"
+	"net/url"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -196,6 +197,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "x",
 			html:   true,
 		},
+		{
+			// pathPrefix.
+			text:   "{{ pathPrefix }}",
+			output: "/path/prefix",
+		},
+		{
+			// externalURL.
+			text:   "{{ externalURL }}",
+			output: "http://testhost:9090/path/prefix",
+		},
 	}
 
 	time := model.Time(0)
@@ -218,10 +229,15 @@ func TestTemplateExpansion(t *testing.T) {
 
 	engine := promql.NewEngine(storage, nil)
 
+	extURL, err := url.Parse("http://testhost:9090/path/prefix")
+	if err != nil {
+		panic(err)
+	}
+
 	for i, s := range scenarios {
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, time, engine, "")
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, time, engine, extURL)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
