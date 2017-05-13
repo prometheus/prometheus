@@ -13,7 +13,6 @@
 
 // +build 386 amd64 arm64 mips64 mips64le mips mipsle
 // +build linux
-// +build !nouname
 
 package main
 

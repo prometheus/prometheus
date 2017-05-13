@@ -11,7 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !nouname,linux,arm !nouname,linux,ppc64 !nouname,linux,ppc64le !nouname,linux,s390x
+// +build arm ppc64 ppc64le s390x
+// +build linux
 
 package main
 
