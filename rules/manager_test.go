@@ -105,7 +105,7 @@ func TestAlertingRule(t *testing.T) {
 	for i, test := range tests {
 		evalTime := model.Time(0).Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), "")
+		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), nil)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}
