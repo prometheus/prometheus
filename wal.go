@@ -49,9 +49,8 @@ const (
 	WALEntrySamples WALEntryType = 3
 )
 
-// WAL is a write ahead log for series data. It can only be written to.
-// Use walReader to read back from a write ahead log.
-type WAL struct {
+// SegmentWAL is a write ahead log for series data.
+type SegmentWAL struct {
 	mtx sync.Mutex
 
 	dirFile *os.File
@@ -67,6 +66,21 @@ type WAL struct {
 
 	stopc chan struct{}
 	donec chan struct{}
+}
+
+// WAL is a write ahead log that can log new series labels and samples.
+// It must be completely read before new entries are logged.
+type WAL interface {
+	Reader() WALReader
+	Log([]labels.Labels, []RefSample) error
+	Close() error
+}
+
+// WALReader reads entries from a WAL.
+type WALReader interface {
+	At() ([]labels.Labels, []RefSample)
+	Next() bool
+	Err() error
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
@@ -90,9 +104,9 @@ func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
-// OpenWAL opens or creates a write ahead log in the given directory.
+// OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
-func OpenWAL(dir string, logger log.Logger, flushInterval time.Duration) (*WAL, error) {
+func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) (*SegmentWAL, error) {
 	dir = filepath.Join(dir, walDirName)
 
 	if err := os.MkdirAll(dir, 0777); err != nil {
@@ -106,7 +120,7 @@ func OpenWAL(dir string, logger log.Logger, flushInterval time.Duration) (*WAL, 
 		logger = log.NewNopLogger()
 	}
 
-	w := &WAL{
+	w := &SegmentWAL{
 		dirFile:       df,
 		logger:        logger,
 		flushInterval: flushInterval,
@@ -126,12 +140,12 @@ func OpenWAL(dir string, logger log.Logger, flushInterval time.Duration) (*WAL, 
 
 // Reader returns a new reader over the the write ahead log data.
 // It must be completely consumed before writing to the WAL.
-func (w *WAL) Reader() WALReader {
+func (w *SegmentWAL) Reader() WALReader {
 	return newWALReader(w, w.logger)
 }
 
 // Log writes a batch of new series labels and samples to the log.
-func (w *WAL) Log(series []labels.Labels, samples []RefSample) error {
+func (w *SegmentWAL) Log(series []labels.Labels, samples []RefSample) error {
 	if err := w.encodeSeries(series); err != nil {
 		return err
 	}
@@ -146,7 +160,7 @@ func (w *WAL) Log(series []labels.Labels, samples []RefSample) error {
 
 // initSegments finds all existing segment files and opens them in the
 // appropriate file modes.
-func (w *WAL) initSegments() error {
+func (w *SegmentWAL) initSegments() error {
 	fns, err := sequenceFiles(w.dirFile.Name(), "")
 	if err != nil {
 		return err
@@ -187,7 +201,7 @@ func (w *WAL) initSegments() error {
 
 // cut finishes the currently active segments and opens the next one.
 // The encoder is reset to point to the new segment.
-func (w *WAL) cut() error {
+func (w *SegmentWAL) cut() error {
 	// Sync current tail to disk and close.
 	if tf := w.tail(); tf != nil {
 		if err := w.sync(); err != nil {
@@ -236,7 +250,7 @@ func (w *WAL) cut() error {
 	return nil
 }
 
-func (w *WAL) tail() *os.File {
+func (w *SegmentWAL) tail() *os.File {
 	if len(w.files) == 0 {
 		return nil
 	}
@@ -244,14 +258,14 @@ func (w *WAL) tail() *os.File {
 }
 
 // Sync flushes the changes to disk.
-func (w *WAL) Sync() error {
+func (w *SegmentWAL) Sync() error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
 	return w.sync()
 }
 
-func (w *WAL) sync() error {
+func (w *SegmentWAL) sync() error {
 	if w.cur == nil {
 		return nil
 	}
@@ -261,7 +275,7 @@ func (w *WAL) sync() error {
 	return fileutil.Fdatasync(w.tail())
 }
 
-func (w *WAL) run(interval time.Duration) {
+func (w *SegmentWAL) run(interval time.Duration) {
 	var tick <-chan time.Time
 
 	if interval > 0 {
@@ -284,7 +298,7 @@ func (w *WAL) run(interval time.Duration) {
 }
 
 // Close syncs all data and closes the underlying resources.
-func (w *WAL) Close() error {
+func (w *SegmentWAL) Close() error {
 	close(w.stopc)
 	<-w.donec
 
@@ -312,7 +326,7 @@ const (
 	walPageBytes = 16 * minSectorSize
 )
 
-func (w *WAL) entry(et WALEntryType, flag byte, buf []byte) error {
+func (w *SegmentWAL) entry(et WALEntryType, flag byte, buf []byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
@@ -376,7 +390,7 @@ func putWALBuffer(b []byte) {
 	walBuffers.Put(b)
 }
 
-func (w *WAL) encodeSeries(series []labels.Labels) error {
+func (w *SegmentWAL) encodeSeries(series []labels.Labels) error {
 	if len(series) == 0 {
 		return nil
 	}
@@ -402,7 +416,7 @@ func (w *WAL) encodeSeries(series []labels.Labels) error {
 	return w.entry(WALEntrySeries, walSeriesSimple, buf)
 }
 
-func (w *WAL) encodeSamples(samples []RefSample) error {
+func (w *SegmentWAL) encodeSamples(samples []RefSample) error {
 	if len(samples) == 0 {
 		return nil
 	}
@@ -439,7 +453,7 @@ func (w *WAL) encodeSamples(samples []RefSample) error {
 type walReader struct {
 	logger log.Logger
 
-	wal   *WAL
+	wal   *SegmentWAL
 	cur   int
 	buf   []byte
 	crc32 hash.Hash32
@@ -449,7 +463,7 @@ type walReader struct {
 	samples []RefSample
 }
 
-func newWALReader(w *WAL, l log.Logger) *walReader {
+func newWALReader(w *SegmentWAL, l log.Logger) *walReader {
 	if l == nil {
 		l = log.NewNopLogger()
 	}

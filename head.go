@@ -51,7 +51,7 @@ var (
 type HeadBlock struct {
 	mtx sync.RWMutex
 	dir string
-	wal *WAL
+	wal WAL
 
 	activeWriters uint64
 	closed        bool
@@ -101,7 +101,7 @@ func CreateHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*Head
 
 // OpenHeadBlock opens the head block in dir.
 func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
-	wal, err := OpenWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
+	wal, err := OpenSegmentWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,6 @@ func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
 
 	r := wal.Reader()
 
-Outer:
 	for r.Next() {
 		series, samples := r.At()
 
@@ -132,8 +131,7 @@ Outer:
 		}
 		for _, s := range samples {
 			if int(s.Ref) >= len(h.series) {
-				l.Log("msg", "unknown series reference, abort WAL restore", "got", s.Ref, "max", len(h.series)-1)
-				break Outer
+				return nil, errors.Errorf("unknown series reference %d (max %d); abort WAL restore", s.Ref, len(h.series))
 			}
 			h.series[s.Ref].append(s.T, s.V)
 
