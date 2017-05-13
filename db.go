@@ -418,7 +418,7 @@ func (db *DB) reloadBlocks() error {
 
 		if meta.Compaction.Generation == 0 {
 			if !ok {
-				b, err = OpenHeadBlock(dirs[i], db.logger)
+				b, err = db.openHeadBlock(dirs[i])
 				if err != nil {
 					return errors.Wrapf(err, "load head at %s", dirs[i])
 				}
@@ -709,6 +709,24 @@ func (db *DB) blocksForInterval(mint, maxt int64) []Block {
 	return bs
 }
 
+// openHeadBlock opens the head block at dir.
+func (db *DB) openHeadBlock(dir string) (*HeadBlock, error) {
+	var (
+		wdir = filepath.Join(dir, "wal")
+		l    = log.With(db.logger, "wal", wdir)
+	)
+	wal, err := OpenSegmentWAL(wdir, l, 5*time.Second)
+	if err != nil {
+		return nil, errors.Wrap(err, "open WAL %s")
+	}
+
+	h, err := OpenHeadBlock(dir, log.With(db.logger, "block", dir), wal)
+	if err != nil {
+		return nil, errors.Wrapf(err, "open head block %s", dir)
+	}
+	return h, nil
+}
+
 // cut starts a new head block to append to. The completed head block
 // will still be appendable for the configured grace period.
 func (db *DB) cut(mint int64) (headBlock, error) {
@@ -718,7 +736,10 @@ func (db *DB) cut(mint int64) (headBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	newHead, err := CreateHeadBlock(dir, seq, db.logger, mint, maxt)
+	if err := TouchHeadBlock(dir, seq, mint, maxt); err != nil {
+		return nil, errors.Wrapf(err, "touch head block %s", dir)
+	}
+	newHead, err := db.openHeadBlock(dir)
 	if err != nil {
 		return nil, err
 	}

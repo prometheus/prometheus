@@ -69,20 +69,21 @@ type HeadBlock struct {
 	meta BlockMeta
 }
 
-// CreateHeadBlock creates a new head block in dir that holds samples in the range [mint,maxt).
-func CreateHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*HeadBlock, error) {
+// TouchHeadBlock atomically touches a new head block in dir for
+// samples in the range [mint,maxt).
+func TouchHeadBlock(dir string, seq int, mint, maxt int64) error {
 	// Make head block creation appear atomic.
 	tmp := dir + ".tmp"
 
 	if err := os.MkdirAll(tmp, 0777); err != nil {
-		return nil, err
+		return err
 	}
 
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	ulid, err := ulid.New(ulid.Now(), entropy)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := writeMetaFile(tmp, &BlockMeta{
@@ -91,20 +92,13 @@ func CreateHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*Head
 		MinTime:  mint,
 		MaxTime:  maxt,
 	}); err != nil {
-		return nil, err
+		return err
 	}
-	if err := renameFile(tmp, dir); err != nil {
-		return nil, err
-	}
-	return OpenHeadBlock(dir, l)
+	return renameFile(tmp, dir)
 }
 
 // OpenHeadBlock opens the head block in dir.
-func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
-	wal, err := OpenSegmentWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
+func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
@@ -119,8 +113,11 @@ func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
 		postings: &memPostings{m: make(map[term][]uint32)},
 		meta:     *meta,
 	}
+	return h, h.init()
+}
 
-	r := wal.Reader()
+func (h *HeadBlock) init() error {
+	r := h.wal.Reader()
 
 	for r.Next() {
 		series, samples := r.At()
@@ -131,21 +128,17 @@ func OpenHeadBlock(dir string, l log.Logger) (*HeadBlock, error) {
 		}
 		for _, s := range samples {
 			if int(s.Ref) >= len(h.series) {
-				return nil, errors.Errorf("unknown series reference %d (max %d); abort WAL restore", s.Ref, len(h.series))
+				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore", s.Ref, len(h.series))
 			}
 			h.series[s.Ref].append(s.T, s.V)
 
 			if !h.inBounds(s.T) {
-				return nil, errors.Wrap(ErrOutOfBounds, "consume WAL")
+				return errors.Wrap(ErrOutOfBounds, "consume WAL")
 			}
 			h.meta.Stats.NumSamples++
 		}
 	}
-	if err := r.Err(); err != nil {
-		return nil, errors.Wrap(err, "consume WAL")
-	}
-
-	return h, nil
+	return errors.Wrap(r.Err(), "consume WAL")
 }
 
 // inBounds returns true if the given timestamp is within the valid
