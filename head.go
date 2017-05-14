@@ -176,6 +176,7 @@ func (h *HeadBlock) Close() error {
 	return nil
 }
 
+// Meta implements headBlock
 func (h *HeadBlock) Meta() BlockMeta {
 	m := BlockMeta{
 		ULID:       h.meta.ULID,
@@ -192,11 +193,22 @@ func (h *HeadBlock) Meta() BlockMeta {
 	return m
 }
 
-func (h *HeadBlock) Dir() string         { return h.dir }
-func (h *HeadBlock) Persisted() bool     { return false }
-func (h *HeadBlock) Index() IndexReader  { return &headIndexReader{h} }
+// Dir implements headBlock
+func (h *HeadBlock) Dir() string { return h.dir }
+
+// Persisted implements headBlock
+func (h *HeadBlock) Persisted() bool { return false }
+
+// Index implements headBlock
+func (h *HeadBlock) Index() IndexReader { return &headIndexReader{h} }
+
+// Chunks implements headBlock
 func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
+// Delete implements headBlock
+func (h *HeadBlock) Delete(int64, int64, ...labels.Matcher) error { return nil }
+
+// Querier implements Queryable and headBlock
 func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
@@ -236,6 +248,7 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	}
 }
 
+// Appender implements headBlock
 func (h *HeadBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 
@@ -247,6 +260,7 @@ func (h *HeadBlock) Appender() Appender {
 	return &headAppender{HeadBlock: h, samples: getHeadAppendBuffer()}
 }
 
+// Busy implements headBlock
 func (h *HeadBlock) Busy() bool {
 	return atomic.LoadUint64(&h.activeWriters) > 0
 }

@@ -537,6 +537,9 @@ type indexReader struct {
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint32
 	postings map[string]uint32
+
+	// The underlying byte slice holding the tombstone data.
+	tomb []byte
 }
 
 var (
@@ -572,6 +575,12 @@ func newIndexReader(dir string) (*indexReader, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "read postings table")
 	}
+
+	tf, err := openMmapFile(filepath.Join(dir, tombstoneFilename))
+	if err != nil {
+		return err
+	}
+	r.tomb = tf.b
 
 	return r, nil
 }
@@ -741,6 +750,18 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 		lbls = append(lbls, labels.Label{Name: ln, Value: lv})
 	}
 
+	// TODO: This sucks! Put tombstones in map.
+	tr := r.tombstones()
+	dmint, dmaxt := 0
+	del := false
+	if tr.Seek(ref) {
+		s := tr.At()
+		if s.ref == ref {
+			del = true
+			dmint, dmaxt = s.mint, s.maxt
+		}
+	}
+
 	// Read the chunks meta data.
 	k = int(d2.uvarint())
 	chunks := make([]*ChunkMeta, 0, k)
@@ -754,10 +775,14 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 			return nil, nil, errors.Wrapf(d2.err(), "read meta for chunk %d", i)
 		}
 
+		// TODO(gouthamve): Donot add the chunk if its completely deleted.
 		chunks = append(chunks, &ChunkMeta{
 			Ref:     off,
 			MinTime: mint,
 			MaxTime: maxt,
+
+			deleted: del,
+			dranges: []trange{{dmint, dmaxt}},
 		})
 	}
 
@@ -787,6 +812,10 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 	// TODO(fabxc): read checksum from 4 remainer bytes of d1 and verify.
 
 	return newBigEndianPostings(d2.get()), nil
+}
+
+func (r *indexReader) tombstones() *tombstoneReader {
+	return newTombStoneReader(r.tomb[:])
 }
 
 type stringTuples struct {

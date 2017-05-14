@@ -41,6 +41,18 @@ type ChunkMeta struct {
 	Chunk chunks.Chunk
 
 	MinTime, MaxTime int64 // time range the data covers
+
+	// To handle deleted time-ranges.
+	deleted bool
+	dranges []trange
+}
+
+type trange struct {
+	mint, maxt int64
+}
+
+func (tr trange) inBounds(t int64) bool {
+	return t >= tr.mint && t <= tr.maxt
 }
 
 // writeHash writes the chunk encoding and raw data into the provided hash.
@@ -52,6 +64,58 @@ func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 		return err
 	}
 	return nil
+}
+
+// Iterator returns a chunks.Iterator that honors any deleted ranges.
+// If there is no deleted range then the underlying iterator is returned.
+func (cm *ChunkMeta) Iterator() chunks.Iterator {
+	if cm.Chunk == nil {
+		return nil
+	}
+
+	if cm.deleted {
+		return &deletedIterator{it: cm.Chunk.Iterator(), dranges: cm.dranges}
+	}
+
+	return cm.Chunk.Iterator()
+}
+
+// deletedIterator wraps an Iterator and makes sure any deleted metrics are not
+// returned.
+type deletedIterator struct {
+	it chunks.Iterator
+
+	dranges []trange
+}
+
+func (it *deletedIterator) At() (int64, float64) {
+	return it.it.At()
+}
+
+func (it *deletedIterator) Next() bool {
+Outer:
+	for it.it.Next() {
+		ts, _ := it.it.At()
+		for _, tr := range it.dranges {
+			if tr.inBounds(ts) {
+				continue Outer
+			}
+			if ts > tr.maxt {
+				it.dranges = it.dranges[1:]
+				continue
+			}
+
+			return true
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func (it *deletedIterator) Err() {
+	return it.Err()
 }
 
 // ChunkWriter serializes a time block of chunked series data.

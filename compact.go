@@ -240,6 +240,15 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 		return errors.Wrap(err, "close index writer")
 	}
 
+	// Create an empty tombstones file.
+	tf, err := os.Create(filepath.Join(tmp, tombstoneFilename))
+	if err != nil {
+		return errors.Wrap(err, "touch tombstones file")
+	}
+	if err := tf.Close(); err != nil {
+		return errors.Wrap(err, "close tombstones file")
+	}
+
 	// Block successfully written, make visible and remove old ones.
 	if err := renameFile(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")

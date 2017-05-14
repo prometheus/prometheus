@@ -14,14 +14,17 @@
 package tsdb
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // DiskBlock handles reads against a Block of time series data.
@@ -37,6 +40,9 @@ type DiskBlock interface {
 
 	// Chunks returns a ChunkReader over the block's data.
 	Chunks() ChunkReader
+
+	// Delete deletes data from the block.
+	Delete(mint, maxt int64, ms ...labels.Matcher) error
 
 	// Close releases all underlying resources of the block.
 	Close() error
@@ -106,6 +112,7 @@ type blockMeta struct {
 }
 
 const metaFilename = "meta.json"
+const tombstoneFilename = "tombstones"
 
 func readMetaFile(dir string) (*BlockMeta, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
@@ -206,6 +213,161 @@ func (pb *persistedBlock) Dir() string         { return pb.dir }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
 func (pb *persistedBlock) Meta() BlockMeta     { return pb.meta }
+
+func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	pr := newPostingsReader(pb.indexr)
+	p, absent := pr.Select(ms...)
+
+	ir := pb.indexr
+
+	// Choose only valid postings which have chunks in the time-range.
+	vPostings := []uint32{}
+
+Outer:
+	for p.Next() {
+		lset, chunks, err := ir.Series(p.At())
+
+		for _, abs := range absent {
+			if lset.Get(abs) != "" {
+				continue Outer
+			}
+		}
+
+		// XXX(gouthamve): Adjust mint and maxt to match the time-range in the chunks?
+		for _, chk := range chunks {
+			if (mint <= chk.MinTime && maxt >= MinTime) ||
+				(mint > chk.MinTime && mint <= chk.MaxTime) {
+				vPostings = append(vPostings, p.At())
+				continue
+			}
+		}
+	}
+
+	if p.Err() != nil {
+		return p.Err()
+	}
+
+	// Merge the current and new tombstones.
+	tr := ir.tombstones()
+	stones := make([]rip, 0, len(vPostings))
+	i := 0
+	for tr.Next() {
+		stone := tr.At()
+		for stone.ref > vPostings[i] {
+			stones = append(stones, rip{ref: vPostings[i], mint: mint, maxt: maxt})
+			i++
+		}
+
+		if stone.ref == vPostings[i] {
+			if stone.mint > mint {
+				stone.mint = mint
+			}
+			if stone.maxt < maxt {
+				stone.maxt = maxt
+			}
+
+			stones = append(stones, stone)
+			continue
+		}
+
+		stones = append(stones, stone)
+	}
+
+	path := filepath.Join(pb.dir, tombstoneFilename)
+	tmp := path + ".tmp"
+
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Proper format and all.
+	buf := encbuf{b: make([]byte, 0, 20)}
+	fbuf := bufio.NewWriterSize(f, 20)
+
+	for _, stone := range stones {
+		buf.reset()
+		buf.putBE32(stone.ref)
+		buf.putBE64int64(stone.mint)
+		buf.putBE64int64(stone.maxt)
+
+		_, err := fbuf.Write(buf.get())
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := fbuf.Flush(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	return renameFile(tmp, path)
+}
+
+// rip (after rest-in-peace) holds the information on the posting and time-range
+// that is deleted.
+type rip struct {
+	ref        uint32
+	mint, maxt int64
+}
+
+// TODO(gouthamve): Move to cur and reduction in byte-array vis-a-vis BEPostings.
+type tombstoneReader struct {
+	data []byte
+	idx  int
+	len  int
+}
+
+func newTombStoneReader(data []byte) *tombstoneReader {
+	// TODO(gouthamve): Error handling.
+	return &tombstoneReader{data: data, idx: -1, len: len(data) / 20}
+}
+
+func (t *tombstoneReader) Next() bool {
+	t.idx++
+
+	return t.idx < t.len
+}
+
+func (t *tombstoneReader) At() rip {
+	bytIdx := t.idx * (4 + 8 + 8)
+	dat := t.data[bytIdx : bytIdx+20]
+
+	db := &decbuf{b: dat}
+	ref := db.be32()
+	mint := db.be64int64()
+	maxt := db.be64int64()
+
+	// TODO(gouthamve): Handle errors.
+	return rip{ref: ref, mint: mint, maxt: maxt}
+}
+
+func (t *tombstoneReader) Seek(ref uint32) bool {
+	if s := t.At(); s.ref >= ref {
+		return true
+	}
+
+	i := sort.Search(t.len-t.idx, func(i int) bool {
+		bytIdx := (t.idx + i) * 20
+		dat := t.data[bytIdx : bytIdx+20]
+
+		db := &decbuf{b: dat}
+		ref2 := db.be32()
+		if ref >= ref2 {
+			return true
+		}
+	})
+
+	t.idx += idx
+	return t.idx < t.len
+}
+
+func (t *tombstoneReader) Err() error {
+	return nil
+}
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 func walDir(dir string) string   { return filepath.Join(dir, "wal") }
