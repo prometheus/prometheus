@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWAL_initSegments(t *testing.T) {
+func TestSegmentWAL_initSegments(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_wal_open")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpdir)
@@ -35,7 +35,7 @@ func TestWAL_initSegments(t *testing.T) {
 	df, err := fileutil.OpenDir(tmpdir)
 	require.NoError(t, err)
 
-	w := &WAL{dirFile: df}
+	w := &SegmentWAL{dirFile: df}
 
 	// Create segment files with an appropriate header.
 	for i := 1; i <= 5; i++ {
@@ -80,7 +80,7 @@ func TestWAL_initSegments(t *testing.T) {
 	_, err = f.WriteAt([]byte{0}, 4)
 	require.NoError(t, err)
 
-	w = &WAL{dirFile: df}
+	w = &SegmentWAL{dirFile: df}
 	require.Error(t, w.initSegments(), "init corrupted segments")
 
 	for _, f := range w.files {
@@ -88,13 +88,13 @@ func TestWAL_initSegments(t *testing.T) {
 	}
 }
 
-func TestWAL_cut(t *testing.T) {
+func TestSegmentWAL_cut(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpdir)
 
 	// This calls cut() implicitly the first time without a previous tail.
-	w, err := OpenWAL(tmpdir, nil, 0)
+	w, err := OpenSegmentWAL(tmpdir, nil, 0)
 	require.NoError(t, err)
 
 	require.NoError(t, w.entry(WALEntrySeries, 1, []byte("Hello World!!")))
@@ -122,7 +122,7 @@ func TestWAL_cut(t *testing.T) {
 
 		// We cannot actually check for correct pre-allocation as it is
 		// optional per filesystem and handled transparently.
-		et, flag, b, err := NewWALReader(nil, nil).entry(f)
+		et, flag, b, err := newWALReader(nil, nil).entry(f)
 		require.NoError(t, err)
 		require.Equal(t, WALEntrySeries, et)
 		require.Equal(t, flag, byte(walSeriesSimple))
@@ -131,7 +131,7 @@ func TestWAL_cut(t *testing.T) {
 }
 
 // Symmetrical test of reading and writing to the WAL via its main interface.
-func TestWAL_Log_Restore(t *testing.T) {
+func TestSegmentWAL_Log_Restore(t *testing.T) {
 	const (
 		numMetrics = 5000
 		iterations = 5
@@ -148,14 +148,14 @@ func TestWAL_Log_Restore(t *testing.T) {
 
 	var (
 		recordedSeries  [][]labels.Labels
-		recordedSamples [][]refdSample
+		recordedSamples [][]RefSample
 	)
 	var totalSamples int
 
 	// Open WAL a bunch of times, validate all previous data can be read,
 	// write more data to it, close it.
 	for k := 0; k < numMetrics; k += numMetrics / iterations {
-		w, err := OpenWAL(dir, nil, 0)
+		w, err := OpenSegmentWAL(dir, nil, 0)
 		require.NoError(t, err)
 
 		// Set smaller segment size so we can actually write several files.
@@ -165,7 +165,7 @@ func TestWAL_Log_Restore(t *testing.T) {
 
 		var (
 			resultSeries  [][]labels.Labels
-			resultSamples [][]refdSample
+			resultSamples [][]RefSample
 		)
 
 		for r.Next() {
@@ -177,7 +177,7 @@ func TestWAL_Log_Restore(t *testing.T) {
 				resultSeries = append(resultSeries, clsets)
 			}
 			if len(smpls) > 0 {
-				csmpls := make([]refdSample, len(smpls))
+				csmpls := make([]RefSample, len(smpls))
 				copy(csmpls, smpls)
 				resultSamples = append(resultSamples, csmpls)
 			}
@@ -191,13 +191,13 @@ func TestWAL_Log_Restore(t *testing.T) {
 
 		// Insert in batches and generate different amounts of samples for each.
 		for i := 0; i < len(series); i += stepSize {
-			var samples []refdSample
+			var samples []RefSample
 
 			for j := 0; j < i*10; j++ {
-				samples = append(samples, refdSample{
-					ref: uint64(j % 10000),
-					t:   int64(j * 2),
-					v:   rand.Float64(),
+				samples = append(samples, RefSample{
+					Ref: uint64(j % 10000),
+					T:   int64(j * 2),
+					V:   rand.Float64(),
 				})
 			}
 
@@ -222,11 +222,11 @@ func TestWAL_Log_Restore(t *testing.T) {
 func TestWALRestoreCorrupted(t *testing.T) {
 	cases := []struct {
 		name string
-		f    func(*testing.T, *WAL)
+		f    func(*testing.T, *SegmentWAL)
 	}{
 		{
 			name: "truncate_checksum",
-			f: func(t *testing.T, w *WAL) {
+			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
@@ -239,7 +239,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		},
 		{
 			name: "truncate_body",
-			f: func(t *testing.T, w *WAL) {
+			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
@@ -252,7 +252,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		},
 		{
 			name: "body_content",
-			f: func(t *testing.T, w *WAL) {
+			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
@@ -267,7 +267,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		},
 		{
 			name: "checksum",
-			f: func(t *testing.T, w *WAL) {
+			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
@@ -289,16 +289,16 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			require.NoError(t, err)
 			defer os.RemoveAll(dir)
 
-			w, err := OpenWAL(dir, nil, 0)
+			w, err := OpenSegmentWAL(dir, nil, 0)
 			require.NoError(t, err)
 
-			require.NoError(t, w.Log(nil, []refdSample{{t: 1, v: 2}}))
-			require.NoError(t, w.Log(nil, []refdSample{{t: 2, v: 3}}))
+			require.NoError(t, w.Log(nil, []RefSample{{T: 1, V: 2}}))
+			require.NoError(t, w.Log(nil, []RefSample{{T: 2, V: 3}}))
 
 			require.NoError(t, w.cut())
 
-			require.NoError(t, w.Log(nil, []refdSample{{t: 3, v: 4}}))
-			require.NoError(t, w.Log(nil, []refdSample{{t: 5, v: 6}}))
+			require.NoError(t, w.Log(nil, []RefSample{{T: 3, V: 4}}))
+			require.NoError(t, w.Log(nil, []RefSample{{T: 5, V: 6}}))
 
 			require.NoError(t, w.Close())
 
@@ -310,7 +310,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			logger := log.NewLogfmtLogger(os.Stderr)
 
-			w2, err := OpenWAL(dir, logger, 0)
+			w2, err := OpenSegmentWAL(dir, logger, 0)
 			require.NoError(t, err)
 
 			r := w2.Reader()
@@ -318,13 +318,13 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			require.True(t, r.Next())
 			l, s := r.At()
 			require.Equal(t, 0, len(l))
-			require.Equal(t, []refdSample{{t: 1, v: 2}}, s)
+			require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
 
 			// Truncation should happen transparently and now cause an error.
 			require.False(t, r.Next())
 			require.Nil(t, r.Err())
 
-			require.NoError(t, w2.Log(nil, []refdSample{{t: 99, v: 100}}))
+			require.NoError(t, w2.Log(nil, []RefSample{{T: 99, V: 100}}))
 			require.NoError(t, w2.Close())
 
 			files, err := fileutil.ReadDir(dir)
@@ -333,7 +333,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			// We should see the first valid entry and the new one, everything after
 			// is truncated.
-			w3, err := OpenWAL(dir, logger, 0)
+			w3, err := OpenSegmentWAL(dir, logger, 0)
 			require.NoError(t, err)
 
 			r = w3.Reader()
@@ -341,12 +341,12 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			require.True(t, r.Next())
 			l, s = r.At()
 			require.Equal(t, 0, len(l))
-			require.Equal(t, []refdSample{{t: 1, v: 2}}, s)
+			require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
 
 			require.True(t, r.Next())
 			l, s = r.At()
 			require.Equal(t, 0, len(l))
-			require.Equal(t, []refdSample{{t: 99, v: 100}}, s)
+			require.Equal(t, []RefSample{{T: 99, V: 100}}, s)
 
 			require.False(t, r.Next())
 			require.Nil(t, r.Err())

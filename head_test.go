@@ -20,6 +20,7 @@ import (
 	"os"
 	"sort"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/pkg/errors"
@@ -30,6 +31,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// createTestHeadBlock creates a new head block with a SegmentWAL.
+func createTestHeadBlock(t testing.TB, dir string, mint, maxt int64) *HeadBlock {
+	err := TouchHeadBlock(dir, 0, mint, maxt)
+	require.NoError(t, err)
+
+	wal, err := OpenSegmentWAL(dir, nil, 5*time.Second)
+	require.NoError(t, err)
+
+	h, err := OpenHeadBlock(dir, nil, wal)
+	require.NoError(t, err)
+	return h
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	lbls, err := readPrometheusLabels("cmd/tsdb/testdata.1m", 1e6)
 	require.NoError(b, err)
@@ -39,8 +53,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 		require.NoError(b, err)
 		defer os.RemoveAll(dir)
 
-		h, err := createHeadBlock(dir, 0, nil, 0, 1)
-		require.NoError(b, err)
+		h := createTestHeadBlock(b, dir, 0, 1)
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -90,14 +103,13 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 }
 
 func TestAmendDatapointCausesError(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	dir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(dir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
-	require.NoError(t, err, "Error creating head block")
+	hb := createTestHeadBlock(t, dir, 0, 1000)
 
 	app := hb.Appender()
-	_, err = app.Add(labels.Labels{}, 0, 0)
+	_, err := app.Add(labels.Labels{}, 0, 0)
 	require.NoError(t, err, "Failed to add sample")
 	require.NoError(t, app.Commit(), "Unexpected error committing appender")
 
@@ -107,14 +119,13 @@ func TestAmendDatapointCausesError(t *testing.T) {
 }
 
 func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	dir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(dir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
-	require.NoError(t, err, "Error creating head block")
+	hb := createTestHeadBlock(t, dir, 0, 1000)
 
 	app := hb.Appender()
-	_, err = app.Add(labels.Labels{}, 0, math.NaN())
+	_, err := app.Add(labels.Labels{}, 0, math.NaN())
 	require.NoError(t, err, "Failed to add sample")
 	require.NoError(t, app.Commit(), "Unexpected error committing appender")
 
@@ -124,14 +135,13 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 }
 
 func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	dir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(dir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
-	require.NoError(t, err, "Error creating head block")
+	hb := createTestHeadBlock(t, dir, 0, 1000)
 
 	app := hb.Appender()
-	_, err = app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000001))
+	_, err := app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000001))
 	require.NoError(t, err, "Failed to add sample")
 	require.NoError(t, app.Commit(), "Unexpected error committing appender")
 
@@ -141,15 +151,14 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 }
 
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	dir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(dir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, 0, 1000)
-	require.NoError(t, err)
+	hb := createTestHeadBlock(t, dir, 0, 1000)
 
 	// Append AmendedValue.
 	app := hb.Appender()
-	_, err = app.Add(labels.Labels{{"a", "b"}}, 0, 1)
+	_, err := app.Add(labels.Labels{{"a", "b"}}, 0, 1)
 	require.NoError(t, err)
 	_, err = app.Add(labels.Labels{{"a", "b"}}, 0, 2)
 	require.NoError(t, err)
@@ -243,11 +252,10 @@ func TestHeadBlock_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []sample{}
 	}
 
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
+	dir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(dir)
 
-	hb, err := createHeadBlock(tmpdir+"/hb", 0, nil, minTime, maxTime)
-	require.NoError(t, err)
+	hb := createTestHeadBlock(t, dir, minTime, maxTime)
 	app := hb.Appender()
 
 	for _, l := range lbls {
