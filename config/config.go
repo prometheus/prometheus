@@ -834,6 +834,9 @@ type ConsulSDConfig struct {
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
+	// The list of tags for which targets are discovered.
+	// Defaults to all services if empty.
+	Tags []string `yaml:"tags"`
 
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.

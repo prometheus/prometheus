@@ -89,6 +89,7 @@ type Discovery struct {
 	clientDatacenter string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
+	watchedTags      []string // Set of tags which will be discovered
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -120,6 +121,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		clientConf:       clientConf,
 		tagSeparator:     conf.TagSeparator,
 		watchedServices:  conf.Services,
+		watchedTags:      conf.Tags,
 		clientDatacenter: clientConf.Datacenter,
 	}
 	return cd, nil
@@ -134,6 +136,29 @@ func (d *Discovery) shouldWatch(name string) bool {
 	for _, sn := range d.watchedServices {
 		if sn == name {
 			return true
+		}
+	}
+	return false
+}
+
+// shouldWatchTags return whether the service with the given tag should be watched
+func (d *Discovery) shouldWatchTags(tags []string) bool {
+	// When no watched tags are set, we watch everything
+	if len(d.watchedTags) == 0 {
+		return true
+	}
+
+	return containsTag(d.watchedTags, tags)
+}
+
+// containsTag checks if an array of tags has at least one element in the
+// other array of tags
+func containsTag(serviceTags, tags []string) bool {
+	for _, serviceTag := range serviceTags {
+		for _, tag := range tags {
+			if serviceTag == tag {
+				return true
+			}
 		}
 	}
 	return false
@@ -187,10 +212,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		}
 
 		// Check for new services.
-		for name := range srvs {
-			if !d.shouldWatch(name) {
+		for name, tags := range srvs {
+			// When there are no tags, the service name takes precedence (backward compatibility)
+			// Otherwise, the service is watched when it is listed or when it has the appropriate tag(s)
+			if len(d.watchedTags) == 0 && !d.shouldWatch(name) || !d.shouldWatch(name) && !d.shouldWatchTags(tags) {
+				log.Debugf("Skipping %s (%v)", name, tags)
 				continue
 			}
+
 			if _, ok := services[name]; ok {
 				continue // We are already watching the service.
 			}
@@ -198,6 +227,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			srv := &consulService{
 				client: d.client,
 				name:   name,
+				tags:   d.watchedTags,
 				labels: model.LabelSet{
 					serviceLabel:    model.LabelValue(name),
 					datacenterLabel: model.LabelValue(d.clientDatacenter),
@@ -232,6 +262,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 // consulService contains data belonging to the same service.
 type consulService struct {
 	name         string
+	tags         []string
 	labels       model.LabelSet
 	client       *consul.Client
 	tagSeparator string
@@ -276,6 +307,13 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 		}
 
 		for _, node := range nodes {
+
+			// skip when tags are set and the node does not have at least one of them
+			if len(srv.tags) > 0 && !containsTag(node.ServiceTags, srv.tags) {
+				log.Debugf("Declined node %s:%d (%v)", node.Address, node.ServicePort, node.ServiceTags)
+				continue
+			}
+			log.Debugf("Accepted node %s:%d (%v)", node.Address, node.ServicePort, node.ServiceTags)
 
 			// We surround the separated list with the separator as well. This way regular expressions
 			// in relabeling rules don't have to consider tag positions.
