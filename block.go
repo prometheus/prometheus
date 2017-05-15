@@ -14,7 +14,7 @@
 package tsdb
 
 import (
-	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -155,6 +155,79 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	return renameFile(tmp, path)
 }
 
+func readTombstoneFile(dir string) (TombstoneReader, error) {
+	return newTombStoneReader(dir)
+}
+
+func writeTombstoneFile(dir string, tr TombstoneReader) error {
+	path := filepath.Join(dir, tombstoneFilename)
+	tmp := path + ".tmp"
+
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	stoneOff := make(map[uint32]int64) // The map that holds the ref to offset vals.
+	refs := []uint32{}                 // Sorted refs.
+
+	pos := int64(0)
+	buf := encbuf{b: make([]byte, 2*binary.MaxVarintLen64)}
+	for tr.Next() {
+		s := tr.At()
+
+		refs = append(refs, s.ref)
+		stoneOff[s.ref] = pos
+
+		// Write the ranges.
+		buf.reset()
+		buf.putVarint64(int64(len(s.ranges)))
+		n, err := f.Write(buf.get())
+		if err != nil {
+			return err
+		}
+		pos += int64(n)
+
+		for _, r := range s.ranges {
+			buf.reset()
+			buf.putVarint64(r.mint)
+			buf.putVarint64(r.maxt)
+			n, err = f.Write(buf.get())
+			if err != nil {
+				return err
+			}
+			pos += int64(n)
+		}
+	}
+
+	// Write the offset table.
+	buf.reset()
+	buf.putBE32int(len(refs))
+	for _, ref := range refs {
+		buf.reset()
+		buf.putBE32(ref)
+		buf.putBE64int64(stoneOff[ref])
+		_, err = f.Write(buf.get())
+		if err != nil {
+			return err
+		}
+	}
+
+	// Write the offset to the offset table.
+	buf.reset()
+	buf.putBE64int64(pos)
+	_, err = f.Write(buf.get())
+	if err != nil {
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	return renameFile(tmp, path)
+}
+
 type persistedBlock struct {
 	dir  string
 	meta BlockMeta
@@ -226,6 +299,9 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 Outer:
 	for p.Next() {
 		lset, chunks, err := ir.Series(p.At())
+		if err != nil {
+			return err
+		}
 
 		for _, abs := range absent {
 			if lset.Get(abs) != "" {
@@ -235,10 +311,10 @@ Outer:
 
 		// XXX(gouthamve): Adjust mint and maxt to match the time-range in the chunks?
 		for _, chk := range chunks {
-			if (mint <= chk.MinTime && maxt >= MinTime) ||
+			if (mint <= chk.MinTime && maxt >= chk.MinTime) ||
 				(mint > chk.MinTime && mint <= chk.MaxTime) {
 				vPostings = append(vPostings, p.At())
-				continue
+				continue Outer
 			}
 		}
 	}
@@ -248,125 +324,237 @@ Outer:
 	}
 
 	// Merge the current and new tombstones.
-	tr := ir.tombstones()
-	stones := make([]rip, 0, len(vPostings))
-	i := 0
-	for tr.Next() {
-		stone := tr.At()
-		for stone.ref > vPostings[i] {
-			stones = append(stones, rip{ref: vPostings[i], mint: mint, maxt: maxt})
-			i++
-		}
+	tr := newMapTombstoneReader(ir.tombstones)
+	str := newSimpleTombstoneReader(vPostings, []trange{mint, maxt})
+	tombreader := newMergedTombstoneReader(tr, str)
 
-		if stone.ref == vPostings[i] {
-			if stone.mint > mint {
-				stone.mint = mint
-			}
-			if stone.maxt < maxt {
-				stone.maxt = maxt
-			}
-
-			stones = append(stones, stone)
-			continue
-		}
-
-		stones = append(stones, stone)
-	}
-
-	path := filepath.Join(pb.dir, tombstoneFilename)
-	tmp := path + ".tmp"
-
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	// TODO: Proper format and all.
-	buf := encbuf{b: make([]byte, 0, 20)}
-	fbuf := bufio.NewWriterSize(f, 20)
-
-	for _, stone := range stones {
-		buf.reset()
-		buf.putBE32(stone.ref)
-		buf.putBE64int64(stone.mint)
-		buf.putBE64int64(stone.maxt)
-
-		_, err := fbuf.Write(buf.get())
-		if err != nil {
-			return err
-		}
-	}
-
-	if err := fbuf.Flush(); err != nil {
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-
-	return renameFile(tmp, path)
+	return writeTombstoneFile(pb.dir, tombreader)
 }
 
-// rip (after rest-in-peace) holds the information on the posting and time-range
+// stone holds the information on the posting and time-range
 // that is deleted.
-type rip struct {
-	ref        uint32
-	mint, maxt int64
+type stone struct {
+	ref    uint32
+	ranges []trange
 }
 
-// TODO(gouthamve): Move to cur and reduction in byte-array vis-a-vis BEPostings.
+// TombstoneReader is the iterator over tombstones.
+type TombstoneReader interface {
+	Next() bool
+	At() stone
+	Err() error
+}
+
+var emptyTombstoneReader = newMapTombstoneReader(make(map[uint32][]trange))
+
 type tombstoneReader struct {
-	data []byte
-	idx  int
-	len  int
+	stones []byte
+	idx    int
+	len    int
+
+	b   []byte
+	err error
 }
 
-func newTombStoneReader(data []byte) *tombstoneReader {
-	// TODO(gouthamve): Error handling.
-	return &tombstoneReader{data: data, idx: -1, len: len(data) / 20}
+func newTombStoneReader(dir string) (*tombstoneReader, error) {
+	// TODO(gouthamve): MMAP?
+	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
+	if err != nil {
+		return nil, err
+	}
+
+	offsetBytes := b[len(b)-8:]
+	d := &decbuf{b: offsetBytes}
+	off := d.be64int64()
+	if err := d.err(); err != nil {
+		return nil, err
+	}
+
+	d = &decbuf{b: b[off:]}
+	numStones := d.be64int64()
+	if err := d.err(); err != nil {
+		return nil, err
+	}
+
+	return &tombstoneReader{
+		stones: b[off+8 : (off+8)+(numStones*12)],
+		idx:    -1,
+		len:    int(numStones),
+
+		b: b,
+	}, nil
 }
 
 func (t *tombstoneReader) Next() bool {
+	if t.err != nil {
+		return false
+	}
+
 	t.idx++
 
 	return t.idx < t.len
 }
 
-func (t *tombstoneReader) At() rip {
-	bytIdx := t.idx * (4 + 8 + 8)
-	dat := t.data[bytIdx : bytIdx+20]
+func (t *tombstoneReader) At() stone {
+	bytIdx := t.idx * (4 + 8)
+	dat := t.stones[bytIdx : bytIdx+12]
 
-	db := &decbuf{b: dat}
-	ref := db.be32()
-	mint := db.be64int64()
-	maxt := db.be64int64()
+	d := &decbuf{b: dat}
+	ref := d.be32()
+	off := d.be64int64()
 
-	// TODO(gouthamve): Handle errors.
-	return rip{ref: ref, mint: mint, maxt: maxt}
-}
-
-func (t *tombstoneReader) Seek(ref uint32) bool {
-	if s := t.At(); s.ref >= ref {
-		return true
+	d = &decbuf{b: t.b[off:]}
+	numRanges := d.varint64()
+	if err := d.err(); err != nil {
+		t.err = err
+		return stone{ref: ref}
 	}
 
-	i := sort.Search(t.len-t.idx, func(i int) bool {
-		bytIdx := (t.idx + i) * 20
-		dat := t.data[bytIdx : bytIdx+20]
-
-		db := &decbuf{b: dat}
-		ref2 := db.be32()
-		if ref >= ref2 {
-			return true
+	dranges := make([]trange, 0, numRanges)
+	for i := 0; i < int(numRanges); i++ {
+		mint := d.varint64()
+		maxt := d.varint64()
+		if err := d.err(); err != nil {
+			t.err = err
+			return stone{ref: ref, ranges: dranges}
 		}
-	})
 
-	t.idx += idx
-	return t.idx < t.len
+		dranges = append(dranges, trange{mint, maxt})
+	}
+
+	return stone{ref: ref, ranges: dranges}
 }
 
 func (t *tombstoneReader) Err() error {
+	return t.err
+}
+
+type mapTombstoneReader struct {
+	refs []uint32
+	cur  uint32
+
+	stones map[uint32][]trange
+}
+
+func newMapTombstoneReader(ts map[uint32][]trange) *mapTombstoneReader {
+	refs := make([]uint32, 0, len(ts))
+	for k := range ts {
+		refs = append(refs, k)
+	}
+	sort.Sort(uint32slice(refs))
+	return &mapTombstoneReader{stones: ts, refs: refs}
+}
+
+func (t *mapTombstoneReader) Next() bool {
+	if len(t.refs) > 0 {
+		t.cur = t.refs[0]
+		return true
+	}
+
+	t.cur = 0
+	return false
+}
+
+func (t *mapTombstoneReader) At() stone {
+	return stone{ref: t.cur, ranges: t.stones[t.cur]}
+}
+
+func (t *mapTombstoneReader) Err() error {
 	return nil
+}
+
+type simpleTombstoneReader struct {
+	refs []uint32
+	cur  uint32
+
+	ranges []trange
+}
+
+func newSimpleTombstoneReader(refs []uint32, drange []trange) *simpleTombstoneReader {
+	return &simpleTombstoneReader{refs: refs, ranges: drange}
+}
+
+func (t *simpleTombstoneReader) Next() bool {
+	if len(t.refs) > 0 {
+		t.cur = t.refs[0]
+		return true
+	}
+
+	t.cur = 0
+	return false
+}
+
+func (t *simpleTombstoneReader) At() stone {
+	return stone{ref: t.cur, ranges: t.ranges}
+}
+
+func (t *simpleTombstoneReader) Err() error {
+	return nil
+}
+
+type mergedTombstoneReader struct {
+	a, b TombstoneReader
+	cur  stone
+
+	initialized bool
+	aok, bok    bool
+}
+
+func newMergedTombstoneReader(a, b TombstoneReader) *mergedTombstoneReader {
+	return &mergedTombstoneReader{a: a, b: b}
+}
+
+func (t *mergedTombstoneReader) Next() bool {
+	if !t.initialized {
+		t.aok = t.a.Next()
+		t.bok = t.b.Next()
+		t.initialized = true
+	}
+
+	if !t.aok && !t.bok {
+		return false
+	}
+
+	if !t.aok {
+		t.cur = t.b.At()
+		t.bok = t.b.Next()
+		return true
+	}
+	if !t.bok {
+		t.cur = t.a.At()
+		t.aok = t.a.Next()
+		return true
+	}
+
+	acur, bcur := t.a.At(), t.b.At()
+
+	if acur.ref < bcur.ref {
+		t.cur = acur
+		t.aok = t.a.Next()
+	} else if acur.ref > bcur.ref {
+		t.cur = bcur
+		t.bok = t.b.Next()
+	} else {
+		t.cur = acur
+		// Merge time ranges.
+		for _, r := range bcur.ranges {
+			acur.ranges = addNewInterval(acur.ranges, r)
+		}
+		t.aok = t.a.Next()
+		t.bok = t.b.Next()
+	}
+	return true
+}
+
+func (t *mergedTombstoneReader) At() stone {
+	return t.cur
+}
+
+func (t *mergedTombstoneReader) Err() error {
+	if t.a.Err() != nil {
+		return t.a.Err()
+	}
+	return t.b.Err()
 }
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }

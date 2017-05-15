@@ -66,6 +66,8 @@ type HeadBlock struct {
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
+	tombstones map[uint32][]trange
+
 	meta BlockMeta
 }
 
@@ -94,6 +96,7 @@ func TouchHeadBlock(dir string, seq int, mint, maxt int64) error {
 	}); err != nil {
 		return err
 	}
+
 	return renameFile(tmp, dir)
 }
 
@@ -105,13 +108,14 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 	}
 
 	h := &HeadBlock{
-		dir:      dir,
-		wal:      wal,
-		series:   []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
-		hashes:   map[uint64][]*memSeries{},
-		values:   map[string]stringset{},
-		postings: &memPostings{m: make(map[term][]uint32)},
-		meta:     *meta,
+		dir:        dir,
+		wal:        wal,
+		series:     []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
+		hashes:     map[uint64][]*memSeries{},
+		values:     map[string]stringset{},
+		postings:   &memPostings{m: make(map[term][]uint32)},
+		meta:       *meta,
+		tombstones: make(map[uint32][]trange),
 	}
 	return h, h.init()
 }
@@ -138,7 +142,20 @@ func (h *HeadBlock) init() error {
 			h.meta.Stats.NumSamples++
 		}
 	}
-	return errors.Wrap(r.Err(), "consume WAL")
+	if err := r.Err(); err != nil {
+		return errors.Wrap(err, "consume WAL")
+	}
+
+	tr, err := readTombstoneFile(h.dir)
+	if err != nil {
+		return errors.Wrap(err, "read tombstones file")
+	}
+
+	for tr.Next() {
+		s := tr.At()
+		h.tombstones[s.ref] = s.ranges
+	}
+	return errors.Wrap(err, "tombstones reader iteration")
 }
 
 // inBounds returns true if the given timestamp is within the valid
@@ -206,7 +223,44 @@ func (h *HeadBlock) Index() IndexReader { return &headIndexReader{h} }
 func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
 // Delete implements headBlock
-func (h *HeadBlock) Delete(int64, int64, ...labels.Matcher) error { return nil }
+func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
+	h.mtx.RLock()
+
+	ir := h.Index()
+
+	pr := newPostingsReader(ir)
+	p, absent := pr.Select(ms...)
+
+	h.mtx.RUnlock()
+
+	h.mtx.Lock() // We are modifying the tombstones here.
+	defer h.mtx.Unlock()
+
+Outer:
+	for p.Next() {
+		ref := p.At()
+		lset := h.series[ref].lset
+		for _, abs := range absent {
+			if lset.Get(abs) != "" {
+				continue Outer
+			}
+		}
+
+		rs, ok := h.tombstones[ref]
+		if !ok {
+			h.tombstones[ref] = []trange{{mint, maxt}}
+			continue
+		}
+
+		h.tombstones[ref] = addNewInterval(rs, trange{mint, maxt})
+	}
+
+	if p.Err() != nil {
+		return p.Err()
+	}
+
+	return writeTombstoneFile(h.dir, newMapTombstoneReader(h.tombstones))
+}
 
 // Querier implements Queryable and headBlock
 func (h *HeadBlock) Querier(mint, maxt int64) Querier {
@@ -527,6 +581,9 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error
 	if int(ref) >= len(h.series) {
 		return nil, nil, ErrNotFound
 	}
+
+	dranges, deleted := h.tombstones[ref]
+
 	s := h.series[ref]
 	metas := make([]*ChunkMeta, 0, len(s.chunks))
 
@@ -538,6 +595,9 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     (uint64(ref) << 32) | uint64(i),
+
+			deleted: deleted,
+			dranges: dranges,
 		})
 	}
 

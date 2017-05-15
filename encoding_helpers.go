@@ -72,9 +72,9 @@ type decbuf struct {
 	e error
 }
 
-func (d *decbuf) uvarint() int   { return int(d.uvarint64()) }
-func (d *decbuf) be32int() int   { return int(d.be32()) }
-func (d *decbuf) be64int64() int { return int64(d.be64()) }
+func (d *decbuf) uvarint() int     { return int(d.uvarint64()) }
+func (d *decbuf) be32int() int     { return int(d.be32()) }
+func (d *decbuf) be64int64() int64 { return int64(d.be64()) }
 
 func (d *decbuf) uvarintStr() string {
 	l := d.uvarint64()

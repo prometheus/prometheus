@@ -55,6 +55,38 @@ func (tr trange) inBounds(t int64) bool {
 	return t >= tr.mint && t <= tr.maxt
 }
 
+// This adds the new time-range to the existing ones.
+// The existing ones must be sorted.
+func addNewInterval(existing []trange, n trange) []trange {
+	for i, r := range existing {
+		if r.inBounds(n.mint) {
+			if n.maxt > r.maxt {
+				existing[i].maxt = n.maxt
+			}
+
+			return existing
+		}
+		if r.inBounds(n.maxt) {
+			if n.mint < r.maxt {
+				existing[i].mint = n.mint
+			}
+
+			return existing
+		}
+
+		if n.mint < r.mint {
+			newRange := existing[:i]
+			newRange = append(newRange, n)
+			newRange = append(newRange, existing[i:]...)
+
+			return newRange
+		}
+	}
+
+	existing = append(existing, n)
+	return existing
+}
+
 // writeHash writes the chunk encoding and raw data into the provided hash.
 func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
@@ -114,7 +146,7 @@ Outer:
 	return false
 }
 
-func (it *deletedIterator) Err() {
+func (it *deletedIterator) Err() error {
 	return it.Err()
 }
 
@@ -252,6 +284,27 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
 	for _, c := range chks {
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
+
+		// Remove the deleted parts.
+		if c.deleted {
+			// TODO(gouthamve): Try to do it in-place somehow?
+			chk := chunks.NewXORChunk()
+			app, err := chk.Appender()
+			if err != nil {
+				return err
+			}
+			it := c.Iterator()
+			for it.Next() {
+				ts, v := it.At()
+				app.Append(ts, v)
+			}
+
+			if err := it.Err(); err != nil {
+				return err
+			}
+			c.Chunk = chk
+		}
+
 		maxLen += int64(len(c.Chunk.Bytes()))
 	}
 	newsz := w.n + maxLen

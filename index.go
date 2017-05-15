@@ -165,6 +165,10 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
 	}
+	// TODO(gouthamve): Figure out where this function goes, index or block.
+	if err := writeTombstoneFile(dir, emptyTombstoneReader); err != nil {
+		return nil, err
+	}
 	return iw, nil
 }
 
@@ -538,8 +542,7 @@ type indexReader struct {
 	labels   map[string]uint32
 	postings map[string]uint32
 
-	// The underlying byte slice holding the tombstone data.
-	tomb []byte
+	tombstones map[uint32][]trange
 }
 
 var (
@@ -576,13 +579,17 @@ func newIndexReader(dir string) (*indexReader, error) {
 		return nil, errors.Wrap(err, "read postings table")
 	}
 
-	tf, err := openMmapFile(filepath.Join(dir, tombstoneFilename))
+	tr, err := readTombstoneFile(dir)
 	if err != nil {
-		return err
+		return r, err
 	}
-	r.tomb = tf.b
+	r.tombstones = make(map[uint32][]trange)
+	for tr.Next() {
+		s := tr.At()
+		r.tombstones[s.ref] = s.ranges
+	}
 
-	return r, nil
+	return r, tr.Err()
 }
 
 func (r *indexReader) readTOC() error {
@@ -750,17 +757,7 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 		lbls = append(lbls, labels.Label{Name: ln, Value: lv})
 	}
 
-	// TODO: This sucks! Put tombstones in map.
-	tr := r.tombstones()
-	dmint, dmaxt := 0
-	del := false
-	if tr.Seek(ref) {
-		s := tr.At()
-		if s.ref == ref {
-			del = true
-			dmint, dmaxt = s.mint, s.maxt
-		}
-	}
+	s, deleted := r.tombstones[ref]
 
 	// Read the chunks meta data.
 	k = int(d2.uvarint())
@@ -781,8 +778,8 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 			MinTime: mint,
 			MaxTime: maxt,
 
-			deleted: del,
-			dranges: []trange{{dmint, dmaxt}},
+			deleted: deleted,
+			dranges: s,
 		})
 	}
 
@@ -812,10 +809,6 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 	// TODO(fabxc): read checksum from 4 remainer bytes of d1 and verify.
 
 	return newBigEndianPostings(d2.get()), nil
-}
-
-func (r *indexReader) tombstones() *tombstoneReader {
-	return newTombStoneReader(r.tomb[:])
 }
 
 type stringTuples struct {
