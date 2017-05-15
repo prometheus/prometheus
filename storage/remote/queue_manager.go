@@ -323,7 +323,7 @@ func (t *QueueManager) calculateDesiredShards() {
 		timePerSample = samplesOutDuration / samplesOut
 		desiredShards = (timePerSample * (samplesIn + samplesPending + t.integralAccumulator)) / float64(time.Second)
 	)
-	log.Debugf("QueueManager.caclulateDesiredShards samplesIn=%f, samplesOut=%f, samplesPending=%f, desiredShards=%f",
+	log.Debugf("QueueManager.calculateDesiredShards samplesIn=%f, samplesOut=%f, samplesPending=%f, desiredShards=%f",
 		samplesIn, samplesOut, samplesPending, desiredShards)
 
 	// Changes in the number of shards must be greater than shardToleranceFraction.
@@ -478,7 +478,7 @@ func (s *shards) sendSamples(samples model.Samples) {
 	begin := time.Now()
 	s.sendSamplesWithBackoff(samples)
 
-	// These counters are used to caclulate the dynamic sharding, and as such
+	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
