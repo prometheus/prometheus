@@ -41,7 +41,7 @@ func TestAlertingRuleHTMLSnippet(t *testing.T) {
 func TestCurrentAlertsClonesLabelsAndAnnotations(t *testing.T) {
 	r := AlertingRule{
 		active: map[model.Fingerprint]*Alert{
-			0: &Alert{
+			0: {
 				Labels:      model.LabelSet{"test_label": "test_label_value"},
 				Annotations: model.LabelSet{"test_annotation": "test_annotation_value"},
 			},
