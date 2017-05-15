@@ -55,12 +55,6 @@ var (
 		},
 		[]string{"interval"},
 	)
-	targetSkippedScrapes = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_target_skipped_scrapes_total",
-			Help: "Total number of scrapes that were skipped because the metric storage was throttled.",
-		},
-	)
 	targetReloadIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_reload_length_seconds",
@@ -94,7 +88,6 @@ var (
 
 func init() {
 	prometheus.MustRegister(targetIntervalLength)
-	prometheus.MustRegister(targetSkippedScrapes)
 	prometheus.MustRegister(targetReloadIntervalLength)
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
