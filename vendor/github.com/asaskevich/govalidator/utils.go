@@ -214,22 +214,22 @@ func Truncate(str string, length int, ending string) string {
 	return str
 }
 
-// Pad left side of string if size of string is less then indicated pad length
+// PadLeft pad left side of string if size of string is less then indicated pad length
 func PadLeft(str string, padStr string, padLen int) string {
 	return buildPadStr(str, padStr, padLen, true, false)
 }
 
-// Pad right side of string if size of string is less then indicated pad length
+// PadRight pad right side of string if size of string is less then indicated pad length
 func PadRight(str string, padStr string, padLen int) string {
 	return buildPadStr(str, padStr, padLen, false, true)
 }
 
-// Pad both sides of string if size of string is less then indicated pad length
+// PadBoth pad sides of string if size of string is less then indicated pad length
 func PadBoth(str string, padStr string, padLen int) string {
 	return buildPadStr(str, padStr, padLen, true, true)
 }
 
-// Pad string either left, right or both sides, not the padding string can be unicode and more then one
+// PadString either left, right or both sides, not the padding string can be unicode and more then one
 // character
 func buildPadStr(str string, padStr string, padLen int, padLeft bool, padRight bool) string {
 

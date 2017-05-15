@@ -65,7 +65,7 @@ func IsURL(str string) bool {
 }
 
 // IsRequestURL check if the string rawurl, assuming
-// it was recieved in an HTTP request, is a valid
+// it was received in an HTTP request, is a valid
 // URL confirm to RFC 3986
 func IsRequestURL(rawurl string) bool {
 	url, err := url.ParseRequestURI(rawurl)
@@ -79,7 +79,7 @@ func IsRequestURL(rawurl string) bool {
 }
 
 // IsRequestURI check if the string rawurl, assuming
-// it was recieved in an HTTP request, is an
+// it was received in an HTTP request, is an
 // absolute URI or an absolute path.
 func IsRequestURI(rawurl string) bool {
 	_, err := url.ParseRequestURI(rawurl)
@@ -572,6 +572,14 @@ func ValidateStruct(s interface{}) (bool, error) {
 		if typeField.PkgPath != "" {
 			continue // Private field
 		}
+		structResult := true
+		if valueField.Kind() == reflect.Struct {
+			var err error
+			structResult, err = ValidateStruct(valueField.Interface())
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
 		resultField, err2 := typeCheck(valueField, typeField, val, nil)
 		if err2 != nil {
 
@@ -587,7 +595,7 @@ func ValidateStruct(s interface{}) (bool, error) {
 						switch tempErr := e.(type) {
 						case Error:
 							tempErr.Name = jsonTag
-							e = tempErr
+							_ = tempErr
 						}
 					}
 					err2 = jsonError
@@ -596,7 +604,7 @@ func ValidateStruct(s interface{}) (bool, error) {
 
 			errs = append(errs, err2)
 		}
-		result = result && resultField
+		result = result && resultField && structResult
 	}
 	if len(errs) > 0 {
 		err = errs
@@ -628,7 +636,7 @@ func isValidTag(s string) bool {
 	}
 	for _, c := range s {
 		switch {
-		case strings.ContainsRune("!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
+		case strings.ContainsRune("\\'\"!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
 			// Backslash and quote chars are reserved, but
 			// otherwise any punctuation chars are allowed
 			// in a tag name.
@@ -654,15 +662,18 @@ func IsSemver(str string) bool {
 	return rxSemver.MatchString(str)
 }
 
+// IsTime check if string is valid according to given format
 func IsTime(str string, format string) bool {
 	_, err := time.Parse(format, str)
 	return err == nil
 }
 
+// IsRFC3339 check if string is valid timestamp value according to RFC3339
 func IsRFC3339(str string) bool {
 	return IsTime(str, time.RFC3339)
 }
 
+// IsISO4217 check if string is valid ISO currency code
 func IsISO4217(str string) bool {
 	for _, currency := range ISO4217List {
 		if str == currency {
@@ -712,6 +723,18 @@ func StringLength(str string, params ...string) bool {
 	return false
 }
 
+// Range check string's length
+func Range(str string, params ...string) bool {
+	if len(params) == 2 {
+		value, _ := ToFloat(str)
+		min, _ := ToFloat(params[0])
+		max, _ := ToFloat(params[1])
+		return InRange(value, min, max)
+	}
+
+	return false
+}
+
 func isInRaw(str string, params ...string) bool {
 	if len(params) == 1 {
 		rawParams := params[0]
@@ -724,7 +747,7 @@ func isInRaw(str string, params ...string) bool {
 	return false
 }
 
-// check if string str is a member of the set of strings params
+// IsIn check if string str is a member of the set of strings params
 func IsIn(str string, params ...string) bool {
 	for _, param := range params {
 		if str == param {
