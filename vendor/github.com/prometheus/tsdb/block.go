@@ -48,8 +48,8 @@ type Block interface {
 	Queryable
 }
 
-// HeadBlock is a regular block that can still be appended to.
-type HeadBlock interface {
+// headBlock is a regular block that can still be appended to.
+type headBlock interface {
 	Block
 	Appendable
 }
