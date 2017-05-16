@@ -16,10 +16,14 @@
 
 package main
 
+import (
+	"strings"
+)
+
 func charsToString(ca []uint8) string {
 	s := make([]byte, len(ca))
 	for i, c := range ca {
 		s[i] = byte(c)
 	}
-	return string(s[0:len(ca)])
+	return strings.Trim(string(s[0:len(ca)]), "\x00")
 }
