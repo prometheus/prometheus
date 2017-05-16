@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
@@ -144,7 +145,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app, reportApp func() storage.Appender) loop {
+	newLoop := func(ctx context.Context, s scraper, app, reportApp func() storage.Appender, _ log.Logger) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -310,7 +311,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	scraper := &testScraper{}
-	sl := newScrapeLoop(context.Background(), scraper, nil, nil)
+	sl := newScrapeLoop(context.Background(), scraper, nil, nil, nil)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
 	// loops are started asynchronously. Thus it's possible, that a loop is stopped
@@ -368,7 +369,7 @@ func TestScrapeLoopStop(t *testing.T) {
 	)
 	defer close(signal)
 
-	sl := newScrapeLoop(context.Background(), scraper, app, reportApp)
+	sl := newScrapeLoop(context.Background(), scraper, app, reportApp, nil)
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -427,7 +428,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp)
+	sl := newScrapeLoop(ctx, scraper, app, reportApp, nil)
 
 	// The loop must terminate during the initial offset if the context
 	// is canceled.
@@ -465,7 +466,7 @@ func TestScrapeLoopRun(t *testing.T) {
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
-	sl = newScrapeLoop(ctx, scraper, app, reportApp)
+	sl = newScrapeLoop(ctx, scraper, app, reportApp, nil)
 
 	go func() {
 		sl.run(time.Second, 100*time.Millisecond, errc)
@@ -510,7 +511,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp)
+	sl := newScrapeLoop(ctx, scraper, app, reportApp, nil)
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -559,7 +560,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp)
+	sl := newScrapeLoop(ctx, scraper, app, reportApp, nil)
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -737,6 +738,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 		reportAppender: func() storage.Appender { return nopAppender{} },
 		refCache:       map[string]uint64{},
 		lsetCache:      map[uint64]lsetCacheEntry{},
+		l:              log.Base(),
 	}
 
 	now := time.Unix(1, 0)
