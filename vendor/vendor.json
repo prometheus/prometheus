@@ -59,10 +59,10 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "BdLdZP/C2uOO3lqk9X3NCKFpXa4=",
+			"checksumSHA1": "ddYc7mKe3g1x1UUKBrGR4vArJs8=",
 			"path": "github.com/asaskevich/govalidator",
-			"revision": "7b3beb6df3c42abd3509abfc3bcacc0fbfb7c877",
-			"revisionTime": "2016-10-01T16:31:30Z"
+			"revision": "065ea97278837088c52c0cd0d963473f61b2d98c",
+			"revisionTime": "2017-05-13T08:31:01Z"
 		},
 		{
 			"checksumSHA1": "WNfR3yhLjRC5/uccgju/bwrdsxQ=",
