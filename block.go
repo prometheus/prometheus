@@ -199,10 +199,17 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 			pos += int64(n)
 		}
 	}
+	if err := tr.Err(); err != nil {
+		return err
+	}
 
 	// Write the offset table.
 	buf.reset()
 	buf.putBE32int(len(refs))
+	if _, err := f.Write(buf.get()); err != nil {
+		return err
+	}
+
 	for _, ref := range refs {
 		buf.reset()
 		buf.putBE32(ref)
@@ -325,7 +332,7 @@ Outer:
 
 	// Merge the current and new tombstones.
 	tr := newMapTombstoneReader(ir.tombstones)
-	str := newSimpleTombstoneReader(vPostings, []trange{mint, maxt})
+	str := newSimpleTombstoneReader(vPostings, []trange{{mint, maxt}})
 	tombreader := newMergedTombstoneReader(tr, str)
 
 	return writeTombstoneFile(pb.dir, tombreader)
@@ -371,13 +378,13 @@ func newTombStoneReader(dir string) (*tombstoneReader, error) {
 	}
 
 	d = &decbuf{b: b[off:]}
-	numStones := d.be64int64()
+	numStones := d.be32int()
 	if err := d.err(); err != nil {
 		return nil, err
 	}
 
 	return &tombstoneReader{
-		stones: b[off+8 : (off+8)+(numStones*12)],
+		stones: b[off+4:],
 		idx:    -1,
 		len:    int(numStones),
 
@@ -448,6 +455,7 @@ func newMapTombstoneReader(ts map[uint32][]trange) *mapTombstoneReader {
 func (t *mapTombstoneReader) Next() bool {
 	if len(t.refs) > 0 {
 		t.cur = t.refs[0]
+		t.refs = t.refs[1:]
 		return true
 	}
 

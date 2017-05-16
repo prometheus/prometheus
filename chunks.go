@@ -47,46 +47,6 @@ type ChunkMeta struct {
 	dranges []trange
 }
 
-type trange struct {
-	mint, maxt int64
-}
-
-func (tr trange) inBounds(t int64) bool {
-	return t >= tr.mint && t <= tr.maxt
-}
-
-// This adds the new time-range to the existing ones.
-// The existing ones must be sorted.
-func addNewInterval(existing []trange, n trange) []trange {
-	for i, r := range existing {
-		if r.inBounds(n.mint) {
-			if n.maxt > r.maxt {
-				existing[i].maxt = n.maxt
-			}
-
-			return existing
-		}
-		if r.inBounds(n.maxt) {
-			if n.mint < r.maxt {
-				existing[i].mint = n.mint
-			}
-
-			return existing
-		}
-
-		if n.mint < r.mint {
-			newRange := existing[:i]
-			newRange = append(newRange, n)
-			newRange = append(newRange, existing[i:]...)
-
-			return newRange
-		}
-	}
-
-	existing = append(existing, n)
-	return existing
-}
-
 // writeHash writes the chunk encoding and raw data into the provided hash.
 func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
@@ -112,6 +72,47 @@ func (cm *ChunkMeta) Iterator() chunks.Iterator {
 	return cm.Chunk.Iterator()
 }
 
+type trange struct {
+	mint, maxt int64
+}
+
+func (tr trange) inBounds(t int64) bool {
+	return t >= tr.mint && t <= tr.maxt
+}
+
+// This adds the new time-range to the existing ones.
+// The existing ones must be sorted and should not be nil.
+func addNewInterval(existing []trange, n trange) []trange {
+	for i, r := range existing {
+		if r.inBounds(n.mint) {
+			if n.maxt > r.maxt {
+				existing[i].maxt = n.maxt
+			}
+
+			return existing
+		}
+		if r.inBounds(n.maxt) {
+			if n.mint < r.maxt {
+				existing[i].mint = n.mint
+			}
+
+			return existing
+		}
+
+		if n.mint < r.mint {
+			newRange := make([]trange, i, len(existing[:i])+1)
+			copy(newRange, existing[:i])
+			newRange = append(newRange, n)
+			newRange = append(newRange, existing[i:]...)
+
+			return newRange
+		}
+	}
+
+	existing = append(existing, n)
+	return existing
+}
+
 // deletedIterator wraps an Iterator and makes sure any deleted metrics are not
 // returned.
 type deletedIterator struct {
@@ -128,10 +129,12 @@ func (it *deletedIterator) Next() bool {
 Outer:
 	for it.it.Next() {
 		ts, _ := it.it.At()
+
 		for _, tr := range it.dranges {
 			if tr.inBounds(ts) {
 				continue Outer
 			}
+
 			if ts > tr.maxt {
 				it.dranges = it.dranges[1:]
 				continue
@@ -147,7 +150,7 @@ Outer:
 }
 
 func (it *deletedIterator) Err() error {
-	return it.Err()
+	return it.it.Err()
 }
 
 // ChunkWriter serializes a time block of chunked series data.
