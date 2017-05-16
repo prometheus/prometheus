@@ -505,7 +505,7 @@ mainLoop:
 			// The append failed, probably due to a parse error.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, err = sl.append([]byte{}, start); err != nil {
-				log.With("err", err).Error("failure append failed")
+				log.With("err", err).Error("append failed")
 			}
 		}
 
@@ -524,6 +524,10 @@ mainLoop:
 
 	close(sl.stopped)
 
+	sl.endOfRunStaleness(last, ticker, interval)
+}
+
+func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, interval time.Duration) {
 	// Scraping has stopped. We want to write stale markers but
 	// the target may be recreated, so we wait just over 2 scrape intervals
 	// before creating them.
