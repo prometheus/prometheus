@@ -210,19 +210,24 @@ func (h *HeadBlock) Meta() BlockMeta {
 	return m
 }
 
-// Dir implements headBlock
+// Dir implements headBlock.
 func (h *HeadBlock) Dir() string { return h.dir }
 
-// Persisted implements headBlock
+// Persisted implements headBlock.
 func (h *HeadBlock) Persisted() bool { return false }
 
-// Index implements headBlock
+// Index implements headBlock.
 func (h *HeadBlock) Index() IndexReader { return &headIndexReader{h} }
 
-// Chunks implements headBlock
+// Chunks implements headBlock.
 func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
-// Delete implements headBlock
+// Tombstones implements headBlock.
+func (h *HeadBlock) Tombstones() TombstoneReader {
+	return newMapTombstoneReader(h.tombstones)
+}
+
+// Delete implements headBlock.
 func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
 	h.mtx.RLock()
 
@@ -246,13 +251,7 @@ Outer:
 			}
 		}
 
-		rs, ok := h.tombstones[ref]
-		if !ok {
-			h.tombstones[ref] = []trange{{mint, maxt}}
-			continue
-		}
-
-		h.tombstones[ref] = addNewInterval(rs, trange{mint, maxt})
+		h.tombstones[ref] = addNewInterval(h.tombstones[ref], trange{mint, maxt})
 	}
 
 	if p.Err() != nil {
@@ -262,7 +261,7 @@ Outer:
 	return writeTombstoneFile(h.dir, newMapTombstoneReader(h.tombstones))
 }
 
-// Querier implements Queryable and headBlock
+// Querier implements Queryable and headBlock.
 func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()

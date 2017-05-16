@@ -126,8 +126,9 @@ func (q *querier) Close() error {
 
 // blockQuerier provides querying access to a single block database.
 type blockQuerier struct {
-	index  IndexReader
-	chunks ChunkReader
+	index      IndexReader
+	chunks     ChunkReader
+	tombstones TombstoneReader
 
 	postingsMapper func(Postings) Postings
 
