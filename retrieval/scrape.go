@@ -609,6 +609,8 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err erro
 		p              = textparse.New(b)
 		defTime        = timestamp.FromTime(ts)
 		samplesScraped = map[string]labels.Labels{}
+		numOutOfOrder  = 0
+		numDuplicates  = 0
 	)
 
 loop:
@@ -632,10 +634,12 @@ loop:
 			case errSeriesDropped:
 				continue
 			case storage.ErrOutOfOrderSample:
-				log.With("timeseries", string(met)).Warn("Out of order sample")
+				log.With("timeseries", string(met)).Debug("Out of order sample")
+				numOutOfOrder += 1
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
-				log.With("timeseries", string(met)).Warn("Duplicate sample for timestamp")
+				numDuplicates += 1
+				log.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
 			default:
 				break loop
@@ -654,11 +658,13 @@ loop:
 				continue
 			case storage.ErrOutOfOrderSample:
 				err = nil
-				log.With("timeseries", string(met)).Warn("Out of order sample")
+				log.With("timeseries", string(met)).Debug("Out of order sample")
+				numOutOfOrder += 1
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				err = nil
-				log.With("timeseries", string(met)).Warn("Duplicate sample for timestamp")
+				numDuplicates += 1
+				log.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
 			default:
 				break loop
@@ -678,6 +684,12 @@ loop:
 	if err == nil {
 		err = p.Err()
 	}
+	if numOutOfOrder > 0 {
+		log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
+	}
+	if numDuplicates > 0 {
+		log.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
+	}
 	if err == nil {
 		for metric, lset := range sl.samplesInPreviousScrape {
 			if _, ok := samplesScraped[metric]; !ok {
@@ -689,8 +701,8 @@ loop:
 					err = nil
 					continue
 				case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
-					// Do not log here, as this is expected if a target goes away and comes back
-					// again with a new scrape loop.
+					// Do not count these in logging, as this is expected if a target
+					// goes away and comes back again with a new scrape loop.
 					err = nil
 					continue
 				default:
