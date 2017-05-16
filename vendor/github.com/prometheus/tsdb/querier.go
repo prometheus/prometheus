@@ -135,21 +135,9 @@ type blockQuerier struct {
 }
 
 func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
-	var (
-		its    []Postings
-		absent []string
-	)
-	for _, m := range ms {
-		// If the matcher checks absence of a label, don't select them
-		// but propagate the check into the series set.
-		if _, ok := m.(*labels.EqualMatcher); ok && m.Matches("") {
-			absent = append(absent, m.Name())
-			continue
-		}
-		its = append(its, q.selectSingle(m))
-	}
+	pr := newPostingsReader(q.index)
 
-	p := Intersect(its...)
+	p, absent := pr.Select(ms...)
 
 	if q.postingsMapper != nil {
 		p = q.postingsMapper(p)
@@ -170,50 +158,6 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 		mint: q.mint,
 		maxt: q.maxt,
 	}
-}
-
-func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
-	// Fast-path for equal matching.
-	if em, ok := m.(*labels.EqualMatcher); ok {
-		it, err := q.index.Postings(em.Name(), em.Value())
-		if err != nil {
-			return errPostings{err: err}
-		}
-		return it
-	}
-
-	tpls, err := q.index.LabelValues(m.Name())
-	if err != nil {
-		return errPostings{err: err}
-	}
-	// TODO(fabxc): use interface upgrading to provide fast solution
-	// for equality and prefix matches. Tuples are lexicographically sorted.
-	var res []string
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return errPostings{err: err}
-		}
-		if m.Matches(vals[0]) {
-			res = append(res, vals[0])
-		}
-	}
-	if len(res) == 0 {
-		return emptyPostings
-	}
-
-	var rit []Postings
-
-	for _, v := range res {
-		it, err := q.index.Postings(m.Name(), v)
-		if err != nil {
-			return errPostings{err: err}
-		}
-		rit = append(rit, it)
-	}
-
-	return Merge(rit...)
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
@@ -239,6 +183,81 @@ func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 
 func (q *blockQuerier) Close() error {
 	return nil
+}
+
+// postingsReader is used to select matching postings from an IndexReader.
+type postingsReader struct {
+	index IndexReader
+}
+
+func newPostingsReader(i IndexReader) *postingsReader {
+	return &postingsReader{index: i}
+}
+
+func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
+	var (
+		its    []Postings
+		absent []string
+	)
+	for _, m := range ms {
+		// If the matcher checks absence of a label, don't select them
+		// but propagate the check into the series set.
+		if _, ok := m.(*labels.EqualMatcher); ok && m.Matches("") {
+			absent = append(absent, m.Name())
+			continue
+		}
+		its = append(its, r.selectSingle(m))
+	}
+
+	p := Intersect(its...)
+
+	return p, absent
+}
+
+func (r *postingsReader) selectSingle(m labels.Matcher) Postings {
+	// Fast-path for equal matching.
+	if em, ok := m.(*labels.EqualMatcher); ok {
+		it, err := r.index.Postings(em.Name(), em.Value())
+		if err != nil {
+			return errPostings{err: err}
+		}
+		return it
+	}
+
+	// TODO(fabxc): use interface upgrading to provide fast solution
+	// for prefix matches. Tuples are lexicographically sorted.
+	tpls, err := r.index.LabelValues(m.Name())
+	if err != nil {
+		return errPostings{err: err}
+	}
+
+	var res []string
+
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
+		if err != nil {
+			return errPostings{err: err}
+		}
+		if m.Matches(vals[0]) {
+			res = append(res, vals[0])
+		}
+	}
+
+	if len(res) == 0 {
+		return emptyPostings
+	}
+
+	var rit []Postings
+
+	for _, v := range res {
+		it, err := r.index.Postings(m.Name(), v)
+		if err != nil {
+			return errPostings{err: err}
+		}
+		rit = append(rit, it)
+	}
+
+	return Merge(rit...)
 }
 
 func mergeStrings(a, b []string) []string {
