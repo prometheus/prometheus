@@ -111,7 +111,7 @@ type scrapePool struct {
 	loops   map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
-	newLoop func(context.Context, scraper, func() storage.Appender, func() storage.Appender) loop
+	newLoop func(context.Context, scraper, func() storage.Appender, func() storage.Appender, log.Logger) loop
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable) *scrapePool {
@@ -187,6 +187,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 				func() storage.Appender {
 					return sp.reportAppender(t)
 				},
+				log.With("target", t.labels.String()),
 			)
 		)
 		wg.Add(1)
@@ -256,6 +257,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				func() storage.Appender {
 					return sp.reportAppender(t)
 				},
+				log.With("target", t.labels.String()),
 			)
 
 			sp.targets[hash] = t
@@ -419,6 +421,7 @@ type lsetCacheEntry struct {
 
 type scrapeLoop struct {
 	scraper scraper
+	l       log.Logger
 
 	appender       func() storage.Appender
 	reportAppender func() storage.Appender
@@ -434,7 +437,10 @@ type scrapeLoop struct {
 	stopped   chan struct{}
 }
 
-func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp func() storage.Appender) loop {
+func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp func() storage.Appender, l log.Logger) loop {
+	if l == nil {
+		l = log.Base()
+	}
 	sl := &scrapeLoop{
 		scraper:        sc,
 		appender:       app,
@@ -443,6 +449,7 @@ func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp func() storag
 		lsetCache:      map[uint64]lsetCacheEntry{},
 		stopped:        make(chan struct{}),
 		ctx:            ctx,
+		l:              l,
 	}
 	sl.scrapeCtx, sl.cancel = context.WithCancel(ctx)
 
@@ -501,11 +508,11 @@ mainLoop:
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
 		if total, added, err = sl.append(b, start); err != nil {
-			log.With("err", err).Error("append failed")
+			sl.l.With("err", err).Error("append failed")
 			// The append failed, probably due to a parse error.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, err = sl.append([]byte{}, start); err != nil {
-				log.With("err", err).Error("append failed")
+				sl.l.With("err", err).Error("append failed")
 			}
 		}
 
@@ -568,10 +575,10 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
 	if _, _, err := sl.append([]byte{}, staleTime); err != nil {
-		log.With("err", err).Error("stale append failed")
+		sl.l.With("err", err).Error("stale append failed")
 	}
 	if err := sl.reportStale(staleTime); err != nil {
-		log.With("err", err).Error("stale report failed")
+		sl.l.With("err", err).Error("stale report failed")
 	}
 }
 
@@ -634,12 +641,12 @@ loop:
 			case errSeriesDropped:
 				continue
 			case storage.ErrOutOfOrderSample:
-				log.With("timeseries", string(met)).Debug("Out of order sample")
+				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
 				numOutOfOrder += 1
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates += 1
-				log.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
 			default:
 				break loop
@@ -658,13 +665,13 @@ loop:
 				continue
 			case storage.ErrOutOfOrderSample:
 				err = nil
-				log.With("timeseries", string(met)).Debug("Out of order sample")
+				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
 				numOutOfOrder += 1
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				err = nil
 				numDuplicates += 1
-				log.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
 			default:
 				break loop
@@ -685,10 +692,10 @@ loop:
 		err = p.Err()
 	}
 	if numOutOfOrder > 0 {
-		log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
+		sl.l.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
 	}
 	if numDuplicates > 0 {
-		log.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
+		sl.l.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
 	}
 	if err == nil {
 		for metric, lset := range sl.samplesInPreviousScrape {
