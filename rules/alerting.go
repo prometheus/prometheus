@@ -15,6 +15,7 @@ package rules
 
 import (
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -151,7 +152,7 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, externalURLPath string) (promql.Vector, error) {
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, externalURL *url.URL) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(r.vector.String(), ts)
 	if err != nil {
 		return nil, err
@@ -194,7 +195,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.En
 				tmplData,
 				model.Time(timestamp.FromTime(ts)),
 				engine,
-				externalURLPath,
+				externalURL,
 			)
 			result, err := tmpl.Expand()
 			if err != nil {
