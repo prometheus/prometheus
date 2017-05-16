@@ -17,9 +17,12 @@
 package main
 
 func charsToString(ca []int8) string {
-	s := make([]byte, len(ca))
-	for i, c := range ca {
-		s[i] = byte(c)
+	s := make([]byte, 0, len(ca))
+	for _, c := range ca {
+		if byte(c) == 0 {
+			break
+		}
+		s = append(s, byte(c))
 	}
-	return string(s[0:len(ca)])
+	return string(s)
 }
