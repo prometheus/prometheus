@@ -72,6 +72,7 @@ func Main() int {
 
 	log.Infoln("Starting prometheus", version.Info())
 	log.Infoln("Build context", version.BuildContext())
+	log.Infoln("Host details", Uname())
 
 	var (
 		// sampleAppender = storage.Fanout{}
