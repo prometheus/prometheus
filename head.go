@@ -97,6 +97,11 @@ func TouchHeadBlock(dir string, seq int, mint, maxt int64) error {
 		return err
 	}
 
+	// Write an empty tombstones file.
+	if err := writeTombstoneFile(tmp, emptyTombstoneReader); err != nil {
+		return err
+	}
+
 	return renameFile(tmp, dir)
 }
 

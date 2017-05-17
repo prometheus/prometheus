@@ -165,10 +165,6 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
 	}
-	// TODO(gouthamve): Figure out where this function goes, index or block.
-	if err := writeTombstoneFile(dir, emptyTombstoneReader); err != nil {
-		return nil, err
-	}
 	return iw, nil
 }
 
@@ -541,8 +537,6 @@ type indexReader struct {
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint32
 	postings map[string]uint32
-
-	tombstones map[uint32][]trange
 }
 
 var (
@@ -575,21 +569,7 @@ func newIndexReader(dir string) (*indexReader, error) {
 		return nil, errors.Wrap(err, "read label index table")
 	}
 	r.postings, err = r.readOffsetTable(r.toc.postingsTable)
-	if err != nil {
-		return nil, errors.Wrap(err, "read postings table")
-	}
-
-	tr, err := readTombstoneFile(dir)
-	if err != nil {
-		return r, err
-	}
-	r.tombstones = make(map[uint32][]trange)
-	for tr.Next() {
-		s := tr.At()
-		r.tombstones[s.ref] = s.ranges
-	}
-
-	return r, tr.Err()
+	return r, errors.Wrap(err, "read postings table")
 }
 
 func (r *indexReader) readTOC() error {
@@ -757,8 +737,6 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 		lbls = append(lbls, labels.Label{Name: ln, Value: lv})
 	}
 
-	s, deleted := r.tombstones[ref]
-
 	// Read the chunks meta data.
 	k = int(d2.uvarint())
 	chunks := make([]*ChunkMeta, 0, k)
@@ -772,14 +750,10 @@ func (r *indexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
 			return nil, nil, errors.Wrapf(d2.err(), "read meta for chunk %d", i)
 		}
 
-		// TODO(gouthamve): Donot add the chunk if its completely deleted.
 		chunks = append(chunks, &ChunkMeta{
 			Ref:     off,
 			MinTime: mint,
 			MaxTime: maxt,
-
-			deleted: deleted,
-			dranges: s,
 		})
 	}
 
