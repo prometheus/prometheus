@@ -197,7 +197,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *uint64
+		ref    *string
 	}
 
 	scrape := make([]*sample, 0, len(metrics))

@@ -86,11 +86,11 @@ type Appender interface {
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
-	Add(l labels.Labels, t int64, v float64) (uint64, error)
+	Add(l labels.Labels, t int64, v float64) (string, error)
 
 	// Add adds a sample pair for the referenced series. It is generally faster
 	// than adding a sample by providing its full label set.
-	AddFast(ref uint64, t int64, v float64) error
+	AddFast(ref string, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
@@ -517,34 +517,33 @@ type metaAppender struct {
 	app  Appender
 }
 
-func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	h, err := a.appenderFor(t)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	ref, err := h.app.Add(lset, t, v)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	a.samples++
-	// Store last byte of sequence number in 3rd byte of reference.
-	return ref | (uint64(h.meta.Sequence&0xff) << 40), nil
+
+	return string(append(h.meta.ULID[:], ref...)), nil
 }
 
-func (a *dbAppender) AddFast(ref uint64, t int64, v float64) error {
+func (a *dbAppender) AddFast(ref string, t int64, v float64) error {
 	// Load the head last byte of the head sequence from the 3rd byte of the
 	// reference number.
-	gen := (ref << 16) >> 56
+	// gen := (ref << 16) >> 56
 
 	h, err := a.appenderFor(t)
 	if err != nil {
 		return err
 	}
-	// If the last byte of the sequence does not add up, the reference is not valid.
-	if uint64(h.meta.Sequence&0xff) != gen {
-		return ErrNotFound
+	if yoloString(h.meta.ULID[:]) != ref[:16] {
+		return errors.Wrap(ErrNotFound, "unexpected ULID")
 	}
-	if err := h.app.AddFast(ref, t, v); err != nil {
+	if err := h.app.AddFast(ref[16:], t, v); err != nil {
 		return err
 	}
 
@@ -870,9 +869,8 @@ func (es MultiError) Err() error {
 	return es
 }
 
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
+func yoloString(b []byte) string { return *((*string)(unsafe.Pointer(&b))) }
+func yoloBytes(s string) []byte  { return *((*[]byte)(unsafe.Pointer(&s))) }
 
 func closeAll(cs ...io.Closer) error {
 	var merr MultiError
