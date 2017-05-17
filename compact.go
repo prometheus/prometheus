@@ -25,6 +25,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -280,7 +281,7 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 		if err != nil {
 			return nil, err
 		}
-		s := newCompactionSeriesSet(b.Index(), b.Chunks(), all)
+		s := newCompactionSeriesSet(b.Index(), b.Chunks(), b.Tombstones(), all)
 
 		if i == 0 {
 			set = s
@@ -301,14 +302,37 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 	)
 
 	for set.Next() {
-		lset, chunks := set.At()
-		if err := chunkw.WriteChunks(chunks...); err != nil {
+		lset, chks, ranges := set.At() // The chunks here are not fully deleted.
+
+		if len(ranges) > 0 {
+			// Re-encode the chunk to not have deleted values.
+			for _, chk := range chks {
+				// Checks Overlap: http://stackoverflow.com/questions/3269434/
+				if ranges[0].mint <= chk.MaxTime && chk.MinTime <= ranges[len(ranges)-1].maxt {
+					newChunk := chunks.NewXORChunk()
+					app, err := newChunk.Appender()
+					if err != nil {
+						return nil, err
+					}
+
+					it := &deletedIterator{it: chk.Chunk.Iterator(), dranges: ranges}
+					for it.Next() {
+						ts, v := it.At()
+						app.Append(ts, v)
+					}
+
+					chk.Chunk = newChunk
+				}
+			}
+		}
+
+		if err := chunkw.WriteChunks(chks...); err != nil {
 			return nil, err
 		}
 
-		indexw.AddSeries(i, lset, chunks...)
+		indexw.AddSeries(i, lset, chks...)
 
-		meta.Stats.NumChunks += uint64(len(chunks))
+		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
 
 		for _, l := range lset {
@@ -358,25 +382,28 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 
 type compactionSet interface {
 	Next() bool
-	At() (labels.Labels, []*ChunkMeta)
+	At() (labels.Labels, []*ChunkMeta, []trange)
 	Err() error
 }
 
 type compactionSeriesSet struct {
-	p      Postings
-	index  IndexReader
-	chunks ChunkReader
+	p          Postings
+	index      IndexReader
+	chunks     ChunkReader
+	tombstones TombstoneReader
 
-	l   labels.Labels
-	c   []*ChunkMeta
-	err error
+	l       labels.Labels
+	c       []*ChunkMeta
+	dranges []trange
+	err     error
 }
 
-func newCompactionSeriesSet(i IndexReader, c ChunkReader, p Postings) *compactionSeriesSet {
+func newCompactionSeriesSet(i IndexReader, c ChunkReader, t TombstoneReader, p Postings) *compactionSeriesSet {
 	return &compactionSeriesSet{
-		index:  i,
-		chunks: c,
-		p:      p,
+		index:      i,
+		chunks:     c,
+		tombstones: t,
+		p:          p,
 	}
 }
 
@@ -385,15 +412,34 @@ func (c *compactionSeriesSet) Next() bool {
 		return false
 	}
 
+	if c.tombstones.Seek(c.p.At()) {
+		s := c.tombstones.At()
+		if c.p.At() == s.ref {
+			c.dranges = s.ranges
+		} else {
+			c.dranges = nil
+		}
+	}
 	c.l, c.c, c.err = c.index.Series(c.p.At())
 	if c.err != nil {
 		return false
 	}
-	for _, chk := range c.c {
-		chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
-		if c.err != nil {
-			return false
+
+	// Remove completely deleted chunks and re-encode partial ones.
+	if len(c.dranges) > 0 {
+		chks := make([]*ChunkMeta, 0, len(c.c))
+		for _, chk := range c.c {
+			if !(trange{chk.MinTime, chk.MaxTime}.isSubrange(c.dranges)) {
+				chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
+				if c.err != nil {
+					return false
+				}
+
+				chks = append(chks, chk)
+			}
 		}
+
+		c.c = chks
 	}
 
 	return true
@@ -406,8 +452,8 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []*ChunkMeta) {
-	return c.l, c.c
+func (c *compactionSeriesSet) At() (labels.Labels, []*ChunkMeta, []trange) {
+	return c.l, c.c, c.dranges
 }
 
 type compactionMerger struct {
@@ -416,6 +462,7 @@ type compactionMerger struct {
 	aok, bok bool
 	l        labels.Labels
 	c        []*ChunkMeta
+	dranges  []trange
 }
 
 type compactionSeries struct {
@@ -443,8 +490,8 @@ func (c *compactionMerger) compare() int {
 	if !c.bok {
 		return -1
 	}
-	a, _ := c.a.At()
-	b, _ := c.b.At()
+	a, _, _ := c.a.At()
+	b, _, _ := c.b.At()
 	return labels.Compare(a, b)
 }
 
@@ -456,17 +503,21 @@ func (c *compactionMerger) Next() bool {
 	d := c.compare()
 	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
-		c.l, c.c = c.b.At()
+		c.l, c.c, c.dranges = c.b.At()
 		c.bok = c.b.Next()
 	} else if d < 0 {
-		c.l, c.c = c.a.At()
+		c.l, c.c, c.dranges = c.a.At()
 		c.aok = c.a.Next()
 	} else {
-		l, ca := c.a.At()
-		_, cb := c.b.At()
+		l, ca, ra := c.a.At()
+		_, cb, rb := c.b.At()
+		for _, r := range rb {
+			ra = addNewInterval(ra, r)
+		}
 
 		c.l = l
 		c.c = append(ca, cb...)
+		c.dranges = ra
 
 		c.aok = c.a.Next()
 		c.bok = c.b.Next()
@@ -481,8 +532,8 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []*ChunkMeta) {
-	return c.l, c.c
+func (c *compactionMerger) At() (labels.Labels, []*ChunkMeta, []trange) {
+	return c.l, c.c, c.dranges
 }
 
 func renameFile(from, to string) error {

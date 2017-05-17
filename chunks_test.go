@@ -37,51 +37,6 @@ func (cr mockChunkReader) Close() error {
 	return nil
 }
 
-func TestAddingNewIntervals(t *testing.T) {
-	cases := []struct {
-		exist []trange
-		new   trange
-
-		exp []trange
-	}{
-		{
-			new: trange{1, 2},
-			exp: []trange{{1, 2}},
-		},
-		{
-			exist: []trange{{1, 10}, {12, 20}, {25, 30}},
-			new:   trange{21, 23},
-			exp:   []trange{{1, 10}, {12, 20}, {21, 23}, {25, 30}},
-		},
-		{
-			exist: []trange{{1, 10}, {12, 20}, {25, 30}},
-			new:   trange{21, 25},
-			exp:   []trange{{1, 10}, {12, 20}, {21, 30}},
-		},
-		{
-			exist: []trange{{1, 10}, {12, 20}, {25, 30}},
-			new:   trange{18, 23},
-			exp:   []trange{{1, 10}, {12, 23}, {25, 30}},
-		},
-		// TODO(gouthamve): (below) This is technically right, but fix it in the future.
-		{
-			exist: []trange{{1, 10}, {12, 20}, {25, 30}},
-			new:   trange{9, 23},
-			exp:   []trange{{1, 23}, {12, 20}, {25, 30}},
-		},
-		{
-			exist: []trange{{5, 10}, {12, 20}, {25, 30}},
-			new:   trange{1, 4},
-			exp:   []trange{{1, 4}, {5, 10}, {12, 20}, {25, 30}},
-		},
-	}
-
-	for _, c := range cases {
-		require.Equal(t, c.exp, addNewInterval(c.exist, c.new))
-	}
-	return
-}
-
 func TestDeletedIterator(t *testing.T) {
 	chk := chunks.NewXORChunk()
 	app, err := chk.Appender()

@@ -378,8 +378,9 @@ Outer:
 	for _, c := range cases.queries {
 		ir, cr := createIdxChkReaders(cases.data)
 		querier := &blockQuerier{
-			index:  ir,
-			chunks: cr,
+			index:      ir,
+			chunks:     cr,
+			tombstones: emptyTombstoneReader,
 
 			mint: c.mint,
 			maxt: c.maxt,
@@ -487,13 +488,14 @@ func TestBaseChunkSeries(t *testing.T) {
 		}
 
 		bcs := &baseChunkSeries{
-			p:     newListPostings(tc.postings),
-			index: mi,
+			p:          newListPostings(tc.postings),
+			index:      mi,
+			tombstones: emptyTombstoneReader,
 		}
 
 		i := 0
 		for bcs.Next() {
-			lset, chks := bcs.At()
+			lset, chks, _ := bcs.At()
 
 			idx := tc.expIdxs[i]
 
@@ -701,7 +703,7 @@ func TestSeriesIterator(t *testing.T) {
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
 			}
-			res := newChunkSeriesIterator(chkMetas, tc.mint, tc.maxt)
+			res := newChunkSeriesIterator(chkMetas, stone{}, tc.mint, tc.maxt)
 
 			smplValid := make([]sample, 0)
 			for _, s := range tc.exp {
@@ -772,7 +774,7 @@ func TestSeriesIterator(t *testing.T) {
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
 				}
-				res := newChunkSeriesIterator(chkMetas, tc.mint, tc.maxt)
+				res := newChunkSeriesIterator(chkMetas, stone{}, tc.mint, tc.maxt)
 
 				smplValid := make([]sample, 0)
 				for _, s := range tc.exp {
@@ -919,8 +921,8 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta) {
-	return m.l[m.i], m.cm[m.i]
+func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta, stone) {
+	return m.l[m.i], m.cm[m.i], stone{}
 }
 
 func (m *mockChunkSeriesSet) Err() error {

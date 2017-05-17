@@ -41,10 +41,6 @@ type ChunkMeta struct {
 	Chunk chunks.Chunk
 
 	MinTime, MaxTime int64 // time range the data covers
-
-	// To handle deleted time-ranges.
-	deleted bool
-	dranges []trange
 }
 
 // writeHash writes the chunk encoding and raw data into the provided hash.
@@ -56,61 +52,6 @@ func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 		return err
 	}
 	return nil
-}
-
-// Iterator returns a chunks.Iterator that honors any deleted ranges.
-// If there is no deleted range then the underlying iterator is returned.
-func (cm *ChunkMeta) Iterator() chunks.Iterator {
-	if cm.Chunk == nil {
-		return nil
-	}
-
-	if cm.deleted {
-		return &deletedIterator{it: cm.Chunk.Iterator(), dranges: cm.dranges}
-	}
-
-	return cm.Chunk.Iterator()
-}
-
-type trange struct {
-	mint, maxt int64
-}
-
-func (tr trange) inBounds(t int64) bool {
-	return t >= tr.mint && t <= tr.maxt
-}
-
-// This adds the new time-range to the existing ones.
-// The existing ones must be sorted and should not be nil.
-func addNewInterval(existing []trange, n trange) []trange {
-	for i, r := range existing {
-		if r.inBounds(n.mint) {
-			if n.maxt > r.maxt {
-				existing[i].maxt = n.maxt
-			}
-
-			return existing
-		}
-		if r.inBounds(n.maxt) {
-			if n.mint < r.maxt {
-				existing[i].mint = n.mint
-			}
-
-			return existing
-		}
-
-		if n.mint < r.mint {
-			newRange := make([]trange, i, len(existing[:i])+1)
-			copy(newRange, existing[:i])
-			newRange = append(newRange, n)
-			newRange = append(newRange, existing[i:]...)
-
-			return newRange
-		}
-	}
-
-	existing = append(existing, n)
-	return existing
 }
 
 // deletedIterator wraps an Iterator and makes sure any deleted metrics are not
@@ -287,27 +228,6 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
 	for _, c := range chks {
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
-
-		// Remove the deleted parts.
-		if c.deleted {
-			// TODO(gouthamve): Try to do it in-place somehow?
-			chk := chunks.NewXORChunk()
-			app, err := chk.Appender()
-			if err != nil {
-				return err
-			}
-			it := c.Iterator()
-			for it.Next() {
-				ts, v := it.At()
-				app.Append(ts, v)
-			}
-
-			if err := it.Err(); err != nil {
-				return err
-			}
-			c.Chunk = chk
-		}
-
 		maxLen += int64(len(c.Chunk.Bytes()))
 	}
 	newsz := w.n + maxLen

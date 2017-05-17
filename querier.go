@@ -150,6 +150,8 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 				p:      p,
 				index:  q.index,
 				absent: absent,
+
+				tombstones: q.tombstones.Copy(),
 			},
 			chunks: q.chunks,
 			mint:   q.mint,
@@ -367,29 +369,35 @@ func (s *mergedSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []*ChunkMeta)
+	At() (labels.Labels, []*ChunkMeta, stone)
 	Err() error
 }
 
 // baseChunkSeries loads the label set and chunk references for a postings
 // list from an index. It filters out series that have labels set that should be unset.
 type baseChunkSeries struct {
-	p      Postings
-	index  IndexReader
-	absent []string // labels that must be unset in results.
+	p          Postings
+	index      IndexReader
+	tombstones TombstoneReader
+	absent     []string // labels that must be unset in results.
 
-	lset labels.Labels
-	chks []*ChunkMeta
-	err  error
+	lset  labels.Labels
+	chks  []*ChunkMeta
+	stone stone
+	err   error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta) { return s.lset, s.chks }
-func (s *baseChunkSeries) Err() error                        { return s.err }
+func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta, stone) {
+	return s.lset, s.chks, s.stone
+}
+
+func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 Outer:
 	for s.p.Next() {
-		lset, chunks, err := s.index.Series(s.p.At())
+		ref := s.p.At()
+		lset, chunks, err := s.index.Series(ref)
 		if err != nil {
 			s.err = err
 			return false
@@ -404,6 +412,19 @@ Outer:
 
 		s.lset = lset
 		s.chks = chunks
+		if s.tombstones.Seek(ref) && s.tombstones.At().ref == ref {
+			s.stone = s.tombstones.At()
+
+			// Only those chunks that are not entirely deleted.
+			chks := make([]*ChunkMeta, 0, len(s.chks))
+			for _, chk := range s.chks {
+				if !(trange{chk.MinTime, chk.MaxTime}.isSubrange(s.stone.ranges)) {
+					chks = append(chks, chk)
+				}
+			}
+
+			s.chks = chks
+		}
 
 		return true
 	}
@@ -421,17 +442,20 @@ type populatedChunkSeries struct {
 	chunks     ChunkReader
 	mint, maxt int64
 
-	err  error
-	chks []*ChunkMeta
-	lset labels.Labels
+	err   error
+	chks  []*ChunkMeta
+	lset  labels.Labels
+	stone stone
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta) { return s.lset, s.chks }
-func (s *populatedChunkSeries) Err() error                        { return s.err }
+func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta, stone) {
+	return s.lset, s.chks, stone{}
+}
+func (s *populatedChunkSeries) Err() error { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
-		lset, chks := s.set.At()
+		lset, chks, stn := s.set.At()
 
 		for len(chks) > 0 {
 			if chks[0].MaxTime >= s.mint {
@@ -458,6 +482,7 @@ func (s *populatedChunkSeries) Next() bool {
 
 		s.lset = lset
 		s.chks = chks
+		s.stone = stn
 
 		return true
 	}
@@ -478,8 +503,15 @@ type blockSeriesSet struct {
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
-		lset, chunks := s.set.At()
-		s.cur = &chunkSeries{labels: lset, chunks: chunks, mint: s.mint, maxt: s.maxt}
+		lset, chunks, stn := s.set.At()
+		s.cur = &chunkSeries{
+			labels: lset,
+			chunks: chunks,
+			mint:   s.mint,
+			maxt:   s.maxt,
+
+			stone: stn,
+		}
 		return true
 	}
 	if s.set.Err() != nil {
@@ -498,6 +530,8 @@ type chunkSeries struct {
 	chunks []*ChunkMeta // in-order chunk refs
 
 	mint, maxt int64
+
+	stone stone
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -505,7 +539,7 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 func (s *chunkSeries) Iterator() SeriesIterator {
-	return newChunkSeriesIterator(s.chunks, s.mint, s.maxt)
+	return newChunkSeriesIterator(s.chunks, s.stone, s.mint, s.maxt)
 }
 
 // SeriesIterator iterates over the data of a time series.
@@ -602,16 +636,24 @@ type chunkSeriesIterator struct {
 	cur chunks.Iterator
 
 	maxt, mint int64
+
+	stone stone
 }
 
-func newChunkSeriesIterator(cs []*ChunkMeta, mint, maxt int64) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta, s stone, mint, maxt int64) *chunkSeriesIterator {
+	it := cs[0].Chunk.Iterator()
+	if len(s.ranges) > 0 {
+		it = &deletedIterator{it: it, dranges: s.ranges}
+	}
 	return &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,
-		cur:    cs[0].Chunk.Iterator(),
+		cur:    it,
 
 		mint: mint,
 		maxt: maxt,
+
+		stone: s,
 	}
 }
 
@@ -646,6 +688,9 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 
 	it.i = x
 	it.cur = it.chunks[x].Chunk.Iterator()
+	if len(it.stone.ranges) > 0 {
+		it.cur = &deletedIterator{it: it.cur, dranges: it.stone.ranges}
+	}
 
 	for it.cur.Next() {
 		t0, _ := it.cur.At()
@@ -677,6 +722,9 @@ func (it *chunkSeriesIterator) Next() bool {
 
 	it.i++
 	it.cur = it.chunks[it.i].Chunk.Iterator()
+	if len(it.stone.ranges) > 0 {
+		it.cur = &deletedIterator{it: it.cur, dranges: it.stone.ranges}
+	}
 
 	return it.Next()
 }

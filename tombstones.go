@@ -102,6 +102,8 @@ type TombstoneReader interface {
 	Next() bool
 	Seek(ref uint32) bool
 	At() stone
+	// A copy of the current instance. Changes to the copy will not affect parent.
+	Copy() TombstoneReader
 	Err() error
 }
 
@@ -195,6 +197,16 @@ func (t *tombstoneReader) At() stone {
 	return stone{ref: ref, ranges: dranges}
 }
 
+func (t *tombstoneReader) Copy() TombstoneReader {
+	return &tombstoneReader{
+		stones: t.stones[:],
+		idx:    t.idx,
+		len:    t.len,
+
+		b: t.b,
+	}
+}
+
 func (t *tombstoneReader) Err() error {
 	return t.err
 }
@@ -250,6 +262,15 @@ func (t *mapTombstoneReader) At() stone {
 	return stone{ref: t.cur, ranges: t.stones[t.cur]}
 }
 
+func (t *mapTombstoneReader) Copy() TombstoneReader {
+	return &mapTombstoneReader{
+		refs: t.refs[:],
+		cur:  t.cur,
+
+		stones: t.stones,
+	}
+}
+
 func (t *mapTombstoneReader) Err() error {
 	return nil
 }
@@ -296,6 +317,10 @@ func (t *simpleTombstoneReader) Seek(ref uint32) bool {
 
 func (t *simpleTombstoneReader) At() stone {
 	return stone{ref: t.cur, ranges: t.ranges}
+}
+
+func (t *simpleTombstoneReader) Copy() TombstoneReader {
+	return &simpleTombstoneReader{refs: t.refs[:], cur: t.cur, ranges: t.ranges}
 }
 
 func (t *simpleTombstoneReader) Err() error {
@@ -371,9 +396,86 @@ func (t *mergedTombstoneReader) At() stone {
 	return t.cur
 }
 
+func (t *mergedTombstoneReader) Copy() TombstoneReader {
+	return &mergedTombstoneReader{
+		a: t.a.Copy(),
+		b: t.b.Copy(),
+
+		cur: t.cur,
+
+		initialized: t.initialized,
+		aok:         t.aok,
+		bok:         t.bok,
+	}
+}
+
 func (t *mergedTombstoneReader) Err() error {
 	if t.a.Err() != nil {
 		return t.a.Err()
 	}
 	return t.b.Err()
+}
+
+type trange struct {
+	mint, maxt int64
+}
+
+func (tr trange) inBounds(t int64) bool {
+	return t >= tr.mint && t <= tr.maxt
+}
+
+func (tr trange) isSubrange(ranges []trange) bool {
+	for _, r := range ranges {
+		if r.inBounds(tr.mint) && r.inBounds(tr.maxt) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// This adds the new time-range to the existing ones.
+// The existing ones must be sorted and should not be nil.
+func addNewInterval(existing []trange, n trange) []trange {
+	for i, r := range existing {
+		// TODO(gouthamve): Make this codepath easier to digest.
+		if r.inBounds(n.mint) {
+			if n.maxt > r.maxt {
+				existing[i].maxt = n.maxt
+			}
+
+			j := 0
+			for _, r2 := range existing[i+1:] {
+				if n.maxt < r2.mint {
+					break
+				}
+				j++
+			}
+			if j != 0 {
+				if existing[i+j].maxt > n.maxt {
+					existing[i].maxt = existing[i+j].maxt
+				}
+				existing = append(existing[:i+1], existing[i+j+1:]...)
+			}
+			return existing
+		}
+
+		if r.inBounds(n.maxt) {
+			if n.mint < r.maxt {
+				existing[i].mint = n.mint
+			}
+			return existing
+		}
+		if n.mint < r.mint {
+			newRange := make([]trange, i, len(existing[:i])+1)
+			copy(newRange, existing[:i])
+			newRange = append(newRange, n)
+			newRange = append(newRange, existing[i:]...)
+
+			return newRange
+		}
+	}
+
+	existing = append(existing, n)
+	return existing
 }

@@ -279,10 +279,12 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	series := h.series[:]
 
 	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  h.Index(),
-		chunks: h.Chunks(),
+		mint:       mint,
+		maxt:       maxt,
+		index:      h.Index(),
+		chunks:     h.Chunks(),
+		tombstones: h.Tombstones(),
+
 		postingsMapper: func(p Postings) Postings {
 			ep := make([]uint32, 0, 64)
 
@@ -586,8 +588,6 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error
 		return nil, nil, ErrNotFound
 	}
 
-	dranges, deleted := h.tombstones[ref]
-
 	s := h.series[ref]
 	metas := make([]*ChunkMeta, 0, len(s.chunks))
 
@@ -599,9 +599,6 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     (uint64(ref) << 32) | uint64(i),
-
-			deleted: deleted,
-			dranges: dranges,
 		})
 	}
 

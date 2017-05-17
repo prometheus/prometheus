@@ -100,7 +100,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test1")
+	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
 	db, err := Open(tmpdir, nil, nil, nil)
