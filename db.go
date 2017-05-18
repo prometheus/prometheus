@@ -482,26 +482,6 @@ func (db *DB) Close() error {
 func (db *DB) Appender() Appender {
 	db.mtx.RLock()
 	return &dbAppender{db: db}
-
-	// 	// XXX(fabxc): turn off creating initial appender as it will happen on-demand
-	// 	// anyway. For now this, with combination of only having a single timestamp per batch,
-	// 	// prevents opening more than one appender and hitting an unresolved deadlock (#11).
-	// 	//
-
-	// 	// Only instantiate appender after returning the headmtx to avoid
-	// 	// questionable locking order.
-	// 	db.headmtx.RLock()
-	// 	app := db.appendable()
-	// 	db.headmtx.RUnlock()
-
-	// 	for _, b := range app {
-	// 		a.heads = append(a.heads, &metaAppender{
-	// 			meta: b.Meta(),
-	// 			app:  b.Appender(),
-	// 		})
-	// 	}
-
-	// 	return a
 }
 
 type dbAppender struct {
@@ -612,14 +592,16 @@ func rangeForTimestamp(t int64, width int64) (mint, maxt int64) {
 func (db *DB) ensureHead(t int64) error {
 	mint, maxt := rangeForTimestamp(t, int64(db.opts.MinBlockDuration))
 
-	// Initial case with an empty database. t is the first timestamp we ever received.
-	// Create an additional buffering block in front.
-	if len(db.blocks) == 0 {
+	last := db.blocks[len(db.blocks)-1].Meta()
+	// Create another block of buffer in front if the DB is initialized or retrieving
+	// new data after a long gap.
+	// This ensures we always have a full block width if append window.
+	if len(db.blocks) == 0 || last.MaxTime <= mint-int64(db.opts.MinBlockDuration) {
 		if _, err := db.createHeadBlock(mint-int64(db.opts.MinBlockDuration), mint); err != nil {
 			return err
 		}
 		// If the previous block reaches into our new window, make it smaller.
-	} else if mt := db.blocks[len(db.blocks)-1].Meta().MaxTime; mt > mint {
+	} else if mt := last.MaxTime; mt > mint {
 		mint = mt
 	}
 	if mint >= maxt {

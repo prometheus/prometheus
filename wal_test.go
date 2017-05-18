@@ -320,16 +320,12 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			require.Equal(t, 0, len(l))
 			require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
 
-			// Truncation should happen transparently and now cause an error.
+			// Truncation should happen transparently and not cause an error.
 			require.False(t, r.Next())
 			require.Nil(t, r.Err())
 
 			require.NoError(t, w2.Log(nil, []RefSample{{T: 99, V: 100}}))
 			require.NoError(t, w2.Close())
-
-			files, err := fileutil.ReadDir(dir)
-			require.NoError(t, err)
-			require.Equal(t, 1, len(files))
 
 			// We should see the first valid entry and the new one, everything after
 			// is truncated.
