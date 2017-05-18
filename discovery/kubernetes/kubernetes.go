@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"io/ioutil"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -62,9 +63,10 @@ func init() {
 // Discovery implements the TargetProvider interface for discovering
 // targets from Kubernetes.
 type Discovery struct {
-	client kubernetes.Interface
-	role   config.KubernetesRole
-	logger log.Logger
+	client             kubernetes.Interface
+	role               config.KubernetesRole
+	logger             log.Logger
+	namespaceDiscovery *config.KubernetesNamespaceDiscovery
 }
 
 func init() {
@@ -73,6 +75,14 @@ func init() {
 			log.With("component", "kube_client_runtime").Errorln(err)
 		},
 	}
+}
+
+func (d *Discovery) getNamespaces() []string {
+	namespaces := d.namespaceDiscovery.Names
+	if len(namespaces) == 0 {
+		namespaces = []string{api.NamespaceAll}
+	}
+	return namespaces
 }
 
 // New creates a new Kubernetes discovery for the given role.
@@ -137,9 +147,10 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
 		return nil, err
 	}
 	return &Discovery{
-		client: c,
-		logger: l,
-		role:   conf.Role,
+		client:             c,
+		logger:             l,
+		role:               conf.Role,
+		namespaceDiscovery: &conf.NamespaceDiscovery,
 	}, nil
 }
 
@@ -149,58 +160,82 @@ const resyncPeriod = 10 * time.Minute
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	rclient := d.client.Core().RESTClient()
 
+	namespaces := d.getNamespaces()
+
 	switch d.role {
 	case "endpoints":
-		elw := cache.NewListWatchFromClient(rclient, "endpoints", api.NamespaceAll, nil)
-		slw := cache.NewListWatchFromClient(rclient, "services", api.NamespaceAll, nil)
-		plw := cache.NewListWatchFromClient(rclient, "pods", api.NamespaceAll, nil)
-		eps := NewEndpoints(
-			d.logger.With("kubernetes_sd", "endpoint"),
-			cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-			cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
-			cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
-		)
-		go eps.endpointsInf.Run(ctx.Done())
-		go eps.serviceInf.Run(ctx.Done())
-		go eps.podInf.Run(ctx.Done())
+		var wg sync.WaitGroup
 
-		for !eps.serviceInf.HasSynced() {
-			time.Sleep(100 * time.Millisecond)
-		}
-		for !eps.endpointsInf.HasSynced() {
-			time.Sleep(100 * time.Millisecond)
-		}
-		for !eps.podInf.HasSynced() {
-			time.Sleep(100 * time.Millisecond)
-		}
-		eps.Run(ctx, ch)
+		for _, namespace := range namespaces {
+			elw := cache.NewListWatchFromClient(rclient, "endpoints", namespace, nil)
+			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
+			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
+			eps := NewEndpoints(
+				d.logger.With("kubernetes_sd", "endpoint"),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
+				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+			)
+			go eps.endpointsInf.Run(ctx.Done())
+			go eps.serviceInf.Run(ctx.Done())
+			go eps.podInf.Run(ctx.Done())
 
+			for !eps.serviceInf.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			for !eps.endpointsInf.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			for !eps.podInf.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				eps.Run(ctx, ch)
+			}()
+		}
+		wg.Wait()
 	case "pod":
-		plw := cache.NewListWatchFromClient(rclient, "pods", api.NamespaceAll, nil)
-		pod := NewPod(
-			d.logger.With("kubernetes_sd", "pod"),
-			cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
-		)
-		go pod.informer.Run(ctx.Done())
+		var wg sync.WaitGroup
+		for _, namespace := range namespaces {
+			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
+			pod := NewPod(
+				d.logger.With("kubernetes_sd", "pod"),
+				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+			)
+			go pod.informer.Run(ctx.Done())
 
-		for !pod.informer.HasSynced() {
-			time.Sleep(100 * time.Millisecond)
+			for !pod.informer.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pod.Run(ctx, ch)
+			}()
 		}
-		pod.Run(ctx, ch)
-
+		wg.Wait()
 	case "service":
-		slw := cache.NewListWatchFromClient(rclient, "services", api.NamespaceAll, nil)
-		svc := NewService(
-			d.logger.With("kubernetes_sd", "service"),
-			cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-		)
-		go svc.informer.Run(ctx.Done())
+		var wg sync.WaitGroup
+		for _, namespace := range namespaces {
+			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
+			svc := NewService(
+				d.logger.With("kubernetes_sd", "service"),
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
+			)
+			go svc.informer.Run(ctx.Done())
 
-		for !svc.informer.HasSynced() {
-			time.Sleep(100 * time.Millisecond)
+			for !svc.informer.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				svc.Run(ctx, ch)
+			}()
 		}
-		svc.Run(ctx, ch)
-
+		wg.Wait()
 	case "node":
 		nlw := cache.NewListWatchFromClient(rclient, "nodes", api.NamespaceAll, nil)
 		node := NewNode(

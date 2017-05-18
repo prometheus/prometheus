@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"html/template"
+	"net/url"
 
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
@@ -46,7 +47,7 @@ func (rule RecordingRule) Name() string {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ string) (model.Vector, error) {
+func (rule RecordingRule) Eval(ctx context.Context, timestamp model.Time, engine *promql.Engine, _ *url.URL) (model.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), timestamp)
 	if err != nil {
 		return nil, err

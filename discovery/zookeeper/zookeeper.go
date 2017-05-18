@@ -93,6 +93,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
 		case event := <-d.updates:
 			tg := &config.TargetGroup{
 				Source: event.Path,

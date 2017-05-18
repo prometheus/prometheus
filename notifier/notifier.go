@@ -79,15 +79,16 @@ type Options struct {
 }
 
 type alertMetrics struct {
-	latency       *prometheus.SummaryVec
-	errors        *prometheus.CounterVec
-	sent          *prometheus.CounterVec
-	dropped       prometheus.Counter
-	queueLength   prometheus.GaugeFunc
-	queueCapacity prometheus.Gauge
+	latency                 *prometheus.SummaryVec
+	errors                  *prometheus.CounterVec
+	sent                    *prometheus.CounterVec
+	dropped                 prometheus.Counter
+	queueLength             prometheus.GaugeFunc
+	queueCapacity           prometheus.Gauge
+	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() float64) *alertMetrics {
+func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: namespace,
@@ -131,6 +132,10 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() floa
 			Name:      "queue_capacity",
 			Help:      "The capacity of the alert notifications queue.",
 		}),
+		alertmanagersDiscovered: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_notifications_alertmanagers_discovered",
+			Help: "The number of alertmanagers discovered and active.",
+		}, alertmanagersDiscovered),
 	}
 
 	m.queueCapacity.Set(float64(queueCap))
@@ -143,6 +148,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() floa
 			m.dropped,
 			m.queueLength,
 			m.queueCapacity,
+			m.alertmanagersDiscovered,
 		)
 	}
 
@@ -166,7 +172,8 @@ func New(o *Options) *Notifier {
 	}
 
 	queueLenFunc := func() float64 { return float64(n.queueLen()) }
-	n.metrics = newAlertMetrics(o.Registerer, o.QueueCapacity, queueLenFunc)
+	alertmanagersDiscoveredFunc := func() float64 { return float64(len(n.Alertmanagers())) }
+	n.metrics = newAlertMetrics(o.Registerer, o.QueueCapacity, queueLenFunc, alertmanagersDiscoveredFunc)
 	return n
 }
 
@@ -316,13 +323,13 @@ func (n *Notifier) setMore() {
 	}
 }
 
-// Alertmanagers returns a list Alertmanager URLs.
-func (n *Notifier) Alertmanagers() []string {
+// Alertmanagers returns a slice of Alertmanager URLs.
+func (n *Notifier) Alertmanagers() []*url.URL {
 	n.mtx.RLock()
 	amSets := n.alertmanagers
 	n.mtx.RUnlock()
 
-	var res []string
+	var res []*url.URL
 
 	for _, ams := range amSets {
 		ams.mtx.RLock()
@@ -364,7 +371,7 @@ func (n *Notifier) sendAll(alerts ...*model.Alert) bool {
 			defer cancel()
 
 			go func(am alertmanager) {
-				u := am.url()
+				u := am.url().String()
 
 				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
 					log.With("alertmanager", u).With("count", len(alerts)).Errorf("Error sending alerts: %s", err)
@@ -412,20 +419,19 @@ func (n *Notifier) Stop() {
 
 // alertmanager holds Alertmanager endpoint information.
 type alertmanager interface {
-	url() string
+	url() *url.URL
 }
 
 type alertmanagerLabels model.LabelSet
 
 const pathLabel = "__alerts_path__"
 
-func (a alertmanagerLabels) url() string {
-	u := &url.URL{
+func (a alertmanagerLabels) url() *url.URL {
+	return &url.URL{
 		Scheme: string(a[model.SchemeLabel]),
 		Host:   string(a[model.AddressLabel]),
 		Path:   string(a[pathLabel]),
 	}
-	return u.String()
 }
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -476,7 +482,7 @@ func (s *alertmanagerSet) Sync(tgs []*config.TargetGroup) {
 	seen := map[string]struct{}{}
 
 	for _, am := range all {
-		us := am.url()
+		us := am.url().String()
 		if _, ok := seen[us]; ok {
 			continue
 		}

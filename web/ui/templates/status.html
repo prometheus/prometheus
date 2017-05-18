@@ -54,7 +54,8 @@
         </tr>
         {{range .Alertmanagers}}
         <tr>
-          <td>{{.}}</td>
+          {{/* Alertmanager URLs always have Scheme, Host and Path set */}}
+          <td>{{.Scheme}}://<a href="{{.Scheme}}://{{.Host}}">{{.Host}}</a>{{.Path}}</td>
         </tr>
         {{end}}
       </tbody>

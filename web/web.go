@@ -32,6 +32,8 @@ import (
 	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
+	"github.com/opentracing-contrib/go-stdlib/nethttp"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -127,10 +129,7 @@ type Options struct {
 
 // New initializes a new web Handler.
 func New(o *Options) *Handler {
-	router := route.New(func(r *http.Request) (context.Context, error) {
-		return o.Context, nil
-	})
-
+	router := route.New()
 	cwd, err := os.Getwd()
 
 	if err != nil {
@@ -218,7 +217,7 @@ func New(o *Options) *Handler {
 }
 
 func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
-	fp := route.Param(route.Context(req), "filepath")
+	fp := route.Param(req.Context(), "filepath")
 	fp = filepath.Join("web/ui/static", fp)
 
 	info, err := ui.AssetInfo(fp)
@@ -257,9 +256,12 @@ func (h *Handler) Reload() <-chan chan error {
 // Run serves the HTTP endpoints.
 func (h *Handler) Run() {
 	log.Infof("Listening on %s", h.options.ListenAddress)
+	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
+		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+	})
 	server := &http.Server{
 		Addr:        h.options.ListenAddress,
-		Handler:     h.router,
+		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), h.router, operationName),
 		ErrorLog:    log.NewErrorLogger(),
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -289,7 +291,7 @@ func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
-	ctx := route.Context(r)
+	ctx := r.Context()
 	name := route.Param(ctx, "filepath")
 
 	file, err := http.Dir(h.options.ConsoleTemplatesPath).Open(name)
@@ -324,7 +326,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		Path:      strings.TrimLeft(name, "/"),
 	}
 
-	tmpl := template.NewTemplateExpander(h.context, string(text), "__console_"+name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, string(text), "__console_"+name, data, h.now(), h.queryEngine, h.options.ExternalURL)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -347,7 +349,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		Birth         time.Time
 		CWD           string
 		Version       *PrometheusVersion
-		Alertmanagers []string
+		Alertmanagers []*url.URL
 	}{
 		Birth:         h.birth,
 		CWD:           h.cwd,
@@ -519,7 +521,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	tmpl := template.NewTemplateExpander(h.context, text, name, data, h.now(), h.queryEngine, h.options.ExternalURL.Path)
+	tmpl := template.NewTemplateExpander(h.context, text, name, data, h.now(), h.queryEngine, h.options.ExternalURL)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
 
 	result, err := tmpl.ExpandHTML(nil)

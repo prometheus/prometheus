@@ -94,12 +94,8 @@ func (c *Client) Store(samples model.Samples) error {
 		return err
 	}
 
-	buf := bytes.Buffer{}
-	if _, err := snappy.NewWriter(&buf).Write(data); err != nil {
-		return err
-	}
-
-	httpReq, err := http.NewRequest("POST", c.url.String(), &buf)
+	compressed := snappy.Encode(nil, data)
+	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewBuffer(compressed))
 	if err != nil {
 		// Errors from NewRequest are from unparseable URLs, so are not
 		// recoverable.
@@ -107,7 +103,7 @@ func (c *Client) Store(samples model.Samples) error {
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.0.1")
+	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
@@ -126,7 +122,7 @@ func (c *Client) Store(samples model.Samples) error {
 	if httpResp.StatusCode/100 == 5 {
 		return recoverableError{err}
 	}
-	return nil
+	return err
 }
 
 // Name identifies the client.
@@ -151,17 +147,14 @@ func (c *Client) Read(ctx context.Context, from, through model.Time, matchers me
 		return nil, fmt.Errorf("unable to marshal read request: %v", err)
 	}
 
-	buf := bytes.Buffer{}
-	if _, err := snappy.NewWriter(&buf).Write(data); err != nil {
-		return nil, err
-	}
-
-	httpReq, err := http.NewRequest("POST", c.url.String(), &buf)
+	compressed := snappy.Encode(nil, data)
+	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewBuffer(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %v", err)
 	}
+	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.0.1")
+	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -175,12 +168,18 @@ func (c *Client) Read(ctx context.Context, from, through model.Time, matchers me
 		return nil, fmt.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
 
-	if data, err = ioutil.ReadAll(snappy.NewReader(httpResp.Body)); err != nil {
+	compressed, err = ioutil.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %v", err)
+	}
+
+	uncompressed, err := snappy.Decode(nil, compressed)
+	if err != nil {
 		return nil, fmt.Errorf("error reading response: %v", err)
 	}
 
 	var resp ReadResponse
-	err = proto.Unmarshal(data, &resp)
+	err = proto.Unmarshal(uncompressed, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
 	}

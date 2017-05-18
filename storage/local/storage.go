@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -78,6 +79,12 @@ const (
 	// real-life production scenario.
 	fpEqualMatchThreshold = 1000
 	fpOtherMatchThreshold = 10000
+
+	selectorsTag = "selectors"
+	fromTag      = "from"
+	throughTag   = "through"
+	tsTag        = "ts"
+	numSeries    = "num_series"
 )
 
 type quarantineRequest struct {
@@ -567,7 +574,13 @@ func (bit *boundedIterator) Close() {
 }
 
 // QueryRange implements Storage.
-func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *MemorySeriesStorage) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "QueryRange")
+	span.SetTag(selectorsTag, metric.LabelMatchers(matchers).String())
+	span.SetTag(fromTag, int64(from))
+	span.SetTag(throughTag, int64(through))
+	defer span.Finish()
+
 	if through.Before(from) {
 		// In that case, nothing will match.
 		return nil, nil
@@ -576,6 +589,7 @@ func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.
 	if err != nil {
 		return nil, err
 	}
+	span.SetTag(numSeries, len(fpSeriesPairs))
 	iterators := make([]SeriesIterator, 0, len(fpSeriesPairs))
 	for _, pair := range fpSeriesPairs {
 		it := s.preloadChunksForRange(pair, from, through)
@@ -585,7 +599,12 @@ func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.
 }
 
 // QueryInstant implements Storage.
-func (s *MemorySeriesStorage) QueryInstant(_ context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *MemorySeriesStorage) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "QueryInstant")
+	span.SetTag(selectorsTag, metric.LabelMatchers(matchers).String())
+	span.SetTag(tsTag, ts)
+	defer span.Finish()
+
 	if stalenessDelta < 0 {
 		panic("negative staleness delta")
 	}

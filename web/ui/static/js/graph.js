@@ -415,7 +415,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
           return;
         }
         var duration = new Date().getTime() - startTime;
-        var totalTimeSeries = xhr.responseJSON.data.result.length;
+        var totalTimeSeries = (xhr.responseJSON.data !== undefined) ? xhr.responseJSON.data.result.length : 0;
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total time series: " + totalTimeSeries);
         self.spinner.hide();
       }
@@ -557,24 +557,41 @@ Prometheus.Graph.prototype.updateGraph = function() {
   });
 
   // Find and set graph's max/min
-  var min = Infinity;
-  var max = -Infinity;
-  self.data.forEach(function(timeSeries) {
-    timeSeries.data.forEach(function(dataPoint) {
+  if (self.isStacked() === true) {
+    // When stacked is toggled
+    var max = 0;
+    var currSeriesMax = 0;
+    self.data.forEach(function(timeSeries) {
+      timeSeries.data.forEach(function(dataPoint) {
+        if (dataPoint.y > currSeriesMax && dataPoint.y != null) {
+          currSeriesMax = dataPoint.y;
+        }
+      });
+      max += currSeriesMax;
+      currSeriesMax = 0;
+    });
+    self.rickshawGraph.max = max*1.05;
+    self.rickshawGraph.min = 0;
+  } else {
+    var min = Infinity;
+    var max = -Infinity;
+    self.data.forEach(function(timeSeries) {
+      timeSeries.data.forEach(function(dataPoint) {
         if (dataPoint.y < min && dataPoint.y != null) {
           min = dataPoint.y;
         }
         if (dataPoint.y > max && dataPoint.y != null) {
           max = dataPoint.y;
         }
+      });
     });
-  });
-  if (min === max) {
-    self.rickshawGraph.max = max + 1;
-    self.rickshawGraph.min = min - 1;
-  } else {
-    self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
-    self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+    if (min === max) {
+      self.rickshawGraph.max = max + 1;
+      self.rickshawGraph.min = min - 1;
+    } else {
+      self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
+      self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+    }
   }
 
   var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });

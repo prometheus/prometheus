@@ -37,3 +37,26 @@ func TestAlertingRuleHTMLSnippet(t *testing.T) {
 		t.Fatalf("incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
 	}
 }
+
+func TestCurrentAlertsClonesLabelsAndAnnotations(t *testing.T) {
+	r := AlertingRule{
+		active: map[model.Fingerprint]*Alert{
+			0: {
+				Labels:      model.LabelSet{"test_label": "test_label_value"},
+				Annotations: model.LabelSet{"test_annotation": "test_annotation_value"},
+			},
+		},
+	}
+
+	alerts := r.currentAlerts()
+	alerts[0].Labels["test_label"] = "new_label_value"
+	alerts[0].Annotations["test_annotation"] = "new_annotation_value"
+
+	alerts = r.currentAlerts()
+	if want, got := model.LabelValue("test_label_value"), alerts[0].Labels["test_label"]; want != got {
+		t.Fatalf("unexpected label value; want %q, got %q", want, got)
+	}
+	if want, got := model.LabelValue("test_annotation_value"), alerts[0].Annotations["test_annotation"]; want != got {
+		t.Fatalf("unexpected annotation value; want %q, got %q", want, got)
+	}
+}
