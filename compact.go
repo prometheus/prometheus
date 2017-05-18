@@ -200,6 +200,11 @@ func (c *compactor) Compact(dirs ...string) (err error) {
 }
 
 func (c *compactor) Write(b Block) error {
+	// Buffering blocks might have been created that often have no data.
+	if b.Meta().Stats.NumSeries == 0 {
+		return errors.Wrap(os.RemoveAll(b.Dir()), "remove empty block")
+	}
+
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
