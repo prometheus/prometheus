@@ -163,7 +163,7 @@ func (g *Group) run() {
 		iterationsScheduled.Inc()
 
 		start := time.Now()
-		g.Eval()
+		g.Eval(start)
 
 		iterationDuration.Observe(time.Since(start).Seconds())
 	}
@@ -257,9 +257,8 @@ func typeForRule(r Rule) ruleType {
 // Eval runs a single evaluation cycle in which all rules are evaluated in parallel.
 // In the future a single group will be evaluated sequentially to properly handle
 // rule dependency.
-func (g *Group) Eval() {
+func (g *Group) Eval(ts time.Time) {
 	var (
-		now            = time.Now()
 		wg             sync.WaitGroup
 		mu             sync.Mutex
 		seriesReturned = make(map[string]labels.Labels, len(g.seriesInPreviousEval))
@@ -279,7 +278,7 @@ func (g *Group) Eval() {
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.Eval(g.opts.Context, now, g.opts.QueryEngine, g.opts.ExternalURL)
+			vector, err := rule.Eval(g.opts.Context, ts, g.opts.QueryEngine, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -344,7 +343,7 @@ func (g *Group) Eval() {
 	for metric, lset := range g.seriesInPreviousEval {
 		if _, ok := seriesReturned[metric]; !ok {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Add(lset, timestamp.FromTime(now), math.Float64frombits(value.StaleNaN))
+			_, err = app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 			switch err {
 			case nil:
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
