@@ -230,7 +230,7 @@ func (b *Builder) Set(n, v string) *Builder {
 }
 
 // Labels returns the labels from the builder. If no modifications
-// were made, the originl labels are returned.
+// were made, the original labels are returned.
 func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
