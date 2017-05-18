@@ -18,9 +18,8 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
-
-	"go4.org/sort"
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/go-kit/kit/log"
@@ -118,7 +117,7 @@ func (c *compactor) Plan() ([][]string, error) {
 		return nil, err
 	}
 
-	var bs []dirMeta
+	var dms []dirMeta
 
 	for _, dir := range dirs {
 		meta, err := readMetaFile(dir)
@@ -126,28 +125,28 @@ func (c *compactor) Plan() ([][]string, error) {
 			return nil, err
 		}
 		if meta.Compaction.Generation > 0 {
-			bs = append(bs, dirMeta{dir, meta})
+			dms = append(dms, dirMeta{dir, meta})
 		}
 	}
-	sort.Slice(bs, func(i, j int) bool {
-		return bs[i].meta.MinTime < bs[j].meta.MinTime
+	sort.Slice(dms, func(i, j int) bool {
+		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
 
-	if len(bs) == 0 {
+	if len(dms) == 0 {
 		return nil, nil
 	}
 
 	sliceDirs := func(i, j int) [][]string {
 		var res []string
 		for k := i; k < j; k++ {
-			res = append(res, bs[k].dir)
+			res = append(res, dms[k].dir)
 		}
 		return [][]string{res}
 	}
 
 	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(bs)-compactionBlocksLen+1; i++ {
-		if c.match(bs[i : i+3]) {
+	for i := 0; i < len(dms)-compactionBlocksLen+1; i++ {
+		if c.match(dms[i : i+3]) {
 			return sliceDirs(i, i+compactionBlocksLen), nil
 		}
 	}
@@ -155,15 +154,15 @@ func (c *compactor) Plan() ([][]string, error) {
 	return nil, nil
 }
 
-func (c *compactor) match(bs []dirMeta) bool {
-	g := bs[0].meta.Compaction.Generation
+func (c *compactor) match(dirs []dirMeta) bool {
+	g := dirs[0].meta.Compaction.Generation
 
-	for _, b := range bs {
-		if b.meta.Compaction.Generation != g {
+	for _, d := range dirs {
+		if d.meta.Compaction.Generation != g {
 			return false
 		}
 	}
-	return uint64(bs[len(bs)-1].meta.MaxTime-bs[0].meta.MinTime) <= c.opts.maxBlockRange
+	return uint64(dirs[len(dirs)-1].meta.MaxTime-dirs[0].meta.MinTime) <= c.opts.maxBlockRange
 }
 
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
