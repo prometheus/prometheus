@@ -108,22 +108,22 @@ func TestDBAppenderAddRef(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	app := db.Appender()
-	defer app.Rollback()
+	app1 := db.Appender()
 
-	ref, err := app.Add(labels.FromStrings("a", "b"), 0, 0)
+	ref, err := app1.Add(labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
 
 	// When a series is first created, refs don't work within that transaction.
-	err = app.AddFast(ref, 1, 1)
+	err = app1.AddFast(ref, 1, 1)
 	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
 
-	err = app.Commit()
+	err = app1.Commit()
 	require.NoError(t, err)
 
-	app = db.Appender()
+	app2 := db.Appender()
+	defer app2.Rollback()
 
-	ref, err = app.Add(labels.FromStrings("a", "b"), 1, 1)
+	ref, err = app2.Add(labels.FromStrings("a", "b"), 1, 1)
 	require.NoError(t, err)
 
 	// Ref must be prefixed with block ULID of the block we wrote to.
@@ -131,13 +131,13 @@ func TestDBAppenderAddRef(t *testing.T) {
 	require.Equal(t, string(id[:]), ref[:16])
 
 	// Reference must be valid to add another sample.
-	err = app.AddFast(ref, 2, 2)
+	err = app2.AddFast(ref, 2, 2)
 	require.NoError(t, err)
 
 	// AddFast for the same timestamp must fail if the generation in the reference
 	// doesn't add up.
 	refb := []byte(ref)
 	refb[15] ^= refb[15]
-	err = app.AddFast(string(refb), 1, 1)
+	err = app2.AddFast(string(refb), 1, 1)
 	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
 }

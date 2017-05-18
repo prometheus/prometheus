@@ -18,6 +18,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -73,30 +74,30 @@ type HeadBlock struct {
 
 // TouchHeadBlock atomically touches a new head block in dir for
 // samples in the range [mint,maxt).
-func TouchHeadBlock(dir string, seq int, mint, maxt int64) error {
-	// Make head block creation appear atomic.
-	tmp := dir + ".tmp"
-
-	if err := os.MkdirAll(tmp, 0777); err != nil {
-		return err
-	}
-
+func TouchHeadBlock(dir string, mint, maxt int64) (string, error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	ulid, err := ulid.New(ulid.Now(), entropy)
 	if err != nil {
-		return err
+		return "", err
+	}
+
+	// Make head block creation appear atomic.
+	dir = filepath.Join(dir, ulid.String())
+	tmp := dir + ".tmp"
+
+	if err := os.MkdirAll(tmp, 0777); err != nil {
+		return "", err
 	}
 
 	if err := writeMetaFile(tmp, &BlockMeta{
-		ULID:     ulid,
-		Sequence: seq,
-		MinTime:  mint,
-		MaxTime:  maxt,
+		ULID:    ulid,
+		MinTime: mint,
+		MaxTime: maxt,
 	}); err != nil {
-		return err
+		return "", err
 	}
-	return renameFile(tmp, dir)
+	return dir, renameFile(tmp, dir)
 }
 
 // OpenHeadBlock opens the head block in dir.
@@ -150,7 +151,7 @@ func (h *HeadBlock) inBounds(t int64) bool {
 }
 
 func (h *HeadBlock) String() string {
-	return fmt.Sprintf("(%d, %s)", h.meta.Sequence, h.meta.ULID)
+	return h.meta.ULID.String()
 }
 
 // Close syncs all data and closes underlying resources of the head block.
@@ -182,7 +183,6 @@ func (h *HeadBlock) Close() error {
 func (h *HeadBlock) Meta() BlockMeta {
 	m := BlockMeta{
 		ULID:       h.meta.ULID,
-		Sequence:   h.meta.Sequence,
 		MinTime:    h.meta.MinTime,
 		MaxTime:    h.meta.MaxTime,
 		Compaction: h.meta.Compaction,
@@ -337,6 +337,9 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (string, erro
 var nullRef = string([]byte{0, 0, 0, 0, 0, 0, 0, 0})
 
 func (a *headAppender) AddFast(ref string, t int64, v float64) error {
+	if len(ref) != 8 {
+		return errors.Wrap(ErrNotFound, "invalid ref length")
+	}
 	var (
 		refn = binary.BigEndian.Uint64(yoloBytes(ref))
 		id   = (refn << 1) >> 1

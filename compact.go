@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"go4.org/sort"
+
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
@@ -34,10 +36,10 @@ type Compactor interface {
 	// Plan returns a set of non-overlapping directories that can
 	// be compacted concurrently.
 	// Results returned when compactions are in progress are undefined.
-	Plan(dir string) ([][]string, error)
+	Plan() ([][]string, error)
 
 	// Write persists a Block into a directory.
-	Write(dir string, b Block) error
+	Write(b Block) error
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -46,6 +48,7 @@ type Compactor interface {
 
 // compactor implements the Compactor interface.
 type compactor struct {
+	dir     string
 	metrics *compactorMetrics
 	logger  log.Logger
 	opts    *compactorOptions
@@ -87,8 +90,9 @@ type compactorOptions struct {
 	maxBlockRange uint64
 }
 
-func newCompactor(r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
+func newCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
 	return &compactor{
+		dir:     dir,
 		opts:    opts,
 		logger:  l,
 		metrics: newCompactorMetrics(r),
@@ -103,13 +107,18 @@ type compactionInfo struct {
 
 const compactionBlocksLen = 3
 
-func (c *compactor) Plan(dir string) ([][]string, error) {
-	dirs, err := blockDirs(dir)
+type dirMeta struct {
+	dir  string
+	meta *BlockMeta
+}
+
+func (c *compactor) Plan() ([][]string, error) {
+	dirs, err := blockDirs(c.dir)
 	if err != nil {
 		return nil, err
 	}
 
-	var bs []*BlockMeta
+	var bs []dirMeta
 
 	for _, dir := range dirs {
 		meta, err := readMetaFile(dir)
@@ -117,9 +126,12 @@ func (c *compactor) Plan(dir string) ([][]string, error) {
 			return nil, err
 		}
 		if meta.Compaction.Generation > 0 {
-			bs = append(bs, meta)
+			bs = append(bs, dirMeta{dir, meta})
 		}
 	}
+	sort.Slice(bs, func(i, j int) bool {
+		return bs[i].meta.MinTime < bs[j].meta.MinTime
+	})
 
 	if len(bs) == 0 {
 		return nil, nil
@@ -128,7 +140,7 @@ func (c *compactor) Plan(dir string) ([][]string, error) {
 	sliceDirs := func(i, j int) [][]string {
 		var res []string
 		for k := i; k < j; k++ {
-			res = append(res, dirs[k])
+			res = append(res, bs[k].dir)
 		}
 		return [][]string{res}
 	}
@@ -143,26 +155,22 @@ func (c *compactor) Plan(dir string) ([][]string, error) {
 	return nil, nil
 }
 
-func (c *compactor) match(bs []*BlockMeta) bool {
-	g := bs[0].Compaction.Generation
+func (c *compactor) match(bs []dirMeta) bool {
+	g := bs[0].meta.Compaction.Generation
 
 	for _, b := range bs {
-		if b.Compaction.Generation != g {
+		if b.meta.Compaction.Generation != g {
 			return false
 		}
 	}
-	return uint64(bs[len(bs)-1].MaxTime-bs[0].MinTime) <= c.opts.maxBlockRange
+	return uint64(bs[len(bs)-1].meta.MaxTime-bs[0].meta.MinTime) <= c.opts.maxBlockRange
 }
 
 func mergeBlockMetas(blocks ...Block) (res BlockMeta) {
 	m0 := blocks[0].Meta()
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	res.Sequence = m0.Sequence
 	res.MinTime = m0.MinTime
 	res.MaxTime = blocks[len(blocks)-1].Meta().MaxTime
-	res.ULID = ulid.MustNew(ulid.Now(), entropy)
 
 	res.Compaction.Generation = m0.Compaction.Generation + 1
 
@@ -185,16 +193,22 @@ func (c *compactor) Compact(dirs ...string) (err error) {
 		blocks = append(blocks, b)
 	}
 
-	return c.write(dirs[0], blocks...)
+	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+	uid := ulid.MustNew(ulid.Now(), entropy)
+
+	return c.write(uid, blocks...)
 }
 
-func (c *compactor) Write(dir string, b Block) error {
-	return c.write(dir, b)
+func (c *compactor) Write(b Block) error {
+	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+	uid := ulid.MustNew(ulid.Now(), entropy)
+
+	return c.write(uid, b)
 }
 
 // write creates a new block that is the union of the provided blocks into dir.
 // It cleans up all files of the old blocks after completing successfully.
-func (c *compactor) write(dir string, blocks ...Block) (err error) {
+func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 	c.logger.Log("msg", "compact blocks", "blocks", fmt.Sprintf("%v", blocks))
 
 	defer func(t time.Time) {
@@ -204,6 +218,7 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
+	dir := filepath.Join(c.dir, uid.String())
 	tmp := dir + ".tmp"
 
 	if err = os.RemoveAll(tmp); err != nil {
@@ -229,6 +244,8 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
+	meta.ULID = uid
+
 	if err = writeMetaFile(tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
 	}
@@ -244,7 +261,7 @@ func (c *compactor) write(dir string, blocks ...Block) (err error) {
 	if err := renameFile(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}
-	for _, b := range blocks[1:] {
+	for _, b := range blocks {
 		if err := os.RemoveAll(b.Dir()); err != nil {
 			return err
 		}
