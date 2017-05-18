@@ -500,6 +500,7 @@ func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfi
 	var res []alertmanager
 
 	for _, lset := range tg.Targets {
+		lset = lset.Clone()
 		// Set configured scheme as the initial scheme label for overwrite.
 		lset[model.SchemeLabel] = model.LabelValue(cfg.Scheme)
 		lset[pathLabel] = model.LabelValue(postPath(cfg.PathPrefix))
@@ -510,7 +511,8 @@ func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfi
 				lset[ln] = lv
 			}
 		}
-		lset := relabel.Process(lset, cfg.RelabelConfigs...)
+
+		lset = relabel.Process(lset, cfg.RelabelConfigs...)
 		if lset == nil {
 			continue
 		}
