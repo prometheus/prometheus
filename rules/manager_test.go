@@ -183,15 +183,7 @@ func TestStaleness(t *testing.T) {
 	// A time series that has two samples and then goes stale.
 	app, _ := storage.Appender()
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	if err = app.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	app, _ = storage.Appender()
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	if err = app.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	app, _ = storage.Appender()
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
 	if err = app.Commit(); err != nil {
 		t.Fatal(err)
@@ -208,8 +200,7 @@ func TestStaleness(t *testing.T) {
 		t.Fatal(err)
 	}
 	matcher, _ := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
-	seriesSet := querier.Select(matcher)
-	samples, err := readSeriesSet(seriesSet)
+	samples, err := readSeriesSet(querier.Select(matcher))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,9 +240,53 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 
 		name := series.Labels().String()
 		result[name] = points
-		if err := ss.Err(); err != nil {
-			return nil, err
-		}
 	}
-	return result, nil
+	return result, ss.Err()
+}
+
+func TestCopyState(t *testing.T) {
+	oldGroup := &Group{
+		rules: []Rule{
+			NewAlertingRule("alert", nil, 0, nil, nil),
+			NewRecordingRule("rule1", nil, nil),
+			NewRecordingRule("rule2", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+		},
+		seriesInPreviousEval: []map[string]labels.Labels{
+			map[string]labels.Labels{"a": nil},
+			map[string]labels.Labels{"r1": nil},
+			map[string]labels.Labels{"r2": nil},
+			map[string]labels.Labels{"r3a": nil},
+			map[string]labels.Labels{"r3b": nil},
+		},
+	}
+	oldGroup.rules[0].(*AlertingRule).active[42] = nil
+	newGroup := &Group{
+		rules: []Rule{
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil),
+			NewRecordingRule("rule1", nil, nil),
+			NewRecordingRule("rule4", nil, nil),
+		},
+		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
+	}
+	newGroup.copyState(oldGroup)
+
+	want := []map[string]labels.Labels{
+		map[string]labels.Labels{"r3a": nil},
+		map[string]labels.Labels{"r3b": nil},
+		nil,
+		map[string]labels.Labels{"a": nil},
+		map[string]labels.Labels{"r1": nil},
+		nil,
+	}
+	if !reflect.DeepEqual(want, newGroup.seriesInPreviousEval) {
+		t.Fatalf("seriesInPreviousEval not as expected. Wanted: %+v Got: %+v", want, newGroup.seriesInPreviousEval)
+	}
+	if !reflect.DeepEqual(oldGroup.rules[0], newGroup.rules[3]) {
+		t.Fatalf("Active alerts not as expected. Wanted: %+v Got: %+v", oldGroup.rules[0], oldGroup.rules[3])
+	}
 }
