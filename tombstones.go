@@ -107,8 +107,6 @@ type TombstoneReader interface {
 	Err() error
 }
 
-var emptyTombstoneReader = newMapTombstoneReader(make(map[uint32][]trange))
-
 type tombstoneReader struct {
 	stones []byte
 	idx    int
@@ -223,8 +221,13 @@ func newMapTombstoneReader(ts map[uint32][]trange) *mapTombstoneReader {
 	for k := range ts {
 		refs = append(refs, k)
 	}
+
 	sort.Sort(uint32slice(refs))
 	return &mapTombstoneReader{stones: ts, refs: refs}
+}
+
+func newEmptyTombstoneReader() *mapTombstoneReader {
+	return &mapTombstoneReader{stones: make(map[uint32][]trange)}
 }
 
 func (t *mapTombstoneReader) Next() bool {

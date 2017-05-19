@@ -449,7 +449,7 @@ type populatedChunkSeries struct {
 }
 
 func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta, stone) {
-	return s.lset, s.chks, stone{}
+	return s.lset, s.chks, s.stone
 }
 func (s *populatedChunkSeries) Err() error { return s.err }
 

@@ -98,7 +98,7 @@ func TouchHeadBlock(dir string, seq int, mint, maxt int64) error {
 	}
 
 	// Write an empty tombstones file.
-	if err := writeTombstoneFile(tmp, emptyTombstoneReader); err != nil {
+	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
 		return err
 	}
 
@@ -120,7 +120,7 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 		values:     map[string]stringset{},
 		postings:   &memPostings{m: make(map[term][]uint32)},
 		meta:       *meta,
-		tombstones: emptyTombstoneReader,
+		tombstones: newEmptyTombstoneReader(),
 	}
 	return h, h.init()
 }
@@ -235,9 +235,6 @@ func (h *HeadBlock) Tombstones() TombstoneReader {
 
 // Delete implements headBlock.
 func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
-	h.mtx.Lock() // We are modifying the tombstones here.
-	defer h.mtx.Unlock()
-
 	ir := h.Index()
 
 	pr := newPostingsReader(ir)
@@ -260,7 +257,8 @@ Outer:
 		return p.Err()
 	}
 
-	return writeTombstoneFile(h.dir, newMapTombstoneReader(h.tombstones.stones))
+	h.tombstones = newMapTombstoneReader(h.tombstones.stones)
+	return writeTombstoneFile(h.dir, h.tombstones.Copy())
 }
 
 // Querier implements Queryable and headBlock.
@@ -280,7 +278,7 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 		maxt:       maxt,
 		index:      h.Index(),
 		chunks:     h.Chunks(),
-		tombstones: h.Tombstones(),
+		tombstones: h.Tombstones().Copy(),
 
 		postingsMapper: func(p Postings) Postings {
 			ep := make([]uint32, 0, 64)
