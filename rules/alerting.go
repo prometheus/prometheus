@@ -125,7 +125,7 @@ func (r *AlertingRule) equal(o *AlertingRule) bool {
 	return r.name == o.name && labels.Equal(r.labels, o.labels)
 }
 
-func (r *AlertingRule) sample(alert *Alert, ts time.Time, set bool) promql.Sample {
+func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
 	for _, l := range alert.Labels {
@@ -138,10 +138,7 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time, set bool) promql.Sampl
 
 	s := promql.Sample{
 		Metric: lb.Labels(),
-		Point:  promql.Point{T: timestamp.FromTime(ts), V: 0},
-	}
-	if set {
-		s.V = 1
+		Point:  promql.Point{T: timestamp.FromTime(ts), V: 1},
 	}
 	return s
 }
@@ -241,9 +238,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.En
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
-			if a.State != StateInactive {
-				vec = append(vec, r.sample(a, ts, false))
-			}
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
@@ -257,11 +251,10 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.En
 		}
 
 		if a.State == StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
-			vec = append(vec, r.sample(a, ts, false))
 			a.State = StateFiring
 		}
 
-		vec = append(vec, r.sample(a, ts, true))
+		vec = append(vec, r.sample(a, ts))
 	}
 
 	return vec, nil
