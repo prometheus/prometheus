@@ -415,7 +415,14 @@ Prometheus.Graph.prototype.submitQuery = function() {
           return;
         }
         var duration = new Date().getTime() - startTime;
-        var totalTimeSeries = (xhr.responseJSON.data !== undefined) ? xhr.responseJSON.data.result.length : 0;
+        var totalTimeSeries = 0;
+        if (xhr.responseJSON.data !== undefined) {
+          if (xhr.responseJSON.data.resultType === "scalar") {
+            totalTimeSeries = 1;
+          } else {
+            totalTimeSeries = xhr.responseJSON.data.result.length;
+          }
+        }
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total time series: " + totalTimeSeries);
         self.spinner.hide();
       }
