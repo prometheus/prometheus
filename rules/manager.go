@@ -221,25 +221,37 @@ func (g *Group) offset() time.Duration {
 }
 
 // copyState copies the alerting rule and staleness related state from the given group.
+//
+// Rules are matched based on their name. If there are duplicates, the
+// first is matched with the first, second with the second etc.
 func (g *Group) copyState(from *Group) {
-	g.seriesInPreviousEval = from.seriesInPreviousEval
-	for _, fromRule := range from.rules {
-		far, ok := fromRule.(*AlertingRule)
+	ruleMap := make(map[string][]int, len(from.rules))
+
+	for fi, fromRule := range from.rules {
+		l, _ := ruleMap[fromRule.Name()]
+		ruleMap[fromRule.Name()] = append(l, fi)
+	}
+
+	for i, rule := range g.rules {
+		indexes, ok := ruleMap[rule.Name()]
+		if len(indexes) == 0 {
+			continue
+		}
+		fi := indexes[0]
+		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
+		ruleMap[rule.Name()] = indexes[1:]
+
+		ar, ok := rule.(*AlertingRule)
 		if !ok {
 			continue
 		}
-		for _, rule := range g.rules {
-			ar, ok := rule.(*AlertingRule)
-			if !ok {
-				continue
-			}
-			// TODO(fabxc): forbid same alert definitions that are not unique by
-			// at least on static label or alertname?
-			if far.equal(ar) {
-				for fp, a := range far.active {
-					ar.active[fp] = a
-				}
-			}
+		far, ok := from.rules[fi].(*AlertingRule)
+		if !ok {
+			continue
+		}
+
+		for fp, a := range far.active {
+			ar.active[fp] = a
 		}
 	}
 }
