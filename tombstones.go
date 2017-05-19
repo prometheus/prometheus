@@ -218,7 +218,6 @@ type mapTombstoneReader struct {
 	stones map[uint32][]trange
 }
 
-// TODO(gouthamve): Take pre-sorted refs.
 func newMapTombstoneReader(ts map[uint32][]trange) *mapTombstoneReader {
 	refs := make([]uint32, 0, len(ts))
 	for k := range ts {

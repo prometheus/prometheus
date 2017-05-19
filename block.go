@@ -163,8 +163,7 @@ type persistedBlock struct {
 	indexr *indexReader
 
 	// For tombstones.
-	stones     []uint32
-	tombstones map[uint32][]trange
+	tombstones *mapTombstoneReader
 }
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
@@ -186,6 +185,7 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	ts := make(map[uint32][]trange)
 	for tr.Next() {
 		s := tr.At()
@@ -198,7 +198,7 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		chunkr: cr,
 		indexr: ir,
 
-		tombstones: ts,
+		tombstones: newMapTombstoneReader(ts),
 	}
 	return pb, nil
 }
@@ -229,7 +229,7 @@ func (pb *persistedBlock) Dir() string         { return pb.dir }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
 func (pb *persistedBlock) Tombstones() TombstoneReader {
-	return newMapTombstoneReader(pb.tombstones)
+	return pb.tombstones.Copy()
 }
 func (pb *persistedBlock) Meta() BlockMeta { return pb.meta }
 
@@ -270,7 +270,7 @@ Outer:
 	}
 
 	// Merge the current and new tombstones.
-	tr := newMapTombstoneReader(pb.tombstones)
+	tr := pb.tombstones.Copy()
 	str := newSimpleTombstoneReader(vPostings, []trange{{mint, maxt}})
 	tombreader := newMergedTombstoneReader(tr, str)
 

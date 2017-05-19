@@ -66,7 +66,7 @@ type HeadBlock struct {
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
-	tombstones map[uint32][]trange
+	tombstones *mapTombstoneReader
 
 	meta BlockMeta
 }
@@ -120,7 +120,7 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 		values:     map[string]stringset{},
 		postings:   &memPostings{m: make(map[term][]uint32)},
 		meta:       *meta,
-		tombstones: make(map[uint32][]trange),
+		tombstones: emptyTombstoneReader,
 	}
 	return h, h.init()
 }
@@ -158,7 +158,8 @@ func (h *HeadBlock) init() error {
 
 	for tr.Next() {
 		s := tr.At()
-		h.tombstones[s.ref] = s.ranges
+		h.tombstones.refs = append(h.tombstones.refs, s.ref)
+		h.tombstones.stones[s.ref] = s.ranges
 	}
 	return errors.Wrap(err, "tombstones reader iteration")
 }
@@ -229,22 +230,18 @@ func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 
 // Tombstones implements headBlock.
 func (h *HeadBlock) Tombstones() TombstoneReader {
-	return newMapTombstoneReader(h.tombstones)
+	return h.tombstones.Copy()
 }
 
 // Delete implements headBlock.
 func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
-	h.mtx.RLock()
+	h.mtx.Lock() // We are modifying the tombstones here.
+	defer h.mtx.Unlock()
 
 	ir := h.Index()
 
 	pr := newPostingsReader(ir)
 	p, absent := pr.Select(ms...)
-
-	h.mtx.RUnlock()
-
-	h.mtx.Lock() // We are modifying the tombstones here.
-	defer h.mtx.Unlock()
 
 Outer:
 	for p.Next() {
@@ -256,14 +253,14 @@ Outer:
 			}
 		}
 
-		h.tombstones[ref] = addNewInterval(h.tombstones[ref], trange{mint, maxt})
+		h.tombstones.stones[ref] = addNewInterval(h.tombstones.stones[ref], trange{mint, maxt})
 	}
 
 	if p.Err() != nil {
 		return p.Err()
 	}
 
-	return writeTombstoneFile(h.dir, newMapTombstoneReader(h.tombstones))
+	return writeTombstoneFile(h.dir, newMapTombstoneReader(h.tombstones.stones))
 }
 
 // Querier implements Queryable and headBlock.
