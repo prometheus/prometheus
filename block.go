@@ -218,10 +218,11 @@ func (pb *persistedBlock) String() string {
 
 func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
 	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  pb.Index(),
-		chunks: pb.Chunks(),
+		mint:       mint,
+		maxt:       maxt,
+		index:      pb.Index(),
+		chunks:     pb.Chunks(),
+		tombstones: pb.tombstones.Copy(),
 	}
 }
 
@@ -255,10 +256,8 @@ Outer:
 			}
 		}
 
-		// XXX(gouthamve): Adjust mint and maxt to match the time-range in the chunks?
 		for _, chk := range chunks {
-			if (mint <= chk.MinTime && maxt >= chk.MinTime) ||
-				(mint > chk.MinTime && mint <= chk.MaxTime) {
+			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
 				vPostings = append(vPostings, p.At())
 				continue Outer
 			}

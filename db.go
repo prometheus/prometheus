@@ -669,6 +669,32 @@ func (a *dbAppender) Rollback() error {
 	return g.Wait()
 }
 
+// Delete implements deletion of metrics.
+func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	s.mtx.RLock()
+
+	s.headmtx.RLock()
+	blocks := s.blocksForInterval(mint, maxt)
+	s.headmtx.RUnlock()
+
+	// TODO(gouthamve): Wait for pending compactions and stop compactions until
+	// delete finishes.
+	var g errgroup.Group
+
+	for _, b := range blocks {
+		f := func() error {
+			return b.Delete(mint, maxt, ms...)
+		}
+		g.Go(f)
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	return db.reloadBlocks()
+}
+
 // appendable returns a copy of a slice of HeadBlocks that can still be appended to.
 func (db *DB) appendable() []headBlock {
 	var i int
@@ -681,10 +707,8 @@ func (db *DB) appendable() []headBlock {
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	if bmin >= amin && bmin <= amax {
-		return true
-	}
-	if amin >= bmin && amin <= bmax {
+	// Checks Overlap: http://stackoverflow.com/questions/3269434/
+	if amin <= bmax && bmin <= amax {
 		return true
 	}
 	return false

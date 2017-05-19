@@ -307,8 +307,7 @@ func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWri
 		if len(ranges) > 0 {
 			// Re-encode the chunk to not have deleted values.
 			for _, chk := range chks {
-				// Checks Overlap: http://stackoverflow.com/questions/3269434/
-				if ranges[0].mint <= chk.MaxTime && chk.MinTime <= ranges[len(ranges)-1].maxt {
+				if intervalOverlap(ranges[0].mint, ranges[len(ranges)-1].maxt, chk.MinTime, chk.MaxTime) {
 					newChunk := chunks.NewXORChunk()
 					app, err := newChunk.Appender()
 					if err != nil {
