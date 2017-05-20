@@ -125,6 +125,9 @@ type DB struct {
 	compactc chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
+
+	// compMtx is used to control compactions and deletions.
+	cmtx sync.Mutex
 }
 
 type dbMetrics struct {
@@ -271,6 +274,9 @@ func (db *DB) retentionCutoff() (bool, error) {
 }
 
 func (db *DB) compact() (changes bool, err error) {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
 	db.headmtx.RLock()
 
 	// Check whether we have pending head blocks that are ready to be persisted.
@@ -671,14 +677,13 @@ func (a *dbAppender) Rollback() error {
 
 // Delete implements deletion of metrics.
 func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
-	s.mtx.RLock()
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
 
 	s.headmtx.RLock()
 	blocks := s.blocksForInterval(mint, maxt)
 	s.headmtx.RUnlock()
 
-	// TODO(gouthamve): Wait for pending compactions and stop compactions until
-	// delete finishes.
 	var g errgroup.Group
 
 	for _, b := range blocks {
