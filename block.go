@@ -198,6 +198,7 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		chunkr: cr,
 		indexr: ir,
 
+		// TODO(gouthamve): We will be sorting the refs again internally, is it a big deal?
 		tombstones: newMapTombstoneReader(ts),
 	}
 	return pb, nil
@@ -222,7 +223,7 @@ func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
 		maxt:       maxt,
 		index:      pb.Index(),
 		chunks:     pb.Chunks(),
-		tombstones: pb.tombstones.Copy(),
+		tombstones: pb.Tombstones(),
 	}
 }
 
@@ -269,7 +270,7 @@ Outer:
 	}
 
 	// Merge the current and new tombstones.
-	tr := pb.tombstones.Copy()
+	tr := pb.Tombstones()
 	str := newSimpleTombstoneReader(vPostings, []trange{{mint, maxt}})
 	tombreader := newMergedTombstoneReader(tr, str)
 

@@ -424,7 +424,7 @@ func (c *compactionSeriesSet) Next() bool {
 		return false
 	}
 
-	// Remove completely deleted chunks and re-encode partial ones.
+	// Remove completely deleted chunks.
 	if len(c.dranges) > 0 {
 		chks := make([]*ChunkMeta, 0, len(c.c))
 		for _, chk := range c.c {

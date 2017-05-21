@@ -102,15 +102,15 @@ type TombstoneReader interface {
 	Next() bool
 	Seek(ref uint32) bool
 	At() stone
-	// A copy of the current instance. Changes to the copy will not affect parent.
+	// Copy copies the current reader state. Changes to the copy will not affect parent.
 	Copy() TombstoneReader
 	Err() error
 }
 
 type tombstoneReader struct {
 	stones []byte
-	idx    int
-	len    int
+
+	cur stone
 
 	b   []byte
 	err error
@@ -135,11 +135,10 @@ func newTombStoneReader(dir string) (*tombstoneReader, error) {
 	if err := d.err(); err != nil {
 		return nil, err
 	}
+	off += 4 // For the numStones which has been read.
 
 	return &tombstoneReader{
-		stones: b[off+4:],
-		idx:    -1,
-		len:    int(numStones),
+		stones: b[off : off+int64(numStones*12)],
 
 		b: b,
 	}, nil
@@ -150,26 +149,11 @@ func (t *tombstoneReader) Next() bool {
 		return false
 	}
 
-	t.idx++
+	if len(t.stones) < 12 {
+		return false
+	}
 
-	return t.idx < t.len
-}
-
-func (t *tombstoneReader) Seek(ref uint32) bool {
-	bytIdx := t.idx * 12
-
-	t.idx += sort.Search(t.len-t.idx, func(i int) bool {
-		return binary.BigEndian.Uint32(t.b[bytIdx+i*12:]) >= ref
-	})
-
-	return t.idx < t.len
-}
-
-func (t *tombstoneReader) At() stone {
-	bytIdx := t.idx * (4 + 8)
-	dat := t.stones[bytIdx : bytIdx+12]
-
-	d := &decbuf{b: dat}
+	d := &decbuf{b: t.stones[:12]}
 	ref := d.be32()
 	off := d.be64int64()
 
@@ -177,7 +161,7 @@ func (t *tombstoneReader) At() stone {
 	numRanges := d.varint64()
 	if err := d.err(); err != nil {
 		t.err = err
-		return stone{ref: ref}
+		return false
 	}
 
 	dranges := make([]trange, 0, numRanges)
@@ -186,20 +170,40 @@ func (t *tombstoneReader) At() stone {
 		maxt := d.varint64()
 		if err := d.err(); err != nil {
 			t.err = err
-			return stone{ref: ref, ranges: dranges}
+			return false
 		}
 
 		dranges = append(dranges, trange{mint, maxt})
 	}
 
-	return stone{ref: ref, ranges: dranges}
+	t.stones = t.stones[12:]
+	t.cur = stone{ref: ref, ranges: dranges}
+	return true
+}
+
+func (t *tombstoneReader) Seek(ref uint32) bool {
+	i := sort.Search(len(t.stones)/12, func(i int) bool {
+		x := binary.BigEndian.Uint32(t.stones[i*12:])
+		return x >= ref
+	})
+
+	if i*12 < len(t.stones) {
+		t.stones = t.stones[i*12:]
+		return t.Next()
+	}
+
+	t.stones = nil
+	return false
+}
+
+func (t *tombstoneReader) At() stone {
+	return t.cur
 }
 
 func (t *tombstoneReader) Copy() TombstoneReader {
 	return &tombstoneReader{
 		stones: t.stones[:],
-		idx:    t.idx,
-		len:    t.len,
+		cur:    t.cur,
 
 		b: t.b,
 	}
@@ -291,6 +295,7 @@ func newSimpleTombstoneReader(refs []uint32, drange []trange) *simpleTombstoneRe
 func (t *simpleTombstoneReader) Next() bool {
 	if len(t.refs) > 0 {
 		t.cur = t.refs[0]
+		t.refs = t.refs[1:]
 		return true
 	}
 
@@ -437,7 +442,8 @@ func (tr trange) isSubrange(ranges []trange) bool {
 }
 
 // This adds the new time-range to the existing ones.
-// The existing ones must be sorted and should not be nil.
+// The existing ones must be sorted.
+// TODO(gouthamve): {1, 2}, {3, 4} can be merged into {1, 4}.
 func addNewInterval(existing []trange, n trange) []trange {
 	for i, r := range existing {
 		// TODO(gouthamve): Make this codepath easier to digest.

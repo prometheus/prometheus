@@ -680,9 +680,9 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	s.headmtx.RLock()
-	blocks := s.blocksForInterval(mint, maxt)
-	s.headmtx.RUnlock()
+	db.headmtx.RLock()
+	blocks := db.blocksForInterval(mint, maxt)
+	db.headmtx.RUnlock()
 
 	var g errgroup.Group
 
