@@ -427,8 +427,8 @@ type scrapeLoop struct {
 	reportAppender func() storage.Appender
 
 	// TODO: Keep only the values from the last scrape to avoid a memory leak.
-	refCache               map[string]uint64         // Parsed string to ref.
-	lsetCache              map[uint64]lsetCacheEntry // Ref to labelset and string
+	refCache               map[string]string         // Parsed string to ref.
+	lsetCache              map[string]lsetCacheEntry // Ref to labelset and string
 	seriesInPreviousScrape map[string]labels.Labels
 
 	ctx       context.Context
@@ -445,8 +445,8 @@ func newScrapeLoop(ctx context.Context, sc scraper, app, reportApp func() storag
 		scraper:        sc,
 		appender:       app,
 		reportAppender: reportApp,
-		refCache:       map[string]uint64{},
-		lsetCache:      map[uint64]lsetCacheEntry{},
+		refCache:       map[string]string{},
+		lsetCache:      map[string]lsetCacheEntry{},
 		stopped:        make(chan struct{}),
 		ctx:            ctx,
 		l:              l,
