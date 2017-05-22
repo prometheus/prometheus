@@ -1,3 +1,9 @@
+## 1.6.3 / 2017-05-18
+
+* [BUGFIX] Fix disappearing Alertmanger targets in Alertmanager discovery.
+* [BUGFIX] Fix panic with remote_write on ARMv7.
+* [BUGFIX] Fix stacked graphs to adapt min/max values.
+
 ## 1.6.2 / 2017-05-11
 
 * [BUGFIX] Fix potential memory leak in Kubernetes service discovery
