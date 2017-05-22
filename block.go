@@ -182,10 +182,10 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, err
 	}
 
-	ts := make(map[uint32][]trange)
+	ts := make(map[uint32]intervals)
 	for tr.Next() {
 		s := tr.At()
-		ts[s.ref] = s.ranges
+		ts[s.ref] = s.intervals
 	}
 
 	pb := &persistedBlock{
@@ -238,7 +238,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	delStones := map[uint32][]trange{}
+	delStones := map[uint32]intervals{}
 
 Outer:
 	for p.Next() {
@@ -260,7 +260,7 @@ Outer:
 				if maxtime > maxt {
 					maxtime = maxt
 				}
-				delStones[p.At()] = []trange{{mint, maxtime}}
+				delStones[p.At()] = intervals{{mint, maxtime}}
 				continue Outer
 			}
 		}

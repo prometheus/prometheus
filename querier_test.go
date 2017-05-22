@@ -481,10 +481,10 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: newMapTombstoneReader(
-			map[uint32][]trange{
-				1: []trange{{1, 3}},
-				2: []trange{{1, 3}, {6, 10}},
-				3: []trange{{6, 10}},
+			map[uint32]intervals{
+				1: intervals{{1, 3}},
+				2: intervals{{1, 3}, {6, 10}},
+				3: intervals{{6, 10}},
 			},
 		),
 
@@ -876,7 +876,7 @@ func TestSeriesIterator(t *testing.T) {
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
 			}
-			res := newChunkSeriesIterator(chkMetas, stone{}, tc.mint, tc.maxt)
+			res := newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt)
 
 			smplValid := make([]sample, 0)
 			for _, s := range tc.exp {
@@ -947,7 +947,7 @@ func TestSeriesIterator(t *testing.T) {
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
 				}
-				res := newChunkSeriesIterator(chkMetas, stone{}, tc.mint, tc.maxt)
+				res := newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt)
 
 				smplValid := make([]sample, 0)
 				for _, s := range tc.exp {
@@ -1094,8 +1094,8 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta, stone) {
-	return m.l[m.i], m.cm[m.i], stone{}
+func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta, intervals) {
+	return m.l[m.i], m.cm[m.i], nil
 }
 
 func (m *mockChunkSeriesSet) Err() error {

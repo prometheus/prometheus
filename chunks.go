@@ -59,7 +59,7 @@ func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 type deletedIterator struct {
 	it chunks.Iterator
 
-	dranges []trange
+	intervals intervals
 }
 
 func (it *deletedIterator) At() (int64, float64) {
@@ -71,13 +71,13 @@ Outer:
 	for it.it.Next() {
 		ts, _ := it.it.At()
 
-		for _, tr := range it.dranges {
+		for _, tr := range it.intervals {
 			if tr.inBounds(ts) {
 				continue Outer
 			}
 
 			if ts > tr.maxt {
-				it.dranges = it.dranges[1:]
+				it.intervals = it.intervals[1:]
 				continue
 			}
 

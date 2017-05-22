@@ -369,7 +369,7 @@ func (s *mergedSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []*ChunkMeta, stone)
+	At() (labels.Labels, []*ChunkMeta, intervals)
 	Err() error
 }
 
@@ -381,14 +381,14 @@ type baseChunkSeries struct {
 	tombstones TombstoneReader
 	absent     []string // labels that must be unset in results.
 
-	lset  labels.Labels
-	chks  []*ChunkMeta
-	stone stone
-	err   error
+	lset      labels.Labels
+	chks      []*ChunkMeta
+	intervals intervals
+	err       error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta, stone) {
-	return s.lset, s.chks, s.stone
+func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta, intervals) {
+	return s.lset, s.chks, s.intervals
 }
 
 func (s *baseChunkSeries) Err() error { return s.err }
@@ -413,12 +413,12 @@ Outer:
 		s.lset = lset
 		s.chks = chunks
 		if s.tombstones.Seek(ref) && s.tombstones.At().ref == ref {
-			s.stone = s.tombstones.At()
+			s.intervals = s.tombstones.At().intervals
 
 			// Only those chunks that are not entirely deleted.
 			chks := make([]*ChunkMeta, 0, len(s.chks))
 			for _, chk := range s.chks {
-				if !(trange{chk.MinTime, chk.MaxTime}.isSubrange(s.stone.ranges)) {
+				if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
 					chks = append(chks, chk)
 				}
 			}
@@ -442,20 +442,20 @@ type populatedChunkSeries struct {
 	chunks     ChunkReader
 	mint, maxt int64
 
-	err   error
-	chks  []*ChunkMeta
-	lset  labels.Labels
-	stone stone
+	err       error
+	chks      []*ChunkMeta
+	lset      labels.Labels
+	intervals intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta, stone) {
-	return s.lset, s.chks, s.stone
+func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta, intervals) {
+	return s.lset, s.chks, s.intervals
 }
 func (s *populatedChunkSeries) Err() error { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
-		lset, chks, stn := s.set.At()
+		lset, chks, dranges := s.set.At()
 
 		for len(chks) > 0 {
 			if chks[0].MaxTime >= s.mint {
@@ -482,7 +482,7 @@ func (s *populatedChunkSeries) Next() bool {
 
 		s.lset = lset
 		s.chks = chks
-		s.stone = stn
+		s.intervals = dranges
 
 		return true
 	}
@@ -503,14 +503,14 @@ type blockSeriesSet struct {
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
-		lset, chunks, stn := s.set.At()
+		lset, chunks, dranges := s.set.At()
 		s.cur = &chunkSeries{
 			labels: lset,
 			chunks: chunks,
 			mint:   s.mint,
 			maxt:   s.maxt,
 
-			stone: stn,
+			intervals: dranges,
 		}
 		return true
 	}
@@ -531,7 +531,7 @@ type chunkSeries struct {
 
 	mint, maxt int64
 
-	stone stone
+	intervals intervals
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -539,7 +539,7 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 func (s *chunkSeries) Iterator() SeriesIterator {
-	return newChunkSeriesIterator(s.chunks, s.stone, s.mint, s.maxt)
+	return newChunkSeriesIterator(s.chunks, s.intervals, s.mint, s.maxt)
 }
 
 // SeriesIterator iterates over the data of a time series.
@@ -637,13 +637,13 @@ type chunkSeriesIterator struct {
 
 	maxt, mint int64
 
-	stone stone
+	intervals intervals
 }
 
-func newChunkSeriesIterator(cs []*ChunkMeta, s stone, mint, maxt int64) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta, dranges intervals, mint, maxt int64) *chunkSeriesIterator {
 	it := cs[0].Chunk.Iterator()
-	if len(s.ranges) > 0 {
-		it = &deletedIterator{it: it, dranges: s.ranges}
+	if len(dranges) > 0 {
+		it = &deletedIterator{it: it, intervals: dranges}
 	}
 	return &chunkSeriesIterator{
 		chunks: cs,
@@ -653,7 +653,7 @@ func newChunkSeriesIterator(cs []*ChunkMeta, s stone, mint, maxt int64) *chunkSe
 		mint: mint,
 		maxt: maxt,
 
-		stone: s,
+		intervals: dranges,
 	}
 }
 
@@ -688,8 +688,8 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 
 	it.i = x
 	it.cur = it.chunks[x].Chunk.Iterator()
-	if len(it.stone.ranges) > 0 {
-		it.cur = &deletedIterator{it: it.cur, dranges: it.stone.ranges}
+	if len(it.intervals) > 0 {
+		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
 	}
 
 	for it.cur.Next() {
@@ -722,8 +722,8 @@ func (it *chunkSeriesIterator) Next() bool {
 
 	it.i++
 	it.cur = it.chunks[it.i].Chunk.Iterator()
-	if len(it.stone.ranges) > 0 {
-		it.cur = &deletedIterator{it: it.cur, dranges: it.stone.ranges}
+	if len(it.intervals) > 0 {
+		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
 	}
 
 	return it.Next()

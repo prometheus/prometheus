@@ -36,14 +36,14 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 
 		// Write the ranges.
 		buf.reset()
-		buf.putVarint64(int64(len(s.ranges)))
+		buf.putVarint64(int64(len(s.intervals)))
 		n, err := f.Write(buf.get())
 		if err != nil {
 			return err
 		}
 		pos += int64(n)
 
-		for _, r := range s.ranges {
+		for _, r := range s.intervals {
 			buf.reset()
 			buf.putVarint64(r.mint)
 			buf.putVarint64(r.maxt)
@@ -93,8 +93,8 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 // stone holds the information on the posting and time-range
 // that is deleted.
 type stone struct {
-	ref    uint32
-	ranges []trange
+	ref       uint32
+	intervals intervals
 }
 
 // TombstoneReader is the iterator over tombstones.
@@ -164,7 +164,7 @@ func (t *tombstoneReader) Next() bool {
 		return false
 	}
 
-	dranges := make([]trange, 0, numRanges)
+	dranges := make(intervals, 0, numRanges)
 	for i := 0; i < int(numRanges); i++ {
 		mint := d.varint64()
 		maxt := d.varint64()
@@ -173,11 +173,11 @@ func (t *tombstoneReader) Next() bool {
 			return false
 		}
 
-		dranges = append(dranges, trange{mint, maxt})
+		dranges = append(dranges, interval{mint, maxt})
 	}
 
 	t.stones = t.stones[12:]
-	t.cur = stone{ref: ref, ranges: dranges}
+	t.cur = stone{ref: ref, intervals: dranges}
 	return true
 }
 
@@ -217,10 +217,10 @@ type mapTombstoneReader struct {
 	refs []uint32
 	cur  uint32
 
-	stones map[uint32][]trange
+	stones map[uint32]intervals
 }
 
-func newMapTombstoneReader(ts map[uint32][]trange) *mapTombstoneReader {
+func newMapTombstoneReader(ts map[uint32]intervals) *mapTombstoneReader {
 	refs := make([]uint32, 0, len(ts))
 	for k := range ts {
 		refs = append(refs, k)
@@ -231,7 +231,7 @@ func newMapTombstoneReader(ts map[uint32][]trange) *mapTombstoneReader {
 }
 
 func newEmptyTombstoneReader() *mapTombstoneReader {
-	return &mapTombstoneReader{stones: make(map[uint32][]trange)}
+	return &mapTombstoneReader{stones: make(map[uint32]intervals)}
 }
 
 func (t *mapTombstoneReader) Next() bool {
@@ -265,7 +265,7 @@ func (t *mapTombstoneReader) Seek(ref uint32) bool {
 }
 
 func (t *mapTombstoneReader) At() stone {
-	return stone{ref: t.cur, ranges: t.stones[t.cur]}
+	return stone{ref: t.cur, intervals: t.stones[t.cur]}
 }
 
 func (t *mapTombstoneReader) Copy() TombstoneReader {
@@ -285,11 +285,11 @@ type simpleTombstoneReader struct {
 	refs []uint32
 	cur  uint32
 
-	ranges []trange
+	intervals intervals
 }
 
-func newSimpleTombstoneReader(refs []uint32, drange []trange) *simpleTombstoneReader {
-	return &simpleTombstoneReader{refs: refs, ranges: drange}
+func newSimpleTombstoneReader(refs []uint32, dranges intervals) *simpleTombstoneReader {
+	return &simpleTombstoneReader{refs: refs, intervals: dranges}
 }
 
 func (t *simpleTombstoneReader) Next() bool {
@@ -323,11 +323,11 @@ func (t *simpleTombstoneReader) Seek(ref uint32) bool {
 }
 
 func (t *simpleTombstoneReader) At() stone {
-	return stone{ref: t.cur, ranges: t.ranges}
+	return stone{ref: t.cur, intervals: t.intervals}
 }
 
 func (t *simpleTombstoneReader) Copy() TombstoneReader {
-	return &simpleTombstoneReader{refs: t.refs[:], cur: t.cur, ranges: t.ranges}
+	return &simpleTombstoneReader{refs: t.refs[:], cur: t.cur, intervals: t.intervals}
 }
 
 func (t *simpleTombstoneReader) Err() error {
@@ -378,8 +378,8 @@ func (t *mergedTombstoneReader) Next() bool {
 		t.bok = t.b.Next()
 	} else {
 		// Merge time ranges.
-		for _, r := range bcur.ranges {
-			acur.ranges = addNewInterval(acur.ranges, r)
+		for _, r := range bcur.intervals {
+			acur.intervals = acur.intervals.add(r)
 		}
 
 		t.cur = acur
@@ -424,16 +424,16 @@ func (t *mergedTombstoneReader) Err() error {
 	return t.b.Err()
 }
 
-type trange struct {
+type interval struct {
 	mint, maxt int64
 }
 
-func (tr trange) inBounds(t int64) bool {
+func (tr interval) inBounds(t int64) bool {
 	return t >= tr.mint && t <= tr.maxt
 }
 
-func (tr trange) isSubrange(ranges []trange) bool {
-	for _, r := range ranges {
+func (tr interval) isSubrange(dranges intervals) bool {
+	for _, r := range dranges {
 		if r.inBounds(tr.mint) && r.inBounds(tr.maxt) {
 			return true
 		}
@@ -442,49 +442,51 @@ func (tr trange) isSubrange(ranges []trange) bool {
 	return false
 }
 
+type intervals []interval
+
 // This adds the new time-range to the existing ones.
 // The existing ones must be sorted.
-// TODO(gouthamve): {1, 2}, {3, 4} can be merged into {1, 4}.
-func addNewInterval(existing []trange, n trange) []trange {
-	for i, r := range existing {
+func (itvs intervals) add(n interval) intervals {
+	for i, r := range itvs {
 		// TODO(gouthamve): Make this codepath easier to digest.
-		if r.inBounds(n.mint) {
+		if r.inBounds(n.mint-1) || r.inBounds(n.mint) {
 			if n.maxt > r.maxt {
-				existing[i].maxt = n.maxt
+				itvs[i].maxt = n.maxt
 			}
 
 			j := 0
-			for _, r2 := range existing[i+1:] {
+			for _, r2 := range itvs[i+1:] {
 				if n.maxt < r2.mint {
 					break
 				}
 				j++
 			}
 			if j != 0 {
-				if existing[i+j].maxt > n.maxt {
-					existing[i].maxt = existing[i+j].maxt
+				if itvs[i+j].maxt > n.maxt {
+					itvs[i].maxt = itvs[i+j].maxt
 				}
-				existing = append(existing[:i+1], existing[i+j+1:]...)
+				itvs = append(itvs[:i+1], itvs[i+j+1:]...)
 			}
-			return existing
+			return itvs
 		}
 
-		if r.inBounds(n.maxt) {
+		if r.inBounds(n.maxt+1) || r.inBounds(n.maxt) {
 			if n.mint < r.maxt {
-				existing[i].mint = n.mint
+				itvs[i].mint = n.mint
 			}
-			return existing
+			return itvs
 		}
+
 		if n.mint < r.mint {
-			newRange := make([]trange, i, len(existing[:i])+1)
-			copy(newRange, existing[:i])
+			newRange := make(intervals, i, len(itvs[:i])+1)
+			copy(newRange, itvs[:i])
 			newRange = append(newRange, n)
-			newRange = append(newRange, existing[i:]...)
+			newRange = append(newRange, itvs[i:]...)
 
 			return newRange
 		}
 	}
 
-	existing = append(existing, n)
-	return existing
+	itvs = append(itvs, n)
+	return itvs
 }

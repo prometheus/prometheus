@@ -50,23 +50,23 @@ func TestDeletedIterator(t *testing.T) {
 	}
 
 	cases := []struct {
-		r []trange
+		r intervals
 	}{
-		{r: []trange{{1, 20}}},
-		{r: []trange{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
-		{r: []trange{{1, 10}, {12, 20}, {20, 30}}},
-		{r: []trange{{1, 10}, {12, 23}, {25, 30}}},
-		{r: []trange{{1, 23}, {12, 20}, {25, 30}}},
-		{r: []trange{{1, 23}, {12, 20}, {25, 3000}}},
-		{r: []trange{{0, 2000}}},
-		{r: []trange{{500, 2000}}},
-		{r: []trange{{0, 200}}},
-		{r: []trange{{1000, 20000}}},
+		{r: intervals{{1, 20}}},
+		{r: intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
+		{r: intervals{{1, 10}, {12, 20}, {20, 30}}},
+		{r: intervals{{1, 10}, {12, 23}, {25, 30}}},
+		{r: intervals{{1, 23}, {12, 20}, {25, 30}}},
+		{r: intervals{{1, 23}, {12, 20}, {25, 3000}}},
+		{r: intervals{{0, 2000}}},
+		{r: intervals{{500, 2000}}},
+		{r: intervals{{0, 200}}},
+		{r: intervals{{1000, 20000}}},
 	}
 
 	for _, c := range cases {
 		i := int64(-1)
-		it := &deletedIterator{it: chk.Iterator(), dranges: c.r[:]}
+		it := &deletedIterator{it: chk.Iterator(), intervals: c.r[:]}
 		ranges := c.r[:]
 		for it.Next() {
 			i++

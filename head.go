@@ -162,7 +162,7 @@ func (h *HeadBlock) init() error {
 	for tr.Next() {
 		s := tr.At()
 		h.tombstones.refs = append(h.tombstones.refs, s.ref)
-		h.tombstones.stones[s.ref] = s.ranges
+		h.tombstones.stones[s.ref] = s.intervals
 	}
 	return errors.Wrap(err, "tombstones reader iteration")
 }
@@ -245,7 +245,7 @@ Outer:
 		if maxtime > maxt {
 			maxtime = maxt
 		}
-		h.tombstones.stones[ref] = addNewInterval(h.tombstones.stones[ref], trange{mint, maxtime})
+		h.tombstones.stones[ref] = h.tombstones.stones[ref].add(interval{mint, maxtime})
 	}
 
 	if p.Err() != nil {
