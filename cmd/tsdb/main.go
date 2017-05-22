@@ -28,6 +28,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/pkg/errors"
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb"
@@ -73,6 +74,7 @@ type writeBenchmark struct {
 	cpuprof   *os.File
 	memprof   *os.File
 	blockprof *os.File
+	mtxprof   *os.File
 }
 
 func NewBenchWriteCommand() *cobra.Command {
@@ -113,7 +115,6 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 		RetentionDuration: 2 * 24 * 60 * 60 * 1000, // 1 days in milliseconds
 		MinBlockDuration:  3 * 60 * 60 * 1000,      // 2 hours in milliseconds
 		MaxBlockDuration:  27 * 60 * 60 * 1000,     // 1 days in milliseconds
-		AppendableBlocks:  2,
 	})
 	if err != nil {
 		exitWithError(err)
@@ -196,7 +197,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *uint64
+		ref    *string
 	}
 
 	scrape := make([]*sample, 0, len(metrics))
@@ -224,7 +225,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 				s.ref = &ref
 			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
 
-				if err.Error() != "not found" {
+				if errors.Cause(err) != tsdb.ErrNotFound {
 					panic(err)
 				}
 
@@ -259,14 +260,20 @@ func (b *writeBenchmark) startProfiling() {
 	if err != nil {
 		exitWithError(fmt.Errorf("bench: could not create memory profile: %v", err))
 	}
-	runtime.MemProfileRate = 4096
+	runtime.MemProfileRate = 64 * 1024
 
 	// Start fatal profiling.
 	b.blockprof, err = os.Create(filepath.Join(b.outPath, "block.prof"))
 	if err != nil {
 		exitWithError(fmt.Errorf("bench: could not create block profile: %v", err))
 	}
-	runtime.SetBlockProfileRate(1)
+	runtime.SetBlockProfileRate(20)
+
+	b.mtxprof, err = os.Create(filepath.Join(b.outPath, "mutex.prof"))
+	if err != nil {
+		exitWithError(fmt.Errorf("bench: could not create mutex profile: %v", err))
+	}
+	runtime.SetMutexProfileFraction(20)
 }
 
 func (b *writeBenchmark) stopProfiling() {
@@ -285,6 +292,12 @@ func (b *writeBenchmark) stopProfiling() {
 		b.blockprof.Close()
 		b.blockprof = nil
 		runtime.SetBlockProfileRate(0)
+	}
+	if b.mtxprof != nil {
+		pprof.Lookup("mutex").WriteTo(b.mtxprof, 0)
+		b.mtxprof.Close()
+		b.mtxprof = nil
+		runtime.SetMutexProfileFraction(0)
 	}
 }
 

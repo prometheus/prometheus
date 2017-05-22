@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -79,9 +78,6 @@ type Queryable interface {
 type BlockMeta struct {
 	// Unique identifier for the block and its contents. Changes on compaction.
 	ULID ulid.ULID `json:"ulid"`
-
-	// Sequence number of the block.
-	Sequence int `json:"sequence"`
 
 	// MinTime and MaxTime specify the time range all samples
 	// in the block are in.
@@ -214,7 +210,7 @@ func (pb *persistedBlock) Close() error {
 }
 
 func (pb *persistedBlock) String() string {
-	return fmt.Sprintf("(%d, %s)", pb.meta.Sequence, pb.meta.ULID)
+	return pb.meta.ULID.String()
 }
 
 func (pb *persistedBlock) Querier(mint, maxt int64) Querier {

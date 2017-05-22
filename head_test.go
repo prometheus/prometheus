@@ -33,7 +33,7 @@ import (
 
 // createTestHeadBlock creates a new head block with a SegmentWAL.
 func createTestHeadBlock(t testing.TB, dir string, mint, maxt int64) *HeadBlock {
-	err := TouchHeadBlock(dir, 0, mint, maxt)
+	dir, err := TouchHeadBlock(dir, mint, maxt)
 	require.NoError(t, err)
 
 	return openTestHeadBlock(t, dir)
