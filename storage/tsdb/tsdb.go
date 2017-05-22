@@ -17,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -41,13 +42,6 @@ type Options struct {
 	// The maximum timestamp range of compacted blocks.
 	MaxBlockDuration time.Duration
 
-	// Number of head blocks that can be appended to.
-	// Should be two or higher to prevent write errors in general scenarios.
-	//
-	// After a new block is started for timestamp t0 or higher, appends with
-	// timestamps as early as t0 - (n-1) * MinBlockDuration are valid.
-	AppendableBlocks int
-
 	// Duration for how long to retain data.
 	Retention time.Duration
 
@@ -61,7 +55,6 @@ func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage,
 		WALFlushInterval:  10 * time.Second,
 		MinBlockDuration:  uint64(opts.MinBlockDuration.Seconds() * 1000),
 		MaxBlockDuration:  uint64(opts.MaxBlockDuration.Seconds() * 1000),
-		AppendableBlocks:  opts.AppendableBlocks,
 		RetentionDuration: uint64(opts.Retention.Seconds() * 1000),
 		NoLockfile:        opts.NoLockfile,
 	})
@@ -121,24 +114,24 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a appender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	ref, err := a.a.Add(toTSDBLabels(lset), t, v)
 
-	switch err {
+	switch errors.Cause(err) {
 	case tsdb.ErrNotFound:
-		return 0, storage.ErrNotFound
+		return "", storage.ErrNotFound
 	case tsdb.ErrOutOfOrderSample:
-		return 0, storage.ErrOutOfOrderSample
+		return "", storage.ErrOutOfOrderSample
 	case tsdb.ErrAmendSample:
-		return 0, storage.ErrDuplicateSampleForTimestamp
+		return "", storage.ErrDuplicateSampleForTimestamp
 	}
 	return ref, err
 }
 
-func (a appender) AddFast(ref uint64, t int64, v float64) error {
+func (a appender) AddFast(ref string, t int64, v float64) error {
 	err := a.a.AddFast(ref, t, v)
 
-	switch err {
+	switch errors.Cause(err) {
 	case tsdb.ErrNotFound:
 		return storage.ErrNotFound
 	case tsdb.ErrOutOfOrderSample:

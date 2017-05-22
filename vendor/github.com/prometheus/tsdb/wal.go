@@ -21,7 +21,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -91,7 +90,6 @@ type RefSample struct {
 }
 
 const (
-	walDirName          = "wal"
 	walSegmentSizeBytes = 256 * 1024 * 1024 // 256 MB
 )
 
@@ -107,8 +105,6 @@ func init() {
 // OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) (*SegmentWAL, error) {
-	dir = filepath.Join(dir, walDirName)
-
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
