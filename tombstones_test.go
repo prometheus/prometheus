@@ -64,6 +64,11 @@ func TestAddingNewIntervals(t *testing.T) {
 			exp:   []trange{{1, 10}, {12, 20}, {21, 23}, {25, 30}},
 		},
 		{
+			exist: []trange{{1, 2}, {3, 5}, {6, 7}},
+			new:   trange{6, 7},
+			exp:   []trange{{1, 2}, {3, 5}, {6, 7}},
+		},
+		{
 			exist: []trange{{1, 10}, {12, 20}, {25, 30}},
 			new:   trange{21, 25},
 			exp:   []trange{{1, 10}, {12, 20}, {21, 30}},
@@ -198,4 +203,115 @@ func TestTombstoneReadersSeek(t *testing.T) {
 		}
 		return
 	})
+}
+
+func TestMergedTombstoneReader(t *testing.T) {
+	cases := []struct {
+		a, b TombstoneReader
+
+		exp TombstoneReader
+	}{
+		{
+			a: newMapTombstoneReader(
+				map[uint32][]trange{
+					2:    []trange{{1, 2}},
+					3:    []trange{{1, 4}, {5, 6}},
+					4:    []trange{{10, 15}, {16, 20}},
+					5:    []trange{{1, 4}, {5, 6}},
+					50:   []trange{{10, 20}, {35, 50}},
+					600:  []trange{{100, 2000}},
+					1000: []trange{},
+					1500: []trange{{10000, 500000}},
+					1600: []trange{{1, 2}, {3, 4}, {4, 5}, {6, 7}},
+				},
+			),
+			b: newMapTombstoneReader(
+				map[uint32][]trange{
+					2:    []trange{{1, 2}},
+					3:    []trange{{1, 4}, {5, 6}},
+					4:    []trange{{10, 15}, {16, 20}},
+					5:    []trange{{1, 4}, {5, 6}},
+					50:   []trange{{10, 20}, {35, 50}},
+					600:  []trange{{100, 2000}},
+					1000: []trange{},
+					1500: []trange{{10000, 500000}},
+					1600: []trange{{1, 2}, {3, 4}, {4, 5}, {6, 7}},
+				},
+			),
+
+			exp: newMapTombstoneReader(
+				map[uint32][]trange{
+					2:    []trange{{1, 2}},
+					3:    []trange{{1, 4}, {5, 6}},
+					4:    []trange{{10, 15}, {16, 20}},
+					5:    []trange{{1, 4}, {5, 6}},
+					50:   []trange{{10, 20}, {35, 50}},
+					600:  []trange{{100, 2000}},
+					1000: []trange{},
+					1500: []trange{{10000, 500000}},
+					1600: []trange{{1, 2}, {3, 5}, {6, 7}},
+				},
+			),
+		},
+		{
+			a: newMapTombstoneReader(
+				map[uint32][]trange{
+					2:    []trange{{1, 2}},
+					3:    []trange{{1, 4}, {5, 6}},
+					4:    []trange{{10, 15}, {16, 20}},
+					5:    []trange{{1, 4}, {5, 6}},
+					50:   []trange{{10, 20}, {35, 50}},
+					600:  []trange{{100, 2000}},
+					1000: []trange{},
+					1500: []trange{{10000, 500000}},
+					1600: []trange{{1, 2}, {3, 4}, {4, 5}, {6, 7}},
+				},
+			),
+			b: newMapTombstoneReader(
+				map[uint32][]trange{
+					20:    []trange{{1, 2}},
+					30:    []trange{{1, 4}, {5, 6}},
+					40:    []trange{{10, 15}, {16, 20}},
+					60:    []trange{{1, 4}, {5, 6}},
+					500:   []trange{{10, 20}, {35, 50}},
+					6000:  []trange{{100, 2000}},
+					10000: []trange{},
+					15000: []trange{{10000, 500000}},
+					1600:  []trange{{1, 2}, {3, 4}, {4, 5}, {6, 7}},
+				},
+			),
+
+			exp: newMapTombstoneReader(
+				map[uint32][]trange{
+					2:     []trange{{1, 2}},
+					3:     []trange{{1, 4}, {5, 6}},
+					4:     []trange{{10, 15}, {16, 20}},
+					5:     []trange{{1, 4}, {5, 6}},
+					50:    []trange{{10, 20}, {35, 50}},
+					600:   []trange{{100, 2000}},
+					1000:  []trange{},
+					1500:  []trange{{10000, 500000}},
+					20:    []trange{{1, 2}},
+					30:    []trange{{1, 4}, {5, 6}},
+					40:    []trange{{10, 15}, {16, 20}},
+					60:    []trange{{1, 4}, {5, 6}},
+					500:   []trange{{10, 20}, {35, 50}},
+					6000:  []trange{{100, 2000}},
+					10000: []trange{},
+					15000: []trange{{10000, 500000}},
+					1600:  []trange{{1, 2}, {3, 5}, {6, 7}},
+				},
+			),
+		},
+	}
+
+	for _, c := range cases {
+		res := newMergedTombstoneReader(c.a, c.b)
+		for c.exp.Next() {
+			require.True(t, res.Next())
+			require.Equal(t, c.exp.At(), res.At())
+		}
+		require.False(t, res.Next())
+	}
+	return
 }

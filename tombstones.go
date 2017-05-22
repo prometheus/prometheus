@@ -377,11 +377,12 @@ func (t *mergedTombstoneReader) Next() bool {
 		t.cur = bcur
 		t.bok = t.b.Next()
 	} else {
-		t.cur = acur
 		// Merge time ranges.
 		for _, r := range bcur.ranges {
 			acur.ranges = addNewInterval(acur.ranges, r)
 		}
+
+		t.cur = acur
 		t.aok = t.a.Next()
 		t.bok = t.b.Next()
 	}
