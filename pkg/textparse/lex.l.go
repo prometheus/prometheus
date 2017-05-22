@@ -264,7 +264,12 @@ yystate20:
 
 yystate21:
 	c = l.next()
-	goto yyrule8
+	switch {
+	default:
+		goto yyrule8
+	case c == '}':
+		goto yystate22
+	}
 
 yystate22:
 	c = l.next()
@@ -391,7 +396,7 @@ yyrule5: // {S}({M}|{D})*
 yyrule6: // [ \t]+
 
 	goto yystate0
-yyrule7: // \}
+yyrule7: // ,?\}
 	{
 		s = lstateValue
 		l.mend = l.i
