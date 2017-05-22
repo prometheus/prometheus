@@ -28,6 +28,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/pkg/errors"
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb"
@@ -114,7 +115,6 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 		RetentionDuration: 2 * 24 * 60 * 60 * 1000, // 1 days in milliseconds
 		MinBlockDuration:  3 * 60 * 60 * 1000,      // 2 hours in milliseconds
 		MaxBlockDuration:  27 * 60 * 60 * 1000,     // 1 days in milliseconds
-		AppendableBlocks:  2,
 	})
 	if err != nil {
 		exitWithError(err)
@@ -197,7 +197,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *uint64
+		ref    *string
 	}
 
 	scrape := make([]*sample, 0, len(metrics))
@@ -225,7 +225,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 				s.ref = &ref
 			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
 
-				if err.Error() != "not found" {
+				if errors.Cause(err) != tsdb.ErrNotFound {
 					panic(err)
 				}
 

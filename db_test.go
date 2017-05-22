@@ -18,6 +18,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
@@ -107,25 +108,36 @@ func TestDBAppenderAddRef(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	app := db.Appender()
-	defer app.Rollback()
+	app1 := db.Appender()
 
-	ref, err := app.Add(labels.FromStrings("a", "b"), 0, 0)
+	ref, err := app1.Add(labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
 
-	// Head sequence number should be in 3rd MSB and be greater than 0.
-	gen := (ref << 16) >> 56
-	require.True(t, gen > 1)
+	// When a series is first created, refs don't work within that transaction.
+	err = app1.AddFast(ref, 1, 1)
+	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
+
+	err = app1.Commit()
+	require.NoError(t, err)
+
+	app2 := db.Appender()
+	defer app2.Rollback()
+
+	ref, err = app2.Add(labels.FromStrings("a", "b"), 1, 1)
+	require.NoError(t, err)
+
+	// Ref must be prefixed with block ULID of the block we wrote to.
+	id := db.blocks[len(db.blocks)-1].Meta().ULID
+	require.Equal(t, string(id[:]), ref[:16])
 
 	// Reference must be valid to add another sample.
-	err = app.AddFast(ref, 1, 1)
+	err = app2.AddFast(ref, 2, 2)
 	require.NoError(t, err)
 
 	// AddFast for the same timestamp must fail if the generation in the reference
 	// doesn't add up.
-	refBad := ref | ((gen + 1) << 4)
-	err = app.AddFast(refBad, 1, 1)
-	require.Error(t, err)
-
-	require.Equal(t, 2, app.(*dbAppender).samples)
+	refb := []byte(ref)
+	refb[15] ^= refb[15]
+	err = app2.AddFast(string(refb), 1, 1)
+	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
 }
