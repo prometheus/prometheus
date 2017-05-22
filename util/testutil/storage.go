@@ -33,10 +33,11 @@ func NewStorage(t T) storage.Storage {
 
 	log.With("dir", dir).Debugln("opening test storage")
 
+	// Tests just load data for a series sequentially. Thus we
+	// need a long appendable window.
 	db, err := tsdb.Open(dir, nil, &tsdb.Options{
-		MinBlockDuration: 2 * time.Hour,
+		MinBlockDuration: 24 * time.Hour,
 		MaxBlockDuration: 24 * time.Hour,
-		AppendableBlocks: 10,
 	})
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)

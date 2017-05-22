@@ -137,10 +137,6 @@ func init() {
 		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration", 0,
 		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)",
 	)
-	cfg.fs.IntVar(
-		&cfg.tsdb.AppendableBlocks, "storage.tsdb.appendable-blocks", 2,
-		"Number of head blocks that can be appended to.",
-	)
 	cfg.fs.DurationVar(
 		&cfg.tsdb.Retention, "storage.tsdb.retention", 15*24*time.Hour,
 		"How long to retain samples in the storage.",

@@ -604,8 +604,8 @@ func TestScrapeLoopAppend(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]uint64{},
-		lsetCache:      map[uint64]lsetCacheEntry{},
+		refCache:       map[string]string{},
+		lsetCache:      map[string]lsetCacheEntry{},
 	}
 
 	now := time.Now()
@@ -643,8 +643,8 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]uint64{},
-		lsetCache:      map[uint64]lsetCacheEntry{},
+		refCache:       map[string]string{},
+		lsetCache:      map[string]lsetCacheEntry{},
 	}
 
 	now := time.Now()
@@ -687,8 +687,8 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]uint64{},
-		lsetCache:      map[uint64]lsetCacheEntry{},
+		refCache:       map[string]string{},
+		lsetCache:      map[string]lsetCacheEntry{},
 	}
 
 	now := time.Now()
@@ -718,16 +718,16 @@ type errorAppender struct {
 	collectResultAppender
 }
 
-func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	if lset.Get(model.MetricNameLabel) == "out_of_order" {
-		return 0, storage.ErrOutOfOrderSample
+		return "", storage.ErrOutOfOrderSample
 	} else if lset.Get(model.MetricNameLabel) == "amend" {
-		return 0, storage.ErrDuplicateSampleForTimestamp
+		return "", storage.ErrDuplicateSampleForTimestamp
 	}
 	return app.collectResultAppender.Add(lset, t, v)
 }
 
-func (app *errorAppender) AddFast(ref uint64, t int64, v float64) error {
+func (app *errorAppender) AddFast(ref string, t int64, v float64) error {
 	return app.collectResultAppender.AddFast(ref, t, v)
 }
 
@@ -736,8 +736,8 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]uint64{},
-		lsetCache:      map[uint64]lsetCacheEntry{},
+		refCache:       map[string]string{},
+		lsetCache:      map[string]lsetCacheEntry{},
 		l:              log.Base(),
 	}
 
