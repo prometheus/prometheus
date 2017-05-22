@@ -242,7 +242,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	vPostings := []uint32{}
+	delStones := map[uint32][]trange{}
 
 Outer:
 	for p.Next() {
@@ -259,7 +259,12 @@ Outer:
 
 		for _, chk := range chunks {
 			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
-				vPostings = append(vPostings, p.At())
+				// Delete only until the current maxtime and not beyond.
+				maxtime := chunks[len(chunks)-1].MaxTime
+				if maxtime > maxt {
+					maxtime = maxt
+				}
+				delStones[p.At()] = []trange{{mint, maxtime}}
 				continue Outer
 			}
 		}
@@ -271,7 +276,7 @@ Outer:
 
 	// Merge the current and new tombstones.
 	tr := pb.Tombstones()
-	str := newSimpleTombstoneReader(vPostings, []trange{{mint, maxt}})
+	str := newMapTombstoneReader(delStones)
 	tombreader := newMergedTombstoneReader(tr, str)
 
 	return writeTombstoneFile(pb.dir, tombreader)

@@ -382,7 +382,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 	return
 }
 
-func TestDelete_simple(t *testing.T) {
+func TestDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
 	dir, _ := ioutil.TempDir("", "test")
@@ -472,6 +472,39 @@ Outer:
 			require.Equal(t, smplExp, smplRes, "samples")
 		}
 	}
+}
+
+func TestDeleteUntilCurMax(t *testing.T) {
+	numSamples := int64(10)
+
+	dir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(dir)
+
+	hb := createTestHeadBlock(t, dir, 0, 2*numSamples)
+	app := hb.Appender()
+
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+	}
+
+	require.NoError(t, app.Commit())
+	require.NoError(t, hb.Delete(0, 10000, labels.NewEqualMatcher("a", "b")))
+	app = hb.Appender()
+	_, err := app.Add(labels.Labels{{"a", "b"}}, 11, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	q := hb.Querier(0, 100000)
+	res := q.Select(labels.NewEqualMatcher("a", "b"))
+
+	require.True(t, res.Next())
+	exps := res.At()
+	it := exps.Iterator()
+	ressmpls, err := expandSeriesIterator(it)
+	require.NoError(t, err)
+	require.Equal(t, []sample{{11, 1}}, ressmpls)
 }
 
 func TestDelete_e2e(t *testing.T) {

@@ -250,7 +250,12 @@ Outer:
 			}
 		}
 
-		h.tombstones.stones[ref] = addNewInterval(h.tombstones.stones[ref], trange{mint, maxt})
+		// Delete only until the current values and not beyond.
+		maxtime := h.series[ref].head().maxTime
+		if maxtime > maxt {
+			maxtime = maxt
+		}
+		h.tombstones.stones[ref] = addNewInterval(h.tombstones.stones[ref], trange{mint, maxtime})
 	}
 
 	if p.Err() != nil {
