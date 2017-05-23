@@ -1,18 +1,18 @@
-## 1.6.3 / 2017-05-18
+## v1.6.3 / 2017-05-18
 
 * [BUGFIX] Fix disappearing Alertmanger targets in Alertmanager discovery.
 * [BUGFIX] Fix panic with remote_write on ARMv7.
 * [BUGFIX] Fix stacked graphs to adapt min/max values.
 
-## 1.6.2 / 2017-05-11
+## v1.6.2 / 2017-05-11
 
 * [BUGFIX] Fix potential memory leak in Kubernetes service discovery
 
-## 1.6.1 / 2017-04-19
+## v1.6.1 / 2017-04-19
 
 * [BUGFIX] Don't panic if storage has no FPs even after initial wait
 
-## 1.6.0 / 2017-04-14
+## v1.6.0 / 2017-04-14
 
 * [CHANGE] Replaced the remote write implementations for various backends by a
   generic write interface with example adapter implementation for various
@@ -77,11 +77,11 @@
 * [BUGFIX] Fix deadlock in Zookeeper SD.
 * [BUGFIX] Fix fuzzy search problems in the web-UI auto-completion.
 
-## 1.5.3 / 2017-05-11
+## v1.5.3 / 2017-05-11
 
 * [BUGFIX] Fix potential memory leak in Kubernetes service discovery
 
-## 1.5.2 / 2017-02-10
+## v1.5.2 / 2017-02-10
 
 * [BUGFIX] Fix series corruption in a special case of series maintenance where
   the minimum series-file-shrink-ratio kicks in.
@@ -89,14 +89,14 @@
   scheduled to be quarantined.
 * [ENHANCEMENT] Binaries built with Go1.7.5.
 
-## 1.5.1 / 2017-02-07
+## v1.5.1 / 2017-02-07
 
 * [BUGFIX] Don't lose fully persisted memory series during checkpointing.
 * [BUGFIX] Fix intermittently failing relabeling.
 * [BUGFIX] Make `-storage.local.series-file-shrink-ratio` work.
 * [BUGFIX] Remove race condition from TestLoop.
 
-## 1.5.0 / 2017-01-23
+## v1.5.0 / 2017-01-23
 
 * [CHANGE] Use lexicographic order to sort alerts by name.
 * [FEATURE] Add Joyent Triton discovery.
@@ -113,11 +113,11 @@
 * [BUGFIX] Ignore dotfiles in data directory.
 * [BUGFIX] Abort on intermediate federation errors.
 
-## 1.4.1 / 2016-11-28
+## v1.4.1 / 2016-11-28
 
 * [BUGFIX] Fix Consul service discovery
 
-## 1.4.0 / 2016-11-25
+## v1.4.0 / 2016-11-25
 
 * [FEATURE] Allow configuring Alertmanagers via service discovery
 * [FEATURE] Display used Alertmanagers on runtime page in the UI
@@ -130,27 +130,16 @@
 * [BUGFIX] Use proper float64 modulo in PromQL `%` binary operations
 * [BUGFIX] Fix crash bug in Kubernetes service discovery
 
-## 1.3.1 / 2016-11-04
+## v1.3.1 / 2016-11-04
 
-This bug-fix release pulls in the fixes from the 1.2.3 release.
+This bug-fix release pulls in the fixes from the v1.2.3 release.
 
 * [BUGFIX] Correctly handle empty Regex entry in relabel config.
 * [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
 * [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
 * [ENHANCEMENT] Improved DNS error reporting.
 
-## 1.2.3 / 2016-11-04
-
-Note that this release is chronologically after 1.3.0.
-
-* [BUGFIX] Correctly handle end time before start time in range queries.
-* [BUGFIX] Error on negative `-storage.staleness-delta`
-* [BUGFIX] Correctly handle empty Regex entry in relabel config.
-* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
-* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
-* [ENHANCEMENT] Improved DNS error reporting.
-
-## 1.3.0 / 2016-11-01
+## v1.3.0 / 2016-11-01
 
 This is a breaking change to the Kubernetes service discovery.
 
@@ -164,7 +153,16 @@ This is a breaking change to the Kubernetes service discovery.
 * [BUGFIX] Validate query end time is not before start time.
 * [BUGFIX] Error on negative `-storage.staleness-delta`
 
-## 1.2.2 / 2016-10-30
+## v1.2.3 / 2016-11-04
+
+* [BUGFIX] Correctly handle end time before start time in range queries.
+* [BUGFIX] Error on negative `-storage.staleness-delta`
+* [BUGFIX] Correctly handle empty Regex entry in relabel config.
+* [BUGFIX] MOD (`%`) operator doesn't panic with small floating point numbers.
+* [BUGFIX] Updated miekg/dns vendoring to pick up upstream bug fixes.
+* [ENHANCEMENT] Improved DNS error reporting.
+
+## v1.2.2 / 2016-10-30
 
 * [BUGFIX] Correctly handle on() in alerts.
 * [BUGFIX] UI: Deal properly with aborted requests.
@@ -173,13 +171,13 @@ This is a breaking change to the Kubernetes service discovery.
 * [BUGFIX] Remote storage: Re-add accidentally removed timeout flag.
 * [BUGFIX] Updated a number of vendored packages to pick up upstream bug fixes.
 
-## 1.2.1 / 2016-10-10
+## v1.2.1 / 2016-10-10
 
 * [BUGFIX] Count chunk evictions properly so that the server doesn't
   assume it runs out of memory and subsequencly throttles ingestion.
 * [BUGFIX] Use Go1.7.1 for prebuilt binaries to fix issues on MacOS Sierra.
 
-## 1.2.0 / 2016-10-07
+## v1.2.0 / 2016-10-07
 
 * [FEATURE] Cleaner encoding of query parameters in `/graph` URLs.
 * [FEATURE] PromQL: Add `minute()` function.
@@ -202,22 +200,22 @@ This is a breaking change to the Kubernetes service discovery.
 * [FEATURE] **Experimental** remote write path: Add HTTP basic auth and TLS.
 * [FEATURE] **Experimental** remote write path: Support for relabelling.
 
-## 1.1.3 / 2016-09-16
+## v1.1.3 / 2016-09-16
 
 * [ENHANCEMENT] Use golang-builder base image for tests in CircleCI.
 * [ENHANCEMENT] Added unit tests for federation.
 * [BUGFIX] Correctly de-dup metric families in federation output.
 
-## 1.1.2 / 2016-09-08
+## v1.1.2 / 2016-09-08
 
 * [BUGFIX] Allow label names that coincide with keywords.
 
-## 1.1.1 / 2016-09-07
+## v1.1.1 / 2016-09-07
 
 * [BUGFIX] Fix IPv6 escaping in service discovery integrations
 * [BUGFIX] Fix default scrape port assignment for IPv6
 
-## 1.1.0 / 2016-09-03
+## v1.1.0 / 2016-09-03
 
 * [FEATURE] Add `quantile` and `quantile_over_time`.
 * [FEATURE] Add `stddev_over_time` and `stdvar_over_time`.
@@ -247,17 +245,17 @@ This is a breaking change to the Kubernetes service discovery.
 * [BUGFIX] Fix rule HTML escaping issues.
 * [BUGFIX] Remove internal labels from alerts sent to AM.
 
-## 1.0.2 / 2016-08-24
+## v1.0.2 / 2016-08-24
 
 * [BUGFIX] Clean up old targets after config reload.
 
-## 1.0.1 / 2016-07-21
+## v1.0.1 / 2016-07-21
 
 * [BUGFIX] Exit with error on non-flag command-line arguments.
 * [BUGFIX] Update example console templates to new HTTP API.
 * [BUGFIX] Re-add logging flags.
 
-## 1.0.0 / 2016-07-18
+## v1.0.0 / 2016-07-18
 
 * [CHANGE] Remove deprecated query language keywords
 * [CHANGE] Change Kubernetes SD to require specifying Kubernetes role
@@ -276,7 +274,7 @@ This is a breaking change to the Kubernetes service discovery.
 * [BUGFIX] Fix edge case handling in crash recovery
 * [BUGFIX] Hide testing package flags from help output
 
-## 0.20.0 / 2016-06-15
+## v0.20.0 / 2016-06-15
 
 This release contains multiple breaking changes to the configuration schema.
 
@@ -294,23 +292,23 @@ This release contains multiple breaking changes to the configuration schema.
 * [CHANGE] Rename `names` to `files` in file SD configuration
 * [CHANGE] Remove kubelet port config option in Kubernetes SD configuration
 
-## 0.19.3 / 2016-06-14
+## v0.19.3 / 2016-06-14
 
 * [BUGFIX] Handle Marathon apps with zero ports
 * [BUGFIX] Fix startup panic in retrieval layer
 
-## 0.19.2 / 2016-05-29
+## v0.19.2 / 2016-05-29
 
 * [BUGFIX] Correctly handle `GROUP_LEFT` and `GROUP_RIGHT` without labels in
   string representation of expressions and in rules.
 * [BUGFIX] Use `-web.external-url` for new status endpoints.
 
-## 0.19.1 / 2016-05-25
+## v0.19.1 / 2016-05-25
 
 * [BUGFIX] Handle service discovery panic affecting Kubernetes SD
 * [BUGFIX] Fix web UI display issue in some browsers
 
-## 0.19.0 / 2016-05-24
+## v0.19.0 / 2016-05-24
 
 This version contains a breaking change to the query language. Please read
 the documentation on the grouping behavior of vector matching:
@@ -325,7 +323,7 @@ https://prometheus.io/docs/querying/operators/#vector-matching
 * [ENHANCEMENT] Partition status page into individual pages
 * [BUGFIX] Fix issue of hanging target scrapes
 
-## 0.18.0 / 2016-04-18
+## v0.18.0 / 2016-04-18
 
 * [BUGFIX] Fix operator precedence in PromQL
 * [BUGFIX] Never drop still open head chunk
@@ -345,16 +343,16 @@ https://prometheus.io/docs/querying/operators/#vector-matching
 * [ENHANCEMENT] Instrument retrieval layer
 * [ENHANCEMENT] Add Go version to `prometheus_build_info` metric
 
-## 0.17.0 / 2016-03-02
+## v0.17.0 / 2016-03-02
 
-This version no longer works with Alertmanager 0.0.4 and earlier!
+This version no longer works with Alertmanager v0.0.4 and earlier!
 The alerting rule syntax has changed as well but the old syntax is supported
-up until version 0.18.
+up until version v0.18.
 
 All regular expressions in PromQL are anchored now, matching the behavior of
 regular expressions in config files.
 
-* [CHANGE] Integrate with Alertmanager 0.1.0 and higher
+* [CHANGE] Integrate with Alertmanager v0.1.0 and higher
 * [CHANGE] Degraded storage mode renamed to rushed mode
 * [CHANGE] New alerting rule syntax
 * [CHANGE] Add label validation on ingestion
@@ -375,7 +373,7 @@ regular expressions in config files.
 * [BUGFIX] Properly handle creation of target with bad TLS config
 * [BUGFIX] Fix of checkpoint timing issue
 
-## 0.16.2 / 2016-01-18
+## v0.16.2 / 2016-01-18
 
 * [FEATURE] Multiple authentication options for EC2 discovery added
 * [FEATURE] Several meta labels for EC2 discovery added
@@ -406,14 +404,14 @@ regular expressions in config files.
 Some changes to the Kubernetes service discovery were integration since
 it was released as a beta feature.
 
-## 0.16.1 / 2015-10-16
+## v0.16.1 / 2015-10-16
 
 * [FEATURE] Add `irate()` function.
 * [ENHANCEMENT] Improved auto-completion in expression browser.
 * [CHANGE] Kubernetes SD moves node label to instance label.
 * [BUGFIX] Escape regexes in console templates.
 
-## 0.16.0 / 2015-10-09
+## v0.16.0 / 2015-10-09
 
 BREAKING CHANGES:
 
@@ -576,13 +574,14 @@ All changes:
   the same series upon append.
 * [CLEANUP] Resolve relative paths during configuration loading.
 
-## 0.15.1 / 2015-07-27
+## v0.15.1 / 2015-07-27
+
 * [BUGFIX] Fix vector matching behavior when there is a mix of equality and
   non-equality matchers in a vector selector and one matcher matches no series.
 * [ENHANCEMENT] Allow overriding `GOARCH` and `GOOS` in Makefile.INCLUDE.
 * [ENHANCEMENT] Update vendored dependencies.
 
-## 0.15.0 / 2015-07-21
+## v0.15.0 / 2015-07-21
 
 BREAKING CHANGES:
 
@@ -693,7 +692,8 @@ All changes:
 * [CLEANUP] Use `templates.TemplateExpander` for all page templates.
 * [CLEANUP] Use new v1 HTTP API for querying and graphing.
 
-## 0.14.0 / 2015-06-01
+## v0.14.0 / 2015-06-01
+
 * [CHANGE] Configuration format changed and switched to YAML.
   (See the provided [migration tool](https://github.com/prometheus/migrate/releases).)
 * [ENHANCEMENT] Redesign of state-preserving target discovery.
@@ -718,10 +718,12 @@ All changes:
 * [FEATURE] Add increase() query function to calculate a counter's increase.
 * [ENHANCEMENT] Limit retrievable samples to the storage's retention window.
 
-## 0.13.4 / 2015-05-23
+## v0.13.4 / 2015-05-23
+
 * [BUGFIX] Fix a race while checkpointing fingerprint mappings.
 
-## 0.13.3 / 2015-05-11
+## v0.13.3 / 2015-05-11
+
 * [BUGFIX] Handle fingerprint collisions properly.
 * [CHANGE] Comments in rules file must start with `#`. (The undocumented `//`
   and `/*...*/` comment styles are no longer supported.)
@@ -731,7 +733,8 @@ All changes:
 * [ENHANCEMENT] Limit maximum number of concurrent queries.
 * [ENHANCEMENT] Terminate running queries during shutdown.
 
-## 0.13.2 / 2015-05-05
+## v0.13.2 / 2015-05-05
+
 * [MAINTENANCE] Updated vendored dependencies to their newest versions.
 * [MAINTENANCE] Include rule_checker and console templates in release tarball.
 * [BUGFIX] Sort NaN as the lowest value.
@@ -741,11 +744,13 @@ All changes:
   reading from disk.
 * [BUGFIX] Show correct error on wrong DNS response.
 
-## 0.13.1 / 2015-04-09
+## v0.13.1 / 2015-04-09
+
 * [BUGFIX] Treat memory series with zero chunks correctly in series maintenance.
 * [ENHANCEMENT] Improve readability of usage text even more.
 
-## 0.13.0 / 2015-04-08
+## v0.13.0 / 2015-04-08
+
 * [ENHANCEMENT] Double-delta encoding for chunks, saving typically 40% of
   space, both in RAM and on disk.
 * [ENHANCEMENT] Redesign of chunk persistence queuing, increasing performance
@@ -772,7 +777,8 @@ All changes:
 * [CLEANUP] Misc. other code cleanups.
 * [MAINTENANCE] Updated vendored dependcies to their newest versions.
 
-## 0.12.0 / 2015-03-04
+## v0.12.0 / 2015-03-04
+
 * [CHANGE] Use client_golang v0.3.1. THIS CHANGES FINGERPRINTING AND INVALIDATES
   ALL PERSISTED FINGERPRINTS. You have to wipe your storage to use this or
   later versions. There is a version guard in place that will prevent you to
@@ -787,8 +793,9 @@ All changes:
   (rather than /tmp/metrics).
 * [CHANGE] Makefile uses Go 1.4.2.
 
-## 0.11.1 / 2015-02-27
-* [BUGFIX] Make series maintenance complete again. (Ever since 0.9.0rc4,
+## v0.11.1 / 2015-02-27
+
+* [BUGFIX] Make series maintenance complete again. (Ever since v0.9.0rc4,
   or commit 0851945, series would not be archived, chunk descriptors would
   not be evicted, and stale head chunks would never be closed. This happened
   due to accidental deletion of a line calling a (well tested :) function.
@@ -799,7 +806,8 @@ All changes:
 * [CLEANUP] Code cleanups.
 * [ENHANCEMENT] Limit the number of 'dirty' series counted during checkpointing.
 
-## 0.11.0 / 2015-02-23
+## v0.11.0 / 2015-02-23
+
 * [FEATURE] Introduce new metric type Histogram with server-side aggregation.
 * [FEATURE] Add offset operator.
 * [FEATURE] Add floor, ceil and round functions.
@@ -823,7 +831,8 @@ All changes:
 * [BUGFIX] Fix Rickshaw/D3 version mismatch.
 * [CLEANUP] Various code cleanups.
 
-## 0.10.0 / 2015-01-26
+## v0.10.0 / 2015-01-26
+
 * [CHANGE] More efficient JSON result format in query API. This requires
   up-to-date versions of PromDash and prometheus_cli, too.
 * [ENHANCEMENT] Excluded non-minified Bootstrap assets and the Bootstrap maps
@@ -835,7 +844,8 @@ All changes:
 * [BUGFIX] Several fixes to graphs in consoles.
 * [CLEANUP] Removed a file size check that did not check anything.
 
-## 0.9.0 / 2015-01-23
+## v0.9.0 / 2015-01-23
+
 * [CHANGE] Reworked command line flags, now more consistent and taking into
   account needs of the new storage backend (see below).
 * [CHANGE] Metric names are dropped after certain transformations.
@@ -869,18 +879,20 @@ All changes:
 * [ENHANCEMENT] Switched from Go 1.3 to Go 1.4.
 * [ENHANCEMENT] Vendored external dependencies with godeps.
 * [ENHANCEMENT] Numerous Web UI improvements, moved to Bootstrap3 and
-  Rickshaw 1.5.1.
+  Rickshaw v1.5.1.
 * [ENHANCEMENT] Improved Docker integration.
 * [ENHANCEMENT] Simplified the Makefile contraption.
 * [CLEANUP] Put meta-data files into proper shape (LICENSE, README.md etc.)
 * [CLEANUP] Removed all legitimate 'go vet' and 'golint' warnings.
 * [CLEANUP] Removed dead code.
 
-## 0.8.0 / 2014-09-04
+## v0.8.0 / 2014-09-04
+
 * [ENHANCEMENT] Stagger scrapes to spread out load.
 * [BUGFIX] Correctly quote HTTP Accept header.
 
-## 0.7.0 / 2014-08-06
+## v0.7.0 / 2014-08-06
+
 * [FEATURE] Added new functions: abs(), topk(), bottomk(), drop_common_labels().
 * [FEATURE] Let console templates get graph links from expressions.
 * [FEATURE] Allow console templates to dynamically include other templates.
@@ -894,7 +906,8 @@ All changes:
 * [ENHANCEMENT] Removed incremental backoffs for unhealthy targets.
 * [ENHANCEMENT] Dockerfile also builds Prometheus support tools now.
 
-## 0.6.0 / 2014-06-30
+## v0.6.0 / 2014-06-30
+
 * [FEATURE] Added console and alert templates support, along with various template functions.
 * [PERFORMANCE] Much faster and more memory-efficient flushing to disk.
 * [ENHANCEMENT] Query results are now only logged when debugging.
@@ -904,7 +917,7 @@ All changes:
 * [BUGFIX] Added installation step for missing dependency to Dockerfile.
 * [BUGFIX] Removed broken and unused "User Dashboard" link.
 
-## 0.5.0 / 2014-05-28
+## v0.5.0 / 2014-05-28
 
 * [BUGFIX] Fixed next retrieval time display on status page.
 * [BUGFIX] Updated some variable references in tools subdir.
@@ -914,7 +927,7 @@ All changes:
 * [ENHANCEMENT] Added internal check to verify temporal order of streams.
 * [ENHANCEMENT] Some internal refactorings.
 
-## 0.4.0 / 2014-04-17
+## v0.4.0 / 2014-04-17
 
 * [FEATURE] Vectors and scalars may now be reversed in binary operations (`<scalar> <binop> <vector>`).
 * [FEATURE] It's possible to shutdown Prometheus via a `/-/quit` web endpoint now.
