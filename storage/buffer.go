@@ -36,10 +36,10 @@ func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	return bit
 }
 
-// PeekBack returns the previous element of the iterator. If there is none buffered,
+// PeekBack returns the nth previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *BufferedSeriesIterator) PeekBack() (t int64, v float64, ok bool) {
-	return b.buf.last()
+func (b *BufferedSeriesIterator) PeekBack(n int) (t int64, v float64, ok bool) {
+	return b.buf.nthLast(n)
 }
 
 // Buffer returns an iterator over the buffered data.
@@ -189,13 +189,13 @@ func (r *sampleRing) add(t int64, v float64) {
 	}
 }
 
-// last returns the most recent element added to the ring.
-func (r *sampleRing) last() (int64, float64, bool) {
-	if r.l == 0 {
+// nthLast returns the nth most recent element added to the ring.
+func (r *sampleRing) nthLast(n int) (int64, float64, bool) {
+	if n > r.l {
 		return 0, 0, false
 	}
-	s := r.buf[r.i]
-	return s.t, s.v, true
+	t, v := r.at(r.l - n)
+	return t, v, true
 }
 
 func (r *sampleRing) samples() []sample {
