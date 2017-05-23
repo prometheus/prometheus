@@ -94,7 +94,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		if ok {
 			t, v = it.Values()
 		} else {
-			t, v, ok = it.PeekBack()
+			t, v, ok = it.PeekBack(0)
 			if !ok {
 				continue
 			}

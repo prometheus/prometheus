@@ -752,7 +752,7 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 		t, v := it.Values()
 
 		if !ok || t > refTime {
-			t, v, ok = it.PeekBack()
+			t, v, ok = it.PeekBack(1)
 			if !ok || t < refTime-durationMilliseconds(StalenessDelta) {
 				continue
 			}
