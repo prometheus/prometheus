@@ -2,6 +2,8 @@ package tsdb
 
 import (
 	"encoding/binary"
+	"fmt"
+	"hash/crc32"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,6 +12,13 @@ import (
 
 const tombstoneFilename = "tombstones"
 
+const (
+	// MagicTombstone is 4 bytes at the head of a tombstone file.
+	MagicTombstone = 0x130BA30
+
+	tombstoneFormatV1 = 1
+)
+
 func readTombstoneFile(dir string) (TombstoneReader, error) {
 	return newTombStoneReader(dir)
 }
@@ -17,6 +26,7 @@ func readTombstoneFile(dir string) (TombstoneReader, error) {
 func writeTombstoneFile(dir string, tr TombstoneReader) error {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
+	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
 
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -28,6 +38,16 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 
 	pos := int64(0)
 	buf := encbuf{b: make([]byte, 2*binary.MaxVarintLen64)}
+	buf.reset()
+	// Write the meta.
+	buf.putBE32(MagicTombstone)
+	buf.putByte(tombstoneFormatV1)
+	n, err := f.Write(buf.get())
+	if err != nil {
+		return err
+	}
+	pos += int64(n)
+
 	for tr.Next() {
 		s := tr.At()
 
@@ -36,29 +56,40 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 
 		// Write the ranges.
 		buf.reset()
-		buf.putVarint64(int64(len(s.intervals)))
+		buf.putUvarint(len(s.intervals))
 		n, err := f.Write(buf.get())
 		if err != nil {
 			return err
 		}
 		pos += int64(n)
 
+		buf.reset()
 		for _, r := range s.intervals {
-			buf.reset()
 			buf.putVarint64(r.mint)
 			buf.putVarint64(r.maxt)
-			n, err = f.Write(buf.get())
-			if err != nil {
-				return err
-			}
-			pos += int64(n)
 		}
+		buf.putHash(hash)
+
+		n, err = f.Write(buf.get())
+		if err != nil {
+			return err
+		}
+		pos += int64(n)
 	}
 	if err := tr.Err(); err != nil {
 		return err
 	}
 
 	// Write the offset table.
+	// Pad first.
+	if p := 4 - (int(pos) % 4); p != 0 {
+		if _, err := f.Write(make([]byte, p)); err != nil {
+			return err
+		}
+
+		pos += int64(p)
+	}
+
 	buf.reset()
 	buf.putBE32int(len(refs))
 	if _, err := f.Write(buf.get()); err != nil {
@@ -123,8 +154,13 @@ func newTombStoneReader(dir string) (*tombstoneReader, error) {
 		return nil, err
 	}
 
+	d := &decbuf{b: b}
+	if mg := d.be32(); mg != MagicTombstone {
+		return nil, fmt.Errorf("invalid magic number %x", mg)
+	}
+
 	offsetBytes := b[len(b)-8:]
-	d := &decbuf{b: offsetBytes}
+	d = &decbuf{b: offsetBytes}
 	off := d.be64int64()
 	if err := d.err(); err != nil {
 		return nil, err
@@ -158,7 +194,7 @@ func (t *tombstoneReader) Next() bool {
 	off := d.be64int64()
 
 	d = &decbuf{b: t.b[off:]}
-	numRanges := d.varint64()
+	numRanges := d.uvarint()
 	if err := d.err(); err != nil {
 		t.err = err
 		return false
@@ -176,6 +212,7 @@ func (t *tombstoneReader) Next() bool {
 		dranges = append(dranges, interval{mint, maxt})
 	}
 
+	// TODO(gouthamve): Verify checksum.
 	t.stones = t.stones[12:]
 	t.cur = stone{ref: ref, intervals: dranges}
 	return true
