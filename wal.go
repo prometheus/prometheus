@@ -49,13 +49,13 @@ const (
 	WALEntryDeletes WALEntryType = 4
 )
 
-// SamplesCB yolo.
+// SamplesCB is the callback after reading samples.
 type SamplesCB func([]RefSample) error
 
-// SeriesCB yolo.
+// SeriesCB is the callback after reading series.
 type SeriesCB func([]labels.Labels) error
 
-// DeletesCB yolo.
+// DeletesCB is the callback after reading deletes.
 type DeletesCB func([]stone) error
 
 // SegmentWAL is a write ahead log for series data.

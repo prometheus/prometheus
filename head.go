@@ -153,8 +153,7 @@ func (h *HeadBlock) init() error {
 	deletesFunc := func(stones []stone) error {
 		for _, s := range stones {
 			for _, itv := range s.intervals {
-				// TODO(gouthamve): Recheck.
-				h.tombstones.stones[s.ref].add(itv)
+				h.tombstones.stones[s.ref] = h.tombstones.stones[s.ref].add(itv)
 			}
 		}
 

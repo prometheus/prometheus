@@ -120,7 +120,7 @@ type DB struct {
 	donec    chan struct{}
 	stopc    chan struct{}
 
-	// compMtx is used to control compactions and deletions.
+	// cmtx is used to control compactions and deletions.
 	cmtx sync.Mutex
 }
 
@@ -671,17 +671,14 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	db.headmtx.RLock()
+	db.mtx.RLock()
 	blocks := db.blocksForInterval(mint, maxt)
-	db.headmtx.RUnlock()
+	db.mtx.RUnlock()
 
 	var g errgroup.Group
 
 	for _, b := range blocks {
-		f := func() error {
-			return b.Delete(mint, maxt, ms...)
-		}
-		g.Go(f)
+		g.Go(func() error { return b.Delete(mint, maxt, ms...) })
 	}
 
 	if err := g.Wait(); err != nil {
@@ -705,10 +702,7 @@ func (db *DB) appendable() (r []headBlock) {
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
 	// Checks Overlap: http://stackoverflow.com/questions/3269434/
-	if amin <= bmax && bmin <= amax {
-		return true
-	}
-	return false
+	return amin <= bmax && bmin <= amax
 }
 
 func intervalContains(min, max, t int64) bool {

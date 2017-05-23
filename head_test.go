@@ -382,7 +382,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 	return
 }
 
-func TestDeleteSimple(t *testing.T) {
+func TestHBDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
 	dir, _ := ioutil.TempDir("", "test")
@@ -427,7 +427,6 @@ func TestDeleteSimple(t *testing.T) {
 Outer:
 	for _, c := range cases {
 		// Reset the tombstones.
-		writeTombstoneFile(hb.dir, newEmptyTombstoneReader())
 		hb.tombstones = newEmptyTombstoneReader()
 
 		// Delete the ranges.
