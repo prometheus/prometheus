@@ -100,11 +100,6 @@ func TouchHeadBlock(dir string, mint, maxt int64) (string, error) {
 		return "", err
 	}
 
-	// Write an empty tombstones file.
-	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
-		return "", err
-	}
-
 	return dir, renameFile(tmp, dir)
 }
 
@@ -131,16 +126,19 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 func (h *HeadBlock) init() error {
 	r := h.wal.Reader()
 
-	for r.Next() {
-		series, samples := r.At()
-
+	seriesFunc := func(series []labels.Labels) error {
 		for _, lset := range series {
 			h.create(lset.Hash(), lset)
 			h.meta.Stats.NumSeries++
 		}
+
+		return nil
+	}
+	samplesFunc := func(samples []RefSample) error {
 		for _, s := range samples {
 			if int(s.Ref) >= len(h.series) {
-				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore", s.Ref, len(h.series))
+				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore",
+					s.Ref, len(h.series))
 			}
 			h.series[s.Ref].append(s.T, s.V)
 
@@ -149,22 +147,26 @@ func (h *HeadBlock) init() error {
 			}
 			h.meta.Stats.NumSamples++
 		}
+
+		return nil
 	}
-	if err := r.Err(); err != nil {
+	deletesFunc := func(stones []stone) error {
+		for _, s := range stones {
+			for _, itv := range s.intervals {
+				// TODO(gouthamve): Recheck.
+				h.tombstones.stones[s.ref].add(itv)
+			}
+		}
+
+		return nil
+	}
+
+	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
 		return errors.Wrap(err, "consume WAL")
 	}
+	h.tombstones = newMapTombstoneReader(h.tombstones.stones)
 
-	tr, err := readTombstoneFile(h.dir)
-	if err != nil {
-		return errors.Wrap(err, "read tombstones file")
-	}
-
-	for tr.Next() {
-		s := tr.At()
-		h.tombstones.refs = append(h.tombstones.refs, s.ref)
-		h.tombstones.stones[s.ref] = s.intervals
-	}
-	return errors.Wrap(err, "tombstones reader iteration")
+	return nil
 }
 
 // inBounds returns true if the given timestamp is within the valid
@@ -230,6 +232,7 @@ func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
 	pr := newPostingsReader(ir)
 	p, absent := pr.Select(ms...)
 
+	newStones := make(map[uint32]intervals)
 Outer:
 	for p.Next() {
 		ref := p.At()
@@ -245,15 +248,26 @@ Outer:
 		if maxtime > maxt {
 			maxtime = maxt
 		}
-		h.tombstones.stones[ref] = h.tombstones.stones[ref].add(interval{mint, maxtime})
+		if mint < h.series[ref].chunks[0].minTime {
+			mint = h.series[ref].chunks[0].minTime
+		}
+
+		newStones[ref] = intervals{{mint, maxtime}}
 	}
 
 	if p.Err() != nil {
 		return p.Err()
 	}
+	if err := h.wal.LogDeletes(newMapTombstoneReader(newStones)); err != nil {
+		return err
+	}
 
+	for k, v := range newStones {
+		h.tombstones.stones[k] = h.tombstones.stones[k].add(v[0])
+	}
 	h.tombstones = newMapTombstoneReader(h.tombstones.stones)
-	return writeTombstoneFile(h.dir, h.tombstones.Copy())
+
+	return nil
 }
 
 // Dir returns the directory of the block.
@@ -486,6 +500,7 @@ func (a *headAppender) createSeries() {
 func (a *headAppender) Commit() error {
 	defer atomic.AddUint64(&a.activeWriters, ^uint64(0))
 	defer putHeadAppendBuffer(a.samples)
+	defer a.mtx.RUnlock()
 
 	a.createSeries()
 
@@ -497,11 +512,14 @@ func (a *headAppender) Commit() error {
 		}
 	}
 
+	var err MultiError
+
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
-	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
-		a.mtx.RUnlock()
-		return err
+	err.Add(a.wal.LogSeries(a.newLabels))
+	err.Add(a.wal.LogSamples(a.samples))
+	if err.Err() != nil {
+		return err.Err()
 	}
 
 	total := uint64(len(a.samples))
@@ -511,8 +529,6 @@ func (a *headAppender) Commit() error {
 			total--
 		}
 	}
-
-	a.mtx.RUnlock()
 
 	atomic.AddUint64(&a.meta.Stats.NumSamples, total)
 	atomic.AddUint64(&a.meta.Stats.NumSeries, uint64(len(a.newSeries)))

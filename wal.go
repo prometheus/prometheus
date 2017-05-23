@@ -46,7 +46,17 @@ const (
 	WALEntrySymbols WALEntryType = 1
 	WALEntrySeries  WALEntryType = 2
 	WALEntrySamples WALEntryType = 3
+	WALEntryDeletes WALEntryType = 4
 )
+
+// SamplesCB yolo.
+type SamplesCB func([]RefSample) error
+
+// SeriesCB yolo.
+type SeriesCB func([]labels.Labels) error
+
+// DeletesCB yolo.
+type DeletesCB func([]stone) error
 
 // SegmentWAL is a write ahead log for series data.
 type SegmentWAL struct {
@@ -71,15 +81,15 @@ type SegmentWAL struct {
 // It must be completely read before new entries are logged.
 type WAL interface {
 	Reader() WALReader
-	Log([]labels.Labels, []RefSample) error
+	LogSeries([]labels.Labels) error
+	LogSamples([]RefSample) error
+	LogDeletes(TombstoneReader) error
 	Close() error
 }
 
 // WALReader reads entries from a WAL.
 type WALReader interface {
-	At() ([]labels.Labels, []RefSample)
-	Next() bool
-	Err() error
+	Read(SeriesCB, SamplesCB, DeletesCB) error
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
@@ -141,13 +151,40 @@ func (w *SegmentWAL) Reader() WALReader {
 }
 
 // Log writes a batch of new series labels and samples to the log.
-func (w *SegmentWAL) Log(series []labels.Labels, samples []RefSample) error {
+//func (w *SegmentWAL) Log(series []labels.Labels, samples []RefSample) error {
+//return nil
+//}
+
+// LogSeries writes a batch of new series labels to the log.
+func (w *SegmentWAL) LogSeries(series []labels.Labels) error {
 	if err := w.encodeSeries(series); err != nil {
 		return err
 	}
+
+	if w.flushInterval <= 0 {
+		return w.Sync()
+	}
+	return nil
+}
+
+// LogSamples writes a batch of new samples to the log.
+func (w *SegmentWAL) LogSamples(samples []RefSample) error {
 	if err := w.encodeSamples(samples); err != nil {
 		return err
 	}
+
+	if w.flushInterval <= 0 {
+		return w.Sync()
+	}
+	return nil
+}
+
+// LogDeletes write a batch of new deletes to the log.
+func (w *SegmentWAL) LogDeletes(tr TombstoneReader) error {
+	if err := w.encodeDeletes(tr); err != nil {
+		return err
+	}
+
 	if w.flushInterval <= 0 {
 		return w.Sync()
 	}
@@ -369,6 +406,7 @@ func (w *SegmentWAL) entry(et WALEntryType, flag byte, buf []byte) error {
 const (
 	walSeriesSimple  = 1
 	walSamplesSimple = 1
+	walDeletesSimple = 1
 )
 
 var walBuffers = sync.Pool{}
@@ -445,6 +483,27 @@ func (w *SegmentWAL) encodeSamples(samples []RefSample) error {
 	return w.entry(WALEntrySamples, walSamplesSimple, buf)
 }
 
+func (w *SegmentWAL) encodeDeletes(tr TombstoneReader) error {
+	b := make([]byte, 2*binary.MaxVarintLen64)
+	eb := &encbuf{b: b}
+	buf := getWALBuffer()
+	for tr.Next() {
+		eb.reset()
+		s := tr.At()
+		eb.putUvarint32(s.ref)
+		eb.putUvarint(len(s.intervals))
+		buf = append(buf, eb.get()...)
+		for _, itv := range s.intervals {
+			eb.reset()
+			eb.putVarint64(itv.mint)
+			eb.putVarint64(itv.maxt)
+			buf = append(buf, eb.get()...)
+		}
+	}
+
+	return w.entry(WALEntryDeletes, walDeletesSimple, buf)
+}
+
 // walReader decodes and emits write ahead log entries.
 type walReader struct {
 	logger log.Logger
@@ -454,9 +513,15 @@ type walReader struct {
 	buf   []byte
 	crc32 hash.Hash32
 
-	err     error
-	labels  []labels.Labels
 	samples []RefSample
+	series  []labels.Labels
+	stones  []stone
+
+	samplesFunc SamplesCB
+	seriesFunc  SeriesCB
+	deletesFunc DeletesCB
+
+	err error
 }
 
 func newWALReader(w *SegmentWAL, l log.Logger) *walReader {
@@ -471,16 +536,20 @@ func newWALReader(w *SegmentWAL, l log.Logger) *walReader {
 	}
 }
 
-// At returns the last decoded entry of labels or samples.
-// The returned slices are only valid until the next call to Next(). Their elements
-// have to be copied to preserve them.
-func (r *walReader) At() ([]labels.Labels, []RefSample) {
-	return r.labels, r.samples
-}
-
 // Err returns the last error the reader encountered.
 func (r *walReader) Err() error {
 	return r.err
+}
+
+func (r *walReader) Read(seriesf SeriesCB, samplesf SamplesCB, deletesf DeletesCB) error {
+	r.samplesFunc = samplesf
+	r.seriesFunc = seriesf
+	r.deletesFunc = deletesf
+
+	for r.next() {
+	}
+
+	return r.Err()
 }
 
 // nextEntry retrieves the next entry. It is also used as a testing hook.
@@ -505,11 +574,12 @@ func (r *walReader) nextEntry() (WALEntryType, byte, []byte, error) {
 	return et, flag, b, err
 }
 
-// Next returns decodes the next entry pair and returns true
+// next returns decodes the next entry pair and returns true
 // if it was succesful.
-func (r *walReader) Next() bool {
-	r.labels = r.labels[:0]
+func (r *walReader) next() bool {
+	r.series = r.series[:0]
 	r.samples = r.samples[:0]
+	r.stones = r.stones[:0]
 
 	if r.cur >= len(r.wal.files) {
 		return false
@@ -537,7 +607,7 @@ func (r *walReader) Next() bool {
 			return false
 		}
 		r.cur++
-		return r.Next()
+		return r.next()
 	}
 	if err != nil {
 		r.err = err
@@ -550,16 +620,13 @@ func (r *walReader) Next() bool {
 
 	// In decoding below we never return a walCorruptionErr for now.
 	// Those should generally be catched by entry decoding before.
-
 	switch et {
-	case WALEntrySamples:
-		if err := r.decodeSamples(flag, b); err != nil {
-			r.err = err
-		}
 	case WALEntrySeries:
-		if err := r.decodeSeries(flag, b); err != nil {
-			r.err = err
-		}
+		r.err = r.decodeSeries(flag, b)
+	case WALEntrySamples:
+		r.err = r.decodeSamples(flag, b)
+	case WALEntryDeletes:
+		r.err = r.decodeDeletes(flag, b)
 	}
 	return r.err == nil
 }
@@ -617,7 +684,7 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	if etype == 0 {
 		return 0, 0, nil, io.EOF
 	}
-	if etype != WALEntrySeries && etype != WALEntrySamples {
+	if etype != WALEntrySeries && etype != WALEntrySamples && etype != WALEntryDeletes {
 		return 0, 0, nil, walCorruptionErrf("invalid entry type %d", etype)
 	}
 
@@ -669,12 +736,14 @@ func (r *walReader) decodeSeries(flag byte, b []byte) error {
 			b = b[n+int(vl):]
 		}
 
-		r.labels = append(r.labels, lset)
+		r.series = append(r.series, lset)
 	}
-	return nil
+	return r.seriesFunc(r.series)
 }
 
 func (r *walReader) decodeSamples(flag byte, b []byte) error {
+	r.samples = r.samples[:]
+
 	if len(b) < 16 {
 		return errors.Wrap(errInvalidSize, "header length")
 	}
@@ -710,5 +779,30 @@ func (r *walReader) decodeSamples(flag byte, b []byte) error {
 
 		r.samples = append(r.samples, smpl)
 	}
-	return nil
+	return r.samplesFunc(r.samples)
+}
+
+func (r *walReader) decodeDeletes(flag byte, b []byte) error {
+	db := &decbuf{b: b}
+	r.samples = r.samples[:]
+
+	for db.len() > 0 {
+		var s stone
+		s.ref = uint32(db.uvarint())
+		l := db.uvarint()
+		if db.err() != nil {
+			return db.err()
+		}
+
+		for i := 0; i < l; i++ {
+			s.intervals = append(s.intervals, interval{db.varint64(), db.varint64()})
+			if db.err() != nil {
+				return db.err()
+			}
+		}
+
+		r.stones = append(r.stones, s)
+	}
+
+	return r.deletesFunc(r.stones)
 }

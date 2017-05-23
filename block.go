@@ -260,6 +260,9 @@ Outer:
 				if maxtime > maxt {
 					maxtime = maxt
 				}
+				if mint < chunks[0].MinTime {
+					mint = chunks[0].MinTime
+				}
 				delStones[p.At()] = intervals{{mint, maxtime}}
 				continue Outer
 			}
