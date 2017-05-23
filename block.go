@@ -95,6 +95,9 @@ type BlockMeta struct {
 	Compaction struct {
 		Generation int `json:"generation"`
 	} `json:"compaction"`
+
+	// The number of tombstones.
+	NumTombstones int64 `json:"numTombstones"`
 }
 
 const (
@@ -278,7 +281,13 @@ Outer:
 	str := newMapTombstoneReader(delStones)
 	tombreader := newMergedTombstoneReader(tr, str)
 
-	return writeTombstoneFile(pb.dir, tombreader)
+	if err := writeTombstoneFile(pb.dir, tombreader); err != nil {
+		return err
+	}
+
+	// TODO(gouthamve): This counts any common tombstones too. But gives the same heuristic.
+	pb.meta.NumTombstones += int64(len(delStones))
+	return writeMetaFile(pb.dir, &pb.meta)
 }
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }

@@ -267,6 +267,7 @@ Outer:
 	}
 	h.tombstones = newMapTombstoneReader(h.tombstones.stones)
 
+	h.meta.NumTombstones = int64(len(h.tombstones.stones))
 	return nil
 }
 
