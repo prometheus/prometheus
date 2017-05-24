@@ -639,6 +639,7 @@ loop:
 			case storage.ErrNotFound:
 				ok = false
 			case errSeriesDropped:
+				err = nil
 				continue
 			case storage.ErrOutOfOrderSample:
 				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
