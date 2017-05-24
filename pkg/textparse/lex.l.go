@@ -318,13 +318,11 @@ yystate27:
 	c = l.next()
 	switch {
 	default:
-		goto yyabort
+		goto yystate27 // c >= '\x00' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ'
 	case c == '"':
 		goto yystate28
 	case c == '\\':
 		goto yystate29
-	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
-		goto yystate27
 	}
 
 yystate28:
@@ -344,13 +342,11 @@ yystate30:
 	c = l.next()
 	switch {
 	default:
-		goto yyabort
+		goto yystate30 // c >= '\x00' && c <= '&' || c >= '(' && c <= '[' || c >= ']' && c <= 'ÿ'
 	case c == '\'':
 		goto yystate31
 	case c == '\\':
 		goto yystate32
-	case c >= '\x01' && c <= '&' || c >= '(' && c <= '[' || c >= ']' && c <= 'ÿ':
-		goto yystate30
 	}
 
 yystate31:
@@ -414,13 +410,13 @@ yyrule9: // {S}({L}|{D})*=
 		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
-yyrule10: // \"(\\.|[^\\"])*\"
+yyrule10: // \"(\\.|[^\\"]|\0)*\"
 	{
 		s = lstateLabels
 		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
-yyrule11: // \'(\\.|[^\\'])*\'
+yyrule11: // \'(\\.|[^\\']|\0)*\'
 	{
 		s = lstateLabels
 		l.offsets = append(l.offsets, l.i-1)
