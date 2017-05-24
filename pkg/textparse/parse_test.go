@@ -38,6 +38,7 @@ some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
 go_goroutines 33  	123123`
+	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
 	int64p := func(x int64) *int64 { return &x }
 
@@ -72,6 +73,10 @@ go_goroutines 33  	123123`
 			v:    33,
 			t:    int64p(123123),
 			lset: labels.FromStrings("__name__", "go_goroutines"),
+		}, {
+			m:    "null_byte_metric{a=\"abc\x00\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
 		},
 	}
 
