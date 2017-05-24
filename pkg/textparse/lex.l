@@ -81,9 +81,9 @@ M     [a-zA-Z_:]
 <lstateLName>{S}({L}|{D})*=           s = lstateLValue
                                       l.offsets = append(l.offsets, l.i-1)
 
-<lstateLValue>\"(\\.|[^\\"])*\"       s = lstateLabels
+<lstateLValue>\"(\\.|[^\\"]|\0)*\"    s = lstateLabels
                                       l.offsets = append(l.offsets, l.i-1)
-<lstateLValue>\'(\\.|[^\\'])*\'       s = lstateLabels
+<lstateLValue>\'(\\.|[^\\']|\0)*\'    s = lstateLabels
                                       l.offsets = append(l.offsets, l.i-1)
 
 <lstateValue>[ \t]+                   l.vstart = l.i
