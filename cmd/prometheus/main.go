@@ -72,12 +72,18 @@ func Main() int {
 
 	log.Infoln("Starting prometheus", version.Info())
 	log.Infoln("Build context", version.BuildContext())
+	log.Infoln("Host details", Uname())
 
 	var (
 		// sampleAppender = storage.Fanout{}
 		reloadables []Reloadable
 	)
 
+	// Make sure that sighup handler is registered with a redirect to the channel before the potentially
+	// long and synchronous tsdb init.
+	hup := make(chan os.Signal)
+	hupReady := make(chan bool)
+	signal.Notify(hup, syscall.SIGHUP)
 	localStorage, err := tsdb.Open(cfg.localStoragePath, prometheus.DefaultRegisterer, &cfg.tsdb)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
@@ -136,9 +142,6 @@ func Main() int {
 	// Wait for reload or termination signals. Start the handler for SIGHUP as
 	// early as possible, but ignore it until we are ready to handle reloading
 	// our config.
-	hup := make(chan os.Signal)
-	hupReady := make(chan bool)
-	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
 		<-hupReady
 		for {

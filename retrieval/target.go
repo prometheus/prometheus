@@ -236,19 +236,19 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	if app.i+1 > app.limit {
-		return 0, errors.New("sample limit exceeded")
+		return "", errors.New("sample limit exceeded")
 	}
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
-		return 0, fmt.Errorf("sample limit of %d exceeded", app.limit)
+		return "", fmt.Errorf("sample limit of %d exceeded", app.limit)
 	}
 	app.i++
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
+func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
 	if app.i+1 > app.limit {
 		return errors.New("sample limit exceeded")
 	}
@@ -267,7 +267,7 @@ type ruleLabelsAppender struct {
 	labels labels.Labels
 }
 
-func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -289,7 +289,7 @@ type honorLabelsAppender struct {
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -309,10 +309,10 @@ type relabelAppender struct {
 
 var errSeriesDropped = errors.New("series dropped")
 
-func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	lset = relabel.Process(lset, app.relabelings...)
 	if lset == nil {
-		return 0, errSeriesDropped
+		return "", errSeriesDropped
 	}
 	return app.Appender.Add(lset, t, v)
 }

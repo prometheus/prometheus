@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -5,10 +18,13 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"encoding/binary"
 
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
@@ -34,11 +50,11 @@ var (
 	ErrOutOfBounds = errors.New("out of bounds")
 )
 
-// headBlock handles reads and writes of time series data within a time window.
-type headBlock struct {
+// HeadBlock handles reads and writes of time series data within a time window.
+type HeadBlock struct {
 	mtx sync.RWMutex
 	dir string
-	wal *WAL
+	wal WAL
 
 	activeWriters uint64
 	closed        bool
@@ -56,59 +72,56 @@ type headBlock struct {
 	meta BlockMeta
 }
 
-func createHeadBlock(dir string, seq int, l log.Logger, mint, maxt int64) (*headBlock, error) {
-	// Make head block creation appear atomic.
-	tmp := dir + ".tmp"
-
-	if err := os.MkdirAll(tmp, 0777); err != nil {
-		return nil, err
-	}
-
+// TouchHeadBlock atomically touches a new head block in dir for
+// samples in the range [mint,maxt).
+func TouchHeadBlock(dir string, mint, maxt int64) (string, error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	ulid, err := ulid.New(ulid.Now(), entropy)
 	if err != nil {
-		return nil, err
+		return "", err
+	}
+
+	// Make head block creation appear atomic.
+	dir = filepath.Join(dir, ulid.String())
+	tmp := dir + ".tmp"
+
+	if err := os.MkdirAll(tmp, 0777); err != nil {
+		return "", err
 	}
 
 	if err := writeMetaFile(tmp, &BlockMeta{
-		ULID:     ulid,
-		Sequence: seq,
-		MinTime:  mint,
-		MaxTime:  maxt,
+		ULID:    ulid,
+		MinTime: mint,
+		MaxTime: maxt,
 	}); err != nil {
-		return nil, err
+		return "", err
 	}
-	if err := renameFile(tmp, dir); err != nil {
-		return nil, err
-	}
-	return openHeadBlock(dir, l)
+	return dir, renameFile(tmp, dir)
 }
 
-// openHeadBlock creates a new empty head block.
-func openHeadBlock(dir string, l log.Logger) (*headBlock, error) {
-	wal, err := OpenWAL(dir, log.With(l, "component", "wal"), 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
+// OpenHeadBlock opens the head block in dir.
+func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	h := &headBlock{
+	h := &HeadBlock{
 		dir:      dir,
 		wal:      wal,
-		series:   []*memSeries{},
+		series:   []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
 		hashes:   map[uint64][]*memSeries{},
 		values:   map[string]stringset{},
 		postings: &memPostings{m: make(map[term][]uint32)},
 		meta:     *meta,
 	}
+	return h, h.init()
+}
 
-	r := wal.Reader()
+func (h *HeadBlock) init() error {
+	r := h.wal.Reader()
 
-Outer:
 	for r.Next() {
 		series, samples := r.At()
 
@@ -117,37 +130,32 @@ Outer:
 			h.meta.Stats.NumSeries++
 		}
 		for _, s := range samples {
-			if int(s.ref) >= len(h.series) {
-				l.Log("msg", "unknown series reference, abort WAL restore", "got", s.ref, "max", len(h.series)-1)
-				break Outer
+			if int(s.Ref) >= len(h.series) {
+				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore", s.Ref, len(h.series))
 			}
-			h.series[s.ref].append(s.t, s.v)
+			h.series[s.Ref].append(s.T, s.V)
 
-			if !h.inBounds(s.t) {
-				return nil, errors.Wrap(ErrOutOfBounds, "consume WAL")
+			if !h.inBounds(s.T) {
+				return errors.Wrap(ErrOutOfBounds, "consume WAL")
 			}
 			h.meta.Stats.NumSamples++
 		}
 	}
-	if err := r.Err(); err != nil {
-		return nil, errors.Wrap(err, "consume WAL")
-	}
-
-	return h, nil
+	return errors.Wrap(r.Err(), "consume WAL")
 }
 
 // inBounds returns true if the given timestamp is within the valid
 // time bounds of the block.
-func (h *headBlock) inBounds(t int64) bool {
+func (h *HeadBlock) inBounds(t int64) bool {
 	return t >= h.meta.MinTime && t <= h.meta.MaxTime
 }
 
-func (h *headBlock) String() string {
-	return fmt.Sprintf("(%d, %s)", h.meta.Sequence, h.meta.ULID)
+func (h *HeadBlock) String() string {
+	return h.meta.ULID.String()
 }
 
 // Close syncs all data and closes underlying resources of the head block.
-func (h *headBlock) Close() error {
+func (h *HeadBlock) Close() error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
@@ -171,10 +179,10 @@ func (h *headBlock) Close() error {
 	return nil
 }
 
-func (h *headBlock) Meta() BlockMeta {
+// Meta returns a BlockMeta for the head block.
+func (h *HeadBlock) Meta() BlockMeta {
 	m := BlockMeta{
 		ULID:       h.meta.ULID,
-		Sequence:   h.meta.Sequence,
 		MinTime:    h.meta.MinTime,
 		MaxTime:    h.meta.MaxTime,
 		Compaction: h.meta.Compaction,
@@ -187,12 +195,17 @@ func (h *headBlock) Meta() BlockMeta {
 	return m
 }
 
-func (h *headBlock) Dir() string         { return h.dir }
-func (h *headBlock) Persisted() bool     { return false }
-func (h *headBlock) Index() IndexReader  { return &headIndexReader{h} }
-func (h *headBlock) Chunks() ChunkReader { return &headChunkReader{h} }
+// Dir returns the directory of the block.
+func (h *HeadBlock) Dir() string { return h.dir }
 
-func (h *headBlock) Querier(mint, maxt int64) Querier {
+// Index returns an IndexReader against the block.
+func (h *HeadBlock) Index() IndexReader { return &headIndexReader{h} }
+
+// Chunks returns a ChunkReader against the block.
+func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
+
+// Querier returns a new Querier against the block for the range [mint, maxt].
+func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -231,7 +244,8 @@ func (h *headBlock) Querier(mint, maxt int64) Querier {
 	}
 }
 
-func (h *headBlock) Appender() Appender {
+// Appender returns a new Appender against the head block.
+func (h *HeadBlock) Appender() Appender {
 	atomic.AddUint64(&h.activeWriters, 1)
 
 	h.mtx.RLock()
@@ -239,100 +253,114 @@ func (h *headBlock) Appender() Appender {
 	if h.closed {
 		panic(fmt.Sprintf("block %s already closed", h.dir))
 	}
-	return &headAppender{headBlock: h, samples: getHeadAppendBuffer()}
+	return &headAppender{HeadBlock: h, samples: getHeadAppendBuffer()}
 }
 
-func (h *headBlock) Busy() bool {
+// Busy returns true if the block has open write transactions.
+func (h *HeadBlock) Busy() bool {
 	return atomic.LoadUint64(&h.activeWriters) > 0
 }
 
 var headPool = sync.Pool{}
 
-func getHeadAppendBuffer() []refdSample {
+func getHeadAppendBuffer() []RefSample {
 	b := headPool.Get()
 	if b == nil {
-		return make([]refdSample, 0, 512)
+		return make([]RefSample, 0, 512)
 	}
-	return b.([]refdSample)
+	return b.([]RefSample)
 }
 
-func putHeadAppendBuffer(b []refdSample) {
+func putHeadAppendBuffer(b []RefSample) {
 	headPool.Put(b[:0])
 }
 
 type headAppender struct {
-	*headBlock
+	*HeadBlock
 
-	newSeries map[uint64]hashedLabels
-	newHashes map[uint64]uint64
-	refmap    map[uint64]uint64
+	newSeries []*hashedLabels
 	newLabels []labels.Labels
+	newHashes map[uint64]uint64
 
-	samples []refdSample
+	samples []RefSample
 }
 
 type hashedLabels struct {
+	ref    uint64
 	hash   uint64
 	labels labels.Labels
 }
 
-type refdSample struct {
-	ref uint64
-	t   int64
-	v   float64
-}
+func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+	if !a.inBounds(t) {
+		return "", ErrOutOfBounds
+	}
 
-func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	hash := lset.Hash()
+	refb := make([]byte, 8)
 
+	// Series exists already in the block.
 	if ms := a.get(hash, lset); ms != nil {
-		return uint64(ms.ref), a.AddFast(uint64(ms.ref), t, v)
+		binary.BigEndian.PutUint64(refb, uint64(ms.ref))
+		return string(refb), a.AddFast(string(refb), t, v)
 	}
+	// Series was added in this transaction previously.
 	if ref, ok := a.newHashes[hash]; ok {
-		return uint64(ref), a.AddFast(uint64(ref), t, v)
+		binary.BigEndian.PutUint64(refb, ref)
+		// XXX(fabxc): there's no fast path for multiple samples for the same new series
+		// in the same transaction. We always return the invalid empty ref. It's has not
+		// been a relevant use case so far and is not worth the trouble.
+		return nullRef, a.AddFast(string(refb), t, v)
 	}
 
-	// We only know the actual reference after committing. We generate an
-	// intermediate reference only valid for this batch.
-	// It is indicated by the the LSB of the 4th byte being set to 1.
-	// We use a random ID to avoid collisions when new series are created
-	// in two subsequent batches.
-	// TODO(fabxc): Provide method for client to determine whether a ref
-	// is valid beyond the current transaction.
-	ref := uint64(rand.Int31()) | (1 << 32)
-
+	// The series is completely new.
 	if a.newSeries == nil {
-		a.newSeries = map[uint64]hashedLabels{}
 		a.newHashes = map[uint64]uint64{}
-		a.refmap = map[uint64]uint64{}
 	}
-	a.newSeries[ref] = hashedLabels{hash: hash, labels: lset}
-	a.newHashes[hash] = ref
+	// First sample for new series.
+	ref := uint64(len(a.newSeries))
 
-	return ref, a.AddFast(ref, t, v)
+	a.newSeries = append(a.newSeries, &hashedLabels{
+		ref:    ref,
+		hash:   hash,
+		labels: lset,
+	})
+	// First bit indicates its a series created in this transaction.
+	ref |= (1 << 63)
+
+	a.newHashes[hash] = ref
+	binary.BigEndian.PutUint64(refb, ref)
+
+	return nullRef, a.AddFast(string(refb), t, v)
 }
 
-func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
-	// We only own the last 5 bytes of the reference. Anything before is
-	// used by higher-order appenders. We erase it to avoid issues.
-	ref = (ref << 24) >> 24
+var nullRef = string([]byte{0, 0, 0, 0, 0, 0, 0, 0})
 
+func (a *headAppender) AddFast(ref string, t int64, v float64) error {
+	if len(ref) != 8 {
+		return errors.Wrap(ErrNotFound, "invalid ref length")
+	}
+	var (
+		refn = binary.BigEndian.Uint64(yoloBytes(ref))
+		id   = (refn << 1) >> 1
+		inTx = refn&(1<<63) != 0
+	)
 	// Distinguish between existing series and series created in
 	// this transaction.
-	if ref&(1<<32) != 0 {
-		if _, ok := a.newSeries[ref]; !ok {
-			return ErrNotFound
+	if inTx {
+		if id > uint64(len(a.newSeries)-1) {
+			return errors.Wrap(ErrNotFound, "transaction series ID too high")
 		}
 		// TODO(fabxc): we also have to validate here that the
 		// sample sequence is valid.
-		// We also have to revalidate it as we switch locks an create
+		// We also have to revalidate it as we switch locks and create
 		// the new series.
-	} else if ref > uint64(len(a.series)) {
-		return ErrNotFound
+	} else if id > uint64(len(a.series)) {
+		return errors.Wrap(ErrNotFound, "transaction series ID too high")
 	} else {
-		ms := a.series[int(ref)]
+		ms := a.series[id]
 		if ms == nil {
-			return ErrNotFound
+			return errors.Wrap(ErrNotFound, "nil series")
 		}
 		// TODO(fabxc): memory series should be locked here already.
 		// Only problem is release of locks in case of a rollback.
@@ -344,15 +372,18 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		if t < c.maxTime {
 			return ErrOutOfOrderSample
 		}
-		if c.maxTime == t && ms.lastValue != v {
+
+		// We are allowing exact duplicates as we can encounter them in valid cases
+		// like federation and erroring out at that time would be extremely noisy.
+		if c.maxTime == t && math.Float64bits(ms.lastValue) != math.Float64bits(v) {
 			return ErrAmendSample
 		}
 	}
 
-	a.samples = append(a.samples, refdSample{
-		ref: ref,
-		t:   t,
-		v:   v,
+	a.samples = append(a.samples, RefSample{
+		Ref: refn,
+		T:   t,
+		V:   v,
 	})
 	return nil
 }
@@ -369,18 +400,18 @@ func (a *headAppender) createSeries() {
 
 	base1 := len(a.series)
 
-	for ref, l := range a.newSeries {
+	for _, l := range a.newSeries {
 		// We switched locks and have to re-validate that the series were not
 		// created by another goroutine in the meantime.
 		if base1 > base0 {
 			if ms := a.get(l.hash, l.labels); ms != nil {
-				a.refmap[ref] = uint64(ms.ref)
+				l.ref = uint64(ms.ref)
 				continue
 			}
 		}
 		// Series is still new.
 		a.newLabels = append(a.newLabels, l.labels)
-		a.refmap[ref] = uint64(len(a.series))
+		l.ref = uint64(len(a.series))
 
 		a.create(l.hash, l.labels)
 	}
@@ -395,11 +426,11 @@ func (a *headAppender) Commit() error {
 
 	a.createSeries()
 
+	// We have to update the refs of samples for series we just created.
 	for i := range a.samples {
 		s := &a.samples[i]
-
-		if s.ref&(1<<32) > 0 {
-			s.ref = a.refmap[s.ref]
+		if s.Ref&(1<<63) != 0 {
+			s.Ref = a.newSeries[(s.Ref<<1)>>1].ref
 		}
 	}
 
@@ -410,22 +441,11 @@ func (a *headAppender) Commit() error {
 		return err
 	}
 
-	var (
-		total = uint64(len(a.samples))
-		mint  = int64(math.MaxInt64)
-		maxt  = int64(math.MinInt64)
-	)
+	total := uint64(len(a.samples))
 
 	for _, s := range a.samples {
-		if !a.series[s.ref].append(s.t, s.v) {
+		if !a.series[s.Ref].append(s.T, s.V) {
 			total--
-		}
-
-		if s.t < mint {
-			mint = s.t
-		}
-		if s.t > maxt {
-			maxt = s.t
 		}
 	}
 
@@ -445,7 +465,7 @@ func (a *headAppender) Rollback() error {
 }
 
 type headChunkReader struct {
-	*headBlock
+	*HeadBlock
 }
 
 // Chunk returns the chunk for the reference number.
@@ -481,7 +501,7 @@ func (c *safeChunk) Iterator() chunks.Iterator {
 // func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
 
 type headIndexReader struct {
-	*headBlock
+	*HeadBlock
 }
 
 // LabelValues returns the possible label values
@@ -519,6 +539,9 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error
 		return nil, nil, ErrNotFound
 	}
 	s := h.series[ref]
+	if s == nil {
+		return nil, nil, ErrNotFound
+	}
 	metas := make([]*ChunkMeta, 0, len(s.chunks))
 
 	s.mtx.RLock()
@@ -549,7 +572,7 @@ func (h *headIndexReader) LabelIndices() ([][]string, error) {
 
 // get retrieves the chunk with the hash and label set and creates
 // a new one if it doesn't exist yet.
-func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
+func (h *HeadBlock) get(hash uint64, lset labels.Labels) *memSeries {
 	series := h.hashes[hash]
 
 	for _, s := range series {
@@ -560,11 +583,13 @@ func (h *headBlock) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (h *headBlock) create(hash uint64, lset labels.Labels) *memSeries {
+func (h *HeadBlock) create(hash uint64, lset labels.Labels) *memSeries {
 	s := &memSeries{
 		lset: lset,
 		ref:  uint32(len(h.series)),
 	}
+	// create the initial chunk and appender
+	s.cut()
 
 	// Allocate empty space until we can insert at the given index.
 	h.series = append(h.series, s)
@@ -627,13 +652,13 @@ func (s *memSeries) append(t int64, v float64) bool {
 
 	var c *memChunk
 
-	if s.app == nil || s.head().samples > 130 {
+	if s.head().samples > 130 {
 		c = s.cut()
 		c.minTime = t
 	} else {
 		c = s.head()
-		// Skip duplicate samples.
-		if c.maxTime == t && s.lastValue != v {
+		// Skip duplicate and out of order samples.
+		if c.maxTime >= t {
 			return false
 		}
 	}

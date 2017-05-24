@@ -27,37 +27,27 @@ func (a nopAppendable) Appender() (storage.Appender, error) {
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error) { return 0, nil }
-func (a nopAppender) AddFast(uint64, int64, float64) error              { return nil }
+func (a nopAppender) Add(labels.Labels, int64, float64) (string, error) { return "", nil }
+func (a nopAppender) AddFast(string, int64, float64) error              { return nil }
 func (a nopAppender) Commit() error                                     { return nil }
 func (a nopAppender) Rollback() error                                   { return nil }
 
 type collectResultAppender struct {
-	refs   map[uint64]labels.Labels
 	result []sample
 }
 
-func (a *collectResultAppender) SetSeries(l labels.Labels) (uint64, error) {
-	if a.refs == nil {
-		a.refs = map[uint64]labels.Labels{}
-	}
-	ref := uint64(len(a.refs))
-	a.refs[ref] = l
-	return ref, nil
+func (a *collectResultAppender) AddFast(ref string, t int64, v float64) error {
+	// Not implemented.
+	return storage.ErrNotFound
 }
 
-func (a *collectResultAppender) Add(ref uint64, t int64, v float64) error {
-	// for ln, lv := range s.Metric {
-	// 	if len(lv) == 0 {
-	// 		delete(s.Metric, ln)
-	// 	}
-	// }
+func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (string, error) {
 	a.result = append(a.result, sample{
-		metric: a.refs[ref],
+		metric: m,
 		t:      t,
 		v:      v,
 	})
-	return nil
+	return "", nil
 }
 
 func (a *collectResultAppender) Commit() error   { return nil }

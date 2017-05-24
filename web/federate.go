@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -94,10 +95,17 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		if ok {
 			t, v = it.Values()
 		} else {
-			t, v, ok = it.PeekBack()
+			t, v, ok = it.PeekBack(1)
 			if !ok {
 				continue
 			}
+		}
+		// The exposition formats do not support stale markers, so drop them. This
+		// is good enough for staleness handling of federated data, as the
+		// interval-based limits on staleness will do the right thing for supported
+		// use cases (which is to say federating aggregated time series).
+		if value.IsStaleNaN(v) {
+			continue
 		}
 
 		vec = append(vec, promql.Sample{

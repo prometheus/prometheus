@@ -127,15 +127,16 @@ type Options struct {
 }
 
 type alertMetrics struct {
-	latency       *prometheus.SummaryVec
-	errors        *prometheus.CounterVec
-	sent          *prometheus.CounterVec
-	dropped       prometheus.Counter
-	queueLength   prometheus.GaugeFunc
-	queueCapacity prometheus.Gauge
+	latency                 *prometheus.SummaryVec
+	errors                  *prometheus.CounterVec
+	sent                    *prometheus.CounterVec
+	dropped                 prometheus.Counter
+	queueLength             prometheus.GaugeFunc
+	queueCapacity           prometheus.Gauge
+	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() float64) *alertMetrics {
+func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace: namespace,
@@ -179,6 +180,10 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() floa
 			Name:      "queue_capacity",
 			Help:      "The capacity of the alert notifications queue.",
 		}),
+		alertmanagersDiscovered: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_notifications_alertmanagers_discovered",
+			Help: "The number of alertmanagers discovered and active.",
+		}, alertmanagersDiscovered),
 	}
 
 	m.queueCapacity.Set(float64(queueCap))
@@ -191,6 +196,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen func() floa
 			m.dropped,
 			m.queueLength,
 			m.queueCapacity,
+			m.alertmanagersDiscovered,
 		)
 	}
 
@@ -214,7 +220,8 @@ func New(o *Options) *Notifier {
 	}
 
 	queueLenFunc := func() float64 { return float64(n.queueLen()) }
-	n.metrics = newAlertMetrics(o.Registerer, o.QueueCapacity, queueLenFunc)
+	alertmanagersDiscoveredFunc := func() float64 { return float64(len(n.Alertmanagers())) }
+	n.metrics = newAlertMetrics(o.Registerer, o.QueueCapacity, queueLenFunc, alertmanagersDiscoveredFunc)
 	return n
 }
 

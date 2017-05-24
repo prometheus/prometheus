@@ -14,7 +14,10 @@
 package rules
 
 import (
+	"context"
 	"fmt"
+	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +26,10 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestAlertingRule(t *testing.T) {
@@ -69,23 +75,18 @@ func TestAlertingRule(t *testing.T) {
 		}, {
 			time: 5 * time.Minute,
 			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
 				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
 				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
 			},
 		}, {
 			time: 10 * time.Minute,
 			result: []string{
 				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 0 @[%v]`,
 			},
 		},
 		{
-			time: 15 * time.Minute,
-			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
-			},
+			time:   15 * time.Minute,
+			result: []string{},
 		},
 		{
 			time:   20 * time.Minute,
@@ -100,7 +101,6 @@ func TestAlertingRule(t *testing.T) {
 		{
 			time: 30 * time.Minute,
 			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 0 @[%v]`,
 				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
 			},
 		},
@@ -109,7 +109,7 @@ func TestAlertingRule(t *testing.T) {
 	for i, test := range tests {
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), "")
+		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), nil)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}
@@ -155,4 +155,132 @@ func annotateWithTime(lines []string, ts time.Time) []string {
 		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp.FromTime(ts)))
 	}
 	return annotatedLines
+}
+
+func TestStaleness(t *testing.T) {
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	engine := promql.NewEngine(storage, nil)
+	opts := &ManagerOptions{
+		QueryEngine: engine,
+		Appendable:  storage,
+		Context:     context.Background(),
+	}
+
+	expr, err := promql.ParseExpr("a + 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	group := NewGroup("default", time.Second, []Rule{rule}, opts)
+
+	// A time series that has two samples and then goes stale.
+	app, _ := storage.Appender()
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+	if err = app.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Execute 3 times, 1 second apart.
+	group.Eval(time.Unix(0, 0))
+	group.Eval(time.Unix(1, 0))
+	group.Eval(time.Unix(2, 0))
+
+	querier, err := storage.Querier(0, 2000)
+	defer querier.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	matcher, _ := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
+	samples, err := readSeriesSet(querier.Select(matcher))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
+	metricSample, ok := samples[metric]
+	if !ok {
+		t.Fatalf("Series %s not returned.", metric)
+	}
+	if !value.IsStaleNaN(metricSample[2].V) {
+		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].V))
+	}
+	metricSample[2].V = 42 // reflect.DeepEqual cannot handle NaN.
+
+	want := map[string][]promql.Point{
+		metric: []promql.Point{{0, 2}, {1000, 3}, {2000, 42}},
+	}
+
+	if !reflect.DeepEqual(want, samples) {
+		t.Fatalf("Returned samples not as expected. Wanted: %+v Got: %+v", want, samples)
+	}
+}
+
+// Convert a SeriesSet into a form useable with reflect.DeepEqual.
+func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
+	result := map[string][]promql.Point{}
+
+	for ss.Next() {
+		series := ss.At()
+
+		points := []promql.Point{}
+		it := series.Iterator()
+		for it.Next() {
+			t, v := it.At()
+			points = append(points, promql.Point{T: t, V: v})
+		}
+
+		name := series.Labels().String()
+		result[name] = points
+	}
+	return result, ss.Err()
+}
+
+func TestCopyState(t *testing.T) {
+	oldGroup := &Group{
+		rules: []Rule{
+			NewAlertingRule("alert", nil, 0, nil, nil),
+			NewRecordingRule("rule1", nil, nil),
+			NewRecordingRule("rule2", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+		},
+		seriesInPreviousEval: []map[string]labels.Labels{
+			map[string]labels.Labels{"a": nil},
+			map[string]labels.Labels{"r1": nil},
+			map[string]labels.Labels{"r2": nil},
+			map[string]labels.Labels{"r3a": nil},
+			map[string]labels.Labels{"r3b": nil},
+		},
+	}
+	oldGroup.rules[0].(*AlertingRule).active[42] = nil
+	newGroup := &Group{
+		rules: []Rule{
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewRecordingRule("rule3", nil, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil),
+			NewRecordingRule("rule1", nil, nil),
+			NewRecordingRule("rule4", nil, nil),
+		},
+		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
+	}
+	newGroup.copyState(oldGroup)
+
+	want := []map[string]labels.Labels{
+		map[string]labels.Labels{"r3a": nil},
+		map[string]labels.Labels{"r3b": nil},
+		nil,
+		map[string]labels.Labels{"a": nil},
+		map[string]labels.Labels{"r1": nil},
+		nil,
+	}
+	if !reflect.DeepEqual(want, newGroup.seriesInPreviousEval) {
+		t.Fatalf("seriesInPreviousEval not as expected. Wanted: %+v Got: %+v", want, newGroup.seriesInPreviousEval)
+	}
+	if !reflect.DeepEqual(oldGroup.rules[0], newGroup.rules[3]) {
+		t.Fatalf("Active alerts not as expected. Wanted: %+v Got: %+v", oldGroup.rules[0], oldGroup.rules[3])
+	}
 }

@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"html/template"
+	"net/url"
 	"time"
 
 	"golang.org/x/net/context"
@@ -47,7 +48,7 @@ func (rule RecordingRule) Name() string {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, _ string) (promql.Vector, error) {
+func (rule RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, _ *url.URL) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), ts)
 	if err != nil {
 		return nil, err
