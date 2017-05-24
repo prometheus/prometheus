@@ -432,6 +432,7 @@ type scrapeLoop struct {
 
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
+	// We hold two maps and swap them out to save allocations.
 	seriesCur  map[string]labels.Labels
 	seriesPrev map[string]labels.Labels
 
