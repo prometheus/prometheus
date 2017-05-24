@@ -25,6 +25,7 @@ func Uname() string {
 	if err != nil {
 		log.Fatal("Error!")
 	}
+
 	str := "(" + charsToString(buf.Sysname[:])
 	str += " " + charsToString(buf.Release[:])
 	str += " " + charsToString(buf.Version[:])

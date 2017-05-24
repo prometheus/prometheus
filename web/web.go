@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -171,7 +172,7 @@ func New(o *Options) *Handler {
 	instrf := prometheus.InstrumentHandlerFunc
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		router.Redirect(w, r, "/graph", http.StatusFound)
+		router.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
 	})
 
 	router.Get("/alerts", instrf("alerts", h.alerts))

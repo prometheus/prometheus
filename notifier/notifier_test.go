@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
@@ -395,4 +396,31 @@ func (a alertmanagerMock) url() *url.URL {
 		panic(err)
 	}
 	return u
+}
+
+func TestLabelSetNotReused(t *testing.T) {
+	tg := makeInputTargetGroup()
+	_, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(tg, makeInputTargetGroup()) {
+		t.Fatal("Target modified during alertmanager extraction")
+	}
+}
+
+func makeInputTargetGroup() *config.TargetGroup {
+	return &config.TargetGroup{
+		Targets: []model.LabelSet{
+			model.LabelSet{
+				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),
+				model.LabelName("notcommon1"): model.LabelValue("label"),
+			},
+		},
+		Labels: model.LabelSet{
+			model.LabelName("common"): model.LabelValue("label"),
+		},
+		Source: "testsource",
+	}
 }
