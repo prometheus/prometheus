@@ -18,6 +18,8 @@ import (
         "fmt"
         "math"
         "strconv"
+
+        "github.com/prometheus/prometheus/pkg/value"
 )
 
 
@@ -46,6 +48,7 @@ func (l *lexer) Lex() int {
 %}
 
 D     [0-9]
+S     [a-zA-Z]
 L     [a-zA-Z_]
 M     [a-zA-Z_:]
 
@@ -63,29 +66,30 @@ M     [a-zA-Z_:]
 #[^\r\n]*\n                           l.mstart = l.i
 [\r\n \t]+                            l.mstart = l.i
 
-{L}({L}|{D})*\{                       s = lstateLabels
+{S}({M}|{D})*\{                       s = lstateLabels
                                       l.offsets = append(l.offsets, l.i-1)
-{L}({L}|{D})*                         s = lstateValue
+{S}({M}|{D})*                         s = lstateValue
                                       l.mend = l.i
                                       l.offsets = append(l.offsets, l.i)
 
 <lstateLabels>[ \t]+
-<lstateLabels>\}                      s = lstateValue
+<lstateLabels>,?\}                    s = lstateValue
                                       l.mend = l.i
 <lstateLabels>,?                      s = lstateLName
                                       l.offsets = append(l.offsets, l.i)
 
-<lstateLName>{M}({M}|{D})*=           s = lstateLValue
+<lstateLName>{S}({L}|{D})*=           s = lstateLValue
                                       l.offsets = append(l.offsets, l.i-1)
 
-<lstateLValue>\"(\\.|[^\\"])*\"       s = lstateLabels
+<lstateLValue>\"(\\.|[^\\"]|\0)*\"    s = lstateLabels
                                       l.offsets = append(l.offsets, l.i-1)
-<lstateLValue>\'(\\.|[^\\'])*\'       s = lstateLabels
+<lstateLValue>\'(\\.|[^\\']|\0)*\'    s = lstateLabels
                                       l.offsets = append(l.offsets, l.i-1)
 
 <lstateValue>[ \t]+                   l.vstart = l.i
-<lstateValue>(NaN)                    l.val = math.NaN()
+<lstateValue>(NaN)                    l.val = math.Float64frombits(value.NormalNaN)
                                       s = lstateTimestamp
+
 <lstateValue>[^\n \t\r]+              // We don't parse strictly correct floats as the conversion
                                       // repeats the effort anyway.
                                       l.val, l.err = strconv.ParseFloat(yoloString(l.b[l.vstart:l.i]), 64)

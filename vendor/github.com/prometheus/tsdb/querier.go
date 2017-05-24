@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -122,21 +135,9 @@ type blockQuerier struct {
 }
 
 func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
-	var (
-		its    []Postings
-		absent []string
-	)
-	for _, m := range ms {
-		// If the matcher checks absence of a label, don't select them
-		// but propagate the check into the series set.
-		if _, ok := m.(*labels.EqualMatcher); ok && m.Matches("") {
-			absent = append(absent, m.Name())
-			continue
-		}
-		its = append(its, q.selectSingle(m))
-	}
+	pr := newPostingsReader(q.index)
 
-	p := Intersect(its...)
+	p, absent := pr.Select(ms...)
 
 	if q.postingsMapper != nil {
 		p = q.postingsMapper(p)
@@ -153,51 +154,10 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 			mint:   q.mint,
 			maxt:   q.maxt,
 		},
-	}
-}
 
-func (q *blockQuerier) selectSingle(m labels.Matcher) Postings {
-	// Fast-path for equal matching.
-	if em, ok := m.(*labels.EqualMatcher); ok {
-		it, err := q.index.Postings(em.Name(), em.Value())
-		if err != nil {
-			return errPostings{err: err}
-		}
-		return it
+		mint: q.mint,
+		maxt: q.maxt,
 	}
-
-	tpls, err := q.index.LabelValues(m.Name())
-	if err != nil {
-		return errPostings{err: err}
-	}
-	// TODO(fabxc): use interface upgrading to provide fast solution
-	// for equality and prefix matches. Tuples are lexicographically sorted.
-	var res []string
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			return errPostings{err: err}
-		}
-		if m.Matches(vals[0]) {
-			res = append(res, vals[0])
-		}
-	}
-	if len(res) == 0 {
-		return emptyPostings
-	}
-
-	var rit []Postings
-
-	for _, v := range res {
-		it, err := q.index.Postings(m.Name(), v)
-		if err != nil {
-			return errPostings{err: err}
-		}
-		rit = append(rit, it)
-	}
-
-	return Merge(rit...)
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
@@ -223,6 +183,81 @@ func (q *blockQuerier) LabelValuesFor(string, labels.Label) ([]string, error) {
 
 func (q *blockQuerier) Close() error {
 	return nil
+}
+
+// postingsReader is used to select matching postings from an IndexReader.
+type postingsReader struct {
+	index IndexReader
+}
+
+func newPostingsReader(i IndexReader) *postingsReader {
+	return &postingsReader{index: i}
+}
+
+func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
+	var (
+		its    []Postings
+		absent []string
+	)
+	for _, m := range ms {
+		// If the matcher checks absence of a label, don't select them
+		// but propagate the check into the series set.
+		if _, ok := m.(*labels.EqualMatcher); ok && m.Matches("") {
+			absent = append(absent, m.Name())
+			continue
+		}
+		its = append(its, r.selectSingle(m))
+	}
+
+	p := Intersect(its...)
+
+	return p, absent
+}
+
+func (r *postingsReader) selectSingle(m labels.Matcher) Postings {
+	// Fast-path for equal matching.
+	if em, ok := m.(*labels.EqualMatcher); ok {
+		it, err := r.index.Postings(em.Name(), em.Value())
+		if err != nil {
+			return errPostings{err: err}
+		}
+		return it
+	}
+
+	// TODO(fabxc): use interface upgrading to provide fast solution
+	// for prefix matches. Tuples are lexicographically sorted.
+	tpls, err := r.index.LabelValues(m.Name())
+	if err != nil {
+		return errPostings{err: err}
+	}
+
+	var res []string
+
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
+		if err != nil {
+			return errPostings{err: err}
+		}
+		if m.Matches(vals[0]) {
+			res = append(res, vals[0])
+		}
+	}
+
+	if len(res) == 0 {
+		return emptyPostings
+	}
+
+	var rit []Postings
+
+	for _, v := range res {
+		it, err := r.index.Postings(m.Name(), v)
+		if err != nil {
+			return errPostings{err: err}
+		}
+		rit = append(rit, it)
+	}
+
+	return Merge(rit...)
 }
 
 func mergeStrings(a, b []string) []string {
@@ -397,11 +432,15 @@ func (s *populatedChunkSeries) Next() bool {
 	for s.set.Next() {
 		lset, chks := s.set.At()
 
-		for i, c := range chks {
-			if c.MaxTime < s.mint {
-				chks = chks[1:]
-				continue
+		for len(chks) > 0 {
+			if chks[0].MaxTime >= s.mint {
+				break
 			}
+			chks = chks[1:]
+		}
+
+		// Break out at the first chunk that has no overlap with mint, maxt.
+		for i, c := range chks {
 			if c.MinTime > s.maxt {
 				chks = chks[:i]
 				break
@@ -411,6 +450,7 @@ func (s *populatedChunkSeries) Next() bool {
 				return false
 			}
 		}
+
 		if len(chks) == 0 {
 			continue
 		}
@@ -431,12 +471,14 @@ type blockSeriesSet struct {
 	set chunkSeriesSet
 	err error
 	cur Series
+
+	mint, maxt int64
 }
 
 func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
 		lset, chunks := s.set.At()
-		s.cur = &chunkSeries{labels: lset, chunks: chunks}
+		s.cur = &chunkSeries{labels: lset, chunks: chunks, mint: s.mint, maxt: s.maxt}
 		return true
 	}
 	if s.set.Err() != nil {
@@ -453,6 +495,8 @@ func (s *blockSeriesSet) Err() error { return s.err }
 type chunkSeries struct {
 	labels labels.Labels
 	chunks []*ChunkMeta // in-order chunk refs
+
+	mint, maxt int64
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -460,14 +504,14 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 func (s *chunkSeries) Iterator() SeriesIterator {
-	return newChunkSeriesIterator(s.chunks)
+	return newChunkSeriesIterator(s.chunks, s.mint, s.maxt)
 }
 
 // SeriesIterator iterates over the data of a time series.
 type SeriesIterator interface {
 	// Seek advances the iterator forward to the given timestamp.
-	// If there's no value exactly at ts, it advances to the last value
-	// before tt.
+	// If there's no value exactly at t, it advances to the first value
+	// after t.
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
 	At() (t int64, v float64)
@@ -488,7 +532,7 @@ func (s *chainedSeries) Labels() labels.Labels {
 }
 
 func (s *chainedSeries) Iterator() SeriesIterator {
-	return &chainedSeriesIterator{series: s.series}
+	return newChainedSeriesIterator(s.series...)
 }
 
 // chainedSeriesIterator implements a series iterater over a list
@@ -498,6 +542,14 @@ type chainedSeriesIterator struct {
 
 	i   int
 	cur SeriesIterator
+}
+
+func newChainedSeriesIterator(s ...Series) *chainedSeriesIterator {
+	return &chainedSeriesIterator{
+		series: s,
+		i:      0,
+		cur:    s[0].Iterator(),
+	}
 }
 
 func (it *chainedSeriesIterator) Seek(t int64) bool {
@@ -516,9 +568,6 @@ func (it *chainedSeriesIterator) Seek(t int64) bool {
 }
 
 func (it *chainedSeriesIterator) Next() bool {
-	if it.cur == nil {
-		it.cur = it.series[it.i].Iterator()
-	}
 	if it.cur.Next() {
 		return true
 	}
@@ -550,17 +599,35 @@ type chunkSeriesIterator struct {
 
 	i   int
 	cur chunks.Iterator
+
+	maxt, mint int64
 }
 
-func newChunkSeriesIterator(cs []*ChunkMeta) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []*ChunkMeta, mint, maxt int64) *chunkSeriesIterator {
 	return &chunkSeriesIterator{
 		chunks: cs,
 		i:      0,
 		cur:    cs[0].Chunk.Iterator(),
+
+		mint: mint,
+		maxt: maxt,
 	}
 }
 
+func (it *chunkSeriesIterator) inBounds(t int64) bool {
+	return t >= it.mint && t <= it.maxt
+}
+
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
+	if t > it.maxt {
+		return false
+	}
+
+	// Seek to the first valid value after t.
+	if t < it.mint {
+		t = it.mint
+	}
+
 	// Only do binary search forward to stay in line with other iterators
 	// that can only move forward.
 	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool { return it.chunks[i].MinTime >= t })
@@ -569,10 +636,10 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	// If the timestamp was not found, it might be in the last chunk.
 	if x == len(it.chunks) {
 		x--
-	}
-	// Go to previous chunk if the chunk doesn't exactly start with t.
-	// If we are already at the first chunk, we use it as it's the best we have.
-	if x > 0 && it.chunks[x].MinTime > t {
+
+		// Go to previous chunk if the chunk doesn't exactly start with t.
+		// If we are already at the first chunk, we use it as it's the best we have.
+	} else if x > 0 && it.chunks[x].MinTime > t {
 		x--
 	}
 
@@ -593,9 +660,13 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *chunkSeriesIterator) Next() bool {
-	if it.cur.Next() {
-		return true
+	for it.cur.Next() {
+		t, _ := it.cur.At()
+		if it.inBounds(t) {
+			return true
+		}
 	}
+
 	if err := it.cur.Err(); err != nil {
 		return false
 	}

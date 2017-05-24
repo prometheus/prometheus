@@ -31,12 +31,14 @@ func TestParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
-go_gc_duration_seconds{quantile="0.25"} 7.424100000000001e-05
+go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds_count 99
+some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
 go_goroutines 33  	123123`
+	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
 	int64p := func(x int64) *int64 { return &x }
 
@@ -51,7 +53,7 @@ go_goroutines 33  	123123`
 			v:    4.9351e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
 		}, {
-			m:    `go_gc_duration_seconds{quantile="0.25"}`,
+			m:    `go_gc_duration_seconds{quantile="0.25",}`,
 			v:    7.424100000000001e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
 		}, {
@@ -63,10 +65,18 @@ go_goroutines 33  	123123`
 			v:    99,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
 		}, {
+			m:    `some:aggregate:rate5m{a_b="c"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
+		}, {
 			m:    `go_goroutines`,
 			v:    33,
 			t:    int64p(123123),
 			lset: labels.FromStrings("__name__", "go_goroutines"),
+		}, {
+			m:    "null_byte_metric{a=\"abc\x00\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
 		},
 	}
 

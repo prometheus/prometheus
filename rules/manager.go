@@ -16,6 +16,7 @@ package rules
 import (
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/url"
 	"path/filepath"
 	"sync"
@@ -30,6 +31,9 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -112,7 +116,7 @@ const (
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, time.Time, *promql.Engine, string) (promql.Vector, error)
+	Eval(context.Context, time.Time, *promql.Engine, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// HTMLSnippet returns a human-readable string representation of the rule,
@@ -122,10 +126,11 @@ type Rule interface {
 
 // Group is a set of rules that have a logical relation.
 type Group struct {
-	name     string
-	interval time.Duration
-	rules    []Rule
-	opts     *ManagerOptions
+	name                 string
+	interval             time.Duration
+	rules                []Rule
+	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
+	opts                 *ManagerOptions
 
 	done       chan struct{}
 	terminated chan struct{}
@@ -134,12 +139,13 @@ type Group struct {
 // NewGroup makes a new Group with the given name, options, and rules.
 func NewGroup(name string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
-		name:       name,
-		interval:   interval,
-		rules:      rules,
-		opts:       opts,
-		done:       make(chan struct{}),
-		terminated: make(chan struct{}),
+		name:                 name,
+		interval:             interval,
+		rules:                rules,
+		opts:                 opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(rules)),
+		done:                 make(chan struct{}),
+		terminated:           make(chan struct{}),
 	}
 }
 
@@ -157,7 +163,7 @@ func (g *Group) run() {
 		iterationsScheduled.Inc()
 
 		start := time.Now()
-		g.Eval()
+		g.Eval(start)
 
 		iterationDuration.Observe(time.Since(start).Seconds())
 	}
@@ -214,25 +220,38 @@ func (g *Group) offset() time.Duration {
 	return time.Duration(next - now)
 }
 
-// copyState copies the alerting rule state from the given group.
+// copyState copies the alerting rule and staleness related state from the given group.
+//
+// Rules are matched based on their name. If there are duplicates, the
+// first is matched with the first, second with the second etc.
 func (g *Group) copyState(from *Group) {
-	for _, fromRule := range from.rules {
-		far, ok := fromRule.(*AlertingRule)
+	ruleMap := make(map[string][]int, len(from.rules))
+
+	for fi, fromRule := range from.rules {
+		l, _ := ruleMap[fromRule.Name()]
+		ruleMap[fromRule.Name()] = append(l, fi)
+	}
+
+	for i, rule := range g.rules {
+		indexes, ok := ruleMap[rule.Name()]
+		if len(indexes) == 0 {
+			continue
+		}
+		fi := indexes[0]
+		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
+		ruleMap[rule.Name()] = indexes[1:]
+
+		ar, ok := rule.(*AlertingRule)
 		if !ok {
 			continue
 		}
-		for _, rule := range g.rules {
-			ar, ok := rule.(*AlertingRule)
-			if !ok {
-				continue
-			}
-			// TODO(fabxc): forbid same alert definitions that are not unique by
-			// at least on static label or alertname?
-			if far.equal(ar) {
-				for fp, a := range far.active {
-					ar.active[fp] = a
-				}
-			}
+		far, ok := from.rules[fi].(*AlertingRule)
+		if !ok {
+			continue
+		}
+
+		for fp, a := range far.active {
+			ar.active[fp] = a
 		}
 	}
 }
@@ -250,18 +269,17 @@ func typeForRule(r Rule) ruleType {
 // Eval runs a single evaluation cycle in which all rules are evaluated in parallel.
 // In the future a single group will be evaluated sequentially to properly handle
 // rule dependency.
-func (g *Group) Eval() {
+func (g *Group) Eval(ts time.Time) {
 	var (
-		now = time.Now()
-		wg  sync.WaitGroup
+		wg sync.WaitGroup
 	)
 
-	for _, rule := range g.rules {
+	for i, rule := range g.rules {
 		rtyp := string(typeForRule(rule))
 
 		wg.Add(1)
 		// BUG(julius): Look at fixing thundering herd.
-		go func(rule Rule) {
+		go func(i int, rule Rule) {
 			defer wg.Done()
 
 			defer func(t time.Time) {
@@ -270,7 +288,7 @@ func (g *Group) Eval() {
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.Eval(g.opts.Context, now, g.opts.QueryEngine, g.opts.ExternalURL.Path)
+			vector, err := rule.Eval(g.opts.Context, ts, g.opts.QueryEngine, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -295,6 +313,7 @@ func (g *Group) Eval() {
 				return
 			}
 
+			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			for _, s := range vector {
 				if _, err := app.Add(s.Metric, s.T, s.V); err != nil {
 					switch err {
@@ -307,6 +326,8 @@ func (g *Group) Eval() {
 					default:
 						log.With("sample", s).With("err", err).Warn("Rule evaluation result discarded")
 					}
+				} else {
+					seriesReturned[s.Metric.String()] = s.Metric
 				}
 			}
 			if numOutOfOrder > 0 {
@@ -315,10 +336,27 @@ func (g *Group) Eval() {
 			if numDuplicates > 0 {
 				log.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
 			}
+
+			for metric, lset := range g.seriesInPreviousEval[i] {
+				if _, ok := seriesReturned[metric]; !ok {
+					// Series no longer exposed, mark it stale.
+					_, err = app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+					switch err {
+					case nil:
+					case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+						// Do not count these in logging, as this is expected if series
+						// is exposed from a different rule.
+					default:
+						log.With("sample", metric).With("err", err).Warn("adding stale sample failed")
+					}
+				}
+			}
 			if err := app.Commit(); err != nil {
 				log.With("err", err).Warn("rule sample appending failed")
+			} else {
+				g.seriesInPreviousEval[i] = seriesReturned
 			}
-		}(rule)
+		}(i, rule)
 	}
 	wg.Wait()
 }
@@ -433,7 +471,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 		wg.Add(1)
 
 		// If there is an old group with the same identifier, stop it and wait for
-		// it to finish the current iteration. Then copy its into the new group.
+		// it to finish the current iteration. Then copy it into the new group.
 		oldg, ok := m.groups[newg.name]
 		delete(m.groups, newg.name)
 

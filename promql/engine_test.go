@@ -15,10 +15,13 @@ package promql
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"golang.org/x/net/context"
+
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 func TestQueryConcurrency(t *testing.T) {
@@ -192,6 +195,93 @@ func TestEngineShutdown(t *testing.T) {
 	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
 		t.Fatalf("expected cancelation error, got %q", res2.Err)
 	}
+}
+
+func TestEngineEvalStmtTimestamps(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric 1 2
+`)
+	if err != nil {
+		t.Fatalf("unexpected error creating test: %q", err)
+	}
+	err = test.Run()
+	if err != nil {
+		t.Fatalf("unexpected error initializing test: %q", err)
+	}
+
+	cases := []struct {
+		Query    string
+		Result   Value
+		Start    time.Time
+		End      time.Time
+		Interval time.Duration
+	}{
+		// Instant queries.
+		{
+			Query:  "1",
+			Result: Scalar{V: 1, T: 1000},
+			Start:  time.Unix(1, 0),
+		},
+		{
+			Query: "metric",
+			Result: Vector{
+				Sample{Point: Point{V: 1, T: 1000},
+					Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start: time.Unix(1, 0),
+		},
+		{
+			Query: "metric[20s]",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start: time.Unix(10, 0),
+		},
+		// Range queries.
+		{
+			Query: "1",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+				Metric: labels.FromStrings()},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 2, T: 2000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+	}
+
+	for _, c := range cases {
+		var err error
+		var qry Query
+		if c.Interval == 0 {
+			qry, err = test.QueryEngine().NewInstantQuery(c.Query, c.Start)
+		} else {
+			qry, err = test.QueryEngine().NewRangeQuery(c.Query, c.Start, c.End, c.Interval)
+		}
+		if err != nil {
+			t.Fatalf("unexpected error creating query: %q", err)
+		}
+		res := qry.Exec(test.Context())
+		if res.Err != nil {
+			t.Fatalf("unexpected error running query: %q", res.Err)
+		}
+		if !reflect.DeepEqual(res.Value, c.Result) {
+			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
+		}
+	}
+
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {

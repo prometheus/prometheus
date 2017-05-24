@@ -23,10 +23,12 @@ import (
 	"sync"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/net/context"
 
@@ -36,6 +38,7 @@ import (
 const (
 	namespace = "prometheus"
 	subsystem = "engine"
+	queryTag  = "query"
 
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 = 9223372036854774784
@@ -168,6 +171,10 @@ func (q *query) Cancel() {
 
 // Exec implements the Query interface.
 func (q *query) Exec(ctx context.Context) *Result {
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		span.SetTag(queryTag, q.stmt.String())
+	}
+
 	res, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res}
 }
@@ -363,8 +370,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
 	// Instant evaluation.
 	if s.Start == s.End && s.Interval == 0 {
+		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			Timestamp: timeMilliseconds(s.Start),
+			Timestamp: start,
 			ctx:       ctx,
 		}
 		val, err := evaluator.Eval(s.Expr)
@@ -374,6 +382,16 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 		evalTimer.Stop()
 		queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+		// Point might have a different timestamp, force it to the evaluation
+		// timestamp as that is when we ran the evaluation.
+		switch v := val.(type) {
+		case Scalar:
+			v.T = start
+		case Vector:
+			for i := range v {
+				v[i].Point.T = start
+			}
+		}
 
 		return val, nil
 	}
@@ -387,8 +405,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			return nil, err
 		}
 
+		t := timeMilliseconds(ts)
 		evaluator := &evaluator{
-			Timestamp: timeMilliseconds(ts),
+			Timestamp: t,
 			ctx:       ctx,
 		}
 		val, err := evaluator.Eval(s.Expr)
@@ -405,7 +424,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				ss = Series{Points: make([]Point, 0, numSteps)}
 				Seriess[0] = ss
 			}
-			ss.Points = append(ss.Points, Point(v))
+			ss.Points = append(ss.Points, Point{V: v.V, T: t})
 			Seriess[0] = ss
 		case Vector:
 			for _, sample := range v {
@@ -418,6 +437,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 					}
 					Seriess[h] = ss
 				}
+				sample.Point.T = t
 				ss.Points = append(ss.Points, sample.Point)
 				Seriess[h] = ss
 			}
@@ -731,15 +751,35 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 		}
 		t, v := it.Values()
 
+		peek := 1
 		if !ok || t > refTime {
-			t, v, ok = it.PeekBack()
+			t, v, ok = it.PeekBack(peek)
+			peek += 1
 			if !ok || t < refTime-durationMilliseconds(StalenessDelta) {
 				continue
 			}
 		}
+		if value.IsStaleNaN(v) {
+			continue
+		}
+		// Find timestamp before this point, within the staleness delta.
+		prevT, _, ok := it.PeekBack(peek)
+		if ok && prevT >= refTime-durationMilliseconds(StalenessDelta) {
+			interval := t - prevT
+			if interval*4+interval/10 < refTime-t {
+				// It is more than 4 (+10% for safety) intervals
+				// since the last data point, skip as stale.
+				//
+				// We need 4 to allow for federation, as with a 10s einterval an eval
+				// started at t=10 could be ingested at t=20, scraped for federation at
+				// t=30 and only ingested by federation at t=40.
+				continue
+			}
+		}
+
 		vec = append(vec, Sample{
 			Metric: node.series[i].Labels(),
-			Point:  Point{V: v, T: ev.Timestamp},
+			Point:  Point{V: v, T: t},
 		})
 	}
 	return vec
@@ -807,6 +847,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		buf := it.Buffer()
 		for buf.Next() {
 			t, v := buf.At()
+			if value.IsStaleNaN(v) {
+				continue
+			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
 				allPoints = append(allPoints, Point{T: t, V: v})
@@ -814,7 +857,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		}
 		// The seeked sample might also be in the range.
 		t, v = it.Values()
-		if t == maxt {
+		if t == maxt && !value.IsStaleNaN(v) {
 			allPoints = append(allPoints, Point{T: t, V: v})
 		}
 
