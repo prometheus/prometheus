@@ -4,9 +4,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 const tombstoneFilename = "tombstones"
@@ -27,84 +30,36 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 
-	stoneOff := make(map[uint32]int64) // The map that holds the ref to offset vals.
-	refs := []uint32{}                 // Sorted refs.
-
-	pos := int64(0)
-	buf := encbuf{b: make([]byte, 2*binary.MaxVarintLen64)}
+	buf := encbuf{b: make([]byte, 3*binary.MaxVarintLen64)}
 	buf.reset()
 	// Write the meta.
 	buf.putBE32(MagicTombstone)
 	buf.putByte(tombstoneFormatV1)
-	n, err := f.Write(buf.get())
-	if err != nil {
-		return err
-	}
-	pos += int64(n)
-
-	for k, v := range tr {
-		refs = append(refs, k)
-		stoneOff[k] = pos
-
-		// Write the ranges.
-		buf.reset()
-		buf.putUvarint(len(v))
-		n, err := f.Write(buf.get())
-		if err != nil {
-			return err
-		}
-		pos += int64(n)
-
-		buf.reset()
-		for _, r := range v {
-			buf.putVarint64(r.mint)
-			buf.putVarint64(r.maxt)
-		}
-		buf.putHash(hash)
-
-		n, err = f.Write(buf.get())
-		if err != nil {
-			return err
-		}
-		pos += int64(n)
-	}
-
-	// Write the offset table.
-	// Pad first.
-	if p := 4 - (int(pos) % 4); p != 0 {
-		if _, err := f.Write(make([]byte, p)); err != nil {
-			return err
-		}
-
-		pos += int64(p)
-	}
-
-	buf.reset()
-	buf.putBE32int(len(refs))
-	if _, err := f.Write(buf.get()); err != nil {
-		return err
-	}
-
-	for _, ref := range refs {
-		buf.reset()
-		buf.putBE32(ref)
-		buf.putBE64int64(stoneOff[ref])
-		_, err = f.Write(buf.get())
-		if err != nil {
-			return err
-		}
-	}
-
-	// Write the offset to the offset table.
-	buf.reset()
-	buf.putBE64int64(pos)
 	_, err = f.Write(buf.get())
 	if err != nil {
 		return err
 	}
 
-	if err := f.Close(); err != nil {
+	mw := io.MultiWriter(f, hash)
+
+	for k, v := range tr {
+		for _, itv := range v {
+			buf.reset()
+			buf.putUvarint32(k)
+			buf.putVarint64(itv.mint)
+			buf.putVarint64(itv.maxt)
+
+			_, err = mw.Write(buf.get())
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	_, err = f.Write(hash.Sum(nil))
+	if err != nil {
 		return err
 	}
 
@@ -129,52 +84,33 @@ func readTombstones(dir string) (tombstoneReader, error) {
 		return nil, err
 	}
 
-	d := &decbuf{b: b}
+	d := &decbuf{b: b[:len(b)-4]} // 4 for the checksum.
 	if mg := d.be32(); mg != MagicTombstone {
 		return nil, fmt.Errorf("invalid magic number %x", mg)
 	}
-
-	offsetBytes := b[len(b)-8:]
-	d = &decbuf{b: offsetBytes}
-	off := d.be64int64()
-	if err := d.err(); err != nil {
-		return nil, err
+	if flag := d.byte(); flag != tombstoneFormatV1 {
+		return nil, fmt.Errorf("invalid tombstone format %x", flag)
 	}
 
-	d = &decbuf{b: b[off:]}
-	numStones := d.be32int()
-	if err := d.err(); err != nil {
-		return nil, err
+	// Verify checksum
+	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	if _, err := hash.Write(d.get()); err != nil {
+		return nil, errors.Wrap(err, "write to hash")
 	}
-	off += 4 // For the numStones which has been read.
+	if binary.BigEndian.Uint32(b[len(b)-4:]) != hash.Sum32() {
+		return nil, errors.New("checksum did not match")
+	}
 
-	stones := b[off : off+int64(numStones*12)]
 	stonesMap := make(map[uint32]intervals)
-	for len(stones) >= 12 {
-		d := &decbuf{b: stones[:12]}
-		ref := d.be32()
-		off := d.be64int64()
-
-		d = &decbuf{b: b[off:]}
-		numRanges := d.uvarint()
-		if err := d.err(); err != nil {
-			return nil, err
+	for d.len() > 0 {
+		k := d.uvarint32()
+		mint := d.varint64()
+		maxt := d.varint64()
+		if d.err() != nil {
+			return nil, d.err()
 		}
 
-		dranges := make(intervals, 0, numRanges)
-		for i := 0; i < int(numRanges); i++ {
-			mint := d.varint64()
-			maxt := d.varint64()
-			if err := d.err(); err != nil {
-				return nil, err
-			}
-
-			dranges = append(dranges, interval{mint, maxt})
-		}
-
-		// TODO(gouthamve): Verify checksum.
-		stones = stones[12:]
-		stonesMap[ref] = dranges
+		stonesMap[k] = stonesMap[k].add(interval{mint, maxt})
 	}
 
 	return newTombstoneReader(stonesMap), nil

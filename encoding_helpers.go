@@ -72,9 +72,10 @@ type decbuf struct {
 	e error
 }
 
-func (d *decbuf) uvarint() int     { return int(d.uvarint64()) }
-func (d *decbuf) be32int() int     { return int(d.be32()) }
-func (d *decbuf) be64int64() int64 { return int64(d.be64()) }
+func (d *decbuf) uvarint() int      { return int(d.uvarint64()) }
+func (d *decbuf) uvarint32() uint32 { return uint32(d.uvarint64()) }
+func (d *decbuf) be32int() int      { return int(d.be32()) }
+func (d *decbuf) be64int64() int64  { return int64(d.be64()) }
 
 func (d *decbuf) uvarintStr() string {
 	l := d.uvarint64()
@@ -140,6 +141,20 @@ func (d *decbuf) be32() uint32 {
 	x := binary.BigEndian.Uint32(d.b)
 	d.b = d.b[4:]
 	return x
+}
+
+func (d *decbuf) byte() byte {
+	if d.e != nil {
+		return 0
+	}
+	if len(d.b) < 1 {
+		d.e = errInvalidSize
+		return 0
+	}
+	x := d.b[0]
+	d.b = d.b[1:]
+	return x
+
 }
 
 func (d *decbuf) decbuf(l int) decbuf {

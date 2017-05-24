@@ -20,11 +20,11 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
 		ref += uint32(rand.Int31n(10)) + 1
-		numRanges := rand.Intn(5)
-		dranges := make(intervals, numRanges)
+		numRanges := rand.Intn(5) + 1
+		dranges := make(intervals, 0, numRanges)
 		mint := rand.Int63n(time.Now().UnixNano())
 		for j := 0; j < numRanges; j++ {
-			dranges[j] = interval{mint, mint + rand.Int63n(1000)}
+			dranges = dranges.add(interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
 		stones[ref] = dranges
@@ -36,7 +36,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 	require.NoError(t, err)
 	exptr := newTombstoneReader(stones)
 	// Compare the two readers.
-	require.Equal(t, restr, exptr)
+	require.Equal(t, exptr, restr)
 }
 
 func TestAddingNewIntervals(t *testing.T) {

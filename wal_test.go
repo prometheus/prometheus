@@ -149,7 +149,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	var (
 		recordedSeries  [][]labels.Labels
 		recordedSamples [][]RefSample
-		recordedDeletes [][]stone
+		recordedDeletes []tombstoneReader
 	)
 	var totalSamples int
 
@@ -167,7 +167,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		var (
 			resultSeries  [][]labels.Labels
 			resultSamples [][]RefSample
-			resultDeletes [][]stone
+			resultDeletes []tombstoneReader
 		)
 
 		serf := func(lsets []labels.Labels) error {
@@ -191,9 +191,11 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 		delf := func(stones []stone) error {
 			if len(stones) > 0 {
-				cstones := make([]stone, len(stones))
-				copy(cstones, stones)
-				resultDeletes = append(resultDeletes, cstones)
+				dels := make(map[uint32]intervals)
+				for _, s := range stones {
+					dels[s.ref] = s.intervals
+				}
+				resultDeletes = append(resultDeletes, newTombstoneReader(dels))
 			}
 
 			return nil
@@ -240,12 +242,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			}
 			if len(stones) > 0 {
 				tr := newTombstoneReader(stones)
-				newdels := []stone{}
-				for k, v := range tr {
-					newdels = append(newdels, stone{k, v})
-				}
-
-				recordedDeletes = append(recordedDeletes, newdels)
+				recordedDeletes = append(recordedDeletes, tr)
 			}
 		}
 

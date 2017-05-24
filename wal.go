@@ -488,12 +488,9 @@ func (w *SegmentWAL) encodeDeletes(tr tombstoneReader) error {
 	eb := &encbuf{b: b}
 	buf := getWALBuffer()
 	for k, v := range tr {
-		eb.reset()
-		eb.putUvarint32(k)
-		eb.putUvarint(len(v))
-		buf = append(buf, eb.get()...)
 		for _, itv := range v {
 			eb.reset()
+			eb.putUvarint32(k)
 			eb.putVarint64(itv.mint)
 			eb.putVarint64(itv.maxt)
 			buf = append(buf, eb.get()...)
@@ -787,17 +784,10 @@ func (r *walReader) decodeDeletes(flag byte, b []byte) error {
 
 	for db.len() > 0 {
 		var s stone
-		s.ref = uint32(db.uvarint())
-		l := db.uvarint()
+		s.ref = db.uvarint32()
+		s.intervals = intervals{{db.varint64(), db.varint64()}}
 		if db.err() != nil {
 			return db.err()
-		}
-
-		for i := 0; i < l; i++ {
-			s.intervals = append(s.intervals, interval{db.varint64(), db.varint64()})
-			if db.err() != nil {
-				return db.err()
-			}
 		}
 
 		r.stones = append(r.stones, s)
