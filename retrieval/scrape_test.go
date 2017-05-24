@@ -606,6 +606,8 @@ func TestScrapeLoopAppend(t *testing.T) {
 		reportAppender: func() storage.Appender { return nopAppender{} },
 		refCache:       map[string]string{},
 		lsetCache:      map[string]lsetCacheEntry{},
+		seriesCur:      map[string]labels.Labels{},
+		seriesPrev:     map[string]labels.Labels{},
 	}
 
 	now := time.Now()
@@ -645,6 +647,8 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		reportAppender: func() storage.Appender { return nopAppender{} },
 		refCache:       map[string]string{},
 		lsetCache:      map[string]lsetCacheEntry{},
+		seriesCur:      map[string]labels.Labels{},
+		seriesPrev:     map[string]labels.Labels{},
 	}
 
 	now := time.Now()
@@ -738,6 +742,8 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 		reportAppender: func() storage.Appender { return nopAppender{} },
 		refCache:       map[string]string{},
 		lsetCache:      map[string]lsetCacheEntry{},
+		seriesCur:      map[string]labels.Labels{},
+		seriesPrev:     map[string]labels.Labels{},
 		l:              log.Base(),
 	}
 
