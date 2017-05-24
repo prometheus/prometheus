@@ -162,7 +162,7 @@ type persistedBlock struct {
 	indexr *indexReader
 
 	// For tombstones.
-	tombstones *mapTombstoneReader
+	tombstones tombstoneReader
 }
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
@@ -180,15 +180,9 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, err
 	}
 
-	tr, err := readTombstoneFile(dir)
+	tr, err := readTombstones(dir)
 	if err != nil {
 		return nil, err
-	}
-
-	ts := make(map[uint32]intervals)
-	for tr.Next() {
-		s := tr.At()
-		ts[s.ref] = s.intervals
 	}
 
 	pb := &persistedBlock{
@@ -197,8 +191,7 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		chunkr: cr,
 		indexr: ir,
 
-		// TODO(gouthamve): We will be sorting the refs again internally, is it a big deal?
-		tombstones: newMapTombstoneReader(ts),
+		tombstones: tr,
 	}
 	return pb, nil
 }
@@ -230,7 +223,7 @@ func (pb *persistedBlock) Dir() string         { return pb.dir }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
 func (pb *persistedBlock) Tombstones() TombstoneReader {
-	return pb.tombstones.Copy()
+	return pb.tombstones
 }
 func (pb *persistedBlock) Meta() BlockMeta { return pb.meta }
 
@@ -277,16 +270,18 @@ Outer:
 	}
 
 	// Merge the current and new tombstones.
-	tr := pb.Tombstones()
-	str := newMapTombstoneReader(delStones)
-	tombreader := newMergedTombstoneReader(tr, str)
+	for k, v := range pb.tombstones {
+		for _, itv := range v {
+			delStones[k] = delStones[k].add(itv)
+		}
+	}
+	tombreader := newTombstoneReader(delStones)
 
 	if err := writeTombstoneFile(pb.dir, tombreader); err != nil {
 		return err
 	}
 
-	// TODO(gouthamve): This counts any common tombstones too. But gives the same heuristic.
-	pb.meta.NumTombstones += int64(len(delStones))
+	pb.meta.NumTombstones = int64(len(delStones))
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 

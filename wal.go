@@ -83,7 +83,7 @@ type WAL interface {
 	Reader() WALReader
 	LogSeries([]labels.Labels) error
 	LogSamples([]RefSample) error
-	LogDeletes(TombstoneReader) error
+	LogDeletes(tombstoneReader) error
 	Close() error
 }
 
@@ -180,7 +180,7 @@ func (w *SegmentWAL) LogSamples(samples []RefSample) error {
 }
 
 // LogDeletes write a batch of new deletes to the log.
-func (w *SegmentWAL) LogDeletes(tr TombstoneReader) error {
+func (w *SegmentWAL) LogDeletes(tr tombstoneReader) error {
 	if err := w.encodeDeletes(tr); err != nil {
 		return err
 	}
@@ -483,17 +483,16 @@ func (w *SegmentWAL) encodeSamples(samples []RefSample) error {
 	return w.entry(WALEntrySamples, walSamplesSimple, buf)
 }
 
-func (w *SegmentWAL) encodeDeletes(tr TombstoneReader) error {
+func (w *SegmentWAL) encodeDeletes(tr tombstoneReader) error {
 	b := make([]byte, 2*binary.MaxVarintLen64)
 	eb := &encbuf{b: b}
 	buf := getWALBuffer()
-	for tr.Next() {
+	for k, v := range tr {
 		eb.reset()
-		s := tr.At()
-		eb.putUvarint32(s.ref)
-		eb.putUvarint(len(s.intervals))
+		eb.putUvarint32(k)
+		eb.putUvarint(len(v))
 		buf = append(buf, eb.get()...)
-		for _, itv := range s.intervals {
+		for _, itv := range v {
 			eb.reset()
 			eb.putVarint64(itv.mint)
 			eb.putVarint64(itv.maxt)

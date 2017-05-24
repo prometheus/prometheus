@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
 const tombstoneFilename = "tombstones"
@@ -19,11 +18,7 @@ const (
 	tombstoneFormatV1 = 1
 )
 
-func readTombstoneFile(dir string) (TombstoneReader, error) {
-	return newTombStoneReader(dir)
-}
-
-func writeTombstoneFile(dir string, tr TombstoneReader) error {
+func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
 	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
@@ -48,15 +43,13 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 	}
 	pos += int64(n)
 
-	for tr.Next() {
-		s := tr.At()
-
-		refs = append(refs, s.ref)
-		stoneOff[s.ref] = pos
+	for k, v := range tr {
+		refs = append(refs, k)
+		stoneOff[k] = pos
 
 		// Write the ranges.
 		buf.reset()
-		buf.putUvarint(len(s.intervals))
+		buf.putUvarint(len(v))
 		n, err := f.Write(buf.get())
 		if err != nil {
 			return err
@@ -64,7 +57,7 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 		pos += int64(n)
 
 		buf.reset()
-		for _, r := range s.intervals {
+		for _, r := range v {
 			buf.putVarint64(r.mint)
 			buf.putVarint64(r.maxt)
 		}
@@ -75,9 +68,6 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 			return err
 		}
 		pos += int64(n)
-	}
-	if err := tr.Err(); err != nil {
-		return err
 	}
 
 	// Write the offset table.
@@ -130,25 +120,10 @@ type stone struct {
 
 // TombstoneReader is the iterator over tombstones.
 type TombstoneReader interface {
-	Next() bool
-	Seek(ref uint32) bool
-	At() stone
-	// Copy copies the current reader state. Changes to the copy will not affect parent.
-	Copy() TombstoneReader
-	Err() error
+	At(ref uint32) intervals
 }
 
-type tombstoneReader struct {
-	stones []byte
-
-	cur stone
-
-	b   []byte
-	err error
-}
-
-func newTombStoneReader(dir string) (*tombstoneReader, error) {
-	// TODO(gouthamve): MMAP?
+func readTombstones(dir string) (tombstoneReader, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
 	if err != nil {
 		return nil, err
@@ -173,292 +148,50 @@ func newTombStoneReader(dir string) (*tombstoneReader, error) {
 	}
 	off += 4 // For the numStones which has been read.
 
-	return &tombstoneReader{
-		stones: b[off : off+int64(numStones*12)],
+	stones := b[off : off+int64(numStones*12)]
+	stonesMap := make(map[uint32]intervals)
+	for len(stones) >= 12 {
+		d := &decbuf{b: stones[:12]}
+		ref := d.be32()
+		off := d.be64int64()
 
-		b: b,
-	}, nil
-}
-
-func (t *tombstoneReader) Next() bool {
-	if t.err != nil {
-		return false
-	}
-
-	if len(t.stones) < 12 {
-		return false
-	}
-
-	d := &decbuf{b: t.stones[:12]}
-	ref := d.be32()
-	off := d.be64int64()
-
-	d = &decbuf{b: t.b[off:]}
-	numRanges := d.uvarint()
-	if err := d.err(); err != nil {
-		t.err = err
-		return false
-	}
-
-	dranges := make(intervals, 0, numRanges)
-	for i := 0; i < int(numRanges); i++ {
-		mint := d.varint64()
-		maxt := d.varint64()
+		d = &decbuf{b: b[off:]}
+		numRanges := d.uvarint()
 		if err := d.err(); err != nil {
-			t.err = err
-			return false
+			return nil, err
 		}
 
-		dranges = append(dranges, interval{mint, maxt})
-	}
+		dranges := make(intervals, 0, numRanges)
+		for i := 0; i < int(numRanges); i++ {
+			mint := d.varint64()
+			maxt := d.varint64()
+			if err := d.err(); err != nil {
+				return nil, err
+			}
 
-	// TODO(gouthamve): Verify checksum.
-	t.stones = t.stones[12:]
-	t.cur = stone{ref: ref, intervals: dranges}
-	return true
-}
-
-func (t *tombstoneReader) Seek(ref uint32) bool {
-	i := sort.Search(len(t.stones)/12, func(i int) bool {
-		x := binary.BigEndian.Uint32(t.stones[i*12:])
-		return x >= ref
-	})
-
-	if i*12 < len(t.stones) {
-		t.stones = t.stones[i*12:]
-		return t.Next()
-	}
-
-	t.stones = nil
-	return false
-}
-
-func (t *tombstoneReader) At() stone {
-	return t.cur
-}
-
-func (t *tombstoneReader) Copy() TombstoneReader {
-	return &tombstoneReader{
-		stones: t.stones[:],
-		cur:    t.cur,
-
-		b: t.b,
-	}
-}
-
-func (t *tombstoneReader) Err() error {
-	return t.err
-}
-
-type mapTombstoneReader struct {
-	refs []uint32
-	cur  uint32
-
-	stones map[uint32]intervals
-}
-
-func newMapTombstoneReader(ts map[uint32]intervals) *mapTombstoneReader {
-	refs := make([]uint32, 0, len(ts))
-	for k := range ts {
-		refs = append(refs, k)
-	}
-
-	sort.Sort(uint32slice(refs))
-	return &mapTombstoneReader{stones: ts, refs: refs}
-}
-
-func newEmptyTombstoneReader() *mapTombstoneReader {
-	return &mapTombstoneReader{stones: make(map[uint32]intervals)}
-}
-
-func (t *mapTombstoneReader) Next() bool {
-	if len(t.refs) > 0 {
-		t.cur = t.refs[0]
-		t.refs = t.refs[1:]
-		return true
-	}
-
-	t.cur = 0
-	return false
-}
-
-func (t *mapTombstoneReader) Seek(ref uint32) bool {
-	// If the current value satisfies, then return.
-	if t.cur >= ref {
-		return true
-	}
-
-	// Do binary search between current position and end.
-	i := sort.Search(len(t.refs), func(i int) bool {
-		return t.refs[i] >= ref
-	})
-	if i < len(t.refs) {
-		t.cur = t.refs[i]
-		t.refs = t.refs[i+1:]
-		return true
-	}
-	t.refs = nil
-	return false
-}
-
-func (t *mapTombstoneReader) At() stone {
-	return stone{ref: t.cur, intervals: t.stones[t.cur]}
-}
-
-func (t *mapTombstoneReader) Copy() TombstoneReader {
-	return &mapTombstoneReader{
-		refs: t.refs[:],
-		cur:  t.cur,
-
-		stones: t.stones,
-	}
-}
-
-func (t *mapTombstoneReader) Err() error {
-	return nil
-}
-
-type simpleTombstoneReader struct {
-	refs []uint32
-	cur  uint32
-
-	intervals intervals
-}
-
-func newSimpleTombstoneReader(refs []uint32, dranges intervals) *simpleTombstoneReader {
-	return &simpleTombstoneReader{refs: refs, intervals: dranges}
-}
-
-func (t *simpleTombstoneReader) Next() bool {
-	if len(t.refs) > 0 {
-		t.cur = t.refs[0]
-		t.refs = t.refs[1:]
-		return true
-	}
-
-	t.cur = 0
-	return false
-}
-
-func (t *simpleTombstoneReader) Seek(ref uint32) bool {
-	// If the current value satisfies, then return.
-	if t.cur >= ref {
-		return true
-	}
-
-	// Do binary search between current position and end.
-	i := sort.Search(len(t.refs), func(i int) bool {
-		return t.refs[i] >= ref
-	})
-	if i < len(t.refs) {
-		t.cur = t.refs[i]
-		t.refs = t.refs[i+1:]
-		return true
-	}
-	t.refs = nil
-	return false
-}
-
-func (t *simpleTombstoneReader) At() stone {
-	return stone{ref: t.cur, intervals: t.intervals}
-}
-
-func (t *simpleTombstoneReader) Copy() TombstoneReader {
-	return &simpleTombstoneReader{refs: t.refs[:], cur: t.cur, intervals: t.intervals}
-}
-
-func (t *simpleTombstoneReader) Err() error {
-	return nil
-}
-
-type mergedTombstoneReader struct {
-	a, b TombstoneReader
-	cur  stone
-
-	initialized bool
-	aok, bok    bool
-}
-
-func newMergedTombstoneReader(a, b TombstoneReader) *mergedTombstoneReader {
-	return &mergedTombstoneReader{a: a, b: b}
-}
-
-func (t *mergedTombstoneReader) Next() bool {
-	if !t.initialized {
-		t.aok = t.a.Next()
-		t.bok = t.b.Next()
-		t.initialized = true
-	}
-
-	if !t.aok && !t.bok {
-		return false
-	}
-
-	if !t.aok {
-		t.cur = t.b.At()
-		t.bok = t.b.Next()
-		return true
-	}
-	if !t.bok {
-		t.cur = t.a.At()
-		t.aok = t.a.Next()
-		return true
-	}
-
-	acur, bcur := t.a.At(), t.b.At()
-
-	if acur.ref < bcur.ref {
-		t.cur = acur
-		t.aok = t.a.Next()
-	} else if acur.ref > bcur.ref {
-		t.cur = bcur
-		t.bok = t.b.Next()
-	} else {
-		// Merge time ranges.
-		for _, r := range bcur.intervals {
-			acur.intervals = acur.intervals.add(r)
+			dranges = append(dranges, interval{mint, maxt})
 		}
 
-		t.cur = acur
-		t.aok = t.a.Next()
-		t.bok = t.b.Next()
-	}
-	return true
-}
-
-func (t *mergedTombstoneReader) Seek(ref uint32) bool {
-	if t.cur.ref >= ref {
-		return true
+		// TODO(gouthamve): Verify checksum.
+		stones = stones[12:]
+		stonesMap[ref] = dranges
 	}
 
-	t.aok = t.a.Seek(ref)
-	t.bok = t.b.Seek(ref)
-	t.initialized = true
-
-	return t.Next()
-}
-func (t *mergedTombstoneReader) At() stone {
-	return t.cur
+	return newTombstoneReader(stonesMap), nil
 }
 
-func (t *mergedTombstoneReader) Copy() TombstoneReader {
-	return &mergedTombstoneReader{
-		a: t.a.Copy(),
-		b: t.b.Copy(),
+type tombstoneReader map[uint32]intervals
 
-		cur: t.cur,
-
-		initialized: t.initialized,
-		aok:         t.aok,
-		bok:         t.bok,
-	}
+func newTombstoneReader(ts map[uint32]intervals) tombstoneReader {
+	return tombstoneReader(ts)
 }
 
-func (t *mergedTombstoneReader) Err() error {
-	if t.a.Err() != nil {
-		return t.a.Err()
-	}
-	return t.b.Err()
+func newEmptyTombstoneReader() tombstoneReader {
+	return tombstoneReader(make(map[uint32]intervals))
+}
+
+func (t tombstoneReader) At(ref uint32) intervals {
+	return t[ref]
 }
 
 type interval struct {

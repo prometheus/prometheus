@@ -151,7 +151,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 				index:  q.index,
 				absent: absent,
 
-				tombstones: q.tombstones.Copy(),
+				tombstones: q.tombstones,
 			},
 			chunks: q.chunks,
 			mint:   q.mint,
@@ -412,9 +412,9 @@ Outer:
 
 		s.lset = lset
 		s.chks = chunks
-		if s.tombstones.Seek(ref) && s.tombstones.At().ref == ref {
-			s.intervals = s.tombstones.At().intervals
+		s.intervals = s.tombstones.At(s.p.At())
 
+		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.
 			chks := make([]*ChunkMeta, 0, len(s.chks))
 			for _, chk := range s.chks {

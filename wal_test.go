@@ -189,7 +189,6 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			return nil
 		}
 
-		// TODO: Add this.
 		delf := func(stones []stone) error {
 			if len(stones) > 0 {
 				cstones := make([]stone, len(stones))
@@ -230,7 +229,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			require.NoError(t, w.LogSeries(lbls))
 			require.NoError(t, w.LogSamples(samples))
-			require.NoError(t, w.LogDeletes(newMapTombstoneReader(stones)))
+			require.NoError(t, w.LogDeletes(newTombstoneReader(stones)))
 
 			if len(lbls) > 0 {
 				recordedSeries = append(recordedSeries, lbls)
@@ -240,12 +239,11 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 				totalSamples += len(samples)
 			}
 			if len(stones) > 0 {
-				tr := newMapTombstoneReader(stones)
+				tr := newTombstoneReader(stones)
 				newdels := []stone{}
-				for tr.Next() {
-					newdels = append(newdels, tr.At())
+				for k, v := range tr {
+					newdels = append(newdels, stone{k, v})
 				}
-				require.NoError(t, tr.Err())
 
 				recordedDeletes = append(recordedDeletes, newdels)
 			}

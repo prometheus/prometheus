@@ -69,7 +69,7 @@ type HeadBlock struct {
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
-	tombstones *mapTombstoneReader
+	tombstones tombstoneReader
 
 	meta BlockMeta
 }
@@ -153,7 +153,7 @@ func (h *HeadBlock) init() error {
 	deletesFunc := func(stones []stone) error {
 		for _, s := range stones {
 			for _, itv := range s.intervals {
-				h.tombstones.stones[s.ref] = h.tombstones.stones[s.ref].add(itv)
+				h.tombstones[s.ref] = h.tombstones[s.ref].add(itv)
 			}
 		}
 
@@ -163,7 +163,6 @@ func (h *HeadBlock) init() error {
 	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
 		return errors.Wrap(err, "consume WAL")
 	}
-	h.tombstones = newMapTombstoneReader(h.tombstones.stones)
 
 	return nil
 }
@@ -221,7 +220,7 @@ func (h *HeadBlock) Meta() BlockMeta {
 
 // Tombstones returns the TombstoneReader against the block.
 func (h *HeadBlock) Tombstones() TombstoneReader {
-	return h.tombstones.Copy()
+	return h.tombstones
 }
 
 // Delete implements headBlock.
@@ -257,16 +256,15 @@ Outer:
 	if p.Err() != nil {
 		return p.Err()
 	}
-	if err := h.wal.LogDeletes(newMapTombstoneReader(newStones)); err != nil {
+	if err := h.wal.LogDeletes(newTombstoneReader(newStones)); err != nil {
 		return err
 	}
 
 	for k, v := range newStones {
-		h.tombstones.stones[k] = h.tombstones.stones[k].add(v[0])
+		h.tombstones[k] = h.tombstones[k].add(v[0])
 	}
-	h.tombstones = newMapTombstoneReader(h.tombstones.stones)
 
-	h.meta.NumTombstones = int64(len(h.tombstones.stones))
+	h.meta.NumTombstones = int64(len(h.tombstones))
 	return nil
 }
 
@@ -296,7 +294,7 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 		maxt:       maxt,
 		index:      h.Index(),
 		chunks:     h.Chunks(),
-		tombstones: h.Tombstones().Copy(),
+		tombstones: h.Tombstones(),
 
 		postingsMapper: func(p Postings) Postings {
 			ep := make([]uint32, 0, 64)

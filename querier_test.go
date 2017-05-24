@@ -432,7 +432,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 			chunks [][]sample
 		}
 
-		tombstones *mapTombstoneReader
+		tombstones tombstoneReader
 		queries    []query
 	}{
 		data: []struct {
@@ -480,7 +480,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				},
 			},
 		},
-		tombstones: newMapTombstoneReader(
+		tombstones: newTombstoneReader(
 			map[uint32]intervals{
 				1: intervals{{1, 3}},
 				2: intervals{{1, 3}, {6, 10}},
@@ -553,7 +553,7 @@ Outer:
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
-			tombstones: cases.tombstones.Copy(),
+			tombstones: cases.tombstones,
 
 			mint: c.mint,
 			maxt: c.maxt,
