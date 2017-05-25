@@ -13,7 +13,7 @@ compile:
     - ls -lah
     - ln -s /builds /go/src/github.com
     - cd /go/src/github.com/prometheus/prometheus
-    - make build
+    - make -j $(getconf _NPROCESSORS_ONLN) build
   artifacts:
     name: "${CI_JOB_NAME}_${CI_COMMIT_REF_NAME}"
     untracked: true
@@ -64,3 +64,4 @@ release:
     expire_in: 4 weeks
     paths:
       - release.properties
+      - "*tar.gz"
