@@ -238,11 +238,11 @@ type limitAppender struct {
 
 func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	if app.i+1 > app.limit {
-		return "", errors.New("sample limit exceeded")
+		return "", fmt.Errorf("sample limit of %d exceeded", app.limit)
 	}
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
-		return "", fmt.Errorf("sample limit of %d exceeded", app.limit)
+		return "", err
 	}
 	app.i++
 	return ref, nil
@@ -250,11 +250,11 @@ func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, e
 
 func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
 	if app.i+1 > app.limit {
-		return errors.New("sample limit exceeded")
+		return fmt.Errorf("sample limit of %d exceeded", app.limit)
 	}
 
 	if err := app.Appender.AddFast(ref, t, v); err != nil {
-		return fmt.Errorf("sample limit of %d exceeded", app.limit)
+		return err
 	}
 	app.i++
 	return nil
