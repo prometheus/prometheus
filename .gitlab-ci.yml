@@ -41,8 +41,8 @@ container:
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker build -t "$CI_REGISTRY_IMAGE:$IMAGE_TAG" .
     - docker push "$CI_REGISTRY_IMAGE:$IMAGE_TAG"
-    - echo image.repository=$CI_REGISTRY_IMAGE | tee release.properties
-    - echo image.tag=$IMAGE_TAG | tee -a release.properties
+    - echo server.image.repository=$CI_REGISTRY_IMAGE | tee release.properties
+    - echo server.image.tag=$IMAGE_TAG | tee -a release.properties
   dependencies:
     - compile
   artifacts:
