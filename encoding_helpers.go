@@ -154,7 +154,6 @@ func (d *decbuf) byte() byte {
 	x := d.b[0]
 	d.b = d.b[1:]
 	return x
-
 }
 
 func (d *decbuf) decbuf(l int) decbuf {

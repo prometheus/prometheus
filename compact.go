@@ -428,7 +428,7 @@ func (c *compactionSeriesSet) Next() bool {
 		return false
 	}
 
-	c.intervals = c.tombstones.At(c.p.At())
+	c.intervals = c.tombstones.Get(c.p.At())
 
 	c.l, c.c, c.err = c.index.Series(c.p.At())
 	if c.err != nil {

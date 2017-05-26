@@ -412,7 +412,7 @@ Outer:
 
 		s.lset = lset
 		s.chks = chunks
-		s.intervals = s.tombstones.At(s.p.At())
+		s.intervals = s.tombstones.Get(s.p.At())
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.

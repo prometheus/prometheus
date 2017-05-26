@@ -149,7 +149,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	var (
 		recordedSeries  [][]labels.Labels
 		recordedSamples [][]RefSample
-		recordedDeletes []tombstoneReader
+		recordedDeletes [][]Stone
 	)
 	var totalSamples int
 
@@ -167,7 +167,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		var (
 			resultSeries  [][]labels.Labels
 			resultSamples [][]RefSample
-			resultDeletes []tombstoneReader
+			resultDeletes [][]Stone
 		)
 
 		serf := func(lsets []labels.Labels) error {
@@ -189,13 +189,9 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			return nil
 		}
 
-		delf := func(stones []stone) error {
+		delf := func(stones []Stone) error {
 			if len(stones) > 0 {
-				dels := make(map[uint32]intervals)
-				for _, s := range stones {
-					dels[s.ref] = s.intervals
-				}
-				resultDeletes = append(resultDeletes, newTombstoneReader(dels))
+				resultDeletes = append(resultDeletes, stones)
 			}
 
 			return nil
@@ -212,7 +208,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		// Insert in batches and generate different amounts of samples for each.
 		for i := 0; i < len(series); i += stepSize {
 			var samples []RefSample
-			stones := map[uint32]intervals{}
+			var stones []Stone
 
 			for j := 0; j < i*10; j++ {
 				samples = append(samples, RefSample{
@@ -224,14 +220,14 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			for j := 0; j < i*20; j++ {
 				ts := rand.Int63()
-				stones[rand.Uint32()] = intervals{{ts, ts + rand.Int63n(10000)}}
+				stones = append(stones, Stone{rand.Uint32(), intervals{{ts, ts + rand.Int63n(10000)}}})
 			}
 
 			lbls := series[i : i+stepSize]
 
 			require.NoError(t, w.LogSeries(lbls))
 			require.NoError(t, w.LogSamples(samples))
-			require.NoError(t, w.LogDeletes(newTombstoneReader(stones)))
+			require.NoError(t, w.LogDeletes(stones))
 
 			if len(lbls) > 0 {
 				recordedSeries = append(recordedSeries, lbls)
@@ -241,8 +237,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 				totalSamples += len(samples)
 			}
 			if len(stones) > 0 {
-				tr := newTombstoneReader(stones)
-				recordedDeletes = append(recordedDeletes, tr)
+				recordedDeletes = append(recordedDeletes, stones)
 			}
 		}
 
@@ -350,7 +345,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				require.Equal(t, 0, len(l))
 				return nil
 			}
-			delf := func([]stone) error { return nil }
+			delf := func([]Stone) error { return nil }
 
 			// Weird hack to check order of reads.
 			i := 0

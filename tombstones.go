@@ -1,3 +1,16 @@
+// Copyright 2017 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -66,16 +79,16 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	return renameFile(tmp, path)
 }
 
-// stone holds the information on the posting and time-range
+// Stone holds the information on the posting and time-range
 // that is deleted.
-type stone struct {
+type Stone struct {
 	ref       uint32
 	intervals intervals
 }
 
 // TombstoneReader is the iterator over tombstones.
 type TombstoneReader interface {
-	At(ref uint32) intervals
+	Get(ref uint32) intervals
 }
 
 func readTombstones(dir string) (tombstoneReader, error) {
@@ -84,12 +97,20 @@ func readTombstones(dir string) (tombstoneReader, error) {
 		return nil, err
 	}
 
+	if len(b) < 5 {
+		return nil, errors.Wrap(errInvalidSize, "tombstones header")
+	}
+
 	d := &decbuf{b: b[:len(b)-4]} // 4 for the checksum.
 	if mg := d.be32(); mg != MagicTombstone {
 		return nil, fmt.Errorf("invalid magic number %x", mg)
 	}
 	if flag := d.byte(); flag != tombstoneFormatV1 {
 		return nil, fmt.Errorf("invalid tombstone format %x", flag)
+	}
+
+	if d.err() != nil {
+		return nil, d.err()
 	}
 
 	// Verify checksum
@@ -101,7 +122,7 @@ func readTombstones(dir string) (tombstoneReader, error) {
 		return nil, errors.New("checksum did not match")
 	}
 
-	stonesMap := make(map[uint32]intervals)
+	stonesMap := newEmptyTombstoneReader()
 	for d.len() > 0 {
 		k := d.uvarint32()
 		mint := d.varint64()
@@ -110,7 +131,7 @@ func readTombstones(dir string) (tombstoneReader, error) {
 			return nil, d.err()
 		}
 
-		stonesMap[k] = stonesMap[k].add(interval{mint, maxt})
+		stonesMap.add(k, interval{mint, maxt})
 	}
 
 	return newTombstoneReader(stonesMap), nil
@@ -126,8 +147,12 @@ func newEmptyTombstoneReader() tombstoneReader {
 	return tombstoneReader(make(map[uint32]intervals))
 }
 
-func (t tombstoneReader) At(ref uint32) intervals {
+func (t tombstoneReader) Get(ref uint32) intervals {
 	return t[ref]
+}
+
+func (t tombstoneReader) add(ref uint32, itv interval) {
+	t[ref] = t[ref].add(itv)
 }
 
 type interval struct {

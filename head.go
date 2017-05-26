@@ -150,10 +150,10 @@ func (h *HeadBlock) init() error {
 
 		return nil
 	}
-	deletesFunc := func(stones []stone) error {
+	deletesFunc := func(stones []Stone) error {
 		for _, s := range stones {
 			for _, itv := range s.intervals {
-				h.tombstones[s.ref] = h.tombstones[s.ref].add(itv)
+				h.tombstones.add(s.ref, itv)
 			}
 		}
 
@@ -230,7 +230,8 @@ func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
 	pr := newPostingsReader(ir)
 	p, absent := pr.Select(ms...)
 
-	newStones := make(map[uint32]intervals)
+	var stones []Stone
+
 Outer:
 	for p.Next() {
 		ref := p.At()
@@ -242,29 +243,22 @@ Outer:
 		}
 
 		// Delete only until the current values and not beyond.
-		maxtime := h.series[ref].head().maxTime
-		if maxtime > maxt {
-			maxtime = maxt
-		}
-		if mint < h.series[ref].chunks[0].minTime {
-			mint = h.series[ref].chunks[0].minTime
-		}
-
-		newStones[ref] = intervals{{mint, maxtime}}
+		mint, maxt = clampInterval(mint, maxt, h.series[ref].chunks[0].minTime, h.series[ref].head().maxTime)
+		stones = append(stones, Stone{ref, intervals{{mint, maxt}}})
 	}
 
 	if p.Err() != nil {
 		return p.Err()
 	}
-	if err := h.wal.LogDeletes(newTombstoneReader(newStones)); err != nil {
+	if err := h.wal.LogDeletes(stones); err != nil {
 		return err
 	}
 
-	for k, v := range newStones {
-		h.tombstones[k] = h.tombstones[k].add(v[0])
+	for _, s := range stones {
+		h.tombstones.add(s.ref, s.intervals[0])
 	}
 
-	h.meta.NumTombstones = int64(len(h.tombstones))
+	h.meta.Stats.NumTombstones = uint64(len(h.tombstones))
 	return nil
 }
 
@@ -510,14 +504,13 @@ func (a *headAppender) Commit() error {
 		}
 	}
 
-	var err MultiError
-
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
-	err.Add(a.wal.LogSeries(a.newLabels))
-	err.Add(a.wal.LogSamples(a.samples))
-	if err.Err() != nil {
-		return err.Err()
+	if err := a.wal.LogSeries(a.newLabels); err != nil {
+		return errors.Wrap(err, "WAL log series")
+	}
+	if err := a.wal.LogSamples(a.samples); err != nil {
+		return errors.Wrap(err, "WAL log samples")
 	}
 
 	total := uint64(len(a.samples))

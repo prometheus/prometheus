@@ -86,18 +86,16 @@ type BlockMeta struct {
 
 	// Stats about the contents of the block.
 	Stats struct {
-		NumSamples uint64 `json:"numSamples,omitempty"`
-		NumSeries  uint64 `json:"numSeries,omitempty"`
-		NumChunks  uint64 `json:"numChunks,omitempty"`
+		NumSamples    uint64 `json:"numSamples,omitempty"`
+		NumSeries     uint64 `json:"numSeries,omitempty"`
+		NumChunks     uint64 `json:"numChunks,omitempty"`
+		NumTombstones uint64 `json:"numTombstones,omitempty"`
 	} `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.
 	Compaction struct {
 		Generation int `json:"generation"`
 	} `json:"compaction"`
-
-	// The number of tombstones.
-	NumTombstones int64 `json:"numTombstones"`
 }
 
 const (
@@ -161,7 +159,6 @@ type persistedBlock struct {
 	chunkr *chunkReader
 	indexr *indexReader
 
-	// For tombstones.
 	tombstones tombstoneReader
 }
 
@@ -186,11 +183,10 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 	}
 
 	pb := &persistedBlock{
-		dir:    dir,
-		meta:   *meta,
-		chunkr: cr,
-		indexr: ir,
-
+		dir:        dir,
+		meta:       *meta,
+		chunkr:     cr,
+		indexr:     ir,
 		tombstones: tr,
 	}
 	return pb, nil
@@ -234,7 +230,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	newStones := map[uint32]intervals{}
+	stones := map[uint32]intervals{}
 
 Outer:
 	for p.Next() {
@@ -251,15 +247,9 @@ Outer:
 
 		for _, chk := range chunks {
 			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
-				// Delete only until the current maxtime and not beyond.
-				maxtime := chunks[len(chunks)-1].MaxTime
-				if maxtime > maxt {
-					maxtime = maxt
-				}
-				if mint < chunks[0].MinTime {
-					mint = chunks[0].MinTime
-				}
-				newStones[p.At()] = intervals{{mint, maxtime}}
+				// Delete only until the current vlaues and not beyond.
+				mint, maxt = clampInterval(mint, maxt, chunks[0].MinTime, chunks[len(chunks)-1].MaxTime)
+				stones[p.At()] = intervals{{mint, maxt}}
 				continue Outer
 			}
 		}
@@ -270,20 +260,31 @@ Outer:
 	}
 
 	// Merge the current and new tombstones.
-	for k, v := range newStones {
-		pb.tombstones[k] = pb.tombstones[k].add(v[0])
+	for k, v := range stones {
+		pb.tombstones.add(k, v[0])
 	}
 
 	if err := writeTombstoneFile(pb.dir, pb.tombstones); err != nil {
 		return err
 	}
 
-	pb.meta.NumTombstones = int64(len(pb.tombstones))
+	pb.meta.Stats.NumTombstones = uint64(len(pb.tombstones))
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 func walDir(dir string) string   { return filepath.Join(dir, "wal") }
+
+func clampInterval(a, b, mint, maxt int64) (int64, int64) {
+	if a < mint {
+		a = mint
+	}
+	if b > maxt {
+		b = maxt
+	}
+
+	return a, b
+}
 
 type mmapFile struct {
 	f *os.File
