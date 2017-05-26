@@ -263,12 +263,8 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 	}
 
 	// Create an empty tombstones file.
-	tf, err := os.Create(filepath.Join(tmp, tombstoneFilename))
-	if err != nil {
-		return errors.Wrap(err, "touch tombstones file")
-	}
-	if err := tf.Close(); err != nil {
-		return errors.Wrap(err, "close tombstones file")
+	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
+		return errors.Wrap(err, "write new tombstones file")
 	}
 
 	// Block successfully written, make visible and remove old ones.
@@ -444,16 +440,18 @@ func (c *compactionSeriesSet) Next() bool {
 		chks := make([]*ChunkMeta, 0, len(c.c))
 		for _, chk := range c.c {
 			if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(c.intervals)) {
-				chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
-				if c.err != nil {
-					return false
-				}
-
 				chks = append(chks, chk)
 			}
 		}
 
 		c.c = chks
+	}
+
+	for _, chk := range c.c {
+		chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
+		if c.err != nil {
+			return false
+		}
 	}
 
 	return true

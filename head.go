@@ -260,12 +260,9 @@ Outer:
 		return err
 	}
 
-	// Map is accessed in other places also, so protect it.
-	h.mtx.Lock()
 	for k, v := range newStones {
 		h.tombstones[k] = h.tombstones[k].add(v[0])
 	}
-	h.mtx.Unlock()
 
 	h.meta.NumTombstones = int64(len(h.tombstones))
 	return nil

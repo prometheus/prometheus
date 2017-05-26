@@ -234,7 +234,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	delStones := map[uint32]intervals{}
+	newStones := map[uint32]intervals{}
 
 Outer:
 	for p.Next() {
@@ -259,7 +259,7 @@ Outer:
 				if mint < chunks[0].MinTime {
 					mint = chunks[0].MinTime
 				}
-				delStones[p.At()] = intervals{{mint, maxtime}}
+				newStones[p.At()] = intervals{{mint, maxtime}}
 				continue Outer
 			}
 		}
@@ -270,18 +270,15 @@ Outer:
 	}
 
 	// Merge the current and new tombstones.
-	for k, v := range pb.tombstones {
-		for _, itv := range v {
-			delStones[k] = delStones[k].add(itv)
-		}
+	for k, v := range newStones {
+		pb.tombstones[k] = pb.tombstones[k].add(v[0])
 	}
-	tombreader := newTombstoneReader(delStones)
 
-	if err := writeTombstoneFile(pb.dir, tombreader); err != nil {
+	if err := writeTombstoneFile(pb.dir, pb.tombstones); err != nil {
 		return err
 	}
 
-	pb.meta.NumTombstones = int64(len(delStones))
+	pb.meta.NumTombstones = int64(len(pb.tombstones))
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 

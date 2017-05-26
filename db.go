@@ -424,6 +424,7 @@ func (db *DB) reloadBlocks() error {
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
 	}
+
 	// Close all opened blocks that no longer exist after we returned all locks.
 	for _, b := range db.blocks {
 		if _, ok := exist[b.Meta().ULID]; !ok {
@@ -670,22 +671,24 @@ func (a *dbAppender) Rollback() error {
 func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
-	db.mtx.RLock()
 	blocks := db.blocksForInterval(mint, maxt)
-	db.mtx.RUnlock()
 
 	var g errgroup.Group
 
 	for _, b := range blocks {
-		g.Go(func() error { return b.Delete(mint, maxt, ms...) })
+		g.Go(func(b Block) func() error {
+			return func() error { return b.Delete(mint, maxt, ms...) }
+		}(b))
 	}
 
 	if err := g.Wait(); err != nil {
 		return err
 	}
 
-	return db.reloadBlocks()
+	return nil
 }
 
 // appendable returns a copy of a slice of HeadBlocks that can still be appended to.
