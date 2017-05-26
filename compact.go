@@ -70,7 +70,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 		Name: "tsdb_compactions_failed_total",
 		Help: "Total number of compactions that failed for the partition.",
 	})
-	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.duration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "tsdb_compaction_duration",
 		Help: "Duration of compaction runs.",
 	})
@@ -219,6 +219,7 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 		if err != nil {
 			c.metrics.failed.Inc()
 		}
+		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
