@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -144,6 +145,7 @@ var expectedConf = &Config{
 			},
 		},
 		{
+
 			JobName: "service-x",
 
 			ScrapeInterval: model.Duration(50 * time.Second),
@@ -153,7 +155,7 @@ var expectedConf = &Config{
 			HTTPClientConfig: HTTPClientConfig{
 				BasicAuth: &BasicAuth{
 					Username: "admin_name",
-					Password: "admin_password",
+					Password: "multiline\nmysecret\ntest",
 				},
 			},
 			MetricsPath: "/my_path",
@@ -284,7 +286,7 @@ var expectedConf = &Config{
 					KeyFile:  "testdata/valid_key_file",
 				},
 
-				BearerToken: "avalidtoken",
+				BearerToken: "mysecret",
 			},
 		},
 		{
@@ -303,7 +305,7 @@ var expectedConf = &Config{
 						Role:      KubernetesRoleEndpoint,
 						BasicAuth: &BasicAuth{
 							Username: "myusername",
-							Password: "mypassword",
+							Password: "mysecret",
 						},
 						NamespaceDiscovery: KubernetesNamespaceDiscovery{},
 					},
@@ -372,7 +374,7 @@ var expectedConf = &Config{
 					{
 						Region:          "us-east-1",
 						AccessKey:       "access",
-						SecretKey:       "secret",
+						SecretKey:       "mysecret",
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
@@ -395,7 +397,7 @@ var expectedConf = &Config{
 						SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
 						TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
 						ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
-						ClientSecret:    "nAdvAK2oBuVym4IXix",
+						ClientSecret:    "mysecret",
 						RefreshInterval: model.Duration(5 * time.Minute),
 						Port:            9100,
 					},
@@ -538,9 +540,12 @@ func TestLoadConfig(t *testing.T) {
 
 	// String method must not reveal authentication credentials.
 	s := c.String()
-	if strings.Contains(s, "admin_password") {
+	secretRe := regexp.MustCompile("<secret>")
+	matches := secretRe.FindAllStringIndex(s, -1)
+	if len(matches) != 5 || strings.Contains(s, "mysecret") {
 		t.Fatalf("config's String method reveals authentication credentials.")
 	}
+
 }
 
 var expectedErrors = []struct {

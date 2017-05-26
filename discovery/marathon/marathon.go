@@ -94,7 +94,7 @@ func NewDiscovery(conf *config.MarathonSDConfig) (*Discovery, error) {
 		return nil, err
 	}
 
-	token := conf.BearerToken
+	token := string(conf.BearerToken)
 	if conf.BearerTokenFile != "" {
 		bf, err := ioutil.ReadFile(conf.BearerTokenFile)
 		if err != nil {
