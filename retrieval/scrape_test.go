@@ -373,11 +373,9 @@ func TestScrapeLoopStop(t *testing.T) {
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		numScrapes += 1
+		numScrapes++
 		if numScrapes == 2 {
-			go func() {
-				sl.stop()
-			}()
+			go sl.stop()
 		}
 		w.Write([]byte("metric_a 42\n"))
 		return nil
@@ -398,7 +396,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		t.Fatalf("Appended samples not as expected. Wanted: at least %d samples Got: %d", 2, len(appender.result))
 	}
 	if !value.IsStaleNaN(appender.result[len(appender.result)-1].v) {
-		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[len(appender.result)].v))
+		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[len(appender.result)-1].v))
 	}
 
 	if len(reportAppender.result) < 8 {
@@ -515,7 +513,8 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		numScrapes += 1
+		numScrapes++
+
 		if numScrapes == 1 {
 			w.Write([]byte("metric_a 42\n"))
 			return nil
@@ -564,7 +563,8 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		numScrapes += 1
+		numScrapes++
+
 		if numScrapes == 1 {
 			w.Write([]byte("metric_a 42\n"))
 			return nil
@@ -601,15 +601,12 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 
 func TestScrapeLoopAppend(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := &scrapeLoop{
-		appender:       func() storage.Appender { return app },
-		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]*refEntry{},
-		lsetCache:      map[string]*lsetCacheEntry{},
-		seriesCur:      map[uint64]labels.Labels{},
-		seriesPrev:     map[uint64]labels.Labels{},
-	}
 
+	sl := newScrapeLoop(context.Background(), nil,
+		func() storage.Appender { return app },
+		func() storage.Appender { return nopAppender{} },
+		nil,
+	)
 	now := time.Now()
 	_, _, err := sl.append([]byte("metric_a 1\nmetric_b NaN\n"), now)
 	if err != nil {
@@ -642,14 +639,11 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 func TestScrapeLoopAppendStaleness(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := &scrapeLoop{
-		appender:       func() storage.Appender { return app },
-		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]*refEntry{},
-		lsetCache:      map[string]*lsetCacheEntry{},
-		seriesCur:      map[uint64]labels.Labels{},
-		seriesPrev:     map[uint64]labels.Labels{},
-	}
+	sl := newScrapeLoop(context.Background(), nil,
+		func() storage.Appender { return app },
+		func() storage.Appender { return nopAppender{} },
+		nil,
+	)
 
 	now := time.Now()
 	_, _, err := sl.append([]byte("metric_a 1\n"), now)
@@ -688,12 +682,11 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := &scrapeLoop{
-		appender:       func() storage.Appender { return app },
-		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]*refEntry{},
-		lsetCache:      map[string]*lsetCacheEntry{},
-	}
+	sl := newScrapeLoop(context.Background(), nil,
+		func() storage.Appender { return app },
+		func() storage.Appender { return nopAppender{} },
+		nil,
+	)
 
 	now := time.Now()
 	_, _, err := sl.append([]byte("metric_a 1 1000\n"), now)
@@ -737,15 +730,11 @@ func (app *errorAppender) AddFast(ref string, t int64, v float64) error {
 
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 	app := &errorAppender{}
-	sl := &scrapeLoop{
-		appender:       func() storage.Appender { return app },
-		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]*refEntry{},
-		lsetCache:      map[string]*lsetCacheEntry{},
-		seriesCur:      map[uint64]labels.Labels{},
-		seriesPrev:     map[uint64]labels.Labels{},
-		l:              log.Base(),
-	}
+	sl := newScrapeLoop(context.Background(), nil,
+		func() storage.Appender { return app },
+		func() storage.Appender { return nopAppender{} },
+		nil,
+	)
 
 	now := time.Unix(1, 0)
 	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\n"), now)

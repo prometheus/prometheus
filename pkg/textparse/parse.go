@@ -99,6 +99,7 @@ func (p *Parser) Err() error {
 }
 
 // Metric writes the labels of the current sample into the passed labels.
+// It returns the string from which the metric was parsed.
 func (p *Parser) Metric(l *labels.Labels) string {
 	// Allocate the full immutable string immediately, so we just
 	// have to create references on it below.
