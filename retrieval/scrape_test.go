@@ -604,10 +604,10 @@ func TestScrapeLoopAppend(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]string{},
-		lsetCache:      map[string]lsetCacheEntry{},
-		seriesCur:      map[string]labels.Labels{},
-		seriesPrev:     map[string]labels.Labels{},
+		refCache:       map[string]*refEntry{},
+		lsetCache:      map[string]*lsetCacheEntry{},
+		seriesCur:      map[uint64]labels.Labels{},
+		seriesPrev:     map[uint64]labels.Labels{},
 	}
 
 	now := time.Now()
@@ -645,10 +645,10 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]string{},
-		lsetCache:      map[string]lsetCacheEntry{},
-		seriesCur:      map[string]labels.Labels{},
-		seriesPrev:     map[string]labels.Labels{},
+		refCache:       map[string]*refEntry{},
+		lsetCache:      map[string]*lsetCacheEntry{},
+		seriesCur:      map[uint64]labels.Labels{},
+		seriesPrev:     map[uint64]labels.Labels{},
 	}
 
 	now := time.Now()
@@ -691,8 +691,8 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]string{},
-		lsetCache:      map[string]lsetCacheEntry{},
+		refCache:       map[string]*refEntry{},
+		lsetCache:      map[string]*lsetCacheEntry{},
 	}
 
 	now := time.Now()
@@ -740,10 +740,10 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 	sl := &scrapeLoop{
 		appender:       func() storage.Appender { return app },
 		reportAppender: func() storage.Appender { return nopAppender{} },
-		refCache:       map[string]string{},
-		lsetCache:      map[string]lsetCacheEntry{},
-		seriesCur:      map[string]labels.Labels{},
-		seriesPrev:     map[string]labels.Labels{},
+		refCache:       map[string]*refEntry{},
+		lsetCache:      map[string]*lsetCacheEntry{},
+		seriesCur:      map[uint64]labels.Labels{},
+		seriesPrev:     map[uint64]labels.Labels{},
 		l:              log.Base(),
 	}
 
