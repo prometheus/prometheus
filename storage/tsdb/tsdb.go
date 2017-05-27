@@ -73,6 +73,15 @@ func (a adapter) Appender() (storage.Appender, error) {
 	return appender{a: a.db.Appender()}, nil
 }
 
+func (a adapter) Delete(mint, maxt int64, oms ...*labels.Matcher) error {
+	ms := make([]tsdbLabels.Matcher, 0, len(oms))
+
+	for _, om := range oms {
+		ms = append(ms, convertMatcher(om))
+	}
+	return a.db.Delete(mint, maxt, ms...)
+}
+
 // Close closes the storage and all its underlying resources.
 func (a adapter) Close() error {
 	return a.db.Close()

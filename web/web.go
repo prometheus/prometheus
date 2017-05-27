@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
+	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -67,6 +68,7 @@ type Handler struct {
 	notifier      *notifier.Notifier
 
 	apiV1 *api_v1.API
+	apiV2 *api_v2.API
 
 	router       *route.Router
 	listenErrCh  chan error
@@ -157,6 +159,7 @@ func New(o *Options) *Handler {
 		notifier:      o.Notifier,
 
 		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager, o.Notifier),
+		apiV2: api_v2.NewAPI(o.QueryEngine, o.Storage),
 		now:   model.Now,
 	}
 
@@ -193,6 +196,7 @@ func New(o *Options) *Handler {
 	}))
 
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
+	h.apiV2.Register(router.WithPrefix("/api/v2"))
 
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
 

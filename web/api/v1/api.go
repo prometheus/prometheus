@@ -143,7 +143,6 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 
 	r.Get("/series", instr("series", api.series))
-	r.Del("/series", instr("drop_series", api.dropSeries))
 
 	r.Get("/targets", instr("targets", api.targets))
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
@@ -355,36 +354,6 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return metrics, nil
-}
-
-func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
-	r.ParseForm()
-	if len(r.Form["match[]"]) == 0 {
-		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
-	}
-
-	// TODO(fabxc): temporarily disabled
-	return nil, &apiError{errorExec, fmt.Errorf("temporarily disabled")}
-
-	// numDeleted := 0
-	// for _, s := range r.Form["match[]"] {
-	// 	matchers, err := promql.ParseMetricSelector(s)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorBadData, err}
-	// 	}
-	// 	n, err := api.Storage.DropMetricsForLabelMatchers(context.TODO(), matchers...)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorExec, err}
-	// 	}
-	// 	numDeleted += n
-	// }
-
-	// res := struct {
-	// 	NumDeleted int `json:"numDeleted"`
-	// }{
-	// 	NumDeleted: numDeleted,
-	// }
-	// return res, nil
 }
 
 // Target has the information for one target.
