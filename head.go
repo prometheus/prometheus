@@ -243,8 +243,8 @@ Outer:
 		}
 
 		// Delete only until the current values and not beyond.
-		mint, maxt = clampInterval(mint, maxt, h.series[ref].chunks[0].minTime, h.series[ref].head().maxTime)
-		stones = append(stones, Stone{ref, intervals{{mint, maxt}}})
+		tmin, tmax := clampInterval(mint, maxt, h.series[ref].chunks[0].minTime, h.series[ref].head().maxTime)
+		stones = append(stones, Stone{ref, intervals{{tmin, tmax}}})
 	}
 
 	if p.Err() != nil {
