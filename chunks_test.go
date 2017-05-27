@@ -14,8 +14,12 @@
 package tsdb
 
 import (
+	"math/rand"
+	"testing"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/stretchr/testify/require"
 )
 
 type mockChunkReader map[uint64]chunks.Chunk
@@ -31,4 +35,64 @@ func (cr mockChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 
 func (cr mockChunkReader) Close() error {
 	return nil
+}
+
+func TestDeletedIterator(t *testing.T) {
+	chk := chunks.NewXORChunk()
+	app, err := chk.Appender()
+	require.NoError(t, err)
+	// Insert random stuff from (0, 1000).
+	act := make([]sample, 1000)
+	for i := 0; i < 1000; i++ {
+		act[i].t = int64(i)
+		act[i].v = rand.Float64()
+		app.Append(act[i].t, act[i].v)
+	}
+
+	cases := []struct {
+		r intervals
+	}{
+		{r: intervals{{1, 20}}},
+		{r: intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
+		{r: intervals{{1, 10}, {12, 20}, {20, 30}}},
+		{r: intervals{{1, 10}, {12, 23}, {25, 30}}},
+		{r: intervals{{1, 23}, {12, 20}, {25, 30}}},
+		{r: intervals{{1, 23}, {12, 20}, {25, 3000}}},
+		{r: intervals{{0, 2000}}},
+		{r: intervals{{500, 2000}}},
+		{r: intervals{{0, 200}}},
+		{r: intervals{{1000, 20000}}},
+	}
+
+	for _, c := range cases {
+		i := int64(-1)
+		it := &deletedIterator{it: chk.Iterator(), intervals: c.r[:]}
+		ranges := c.r[:]
+		for it.Next() {
+			i++
+			for _, tr := range ranges {
+				if tr.inBounds(i) {
+					i = tr.maxt + 1
+					ranges = ranges[1:]
+				}
+			}
+
+			require.True(t, i < 1000)
+
+			ts, v := it.At()
+			require.Equal(t, act[i].t, ts)
+			require.Equal(t, act[i].v, v)
+		}
+		// There has been an extra call to Next().
+		i++
+		for _, tr := range ranges {
+			if tr.inBounds(i) {
+				i = tr.maxt + 1
+				ranges = ranges[1:]
+			}
+		}
+
+		require.False(t, i < 1000)
+		require.NoError(t, it.Err())
+	}
 }

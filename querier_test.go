@@ -232,6 +232,7 @@ func createIdxChkReaders(tc []struct {
 	mi := newMockIndex()
 
 	for i, s := range tc {
+		i = i + 1 // 0 is not a valid posting.
 		metas := make([]*ChunkMeta, 0, len(s.chunks))
 		for _, chk := range s.chunks {
 			// Collisions can be there, but for tests, its fine.
@@ -378,8 +379,181 @@ Outer:
 	for _, c := range cases.queries {
 		ir, cr := createIdxChkReaders(cases.data)
 		querier := &blockQuerier{
-			index:  ir,
-			chunks: cr,
+			index:      ir,
+			chunks:     cr,
+			tombstones: newEmptyTombstoneReader(),
+
+			mint: c.mint,
+			maxt: c.maxt,
+		}
+
+		res := querier.Select(c.ms...)
+
+		for {
+			eok, rok := c.exp.Next(), res.Next()
+			require.Equal(t, eok, rok, "next")
+
+			if !eok {
+				continue Outer
+			}
+			sexp := c.exp.At()
+			sres := res.At()
+
+			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+
+			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
+			smplRes, errRes := expandSeriesIterator(sres.Iterator())
+
+			require.Equal(t, errExp, errRes, "samples error")
+			require.Equal(t, smplExp, smplRes, "samples")
+		}
+	}
+
+	return
+}
+
+func TestBlockQuerierDelete(t *testing.T) {
+	newSeries := func(l map[string]string, s []sample) Series {
+		return &mockSeries{
+			labels:   func() labels.Labels { return labels.FromMap(l) },
+			iterator: func() SeriesIterator { return newListSeriesIterator(s) },
+		}
+	}
+
+	type query struct {
+		mint, maxt int64
+		ms         []labels.Matcher
+		exp        SeriesSet
+	}
+
+	cases := struct {
+		data []struct {
+			lset   map[string]string
+			chunks [][]sample
+		}
+
+		tombstones tombstoneReader
+		queries    []query
+	}{
+		data: []struct {
+			lset   map[string]string
+			chunks [][]sample
+		}{
+			{
+				lset: map[string]string{
+					"a": "a",
+				},
+				chunks: [][]sample{
+					{
+						{1, 2}, {2, 3}, {3, 4},
+					},
+					{
+						{5, 2}, {6, 3}, {7, 4},
+					},
+				},
+			},
+			{
+				lset: map[string]string{
+					"a": "a",
+					"b": "b",
+				},
+				chunks: [][]sample{
+					{
+						{1, 1}, {2, 2}, {3, 3},
+					},
+					{
+						{4, 15}, {5, 3}, {6, 6},
+					},
+				},
+			},
+			{
+				lset: map[string]string{
+					"b": "b",
+				},
+				chunks: [][]sample{
+					{
+						{1, 3}, {2, 2}, {3, 6},
+					},
+					{
+						{5, 1}, {6, 7}, {7, 2},
+					},
+				},
+			},
+		},
+		tombstones: newTombstoneReader(
+			map[uint32]intervals{
+				1: intervals{{1, 3}},
+				2: intervals{{1, 3}, {6, 10}},
+				3: intervals{{6, 10}},
+			},
+		),
+
+		queries: []query{
+			{
+				mint: 2,
+				maxt: 7,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+				exp: newListSeriesSet([]Series{
+					newSeries(map[string]string{
+						"a": "a",
+					},
+						[]sample{{5, 2}, {6, 3}, {7, 4}},
+					),
+					newSeries(map[string]string{
+						"a": "a",
+						"b": "b",
+					},
+						[]sample{{4, 15}, {5, 3}},
+					),
+				}),
+			},
+			{
+				mint: 2,
+				maxt: 7,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("b", "b")},
+				exp: newListSeriesSet([]Series{
+					newSeries(map[string]string{
+						"a": "a",
+						"b": "b",
+					},
+						[]sample{{4, 15}, {5, 3}},
+					),
+					newSeries(map[string]string{
+						"b": "b",
+					},
+						[]sample{{2, 2}, {3, 6}, {5, 1}},
+					),
+				}),
+			},
+			{
+				mint: 1,
+				maxt: 4,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+				exp: newListSeriesSet([]Series{
+					newSeries(map[string]string{
+						"a": "a",
+						"b": "b",
+					},
+						[]sample{{4, 15}},
+					),
+				}),
+			},
+			{
+				mint: 1,
+				maxt: 3,
+				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
+				exp:  newListSeriesSet([]Series{}),
+			},
+		},
+	}
+
+Outer:
+	for _, c := range cases.queries {
+		ir, cr := createIdxChkReaders(cases.data)
+		querier := &blockQuerier{
+			index:      ir,
+			chunks:     cr,
+			tombstones: cases.tombstones,
 
 			mint: c.mint,
 			maxt: c.maxt,
@@ -487,13 +661,14 @@ func TestBaseChunkSeries(t *testing.T) {
 		}
 
 		bcs := &baseChunkSeries{
-			p:     newListPostings(tc.postings),
-			index: mi,
+			p:          newListPostings(tc.postings),
+			index:      mi,
+			tombstones: newEmptyTombstoneReader(),
 		}
 
 		i := 0
 		for bcs.Next() {
-			lset, chks := bcs.At()
+			lset, chks, _ := bcs.At()
 
 			idx := tc.expIdxs[i]
 
@@ -701,7 +876,7 @@ func TestSeriesIterator(t *testing.T) {
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
 			}
-			res := newChunkSeriesIterator(chkMetas, tc.mint, tc.maxt)
+			res := newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt)
 
 			smplValid := make([]sample, 0)
 			for _, s := range tc.exp {
@@ -772,7 +947,7 @@ func TestSeriesIterator(t *testing.T) {
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
 				}
-				res := newChunkSeriesIterator(chkMetas, tc.mint, tc.maxt)
+				res := newChunkSeriesIterator(chkMetas, nil, tc.mint, tc.maxt)
 
 				smplValid := make([]sample, 0)
 				for _, s := range tc.exp {
@@ -919,8 +1094,8 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta) {
-	return m.l[m.i], m.cm[m.i]
+func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta, intervals) {
+	return m.l[m.i], m.cm[m.i], nil
 }
 
 func (m *mockChunkSeriesSet) Err() error {

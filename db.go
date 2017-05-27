@@ -119,6 +119,9 @@ type DB struct {
 	compactc chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
+
+	// cmtx is used to control compactions and deletions.
+	cmtx sync.Mutex
 }
 
 type dbMetrics struct {
@@ -296,6 +299,9 @@ func (db *DB) retentionCutoff() (bool, error) {
 }
 
 func (db *DB) compact() (changes bool, err error) {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
 	db.headmtx.RLock()
 
 	// Check whether we have pending head blocks that are ready to be persisted.
@@ -461,6 +467,7 @@ func (db *DB) reloadBlocks() (err error) {
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
 	}
+
 	// Close all opened blocks that no longer exist after we returned all locks.
 	for _, b := range db.blocks {
 		if _, ok := exist[b.Meta().ULID]; !ok {
@@ -707,6 +714,30 @@ func (a *dbAppender) Rollback() error {
 	return g.Wait()
 }
 
+// Delete implements deletion of metrics.
+func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
+	blocks := db.blocksForInterval(mint, maxt)
+
+	var g errgroup.Group
+
+	for _, b := range blocks {
+		g.Go(func(b Block) func() error {
+			return func() error { return b.Delete(mint, maxt, ms...) }
+		}(b))
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // appendable returns a copy of a slice of HeadBlocks that can still be appended to.
 func (db *DB) appendable() (r []headBlock) {
 	switch len(db.heads) {
@@ -720,13 +751,8 @@ func (db *DB) appendable() (r []headBlock) {
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	if bmin >= amin && bmin <= amax {
-		return true
-	}
-	if amin >= bmin && amin <= bmax {
-		return true
-	}
-	return false
+	// Checks Overlap: http://stackoverflow.com/questions/3269434/
+	return amin <= bmax && bmin <= amax
 }
 
 func intervalContains(min, max, t int64) bool {

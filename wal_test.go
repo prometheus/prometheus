@@ -149,6 +149,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	var (
 		recordedSeries  [][]labels.Labels
 		recordedSamples [][]RefSample
+		recordedDeletes [][]Stone
 	)
 	var totalSamples int
 
@@ -166,32 +167,48 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		var (
 			resultSeries  [][]labels.Labels
 			resultSamples [][]RefSample
+			resultDeletes [][]Stone
 		)
 
-		for r.Next() {
-			lsets, smpls := r.At()
-
+		serf := func(lsets []labels.Labels) error {
 			if len(lsets) > 0 {
 				clsets := make([]labels.Labels, len(lsets))
 				copy(clsets, lsets)
 				resultSeries = append(resultSeries, clsets)
 			}
+
+			return nil
+		}
+		smplf := func(smpls []RefSample) error {
 			if len(smpls) > 0 {
 				csmpls := make([]RefSample, len(smpls))
 				copy(csmpls, smpls)
 				resultSamples = append(resultSamples, csmpls)
 			}
+
+			return nil
 		}
-		require.NoError(t, r.Err())
+
+		delf := func(stones []Stone) error {
+			if len(stones) > 0 {
+				resultDeletes = append(resultDeletes, stones)
+			}
+
+			return nil
+		}
+
+		require.NoError(t, r.Read(serf, smplf, delf))
 
 		require.Equal(t, recordedSamples, resultSamples)
 		require.Equal(t, recordedSeries, resultSeries)
+		require.Equal(t, recordedDeletes, resultDeletes)
 
 		series := series[k : k+(numMetrics/iterations)]
 
 		// Insert in batches and generate different amounts of samples for each.
 		for i := 0; i < len(series); i += stepSize {
 			var samples []RefSample
+			var stones []Stone
 
 			for j := 0; j < i*10; j++ {
 				samples = append(samples, RefSample{
@@ -201,9 +218,16 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 				})
 			}
 
+			for j := 0; j < i*20; j++ {
+				ts := rand.Int63()
+				stones = append(stones, Stone{rand.Uint32(), intervals{{ts, ts + rand.Int63n(10000)}}})
+			}
+
 			lbls := series[i : i+stepSize]
 
-			require.NoError(t, w.Log(lbls, samples))
+			require.NoError(t, w.LogSeries(lbls))
+			require.NoError(t, w.LogSamples(samples))
+			require.NoError(t, w.LogDeletes(stones))
 
 			if len(lbls) > 0 {
 				recordedSeries = append(recordedSeries, lbls)
@@ -211,6 +235,9 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			if len(samples) > 0 {
 				recordedSamples = append(recordedSamples, samples)
 				totalSamples += len(samples)
+			}
+			if len(stones) > 0 {
+				recordedDeletes = append(recordedDeletes, stones)
 			}
 		}
 
@@ -292,13 +319,13 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			w, err := OpenSegmentWAL(dir, nil, 0)
 			require.NoError(t, err)
 
-			require.NoError(t, w.Log(nil, []RefSample{{T: 1, V: 2}}))
-			require.NoError(t, w.Log(nil, []RefSample{{T: 2, V: 3}}))
+			require.NoError(t, w.LogSamples([]RefSample{{T: 1, V: 2}}))
+			require.NoError(t, w.LogSamples([]RefSample{{T: 2, V: 3}}))
 
 			require.NoError(t, w.cut())
 
-			require.NoError(t, w.Log(nil, []RefSample{{T: 3, V: 4}}))
-			require.NoError(t, w.Log(nil, []RefSample{{T: 5, V: 6}}))
+			require.NoError(t, w.LogSamples([]RefSample{{T: 3, V: 4}}))
+			require.NoError(t, w.LogSamples([]RefSample{{T: 5, V: 6}}))
 
 			require.NoError(t, w.Close())
 
@@ -314,17 +341,28 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			require.NoError(t, err)
 
 			r := w2.Reader()
+			serf := func(l []labels.Labels) error {
+				require.Equal(t, 0, len(l))
+				return nil
+			}
+			delf := func([]Stone) error { return nil }
 
-			require.True(t, r.Next())
-			l, s := r.At()
-			require.Equal(t, 0, len(l))
-			require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
+			// Weird hack to check order of reads.
+			i := 0
+			samplf := func(s []RefSample) error {
+				if i == 0 {
+					require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
+					i++
+				} else {
+					require.Equal(t, []RefSample{{T: 99, V: 100}}, s)
+				}
 
-			// Truncation should happen transparently and not cause an error.
-			require.False(t, r.Next())
-			require.Nil(t, r.Err())
+				return nil
+			}
 
-			require.NoError(t, w2.Log(nil, []RefSample{{T: 99, V: 100}}))
+			require.NoError(t, r.Read(serf, samplf, delf))
+
+			require.NoError(t, w2.LogSamples([]RefSample{{T: 99, V: 100}}))
 			require.NoError(t, w2.Close())
 
 			// We should see the first valid entry and the new one, everything after
@@ -334,18 +372,8 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			r = w3.Reader()
 
-			require.True(t, r.Next())
-			l, s = r.At()
-			require.Equal(t, 0, len(l))
-			require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
-
-			require.True(t, r.Next())
-			l, s = r.At()
-			require.Equal(t, 0, len(l))
-			require.Equal(t, []RefSample{{T: 99, V: 100}}, s)
-
-			require.False(t, r.Next())
-			require.Nil(t, r.Err())
+			i = 0
+			require.NoError(t, r.Read(serf, samplf, delf))
 		})
 	}
 }

@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"testing"
 
@@ -140,4 +141,78 @@ func TestDBAppenderAddRef(t *testing.T) {
 	refb[15] ^= refb[15]
 	err = app2.AddFast(string(refb), 1, 1)
 	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
+}
+
+func TestDeleteSimple(t *testing.T) {
+	numSamples := int64(10)
+
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	require.NoError(t, err)
+	app := db.Appender()
+
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+	}
+
+	require.NoError(t, app.Commit())
+	cases := []struct {
+		intervals intervals
+		remaint   []int64
+	}{
+		{
+			intervals: intervals{{1, 3}, {4, 7}},
+			remaint:   []int64{0, 8, 9},
+		},
+	}
+
+Outer:
+	for _, c := range cases {
+		// TODO(gouthamve): Reset the tombstones somehow.
+		// Delete the ranges.
+		for _, r := range c.intervals {
+			require.NoError(t, db.Delete(r.mint, r.maxt, labels.NewEqualMatcher("a", "b")))
+		}
+
+		// Compare the result.
+		q := db.Querier(0, numSamples)
+		res := q.Select(labels.NewEqualMatcher("a", "b"))
+
+		expSamples := make([]sample, 0, len(c.remaint))
+		for _, ts := range c.remaint {
+			expSamples = append(expSamples, sample{ts, smpls[ts]})
+		}
+
+		expss := newListSeriesSet([]Series{
+			newSeries(map[string]string{"a": "b"}, expSamples),
+		})
+
+		if len(expSamples) == 0 {
+			require.False(t, res.Next())
+			continue
+		}
+
+		for {
+			eok, rok := expss.Next(), res.Next()
+			require.Equal(t, eok, rok, "next")
+
+			if !eok {
+				continue Outer
+			}
+			sexp := expss.At()
+			sres := res.At()
+
+			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+
+			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
+			smplRes, errRes := expandSeriesIterator(sres.Iterator())
+
+			require.Equal(t, errExp, errRes, "samples error")
+			require.Equal(t, smplExp, smplRes, "samples")
+		}
+	}
 }
