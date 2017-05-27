@@ -569,11 +569,7 @@ func newIndexReader(dir string) (*indexReader, error) {
 		return nil, errors.Wrap(err, "read label index table")
 	}
 	r.postings, err = r.readOffsetTable(r.toc.postingsTable)
-	if err != nil {
-		return nil, errors.Wrap(err, "read postings table")
-	}
-
-	return r, nil
+	return r, errors.Wrap(err, "read postings table")
 }
 
 func (r *indexReader) readTOC() error {

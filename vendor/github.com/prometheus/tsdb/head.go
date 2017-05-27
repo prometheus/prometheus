@@ -69,6 +69,8 @@ type HeadBlock struct {
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
+	tombstones tombstoneReader
+
 	meta BlockMeta
 }
 
@@ -97,6 +99,7 @@ func TouchHeadBlock(dir string, mint, maxt int64) (string, error) {
 	}); err != nil {
 		return "", err
 	}
+
 	return dir, renameFile(tmp, dir)
 }
 
@@ -108,13 +111,14 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 	}
 
 	h := &HeadBlock{
-		dir:      dir,
-		wal:      wal,
-		series:   []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
-		hashes:   map[uint64][]*memSeries{},
-		values:   map[string]stringset{},
-		postings: &memPostings{m: make(map[term][]uint32)},
-		meta:     *meta,
+		dir:        dir,
+		wal:        wal,
+		series:     []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
+		hashes:     map[uint64][]*memSeries{},
+		values:     map[string]stringset{},
+		postings:   &memPostings{m: make(map[term][]uint32)},
+		meta:       *meta,
+		tombstones: newEmptyTombstoneReader(),
 	}
 	return h, h.init()
 }
@@ -122,16 +126,19 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 func (h *HeadBlock) init() error {
 	r := h.wal.Reader()
 
-	for r.Next() {
-		series, samples := r.At()
-
+	seriesFunc := func(series []labels.Labels) error {
 		for _, lset := range series {
 			h.create(lset.Hash(), lset)
 			h.meta.Stats.NumSeries++
 		}
+
+		return nil
+	}
+	samplesFunc := func(samples []RefSample) error {
 		for _, s := range samples {
 			if int(s.Ref) >= len(h.series) {
-				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore", s.Ref, len(h.series))
+				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore",
+					s.Ref, len(h.series))
 			}
 			h.series[s.Ref].append(s.T, s.V)
 
@@ -140,8 +147,24 @@ func (h *HeadBlock) init() error {
 			}
 			h.meta.Stats.NumSamples++
 		}
+
+		return nil
 	}
-	return errors.Wrap(r.Err(), "consume WAL")
+	deletesFunc := func(stones []Stone) error {
+		for _, s := range stones {
+			for _, itv := range s.intervals {
+				h.tombstones.add(s.ref, itv)
+			}
+		}
+
+		return nil
+	}
+
+	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
+		return errors.Wrap(err, "consume WAL")
+	}
+
+	return nil
 }
 
 // inBounds returns true if the given timestamp is within the valid
@@ -195,6 +218,50 @@ func (h *HeadBlock) Meta() BlockMeta {
 	return m
 }
 
+// Tombstones returns the TombstoneReader against the block.
+func (h *HeadBlock) Tombstones() TombstoneReader {
+	return h.tombstones
+}
+
+// Delete implements headBlock.
+func (h *HeadBlock) Delete(mint int64, maxt int64, ms ...labels.Matcher) error {
+	ir := h.Index()
+
+	pr := newPostingsReader(ir)
+	p, absent := pr.Select(ms...)
+
+	var stones []Stone
+
+Outer:
+	for p.Next() {
+		ref := p.At()
+		lset := h.series[ref].lset
+		for _, abs := range absent {
+			if lset.Get(abs) != "" {
+				continue Outer
+			}
+		}
+
+		// Delete only until the current values and not beyond.
+		tmin, tmax := clampInterval(mint, maxt, h.series[ref].chunks[0].minTime, h.series[ref].head().maxTime)
+		stones = append(stones, Stone{ref, intervals{{tmin, tmax}}})
+	}
+
+	if p.Err() != nil {
+		return p.Err()
+	}
+	if err := h.wal.LogDeletes(stones); err != nil {
+		return err
+	}
+
+	for _, s := range stones {
+		h.tombstones.add(s.ref, s.intervals[0])
+	}
+
+	h.meta.Stats.NumTombstones = uint64(len(h.tombstones))
+	return nil
+}
+
 // Dir returns the directory of the block.
 func (h *HeadBlock) Dir() string { return h.dir }
 
@@ -217,10 +284,12 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	series := h.series[:]
 
 	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  h.Index(),
-		chunks: h.Chunks(),
+		mint:       mint,
+		maxt:       maxt,
+		index:      h.Index(),
+		chunks:     h.Chunks(),
+		tombstones: h.Tombstones(),
+
 		postingsMapper: func(p Postings) Postings {
 			ep := make([]uint32, 0, 64)
 
@@ -423,6 +492,7 @@ func (a *headAppender) createSeries() {
 func (a *headAppender) Commit() error {
 	defer atomic.AddUint64(&a.activeWriters, ^uint64(0))
 	defer putHeadAppendBuffer(a.samples)
+	defer a.mtx.RUnlock()
 
 	a.createSeries()
 
@@ -436,9 +506,11 @@ func (a *headAppender) Commit() error {
 
 	// Write all new series and samples to the WAL and add it to the
 	// in-mem database on success.
-	if err := a.wal.Log(a.newLabels, a.samples); err != nil {
-		a.mtx.RUnlock()
-		return err
+	if err := a.wal.LogSeries(a.newLabels); err != nil {
+		return errors.Wrap(err, "WAL log series")
+	}
+	if err := a.wal.LogSamples(a.samples); err != nil {
+		return errors.Wrap(err, "WAL log samples")
 	}
 
 	total := uint64(len(a.samples))
@@ -448,8 +520,6 @@ func (a *headAppender) Commit() error {
 			total--
 		}
 	}
-
-	a.mtx.RUnlock()
 
 	atomic.AddUint64(&a.meta.Stats.NumSamples, total)
 	atomic.AddUint64(&a.meta.Stats.NumSeries, uint64(len(a.newSeries)))
@@ -538,6 +608,7 @@ func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error
 	if int(ref) >= len(h.series) {
 		return nil, nil, ErrNotFound
 	}
+
 	s := h.series[ref]
 	if s == nil {
 		return nil, nil, ErrNotFound

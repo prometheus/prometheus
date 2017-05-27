@@ -21,6 +21,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // DiskBlock handles reads against a Block of time series data.
@@ -36,6 +37,12 @@ type DiskBlock interface {
 
 	// Chunks returns a ChunkReader over the block's data.
 	Chunks() ChunkReader
+
+	// Tombstones returns a TombstoneReader over the block's deleted data.
+	Tombstones() TombstoneReader
+
+	// Delete deletes data from the block.
+	Delete(mint, maxt int64, ms ...labels.Matcher) error
 
 	// Close releases all underlying resources of the block.
 	Close() error
@@ -79,9 +86,10 @@ type BlockMeta struct {
 
 	// Stats about the contents of the block.
 	Stats struct {
-		NumSamples uint64 `json:"numSamples,omitempty"`
-		NumSeries  uint64 `json:"numSeries,omitempty"`
-		NumChunks  uint64 `json:"numChunks,omitempty"`
+		NumSamples    uint64 `json:"numSamples,omitempty"`
+		NumSeries     uint64 `json:"numSeries,omitempty"`
+		NumChunks     uint64 `json:"numChunks,omitempty"`
+		NumTombstones uint64 `json:"numTombstones,omitempty"`
 	} `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.
@@ -150,6 +158,8 @@ type persistedBlock struct {
 
 	chunkr *chunkReader
 	indexr *indexReader
+
+	tombstones tombstoneReader
 }
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
@@ -167,11 +177,17 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, err
 	}
 
+	tr, err := readTombstones(dir)
+	if err != nil {
+		return nil, err
+	}
+
 	pb := &persistedBlock{
-		dir:    dir,
-		meta:   *meta,
-		chunkr: cr,
-		indexr: ir,
+		dir:        dir,
+		meta:       *meta,
+		chunkr:     cr,
+		indexr:     ir,
+		tombstones: tr,
 	}
 	return pb, nil
 }
@@ -191,20 +207,84 @@ func (pb *persistedBlock) String() string {
 
 func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
 	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  pb.Index(),
-		chunks: pb.Chunks(),
+		mint:       mint,
+		maxt:       maxt,
+		index:      pb.Index(),
+		chunks:     pb.Chunks(),
+		tombstones: pb.Tombstones(),
 	}
 }
 
 func (pb *persistedBlock) Dir() string         { return pb.dir }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
-func (pb *persistedBlock) Meta() BlockMeta     { return pb.meta }
+func (pb *persistedBlock) Tombstones() TombstoneReader {
+	return pb.tombstones
+}
+func (pb *persistedBlock) Meta() BlockMeta { return pb.meta }
+
+func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	pr := newPostingsReader(pb.indexr)
+	p, absent := pr.Select(ms...)
+
+	ir := pb.indexr
+
+	// Choose only valid postings which have chunks in the time-range.
+	stones := map[uint32]intervals{}
+
+Outer:
+	for p.Next() {
+		lset, chunks, err := ir.Series(p.At())
+		if err != nil {
+			return err
+		}
+
+		for _, abs := range absent {
+			if lset.Get(abs) != "" {
+				continue Outer
+			}
+		}
+
+		for _, chk := range chunks {
+			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
+				// Delete only until the current vlaues and not beyond.
+				tmin, tmax := clampInterval(mint, maxt, chunks[0].MinTime, chunks[len(chunks)-1].MaxTime)
+				stones[p.At()] = intervals{{tmin, tmax}}
+				continue Outer
+			}
+		}
+	}
+
+	if p.Err() != nil {
+		return p.Err()
+	}
+
+	// Merge the current and new tombstones.
+	for k, v := range stones {
+		pb.tombstones.add(k, v[0])
+	}
+
+	if err := writeTombstoneFile(pb.dir, pb.tombstones); err != nil {
+		return err
+	}
+
+	pb.meta.Stats.NumTombstones = uint64(len(pb.tombstones))
+	return writeMetaFile(pb.dir, &pb.meta)
+}
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 func walDir(dir string) string   { return filepath.Join(dir, "wal") }
+
+func clampInterval(a, b, mint, maxt int64) (int64, int64) {
+	if a < mint {
+		a = mint
+	}
+	if b > maxt {
+		b = maxt
+	}
+
+	return a, b
+}
 
 type mmapFile struct {
 	f *os.File
