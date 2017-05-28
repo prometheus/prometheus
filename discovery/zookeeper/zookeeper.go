@@ -175,9 +175,10 @@ const (
 )
 
 type nerveMember struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	Name string `json:"name"`
+	Host   string                     `json:"host"`
+	Port   int                        `json:"port"`
+	Name   string                     `json:"name"`
+	Labels map[model.LabelName]string `json:"labels"`
 }
 
 func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
@@ -195,6 +196,10 @@ func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
 	labels[nerveEndpointLabelPrefix+"_host"] = model.LabelValue(member.Host)
 	labels[nerveEndpointLabelPrefix+"_port"] = model.LabelValue(fmt.Sprintf("%d", member.Port))
 	labels[nerveEndpointLabelPrefix+"_name"] = model.LabelValue(member.Name)
+
+	for k, v := range member.Labels {
+		labels[nerveEndpointLabelPrefix+"_labels_"+k] = model.LabelValue(v)
+	}
 
 	return labels, nil
 }
