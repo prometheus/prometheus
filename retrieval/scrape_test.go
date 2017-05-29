@@ -718,6 +718,116 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 
 }
 
+func TestScrapeLoopRunAppliesScrapeLimit(t *testing.T) {
+
+	cases := []struct {
+		appender                                  func() storage.Appender
+		up                                        float64
+		scrapeSamplesScraped                      float64
+		scrapeSamplesScrapedPostMetricRelabelling float64
+	}{
+		{
+			appender:                                  func() storage.Appender { return nopAppender{} },
+			up:                                        1,
+			scrapeSamplesScraped:                      3,
+			scrapeSamplesScrapedPostMetricRelabelling: 3,
+		},
+		{
+			appender: func() storage.Appender {
+				return &limitAppender{Appender: nopAppender{}, limit: 3}
+			},
+			up:                                        1,
+			scrapeSamplesScraped:                      3,
+			scrapeSamplesScrapedPostMetricRelabelling: 3,
+		},
+		{
+			appender: func() storage.Appender {
+				return &limitAppender{Appender: nopAppender{}, limit: 2}
+			},
+			up:                                        0,
+			scrapeSamplesScraped:                      3,
+			scrapeSamplesScrapedPostMetricRelabelling: 3,
+		},
+		{
+			appender: func() storage.Appender {
+				return &relabelAppender{
+					Appender: &limitAppender{Appender: nopAppender{}, limit: 2},
+					relabelings: []*config.RelabelConfig{
+						&config.RelabelConfig{
+							SourceLabels: model.LabelNames{"__name__"},
+							Regex:        config.MustNewRegexp("a"),
+							Action:       config.RelabelDrop,
+						},
+					},
+				}
+			},
+			up:                                        1,
+			scrapeSamplesScraped:                      3,
+			scrapeSamplesScrapedPostMetricRelabelling: 2,
+		},
+	}
+
+	for i, c := range cases {
+		reportAppender := &collectResultAppender{}
+		var (
+			signal     = make(chan struct{})
+			scraper    = &testScraper{}
+			numScrapes = 0
+			reportApp  = func() storage.Appender {
+				// Get result of the 2nd scrape.
+				if numScrapes == 2 {
+					return reportAppender
+				} else {
+					return nopAppender{}
+				}
+			}
+		)
+		defer close(signal)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		sl := newScrapeLoop(ctx, scraper, c.appender, reportApp, nil)
+
+		// Setup a series to be stale, then 3 samples, then stop.
+		scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+			numScrapes += 1
+			if numScrapes == 1 {
+				w.Write([]byte("stale 0\n"))
+				return nil
+			} else if numScrapes == 2 {
+				w.Write([]byte("a 0\nb 0\nc 0 \n"))
+				return nil
+			} else if numScrapes == 3 {
+				cancel()
+			}
+			return fmt.Errorf("Scrape failed.")
+		}
+
+		go func() {
+			sl.run(10*time.Millisecond, time.Hour, nil)
+			signal <- struct{}{}
+		}()
+
+		select {
+		case <-signal:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("Scrape wasn't stopped.")
+		}
+
+		if len(reportAppender.result) != 4 {
+			t.Fatalf("Case %d appended report samples not as expected. Wanted: %d samples Got: %d", i, 4, len(reportAppender.result))
+		}
+		if reportAppender.result[0].v != c.up {
+			t.Fatalf("Case %d appended up sample not as expected. Wanted: %f Got: %+v", i, c.up, reportAppender.result[0])
+		}
+		if reportAppender.result[2].v != c.scrapeSamplesScraped {
+			t.Fatalf("Case %d appended scrape_samples_scraped sample not as expected. Wanted: %f Got: %+v", i, c.scrapeSamplesScraped, reportAppender.result[2])
+		}
+		if reportAppender.result[3].v != c.scrapeSamplesScrapedPostMetricRelabelling {
+			t.Fatalf("Case %d appended scrape_samples_scraped_post_metric_relabeling sample not as expected. Wanted: %f Got: %+v", i, c.scrapeSamplesScrapedPostMetricRelabelling, reportAppender.result[3])
+		}
+	}
+}
+
 type errorAppender struct {
 	collectResultAppender
 }
