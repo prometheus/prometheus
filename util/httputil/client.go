@@ -49,7 +49,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 
 	// If a bearer token is provided, create a round tripper that will set the
 	// Authorization header correctly on each request.
-	bearerToken := cfg.BearerToken
+	bearerToken := string(cfg.BearerToken)
 	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
 		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
 		if err != nil {
@@ -63,7 +63,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 	}
 
 	if cfg.BasicAuth != nil {
-		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
+		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, string(cfg.BasicAuth.Password), rt)
 	}
 
 	// Return a new client with the configured round tripper.

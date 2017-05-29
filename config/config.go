@@ -30,7 +30,6 @@ import (
 var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
 	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
 )
 
@@ -219,6 +218,23 @@ type Config struct {
 	original string
 }
 
+// Secret special type for storing secrets.
+type Secret string
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface for Secrets.
+func (s *Secret) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain Secret
+	return unmarshal((*plain)(s))
+}
+
+// MarshalYAML implements the yaml.Marshaler interface for Secrets.
+func (s Secret) MarshalYAML() (interface{}, error) {
+	if s != "" {
+		return "<secret>", nil
+	}
+	return nil, nil
+}
+
 // resolveFilepaths joins all relative paths in a configuration
 // with a given base directory.
 func resolveFilepaths(baseDir string, cfg *Config) {
@@ -281,17 +297,11 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 }
 
 func (c Config) String() string {
-	var s string
-	if c.original != "" {
-		s = c.original
-	} else {
-		b, err := yaml.Marshal(c)
-		if err != nil {
-			return fmt.Sprintf("<error creating config string: %s>", err)
-		}
-		s = string(b)
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
-	return patAuthLine.ReplaceAllString(s, "${1}<hidden>")
+	return string(b)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -480,7 +490,7 @@ type HTTPClientConfig struct {
 	// The HTTP basic authentication credentials for the targets.
 	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
 	// The bearer token for the targets.
-	BearerToken string `yaml:"bearer_token,omitempty"`
+	BearerToken Secret `yaml:"bearer_token,omitempty"`
 	// The bearer token file for the targets.
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
@@ -544,7 +554,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "scrape_config"); err != nil {
+	if err = checkOverflow(c.XXX, "scrape_config"); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {
@@ -554,7 +564,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.validate(); err != nil {
+	if err = c.HTTPClientConfig.validate(); err != nil {
 		return err
 	}
 
@@ -660,7 +670,7 @@ func CheckTargetAddress(address model.LabelValue) error {
 // BasicAuth contains basic HTTP authentication credentials.
 type BasicAuth struct {
 	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	Password Secret `yaml:"password"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -669,7 +679,7 @@ type BasicAuth struct {
 // ClientCert contains client cert credentials.
 type ClientCert struct {
 	Cert string `yaml:"cert"`
-	Key  string `yaml:"key"`
+	Key  Secret `yaml:"key"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -830,7 +840,7 @@ type ConsulSDConfig struct {
 	TagSeparator string `yaml:"tag_separator,omitempty"`
 	Scheme       string `yaml:"scheme,omitempty"`
 	Username     string `yaml:"username,omitempty"`
-	Password     string `yaml:"password,omitempty"`
+	Password     Secret `yaml:"password,omitempty"`
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
@@ -933,7 +943,7 @@ type MarathonSDConfig struct {
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-	BearerToken     string         `yaml:"bearer_token,omitempty"`
+	BearerToken     Secret         `yaml:"bearer_token,omitempty"`
 	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -990,7 +1000,7 @@ type KubernetesSDConfig struct {
 	APIServer          URL                          `yaml:"api_server"`
 	Role               KubernetesRole               `yaml:"role"`
 	BasicAuth          *BasicAuth                   `yaml:"basic_auth,omitempty"`
-	BearerToken        string                       `yaml:"bearer_token,omitempty"`
+	BearerToken        Secret                       `yaml:"bearer_token,omitempty"`
 	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
 	TLSConfig          TLSConfig                    `yaml:"tls_config,omitempty"`
 	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
@@ -1095,7 +1105,7 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type EC2SDConfig struct {
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
-	SecretKey       string         `yaml:"secret_key,omitempty"`
+	SecretKey       Secret         `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
@@ -1127,7 +1137,7 @@ type AzureSDConfig struct {
 	SubscriptionID  string         `yaml:"subscription_id"`
 	TenantID        string         `yaml:"tenant_id,omitempty"`
 	ClientID        string         `yaml:"client_id,omitempty"`
-	ClientSecret    string         `yaml:"client_secret,omitempty"`
+	ClientSecret    Secret         `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
