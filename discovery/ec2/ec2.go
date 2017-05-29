@@ -76,7 +76,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *config.EC2SDConfig) *Discovery {
-	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
+	creds := credentials.NewStaticCredentials(conf.AccessKey, string(conf.SecretKey), "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = nil
 	}

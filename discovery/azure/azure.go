@@ -120,7 +120,7 @@ func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
 	if err != nil {
 		return azureClient{}, err
 	}
-	spt, err := azure.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, cfg.ClientSecret, azure.PublicCloud.ResourceManagerEndpoint)
+	spt, err := azure.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), azure.PublicCloud.ResourceManagerEndpoint)
 	if err != nil {
 		return azureClient{}, err
 	}

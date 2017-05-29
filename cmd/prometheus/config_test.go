@@ -13,7 +13,11 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/prometheus/prometheus/config"
+)
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -72,7 +76,7 @@ func TestParseAlertmanagerURLToConfig(t *testing.T) {
 	tests := []struct {
 		url      string
 		username string
-		password string
+		password config.Secret
 	}{
 		{
 			url:      "http://alertmanager.company.com",
