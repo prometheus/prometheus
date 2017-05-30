@@ -380,7 +380,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "global config"); err != nil {
+	if err := checkOverflow(gc.XXX, "global config"); err != nil {
 		return err
 	}
 	// First set the correct scrape interval, then check that the timeout

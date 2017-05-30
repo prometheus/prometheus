@@ -639,6 +639,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "target_label_hashmod_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
+	}, {
+		filename: "unknown_global_attr.bad.yml",
+		errMsg:   "unknown fields in global config: nonexistent_field",
 	},
 }
 
