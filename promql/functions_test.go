@@ -71,3 +71,18 @@ eval instant at 1d changes(http_requests[1d])
 	bench := NewBenchmark(b, input)
 	bench.Run()
 }
+
+func BenchmarkPAA1Day1Min(b *testing.B) {
+	input := `
+clear
+load 1m
+    http_requests{path="/foo"}    0+10x1440
+
+eval instant at 1d paa(http_requests[1d])
+    {path="/foo"} 2406775
+`
+
+	bench := NewBenchmark(b, input)
+	bench.Run()
+
+}
