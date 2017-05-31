@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
@@ -117,7 +118,12 @@ func (c *Client) Store(samples model.Samples) error {
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode/100 != 2 {
-		err = fmt.Errorf("server returned HTTP status %s", httpResp.Status)
+		scanner := bufio.NewScanner(httpResp.Body)
+		line := ""
+		if scanner.Scan() {
+			line = scanner.Text()
+		}
+		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
 		return recoverableError{err}
