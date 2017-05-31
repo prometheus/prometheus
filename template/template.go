@@ -161,6 +161,33 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 				sort.Stable(sorter)
 				return v
 			},
+			"groupByLabel": func(label string, v queryResult) (queryResult, error) {
+				m := make(map[string]*sample)
+
+				for _, r := range v {
+					if s, ok := m[r.Labels[label]]; ok {
+						s.Value = s.Value + 1
+					} else {
+						r.Value = 1
+						m[r.Labels[label]] = r
+
+					}
+				}
+
+				var newResults queryResult
+				for _, g := range m {
+					newResults = append(newResults, g)
+				}
+
+				if len(newResults) == 0 {
+					return nil, fmt.Errorf("Query result has no label: '%s' to group by", label)
+				}
+
+				sorter := queryResultByLabelSorter{newResults[:], label}
+				sort.Stable(sorter)
+
+				return newResults, nil
+			},
 			"humanize": func(v float64) string {
 				if v == 0 || math.IsNaN(v) || math.IsInf(v, 0) {
 					return fmt.Sprintf("%.4g", v)
