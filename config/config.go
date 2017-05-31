@@ -728,7 +728,7 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		})
 	}
 	tg.Labels = g.Labels
-	return checkOverflow(g.XXX, "target_group")
+	return checkOverflow(g.XXX, "static_config")
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
