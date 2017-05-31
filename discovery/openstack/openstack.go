@@ -175,7 +175,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("could not describe floating: %s", err)
+		return nil, fmt.Errorf("could not describe floating IPs: %s", err)
 	}
 
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
@@ -192,24 +192,24 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			for _, address := range s.Addresses {
 				md, ok := address.([]interface{})
 				if !ok {
-					log.Warn("Invalid type for addresses, excepted array")
+					log.Warn("Invalid type for address, expected array")
 					continue
 				}
 
 				if len(md) == 0 {
-					log.Debugf("Got no ip address for instance %s", s.ID)
+					log.Debugf("Got no IP address for instance %s", s.ID)
 					continue
 				}
 
 				md1, ok := md[0].(map[string]interface{})
 				if !ok {
-					log.Warn("Invalid type for addresses, excepted dict")
+					log.Warn("Invalid type for address, expected dict")
 					continue
 				}
 
 				addr, ok := md1["addr"].(string)
 				if !ok {
-					log.Warn("Invalid type for addresses, excepted string")
+					log.Warn("Invalid type for address, expected string")
 					continue
 				}
 
@@ -219,7 +219,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
-				// Only use first private ip
+				// Only use first private IP
 				break
 			}
 
