@@ -37,15 +37,15 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 		{
 			code: 300,
-			err:  fmt.Errorf("server returned HTTP status 300 Multiple Choices"),
+			err:  fmt.Errorf("server returned HTTP status 300 Multiple Choices: test error"),
 		},
 		{
 			code: 404,
-			err:  fmt.Errorf("server returned HTTP status 404 Not Found"),
+			err:  fmt.Errorf("server returned HTTP status 404 Not Found: test error"),
 		},
 		{
 			code: 500,
-			err:  recoverableError{fmt.Errorf("server returned HTTP status 500 Internal Server Error")},
+			err:  recoverableError{fmt.Errorf("server returned HTTP status 500 Internal Server Error: test error")},
 		},
 	}
 
@@ -68,7 +68,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 
 		err = c.Store(nil)
 		if !reflect.DeepEqual(err, test.err) {
-			t.Fatalf("%d. Unexpected error; want %v, got %v", i, test.err, err)
+			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
 		}
 
 		server.Close()
