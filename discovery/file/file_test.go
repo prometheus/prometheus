@@ -60,7 +60,7 @@ func testFileSD(t *testing.T, ext string) {
 	}
 	defer newf.Close()
 
-	f, err := os.Open("fixtures/target_groups" + ext)
+	f, err := os.Open("fixtures/valid" + ext)
 	if err != nil {
 		t.Fatal(err)
 	}
