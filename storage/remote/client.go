@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -31,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
 )
+
+const maxErrMsgLen = 256
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
@@ -118,7 +121,7 @@ func (c *Client) Store(samples model.Samples) error {
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode/100 != 2 {
-		scanner := bufio.NewScanner(httpResp.Body)
+		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
 		line := ""
 		if scanner.Scan() {
 			line = scanner.Text()
