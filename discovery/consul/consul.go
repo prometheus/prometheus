@@ -105,7 +105,7 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 		Address:    conf.Server,
 		Scheme:     conf.Scheme,
 		Datacenter: conf.Datacenter,
-		Token:      conf.Token,
+		Token:      string(conf.Token),
 		HttpAuth: &consul.HttpBasicAuth{
 			Username: conf.Username,
 			Password: string(conf.Password),
