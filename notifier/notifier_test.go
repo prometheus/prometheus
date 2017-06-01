@@ -26,6 +26,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 )
@@ -63,7 +64,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{})
+	h := New(&Options{}, log.Base())
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &model.Alert{
@@ -150,7 +151,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{})
+	h := New(&Options{}, log.Base())
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -217,7 +218,7 @@ func TestCustomDo(t *testing.T) {
 				Body: ioutil.NopCloser(nil),
 			}, nil
 		},
-	})
+	}, log.Base())
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
@@ -239,7 +240,7 @@ func TestExternalLabels(t *testing.T) {
 				Replacement:  "c",
 			},
 		},
-	})
+	}, log.Base())
 
 	// This alert should get the external label attached.
 	h.Send(&model.Alert{
@@ -293,7 +294,7 @@ func TestHandlerRelabel(t *testing.T) {
 				Replacement:  "renamed",
 			},
 		},
-	})
+	}, log.Base())
 
 	// This alert should be dropped due to the configuration
 	h.Send(&model.Alert{
@@ -347,7 +348,9 @@ func TestHandlerQueueing(t *testing.T) {
 
 	h := New(&Options{
 		QueueCapacity: 3 * maxBatchSize,
-	})
+	},
+		log.Base(),
+	)
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
