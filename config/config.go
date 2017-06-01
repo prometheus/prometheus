@@ -1144,7 +1144,7 @@ type OpenstackSDConfig struct {
 	IdentityEndpoint string         `yaml:"identity_endpoint"`
 	Username         string         `yaml:"username"`
 	UserID           string         `yaml:"userid"`
-	Password         string         `yaml:"password"`
+	Password         Secret         `yaml:"password"`
 	ProjectName      string         `yaml:"project_name"`
 	ProjectID        string         `yaml:"project_id"`
 	DomainName       string         `yaml:"domain_name"`
