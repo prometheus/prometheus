@@ -1,11 +1,27 @@
-sudo: false
+sudo: true
 
 language: go
+
+services:
+  - docker
 
 go:
 - 1.8.x
 
 go_import_path: github.com/prometheus/prometheus
 
+install:
+  - sudo apt-get install -y python python-dev systemd python-netaddr python-apt
+  - sudo pip install ansible
+  - git clone https://github.com/reachlin/k8s0.git
+
+before_script:
+  - ansible-playbook -i k8s0/inventory/local k8s0/images.yml
+  - ansible-playbook -i k8s0/inventory/local k8s0/site.yml
+
 script:
-- make check_license style test
+  - make check_license style test
+  - kubectl get all -n kube-system -o wide
+  - make k8s
+  - sleep 30
+  - kubectl get all -o wide
