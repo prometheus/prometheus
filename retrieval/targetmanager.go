@@ -38,6 +38,7 @@ type TargetManager struct {
 
 	// Set of unqiue targets by scrape configuration.
 	targetSets map[string]*targetSet
+	logger     log.Logger
 }
 
 type targetSet struct {
@@ -49,16 +50,17 @@ type targetSet struct {
 }
 
 // NewTargetManager creates a new TargetManager.
-func NewTargetManager(app storage.SampleAppender) *TargetManager {
+func NewTargetManager(app storage.SampleAppender, logger log.Logger) *TargetManager {
 	return &TargetManager{
 		appender:   app,
 		targetSets: map[string]*targetSet{},
+		logger:     logger,
 	}
 }
 
 // Run starts background processing to handle target updates.
 func (tm *TargetManager) Run() {
-	log.Info("Starting target manager...")
+	tm.logger.Info("Starting target manager...")
 
 	tm.mtx.Lock()
 
@@ -72,7 +74,7 @@ func (tm *TargetManager) Run() {
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
-	log.Infoln("Stopping target manager...")
+	tm.logger.Infoln("Stopping target manager...")
 
 	tm.mtx.Lock()
 	// Cancel the base context, this will cause all target providers to shut down
@@ -84,7 +86,7 @@ func (tm *TargetManager) Stop() {
 	// Wait for all scrape inserts to complete.
 	tm.wg.Wait()
 
-	log.Debugln("Target manager stopped")
+	tm.logger.Debugln("Target manager stopped")
 }
 
 func (tm *TargetManager) reload() {
@@ -118,7 +120,7 @@ func (tm *TargetManager) reload() {
 		} else {
 			ts.sp.reload(scfg)
 		}
-		ts.ts.UpdateProviders(discovery.ProvidersFromConfig(scfg.ServiceDiscoveryConfig))
+		ts.ts.UpdateProviders(discovery.ProvidersFromConfig(scfg.ServiceDiscoveryConfig, tm.logger))
 	}
 
 	// Remove old target sets. Waiting for scrape pools to complete pending
