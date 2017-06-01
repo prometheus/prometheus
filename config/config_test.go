@@ -247,6 +247,7 @@ var expectedConf = &Config{
 				ConsulSDConfigs: []*ConsulSDConfig{
 					{
 						Server:       "localhost:1234",
+						Token:        "mysecret",
 						Services:     []string{"nginx", "cache", "mysql"},
 						TagSeparator: DefaultConsulSDConfig.TagSeparator,
 						Scheme:       "https",
@@ -542,7 +543,7 @@ func TestLoadConfig(t *testing.T) {
 	s := c.String()
 	secretRe := regexp.MustCompile("<secret>")
 	matches := secretRe.FindAllStringIndex(s, -1)
-	if len(matches) != 5 || strings.Contains(s, "mysecret") {
+	if len(matches) != 6 || strings.Contains(s, "mysecret") {
 		t.Fatalf("config's String method reveals authentication credentials.")
 	}
 

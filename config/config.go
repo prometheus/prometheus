@@ -835,7 +835,7 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // ConsulSDConfig is the configuration for Consul service discovery.
 type ConsulSDConfig struct {
 	Server       string `yaml:"server"`
-	Token        string `yaml:"token,omitempty"`
+	Token        Secret `yaml:"token,omitempty"`
 	Datacenter   string `yaml:"datacenter,omitempty"`
 	TagSeparator string `yaml:"tag_separator,omitempty"`
 	Scheme       string `yaml:"scheme,omitempty"`
