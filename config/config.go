@@ -1145,8 +1145,8 @@ type OpenstackSDConfig struct {
 	Username         string         `yaml:"username"`
 	UserID           string         `yaml:"userid"`
 	Password         string         `yaml:"password"`
-	TenantName       string         `yaml:"tenant_name"`
-	TenantID         string         `yaml:"tenant_id"`
+	ProjectName      string         `yaml:"project_name"`
+	ProjectID        string         `yaml:"project_id"`
 	DomainName       string         `yaml:"domain_name"`
 	DomainID         string         `yaml:"domain_id"`
 	Region           string         `yaml:"region"`

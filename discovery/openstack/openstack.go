@@ -77,8 +77,8 @@ func NewDiscovery(conf *config.OpenstackSDConfig) (*Discovery, error) {
 		Username:         conf.Username,
 		UserID:           conf.UserID,
 		Password:         conf.Password,
-		TenantName:       conf.TenantName,
-		TenantID:         conf.TenantID,
+		TenantName:       conf.ProjectName,
+		TenantID:         conf.ProjectID,
 		DomainName:       conf.DomainName,
 		DomainID:         conf.DomainID,
 	}
