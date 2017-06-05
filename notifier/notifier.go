@@ -217,7 +217,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-const maxBatchSize = 64
+const maxBatchSize = 256
 
 func (n *Notifier) queueLen() int {
 	n.mtx.RLock()
