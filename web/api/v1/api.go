@@ -143,6 +143,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 
 	r.Get("/series", instr("series", api.series))
+	r.Del("/series", instr("drop_series", api.dropSeries))
 
 	r.Get("/targets", instr("targets", api.targets))
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
@@ -354,6 +355,10 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return metrics, nil
+}
+
+func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
+	return nil, &apiError{errorExec, fmt.Errorf("use /api/v2/admin/delete instead")}
 }
 
 // Target has the information for one target.
