@@ -9,6 +9,8 @@ before_script:
 compile:
   image: golang:1.8.1
   stage: build
+  variables:
+    CGO_ENABLED: '0'
   script:
     - ls -lah
     - ln -s /builds /go/src/github.com
