@@ -14,7 +14,7 @@ go build
 
 ```yaml
 remote_write:
-  url: "http://localhost:1234/receive"
+  - url: "http://localhost:1234/receive"
 ```
 
 Then start Prometheus:
