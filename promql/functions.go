@@ -840,8 +840,12 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 		srcLabels = make([]model.LabelName, 0)
 	)
 	for i := 3; i < len(args); i++ {
-		src := args[i]
-		srcLabels = append(srcLabels, model.LabelName(ev.evalString(src).Value))
+		src := model.LabelName(ev.evalString(args[i]).Value)
+
+		if !model.LabelNameRE.MatchString(string(src)) {
+			ev.errorf("invalid source label name in label_join(): %s", src)
+		}
+		srcLabels = append(srcLabels, src)
 	}
 
 	if !model.LabelNameRE.MatchString(string(dst)) {
@@ -852,12 +856,10 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 	for _, el := range vector {
 		srcVals := make([]string, 0)
 		for _, src := range srcLabels {
-			srcVal := string(el.Metric.Metric[src])
-			srcVals = append(srcVals, srcVal)
+			srcVals = append(srcVals, string(el.Metric.Metric[src]))
 		}
 
-		dstVal := strings.Join(srcVals, sep)
-		el.Metric.Set(dst, model.LabelValue(dstVal))
+		el.Metric.Set(dst, model.LabelValue(strings.Join(srcVals, sep)))
 
 		fp := el.Metric.Metric.Fingerprint()
 		if _, exists := outSet[fp]; exists {
