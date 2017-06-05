@@ -67,7 +67,7 @@ func newFPMapper(fpToSeries *seriesMap, p *persistence) (*fpMapper, error) {
 		return nil, err
 	}
 	m.mappings = mappings
-	m.mappingsCounter.Set(float64(len(m.mappings)))
+	m.mappingsCounter.Add(float64(len(m.mappings)))
 	m.highestMappedFP = nextFP
 	return m, nil
 }

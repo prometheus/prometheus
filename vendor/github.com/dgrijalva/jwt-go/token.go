@@ -3,7 +3,6 @@ package jwt
 import (
 	"encoding/base64"
 	"encoding/json"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -15,7 +14,7 @@ var TimeFunc = time.Now
 
 // Parse methods use this callback function to supply
 // the key for verification.  The function receives the parsed,
-// but unverified Token.  This allows you to use propries in the
+// but unverified Token.  This allows you to use properties in the
 // Header of the token (such as `kid`) to identify which key to use.
 type Keyfunc func(*Token) (interface{}, error)
 
@@ -25,19 +24,23 @@ type Token struct {
 	Raw       string                 // The raw token.  Populated when you Parse a token
 	Method    SigningMethod          // The signing method used or to be used
 	Header    map[string]interface{} // The first segment of the token
-	Claims    map[string]interface{} // The second segment of the token
+	Claims    Claims                 // The second segment of the token
 	Signature string                 // The third segment of the token.  Populated when you Parse a token
 	Valid     bool                   // Is the token valid?  Populated when you Parse/Verify a token
 }
 
 // Create a new Token.  Takes a signing method
 func New(method SigningMethod) *Token {
+	return NewWithClaims(method, MapClaims{})
+}
+
+func NewWithClaims(method SigningMethod, claims Claims) *Token {
 	return &Token{
 		Header: map[string]interface{}{
 			"typ": "JWT",
 			"alg": method.Alg(),
 		},
-		Claims: make(map[string]interface{}),
+		Claims: claims,
 		Method: method,
 	}
 }
@@ -63,16 +66,15 @@ func (t *Token) SigningString() (string, error) {
 	var err error
 	parts := make([]string, 2)
 	for i, _ := range parts {
-		var source map[string]interface{}
-		if i == 0 {
-			source = t.Header
-		} else {
-			source = t.Claims
-		}
-
 		var jsonValue []byte
-		if jsonValue, err = json.Marshal(source); err != nil {
-			return "", err
+		if i == 0 {
+			if jsonValue, err = json.Marshal(t.Header); err != nil {
+				return "", err
+			}
+		} else {
+			if jsonValue, err = json.Marshal(t.Claims); err != nil {
+				return "", err
+			}
 		}
 
 		parts[i] = EncodeSegment(jsonValue)
@@ -87,28 +89,8 @@ func Parse(tokenString string, keyFunc Keyfunc) (*Token, error) {
 	return new(Parser).Parse(tokenString, keyFunc)
 }
 
-// Try to find the token in an http.Request.
-// This method will call ParseMultipartForm if there's no token in the header.
-// Currently, it looks in the Authorization header as well as
-// looking for an 'access_token' request parameter in req.Form.
-func ParseFromRequest(req *http.Request, keyFunc Keyfunc) (token *Token, err error) {
-
-	// Look for an Authorization header
-	if ah := req.Header.Get("Authorization"); ah != "" {
-		// Should be a bearer token
-		if len(ah) > 6 && strings.ToUpper(ah[0:7]) == "BEARER " {
-			return Parse(ah[7:], keyFunc)
-		}
-	}
-
-	// Look for "access_token" parameter
-	req.ParseMultipartForm(10e6)
-	if tokStr := req.Form.Get("access_token"); tokStr != "" {
-		return Parse(tokStr, keyFunc)
-	}
-
-	return nil, ErrNoTokenInRequest
-
+func ParseWithClaims(tokenString string, claims Claims, keyFunc Keyfunc) (*Token, error) {
+	return new(Parser).ParseWithClaims(tokenString, claims, keyFunc)
 }
 
 // Encode JWT specific base64url encoding with padding stripped

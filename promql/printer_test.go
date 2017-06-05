@@ -15,7 +15,42 @@ package promql
 
 import (
 	"testing"
+	"time"
+
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/metric"
 )
+
+func TestStatementString(t *testing.T) {
+	in := &AlertStmt{
+		Name: "FooAlert",
+		Expr: &BinaryExpr{
+			Op: itemGTR,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: metric.LabelMatchers{
+					{Type: metric.Equal, Name: model.MetricNameLabel, Value: "bar"},
+				},
+			},
+			RHS: &NumberLiteral{10},
+		},
+		Duration: 5 * time.Minute,
+		Labels:   model.LabelSet{"foo": "bar"},
+		Annotations: model.LabelSet{
+			"notify": "team-a",
+		},
+	}
+
+	expected := `ALERT FooAlert
+	IF foo > 10
+	FOR 5m
+	LABELS {foo="bar"}
+	ANNOTATIONS {notify="team-a"}`
+
+	if in.String() != expected {
+		t.Fatalf("expected:\n%s\ngot:\n%s\n", expected, in.String())
+	}
+}
 
 func TestExprString(t *testing.T) {
 	// A list of valid expressions that are expected to be
@@ -24,6 +59,10 @@ func TestExprString(t *testing.T) {
 	inputs := []struct {
 		in, out string
 	}{
+		{
+			in:  `sum(task:errors:rate10s{job="s"}) BY ()`,
+			out: `sum(task:errors:rate10s{job="s"})`,
+		},
 		{
 			in: `sum(task:errors:rate10s{job="s"}) BY (code)`,
 		},
@@ -37,6 +76,15 @@ func TestExprString(t *testing.T) {
 			in: `sum(task:errors:rate10s{job="s"}) WITHOUT (instance)`,
 		},
 		{
+			in: `topk(5, task:errors:rate10s{job="s"})`,
+		},
+		{
+			in: `count_values("value", task:errors:rate10s{job="s"})`,
+		},
+		{
+			in: `a - ON() c`,
+		},
+		{
 			in: `a - ON(b) c`,
 		},
 		{
@@ -46,10 +94,18 @@ func TestExprString(t *testing.T) {
 			in: `a - ON(b) GROUP_LEFT(x, y) c`,
 		},
 		{
-			in: `a - ON(b) GROUP_LEFT c`,
+			in:  `a - ON(b) GROUP_LEFT c`,
+			out: `a - ON(b) GROUP_LEFT() c`,
+		},
+		{
+			in: `a - ON(b) GROUP_LEFT() (c)`,
 		},
 		{
 			in: `a - IGNORING(b) c`,
+		},
+		{
+			in:  `a - IGNORING() c`,
+			out: `a - c`,
 		},
 		{
 			in: `up > BOOL 0`,

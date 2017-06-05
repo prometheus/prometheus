@@ -11,12 +11,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
 var fieldsRequiredByDefault bool
+
+const maxURLRuneCount = 2083
+const minURLRuneCount = 3
 
 // SetFieldsRequiredByDefault causes validation to fail when struct fields
 // do not include validations or are not explicitly marked as exempt (using `valid:"-"` or `valid:"email,optional"`).
@@ -44,7 +47,7 @@ func IsEmail(str string) bool {
 
 // IsURL check if the string is an URL.
 func IsURL(str string) bool {
-	if str == "" || len(str) >= 2083 || len(str) <= 3 || strings.HasPrefix(str, ".") {
+	if str == "" || utf8.RuneCountInString(str) >= maxURLRuneCount || len(str) <= minURLRuneCount || strings.HasPrefix(str, ".") {
 		return false
 	}
 	u, err := url.Parse(str)
@@ -62,7 +65,7 @@ func IsURL(str string) bool {
 }
 
 // IsRequestURL check if the string rawurl, assuming
-// it was recieved in an HTTP request, is a valid
+// it was received in an HTTP request, is a valid
 // URL confirm to RFC 3986
 func IsRequestURL(rawurl string) bool {
 	url, err := url.ParseRequestURI(rawurl)
@@ -76,7 +79,7 @@ func IsRequestURL(rawurl string) bool {
 }
 
 // IsRequestURI check if the string rawurl, assuming
-// it was recieved in an HTTP request, is an
+// it was received in an HTTP request, is an
 // absolute URI or an absolute path.
 func IsRequestURI(rawurl string) bool {
 	_, err := url.ParseRequestURI(rawurl)
@@ -458,7 +461,7 @@ func IsDNSName(str string) bool {
 		// constraints already violated
 		return false
 	}
-	return rxDNSName.MatchString(str)
+	return !IsIP(str) && rxDNSName.MatchString(str)
 }
 
 // IsDialString validates the given string for usage with the various Dial() functions
@@ -496,6 +499,12 @@ func IsIPv6(str string) bool {
 	return ip != nil && strings.Contains(str, ":")
 }
 
+// IsCIDR check if the string is an valid CIDR notiation (IPV4 & IPV6)
+func IsCIDR(str string) bool {
+	_, _, err := net.ParseCIDR(str)
+	return err == nil
+}
+
 // IsMAC check if a string is valid MAC address.
 // Possible MAC formats:
 // 01:23:45:67:89:ab
@@ -529,7 +538,19 @@ func IsLongitude(str string) bool {
 	return rxLongitude.MatchString(str)
 }
 
-// ValidateStruct use tags for fields
+func toJSONName(tag string) string {
+	if tag == "" {
+		return ""
+	}
+
+	// JSON name always comes first. If there's no options then split[0] is
+	// JSON name, if JSON name is not set, then split[0] is an empty string.
+	split := strings.SplitN(tag, ",", 2)
+	return split[0]
+}
+
+// ValidateStruct use tags for fields.
+// result will be equal to `false` if there are any errors.
 func ValidateStruct(s interface{}) (bool, error) {
 	if s == nil {
 		return true, nil
@@ -551,11 +572,39 @@ func ValidateStruct(s interface{}) (bool, error) {
 		if typeField.PkgPath != "" {
 			continue // Private field
 		}
-		resultField, err := typeCheck(valueField, typeField)
-		if err != nil {
-			errs = append(errs, err)
+		structResult := true
+		if valueField.Kind() == reflect.Struct {
+			var err error
+			structResult, err = ValidateStruct(valueField.Interface())
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
-		result = result && resultField
+		resultField, err2 := typeCheck(valueField, typeField, val, nil)
+		if err2 != nil {
+
+			// Replace structure name with JSON name if there is a tag on the variable
+			jsonTag := toJSONName(typeField.Tag.Get("json"))
+			if jsonTag != "" {
+				switch jsonError := err2.(type) {
+				case Error:
+					jsonError.Name = jsonTag
+					err2 = jsonError
+				case Errors:
+					for _, e := range jsonError.Errors() {
+						switch tempErr := e.(type) {
+						case Error:
+							tempErr.Name = jsonTag
+							_ = tempErr
+						}
+					}
+					err2 = jsonError
+				}
+			}
+
+			errs = append(errs, err2)
+		}
+		result = result && resultField && structResult
 	}
 	if len(errs) > 0 {
 		err = errs
@@ -563,11 +612,22 @@ func ValidateStruct(s interface{}) (bool, error) {
 	return result, err
 }
 
-// parseTag splits a struct field's tag into its
-// comma-separated options.
-func parseTag(tag string) tagOptions {
-	split := strings.SplitN(tag, ",", -1)
-	return tagOptions(split)
+// parseTagIntoMap parses a struct tag `valid:required~Some error message,length(2|3)` into map[string]string{"required": "Some error message", "length(2|3)": ""}
+func parseTagIntoMap(tag string) tagOptionsMap {
+	optionsMap := make(tagOptionsMap)
+	options := strings.SplitN(tag, ",", -1)
+	for _, option := range options {
+		validationOptions := strings.Split(option, "~")
+		if !isValidTag(validationOptions[0]) {
+			continue
+		}
+		if len(validationOptions) == 2 {
+			optionsMap[validationOptions[0]] = validationOptions[1]
+		} else {
+			optionsMap[validationOptions[0]] = ""
+		}
+	}
+	return optionsMap
 }
 
 func isValidTag(s string) bool {
@@ -576,7 +636,7 @@ func isValidTag(s string) bool {
 	}
 	for _, c := range s {
 		switch {
-		case strings.ContainsRune("!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
+		case strings.ContainsRune("\\'\"!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
 			// Backslash and quote chars are reserved, but
 			// otherwise any punctuation chars are allowed
 			// in a tag name.
@@ -602,6 +662,28 @@ func IsSemver(str string) bool {
 	return rxSemver.MatchString(str)
 }
 
+// IsTime check if string is valid according to given format
+func IsTime(str string, format string) bool {
+	_, err := time.Parse(format, str)
+	return err == nil
+}
+
+// IsRFC3339 check if string is valid timestamp value according to RFC3339
+func IsRFC3339(str string) bool {
+	return IsTime(str, time.RFC3339)
+}
+
+// IsISO4217 check if string is valid ISO currency code
+func IsISO4217(str string) bool {
+	for _, currency := range ISO4217List {
+		if str == currency {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ByteLength check string's length
 func ByteLength(str string, params ...string) bool {
 	if len(params) == 2 {
@@ -611,6 +693,12 @@ func ByteLength(str string, params ...string) bool {
 	}
 
 	return false
+}
+
+// RuneLength check string's length
+// Alias for StringLength
+func RuneLength(str string, params ...string) bool {
+	return StringLength(str, params...)
 }
 
 // StringMatches checks if a string matches a given pattern.
@@ -635,52 +723,55 @@ func StringLength(str string, params ...string) bool {
 	return false
 }
 
-// Contains returns whether checks that a comma-separated list of options
-// contains a particular substr flag. substr must be surrounded by a
-// string boundary or commas.
-func (opts tagOptions) contains(optionName string) bool {
-	for i := range opts {
-		tagOpt := opts[i]
-		if tagOpt == optionName {
-			return true
-		}
+// Range check string's length
+func Range(str string, params ...string) bool {
+	if len(params) == 2 {
+		value, _ := ToFloat(str)
+		min, _ := ToFloat(params[0])
+		max, _ := ToFloat(params[1])
+		return InRange(value, min, max)
 	}
+
 	return false
 }
 
-func searchOption(limit int, predicate func(counter int) bool) int {
-	for counter := 0; counter < limit; counter++ {
-		if predicate(counter) {
-			return counter
-		}
+func isInRaw(str string, params ...string) bool {
+	if len(params) == 1 {
+		rawParams := params[0]
+
+		parsedParams := strings.Split(rawParams, "|")
+
+		return IsIn(str, parsedParams...)
 	}
-	return -1
+
+	return false
 }
 
-func checkRequired(v reflect.Value, t reflect.StructField, options tagOptions) (bool, error) {
-	var err error
-	var customErrorMessageExists bool
-	requiredIndex := searchOption(len(options), func(index int) bool { return strings.HasPrefix(options[index], "required") })
-	optionalIndex := searchOption(len(options), func(index int) bool { return strings.HasPrefix(options[index], "optional") })
-	if requiredIndex > -1 {
-		validationOptions := strings.Split(options[requiredIndex], "~")
-		if len(validationOptions) == 2 {
-			err = fmt.Errorf(strings.Split(options[requiredIndex], "~")[1])
-			customErrorMessageExists = true
-		} else {
-			err = fmt.Errorf("non zero value required")
+// IsIn check if string str is a member of the set of strings params
+func IsIn(str string, params ...string) bool {
+	for _, param := range params {
+		if str == param {
+			return true
 		}
-		return false, Error{t.Name, err, customErrorMessageExists}
-	} else if fieldsRequiredByDefault && optionalIndex == -1 {
-		err := fmt.Errorf("All fields are required to at least have one validation defined")
-		return false, Error{t.Name, err, customErrorMessageExists}
+	}
+
+	return false
+}
+
+func checkRequired(v reflect.Value, t reflect.StructField, options tagOptionsMap) (bool, error) {
+	if requiredOption, isRequired := options["required"]; isRequired {
+		if len(requiredOption) > 0 {
+			return false, Error{t.Name, fmt.Errorf(requiredOption), true}
+		}
+		return false, Error{t.Name, fmt.Errorf("non zero value required"), false}
+	} else if _, isOptional := options["optional"]; fieldsRequiredByDefault && !isOptional {
+		return false, Error{t.Name, fmt.Errorf("All fields are required to at least have one validation defined"), false}
 	}
 	// not required and empty is valid
 	return true, nil
 }
 
-func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
-	var customErrorMessageExists bool
+func typeCheck(v reflect.Value, t reflect.StructField, o reflect.Value, options tagOptionsMap) (isValid bool, resultErr error) {
 	if !v.IsValid() {
 		return false, nil
 	}
@@ -693,34 +784,56 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 		if !fieldsRequiredByDefault {
 			return true, nil
 		}
-		err := fmt.Errorf("All fields are required to at least have one validation defined")
-		return false, Error{t.Name, err, customErrorMessageExists}
+		return false, Error{t.Name, fmt.Errorf("All fields are required to at least have one validation defined"), false}
 	case "-":
 		return true, nil
 	}
 
-	options := parseTag(tag)
-	for i := range options {
-		tagOpt := options[i]
-		tagOptions := strings.Split(tagOpt, "~")
-		if ok := isValidTag(tagOptions[0]); !ok {
-			continue
-		}
-		if validatefunc, ok := CustomTypeTagMap[tagOptions[0]]; ok {
-			options = append(options[:i], options[i+1:]...) // we found our custom validator, so remove it from the options
-			if result := validatefunc(v.Interface()); !result {
-				if len(tagOptions) == 2 {
-					return false, Error{t.Name, fmt.Errorf(tagOptions[1]), true}
-				}
-				return false, Error{t.Name, fmt.Errorf("%s does not validate as %s", fmt.Sprint(v), tagOptions[0]), false}
-			}
-			return true, nil
-		}
+	isRootType := false
+	if options == nil {
+		isRootType = true
+		options = parseTagIntoMap(tag)
 	}
 
 	if isEmptyValue(v) {
 		// an empty value is not validated, check only required
 		return checkRequired(v, t, options)
+	}
+
+	var customTypeErrors Errors
+	for validatorName, customErrorMessage := range options {
+		if validatefunc, ok := CustomTypeTagMap.Get(validatorName); ok {
+			delete(options, validatorName)
+
+			if result := validatefunc(v.Interface(), o.Interface()); !result {
+				if len(customErrorMessage) > 0 {
+					customTypeErrors = append(customTypeErrors, Error{Name: t.Name, Err: fmt.Errorf(customErrorMessage), CustomErrorMessageExists: true})
+					continue
+				}
+				customTypeErrors = append(customTypeErrors, Error{Name: t.Name, Err: fmt.Errorf("%s does not validate as %s", fmt.Sprint(v), validatorName), CustomErrorMessageExists: false})
+			}
+		}
+	}
+
+	if len(customTypeErrors.Errors()) > 0 {
+		return false, customTypeErrors
+	}
+
+	if isRootType {
+		// Ensure that we've checked the value by all specified validators before report that the value is valid
+		defer func() {
+			delete(options, "optional")
+			delete(options, "required")
+
+			if isValid && resultErr == nil && len(options) != 0 {
+				for validator := range options {
+					isValid = false
+					resultErr = Error{t.Name, fmt.Errorf(
+						"The following validator is invalid or can't be applied to the field: %q", validator), false}
+					return
+				}
+			}
+		}()
 	}
 
 	switch v.Kind() {
@@ -730,58 +843,61 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 		reflect.Float32, reflect.Float64,
 		reflect.String:
 		// for each tag option check the map of validator functions
-		for i := range options {
-			tagOpt := options[i]
-			tagOptions := strings.Split(tagOpt, "~")
-			negate := false
-			customMsgExists := (len(tagOptions) == 2)
-			// Check wether the tag looks like '!something' or 'something'
-			if len(tagOptions[0]) > 0 && tagOptions[0][0] == '!' {
-				tagOpt = string(tagOptions[0][1:])
-				tagOptions[0] = tagOpt
+		for validatorSpec, customErrorMessage := range options {
+			var negate bool
+			validator := validatorSpec
+			customMsgExists := (len(customErrorMessage) > 0)
+
+			// Check whether the tag looks like '!something' or 'something'
+			if validator[0] == '!' {
+				validator = string(validator[1:])
 				negate = true
-			}
-			if ok := isValidTag(tagOptions[0]); !ok {
-				err := fmt.Errorf("Unknown Validator %s", tagOptions[0])
-				return false, Error{t.Name, err, false}
 			}
 
 			// Check for param validators
 			for key, value := range ParamTagRegexMap {
-				ps := value.FindStringSubmatch(tagOptions[0])
-				if len(ps) > 0 {
-					if validatefunc, ok := ParamTagMap[key]; ok {
-						switch v.Kind() {
-						case reflect.String:
-							field := fmt.Sprint(v) // make value into string, then validate with regex
-							if result := validatefunc(field, ps[1:]...); (!result && !negate) || (result && negate) {
-								var err error
-								if !negate {
-									if customMsgExists {
-										err = fmt.Errorf(tagOptions[1])
-									} else {
-										err = fmt.Errorf("%s does not validate as %s", field, tagOpt)
-									}
+				ps := value.FindStringSubmatch(validator)
+				if len(ps) == 0 {
+					continue
+				}
 
-								} else {
-									if customMsgExists {
-										err = fmt.Errorf(tagOptions[1])
-									} else {
-										err = fmt.Errorf("%s does validate as %s", field, tagOpt)
-									}
-								}
-								return false, Error{t.Name, err, customMsgExists}
+				validatefunc, ok := ParamTagMap[key]
+				if !ok {
+					continue
+				}
+
+				delete(options, validatorSpec)
+
+				switch v.Kind() {
+				case reflect.String:
+					field := fmt.Sprint(v) // make value into string, then validate with regex
+					if result := validatefunc(field, ps[1:]...); (!result && !negate) || (result && negate) {
+						var err error
+						if !negate {
+							if customMsgExists {
+								err = fmt.Errorf(customErrorMessage)
+							} else {
+								err = fmt.Errorf("%s does not validate as %s", field, validator)
 							}
-						default:
-							//Not Yet Supported Types (Fail here!)
-							err := fmt.Errorf("Validator %s doesn't support kind %s", tagOptions[0], v.Kind())
-							return false, Error{t.Name, err, false}
+
+						} else {
+							if customMsgExists {
+								err = fmt.Errorf(customErrorMessage)
+							} else {
+								err = fmt.Errorf("%s does validate as %s", field, validator)
+							}
 						}
+						return false, Error{t.Name, err, customMsgExists}
 					}
+				default:
+					// type not yet supported, fail
+					return false, Error{t.Name, fmt.Errorf("Validator %s doesn't support kind %s", validator, v.Kind()), false}
 				}
 			}
 
-			if validatefunc, ok := TagMap[tagOptions[0]]; ok {
+			if validatefunc, ok := TagMap[validator]; ok {
+				delete(options, validatorSpec)
+
 				switch v.Kind() {
 				case reflect.String:
 					field := fmt.Sprint(v) // make value into string, then validate with regex
@@ -790,22 +906,22 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 
 						if !negate {
 							if customMsgExists {
-								err = fmt.Errorf(tagOptions[1])
+								err = fmt.Errorf(customErrorMessage)
 							} else {
-								err = fmt.Errorf("%s does not validate as %s", field, tagOpt)
+								err = fmt.Errorf("%s does not validate as %s", field, validator)
 							}
 						} else {
 							if customMsgExists {
-								err = fmt.Errorf(tagOptions[1])
+								err = fmt.Errorf(customErrorMessage)
 							} else {
-								err = fmt.Errorf("%s does validate as %s", field, tagOpt)
+								err = fmt.Errorf("%s does validate as %s", field, validator)
 							}
 						}
 						return false, Error{t.Name, err, customMsgExists}
 					}
 				default:
 					//Not Yet Supported Types (Fail here!)
-					err := fmt.Errorf("Validator %s doesn't support kind %s for value %v", tagOptions[0], v.Kind(), v)
+					err := fmt.Errorf("Validator %s doesn't support kind %s for value %v", validator, v.Kind(), v)
 					return false, Error{t.Name, err, false}
 				}
 			}
@@ -833,7 +949,7 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 			var resultItem bool
 			var err error
 			if v.Index(i).Kind() != reflect.Struct {
-				resultItem, err = typeCheck(v.Index(i), t)
+				resultItem, err = typeCheck(v.Index(i), t, o, options)
 				if err != nil {
 					return false, err
 				}
@@ -852,7 +968,7 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 			var resultItem bool
 			var err error
 			if v.Index(i).Kind() != reflect.Struct {
-				resultItem, err = typeCheck(v.Index(i), t)
+				resultItem, err = typeCheck(v.Index(i), t, o, options)
 				if err != nil {
 					return false, err
 				}
@@ -876,7 +992,7 @@ func typeCheck(v reflect.Value, t reflect.StructField) (bool, error) {
 		if v.IsNil() {
 			return true, nil
 		}
-		return typeCheck(v.Elem(), t)
+		return typeCheck(v.Elem(), t, o, options)
 	case reflect.Struct:
 		return ValidateStruct(v.Interface())
 	default:
@@ -929,7 +1045,10 @@ func ErrorsByField(e error) map[string]string {
 		m[e.(Error).Name] = e.(Error).Err.Error()
 	case Errors:
 		for _, item := range e.(Errors).Errors() {
-			m[item.(Error).Name] = item.(Error).Err.Error()
+			n := ErrorsByField(item)
+			for k, v := range n {
+				m[k] = v
+			}
 		}
 	}
 

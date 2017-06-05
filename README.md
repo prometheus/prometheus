@@ -3,11 +3,14 @@
 [![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/master.svg?style=shield)][circleci]
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
+[![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
+[![Code Climate](https://codeclimate.com/github/prometheus/prometheus/badges/gpa.svg)](https://codeclimate.com/github/prometheus/prometheus)
+[![Issue Count](https://codeclimate.com/github/prometheus/prometheus/badges/issue_count.svg)](https://codeclimate.com/github/prometheus/prometheus)
 
 Visit [prometheus.io](https://prometheus.io) for the full documentation,
 examples and guides.
 
-Prometheus is a systems and service monitoring system. It collects metrics
+Prometheus, a [Cloud Native Computing Foundation](https://cncf.io/) project, is a systems and service monitoring system. It collects metrics
 from configured targets at given intervals, evaluates rule expressions,
 displays the results, and can trigger alerts if some condition is observed
 to be true.
@@ -25,7 +28,7 @@ Prometheus' main distinguishing features as compared to other monitoring systems
 
 ## Architecture overview
 
-![](https://cdn.rawgit.com/prometheus/prometheus/e761f0d/documentation/images/architecture.svg)
+![](https://cdn.rawgit.com/prometheus/prometheus/c34257d069c630685da35bcef084632ffd5d6209/documentation/images/architecture.svg)
 
 ## Install
 
@@ -34,18 +37,28 @@ There are various ways of installing Prometheus.
 ### Precompiled binaries
 
 Precompiled binaries for released versions are available in the
-[*releases* section](https://github.com/prometheus/prometheus/releases)
-of the GitHub repository. Using the latest production release binary
-is the recommended way of installing Prometheus. 
-See the [Installing](https://prometheus.io/docs/introduction/install/) 
+[*download* section](https://prometheus.io/download/)
+on [prometheus.io](https://prometheus.io). Using the latest production release binary
+is the recommended way of installing Prometheus.
+See the [Installing](https://prometheus.io/docs/introduction/install/)
 chapter in the documentation for all the details.
 
-Debian and RPM packages are being worked on.
+Debian packages [are available](https://packages.debian.org/sid/net/prometheus).
+
+### Docker images
+
+Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus).
+
+You can launch a Prometheus container for trying it out with
+
+    $ docker run --name prometheus -d -p 127.0.0.1:9090:9090 quay.io/prometheus/prometheus
+
+Prometheus will now be reachable at http://localhost:9090/.
 
 ### Building from source
 
 To build Prometheus from the source code yourself you need to have a working
-Go environment with [version 1.5 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.8 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `prometheus`
 and `promtool` binaries into your `GOPATH`. We use Go 1.5's experimental
@@ -68,6 +81,7 @@ The Makefile provides several targets:
 
   * *build*: build the `prometheus` and `promtool` binaries
   * *test*: run the tests
+  * *test-short*: run the short tests
   * *format*: format the source code
   * *vet*: check the source code for common errors
   * *assets*: rebuild the static assets
@@ -77,15 +91,15 @@ The Makefile provides several targets:
 
   * The source code is periodically indexed: [Prometheus Core](http://godoc.org/github.com/prometheus/prometheus).
   * You will find a Travis CI configuration in `.travis.yml`.
-  * All of the core developers are accessible via the [Prometheus Developers Mailinglist](https://groups.google.com/forum/?fromgroups#!forum/prometheus-developers) and the `#prometheus` channel on `irc.freenode.net`.
+  * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
 
-Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
+Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/master/CONTRIBUTING.md)
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/master/LICENSE).
 
 
 [travis]: https://travis-ci.org/prometheus/prometheus

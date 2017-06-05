@@ -30,7 +30,20 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/retrieval"
 )
+
+type targetRetrieverFunc func() []*retrieval.Target
+
+func (f targetRetrieverFunc) Targets() []*retrieval.Target {
+	return f()
+}
+
+type alertmanagerRetrieverFunc func() []*url.URL
+
+func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
+	return f()
+}
 
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
@@ -49,10 +62,35 @@ func TestEndpoints(t *testing.T) {
 	}
 
 	now := model.Now()
+
+	tr := targetRetrieverFunc(func() []*retrieval.Target {
+		return []*retrieval.Target{
+			retrieval.NewTarget(
+				model.LabelSet{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+				},
+				model.LabelSet{},
+				url.Values{},
+			),
+		}
+	})
+
+	ar := alertmanagerRetrieverFunc(func() []*url.URL {
+		return []*url.URL{{
+			Scheme: "http",
+			Host:   "alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		}}
+	})
+
 	api := &API{
-		Storage:     suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
-		now:         func() model.Time { return now },
+		Storage:               suite.Storage(),
+		QueryEngine:           suite.QueryEngine(),
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		now: func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -183,6 +221,39 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"invalid][query"},
 				"start": []string{"0"},
 				"end":   []string{"100"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		// Invalid step.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"1"},
+				"end":   []string{"2"},
+				"step":  []string{"0"},
+			},
+			errType: errorBadData,
+		},
+		// Start after end.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"2"},
+				"end":   []string{"1"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		// Start overflows int64 internally.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"148966367200.372"},
+				"end":   []string{"1489667272.372"},
 				"step":  []string{"1"},
 			},
 			errType: errorBadData,
@@ -382,6 +453,27 @@ func TestEndpoints(t *testing.T) {
 			response: struct {
 				NumDeleted int `json:"numDeleted"`
 			}{2},
+		}, {
+			endpoint: api.targets,
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: model.LabelSet{},
+						Labels:           model.LabelSet{},
+						ScrapeURL:        "http://example.com:8080/metrics",
+						Health:           "unknown",
+					},
+				},
+			},
+		}, {
+			endpoint: api.alertmanagers,
+			response: &AlertmanagerDiscovery{
+				ActiveAlertmanagers: []*AlertmanagerTarget{
+					{
+						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
+			},
 		},
 	}
 
@@ -391,15 +483,12 @@ func TestEndpoints(t *testing.T) {
 		for p, v := range test.params {
 			ctx = route.WithParam(ctx, p, v)
 		}
-		api.context = func(r *http.Request) context.Context {
-			return ctx
-		}
 
 		req, err := http.NewRequest("ANY", fmt.Sprintf("http://example.com?%s", test.query.Encode()), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp, apiErr := test.endpoint(req)
+		resp, apiErr := test.endpoint(req.WithContext(ctx))
 		if apiErr != nil {
 			if test.errType == errorNone {
 				t.Fatalf("Unexpected error: %s", apiErr)
@@ -517,11 +606,16 @@ func TestParseTime(t *testing.T) {
 			input: "30s",
 			fail:  true,
 		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
+			fail:  true,
+		}, {
 			input:  "123",
 			result: time.Unix(123, 0),
-		}, {
-			input:  "123.123",
-			result: time.Unix(123, 123000000),
 		}, {
 			input:  "123.123",
 			result: time.Unix(123, 123000000),
@@ -565,6 +659,14 @@ func TestParseDuration(t *testing.T) {
 			fail:  true,
 		}, {
 			input: "2015-06-03T13:21:58.555Z",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
 			fail:  true,
 		}, {
 			input:  "123",

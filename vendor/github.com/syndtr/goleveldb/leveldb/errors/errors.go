@@ -15,6 +15,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
+// Common errors.
 var (
 	ErrNotFound    = New("leveldb: not found")
 	ErrReleased    = util.ErrReleased
@@ -29,21 +30,20 @@ func New(text string) error {
 // ErrCorrupted is the type that wraps errors that indicate corruption in
 // the database.
 type ErrCorrupted struct {
-	File *storage.FileInfo
-	Err  error
+	Fd  storage.FileDesc
+	Err error
 }
 
 func (e *ErrCorrupted) Error() string {
-	if e.File != nil {
-		return fmt.Sprintf("%v [file=%v]", e.Err, e.File)
-	} else {
-		return e.Err.Error()
+	if !e.Fd.Zero() {
+		return fmt.Sprintf("%v [file=%v]", e.Err, e.Fd)
 	}
+	return e.Err.Error()
 }
 
 // NewErrCorrupted creates new ErrCorrupted error.
-func NewErrCorrupted(f storage.File, err error) error {
-	return &ErrCorrupted{storage.NewFileInfo(f), err}
+func NewErrCorrupted(fd storage.FileDesc, err error) error {
+	return &ErrCorrupted{fd, err}
 }
 
 // IsCorrupted returns a boolean indicating whether the error is indicating
@@ -61,17 +61,17 @@ func IsCorrupted(err error) bool {
 // ErrMissingFiles is the type that indicating a corruption due to missing
 // files. ErrMissingFiles always wrapped with ErrCorrupted.
 type ErrMissingFiles struct {
-	Files []*storage.FileInfo
+	Fds []storage.FileDesc
 }
 
 func (e *ErrMissingFiles) Error() string { return "file missing" }
 
-// SetFile sets 'file info' of the given error with the given file.
+// SetFd sets 'file info' of the given error with the given file.
 // Currently only ErrCorrupted is supported, otherwise will do nothing.
-func SetFile(err error, f storage.File) error {
+func SetFd(err error, fd storage.FileDesc) error {
 	switch x := err.(type) {
 	case *ErrCorrupted:
-		x.File = storage.NewFileInfo(f)
+		x.Fd = fd
 		return x
 	}
 	return err

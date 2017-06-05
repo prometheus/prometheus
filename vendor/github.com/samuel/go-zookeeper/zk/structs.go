@@ -270,6 +270,7 @@ type multiResponseOp struct {
 	Header multiHeader
 	String string
 	Stat   *Stat
+	Err    ErrCode
 }
 type multiResponse struct {
 	Ops        []multiResponseOp
@@ -327,6 +328,8 @@ func (r *multiRequest) Decode(buf []byte) (int, error) {
 }
 
 func (r *multiResponse) Decode(buf []byte) (int, error) {
+	var multiErr error
+
 	r.Ops = make([]multiResponseOp, 0)
 	r.DoneHeader = multiHeader{-1, true, -1}
 	total := 0
@@ -347,6 +350,8 @@ func (r *multiResponse) Decode(buf []byte) (int, error) {
 		switch header.Type {
 		default:
 			return total, ErrAPIError
+		case opError:
+			w = reflect.ValueOf(&res.Err)
 		case opCreate:
 			w = reflect.ValueOf(&res.String)
 		case opSetData:
@@ -362,8 +367,12 @@ func (r *multiResponse) Decode(buf []byte) (int, error) {
 			total += n
 		}
 		r.Ops = append(r.Ops, res)
+		if multiErr == nil && res.Err != errOk {
+			// Use the first error as the error returned from Multi().
+			multiErr = res.Err.toError()
+		}
 	}
-	return total, nil
+	return total, multiErr
 }
 
 type watcherEvent struct {
@@ -595,46 +604,6 @@ func requestStructForOp(op int32) interface{} {
 		return &CheckVersionRequest{}
 	case opMulti:
 		return &multiRequest{}
-	}
-	return nil
-}
-
-func responseStructForOp(op int32) interface{} {
-	switch op {
-	case opClose:
-		return &closeResponse{}
-	case opCreate:
-		return &createResponse{}
-	case opDelete:
-		return &deleteResponse{}
-	case opExists:
-		return &existsResponse{}
-	case opGetAcl:
-		return &getAclResponse{}
-	case opGetChildren:
-		return &getChildrenResponse{}
-	case opGetChildren2:
-		return &getChildren2Response{}
-	case opGetData:
-		return &getDataResponse{}
-	case opPing:
-		return &pingResponse{}
-	case opSetAcl:
-		return &setAclResponse{}
-	case opSetData:
-		return &setDataResponse{}
-	case opSetWatches:
-		return &setWatchesResponse{}
-	case opSync:
-		return &syncResponse{}
-	case opWatcherEvent:
-		return &watcherEvent{}
-	case opSetAuth:
-		return &setAuthResponse{}
-	// case opCheck:
-	// 	return &checkVersionResponse{}
-	case opMulti:
-		return &multiResponse{}
 	}
 	return nil
 }

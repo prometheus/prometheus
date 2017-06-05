@@ -135,7 +135,11 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	aggrString := fmt.Sprintf("%s(%s)", node.Op, node.Expr)
+	aggrString := fmt.Sprintf("%s(", node.Op)
+	if node.Op.isAggregatorWithParam() {
+		aggrString += fmt.Sprintf("%s, ", node.Param)
+	}
+	aggrString += fmt.Sprintf("%s)", node.Expr)
 	if len(node.Grouping) > 0 {
 		var format string
 		if node.Without {
@@ -159,11 +163,11 @@ func (node *BinaryExpr) String() string {
 
 	matching := ""
 	vm := node.VectorMatching
-	if vm != nil && len(vm.MatchingLabels) > 0 {
-		if vm.Ignoring {
-			matching = fmt.Sprintf(" IGNORING(%s)", vm.MatchingLabels)
-		} else {
+	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
+		if vm.On {
 			matching = fmt.Sprintf(" ON(%s)", vm.MatchingLabels)
+		} else {
+			matching = fmt.Sprintf(" IGNORING(%s)", vm.MatchingLabels)
 		}
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			matching += " GROUP_"
@@ -172,9 +176,7 @@ func (node *BinaryExpr) String() string {
 			} else {
 				matching += "RIGHT"
 			}
-			if len(vm.Include) > 0 {
-				matching += fmt.Sprintf("(%s)", vm.Include)
-			}
+			matching += fmt.Sprintf("(%s)", vm.Include)
 		}
 	}
 	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)

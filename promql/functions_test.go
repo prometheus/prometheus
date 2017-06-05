@@ -22,7 +22,7 @@ load 5m
     http_requests{path="/foo"}    0+10x8064
 
 eval instant at 4w holt_winters(http_requests[4w], 0.3, 0.3)
-    {path="/foo"} 20160
+    {path="/foo"} 80640
 `
 
 	bench := NewBenchmark(b, input)
@@ -51,7 +51,7 @@ load 1m
     http_requests{path="/foo"}    0+10x1440
 
 eval instant at 1d holt_winters(http_requests[1d], 0.3, 0.3)
-    {path="/foo"} 20160
+    {path="/foo"} 14400
 `
 
 	bench := NewBenchmark(b, input)
@@ -65,7 +65,7 @@ load 1m
     http_requests{path="/foo"}    0+10x1440
 
 eval instant at 1d changes(http_requests[1d])
-    {path="/foo"} 20160
+    {path="/foo"} 1440
 `
 
 	bench := NewBenchmark(b, input)

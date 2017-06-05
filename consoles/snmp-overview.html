@@ -25,10 +25,10 @@
      {{ else if eq (. | value) 7.0}}">lowerLayerDown
      {{else}}">{{ end }}</td>
   <td class="text-right">{{ template "prom_query_drilldown" (args (printf "ifHighSpeed{job='snmp',instance='%s',ifDescr='%s'} * 1e6 or ifSpeed{job='snmp',instance='%s',ifDescr='%s'}" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "b/s" "humanize")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifHCInOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8 or rate(ifInOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "b/s" "humanize")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifHCOutOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8 or rate(ifOutOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "b/s" "humanize")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifInDiscards{job='snmp',instance='%s',ifDescr='%s'}[5m]) + rate(ifOutDiscards{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "/s" "humanizeNoSmallPrefix")}}</td>
-  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifInErrors{job='snmp',instance='%s',ifDescr='%s'}[5m]) + rate(ifOutErrors{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "/s" "humanizeNoSmallPrefix")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifHCInOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8 or irate(ifInOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "b/s" "humanize")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifHCOutOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8 or irate(ifOutOctets{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "b/s" "humanize")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifInDiscards{job='snmp',instance='%s',ifDescr='%s'}[5m]) + irate(ifOutDiscards{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "/s" "humanizeNoSmallPrefix")}}</td>
+  <td class="text-right">{{ template "prom_query_drilldown" (args (printf "irate(ifInErrors{job='snmp',instance='%s',ifDescr='%s'}[5m]) + irate(ifOutErrors{job='snmp',instance='%s',ifDescr='%s'}[5m]) * 8" .Labels.instance .Labels.ifDescr .Labels.instance .Labels.ifDescr) "/s" "humanizeNoSmallPrefix")}}</td>
 </tr>
 {{ end }}
 {{ template "prom_content_tail" . }}

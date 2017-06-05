@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	text_template "text/template"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -55,12 +57,12 @@ func (q queryResultByLabelSorter) Swap(i, j int) {
 	q.results[i], q.results[j] = q.results[j], q.results[i]
 }
 
-func query(q string, timestamp model.Time, queryEngine *promql.Engine) (queryResult, error) {
+func query(ctx context.Context, q string, timestamp model.Time, queryEngine *promql.Engine) (queryResult, error) {
 	query, err := queryEngine.NewInstantQuery(q, timestamp)
 	if err != nil {
 		return nil, err
 	}
-	res := query.Exec()
+	res := query.Exec(ctx)
 	if res.Err != nil {
 		return nil, res.Err
 	}
@@ -110,14 +112,14 @@ type Expander struct {
 }
 
 // NewTemplateExpander returns a template expander ready to use.
-func NewTemplateExpander(text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, pathPrefix string) *Expander {
+func NewTemplateExpander(ctx context.Context, text string, name string, data interface{}, timestamp model.Time, queryEngine *promql.Engine, externalURL *url.URL) *Expander {
 	return &Expander{
 		text: text,
 		name: name,
 		data: data,
 		funcMap: text_template.FuncMap{
 			"query": func(q string) (queryResult, error) {
-				return query(q, timestamp, queryEngine)
+				return query(ctx, q, timestamp, queryEngine)
 			},
 			"first": func(v queryResult) (*sample, error) {
 				if len(v) > 0 {
@@ -150,6 +152,8 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp m
 			},
 			"match":     regexp.MatchString,
 			"title":     strings.Title,
+			"toUpper":   strings.ToUpper,
+			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,
 			"tableLink": strutil.TableLinkForExpression,
 			"sortByLabel": func(label string, v queryResult) queryResult {
@@ -244,7 +248,10 @@ func NewTemplateExpander(text string, name string, data interface{}, timestamp m
 				return fmt.Sprint(t)
 			},
 			"pathPrefix": func() string {
-				return pathPrefix
+				return externalURL.Path
+			},
+			"externalURL": func() string {
+				return externalURL.String()
 			},
 		},
 	}

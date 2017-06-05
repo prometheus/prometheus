@@ -2,23 +2,10 @@ package route
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
 )
-
-var (
-	mtx   = sync.RWMutex{}
-	ctxts = map[*http.Request]context.Context{}
-)
-
-// Context returns the context for the request.
-func Context(r *http.Request) context.Context {
-	mtx.RLock()
-	defer mtx.RUnlock()
-	return ctxts[r]
-}
 
 type param string
 
@@ -32,29 +19,8 @@ func WithParam(ctx context.Context, p, v string) context.Context {
 	return context.WithValue(ctx, param(p), v)
 }
 
-// handle turns a Handle into httprouter.Handle
-func handle(h http.HandlerFunc) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		for _, p := range params {
-			ctx = context.WithValue(ctx, param(p.Key), p.Value)
-		}
-
-		mtx.Lock()
-		ctxts[r] = ctx
-		mtx.Unlock()
-
-		h(w, r)
-
-		mtx.Lock()
-		delete(ctxts, r)
-		mtx.Unlock()
-	}
-}
-
-// Router wraps httprouter.Router and adds support for prefixed sub-routers.
+// Router wraps httprouter.Router and adds support for prefixed sub-routers
+// and per-request context injections.
 type Router struct {
 	rtr    *httprouter.Router
 	prefix string
@@ -62,7 +28,9 @@ type Router struct {
 
 // New returns a new Router.
 func New() *Router {
-	return &Router{rtr: httprouter.New()}
+	return &Router{
+		rtr: httprouter.New(),
+	}
 }
 
 // WithPrefix returns a router that prefixes all registered routes with prefix.
@@ -70,29 +38,42 @@ func (r *Router) WithPrefix(prefix string) *Router {
 	return &Router{rtr: r.rtr, prefix: r.prefix + prefix}
 }
 
+// handle turns a HandlerFunc into an httprouter.Handle.
+func (r *Router) handle(h http.HandlerFunc) httprouter.Handle {
+	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+
+		for _, p := range params {
+			ctx = context.WithValue(ctx, param(p.Key), p.Value)
+		}
+		h(w, req.WithContext(ctx))
+	}
+}
+
 // Get registers a new GET route.
 func (r *Router) Get(path string, h http.HandlerFunc) {
-	r.rtr.GET(r.prefix+path, handle(h))
+	r.rtr.GET(r.prefix+path, r.handle(h))
 }
 
 // Options registers a new OPTIONS route.
 func (r *Router) Options(path string, h http.HandlerFunc) {
-	r.rtr.OPTIONS(r.prefix+path, handle(h))
+	r.rtr.OPTIONS(r.prefix+path, r.handle(h))
 }
 
 // Del registers a new DELETE route.
 func (r *Router) Del(path string, h http.HandlerFunc) {
-	r.rtr.DELETE(r.prefix+path, handle(h))
+	r.rtr.DELETE(r.prefix+path, r.handle(h))
 }
 
 // Put registers a new PUT route.
 func (r *Router) Put(path string, h http.HandlerFunc) {
-	r.rtr.PUT(r.prefix+path, handle(h))
+	r.rtr.PUT(r.prefix+path, r.handle(h))
 }
 
 // Post registers a new POST route.
 func (r *Router) Post(path string, h http.HandlerFunc) {
-	r.rtr.POST(r.prefix+path, handle(h))
+	r.rtr.POST(r.prefix+path, r.handle(h))
 }
 
 // Redirect takes an absolute path and sends an internal HTTP redirect for it,
@@ -113,7 +94,7 @@ func FileServe(dir string) http.HandlerFunc {
 	fs := http.FileServer(http.Dir(dir))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = Param(Context(r), "filepath")
+		r.URL.Path = Param(r.Context(), "filepath")
 		fs.ServeHTTP(w, r)
 	}
 }

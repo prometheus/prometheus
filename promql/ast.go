@@ -103,6 +103,7 @@ type Expressions []Expr
 type AggregateExpr struct {
 	Op               itemType         // The used aggregation operation.
 	Expr             Expr             // The vector expression over which is aggregated.
+	Param            Expr             // Parameter used by some aggregators.
 	Grouping         model.LabelNames // The labels by which to group the vector.
 	Without          bool             // Whether to drop the given labels rather than keep them.
 	KeepCommonLabels bool             // Whether to keep common labels among result elements.
@@ -134,9 +135,8 @@ type MatrixSelector struct {
 	Offset        time.Duration
 	LabelMatchers metric.LabelMatchers
 
-	// The series iterators are populated at query analysis time.
-	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]metric.Metric
+	// The series iterators are populated at query preparation time.
+	iterators []local.SeriesIterator
 }
 
 // NumberLiteral represents a number.
@@ -168,9 +168,8 @@ type VectorSelector struct {
 	Offset        time.Duration
 	LabelMatchers metric.LabelMatchers
 
-	// The series iterators are populated at query analysis time.
-	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]metric.Metric
+	// The series iterators are populated at query preparation time.
+	iterators []local.SeriesIterator
 }
 
 func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
@@ -231,9 +230,9 @@ type VectorMatching struct {
 	// MatchingLabels contains the labels which define equality of a pair of
 	// elements from the vectors.
 	MatchingLabels model.LabelNames
-	// Ignoring excludes the given label names from matching,
-	// rather than only using them.
-	Ignoring bool
+	// On includes the given label names from matching,
+	// rather than excluding them.
+	On bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include model.LabelNames

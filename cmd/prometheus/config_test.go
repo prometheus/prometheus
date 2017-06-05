@@ -13,7 +13,11 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/prometheus/prometheus/config"
+)
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -37,18 +41,6 @@ func TestParse(t *testing.T) {
 			valid: false,
 		},
 		{
-			input: []string{"-storage.remote.influxdb-url", ""},
-			valid: true,
-		},
-		{
-			input: []string{"-storage.remote.influxdb-url", "http://localhost:8086/"},
-			valid: true,
-		},
-		{
-			input: []string{"-storage.remote.influxdb-url", "'https://some-url/'"},
-			valid: false,
-		},
-		{
 			input: []string{"-alertmanager.url", ""},
 			valid: true,
 		},
@@ -60,18 +52,65 @@ func TestParse(t *testing.T) {
 			input: []string{"-alertmanager.url", "alertmanager.company.com"},
 			valid: false,
 		},
+		{
+			input: []string{"-alertmanager.url", "https://double--dash.de"},
+			valid: true,
+		},
 	}
 
 	for i, test := range tests {
 		// reset "immutable" config
 		cfg.prometheusURL = ""
-		cfg.influxdbURL = ""
+		cfg.alertmanagerURLs = stringset{}
 
 		err := parse(test.input)
 		if test.valid && err != nil {
 			t.Errorf("%d. expected input to be valid, got %s", i, err)
 		} else if !test.valid && err == nil {
 			t.Errorf("%d. expected input to be invalid", i)
+		}
+	}
+}
+
+func TestParseAlertmanagerURLToConfig(t *testing.T) {
+	tests := []struct {
+		url      string
+		username string
+		password config.Secret
+	}{
+		{
+			url:      "http://alertmanager.company.com",
+			username: "",
+			password: "",
+		},
+		{
+			url:      "https://user:password@alertmanager.company.com",
+			username: "user",
+			password: "password",
+		},
+	}
+
+	for i, test := range tests {
+		acfg, err := parseAlertmanagerURLToConfig(test.url)
+		if err != nil {
+			t.Errorf("%d. expected alertmanager URL to be valid, got %s", i, err)
+		}
+
+		if acfg.HTTPClientConfig.BasicAuth != nil {
+			if test.username != acfg.HTTPClientConfig.BasicAuth.Username {
+				t.Errorf("%d. expected alertmanagerConfig username to be %q, got %q",
+					i, test.username, acfg.HTTPClientConfig.BasicAuth.Username)
+			}
+
+			if test.password != acfg.HTTPClientConfig.BasicAuth.Password {
+				t.Errorf("%d. expected alertmanagerConfig password to be %q, got %q", i,
+					test.password, acfg.HTTPClientConfig.BasicAuth.Username)
+			}
+			continue
+		}
+
+		if test.username != "" || test.password != "" {
+			t.Errorf("%d. expected alertmanagerConfig to have basicAuth filled, but was not", i)
 		}
 	}
 }

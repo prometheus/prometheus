@@ -16,8 +16,7 @@ package retrieval
 import (
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
-	"net/http"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -26,8 +25,8 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/relabel"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // TargetHealth describes the health state of a target.
@@ -43,7 +42,7 @@ const (
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
 	// Labels before any processing.
-	metaLabels model.LabelSet
+	discoveredLabels model.LabelSet
 	// Any labels that are added to this target and its metrics.
 	labels model.LabelSet
 	// Additional URL parmeters that are part of the target URL.
@@ -56,60 +55,13 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels, metaLabels model.LabelSet, params url.Values) *Target {
+func NewTarget(labels, discoveredLabels model.LabelSet, params url.Values) *Target {
 	return &Target{
-		labels:     labels,
-		metaLabels: metaLabels,
-		params:     params,
-		health:     HealthUnknown,
+		labels:           labels,
+		discoveredLabels: discoveredLabels,
+		params:           params,
+		health:           HealthUnknown,
 	}
-}
-
-func newHTTPClient(cfg *config.ScrapeConfig) (*http.Client, error) {
-	tlsOpts := httputil.TLSOptions{
-		InsecureSkipVerify: cfg.TLSConfig.InsecureSkipVerify,
-		CAFile:             cfg.TLSConfig.CAFile,
-	}
-	if len(cfg.TLSConfig.CertFile) > 0 && len(cfg.TLSConfig.KeyFile) > 0 {
-		tlsOpts.CertFile = cfg.TLSConfig.CertFile
-		tlsOpts.KeyFile = cfg.TLSConfig.KeyFile
-	}
-	if len(cfg.TLSConfig.ServerName) > 0 {
-		tlsOpts.ServerName = cfg.TLSConfig.ServerName
-	}
-	tlsConfig, err := httputil.NewTLSConfig(tlsOpts)
-	if err != nil {
-		return nil, err
-	}
-	// The only timeout we care about is the configured scrape timeout.
-	// It is applied on request. So we leave out any timings here.
-	var rt http.RoundTripper = &http.Transport{
-		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
-		DisableKeepAlives: true,
-		TLSClientConfig:   tlsConfig,
-	}
-
-	// If a bearer token is provided, create a round tripper that will set the
-	// Authorization header correctly on each request.
-	bearerToken := cfg.BearerToken
-	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
-		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
-		}
-		bearerToken = string(b)
-	}
-
-	if len(bearerToken) > 0 {
-		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
-	}
-
-	if cfg.BasicAuth != nil {
-		rt = httputil.NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
-	}
-
-	// Return a new client with the configured round tripper.
-	return httputil.NewClient(rt), nil
 }
 
 func (t *Target) String() string {
@@ -152,9 +104,9 @@ func (t *Target) Labels() model.LabelSet {
 	return lset
 }
 
-// MetaLabels returns a copy of the target's labels before any processing.
-func (t *Target) MetaLabels() model.LabelSet {
-	return t.metaLabels.Clone()
+// DiscoveredLabels returns a copy of the target's labels before any processing.
+func (t *Target) DiscoveredLabels() model.LabelSet {
+	return t.discoveredLabels.Clone()
 }
 
 // URL returns a copy of the target's URL.
@@ -275,10 +227,8 @@ type relabelAppender struct {
 }
 
 func (app relabelAppender) Append(s *model.Sample) error {
-	labels, err := Relabel(model.LabelSet(s.Metric), app.relabelings...)
-	if err != nil {
-		return fmt.Errorf("metric relabeling error %s: %s", s.Metric, err)
-	}
+	labels := relabel.Process(model.LabelSet(s.Metric), app.relabelings...)
+
 	// Check if the timeseries was dropped.
 	if labels == nil {
 		return nil
@@ -286,4 +236,128 @@ func (app relabelAppender) Append(s *model.Sample) error {
 	s.Metric = model.Metric(labels)
 
 	return app.SampleAppender.Append(s)
+}
+
+// bufferAppender appends samples to the given buffer.
+type bufferAppender struct {
+	buffer model.Samples
+}
+
+func (app *bufferAppender) Append(s *model.Sample) error {
+	app.buffer = append(app.buffer, s)
+	return nil
+}
+
+func (app *bufferAppender) NeedsThrottling() bool { return false }
+
+// countingAppender counts the samples appended to the underlying appender.
+type countingAppender struct {
+	storage.SampleAppender
+	count int
+}
+
+func (app *countingAppender) Append(s *model.Sample) error {
+	app.count++
+	return app.SampleAppender.Append(s)
+}
+
+// populateLabels builds a label set from the given label set and scrape configuration.
+// It returns a label set before relabeling was applied as the second return value.
+// Returns a nil label set if the target is dropped during relabeling.
+func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig model.LabelSet, err error) {
+	lset = lset.Clone()
+	if _, ok := lset[model.AddressLabel]; !ok {
+		return nil, nil, fmt.Errorf("no address")
+	}
+	// Copy labels into the labelset for the target if they are not
+	// set already. Apply the labelsets in order of decreasing precedence.
+	scrapeLabels := model.LabelSet{
+		model.SchemeLabel:      model.LabelValue(cfg.Scheme),
+		model.MetricsPathLabel: model.LabelValue(cfg.MetricsPath),
+		model.JobLabel:         model.LabelValue(cfg.JobName),
+	}
+	for ln, lv := range scrapeLabels {
+		if _, ok := lset[ln]; !ok {
+			lset[ln] = lv
+		}
+	}
+	// Encode scrape query parameters as labels.
+	for k, v := range cfg.Params {
+		if len(v) > 0 {
+			lset[model.LabelName(model.ParamLabelPrefix+k)] = model.LabelValue(v[0])
+		}
+	}
+
+	preRelabelLabels := lset.Clone()
+	lset = relabel.Process(lset, cfg.RelabelConfigs...)
+
+	// Check if the target was dropped.
+	if lset == nil {
+		return nil, nil, nil
+	}
+
+	// addPort checks whether we should add a default port to the address.
+	// If the address is not valid, we don't append a port either.
+	addPort := func(s string) bool {
+		// If we can split, a port exists and we don't have to add one.
+		if _, _, err := net.SplitHostPort(s); err == nil {
+			return false
+		}
+		// If adding a port makes it valid, the previous error
+		// was not due to an invalid address and we can append a port.
+		_, _, err := net.SplitHostPort(s + ":1234")
+		return err == nil
+	}
+	// If it's an address with no trailing port, infer it based on the used scheme.
+	if addr := string(lset[model.AddressLabel]); addPort(addr) {
+		// Addresses reaching this point are already wrapped in [] if necessary.
+		switch lset[model.SchemeLabel] {
+		case "http", "":
+			addr = addr + ":80"
+		case "https":
+			addr = addr + ":443"
+		default:
+			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
+		}
+		lset[model.AddressLabel] = model.LabelValue(addr)
+	}
+	if err := config.CheckTargetAddress(lset[model.AddressLabel]); err != nil {
+		return nil, nil, err
+	}
+
+	// Meta labels are deleted after relabelling. Other internal labels propagate to
+	// the target which decides whether they will be part of their label set.
+	for ln := range lset {
+		if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
+			delete(lset, ln)
+		}
+	}
+
+	// Default the instance label to the target address.
+	if _, ok := lset[model.InstanceLabel]; !ok {
+		lset[model.InstanceLabel] = lset[model.AddressLabel]
+	}
+	return lset, preRelabelLabels, nil
+}
+
+// targetsFromGroup builds targets based on the given TargetGroup and config.
+func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
+	targets := make([]*Target, 0, len(tg.Targets))
+
+	for i, lset := range tg.Targets {
+		// Combine target labels with target group labels.
+		for ln, lv := range tg.Labels {
+			if _, ok := lset[ln]; !ok {
+				lset[ln] = lv
+			}
+		}
+		labels, origLabels, err := populateLabels(lset, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
+		}
+		if labels != nil {
+			targets = append(targets, NewTarget(labels, origLabels, cfg.Params))
+		}
+	}
+	return targets, nil
 }

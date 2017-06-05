@@ -12,7 +12,7 @@
 # limitations under the License.
 
 GO           := GO15VENDOREXPERIMENT=1 go
-FIRST_GOPATH := $(firstword $(subst :, ,$(GOPATH)))
+FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 PROMU        := $(FIRST_GOPATH)/bin/promu
 pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
 
@@ -36,9 +36,13 @@ check_license:
 	@echo ">> checking license header"
 	@./scripts/check_license.sh
 
-test:
-	@echo ">> running tests"
+test-short:
+	@echo ">> running short tests"
 	@$(GO) test -short $(pkgs)
+
+test:
+	@echo ">> running all tests"
+	@$(GO) test $(pkgs)
 
 format:
 	@echo ">> formatting code"
@@ -64,8 +68,10 @@ assets:
 	@echo ">> writing assets"
 	@$(GO) get -u github.com/jteeuwen/go-bindata/...
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
+	@$(GO) fmt ./web/ui
 
 promu:
+	@echo ">> fetching promu"
 	@GOOS=$(shell uname -s | tr A-Z a-z) \
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
 	$(GO) get -u github.com/prometheus/promu

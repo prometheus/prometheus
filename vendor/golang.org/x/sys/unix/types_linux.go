@@ -24,6 +24,7 @@ package unix
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netpacket/packet.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/epoll.h>
@@ -104,6 +105,9 @@ typedef struct pt_regs PtraceRegs;
 typedef struct user PtraceRegs;
 #elif defined(__s390x__)
 typedef struct _user_regs_struct PtraceRegs;
+#elif defined(__sparc__)
+#include <asm/ptrace.h>
+typedef struct pt_regs PtraceRegs;
 #else
 typedef struct user_regs_struct PtraceRegs;
 #endif
@@ -125,7 +129,7 @@ struct my_epoll_event {
 	// padding is not specified in linux/eventpoll.h but added to conform to the
 	// alignment requirements of EABI
 	int32_t padFd;
-#elif defined(__powerpc64__) || defined(__s390x__)
+#elif defined(__powerpc64__) || defined(__s390x__) || defined(__sparc__)
 	int32_t _padFd;
 #endif
 	int32_t fd;
@@ -429,6 +433,24 @@ const (
 	AT_SYMLINK_FOLLOW   = C.AT_SYMLINK_FOLLOW
 	AT_SYMLINK_NOFOLLOW = C.AT_SYMLINK_NOFOLLOW
 )
+
+type PollFd C.struct_pollfd
+
+const (
+	POLLIN    = C.POLLIN
+	POLLPRI   = C.POLLPRI
+	POLLOUT   = C.POLLOUT
+	POLLRDHUP = C.POLLRDHUP
+	POLLERR   = C.POLLERR
+	POLLHUP   = C.POLLHUP
+	POLLNVAL  = C.POLLNVAL
+)
+
+type Sigset_t C.sigset_t
+
+// sysconf information
+
+const _SC_PAGESIZE = C._SC_PAGESIZE
 
 // Terminal handling
 

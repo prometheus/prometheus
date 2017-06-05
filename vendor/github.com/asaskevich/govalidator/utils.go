@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math"
 	"path"
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Contains check if the string contains the substring.
@@ -189,7 +191,7 @@ func NormalizeEmail(str string) (string, error) {
 	return strings.Join(parts, "@"), nil
 }
 
-// Will truncate a string closest length without breaking words.
+// Truncate a string to the closest length without breaking words.
 func Truncate(str string, length int, ending string) string {
 	var aftstr, befstr string
 	if len(str) > length {
@@ -203,12 +205,64 @@ func Truncate(str string, length int, ending string) string {
 			if present > length && i != 0 {
 				if (length - before) < (present - length) {
 					return Trim(befstr, " /\\.,\"'#!?&@+-") + ending
-				} else {
-					return Trim(aftstr, " /\\.,\"'#!?&@+-") + ending
 				}
+				return Trim(aftstr, " /\\.,\"'#!?&@+-") + ending
 			}
 		}
 	}
 
 	return str
+}
+
+// PadLeft pad left side of string if size of string is less then indicated pad length
+func PadLeft(str string, padStr string, padLen int) string {
+	return buildPadStr(str, padStr, padLen, true, false)
+}
+
+// PadRight pad right side of string if size of string is less then indicated pad length
+func PadRight(str string, padStr string, padLen int) string {
+	return buildPadStr(str, padStr, padLen, false, true)
+}
+
+// PadBoth pad sides of string if size of string is less then indicated pad length
+func PadBoth(str string, padStr string, padLen int) string {
+	return buildPadStr(str, padStr, padLen, true, true)
+}
+
+// PadString either left, right or both sides, not the padding string can be unicode and more then one
+// character
+func buildPadStr(str string, padStr string, padLen int, padLeft bool, padRight bool) string {
+
+	// When padded length is less then the current string size
+	if padLen < utf8.RuneCountInString(str) {
+		return str
+	}
+
+	padLen -= utf8.RuneCountInString(str)
+
+	targetLen := padLen
+
+	targetLenLeft := targetLen
+	targetLenRight := targetLen
+	if padLeft && padRight {
+		targetLenLeft = padLen / 2
+		targetLenRight = padLen - targetLenLeft
+	}
+
+	strToRepeatLen := utf8.RuneCountInString(padStr)
+
+	repeatTimes := int(math.Ceil(float64(targetLen) / float64(strToRepeatLen)))
+	repeatedString := strings.Repeat(padStr, repeatTimes)
+
+	leftSide := ""
+	if padLeft {
+		leftSide = repeatedString[0:targetLenLeft]
+	}
+
+	rightSide := ""
+	if padRight {
+		rightSide = repeatedString[0:targetLenRight]
+	}
+
+	return leftSide + str + rightSide
 }

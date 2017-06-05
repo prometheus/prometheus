@@ -60,10 +60,19 @@ func Openat(dirfd int, path string, flags int, mode uint32) (fd int, err error) 
 	return openat(dirfd, path, flags|O_LARGEFILE, mode)
 }
 
-//sys	readlinkat(dirfd int, path string, buf []byte) (n int, err error)
+//sys	ppoll(fds *PollFd, nfds int, timeout *Timespec, sigmask *Sigset_t) (n int, err error)
+
+func Ppoll(fds []PollFd, timeout *Timespec, sigmask *Sigset_t) (n int, err error) {
+	if len(fds) == 0 {
+		return ppoll(nil, 0, timeout, sigmask)
+	}
+	return ppoll(&fds[0], len(fds), timeout, sigmask)
+}
+
+//sys	Readlinkat(dirfd int, path string, buf []byte) (n int, err error)
 
 func Readlink(path string, buf []byte) (n int, err error) {
-	return readlinkat(AT_FDCWD, path, buf)
+	return Readlinkat(AT_FDCWD, path, buf)
 }
 
 func Rename(oldpath string, newpath string) (err error) {
@@ -71,24 +80,20 @@ func Rename(oldpath string, newpath string) (err error) {
 }
 
 func Rmdir(path string) error {
-	return unlinkat(AT_FDCWD, path, AT_REMOVEDIR)
+	return Unlinkat(AT_FDCWD, path, AT_REMOVEDIR)
 }
 
-//sys	symlinkat(oldpath string, newdirfd int, newpath string) (err error)
+//sys	Symlinkat(oldpath string, newdirfd int, newpath string) (err error)
 
 func Symlink(oldpath string, newpath string) (err error) {
-	return symlinkat(oldpath, AT_FDCWD, newpath)
+	return Symlinkat(oldpath, AT_FDCWD, newpath)
 }
 
 func Unlink(path string) error {
-	return unlinkat(AT_FDCWD, path, 0)
+	return Unlinkat(AT_FDCWD, path, 0)
 }
 
-//sys	unlinkat(dirfd int, path string, flags int) (err error)
-
-func Unlinkat(dirfd int, path string, flags int) error {
-	return unlinkat(dirfd, path, flags)
-}
+//sys	Unlinkat(dirfd int, path string, flags int) (err error)
 
 //sys	utimes(path string, times *[2]Timeval) (err error)
 
@@ -134,8 +139,7 @@ func UtimesNano(path string, ts []Timespec) error {
 	// in 2.6.22, Released, 8 July 2007) then fall back to utimes
 	var tv [2]Timeval
 	for i := 0; i < 2; i++ {
-		tv[i].Sec = ts[i].Sec
-		tv[i].Usec = ts[i].Nsec / 1000
+		tv[i] = NsecToTimeval(TimespecToNsec(ts[i]))
 	}
 	return utimes(path, (*[2]Timeval)(unsafe.Pointer(&tv[0])))
 }
@@ -1043,8 +1047,6 @@ func Munmap(b []byte) (err error) {
 // Newfstatat
 // Nfsservctl
 // Personality
-// Poll
-// Ppoll
 // Pselect6
 // Ptrace
 // Putpmsg

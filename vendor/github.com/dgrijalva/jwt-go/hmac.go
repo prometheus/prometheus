@@ -49,7 +49,7 @@ func (m *SigningMethodHMAC) Verify(signingString, signature string, key interfac
 	// Verify the key is the right type
 	keyBytes, ok := key.([]byte)
 	if !ok {
-		return ErrInvalidKey
+		return ErrInvalidKeyType
 	}
 
 	// Decode signature, for comparison

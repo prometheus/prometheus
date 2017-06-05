@@ -14,24 +14,15 @@
 package local
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/metric"
-)
-
-const (
-	// chunkDescEvictionFactor is a factor used for chunkDesc eviction (as opposed
-	// to evictions of chunks, see method evictOlderThan. A chunk takes about 20x
-	// more memory than a chunkDesc. With a chunkDescEvictionFactor of 10, not more
-	// than a third of the total memory taken by a series will be used for
-	// chunkDescs.
-	chunkDescEvictionFactor = 10
-
-	headChunkTimeout = time.Hour // Close head chunk if not touched for that long.
 )
 
 // fingerprintSeriesPair pairs a fingerprint with a memorySeries pointer.
@@ -66,9 +57,11 @@ func (sm *seriesMap) length() int {
 // semantics as the native Go map.
 func (sm *seriesMap) get(fp model.Fingerprint) (s *memorySeries, ok bool) {
 	sm.mtx.RLock()
-	defer sm.mtx.RUnlock()
-
 	s, ok = sm.m[fp]
+	// Note that the RUnlock is not done via defer for performance reasons.
+	// TODO(beorn7): Once https://github.com/golang/go/issues/14939 is
+	// fixed, revert to the usual defer idiom.
+	sm.mtx.RUnlock()
 	return
 }
 
@@ -113,33 +106,25 @@ func (sm *seriesMap) iter() <-chan fingerprintSeriesPair {
 	return ch
 }
 
-// fpIter returns a channel that produces all fingerprints in the seriesMap. The
-// channel will be closed once all fingerprints have been received. Not
-// consuming all fingerprints from the channel will leak a goroutine. The
-// semantics of concurrent modification of seriesMap is the similar as the one
-// for iterating over a map with a 'range' clause. However, if the next element
-// in iteration order is removed after the current element has been received
-// from the channel, it will still be produced by the channel.
-func (sm *seriesMap) fpIter() <-chan model.Fingerprint {
-	ch := make(chan model.Fingerprint)
-	go func() {
-		sm.mtx.RLock()
-		for fp := range sm.m {
-			sm.mtx.RUnlock()
-			ch <- fp
-			sm.mtx.RLock()
-		}
-		sm.mtx.RUnlock()
-		close(ch)
-	}()
-	return ch
+// sortedFPs returns a sorted slice of all the fingerprints in the seriesMap.
+func (sm *seriesMap) sortedFPs() model.Fingerprints {
+	sm.mtx.RLock()
+	fps := make(model.Fingerprints, 0, len(sm.m))
+	for fp := range sm.m {
+		fps = append(fps, fp)
+	}
+	sm.mtx.RUnlock()
+
+	// Sorting could take some time, so do it outside of the lock.
+	sort.Sort(fps)
+	return fps
 }
 
 type memorySeries struct {
 	metric model.Metric
 	// Sorted by start time, overlapping chunk ranges are forbidden.
-	chunkDescs []*chunkDesc
-	// The index (within chunkDescs above) of the first chunkDesc that
+	chunkDescs []*chunk.Desc
+	// The index (within chunkDescs above) of the first chunk.Desc that
 	// points to a non-persisted chunk. If all chunks are persisted, then
 	// persistWatermark == len(chunkDescs).
 	persistWatermark int
@@ -149,7 +134,7 @@ type memorySeries struct {
 	// The chunkDescs in memory might not have all the chunkDescs for the
 	// chunks that are persisted to disk. The missing chunkDescs are all
 	// contiguous and at the tail end. chunkDescsOffset is the index of the
-	// chunk on disk that corresponds to the first chunkDesc in memory. If
+	// chunk on disk that corresponds to the first chunk.Desc in memory. If
 	// it is 0, the chunkDescs are all loaded. A value of -1 denotes a
 	// special case: There are chunks on disk, but the offset to the
 	// chunkDescs in memory is unknown. Also, in this special case, there is
@@ -158,7 +143,7 @@ type memorySeries struct {
 	// set).
 	chunkDescsOffset int
 	// The savedFirstTime field is used as a fallback when the
-	// chunkDescsOffset is not 0. It can be used to save the firstTime of the
+	// chunkDescsOffset is not 0. It can be used to save the FirstTime of the
 	// first chunk before its chunk desc is evicted. In doubt, this field is
 	// just set to the oldest possible timestamp.
 	savedFirstTime model.Time
@@ -191,13 +176,13 @@ type memorySeries struct {
 // set to model.Earliest. The zero value for modTime can be used if the
 // modification time of the series file is unknown (e.g. if this is a genuinely
 // new series).
-func newMemorySeries(m model.Metric, chunkDescs []*chunkDesc, modTime time.Time) (*memorySeries, error) {
+func newMemorySeries(m model.Metric, chunkDescs []*chunk.Desc, modTime time.Time) (*memorySeries, error) {
 	var err error
 	firstTime := model.Earliest
 	lastTime := model.Earliest
 	if len(chunkDescs) > 0 {
-		firstTime = chunkDescs[0].firstTime()
-		if lastTime, err = chunkDescs[len(chunkDescs)-1].lastTime(); err != nil {
+		firstTime = chunkDescs[0].FirstTime()
+		if lastTime, err = chunkDescs[len(chunkDescs)-1].LastTime(); err != nil {
 			return nil, err
 		}
 	}
@@ -218,10 +203,10 @@ func newMemorySeries(m model.Metric, chunkDescs []*chunkDesc, modTime time.Time)
 // The caller must have locked the fingerprint of the series.
 func (s *memorySeries) add(v model.SamplePair) (int, error) {
 	if len(s.chunkDescs) == 0 || s.headChunkClosed {
-		newHead := newChunkDesc(newChunk(), v.Timestamp)
+		newHead := chunk.NewDesc(chunk.New(), v.Timestamp)
 		s.chunkDescs = append(s.chunkDescs, newHead)
 		s.headChunkClosed = false
-	} else if s.headChunkUsedByIterator && s.head().refCount() > 1 {
+	} else if s.headChunkUsedByIterator && s.head().RefCount() > 1 {
 		// We only need to clone the head chunk if the current head
 		// chunk was used in an iterator at all and if the refCount is
 		// still greater than the 1 we always have because the head
@@ -231,26 +216,28 @@ func (s *memorySeries) add(v model.SamplePair) (int, error) {
 		// around and keep the head chunk pinned. We needed to track
 		// pins by version of the head chunk, which is probably not
 		// worth the effort.
-		chunkOps.WithLabelValues(clone).Inc()
+		chunk.Ops.WithLabelValues(chunk.Clone).Inc()
 		// No locking needed here because a non-persisted head chunk can
 		// not get evicted concurrently.
-		s.head().c = s.head().c.clone()
+		s.head().C = s.head().C.Clone()
 		s.headChunkUsedByIterator = false
 	}
 
-	chunks, err := s.head().add(v)
+	chunks, err := s.head().Add(v)
 	if err != nil {
 		return 0, err
 	}
-	s.head().c = chunks[0]
+	s.head().C = chunks[0]
 
 	for _, c := range chunks[1:] {
-		s.chunkDescs = append(s.chunkDescs, newChunkDesc(c, c.firstTime()))
+		s.chunkDescs = append(s.chunkDescs, chunk.NewDesc(c, c.FirstTime()))
 	}
 
 	// Populate lastTime of now-closed chunks.
 	for _, cd := range s.chunkDescs[len(s.chunkDescs)-len(chunks) : len(s.chunkDescs)-1] {
-		cd.maybePopulateLastTime()
+		if err := cd.MaybePopulateLastTime(); err != nil {
+			return 0, err
+		}
 	}
 
 	s.lastTime = v.Timestamp
@@ -260,43 +247,44 @@ func (s *memorySeries) add(v model.SamplePair) (int, error) {
 }
 
 // maybeCloseHeadChunk closes the head chunk if it has not been touched for the
-// duration of headChunkTimeout. It returns whether the head chunk was closed.
-// If the head chunk is already closed, the method is a no-op and returns false.
+// provided duration. It returns whether the head chunk was closed.  If the head
+// chunk is already closed, the method is a no-op and returns false.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) maybeCloseHeadChunk() bool {
+func (s *memorySeries) maybeCloseHeadChunk(timeout time.Duration) (bool, error) {
 	if s.headChunkClosed {
-		return false
+		return false, nil
 	}
-	if time.Now().Sub(s.lastTime.Time()) > headChunkTimeout {
+	if time.Now().Sub(s.lastTime.Time()) > timeout {
 		s.headChunkClosed = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.
 		s.headChunkUsedByIterator = false
-		s.head().maybePopulateLastTime()
-		return true
+		return true, s.head().MaybePopulateLastTime()
 	}
-	return false
+	return false, nil
 }
 
-// evictChunkDescs evicts chunkDescs if there are chunkDescEvictionFactor times
-// more than non-evicted chunks. iOldestNotEvicted is the index within the
-// current chunkDescs of the oldest chunk that is not evicted.
-func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
-	lenToKeep := chunkDescEvictionFactor * (len(s.chunkDescs) - iOldestNotEvicted)
-	if lenToKeep < len(s.chunkDescs) {
-		s.savedFirstTime = s.firstTime()
-		lenEvicted := len(s.chunkDescs) - lenToKeep
-		s.chunkDescsOffset += lenEvicted
-		s.persistWatermark -= lenEvicted
-		chunkDescOps.WithLabelValues(evict).Add(float64(lenEvicted))
-		numMemChunkDescs.Sub(float64(lenEvicted))
-		s.chunkDescs = append(
-			make([]*chunkDesc, 0, lenToKeep),
-			s.chunkDescs[lenEvicted:]...,
-		)
-		s.dirty = true
+// evictChunkDescs evicts chunkDescs. lenToEvict is the index within the current
+// chunkDescs of the oldest chunk that is not evicted.
+func (s *memorySeries) evictChunkDescs(lenToEvict int) {
+	if lenToEvict < 1 {
+		return
 	}
+	if s.chunkDescsOffset < 0 {
+		panic("chunk desc eviction requested with unknown chunk desc offset")
+	}
+	lenToKeep := len(s.chunkDescs) - lenToEvict
+	s.savedFirstTime = s.firstTime()
+	s.chunkDescsOffset += lenToEvict
+	s.persistWatermark -= lenToEvict
+	chunk.DescOps.WithLabelValues(chunk.Evict).Add(float64(lenToEvict))
+	chunk.NumMemDescs.Sub(float64(lenToEvict))
+	s.chunkDescs = append(
+		make([]*chunk.Desc, 0, lenToKeep),
+		s.chunkDescs[lenToEvict:]...,
+	)
+	s.dirty = true
 }
 
 // dropChunks removes chunkDescs older than t. The caller must have locked the
@@ -304,7 +292,7 @@ func (s *memorySeries) evictChunkDescs(iOldestNotEvicted int) {
 func (s *memorySeries) dropChunks(t model.Time) error {
 	keepIdx := len(s.chunkDescs)
 	for i, cd := range s.chunkDescs {
-		lt, err := cd.lastTime()
+		lt, err := cd.LastTime()
 		if err != nil {
 			return err
 		}
@@ -322,7 +310,7 @@ func (s *memorySeries) dropChunks(t model.Time) error {
 		return nil
 	}
 	s.chunkDescs = append(
-		make([]*chunkDesc, 0, len(s.chunkDescs)-keepIdx),
+		make([]*chunk.Desc, 0, len(s.chunkDescs)-keepIdx),
 		s.chunkDescs[keepIdx:]...,
 	)
 	s.persistWatermark -= keepIdx
@@ -332,26 +320,26 @@ func (s *memorySeries) dropChunks(t model.Time) error {
 	if s.chunkDescsOffset != -1 {
 		s.chunkDescsOffset += keepIdx
 	}
-	numMemChunkDescs.Sub(float64(keepIdx))
+	chunk.NumMemDescs.Sub(float64(keepIdx))
 	s.dirty = true
 	return nil
 }
 
 // preloadChunks is an internal helper method.
 func (s *memorySeries) preloadChunks(
-	indexes []int, fp model.Fingerprint, mss *memorySeriesStorage,
-) ([]*chunkDesc, SeriesIterator, error) {
+	indexes []int, fp model.Fingerprint, mss *MemorySeriesStorage,
+) (SeriesIterator, error) {
 	loadIndexes := []int{}
-	pinnedChunkDescs := make([]*chunkDesc, 0, len(indexes))
+	pinnedChunkDescs := make([]*chunk.Desc, 0, len(indexes))
 	for _, idx := range indexes {
 		cd := s.chunkDescs[idx]
 		pinnedChunkDescs = append(pinnedChunkDescs, cd)
-		cd.pin(mss.evictRequests) // Have to pin everything first to prevent immediate eviction on chunk loading.
-		if cd.isEvicted() {
+		cd.Pin(mss.evictRequests) // Have to pin everything first to prevent immediate eviction on chunk loading.
+		if cd.IsEvicted() {
 			loadIndexes = append(loadIndexes, idx)
 		}
 	}
-	chunkOps.WithLabelValues(pin).Add(float64(len(pinnedChunkDescs)))
+	chunk.Ops.WithLabelValues(chunk.Pin).Add(float64(len(pinnedChunkDescs)))
 
 	if len(loadIndexes) > 0 {
 		if s.chunkDescsOffset == -1 {
@@ -361,13 +349,13 @@ func (s *memorySeries) preloadChunks(
 		if err != nil {
 			// Unpin the chunks since we won't return them as pinned chunks now.
 			for _, cd := range pinnedChunkDescs {
-				cd.unpin(mss.evictRequests)
+				cd.Unpin(mss.evictRequests)
 			}
-			chunkOps.WithLabelValues(unpin).Add(float64(len(pinnedChunkDescs)))
-			return nil, nopIter, err
+			chunk.Ops.WithLabelValues(chunk.Unpin).Add(float64(len(pinnedChunkDescs)))
+			return nopIter, err
 		}
 		for i, c := range chunks {
-			s.chunkDescs[loadIndexes[i]].setChunk(c)
+			s.chunkDescs[loadIndexes[i]].SetChunk(c)
 		}
 	}
 
@@ -380,28 +368,35 @@ func (s *memorySeries) preloadChunks(
 	}
 
 	iter := &boundedIterator{
-		it:    s.newIterator(pinnedChunkDescs, curriedQuarantineSeries),
+		it:    s.newIterator(pinnedChunkDescs, curriedQuarantineSeries, mss.evictRequests),
 		start: model.Now().Add(-mss.dropAfter),
 	}
 
-	return pinnedChunkDescs, iter, nil
+	return iter, nil
 }
 
 // newIterator returns a new SeriesIterator for the provided chunkDescs (which
 // must be pinned).
 //
 // The caller must have locked the fingerprint of the memorySeries.
-func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc, quarantine func(error)) SeriesIterator {
-	chunks := make([]chunk, 0, len(pinnedChunkDescs))
+func (s *memorySeries) newIterator(
+	pinnedChunkDescs []*chunk.Desc,
+	quarantine func(error),
+	evictRequests chan<- chunk.EvictRequest,
+) SeriesIterator {
+	chunks := make([]chunk.Chunk, 0, len(pinnedChunkDescs))
 	for _, cd := range pinnedChunkDescs {
 		// It's OK to directly access cd.c here (without locking) as the
 		// series FP is locked and the chunk is pinned.
-		chunks = append(chunks, cd.c)
+		chunks = append(chunks, cd.C)
 	}
 	return &memorySeriesIterator{
-		chunks:     chunks,
-		chunkIts:   make([]chunkIterator, len(chunks)),
-		quarantine: quarantine,
+		chunks:           chunks,
+		chunkIts:         make([]chunk.Iterator, len(chunks)),
+		quarantine:       quarantine,
+		metric:           s.metric,
+		pinnedChunkDescs: pinnedChunkDescs,
+		evictRequests:    evictRequests,
 	}
 }
 
@@ -412,20 +407,23 @@ func (s *memorySeries) newIterator(pinnedChunkDescs []*chunkDesc, quarantine fun
 func (s *memorySeries) preloadChunksForInstant(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	mss *memorySeriesStorage,
-) ([]*chunkDesc, SeriesIterator, error) {
-	// If we have a lastSamplePair in the series, and thas last samplePair
+	mss *MemorySeriesStorage,
+) (SeriesIterator, error) {
+	// If we have a lastSamplePair in the series, and this last samplePair
 	// is in the interval, just take it in a singleSampleSeriesIterator. No
 	// need to pin or load anything.
 	lastSample := s.lastSamplePair()
 	if !through.Before(lastSample.Timestamp) &&
 		!from.After(lastSample.Timestamp) &&
-		lastSample != ZeroSamplePair {
+		lastSample != model.ZeroSamplePair {
 		iter := &boundedIterator{
-			it:    &singleSampleSeriesIterator{samplePair: lastSample},
+			it: &singleSampleSeriesIterator{
+				samplePair: lastSample,
+				metric:     s.metric,
+			},
 			start: model.Now().Add(-mss.dropAfter),
 		}
-		return nil, iter, nil
+		return iter, nil
 	}
 	// If we are here, we are out of luck and have to delegate to the more
 	// expensive method.
@@ -437,44 +435,52 @@ func (s *memorySeries) preloadChunksForInstant(
 func (s *memorySeries) preloadChunksForRange(
 	fp model.Fingerprint,
 	from model.Time, through model.Time,
-	mss *memorySeriesStorage,
-) ([]*chunkDesc, SeriesIterator, error) {
+	mss *MemorySeriesStorage,
+) (SeriesIterator, error) {
 	firstChunkDescTime := model.Latest
 	if len(s.chunkDescs) > 0 {
-		firstChunkDescTime = s.chunkDescs[0].firstTime()
+		firstChunkDescTime = s.chunkDescs[0].FirstTime()
 	}
 	if s.chunkDescsOffset != 0 && from.Before(firstChunkDescTime) {
 		cds, err := mss.loadChunkDescs(fp, s.persistWatermark)
 		if err != nil {
-			return nil, nopIter, err
+			return nopIter, err
 		}
+		if s.chunkDescsOffset != -1 && len(cds) != s.chunkDescsOffset {
+			return nopIter, fmt.Errorf(
+				"unexpected number of chunk descs loaded for fingerprint %v: expected %d, got %d",
+				fp, s.chunkDescsOffset, len(cds),
+			)
+		}
+		s.persistWatermark += len(cds)
 		s.chunkDescs = append(cds, s.chunkDescs...)
 		s.chunkDescsOffset = 0
-		s.persistWatermark += len(cds)
-		firstChunkDescTime = s.chunkDescs[0].firstTime()
+		if len(s.chunkDescs) > 0 {
+			firstChunkDescTime = s.chunkDescs[0].FirstTime()
+		}
 	}
 
 	if len(s.chunkDescs) == 0 || through.Before(firstChunkDescTime) {
-		return nil, nopIter, nil
+		return nopIter, nil
 	}
 
 	// Find first chunk with start time after "from".
 	fromIdx := sort.Search(len(s.chunkDescs), func(i int) bool {
-		return s.chunkDescs[i].firstTime().After(from)
+		return s.chunkDescs[i].FirstTime().After(from)
 	})
 	// Find first chunk with start time after "through".
 	throughIdx := sort.Search(len(s.chunkDescs), func(i int) bool {
-		return s.chunkDescs[i].firstTime().After(through)
+		return s.chunkDescs[i].FirstTime().After(through)
 	})
 	if fromIdx == len(s.chunkDescs) {
 		// Even the last chunk starts before "from". Find out if the
 		// series ends before "from" and we don't need to do anything.
-		lt, err := s.chunkDescs[len(s.chunkDescs)-1].lastTime()
+		lt, err := s.chunkDescs[len(s.chunkDescs)-1].LastTime()
 		if err != nil {
-			return nil, nopIter, err
+			return nopIter, err
 		}
 		if lt.Before(from) {
-			return nil, nopIter, nil
+			return nopIter, nil
 		}
 	}
 	if fromIdx > 0 {
@@ -482,6 +488,10 @@ func (s *memorySeries) preloadChunksForRange(
 	}
 	if throughIdx == len(s.chunkDescs) {
 		throughIdx--
+	}
+	if fromIdx > throughIdx {
+		// Guard against nonsensical result. The caller will quarantine the series with a meaningful log entry.
+		return nopIter, fmt.Errorf("fromIdx=%d is greater than throughIdx=%d, likely caused by data corruption", fromIdx, throughIdx)
 	}
 
 	pinIndexes := make([]int, 0, throughIdx-fromIdx+1)
@@ -494,7 +504,7 @@ func (s *memorySeries) preloadChunksForRange(
 // head returns a pointer to the head chunk descriptor. The caller must have
 // locked the fingerprint of the memorySeries. This method will panic if this
 // series has no chunk descriptors.
-func (s *memorySeries) head() *chunkDesc {
+func (s *memorySeries) head() *chunk.Desc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
 }
 
@@ -503,13 +513,13 @@ func (s *memorySeries) head() *chunkDesc {
 // The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) firstTime() model.Time {
 	if s.chunkDescsOffset == 0 && len(s.chunkDescs) > 0 {
-		return s.chunkDescs[0].firstTime()
+		return s.chunkDescs[0].FirstTime()
 	}
 	return s.savedFirstTime
 }
 
 // lastSamplePair returns the last ingested SamplePair. It returns
-// ZeroSamplePair if this memorySeries has never received a sample (via the add
+// model.ZeroSamplePair if this memorySeries has never received a sample (via the add
 // method), which is the case for freshly unarchived series or newly created
 // ones and also for all series after a server restart. However, in that case,
 // series will most likely be considered stale anyway.
@@ -517,7 +527,7 @@ func (s *memorySeries) firstTime() model.Time {
 // The caller must have locked the fingerprint of the memorySeries.
 func (s *memorySeries) lastSamplePair() model.SamplePair {
 	if !s.lastSampleValueSet {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	return model.SamplePair{
 		Timestamp: s.lastTime,
@@ -531,7 +541,7 @@ func (s *memorySeries) lastSamplePair() model.SamplePair {
 // accordingly.
 //
 // The caller must have locked the fingerprint of the series.
-func (s *memorySeries) chunksToPersist() []*chunkDesc {
+func (s *memorySeries) chunksToPersist() []*chunk.Desc {
 	newWatermark := len(s.chunkDescs)
 	if !s.headChunkClosed {
 		newWatermark--
@@ -547,65 +557,75 @@ func (s *memorySeries) chunksToPersist() []*chunkDesc {
 
 // memorySeriesIterator implements SeriesIterator.
 type memorySeriesIterator struct {
-	chunkIt    chunkIterator   // Last chunkIterator used by ValueAtOrBeforeTime.
-	chunkIts   []chunkIterator // Caches chunkIterators.
-	chunks     []chunk
-	quarantine func(error) // Call to quarantine the series this iterator belongs to.
+	// Last chunk.Iterator used by ValueAtOrBeforeTime.
+	chunkIt chunk.Iterator
+	// Caches chunkIterators.
+	chunkIts []chunk.Iterator
+	// The actual sample chunks.
+	chunks []chunk.Chunk
+	// Call to quarantine the series this iterator belongs to.
+	quarantine func(error)
+	// The metric corresponding to the iterator.
+	metric model.Metric
+	// Chunks that were pinned for this iterator.
+	pinnedChunkDescs []*chunk.Desc
+	// Where to send evict requests when unpinning pinned chunks.
+	evictRequests chan<- chunk.EvictRequest
 }
 
 // ValueAtOrBeforeTime implements SeriesIterator.
 func (it *memorySeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	// The most common case. We are iterating through a chunk.
 	if it.chunkIt != nil {
-		containsT, err := it.chunkIt.contains(t)
+		containsT, err := it.chunkIt.Contains(t)
 		if err != nil {
 			it.quarantine(err)
-			return ZeroSamplePair
+			return model.ZeroSamplePair
 		}
 		if containsT {
-			if it.chunkIt.findAtOrBefore(t) {
-				return it.chunkIt.value()
+			if it.chunkIt.FindAtOrBefore(t) {
+				return it.chunkIt.Value()
 			}
-			if it.chunkIt.err() != nil {
-				it.quarantine(it.chunkIt.err())
+			if it.chunkIt.Err() != nil {
+				it.quarantine(it.chunkIt.Err())
 			}
-			return ZeroSamplePair
+			return model.ZeroSamplePair
 		}
 	}
 
 	if len(it.chunks) == 0 {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 
-	// Find the last chunk where firstTime() is before or equal to t.
+	// Find the last chunk where FirstTime() is before or equal to t.
 	l := len(it.chunks) - 1
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[l-i].firstTime().After(t)
+		return !it.chunks[l-i].FirstTime().After(t)
 	})
 	if i == len(it.chunks) {
 		// Even the first chunk starts after t.
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	it.chunkIt = it.chunkIterator(l - i)
-	if it.chunkIt.findAtOrBefore(t) {
-		return it.chunkIt.value()
+	if it.chunkIt.FindAtOrBefore(t) {
+		return it.chunkIt.Value()
 	}
-	if it.chunkIt.err() != nil {
-		it.quarantine(it.chunkIt.err())
+	if it.chunkIt.Err() != nil {
+		it.quarantine(it.chunkIt.Err())
 	}
-	return ZeroSamplePair
+	return model.ZeroSamplePair
 }
 
 // RangeValues implements SeriesIterator.
 func (it *memorySeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
 	// Find the first chunk for which the first sample is within the interval.
 	i := sort.Search(len(it.chunks), func(i int) bool {
-		return !it.chunks[i].firstTime().Before(in.OldestInclusive)
+		return !it.chunks[i].FirstTime().Before(in.OldestInclusive)
 	})
 	// Only now check the last timestamp of the previous chunk (which is
 	// fairly expensive).
 	if i > 0 {
-		lt, err := it.chunkIterator(i - 1).lastTimestamp()
+		lt, err := it.chunkIterator(i - 1).LastTimestamp()
 		if err != nil {
 			it.quarantine(err)
 			return nil
@@ -617,10 +637,10 @@ func (it *memorySeriesIterator) RangeValues(in metric.Interval) []model.SamplePa
 
 	values := []model.SamplePair{}
 	for j, c := range it.chunks[i:] {
-		if c.firstTime().After(in.NewestInclusive) {
+		if c.FirstTime().After(in.NewestInclusive) {
 			break
 		}
-		chValues, err := rangeValues(it.chunkIterator(i+j), in)
+		chValues, err := chunk.RangeValues(it.chunkIterator(i+j), in)
 		if err != nil {
 			it.quarantine(err)
 			return nil
@@ -630,28 +650,40 @@ func (it *memorySeriesIterator) RangeValues(in metric.Interval) []model.SamplePa
 	return values
 }
 
-// chunkIterator returns the chunkIterator for the chunk at position i (and
+func (it *memorySeriesIterator) Metric() metric.Metric {
+	return metric.Metric{Metric: it.metric}
+}
+
+// chunkIterator returns the chunk.Iterator for the chunk at position i (and
 // creates it if needed).
-func (it *memorySeriesIterator) chunkIterator(i int) chunkIterator {
+func (it *memorySeriesIterator) chunkIterator(i int) chunk.Iterator {
 	chunkIt := it.chunkIts[i]
 	if chunkIt == nil {
-		chunkIt = it.chunks[i].newIterator()
+		chunkIt = it.chunks[i].NewIterator()
 		it.chunkIts[i] = chunkIt
 	}
 	return chunkIt
 }
 
+func (it *memorySeriesIterator) Close() {
+	for _, cd := range it.pinnedChunkDescs {
+		cd.Unpin(it.evictRequests)
+	}
+	chunk.Ops.WithLabelValues(chunk.Unpin).Add(float64(len(it.pinnedChunkDescs)))
+}
+
 // singleSampleSeriesIterator implements Series Iterator. It is a "shortcut
-// iterator" that returns a single samplee only. The sample is saved in the
+// iterator" that returns a single sample only. The sample is saved in the
 // iterator itself, so no chunks need to be pinned.
 type singleSampleSeriesIterator struct {
 	samplePair model.SamplePair
+	metric     model.Metric
 }
 
 // ValueAtTime implements SeriesIterator.
 func (it *singleSampleSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
 	if it.samplePair.Timestamp.After(t) {
-		return ZeroSamplePair
+		return model.ZeroSamplePair
 	}
 	return it.samplePair
 }
@@ -665,17 +697,32 @@ func (it *singleSampleSeriesIterator) RangeValues(in metric.Interval) []model.Sa
 	return []model.SamplePair{it.samplePair}
 }
 
+func (it *singleSampleSeriesIterator) Metric() metric.Metric {
+	return metric.Metric{Metric: it.metric}
+}
+
+// Close implements SeriesIterator.
+func (it *singleSampleSeriesIterator) Close() {}
+
 // nopSeriesIterator implements Series Iterator. It never returns any values.
 type nopSeriesIterator struct{}
 
 // ValueAtTime implements SeriesIterator.
 func (i nopSeriesIterator) ValueAtOrBeforeTime(t model.Time) model.SamplePair {
-	return ZeroSamplePair
+	return model.ZeroSamplePair
 }
 
 // RangeValues implements SeriesIterator.
 func (i nopSeriesIterator) RangeValues(in metric.Interval) []model.SamplePair {
 	return []model.SamplePair{}
 }
+
+// Metric implements SeriesIterator.
+func (i nopSeriesIterator) Metric() metric.Metric {
+	return metric.Metric{}
+}
+
+// Close implements SeriesIterator.
+func (i nopSeriesIterator) Close() {}
 
 var nopIter nopSeriesIterator // A nopSeriesIterator for convenience. Can be shared.

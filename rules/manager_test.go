@@ -27,8 +27,8 @@ import (
 func TestAlertingRule(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
-			http_requests{job="app-server", instance="0", group="canary"}	75 85  95 105 105  95  85
-			http_requests{job="app-server", instance="1", group="canary"}	80 90 100 110 120 130 140
+			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
+			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestAlertingRule(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
-		model.LabelSet{"severity": "critical"},
+		model.LabelSet{"severity": "{{\"c\"}}ritical"},
 		model.LabelSet{},
 	)
 
@@ -105,7 +105,7 @@ func TestAlertingRule(t *testing.T) {
 	for i, test := range tests {
 		evalTime := model.Time(0).Add(test.time)
 
-		res, err := rule.eval(evalTime, suite.QueryEngine())
+		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), nil)
 		if err != nil {
 			t.Fatalf("Error during alerting rule evaluation: %s", err)
 		}
@@ -135,6 +135,12 @@ func TestAlertingRule(t *testing.T) {
 		if t.Failed() {
 			t.Errorf("%d. Expected and actual outputs don't match:", i)
 			t.Fatalf("Expected:\n%v\n----\nActual:\n%v", strings.Join(expected, "\n"), strings.Join(actual, "\n"))
+		}
+
+		for _, aa := range rule.ActiveAlerts() {
+			if _, ok := aa.Labels[model.MetricNameLabel]; ok {
+				t.Fatalf("%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+			}
 		}
 	}
 }

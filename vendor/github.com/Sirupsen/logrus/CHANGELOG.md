@@ -1,3 +1,50 @@
+# 0.11.5
+
+* feature: add writer and writerlevel to entry (#372)
+
+# 0.11.4
+
+* bug: fix undefined variable on solaris (#493)
+
+# 0.11.3
+
+* formatter: configure quoting of empty values (#484)
+* formatter: configure quoting character (default is `"`) (#484)
+* bug: fix not importing io correctly in non-linux environments (#481)
+
+# 0.11.2
+
+* bug: fix windows terminal detection (#476)
+
+# 0.11.1
+
+* bug: fix tty detection with custom out (#471)
+
+# 0.11.0
+
+* performance: Use bufferpool to allocate (#370)
+* terminal: terminal detection for app-engine (#343)
+* feature: exit handler (#375)
+
+# 0.10.0
+
+* feature: Add a test hook (#180)
+* feature: `ParseLevel` is now case-insensitive (#326)
+* feature: `FieldLogger` interface that generalizes `Logger` and `Entry` (#308)
+* performance: avoid re-allocations on `WithFields` (#335)
+
+# 0.9.0
+
+* logrus/text_formatter: don't emit empty msg
+* logrus/hooks/airbrake: move out of main repository
+* logrus/hooks/sentry: move out of main repository
+* logrus/hooks/papertrail: move out of main repository
+* logrus/hooks/bugsnag: move out of main repository
+* logrus/core: run tests with `-race`
+* logrus/core: detect TTY based on `stderr`
+* logrus/core: support `WithError` on logger
+* logrus/core: Solaris support
+
 # 0.8.7
 
 * logrus/core: fix possible race (#216)

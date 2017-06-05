@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/storage/local/codable"
 	"github.com/prometheus/prometheus/storage/local/index"
 )
@@ -61,9 +62,9 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 		if err != nil {
 			return err
 		}
-		defer dir.Close()
 		for fis := []os.FileInfo{}; err != io.EOF; fis, err = dir.Readdir(1024) {
 			if err != nil {
+				dir.Close()
 				return err
 			}
 			for _, fi := range fis {
@@ -77,6 +78,7 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 				}
 			}
 		}
+		dir.Close()
 	}
 	log.Infof("File scan complete. %d series found.", len(fpsSeen))
 
@@ -84,11 +86,12 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 	for fp, s := range fingerprintToSeries {
 		if _, seen := fpsSeen[fp]; !seen {
 			// fp exists in fingerprintToSeries, but has no representation on disk.
-			if s.persistWatermark == len(s.chunkDescs) {
+			if s.persistWatermark >= len(s.chunkDescs) {
 				// Oops, everything including the head chunk was
-				// already persisted, but nothing on disk.
-				// Thus, we lost that series completely. Clean
-				// up the remnants.
+				// already persisted, but nothing on disk. Or
+				// the persistWatermark is plainly wrong. Thus,
+				// we lost that series completely. Clean up the
+				// remnants.
 				delete(fingerprintToSeries, fp)
 				if err := p.purgeArchivedMetric(fp); err != nil {
 					// Purging the archived metric didn't work, so try
@@ -114,10 +117,10 @@ func (p *persistence) recoverFromCrash(fingerprintToSeries map[model.Fingerprint
 					)
 				}
 				s.chunkDescs = append(
-					make([]*chunkDesc, 0, len(s.chunkDescs)-s.persistWatermark),
+					make([]*chunk.Desc, 0, len(s.chunkDescs)-s.persistWatermark),
 					s.chunkDescs[s.persistWatermark:]...,
 				)
-				numMemChunkDescs.Sub(float64(s.persistWatermark))
+				chunk.NumMemDescs.Sub(float64(s.persistWatermark))
 				s.persistWatermark = 0
 				s.chunkDescsOffset = 0
 			}
@@ -290,8 +293,8 @@ func (p *persistence) sanitizeSeries(
 			)
 			s.chunkDescs = cds
 			s.chunkDescsOffset = 0
-			s.savedFirstTime = cds[0].firstTime()
-			s.lastTime, err = cds[len(cds)-1].lastTime()
+			s.savedFirstTime = cds[0].FirstTime()
+			s.lastTime, err = cds[len(cds)-1].LastTime()
 			if err != nil {
 				log.Errorf(
 					"Failed to determine time of the last sample for metric %v, fingerprint %v: %s",
@@ -302,6 +305,8 @@ func (p *persistence) sanitizeSeries(
 			}
 			s.persistWatermark = len(cds)
 			s.modTime = modTime
+			// Finally, evict again all chunk.Descs except the latest one to save memory.
+			s.evictChunkDescs(len(cds) - 1)
 			return fp, true
 		}
 		// This is the tricky one: We have chunks from heads.db, but
@@ -314,7 +319,7 @@ func (p *persistence) sanitizeSeries(
 
 		// First, throw away the chunkDescs without chunks.
 		s.chunkDescs = s.chunkDescs[s.persistWatermark:]
-		numMemChunkDescs.Sub(float64(s.persistWatermark))
+		chunk.NumMemDescs.Sub(float64(s.persistWatermark))
 		cds, err := p.loadChunkDescs(fp, 0)
 		if err != nil {
 			log.Errorf(
@@ -326,10 +331,10 @@ func (p *persistence) sanitizeSeries(
 		}
 		s.persistWatermark = len(cds)
 		s.chunkDescsOffset = 0
-		s.savedFirstTime = cds[0].firstTime()
+		s.savedFirstTime = cds[0].FirstTime()
 		s.modTime = modTime
 
-		lastTime, err := cds[len(cds)-1].lastTime()
+		lastTime, err := cds[len(cds)-1].LastTime()
 		if err != nil {
 			log.Errorf(
 				"Failed to determine time of the last sample for metric %v, fingerprint %v: %s",
@@ -340,7 +345,7 @@ func (p *persistence) sanitizeSeries(
 		}
 		keepIdx := -1
 		for i, cd := range s.chunkDescs {
-			if cd.firstTime() >= lastTime {
+			if cd.FirstTime() >= lastTime {
 				keepIdx = i
 				break
 			}
@@ -350,19 +355,29 @@ func (p *persistence) sanitizeSeries(
 				"Recovered metric %v, fingerprint %v: all %d chunks recovered from series file.",
 				s.metric, fp, chunksInFile,
 			)
-			numMemChunkDescs.Sub(float64(len(s.chunkDescs)))
-			atomic.AddInt64(&numMemChunks, int64(-len(s.chunkDescs)))
+			chunk.NumMemDescs.Sub(float64(len(s.chunkDescs)))
+			atomic.AddInt64(&chunk.NumMemChunks, int64(-len(s.chunkDescs)))
 			s.chunkDescs = cds
 			s.headChunkClosed = true
+			// Finally, evict again all chunk.Descs except the latest one to save memory.
+			s.evictChunkDescs(len(cds) - 1)
 			return fp, true
 		}
 		log.Warnf(
 			"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered %d chunks from checkpoint.",
 			s.metric, fp, chunksInFile, len(s.chunkDescs)-keepIdx,
 		)
-		numMemChunkDescs.Sub(float64(keepIdx))
-		atomic.AddInt64(&numMemChunks, int64(-keepIdx))
+		chunk.NumMemDescs.Sub(float64(keepIdx))
+		atomic.AddInt64(&chunk.NumMemChunks, int64(-keepIdx))
+		chunkDescsToEvict := len(cds)
+		if keepIdx == len(s.chunkDescs) {
+			// No chunks from series file left, head chunk is evicted, so declare it closed.
+			s.headChunkClosed = true
+			chunkDescsToEvict-- // Keep one chunk.Desc in this case to avoid a series with zero chunk.Descs.
+		}
 		s.chunkDescs = append(cds, s.chunkDescs[keepIdx:]...)
+		// Finally, evict again chunk.Descs without chunk to save memory.
+		s.evictChunkDescs(chunkDescsToEvict)
 		return fp, true
 	}
 	// This series is supposed to be archived.
@@ -452,6 +467,8 @@ func (p *persistence) cleanUpArchiveIndexes(
 			return err
 		}
 		fpToSeries[model.Fingerprint(fp)] = series
+		// Evict all but one chunk.Desc to save memory.
+		series.evictChunkDescs(len(cds) - 1)
 		return nil
 	}); err != nil {
 		return err

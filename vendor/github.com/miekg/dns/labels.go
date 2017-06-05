@@ -4,9 +4,11 @@ package dns
 
 // SplitDomainName splits a name string into it's labels.
 // www.miek.nl. returns []string{"www", "miek", "nl"}
+// .www.miek.nl. returns []string{"", "www", "miek", "nl"},
 // The root label (.) returns nil. Note that using
 // strings.Split(s) will work in most cases, but does not handle
 // escaped dots (\.) for instance.
+// s must be a syntactically valid domain name, see IsDomainName.
 func SplitDomainName(s string) (labels []string) {
 	if len(s) == 0 {
 		return nil
@@ -45,6 +47,8 @@ func SplitDomainName(s string) (labels []string) {
 //
 // www.miek.nl. and miek.nl. have two labels in common: miek and nl
 // www.miek.nl. and www.bla.nl. have one label in common: nl
+//
+// s1 and s2 must be syntactically valid domain names.
 func CompareDomainName(s1, s2 string) (n int) {
 	s1 = Fqdn(s1)
 	s2 = Fqdn(s2)
@@ -85,6 +89,7 @@ func CompareDomainName(s1, s2 string) (n int) {
 }
 
 // CountLabel counts the the number of labels in the string s.
+// s must be a syntactically valid domain name.
 func CountLabel(s string) (labels int) {
 	if s == "." {
 		return
@@ -103,6 +108,7 @@ func CountLabel(s string) (labels int) {
 // Split splits a name s into its label indexes.
 // www.miek.nl. returns []int{0, 4, 9}, www.miek.nl also returns []int{0, 4, 9}.
 // The root name (.) returns nil. Also see SplitDomainName.
+// s must be a syntactically valid domain name.
 func Split(s string) []int {
 	if s == "." {
 		return nil

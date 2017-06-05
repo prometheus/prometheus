@@ -137,7 +137,7 @@ func (secret *ServicePrincipalCertificateSecret) SignJwt(spt *ServicePrincipalTo
 
 	token := jwt.New(jwt.SigningMethodRS256)
 	token.Header["x5t"] = thumbprint
-	token.Claims = map[string]interface{}{
+	token.Claims = jwt.MapClaims{
 		"aud": spt.oauthConfig.TokenEndpoint,
 		"iss": spt.clientID,
 		"sub": spt.clientID,
@@ -147,7 +147,7 @@ func (secret *ServicePrincipalCertificateSecret) SignJwt(spt *ServicePrincipalTo
 	}
 
 	signedString, err := token.SignedString(secret.PrivateKey)
-	return signedString, nil
+	return signedString, err
 }
 
 // SetAuthenticationValues is a method of the interface ServicePrincipalSecret.

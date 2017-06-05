@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/local/chunk"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -40,19 +41,19 @@ func (t *testStorageCloser) Close() {
 // NewTestStorage creates a storage instance backed by files in a temporary
 // directory. The returned storage is already in serving state. Upon closing the
 // returned test.Closer, the temporary directory is cleaned up.
-func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage, testutil.Closer) {
-	DefaultChunkEncoding = encoding
+func NewTestStorage(t testutil.T, encoding chunk.Encoding) (*MemorySeriesStorage, testutil.Closer) {
+	chunk.DefaultEncoding = encoding
 	directory := testutil.NewTemporaryDirectory("test_storage", t)
 	o := &MemorySeriesStorageOptions{
-		MemoryChunks:               1000000,
-		MaxChunksToPersist:         1000000,
+		TargetHeapSize:             1000000000,
 		PersistenceRetentionPeriod: 24 * time.Hour * 365 * 100, // Enough to never trigger purging.
 		PersistenceStoragePath:     directory.Path(),
+		HeadChunkTimeout:           5 * time.Minute,
 		CheckpointInterval:         time.Hour,
 		SyncStrategy:               Adaptive,
 	}
 	storage := NewMemorySeriesStorage(o)
-	storage.(*memorySeriesStorage).archiveHighWatermark = model.Latest
+	storage.archiveHighWatermark = model.Latest
 	if err := storage.Start(); err != nil {
 		directory.Close()
 		t.Fatalf("Error creating storage: %s", err)
@@ -63,5 +64,9 @@ func NewTestStorage(t testutil.T, encoding chunkEncoding) (*memorySeriesStorage,
 		directory: directory,
 	}
 
-	return storage.(*memorySeriesStorage), closer
+	return storage, closer
+}
+
+func makeFingerprintSeriesPair(s *MemorySeriesStorage, fp model.Fingerprint) fingerprintSeriesPair {
+	return fingerprintSeriesPair{fp, s.seriesForRange(fp, model.Earliest, model.Latest)}
 }
