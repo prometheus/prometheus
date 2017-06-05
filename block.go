@@ -58,6 +58,12 @@ type Block interface {
 type headBlock interface {
 	Block
 	Appendable
+	Snapshottable
+}
+
+// Snapshottable defines an entity that can be backedup online.
+type Snapshottable interface {
+	Snapshot(dir string) error
 }
 
 // Appendable defines an entity to which data can be appended.

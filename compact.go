@@ -246,7 +246,7 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 		return errors.Wrap(err, "open index writer")
 	}
 
-	meta, err := c.populate(blocks, indexw, chunkw)
+	meta, err := populateBlock(blocks, indexw, chunkw)
 	if err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
@@ -289,9 +289,9 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 	return nil
 }
 
-// populate fills the index and chunk writers with new data gathered as the union
+// populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
-func (c *compactor) populate(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
+func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
 	var set compactionSet
 
 	for i, b := range blocks {

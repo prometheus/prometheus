@@ -528,6 +528,34 @@ func (db *DB) Close() error {
 	return merr.Err()
 }
 
+// DisableCompactions disables compactions.
+func (db *DB) DisableCompactions() error {
+	db.stopc <- struct{}{} // TODO: Can this block?
+	db.cmtx.Lock()
+	return nil
+}
+
+// EnableCompactions enables compactions.
+func (db *DB) EnableCompactions() error {
+	db.cmtx.Unlock()
+	return nil
+}
+
+// Snapshot writes the current headBlock snapshots to snapshots directory.
+func (db *DB) Snapshot(dir string) error {
+	db.headmtx.RLock()
+	heads := db.heads[:]
+	db.headmtx.RUnlock()
+
+	for _, h := range heads {
+		if err := h.Snapshot(dir); err != nil {
+			return errors.Wrap(err, "error snapshotting headblock")
+		}
+	}
+
+	return nil
+}
+
 // Appender returns a new Appender on the database.
 func (db *DB) Appender() Appender {
 	db.metrics.activeAppenders.Inc()
