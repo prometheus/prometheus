@@ -841,7 +841,6 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 	)
 	for i := 3; i < len(args); i++ {
 		src := model.LabelName(ev.evalString(args[i]).Value)
-
 		if !model.LabelNameRE.MatchString(string(src)) {
 			ev.errorf("invalid source label name in label_join(): %s", src)
 		}
