@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -228,6 +229,8 @@ func (ts Targets) Len() int           { return len(ts) }
 func (ts Targets) Less(i, j int) bool { return ts[i].URL().String() < ts[j].URL().String() }
 func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 
+var errSampleLimit = errors.New("sample limit exceeded")
+
 // limitAppender limits the number of total appended samples in a batch.
 type limitAppender struct {
 	storage.Appender
@@ -237,26 +240,29 @@ type limitAppender struct {
 }
 
 func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	if app.i+1 > app.limit {
-		return "", fmt.Errorf("sample limit of %d exceeded", app.limit)
+	if !value.IsStaleNaN(v) {
+		app.i++
+		if app.i > app.limit {
+			return "", errSampleLimit
+		}
 	}
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
 		return "", err
 	}
-	app.i++
 	return ref, nil
 }
 
 func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
-	if app.i+1 > app.limit {
-		return fmt.Errorf("sample limit of %d exceeded", app.limit)
+	if !value.IsStaleNaN(v) {
+		app.i++
+		if app.i > app.limit {
+			return errSampleLimit
+		}
 	}
-
 	if err := app.Appender.AddFast(ref, t, v); err != nil {
 		return err
 	}
-	app.i++
 	return nil
 }
 
