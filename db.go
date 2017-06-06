@@ -530,20 +530,29 @@ func (db *DB) Close() error {
 	return merr.Err()
 }
 
-// ToggleCompactions toggles compactions and returns if compactions are on or not.
-func (db *DB) ToggleCompactions() bool {
+// DisableCompactions disables compactions.
+func (db *DB) DisableCompactions() error {
 	if db.compacting {
 		db.cmtx.Lock()
 		db.compacting = false
-		return false
+		db.logger.Log("msg", "compactions disabled")
 	}
 
-	db.cmtx.Unlock()
-	db.compacting = true
-	return true
+	return nil
 }
 
-// Snapshot writes the current headBlock snapshots to snapshots directory.
+// EnableCompactions enables compactions.
+func (db *DB) EnableCompactions() error {
+	if !db.compacting {
+		db.cmtx.Unlock()
+		db.compacting = true
+		db.logger.Log("msg", "compactions enabled")
+	}
+
+	return nil
+}
+
+// Snapshot writes the current data to the directory.
 func (db *DB) Snapshot(dir string) error {
 	db.mtx.Lock() // To block any appenders.
 	defer db.mtx.Unlock()
@@ -553,7 +562,7 @@ func (db *DB) Snapshot(dir string) error {
 
 	blocks := db.blocks[:]
 	for _, b := range blocks {
-		db.logger.Log("msg", "compacting block", "block", b.Dir())
+		db.logger.Log("msg", "snapshotting block", "block", b)
 		if err := b.Snapshot(dir); err != nil {
 			return errors.Wrap(err, "error snapshotting headblock")
 		}

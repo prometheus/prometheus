@@ -291,8 +291,11 @@ func (pb *persistedBlock) Snapshot(dir string) error {
 	}
 
 	// Hardlink meta, index and tombstones
-	filenames := []string{metaFilename, indexFilename, tombstoneFilename}
-	for _, fname := range filenames {
+	for _, fname := range []string{
+		metaFilename,
+		indexFilename,
+		tombstoneFilename,
+	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
 			return errors.Wrapf(err, "create snapshot %s", fname)
 		}
