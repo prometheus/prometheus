@@ -39,6 +39,8 @@ const (
 	indexFormatV1 = 1
 )
 
+const indexFilename = "index"
+
 const compactionPageBytes = minSectorSize * 64
 
 type indexWriterSeries struct {
@@ -138,7 +140,7 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "index"), os.O_CREATE|os.O_WRONLY, 0666)
+	f, err := os.OpenFile(filepath.Join(dir, indexFilename), os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return nil, err
 	}

@@ -121,7 +121,8 @@ type DB struct {
 	stopc    chan struct{}
 
 	// cmtx is used to control compactions and deletions.
-	cmtx sync.Mutex
+	cmtx       sync.Mutex
+	compacting bool
 }
 
 type dbMetrics struct {
@@ -200,12 +201,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 
 	db = &DB{
-		dir:      dir,
-		logger:   l,
-		opts:     opts,
-		compactc: make(chan struct{}, 1),
-		donec:    make(chan struct{}),
-		stopc:    make(chan struct{}),
+		dir:        dir,
+		logger:     l,
+		opts:       opts,
+		compactc:   make(chan struct{}, 1),
+		donec:      make(chan struct{}),
+		stopc:      make(chan struct{}),
+		compacting: true,
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -526,6 +528,43 @@ func (db *DB) Close() error {
 	}
 
 	return merr.Err()
+}
+
+// DisableCompactions disables compactions.
+func (db *DB) DisableCompactions() {
+	if db.compacting {
+		db.cmtx.Lock()
+		db.compacting = false
+		db.logger.Log("msg", "compactions disabled")
+	}
+}
+
+// EnableCompactions enables compactions.
+func (db *DB) EnableCompactions() {
+	if !db.compacting {
+		db.cmtx.Unlock()
+		db.compacting = true
+		db.logger.Log("msg", "compactions enabled")
+	}
+}
+
+// Snapshot writes the current data to the directory.
+func (db *DB) Snapshot(dir string) error {
+	db.mtx.Lock() // To block any appenders.
+	defer db.mtx.Unlock()
+
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	blocks := db.blocks[:]
+	for _, b := range blocks {
+		db.logger.Log("msg", "snapshotting block", "block", b)
+		if err := b.Snapshot(dir); err != nil {
+			return errors.Wrap(err, "error snapshotting headblock")
+		}
+	}
+
+	return nil
 }
 
 // Appender returns a new Appender on the database.

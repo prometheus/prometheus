@@ -1,4 +1,5 @@
 // Copyright 2017 The Prometheus Authors
+
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -52,12 +53,18 @@ type DiskBlock interface {
 type Block interface {
 	DiskBlock
 	Queryable
+	Snapshottable
 }
 
 // headBlock is a regular block that can still be appended to.
 type headBlock interface {
 	Block
 	Appendable
+}
+
+// Snapshottable defines an entity that can be backedup online.
+type Snapshottable interface {
+	Snapshot(dir string) error
 }
 
 // Appendable defines an entity to which data can be appended.
@@ -270,6 +277,45 @@ Outer:
 
 	pb.meta.Stats.NumTombstones = uint64(len(pb.tombstones))
 	return writeMetaFile(pb.dir, &pb.meta)
+}
+
+func (pb *persistedBlock) Snapshot(dir string) error {
+	blockDir := filepath.Join(dir, pb.meta.ULID.String())
+	if err := os.MkdirAll(blockDir, 0777); err != nil {
+		return errors.Wrap(err, "create snapshot block dir")
+	}
+
+	chunksDir := chunkDir(blockDir)
+	if err := os.MkdirAll(chunksDir, 0777); err != nil {
+		return errors.Wrap(err, "create snapshot chunk dir")
+	}
+
+	// Hardlink meta, index and tombstones
+	for _, fname := range []string{
+		metaFilename,
+		indexFilename,
+		tombstoneFilename,
+	} {
+		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
+			return errors.Wrapf(err, "create snapshot %s", fname)
+		}
+	}
+
+	// Hardlink the chunks
+	curChunkDir := chunkDir(pb.dir)
+	files, err := ioutil.ReadDir(curChunkDir)
+	if err != nil {
+		return errors.Wrap(err, "ReadDir the current chunk dir")
+	}
+
+	for _, f := range files {
+		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
+		if err != nil {
+			return errors.Wrap(err, "hardlink a chunk")
+		}
+	}
+
+	return nil
 }
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
