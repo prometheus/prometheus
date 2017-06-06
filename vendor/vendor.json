@@ -547,13 +547,6 @@
 			"revisionTime": "2017-02-06T22:16:52Z"
 		},
 		{
-			"checksumSHA1": "3YJklSuzSE1Rt8A+2dhiWSmf/fw=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/pborman/uuid",
-			"path": "github.com/pborman/uuid",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
-		},
-		{
 			"checksumSHA1": "zKKp5SZ3d3ycKe4EKMNT0BqAWBw=",
 			"origin": "github.com/stretchr/testify/vendor/github.com/pmezard/go-difflib/difflib",
 			"path": "github.com/pmezard/go-difflib/difflib",
