@@ -1,0 +1,74 @@
+syntax = "proto3";
+package prometheus.api.v2;
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "v2pb";
+
+option (gogoproto.sizer_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+
+// AdminTSDB exposes methods of Prometheus' TSDB.
+service AdminTSDB {
+  // Reload triggers a reload of block data.
+  rpc Reload(AdminTSDBReloadRequest) returns (AdminTSDBReloadResponse) {
+    option (google.api.http) = {
+      get: "/admin/tsdb/reload"
+    };
+  }
+
+  // Snapshot creates a snapshot of all current data into 'snapshots/<datetime>' under
+  // the TSDB's date directory.
+  rpc Snapshot(AdminTSDBSnapshotRequest) returns (AdminTSDBSnapshotResponse) {
+    option (google.api.http) = {
+      get: "/admin/tsdb/snapshot"
+    };
+  }
+
+  // DeleteSeries deletes data for a selection of series in a time range.
+  rpc DeleteSeries(AdminTSDBSeriesDeleteRequest) returns (AdminTSDBSeriesDeleteResponse) {
+    option (google.api.http) = {
+      post: "/admin/tsdb/delete_series"
+      body: "*"
+    };
+  }
+}
+
+message AdminTSDBReloadRequest {
+}
+
+message AdminTSDBReloadResponse {
+}
+
+message AdminTSDBSeriesDeleteRequest {
+  google.protobuf.Timestamp mint = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  google.protobuf.Timestamp maxt = 2 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  repeated LabelMatcher matchers = 3;
+}
+
+message AdminTSDBSeriesDeleteResponse {
+}
+
+message AdminTSDBSnapshotRequest {
+}
+
+message AdminTSDBSnapshotResponse {
+  string name = 1;
+}
+
+// Matcher specifies a rule, which can match or set of labels or not.
+message LabelMatcher {
+  enum Type {
+    EQ  = 0;
+    NEQ = 1;
+    RE  = 2;
+    NRE = 3;
+  }
+  Type type    = 1;
+  string name  = 2;
+  string value = 3;
+}

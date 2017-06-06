@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
@@ -26,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -96,13 +96,13 @@ func Main() int {
 
 	var (
 		notifier       = notifier.New(&cfg.notifier, log.Base())
-		targetManager  = retrieval.NewTargetManager(localStorage, log.Base())
-		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
+		targetManager  = retrieval.NewTargetManager(tsdb.Adapter(localStorage), log.Base())
+		queryEngine    = promql.NewEngine(tsdb.Adapter(localStorage), &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		Appendable:  localStorage,
+		Appendable:  tsdb.Adapter(localStorage),
 		Notifier:    notifier,
 		QueryEngine: queryEngine,
 		Context:     ctx,
@@ -188,7 +188,8 @@ func Main() int {
 	// to be canceled and ensures a quick shutdown of the rule manager.
 	defer cancelCtx()
 
-	go webHandler.Run()
+	errc := make(chan error)
+	go func() { errc <- webHandler.Run(ctx) }()
 
 	// Wait for reload or termination signals.
 	close(hupReady) // Unblock SIGHUP handler.
@@ -200,7 +201,7 @@ func Main() int {
 		log.Warn("Received SIGTERM, exiting gracefully...")
 	case <-webHandler.Quit():
 		log.Warn("Received termination request via web service, exiting gracefully...")
-	case err := <-webHandler.ListenError():
+	case err := <-errc:
 		log.Errorln("Error starting web server, exiting gracefully:", err)
 	}
 

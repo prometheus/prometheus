@@ -1,0 +1,146 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "web/api/v2/v2pb/api.proto",
+    "version": "version not set"
+  },
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/admin/tsdb/delete_series": {
+      "post": {
+        "summary": "DeleteSeries deletes data for a selection of series in a time range.",
+        "operationId": "DeleteSeries",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/v2AdminTSDBSeriesDeleteResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v2AdminTSDBSeriesDeleteRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AdminTSDB"
+        ]
+      }
+    },
+    "/admin/tsdb/reload": {
+      "get": {
+        "summary": "Reload triggers a reload of block data.",
+        "operationId": "Reload",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/v2AdminTSDBReloadResponse"
+            }
+          }
+        },
+        "tags": [
+          "AdminTSDB"
+        ]
+      }
+    },
+    "/admin/tsdb/snapshot": {
+      "get": {
+        "summary": "Snapshot creates a snapshot of all current data into 'snapshots/\u003cdatetime\u003e' under\nthe TSDB's date directory.",
+        "operationId": "Snapshot",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/v2AdminTSDBSnapshotResponse"
+            }
+          }
+        },
+        "tags": [
+          "AdminTSDB"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v2AdminTSDBReloadRequest": {
+      "type": "object"
+    },
+    "v2AdminTSDBReloadResponse": {
+      "type": "object"
+    },
+    "v2AdminTSDBSeriesDeleteRequest": {
+      "type": "object",
+      "properties": {
+        "mint": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "matchers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v2LabelMatcher"
+          }
+        }
+      }
+    },
+    "v2AdminTSDBSeriesDeleteResponse": {
+      "type": "object"
+    },
+    "v2AdminTSDBSnapshotRequest": {
+      "type": "object"
+    },
+    "v2AdminTSDBSnapshotResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v2LabelMatcher": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/v2LabelMatcherType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "description": "Matcher specifies a rule, which can match or set of labels or not."
+    },
+    "v2LabelMatcherType": {
+      "type": "string",
+      "enum": [
+        "EQ",
+        "NEQ",
+        "RE",
+        "NRE"
+      ],
+      "default": "EQ"
+    }
+  }
+}
