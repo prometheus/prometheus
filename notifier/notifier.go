@@ -113,6 +113,7 @@ type Notifier struct {
 
 	alertmanagers   []*alertmanagerSet
 	cancelDiscovery func()
+	logger          log.Logger
 }
 
 // Options are the configurable parameters of a Handler.
@@ -204,7 +205,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 }
 
 // New constructs a new Notifier.
-func New(o *Options) *Notifier {
+func New(o *Options, logger log.Logger) *Notifier {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if o.Do == nil {
@@ -217,6 +218,7 @@ func New(o *Options) *Notifier {
 		cancel: cancel,
 		more:   make(chan struct{}, 1),
 		opts:   o,
+		logger: logger,
 	}
 
 	queueLenFunc := func() float64 { return float64(n.queueLen()) }
@@ -237,7 +239,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	ctx, cancel := context.WithCancel(n.ctx)
 
 	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
-		ams, err := newAlertmanagerSet(cfg)
+		ams, err := newAlertmanagerSet(cfg, n.logger)
 		if err != nil {
 			return err
 		}
@@ -251,7 +253,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	// old ones.
 	for _, ams := range amSets {
 		go ams.ts.Run(ctx)
-		ams.ts.UpdateProviders(discovery.ProvidersFromConfig(ams.cfg.ServiceDiscoveryConfig))
+		ams.ts.UpdateProviders(discovery.ProvidersFromConfig(ams.cfg.ServiceDiscoveryConfig, n.logger))
 	}
 	if n.cancelDiscovery != nil {
 		n.cancelDiscovery()
@@ -335,7 +337,7 @@ func (n *Notifier) Send(alerts ...*Alert) {
 	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
 		alerts = alerts[d:]
 
-		log.Warnf("Alert batch larger than queue capacity, dropping %d alerts", d)
+		n.logger.Warnf("Alert batch larger than queue capacity, dropping %d alerts", d)
 		n.metrics.dropped.Add(float64(d))
 	}
 
@@ -344,7 +346,7 @@ func (n *Notifier) Send(alerts ...*Alert) {
 	if d := (len(n.queue) + len(alerts)) - n.opts.QueueCapacity; d > 0 {
 		n.queue = n.queue[d:]
 
-		log.Warnf("Alert notification queue full, dropping %d alerts", d)
+		n.logger.Warnf("Alert notification queue full, dropping %d alerts", d)
 		n.metrics.dropped.Add(float64(d))
 	}
 	n.queue = append(n.queue, alerts...)
@@ -402,7 +404,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 
 	b, err := json.Marshal(alerts)
 	if err != nil {
-		log.Errorf("Encoding alerts failed: %s", err)
+		n.logger.Errorf("Encoding alerts failed: %s", err)
 		return false
 	}
 
@@ -427,7 +429,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 				u := am.url().String()
 
 				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
-					log.With("alertmanager", u).With("count", len(alerts)).Errorf("Error sending alerts: %s", err)
+					n.logger.With("alertmanager", u).With("count", len(alerts)).Errorf("Error sending alerts: %s", err)
 					n.metrics.errors.WithLabelValues(u).Inc()
 				} else {
 					atomic.AddUint64(&numSuccess, 1)
@@ -466,7 +468,7 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 
 // Stop shuts down the notification handler.
 func (n *Notifier) Stop() {
-	log.Info("Stopping notification handler...")
+	n.logger.Info("Stopping notification handler...")
 	n.cancel()
 }
 
@@ -496,11 +498,12 @@ type alertmanagerSet struct {
 
 	metrics *alertMetrics
 
-	mtx sync.RWMutex
-	ams []alertmanager
+	mtx    sync.RWMutex
+	ams    []alertmanager
+	logger log.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
 	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		return nil, err
@@ -508,6 +511,7 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig) (*alertmanagerSet, error
 	s := &alertmanagerSet{
 		client: client,
 		cfg:    cfg,
+		logger: logger,
 	}
 	s.ts = discovery.NewTargetSet(s)
 
@@ -522,7 +526,7 @@ func (s *alertmanagerSet) Sync(tgs []*config.TargetGroup) {
 	for _, tg := range tgs {
 		ams, err := alertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
-			log.With("err", err).Error("generating discovered Alertmanagers failed")
+			s.logger.With("err", err).Error("generating discovered Alertmanagers failed")
 			continue
 		}
 		all = append(all, ams...)

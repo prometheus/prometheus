@@ -42,14 +42,16 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
-		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
-		DisableKeepAlives: true,
-		TLSClientConfig:   tlsConfig,
+		Proxy:              http.ProxyURL(cfg.ProxyURL.URL),
+		MaxIdleConns:       10000,
+		DisableKeepAlives:  false,
+		TLSClientConfig:    tlsConfig,
+		DisableCompression: true,
 	}
 
 	// If a bearer token is provided, create a round tripper that will set the
 	// Authorization header correctly on each request.
-	bearerToken := cfg.BearerToken
+	bearerToken := string(cfg.BearerToken)
 	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
 		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
 		if err != nil {
@@ -63,7 +65,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 	}
 
 	if cfg.BasicAuth != nil {
-		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
+		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, string(cfg.BasicAuth.Password), rt)
 	}
 
 	// Return a new client with the configured round tripper.

@@ -291,7 +291,7 @@ func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error)
 		}
 
 		if password, isSet := u.User.Password(); isSet {
-			acfg.HTTPClientConfig.BasicAuth.Password = password
+			acfg.HTTPClientConfig.BasicAuth.Password = config.Secret(password)
 		}
 	}
 

@@ -115,7 +115,7 @@ type scrapePool struct {
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable) *scrapePool {
-	client, err := NewHTTPClient(cfg.HTTPClientConfig)
+	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
 		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
