@@ -1128,7 +1128,10 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Region == "" {
-		sess := session.Must(session.NewSession())
+		sess, err := session.NewSession()
+		if err != nil {
+			return err
+		}
 		metadata := ec2metadata.New(sess)
 		region, err := metadata.Region()
 		if err != nil {
