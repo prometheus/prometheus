@@ -293,6 +293,13 @@ var tests = []struct {
 	},
 	// Test Selector.
 	{
+		input: "{{}}",
+		expected: []item{
+			{itemLeftDoubleBrace, 0, `{{`},
+			{itemRightDoubleBrace, 2, `}}`},
+		},
+	},
+	{
 		input: `台北`,
 		fail:  true,
 	}, {
@@ -309,8 +316,16 @@ var tests = []struct {
 			{itemEQL, 4, `=`},
 			{itemString, 5, `'bar'`},
 			{itemRightBrace, 10, `}`},
-		},
-	}, {
+		}},
+	{
+		input: `{{foo='bar'}}`,
+		expected: []item{
+			{itemLeftDoubleBrace, 0, `{{`},
+			{itemIdentifier, 2, `foo`},
+			{itemEQL, 5, `=`},
+			{itemString, 6, `'bar'`},
+			{itemRightDoubleBrace, 11, `}}`},
+		}}, {
 		input: `{foo="bar"}`,
 		expected: []item{
 			{itemLeftBrace, 0, `{`},
@@ -384,7 +399,9 @@ var tests = []struct {
 	}, {
 		input: "{{", fail: true,
 	}, {
-		input: "{{}}", fail: true,
+		input: "{{}", fail: true,
+	}, {
+		input: "{}}", fail: true,
 	}, {
 		input: `[`, fail: true,
 	}, {

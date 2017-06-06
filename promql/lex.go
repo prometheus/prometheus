@@ -133,6 +133,8 @@ const (
 	itemRightParen
 	itemLeftBrace
 	itemRightBrace
+	itemLeftDoubleBrace
+	itemRightDoubleBrace
 	itemLeftBracket
 	itemRightBracket
 	itemComma
@@ -238,17 +240,19 @@ var key = map[string]itemType{
 // These are the default string representations for common items. It does not
 // imply that those are the only character sequences that can be lexed to such an item.
 var itemTypeStr = map[itemType]string{
-	itemLeftParen:    "(",
-	itemRightParen:   ")",
-	itemLeftBrace:    "{",
-	itemRightBrace:   "}",
-	itemLeftBracket:  "[",
-	itemRightBracket: "]",
-	itemComma:        ",",
-	itemAssign:       "=",
-	itemSemicolon:    ";",
-	itemBlank:        "_",
-	itemTimes:        "x",
+	itemLeftParen:        "(",
+	itemRightParen:       ")",
+	itemLeftBrace:        "{",
+	itemRightBrace:       "}",
+	itemLeftDoubleBrace:  "{{",
+	itemRightDoubleBrace: "}}",
+	itemLeftBracket:      "[",
+	itemRightBracket:     "]",
+	itemComma:            ",",
+	itemAssign:           "=",
+	itemSemicolon:        ";",
+	itemBlank:            "_",
+	itemTimes:            "x",
 
 	itemSUB:      "-",
 	itemADD:      "+",
@@ -333,10 +337,11 @@ type lexer struct {
 	lastPos Pos       // Position of most recent item returned by nextItem.
 	items   chan item // Channel of scanned items.
 
-	parenDepth  int  // Nesting depth of ( ) exprs.
-	braceOpen   bool // Whether a { is opened.
-	bracketOpen bool // Whether a [ is opened.
-	stringOpen  rune // Quote rune of the string currently being read.
+	parenDepth      int  // Nesting depth of ( ) exprs.
+	braceOpen       bool // Whether a { is opened.
+	doubleBraceOpen bool // Whether a {{ is opened.
+	bracketOpen     bool // Whether a [ is opened.
+	stringOpen      rune // Quote rune of the string currently being read.
 
 	// seriesDesc is set when a series description for the testing
 	// language is lexed.
@@ -449,7 +454,7 @@ const lineComment = "#"
 
 // lexStatements is the top-level state for lexing.
 func lexStatements(l *lexer) stateFn {
-	if l.braceOpen {
+	if l.braceOpen || l.doubleBraceOpen {
 		return lexInsideBraces
 	}
 	if strings.HasPrefix(l.input[l.pos:], lineComment) {
@@ -460,7 +465,7 @@ func lexStatements(l *lexer) stateFn {
 	case r == eof:
 		if l.parenDepth != 0 {
 			return l.errorf("unclosed left parenthesis")
-		} else if l.bracketOpen {
+		} else if l.bracketOpen || l.doubleBraceOpen {
 			return l.errorf("unclosed left bracket")
 		}
 		l.emit(itemEOF)
@@ -534,8 +539,14 @@ func lexStatements(l *lexer) stateFn {
 		}
 		return lexStatements
 	case r == '{':
-		l.emit(itemLeftBrace)
-		l.braceOpen = true
+		if l.peek() == '{' {
+			l.next()
+			l.emit(itemLeftDoubleBrace)
+			l.doubleBraceOpen = true
+		} else {
+			l.emit(itemLeftBrace)
+			l.braceOpen = true
+		}
 		return lexInsideBraces(l)
 	case r == '[':
 		if l.bracketOpen {
@@ -599,8 +610,17 @@ func lexInsideBraces(l *lexer) stateFn {
 	case r == '{':
 		return l.errorf("unexpected left brace %q", r)
 	case r == '}':
-		l.emit(itemRightBrace)
-		l.braceOpen = false
+		if l.doubleBraceOpen {
+			if p := l.peek(); p != '}' {
+				return l.errorf("expected '}', bug %q", p)
+			}
+			l.next()
+			l.emit(itemRightDoubleBrace)
+			l.doubleBraceOpen = false
+		} else {
+			l.emit(itemRightBrace)
+			l.braceOpen = false
+		}
 
 		if l.seriesDesc {
 			return lexValueSequence
