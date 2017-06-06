@@ -602,10 +602,10 @@ mainLoop:
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
 		if total, added, err = sl.append(b, start); err != nil {
-			sl.l.With("err", err).Error("append failed")
-			// The append failed, probably due to a parse error.
+			sl.l.With("err", err).Warn("append failed")
+			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
-			if _, _, err = sl.append([]byte{}, start); err != nil {
+			if _, _, err := sl.append([]byte{}, start); err != nil {
 				sl.l.With("err", err).Error("append failed")
 			}
 		}
@@ -712,6 +712,7 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err erro
 		numOutOfOrder = 0
 		numDuplicates = 0
 	)
+	var sampleLimitErr error
 
 loop:
 	for p.Next() {
@@ -743,6 +744,12 @@ loop:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
+			case errSampleLimit:
+				// Keep on parsing output if we hit the limit, so we report the correct
+				// total number of samples scraped.
+				sampleLimitErr = err
+				added++
+				continue
 			default:
 				break loop
 			}
@@ -769,6 +776,10 @@ loop:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
+			case errSampleLimit:
+				sampleLimitErr = err
+				added++
+				continue
 			default:
 				break loop
 			}
@@ -784,6 +795,10 @@ loop:
 	}
 	if err == nil {
 		err = p.Err()
+	}
+	if err == nil && sampleLimitErr != nil {
+		targetScrapeSampleLimit.Inc()
+		err = sampleLimitErr
 	}
 	if numOutOfOrder > 0 {
 		sl.l.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
@@ -808,10 +823,10 @@ loop:
 	}
 	if err != nil {
 		app.Rollback()
-		return total, 0, err
+		return total, added, err
 	}
 	if err := app.Commit(); err != nil {
-		return total, 0, err
+		return total, added, err
 	}
 
 	sl.cache.iterDone()
