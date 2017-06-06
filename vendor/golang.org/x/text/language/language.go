@@ -100,7 +100,7 @@
 //
 // BCP 47 - Tags for Identifying Languages
 // http://tools.ietf.org/html/bcp47
-package language
+package language // import "golang.org/x/text/language"
 
 // TODO: Remove above NOTE after:
 // - verifying that tables are dropped correctly (most notably matcher tables).
@@ -593,7 +593,7 @@ func (t Tag) Extension(x byte) (ext Extension, ok bool) {
 			return Extension{ext}, true
 		}
 	}
-	return Extension{string(x)}, false
+	return Extension{}, false
 }
 
 // Extensions returns all extensions of t.

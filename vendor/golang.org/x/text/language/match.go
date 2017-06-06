@@ -396,8 +396,8 @@ type matcher struct {
 // matchHeader has the lists of tags for exact matches and matches based on
 // maximized and canonicalized tags for a given language.
 type matchHeader struct {
-	exact []haveTag
-	max   []haveTag
+	exact []*haveTag
+	max   []*haveTag
 }
 
 // haveTag holds a supported Tag and its maximized script and region. The maximized
@@ -457,7 +457,7 @@ func (h *matchHeader) addIfNew(n haveTag, exact bool) {
 		}
 	}
 	if exact {
-		h.exact = append(h.exact, n)
+		h.exact = append(h.exact, &n)
 	}
 	// Allow duplicate maximized tags, but create a linked list to allow quickly
 	// comparing the equivalents and bail out.
@@ -472,7 +472,7 @@ func (h *matchHeader) addIfNew(n haveTag, exact bool) {
 			break
 		}
 	}
-	h.max = append(h.max, n)
+	h.max = append(h.max, &n)
 }
 
 // header returns the matchHeader for the given language. It creates one if
@@ -503,7 +503,7 @@ func newMatcher(supported []Tag) *matcher {
 		pair, _ := makeHaveTag(tag, i)
 		m.header(tag.lang).addIfNew(pair, true)
 	}
-	m.default_ = &m.header(supported[0].lang).exact[0]
+	m.default_ = m.header(supported[0].lang).exact[0]
 	for i, tag := range supported {
 		pair, max := makeHaveTag(tag, i)
 		if max != tag.lang {
@@ -520,7 +520,8 @@ func newMatcher(supported []Tag) *matcher {
 				return
 			}
 			hw := m.header(langID(want))
-			for _, v := range hh.max {
+			for _, ht := range hh.max {
+				v := *ht
 				if conf < v.conf {
 					v.conf = conf
 				}
@@ -580,7 +581,7 @@ func (m *matcher) getBest(want ...Tag) (got *haveTag, orig Tag, c Confidence) {
 				continue
 			}
 			for i := range h.exact {
-				have := &h.exact[i]
+				have := h.exact[i]
 				if have.tag.equalsRest(w) {
 					return have, w, Exact
 				}
@@ -591,7 +592,7 @@ func (m *matcher) getBest(want ...Tag) (got *haveTag, orig Tag, c Confidence) {
 			// Base language is not defined.
 			if h != nil {
 				for i := range h.exact {
-					have := &h.exact[i]
+					have := h.exact[i]
 					if have.tag.equalsRest(w) {
 						return have, w, Exact
 					}
@@ -609,11 +610,11 @@ func (m *matcher) getBest(want ...Tag) (got *haveTag, orig Tag, c Confidence) {
 		}
 		// Check for match based on maximized tag.
 		for i := range h.max {
-			have := &h.max[i]
+			have := h.max[i]
 			best.update(have, w, max.script, max.region)
 			if best.conf == Exact {
 				for have.nextMax != 0 {
-					have = &h.max[have.nextMax]
+					have = h.max[have.nextMax]
 					best.update(have, w, max.script, max.region)
 				}
 				return best.have, best.want, High
