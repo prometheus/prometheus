@@ -856,14 +856,14 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 		vector    = ev.evalVector(args[0])
 		dst       = model.LabelName(ev.evalString(args[1]).Value)
 		sep       = ev.evalString(args[2]).Value
-		srcLabels = make([]model.LabelName, 0)
+		srcLabels = make([]model.LabelName, len(args)-3)
 	)
 	for i := 3; i < len(args); i++ {
 		src := model.LabelName(ev.evalString(args[i]).Value)
 		if !model.LabelNameRE.MatchString(string(src)) {
 			ev.errorf("invalid source label name in label_join(): %s", src)
 		}
-		srcLabels = append(srcLabels, src)
+		srcLabels[i-3] = src
 	}
 
 	if !model.LabelNameRE.MatchString(string(dst)) {
@@ -872,18 +872,25 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 
 	outSet := make(map[model.Fingerprint]struct{}, len(vector))
 	for _, el := range vector {
-		srcVals := make([]string, 0)
-		for _, src := range srcLabels {
-			srcVals = append(srcVals, string(el.Metric.Metric[src]))
+		srcVals := make([]string, len(srcLabels))
+		issrcValid := false
+		for i, src := range srcLabels {
+			srcVals[i] = string(el.Metric.Metric[src])
+			if string(el.Metric.Metric[src]) != "" {
+				issrcValid = true
+			}
 		}
 
-		el.Metric.Set(dst, model.LabelValue(strings.Join(srcVals, sep)))
-
-		fp := el.Metric.Metric.Fingerprint()
-		if _, exists := outSet[fp]; exists {
-			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
+		if issrcValid == false {
+			el.Metric.Del(dst)
 		} else {
-			outSet[fp] = struct{}{}
+			el.Metric.Set(dst, model.LabelValue(strings.Join(srcVals, sep)))
+			fp := el.Metric.Metric.Fingerprint()
+			if _, exists := outSet[fp]; exists {
+				ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
+			} else {
+				outSet[fp] = struct{}{}
+			}
 		}
 	}
 	return vector
@@ -1049,7 +1056,6 @@ var functions = map[string]*Function{
 	"delta": {
 		Name:       "delta",
 		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar},
-		Variadic:   1, // The 2nd argument is deprecated.
 		ReturnType: model.ValVector,
 		Call:       funcDelta,
 	},
