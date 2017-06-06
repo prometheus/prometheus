@@ -64,10 +64,10 @@ type Querier interface {
 	// QueryRange returns a list of series iterators for the selected
 	// time range and label matchers. The iterators need to be closed
 	// after usage.
-	QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
+	QueryRange(ctx context.Context, from, through model.Time, all bool, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
 	// QueryInstant returns a list of series iterators for the selected
 	// instant and label matchers. The iterators need to be closed after usage.
-	QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
+	QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, all bool, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error)
 	// MetricsForLabelMatchers returns the metrics from storage that satisfy
 	// the given sets of label matchers. Each set of matchers must contain at
 	// least one label matcher that does not match the empty string. Otherwise,
