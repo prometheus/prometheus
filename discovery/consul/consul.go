@@ -89,10 +89,11 @@ type Discovery struct {
 	clientDatacenter string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
+	logger           log.Logger
 }
 
 // NewDiscovery returns a new Discovery for the given config.
-func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
+func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, error) {
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -104,10 +105,10 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		Address:    conf.Server,
 		Scheme:     conf.Scheme,
 		Datacenter: conf.Datacenter,
-		Token:      conf.Token,
+		Token:      string(conf.Token),
 		HttpAuth: &consul.HttpBasicAuth{
 			Username: conf.Username,
-			Password: conf.Password,
+			Password: string(conf.Password),
 		},
 		HttpClient: wrapper,
 	}
@@ -121,6 +122,7 @@ func NewDiscovery(conf *config.ConsulSDConfig) (*Discovery, error) {
 		tagSeparator:     conf.TagSeparator,
 		watchedServices:  conf.Services,
 		clientDatacenter: clientConf.Datacenter,
+		logger:           logger,
 	}
 	return cd, nil
 }
@@ -163,7 +165,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		}
 
 		if err != nil {
-			log.Errorf("Error refreshing service list: %s", err)
+			d.logger.Errorf("Error refreshing service list: %s", err)
 			rpcFailuresCount.Inc()
 			time.Sleep(retryInterval)
 			continue
@@ -179,7 +181,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		if d.clientDatacenter == "" {
 			info, err := d.client.Agent().Self()
 			if err != nil {
-				log.Errorf("Error retrieving datacenter name: %s", err)
+				d.logger.Errorf("Error retrieving datacenter name: %s", err)
 				time.Sleep(retryInterval)
 				continue
 			}
@@ -203,6 +205,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 					datacenterLabel: model.LabelValue(d.clientDatacenter),
 				},
 				tagSeparator: d.tagSeparator,
+				logger:       d.logger,
 			}
 
 			wctx, cancel := context.WithCancel(ctx)
@@ -235,6 +238,7 @@ type consulService struct {
 	labels       model.LabelSet
 	client       *consul.Client
 	tagSeparator string
+	logger       log.Logger
 }
 
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetGroup) {
@@ -258,7 +262,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 		}
 
 		if err != nil {
-			log.Errorf("Error refreshing service %s: %s", srv.name, err)
+			srv.logger.Errorf("Error refreshing service %s: %s", srv.name, err)
 			rpcFailuresCount.Inc()
 			time.Sleep(retryInterval)
 			continue
