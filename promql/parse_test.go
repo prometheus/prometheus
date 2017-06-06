@@ -907,6 +907,37 @@ var testExpr = []struct {
 			All: true,
 		},
 	}, {
+		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz", ll=-"l,l", lll!-"l,l"}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: metric.LabelMatchers{
+				mustLabelMatcher(metric.Equal, "a", "b"),
+				mustLabelMatcher(metric.NotEqual, "foo", "bar"),
+				mustLabelMatcher(metric.RegexMatch, "test", "test"),
+				mustLabelMatcher(metric.RegexNoMatch, "bar", "baz"),
+				mustLabelMatcher(metric.ListMatch, "ll", "l,l"),
+				mustLabelMatcher(metric.ListNoMatch, "lll", "l,l"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+			},
+		},
+	}, {
+		input: `foo{{a="b", foo!="bar", test=~"test", bar!~"baz", ll=-"l,l", lll!-"l,l"}}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: metric.LabelMatchers{
+				mustLabelMatcher(metric.Equal, "a", "b"),
+				mustLabelMatcher(metric.NotEqual, "foo", "bar"),
+				mustLabelMatcher(metric.RegexMatch, "test", "test"),
+				mustLabelMatcher(metric.RegexNoMatch, "bar", "baz"),
+				mustLabelMatcher(metric.ListMatch, "ll", "l,l"),
+				mustLabelMatcher(metric.ListNoMatch, "lll", "l,l"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+			},
+			All: true,
+		},
+	}, {
 		input:  `{`,
 		fail:   true,
 		errMsg: "unexpected end of input inside braces",

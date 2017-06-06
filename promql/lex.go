@@ -164,6 +164,8 @@ const (
 	itemGTR
 	itemEQLRegex
 	itemNEQRegex
+	itemEQLList
+	itemNEQList
 	itemPOW
 	operatorsEnd
 
@@ -267,6 +269,8 @@ var itemTypeStr = map[itemType]string{
 	itemGTR:      ">",
 	itemEQLRegex: "=~",
 	itemNEQRegex: "!~",
+	itemEQLList:  "=-",
+	itemNEQList:  "-!",
 	itemPOW:      "^",
 }
 
@@ -592,18 +596,23 @@ func lexInsideBraces(l *lexer) stateFn {
 		l.stringOpen = r
 		return lexRawString
 	case r == '=':
-		if l.next() == '~' {
+		switch nr := l.next(); {
+		case nr == '~':
 			l.emit(itemEQLRegex)
-			break
+		case nr == '-':
+			l.emit(itemEQLList)
+		default:
+			l.backup()
+			l.emit(itemEQL)
 		}
-		l.backup()
-		l.emit(itemEQL)
 	case r == '!':
 		switch nr := l.next(); {
 		case nr == '~':
 			l.emit(itemNEQRegex)
 		case nr == '=':
 			l.emit(itemNEQ)
+		case nr == '-':
+			l.emit(itemNEQList)
 		default:
 			return l.errorf("unexpected character after '!' inside braces: %q", nr)
 		}

@@ -179,6 +179,10 @@ var tests = []struct {
 		input:    `{=}`,
 		expected: []item{{itemLeftBrace, 0, `{`}, {itemEQL, 1, `=`}, {itemRightBrace, 2, `}`}},
 	}, {
+		// Inside braces equality is a single '=' character.
+		input:    `{=-}`,
+		expected: []item{{itemLeftBrace, 0, `{`}, {itemEQLList, 1, `=-`}, {itemRightBrace, 3, `}`}},
+	}, {
 		input:    `==`,
 		expected: []item{{itemEQL, 0, `==`}},
 	}, {
@@ -309,6 +313,9 @@ var tests = []struct {
 		input: `{0a='a'}`,
 		fail:  true,
 	}, {
+		input: `{0a=-'a'}`,
+		fail:  true,
+	}, {
 		input: `{foo='bar'}`,
 		expected: []item{
 			{itemLeftBrace, 0, `{`},
@@ -367,6 +374,24 @@ var tests = []struct {
 			{itemLeftBrace, 0, `{`},
 			{itemIdentifier, 1, `on`},
 			{itemNEQRegex, 3, `!~`},
+			{itemString, 5, `"bar"`},
+			{itemRightBrace, 10, `}`},
+		},
+	}, {
+		input: `{alert=-"bar" }`,
+		expected: []item{
+			{itemLeftBrace, 0, `{`},
+			{itemIdentifier, 1, `alert`},
+			{itemEQLList, 6, `=-`},
+			{itemString, 8, `"bar"`},
+			{itemRightBrace, 14, `}`},
+		},
+	}, {
+		input: `{on!-"bar"}`,
+		expected: []item{
+			{itemLeftBrace, 0, `{`},
+			{itemIdentifier, 1, `on`},
+			{itemNEQList, 3, `!-`},
 			{itemString, 5, `"bar"`},
 			{itemRightBrace, 10, `}`},
 		},

@@ -865,6 +865,10 @@ func (p *parser) labelMatchers(operators ...itemType) (metric.LabelMatchers, boo
 			matchType = metric.RegexMatch
 		case itemNEQRegex:
 			matchType = metric.RegexNoMatch
+		case itemEQLList:
+			matchType = metric.ListMatch
+		case itemNEQList:
+			matchType = metric.ListNoMatch
 		default:
 			p.errorf("item %q is not a metric match type", op)
 		}
@@ -955,7 +959,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	var all bool
 	// Parse label matching if any.
 	if t := p.peek(); t.typ == itemLeftBrace || t.typ == itemLeftDoubleBrace {
-		matchers, all = p.labelMatchers(itemEQL, itemNEQ, itemEQLRegex, itemNEQRegex)
+		matchers, all = p.labelMatchers(itemEQL, itemNEQ, itemEQLRegex, itemNEQRegex, itemEQLList, itemNEQList)
 	}
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
