@@ -531,25 +531,21 @@ func (db *DB) Close() error {
 }
 
 // DisableCompactions disables compactions.
-func (db *DB) DisableCompactions() error {
+func (db *DB) DisableCompactions() {
 	if db.compacting {
 		db.cmtx.Lock()
 		db.compacting = false
 		db.logger.Log("msg", "compactions disabled")
 	}
-
-	return nil
 }
 
 // EnableCompactions enables compactions.
-func (db *DB) EnableCompactions() error {
+func (db *DB) EnableCompactions() {
 	if !db.compacting {
 		db.cmtx.Unlock()
 		db.compacting = true
 		db.logger.Log("msg", "compactions enabled")
 	}
-
-	return nil
 }
 
 // Snapshot writes the current data to the directory.
