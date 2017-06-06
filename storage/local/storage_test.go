@@ -499,7 +499,7 @@ func BenchmarkQueryRange(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		lm, _ := metric.NewLabelMatcher(metric.Equal, "job", "test")
 		for pb.Next() {
-			s.QueryRange(context.Background(), insertStart, now, lm)
+			s.QueryRange(context.Background(), insertStart, now, false, lm)
 		}
 	})
 }
@@ -528,7 +528,7 @@ func TestQueryRangeThroughBeforeFrom(t *testing.T) {
 	s.WaitForIndexing()
 
 	lm, _ := metric.NewLabelMatcher(metric.Equal, "job", "test")
-	iters, err := s.QueryRange(context.Background(), now.Add(-30*time.Minute), now.Add(-90*time.Minute), lm)
+	iters, err := s.QueryRange(context.Background(), now.Add(-30*time.Minute), now.Add(-90*time.Minute), false, lm)
 	if err != nil {
 		t.Error(err)
 	}
@@ -538,6 +538,14 @@ func TestQueryRangeThroughBeforeFrom(t *testing.T) {
 }
 
 func TestRetentionCutoff(t *testing.T) {
+	testRetentionCutoff(t, false)
+}
+
+func TestRetentionCutoffAll(t *testing.T) {
+	testRetentionCutoff(t, true)
+}
+
+func testRetentionCutoff(t *testing.T, all bool) {
 	now := model.Now()
 	insertStart := now.Add(-2 * time.Hour)
 
@@ -567,7 +575,7 @@ func TestRetentionCutoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error creating label matcher: %s", err)
 	}
-	its, err := s.QueryRange(context.Background(), insertStart, now, lm)
+	its, err := s.QueryRange(context.Background(), insertStart, now, all, lm)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,6 +30,8 @@ const (
 	NotEqual
 	RegexMatch
 	RegexNoMatch
+	ListMatch
+	ListNoMatch
 )
 
 func (m MatchType) String() string {
@@ -38,6 +40,8 @@ func (m MatchType) String() string {
 		NotEqual:     "!=",
 		RegexMatch:   "=~",
 		RegexNoMatch: "!~",
+		ListMatch:    "=-",
+		ListNoMatch:  "!-",
 	}
 	if str, ok := typeToStr[m]; ok {
 		return str
@@ -57,11 +61,13 @@ func (lms LabelMatchers) Less(i, j int) bool { return lms[i].score < lms[j].scor
 
 // LabelMatcher models the matching of a label. Create with NewLabelMatcher.
 type LabelMatcher struct {
-	Type  MatchType
-	Name  model.LabelName
-	Value model.LabelValue
-	re    *regexp.Regexp
-	score float64 // Cardinality score, between 0 and 1, 0 is lowest cardinality.
+	Type   MatchType
+	Name   model.LabelName
+	Value  model.LabelValue
+	Values model.LabelValues
+	re     *regexp.Regexp
+	lst    map[string]struct{}
+	score  float64 // Cardinality score, between 0 and 1, 0 is lowest cardinality.
 }
 
 // NewLabelMatcher returns a LabelMatcher object ready to use.
@@ -77,6 +83,13 @@ func NewLabelMatcher(matchType MatchType, name model.LabelName, value model.Labe
 			return nil, err
 		}
 		m.re = re
+	}
+	if matchType == ListMatch || matchType == ListNoMatch {
+		m.lst = map[string]struct{}{}
+		for _, x := range strings.Split(string(value), ",") {
+			m.lst[x] = struct{}{}
+			m.Values = append(m.Values, model.LabelValue(x))
+		}
 	}
 	m.calculateScore()
 	return m, nil
@@ -123,9 +136,9 @@ func (m *LabelMatcher) calculateScore() {
 	switch m.Type {
 	case Equal:
 		m.score = 0.3 - lengthCorrection
-	case RegexMatch:
+	case RegexMatch, ListMatch:
 		m.score = 0.6 - lengthCorrection
-	case RegexNoMatch:
+	case RegexNoMatch, ListNoMatch:
 		m.score = 0.8 + lengthCorrection
 	case NotEqual:
 		m.score = 0.9 + lengthCorrection
@@ -183,6 +196,12 @@ func (m *LabelMatcher) Match(v model.LabelValue) bool {
 		return m.re.MatchString(string(v))
 	case RegexNoMatch:
 		return !m.re.MatchString(string(v))
+	case ListMatch:
+		_, ok := m.lst[string(v)]
+		return ok
+	case ListNoMatch:
+		_, ok := m.lst[string(v)]
+		return !ok
 	default:
 		panic("invalid match type")
 	}

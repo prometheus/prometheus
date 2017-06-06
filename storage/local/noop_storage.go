@@ -61,12 +61,12 @@ func (s *NoopQuerier) LastSampleForLabelMatchers(ctx context.Context, cutoff mod
 }
 
 // QueryRange implements Querier
-func (s *NoopQuerier) QueryRange(ctx context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *NoopQuerier) QueryRange(ctx context.Context, from, through model.Time, all bool, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	return nil, nil
 }
 
 // QueryInstant implements Querier.
-func (s *NoopQuerier) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *NoopQuerier) QueryInstant(ctx context.Context, ts model.Time, stalenessDelta time.Duration, all bool, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	return nil, nil
 }
 
