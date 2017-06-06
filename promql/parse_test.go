@@ -848,6 +848,17 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo:bar{{a="bc"}}`,
+		expected: &VectorSelector{
+			Name:   "foo:bar",
+			Offset: 0,
+			LabelMatchers: metric.LabelMatchers{
+				mustLabelMatcher(metric.Equal, "a", "bc"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo:bar"),
+			},
+			All: true,
+		},
+	}, {
 		input: `foo{NaN='bc'}`,
 		expected: &VectorSelector{
 			Name:   "foo",
@@ -856,6 +867,17 @@ var testExpr = []struct {
 				mustLabelMatcher(metric.Equal, "NaN", "bc"),
 				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
 			},
+		},
+	}, {
+		input: `foo{{NaN='bc'}}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: metric.LabelMatchers{
+				mustLabelMatcher(metric.Equal, "NaN", "bc"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+			},
+			All: true,
 		},
 	}, {
 		input: `foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
@@ -871,7 +893,25 @@ var testExpr = []struct {
 			},
 		},
 	}, {
+		input: `foo{{a="b", foo!="bar", test=~"test", bar!~"baz"}}`,
+		expected: &VectorSelector{
+			Name:   "foo",
+			Offset: 0,
+			LabelMatchers: metric.LabelMatchers{
+				mustLabelMatcher(metric.Equal, "a", "b"),
+				mustLabelMatcher(metric.NotEqual, "foo", "bar"),
+				mustLabelMatcher(metric.RegexMatch, "test", "test"),
+				mustLabelMatcher(metric.RegexNoMatch, "bar", "baz"),
+				mustLabelMatcher(metric.Equal, model.MetricNameLabel, "foo"),
+			},
+			All: true,
+		},
+	}, {
 		input:  `{`,
+		fail:   true,
+		errMsg: "unexpected end of input inside braces",
+	}, {
+		input:  `{{`,
 		fail:   true,
 		errMsg: "unexpected end of input inside braces",
 	}, {
@@ -879,13 +919,25 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unexpected character: '}'",
 	}, {
+		input:  `}}`,
+		fail:   true,
+		errMsg: "unexpected character: '}'",
+	}, {
 		input:  `some{`,
+		fail:   true,
+		errMsg: "unexpected end of input inside braces",
+	}, {
+		input:  `some{{`,
 		fail:   true,
 		errMsg: "unexpected end of input inside braces",
 	}, {
 		input:  `some}`,
 		fail:   true,
 		errMsg: "could not parse remaining input \"}\"...",
+	}, {
+		input:  `some}}`,
+		fail:   true,
+		errMsg: "could not parse remaining input \"}}\"...",
 	}, {
 		input:  `some_metric{a=b}`,
 		fail:   true,
@@ -895,7 +947,15 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "unexpected character inside braces: ':'",
 	}, {
+		input:  `some_metric{{a:b="b"}}`,
+		fail:   true,
+		errMsg: "unexpected character inside braces: ':'",
+	}, {
 		input:  `foo{a*"b"}`,
+		fail:   true,
+		errMsg: "unexpected character inside braces: '*'",
+	}, {
+		input:  `foo{{a*"b"}}`,
 		fail:   true,
 		errMsg: "unexpected character inside braces: '*'",
 	}, {
@@ -909,6 +969,10 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "expected label matching operator but got }",
 	}, {
+		input:  `foo{{gibberish}}`,
+		fail:   true,
+		errMsg: "expected label matching operator but got }",
+	}, {
 		input:  `foo{1}`,
 		fail:   true,
 		errMsg: "unexpected character inside braces: '1'",
@@ -917,7 +981,15 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "vector selector must contain label matchers or metric name",
 	}, {
+		input:  `{{}}`,
+		fail:   true,
+		errMsg: "vector selector must contain label matchers or metric name",
+	}, {
 		input:  `{x=""}`,
+		fail:   true,
+		errMsg: "vector selector must contain at least one non-empty matcher",
+	}, {
+		input:  `{{x=""}}`,
 		fail:   true,
 		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
@@ -934,6 +1006,14 @@ var testExpr = []struct {
 		errMsg: "vector selector must contain at least one non-empty matcher",
 	}, {
 		input:  `foo{__name__="bar"}`,
+		fail:   true,
+		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
+		// }, {
+		// 	input:  `:foo`,
+		// 	fail:   true,
+		// 	errMsg: "bla",
+	}, {
+		input:  `foo{{__name__="bar"}}`,
 		fail:   true,
 		errMsg: "metric name must not be set twice: \"foo\" or \"bar\"",
 		// }, {
