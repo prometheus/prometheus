@@ -875,8 +875,9 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 		srcVals := make([]string, len(srcLabels))
 		issrcValid := false
 		for i, src := range srcLabels {
-			srcVals[i] = string(el.Metric.Metric[src])
-			if string(el.Metric.Metric[src]) != "" {
+			strval := string(el.Metric.Metric[src])
+			srcVals[i] = strval
+			if strval != "" {
 				issrcValid = true
 			}
 		}
@@ -1055,7 +1056,7 @@ var functions = map[string]*Function{
 	},
 	"delta": {
 		Name:       "delta",
-		ArgTypes:   []model.ValueType{model.ValMatrix, model.ValScalar},
+		ArgTypes:   []model.ValueType{model.ValMatrix},
 		ReturnType: model.ValVector,
 		Call:       funcDelta,
 	},
@@ -1133,6 +1134,7 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcLabelJoin,
 	},
+
 	"ln": {
 		Name:       "ln",
 		ArgTypes:   []model.ValueType{model.ValVector},
