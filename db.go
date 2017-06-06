@@ -121,7 +121,8 @@ type DB struct {
 	stopc    chan struct{}
 
 	// cmtx is used to control compactions and deletions.
-	cmtx sync.Mutex
+	cmtx       sync.Mutex
+	compacting bool
 }
 
 type dbMetrics struct {
@@ -200,12 +201,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 
 	db = &DB{
-		dir:      dir,
-		logger:   l,
-		opts:     opts,
-		compactc: make(chan struct{}, 1),
-		donec:    make(chan struct{}),
-		stopc:    make(chan struct{}),
+		dir:        dir,
+		logger:     l,
+		opts:       opts,
+		compactc:   make(chan struct{}, 1),
+		donec:      make(chan struct{}),
+		stopc:      make(chan struct{}),
+		compacting: true,
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -528,27 +530,31 @@ func (db *DB) Close() error {
 	return merr.Err()
 }
 
-// DisableCompactions disables compactions.
-func (db *DB) DisableCompactions() error {
-	db.stopc <- struct{}{} // TODO: Can this block?
-	db.cmtx.Lock()
-	return nil
-}
+// ToggleCompactions toggles compactions and returns if compactions are on or not.
+func (db *DB) ToggleCompactions() bool {
+	if db.compacting {
+		db.cmtx.Lock()
+		db.compacting = false
+		return false
+	}
 
-// EnableCompactions enables compactions.
-func (db *DB) EnableCompactions() error {
 	db.cmtx.Unlock()
-	return nil
+	db.compacting = true
+	return true
 }
 
 // Snapshot writes the current headBlock snapshots to snapshots directory.
 func (db *DB) Snapshot(dir string) error {
-	db.headmtx.RLock()
-	heads := db.heads[:]
-	db.headmtx.RUnlock()
+	db.mtx.Lock() // To block any appenders.
+	defer db.mtx.Unlock()
 
-	for _, h := range heads {
-		if err := h.Snapshot(dir); err != nil {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	blocks := db.blocks[:]
+	for _, b := range blocks {
+		db.logger.Log("msg", "compacting block", "block", b.Dir())
+		if err := b.Snapshot(dir); err != nil {
 			return errors.Wrap(err, "error snapshotting headblock")
 		}
 	}

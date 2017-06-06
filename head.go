@@ -263,11 +263,10 @@ Outer:
 }
 
 // Snapshot persists the current state of the headblock to the given directory.
+// TODO(gouthamve): Snapshot must be called when there are no active appenders.
+// This has been ensured by acquiring a Lock on DB.mtx, but this limitation should
+// be removed in the future.
 func (h *HeadBlock) Snapshot(snapshotDir string) error {
-	// Needed to stop any appenders.
-	h.mtx.Lock()
-	defer h.mtx.Unlock()
-
 	if h.meta.Stats.NumSeries == 0 {
 		return nil
 	}
