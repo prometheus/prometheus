@@ -654,6 +654,9 @@ func (s *MemorySeriesStorage) candidateFPsForLabelMatchersAll(
 			if err != nil {
 				return nil, err
 			}
+			if x.MatchesEmptyString() {
+				values = append(values, "")
+			}
 			values = x.Filter(values)
 		}
 
@@ -664,6 +667,9 @@ func (s *MemorySeriesStorage) candidateFPsForLabelMatchersAll(
 		new := map[model.Fingerprint]model.Fingerprint{}
 		for fp, fastfp := range merged {
 			for _, v := range values {
+				if v == "" {
+					continue
+				}
 
 				sum := hashAdd(uint64(fp), string(x.Name))
 				sum = hashAddByte(sum, model.SeparatorByte)

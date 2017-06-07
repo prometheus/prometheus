@@ -572,10 +572,12 @@ func testRetentionCutoff(t *testing.T, all bool) {
 	s.WaitForIndexing()
 
 	lm, err := metric.NewLabelMatcher(metric.Equal, "job", "test")
+	lm2, err := metric.NewLabelMatcher(metric.Equal, "host", "")
+	lm3, err := metric.NewLabelMatcher(metric.ListNoMatch, "service", "a,b")
 	if err != nil {
 		t.Fatalf("error creating label matcher: %s", err)
 	}
-	its, err := s.QueryRange(context.Background(), insertStart, now, all, lm)
+	its, err := s.QueryRange(context.Background(), insertStart, now, all, lm, lm2, lm3)
 	if err != nil {
 		t.Fatal(err)
 	}
