@@ -19,12 +19,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 )
+
+var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
 
 func TestStoreHTTPErrorHandling(t *testing.T) {
 	tests := []struct {
@@ -37,22 +40,22 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 		{
 			code: 300,
-			err:  fmt.Errorf("server returned HTTP status 300 Multiple Choices"),
+			err:  fmt.Errorf("server returned HTTP status 300 Multiple Choices: " + longErrMessage[:maxErrMsgLen]),
 		},
 		{
 			code: 404,
-			err:  fmt.Errorf("server returned HTTP status 404 Not Found"),
+			err:  fmt.Errorf("server returned HTTP status 404 Not Found: " + longErrMessage[:maxErrMsgLen]),
 		},
 		{
 			code: 500,
-			err:  recoverableError{fmt.Errorf("server returned HTTP status 500 Internal Server Error")},
+			err:  recoverableError{fmt.Errorf("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen])},
 		},
 	}
 
 	for i, test := range tests {
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				http.Error(w, "test error", test.code)
+				http.Error(w, longErrMessage, test.code)
 			}),
 		)
 
@@ -68,7 +71,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 
 		err = c.Store(nil)
 		if !reflect.DeepEqual(err, test.err) {
-			t.Fatalf("%d. Unexpected error; want %v, got %v", i, test.err, err)
+			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
 		}
 
 		server.Close()
