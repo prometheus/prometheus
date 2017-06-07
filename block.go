@@ -92,17 +92,27 @@ type BlockMeta struct {
 	MaxTime int64 `json:"maxTime"`
 
 	// Stats about the contents of the block.
-	Stats struct {
-		NumSamples    uint64 `json:"numSamples,omitempty"`
-		NumSeries     uint64 `json:"numSeries,omitempty"`
-		NumChunks     uint64 `json:"numChunks,omitempty"`
-		NumTombstones uint64 `json:"numTombstones,omitempty"`
-	} `json:"stats,omitempty"`
+	Stats BlockStats `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.
-	Compaction struct {
-		Generation int `json:"generation"`
-	} `json:"compaction"`
+	Compaction BlockMetaCompaction `json:"compaction"`
+}
+
+// BlockStats contains stats about contents of a block.
+type BlockStats struct {
+	NumSamples    uint64 `json:"numSamples,omitempty"`
+	NumSeries     uint64 `json:"numSeries,omitempty"`
+	NumChunks     uint64 `json:"numChunks,omitempty"`
+	NumTombstones uint64 `json:"numTombstones,omitempty"`
+}
+
+// BlockMetaCompaction holds information about compactions a block went through.
+type BlockMetaCompaction struct {
+	// Maximum number of compaction cycles any source block has
+	// gone through.
+	Generation int `json:"generation"`
+	// ULIDs of all source head blocks that went into the block.
+	Sources []ulid.ULID `json:"sources,omitempty"`
 }
 
 const (
@@ -151,7 +161,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	var merr MultiError
 	if merr.Add(enc.Encode(&blockMeta{Version: 1, BlockMeta: meta})); merr.Err() != nil {
 		merr.Add(f.Close())
-		return merr
+		return merr.Err()
 	}
 	if err := f.Close(); err != nil {
 		return err
