@@ -731,3 +731,45 @@ Outer:
 
 	return ds
 }
+
+func TestComputeChunkEndTime(t *testing.T) {
+	cases := []struct {
+		start, cur, max int64
+		res             int64
+	}{
+		{
+			start: 0,
+			cur:   250,
+			max:   1000,
+			res:   1000,
+		},
+		{
+			start: 100,
+			cur:   200,
+			max:   1000,
+			res:   550,
+		},
+		// Case where we fit floored 0 chunks. Must catch division by 0
+		// and default to maximum time.
+		{
+			start: 0,
+			cur:   500,
+			max:   1000,
+			res:   1000,
+		},
+		// Catch divison by zero for cur == start. Strictly not a possible case.
+		{
+			start: 100,
+			cur:   100,
+			max:   1000,
+			res:   104,
+		},
+	}
+
+	for _, c := range cases {
+		got := computeChunkEndTime(c.start, c.cur, c.max)
+		if got != c.res {
+			t.Errorf("expected %d for (start: %d, cur: %d, max: %d), got %d", c.res, c.start, c.cur, c.max, got)
+		}
+	}
+}
