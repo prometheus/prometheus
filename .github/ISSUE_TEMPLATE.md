@@ -1,4 +1,4 @@
-[NOTICE]: <> (If your question is around usage and not a bug in Prometheus please use: https://groups.google.com/forum/#!forum/prometheus-users)
+[NOTICE]: <> (DO NOT ASK USAGE QUESTIONS HERE! INSTEAD, PLEASE USE: https://groups.google.com/forum/#!forum/prometheus-users)
 
 **What did you do?**
 
