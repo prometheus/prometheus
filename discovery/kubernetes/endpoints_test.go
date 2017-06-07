@@ -126,6 +126,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 	pods.GetStore().Add(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
+			UID:       "e4c35dec-836e-4931-83c6-13b9dbf39b18",
 			Namespace: "default",
 		},
 		Spec: v1.PodSpec{
@@ -203,6 +204,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_protocol":      "TCP",
 						"__meta_kubernetes_endpoint_ready":              "true",
 						"__meta_kubernetes_pod_name":                    "testpod",
+						"__meta_kubernetes_pod_uid":                     "e4c35dec-836e-4931-83c6-13b9dbf39b18",
 						"__meta_kubernetes_pod_ip":                      "1.2.3.4",
 						"__meta_kubernetes_pod_ready":                   "unknown",
 						"__meta_kubernetes_pod_node_name":               "testnode",
@@ -215,6 +217,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 					{
 						"__address__":                                   "1.2.3.4:9001",
 						"__meta_kubernetes_pod_name":                    "testpod",
+						"__meta_kubernetes_pod_uid":                     "e4c35dec-836e-4931-83c6-13b9dbf39b18",
 						"__meta_kubernetes_pod_ip":                      "1.2.3.4",
 						"__meta_kubernetes_pod_ready":                   "unknown",
 						"__meta_kubernetes_pod_node_name":               "testnode",
