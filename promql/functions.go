@@ -873,25 +873,22 @@ func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
 	outSet := make(map[model.Fingerprint]struct{}, len(vector))
 	for _, el := range vector {
 		srcVals := make([]string, len(srcLabels))
-		issrcValid := false
 		for i, src := range srcLabels {
-			strval := string(el.Metric.Metric[src])
-			srcVals[i] = strval
-			if strval != "" {
-				issrcValid = true
-			}
+			srcVals[i] = string(el.Metric.Metric[src])
 		}
 
-		if issrcValid == false {
+		strval := strings.Join(srcVals, sep)
+		if strval == "" {
 			el.Metric.Del(dst)
 		} else {
-			el.Metric.Set(dst, model.LabelValue(strings.Join(srcVals, sep)))
-			fp := el.Metric.Metric.Fingerprint()
-			if _, exists := outSet[fp]; exists {
-				ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
-			} else {
-				outSet[fp] = struct{}{}
-			}
+			el.Metric.Set(dst, model.LabelValue(strval))
+		}
+
+		fp := el.Metric.Metric.Fingerprint()
+		if _, exists := outSet[fp]; exists {
+			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
+		} else {
+			outSet[fp] = struct{}{}
 		}
 	}
 	return vector
@@ -1134,7 +1131,6 @@ var functions = map[string]*Function{
 		ReturnType: model.ValVector,
 		Call:       funcLabelJoin,
 	},
-
 	"ln": {
 		Name:       "ln",
 		ArgTypes:   []model.ValueType{model.ValVector},
