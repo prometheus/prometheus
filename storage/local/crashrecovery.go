@@ -287,7 +287,7 @@ func (p *persistence) sanitizeSeries(
 				purge()
 				return fp, false
 			}
-			log.Warnf(
+			log.Infof(
 				"Treating recovered metric %v, fingerprint %v, as freshly unarchived, with %d chunks in series file.",
 				s.metric, fp, len(cds),
 			)
@@ -351,7 +351,7 @@ func (p *persistence) sanitizeSeries(
 			}
 		}
 		if keepIdx == -1 {
-			log.Warnf(
+			log.Infof(
 				"Recovered metric %v, fingerprint %v: all %d chunks recovered from series file.",
 				s.metric, fp, chunksInFile,
 			)
@@ -363,7 +363,7 @@ func (p *persistence) sanitizeSeries(
 			s.evictChunkDescs(len(cds) - 1)
 			return fp, true
 		}
-		log.Warnf(
+		log.Infof(
 			"Recovered metric %v, fingerprint %v: recovered %d chunks from series file, recovered %d chunks from checkpoint.",
 			s.metric, fp, chunksInFile, len(s.chunkDescs)-keepIdx,
 		)
@@ -427,10 +427,10 @@ func (p *persistence) cleanUpArchiveIndexes(
 		}
 		if !fpSeen || inMemory {
 			if inMemory {
-				log.Warnf("Archive clean-up: Fingerprint %v is not archived. Purging from archive indexes.", model.Fingerprint(fp))
+				log.Infof("Archive clean-up: Fingerprint %v is not archived. Purging from archive indexes.", model.Fingerprint(fp))
 			}
 			if !fpSeen {
-				log.Warnf("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", model.Fingerprint(fp))
+				log.Infof("Archive clean-up: Fingerprint %v is unknown. Purging from archive indexes.", model.Fingerprint(fp))
 			}
 			// It's fine if the fp is not in the archive indexes.
 			if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
@@ -453,7 +453,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if has {
 			return nil // All good.
 		}
-		log.Warnf("Archive clean-up: Fingerprint %v is not in time-range index. Unarchiving it for recovery.")
+		log.Infof("Archive clean-up: Fingerprint %v is not in time-range index. Unarchiving it for recovery.")
 		// Again, it's fine if fp is not in the archive index.
 		if _, err := p.archivedFingerprintToMetrics.Delete(fp); err != nil {
 			return err
@@ -489,7 +489,7 @@ func (p *persistence) cleanUpArchiveIndexes(
 		if has {
 			return nil // All good.
 		}
-		log.Warnf("Archive clean-up: Purging unknown fingerprint %v in time-range index.", fp)
+		log.Infof("Archive clean-up: Purging unknown fingerprint %v in time-range index.", fp)
 		deleted, err := p.archivedFingerprintToTimeRange.Delete(fp)
 		if err != nil {
 			return err
@@ -544,7 +544,7 @@ func (p *persistence) rebuildLabelIndexes(
 // maybeAddMapping adds a fingerprint mapping to fpm if the FastFingerprint of m is different from fp.
 func maybeAddMapping(fp model.Fingerprint, m model.Metric, fpm fpMappings) {
 	if rawFP := m.FastFingerprint(); rawFP != fp {
-		log.Warnf(
+		log.Infof(
 			"Metric %v with fingerprint %v is mapped from raw fingerprint %v.",
 			m, fp, rawFP,
 		)
