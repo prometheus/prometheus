@@ -1,3 +1,22 @@
+## 1.7.0 / 2017-06-06
+
+* [CHANGE] Compress remote storage requests and responses with unframed/raw snappy.
+* [CHANGE] Properly ellide secrets in config.
+* [FEATURE] Add OpenStack service discovery.
+* [FEATURE] Add ability to limit Kubernetes service discovery to certain namespaces.
+* [FEATURE] Add metric for discovered number of Alertmanagers.
+* [ENHANCEMENT] Print system information (uname) on start up.
+* [ENHANCEMENT] Show gaps in graphs on expression browser.
+* [ENHANCEMENT] Promtool linter checks counter naming and more reserved labels.
+* [BUGFIX] Fix broken Mesos discovery.
+* [BUGFIX] Fix redirect when external URL is set.
+* [BUGFIX] Fix mutation of active alert elements by notifier.
+* [BUGFIX] Fix HTTP error handling for remote write.
+* [BUGFIX] Fix builds for Solaris/Illumos.
+* [BUGFIX] Fix overflow checking in global config.
+* [BUGFIX] Fix log level reporting issue.
+* [BUGFIX] Fix ZooKeeper serverset discovery can become out-of-sync.
+
 ## 1.6.3 / 2017-05-18
 
 * [BUGFIX] Fix disappearing Alertmanger targets in Alertmanager discovery.
