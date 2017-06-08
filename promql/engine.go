@@ -522,6 +522,7 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 					ctx,
 					s.Start.Add(-n.Offset),
 					StalenessDelta,
+					n.All,
 					n.LabelMatchers...,
 				)
 			} else {
@@ -529,6 +530,7 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 					ctx,
 					s.Start.Add(-n.Offset-StalenessDelta),
 					s.End.Add(-n.Offset),
+					n.All,
 					n.LabelMatchers...,
 				)
 			}
@@ -540,6 +542,7 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 				ctx,
 				s.Start.Add(-n.Offset-n.Range),
 				s.End.Add(-n.Offset),
+				n.All,
 				n.LabelMatchers...,
 			)
 			if queryErr != nil {

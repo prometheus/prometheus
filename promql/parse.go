@@ -605,6 +605,7 @@ func (p *parser) rangeSelector(vs *VectorSelector) *MatrixSelector {
 	e := &MatrixSelector{
 		Name:          vs.Name,
 		LabelMatchers: vs.LabelMatchers,
+		All:           vs.All,
 		Range:         erange,
 	}
 	return e
@@ -636,7 +637,7 @@ func (p *parser) primaryExpr() Expr {
 	case t.typ == itemString:
 		return &StringLiteral{p.unquoteString(t.val)}
 
-	case t.typ == itemLeftBrace:
+	case t.typ == itemLeftBrace || t.typ == itemLeftDoubleBrace:
 		// Metric selector without metric name.
 		p.backup()
 		return p.vectorSelector("")
@@ -804,7 +805,11 @@ func (p *parser) call(name string) *Call {
 //
 func (p *parser) labelSet() model.LabelSet {
 	set := model.LabelSet{}
-	for _, lm := range p.labelMatchers(itemEQL) {
+	l, all := p.labelMatchers(itemEQL)
+	if all {
+		p.errorf("not support '{{...}}' in label set")
+	}
+	for _, lm := range l {
 		set[lm.Name] = lm.Value
 	}
 	return set
@@ -814,17 +819,20 @@ func (p *parser) labelSet() model.LabelSet {
 //
 //		'{' [ <labelname> <match_op> <match_string>, ... ] '}'
 //
-func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
+func (p *parser) labelMatchers(operators ...itemType) (metric.LabelMatchers, bool) {
 	const ctx = "label matching"
 
 	matchers := metric.LabelMatchers{}
+	all := false
 
-	p.expect(itemLeftBrace, ctx)
+	if p.expectOneOf(itemLeftBrace, itemLeftDoubleBrace, ctx).typ == itemLeftDoubleBrace {
+		all = true
+	}
 
 	// Check if no matchers are provided.
-	if p.peek().typ == itemRightBrace {
+	if p.peek().typ == itemRightBrace || p.peek().typ == itemRightDoubleBrace {
 		p.next()
-		return matchers
+		return matchers, all
 	}
 
 	for {
@@ -857,6 +865,10 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 			matchType = metric.RegexMatch
 		case itemNEQRegex:
 			matchType = metric.RegexNoMatch
+		case itemEQLList:
+			matchType = metric.ListMatch
+		case itemNEQList:
+			matchType = metric.ListNoMatch
 		default:
 			p.errorf("item %q is not a metric match type", op)
 		}
@@ -883,14 +895,14 @@ func (p *parser) labelMatchers(operators ...itemType) metric.LabelMatchers {
 		p.next()
 
 		// Allow comma after each item in a multi-line listing.
-		if p.peek().typ == itemRightBrace {
+		if p.peek().typ == itemRightBrace || p.peek().typ == itemRightDoubleBrace {
 			break
 		}
 	}
 
-	p.expect(itemRightBrace, ctx)
+	p.expectOneOf(itemRightBrace, itemRightDoubleBrace, ctx)
 
-	return matchers
+	return matchers, all
 }
 
 // metric parses a metric.
@@ -944,9 +956,10 @@ func (p *parser) offset() time.Duration {
 //
 func (p *parser) vectorSelector(name string) *VectorSelector {
 	var matchers metric.LabelMatchers
+	var all bool
 	// Parse label matching if any.
-	if t := p.peek(); t.typ == itemLeftBrace {
-		matchers = p.labelMatchers(itemEQL, itemNEQ, itemEQLRegex, itemNEQRegex)
+	if t := p.peek(); t.typ == itemLeftBrace || t.typ == itemLeftDoubleBrace {
+		matchers, all = p.labelMatchers(itemEQL, itemNEQ, itemEQLRegex, itemNEQRegex, itemEQLList, itemNEQList)
 	}
 	// Metric name must not be set in the label matchers and before at the same time.
 	if name != "" {
@@ -982,6 +995,7 @@ func (p *parser) vectorSelector(name string) *VectorSelector {
 	return &VectorSelector{
 		Name:          name,
 		LabelMatchers: matchers,
+		All:           all,
 	}
 }
 

@@ -134,6 +134,7 @@ type MatrixSelector struct {
 	Range         time.Duration
 	Offset        time.Duration
 	LabelMatchers metric.LabelMatchers
+	All           bool
 
 	// The series iterators are populated at query preparation time.
 	iterators []local.SeriesIterator
@@ -167,6 +168,7 @@ type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
 	LabelMatchers metric.LabelMatchers
+	All           bool
 
 	// The series iterators are populated at query preparation time.
 	iterators []local.SeriesIterator

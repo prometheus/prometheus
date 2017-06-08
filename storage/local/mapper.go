@@ -143,6 +143,20 @@ func (m *fpMapper) mapFP(fp model.Fingerprint, metric model.Metric) model.Finger
 	return m.maybeAddMapping(fp, metric)
 }
 
+func (m *fpMapper) dirtyMapping(fastfp, fp model.Fingerprint) model.Fingerprint {
+	if mappedFPs, ok := m.mappings[fastfp]; ok {
+		for _, v := range mappedFPs {
+			if s, ok := m.fpToSeries.get(v); ok && s.metric.Fingerprint() == fp {
+				return v
+			}
+			if s, _ := m.p.archivedMetric(fp); s != nil && s.Fingerprint() == fp {
+				return v
+			}
+		}
+	}
+	return fastfp
+}
+
 // maybeAddMapping is only used internally. It takes a detected collision and
 // adds it to the collisions map if not yet there. In any case, it returns the
 // truly unique fingerprint for the colliding metric.

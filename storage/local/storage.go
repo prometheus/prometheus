@@ -511,12 +511,12 @@ func (bit *boundedIterator) Close() {
 }
 
 // QueryRange implements Storage.
-func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.Time, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.Time, all bool, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	if through.Before(from) {
 		// In that case, nothing will match.
 		return nil, nil
 	}
-	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, matchers...)
+	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, all, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -529,14 +529,14 @@ func (s *MemorySeriesStorage) QueryRange(_ context.Context, from, through model.
 }
 
 // QueryInstant implements Storage.
-func (s *MemorySeriesStorage) QueryInstant(_ context.Context, ts model.Time, stalenessDelta time.Duration, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
+func (s *MemorySeriesStorage) QueryInstant(_ context.Context, ts model.Time, stalenessDelta time.Duration, all bool, matchers ...*metric.LabelMatcher) ([]SeriesIterator, error) {
 	if stalenessDelta < 0 {
 		panic("negative staleness delta")
 	}
 	from := ts.Add(-stalenessDelta)
 	through := ts
 
-	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, matchers...)
+	fpSeriesPairs, err := s.seriesForLabelMatchers(from, through, all, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -595,6 +595,102 @@ func (s *MemorySeriesStorage) MetricsForLabelMatchers(
 		metrics = append(metrics, m)
 	}
 	return metrics, nil
+}
+
+type labelMatchersByName []*metric.LabelMatcher
+
+func (lms labelMatchersByName) Len() int           { return len(lms) }
+func (lms labelMatchersByName) Swap(i, j int)      { lms[i], lms[j] = lms[j], lms[i] }
+func (lms labelMatchersByName) Less(i, j int) bool { return lms[i].Name < lms[j].Name }
+
+const (
+	offset64 = 14695981039346656037
+	prime64  = 1099511628211
+)
+
+// hashNew initializies a new fnv64a hash value.
+func hashNew() uint64 {
+	return offset64
+}
+
+// hashAdd adds a string to a fnv64a hash value, returning the updated hash.
+func hashAdd(h uint64, s string) uint64 {
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= prime64
+	}
+	return h
+}
+
+// hashAddByte adds a byte to a fnv64a hash value, returning the updated hash.
+func hashAddByte(h uint64, b byte) uint64 {
+	h ^= uint64(b)
+	h *= prime64
+	return h
+}
+
+func (s *MemorySeriesStorage) candidateFPsForLabelMatchersAll(
+	matchers ...*metric.LabelMatcher,
+) (map[model.Fingerprint]struct{}, error) {
+
+	var err error
+
+	sort.Sort(labelMatchersByName(matchers))
+
+	merged := map[model.Fingerprint]model.Fingerprint{
+		model.Fingerprint(hashNew()): model.Fingerprint(0),
+	}
+
+	for _, x := range matchers {
+
+		values := model.LabelValues{}
+		switch x.Type {
+		case metric.Equal:
+			values = append(values, x.Value)
+		case metric.ListMatch:
+			values = append(values, x.Values...)
+		case metric.NotEqual, metric.RegexMatch, metric.RegexNoMatch, metric.ListNoMatch:
+			values, err = s.LabelValuesForLabelName(context.TODO(), x.Name)
+			if err != nil {
+				return nil, err
+			}
+			if x.MatchesEmptyString() {
+				values = append(values, "")
+			}
+			values = x.Filter(values)
+		}
+
+		if len(values) == 0 {
+			return nil, nil
+		}
+
+		new := map[model.Fingerprint]model.Fingerprint{}
+		for fp, fastfp := range merged {
+			for _, v := range values {
+				if v == "" {
+					continue
+				}
+
+				sum := hashAdd(uint64(fp), string(x.Name))
+				sum = hashAddByte(sum, model.SeparatorByte)
+				sum = hashAdd(uint64(sum), string(v))
+				sum = hashAddByte(sum, model.SeparatorByte)
+
+				fastsum := hashNew()
+				fastsum = hashAdd(fastsum, string(x.Name))
+				fastsum = hashAddByte(fastsum, model.SeparatorByte)
+				fastsum = hashAdd(fastsum, string(v))
+
+				new[model.Fingerprint(sum)] = model.Fingerprint(uint64(fastfp) ^ fastsum)
+			}
+		}
+		merged = new
+	}
+	candidateFPs := map[model.Fingerprint]struct{}{}
+	for k, v := range merged {
+		candidateFPs[s.mapper.dirtyMapping(v, k)] = struct{}{}
+	}
+	return candidateFPs, nil
 }
 
 // candidateFPsForLabelMatchers returns candidate FPs for given matchers and remaining matchers to be checked.
@@ -668,9 +764,17 @@ func (s *MemorySeriesStorage) candidateFPsForLabelMatchers(
 
 func (s *MemorySeriesStorage) seriesForLabelMatchers(
 	from, through model.Time,
+	all bool,
 	matchers ...*metric.LabelMatcher,
 ) ([]fingerprintSeriesPair, error) {
-	candidateFPs, matchersToCheck, err := s.candidateFPsForLabelMatchers(matchers...)
+	var candidateFPs map[model.Fingerprint]struct{}
+	var matchersToCheck []*metric.LabelMatcher
+	var err error
+	if all {
+		candidateFPs, err = s.candidateFPsForLabelMatchersAll(matchers...)
+	} else {
+		candidateFPs, matchersToCheck, err = s.candidateFPsForLabelMatchers(matchers...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -881,7 +985,6 @@ func (s *MemorySeriesStorage) Append(sample *model.Sample) error {
 	}
 	s.ingestedSamplesCount.Inc()
 	s.incNumChunksToPersist(completedChunksCount)
-
 	return nil
 }
 
