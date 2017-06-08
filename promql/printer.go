@@ -190,6 +190,7 @@ func (node *MatrixSelector) String() string {
 	vecSelector := &VectorSelector{
 		Name:          node.Name,
 		LabelMatchers: node.LabelMatchers,
+		All:           node.All,
 	}
 	offset := ""
 	if node.Offset != time.Duration(0) {
@@ -232,5 +233,8 @@ func (node *VectorSelector) String() string {
 		return fmt.Sprintf("%s%s", node.Name, offset)
 	}
 	sort.Strings(labelStrings)
+	if node.All {
+		return fmt.Sprintf("%s{{%s}}%s", node.Name, strings.Join(labelStrings, ","), offset)
+	}
 	return fmt.Sprintf("%s{%s}%s", node.Name, strings.Join(labelStrings, ","), offset)
 }
