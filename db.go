@@ -238,6 +238,11 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	return db, nil
 }
 
+// Dir returns the directory of the database.
+func (db *DB) Dir() string {
+	return db.dir
+}
+
 func (db *DB) run() {
 	defer close(db.donec)
 
