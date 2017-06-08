@@ -246,6 +246,24 @@
 			"revisionTime": "2017-01-10T19:26:07Z"
 		},
 		{
+			"checksumSHA1": "OWt4jEmsUkhQtG9qvYoFNkx/Tr8=",
+			"path": "github.com/cockroachdb/cockroach/pkg/util/httputil",
+			"revision": "84bc9597164f671c0130543778228928d6865c5c",
+			"revisionTime": "2017-06-08T03:40:07Z"
+		},
+		{
+			"checksumSHA1": "uIrD5cD2feu1HPTXb6Jrbk2b0Cg=",
+			"path": "github.com/cockroachdb/cockroach/pkg/util/protoutil",
+			"revision": "84bc9597164f671c0130543778228928d6865c5c",
+			"revisionTime": "2017-06-08T03:40:07Z"
+		},
+		{
+			"checksumSHA1": "0E+IpLHsq3BjdMNbzvYhmlB3TVc=",
+			"path": "github.com/cockroachdb/cockroach/pkg/util/syncutil",
+			"revision": "84bc9597164f671c0130543778228928d6865c5c",
+			"revisionTime": "2017-06-08T03:40:07Z"
+		},
+		{
 			"checksumSHA1": "ga3jt9r+dQBMSXG0gnpNcXp2xYA=",
 			"path": "github.com/coreos/etcd/pkg/fileutil",
 			"revision": "b32a8010a7768f3e44eb5ed74e4bebac5106234b",
@@ -431,6 +449,13 @@
 			"path": "github.com/go-stack/stack",
 			"revision": "100eb0c0a9c5b306ca2fb4f165df21d80ada4b82",
 			"revisionTime": "2016-05-14T03:44:11Z"
+		},
+		{
+			"checksumSHA1": "+RHv6D0Db8Yke6G9cxGjEW61viM=",
+			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/gogo/protobuf/jsonpb",
+			"path": "github.com/gogo/protobuf/jsonpb",
+			"revision": "84bc9597164f671c0130543778228928d6865c5c",
+			"revisionTime": "2017-06-08T03:40:07Z"
 		},
 		{
 			"checksumSHA1": "BIyZQL97iG7mzZ2UMR3XpiXbZdc=",
@@ -732,6 +757,13 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "jhWbikPpDRvfqYPOvEbZUXzg7KM=",
+			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/petermattis/goid",
+			"path": "github.com/petermattis/goid",
+			"revision": "84bc9597164f671c0130543778228928d6865c5c",
+			"revisionTime": "2017-06-08T03:40:07Z"
+		},
+		{
 			"checksumSHA1": "ynJSWoF6v+3zMnh9R0QmmG6iGV8=",
 			"path": "github.com/pkg/errors",
 			"revision": "248dadf4e9068a0b3e79f02ed0a610d935de5302",
@@ -799,28 +831,35 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "XXXDHMZe3Y3gosaF/1staHm3INc=",
+			"checksumSHA1": "/qWJSG+McYwP63NuJugtMi4zX3k=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "9963a4c7c3b2a742e00a63c54084b051e3174b06",
-			"revisionTime": "2017-06-12T09:17:49Z"
+			"revision": "a2948f3c5fe49cea7b4258e05cb6eacff6c17a3a",
+			"revisionTime": "2017-06-13T08:11:10Z"
 		},
 		{
 			"checksumSHA1": "9EH3v+JdbikCUJAgD4VEOPIaWfs=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "4f2eb2057ee0a7f2b984503886bff970a9dab1a8",
-			"revisionTime": "2017-05-22T06:49:09Z"
+			"revision": "d4cb579443f1f22b25ff65548197c9f7368e3418",
+			"revisionTime": "2017-06-08T10:14:13Z"
 		},
 		{
 			"checksumSHA1": "3RHZcB/ZvIae9K0tJxNlajJg0jA=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "4f2eb2057ee0a7f2b984503886bff970a9dab1a8",
-			"revisionTime": "2017-05-22T06:49:09Z"
+			"revision": "d4cb579443f1f22b25ff65548197c9f7368e3418",
+			"revisionTime": "2017-06-08T10:14:13Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
 			"path": "github.com/samuel/go-zookeeper/zk",
 			"revision": "1d7be4effb13d2d908342d349d71a284a7542693",
 			"revisionTime": "2016-10-28T23:23:40Z"
+		},
+		{
+			"checksumSHA1": "Tfr8KDPvbtpyhncImGklqZwaAmk=",
+			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/sasha-s/go-deadlock",
+			"path": "github.com/sasha-s/go-deadlock",
+			"revision": "84bc9597164f671c0130543778228928d6865c5c",
+			"revisionTime": "2017-06-08T03:40:07Z"
 		},
 		{
 			"checksumSHA1": "YuPBOVkkE3uuBh4RcRUTF0n+frs=",
