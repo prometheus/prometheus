@@ -58,8 +58,16 @@ func (l *Lock) Lock() error {
 			parts := strings.Split(l.path, "/")
 			pth := ""
 			for _, p := range parts[1:] {
+				var exists bool
 				pth += "/" + p
-				_, err := l.c.Create(pth, []byte{}, 0, l.acl)
+				exists, _, err = l.c.Exists(pth)
+				if err != nil {
+					return err
+				}
+				if exists == true {
+					continue
+				}
+				_, err = l.c.Create(pth, []byte{}, 0, l.acl)
 				if err != nil && err != ErrNodeExists {
 					return err
 				}
@@ -86,7 +94,7 @@ func (l *Lock) Lock() error {
 		}
 
 		lowestSeq := seq
-		prevSeq := 0
+		prevSeq := -1
 		prevSeqPath := ""
 		for _, p := range children {
 			s, err := parseSeq(p)

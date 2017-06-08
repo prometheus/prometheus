@@ -17,9 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
 	"net"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -30,8 +28,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // TargetHealth describes the health state of a target.
@@ -67,44 +65,6 @@ func NewTarget(labels, discoveredLabels labels.Labels, params url.Values) *Targe
 		params:           params,
 		health:           HealthUnknown,
 	}
-}
-
-// NewHTTPClient returns a new HTTP client configured for the given scrape configuration.
-func NewHTTPClient(cfg config.HTTPClientConfig) (*http.Client, error) {
-	tlsConfig, err := httputil.NewTLSConfig(cfg.TLSConfig)
-	if err != nil {
-		return nil, err
-	}
-	// The only timeout we care about is the configured scrape timeout.
-	// It is applied on request. So we leave out any timings here.
-	var rt http.RoundTripper = &http.Transport{
-		Proxy:              http.ProxyURL(cfg.ProxyURL.URL),
-		MaxIdleConns:       10000,
-		TLSClientConfig:    tlsConfig,
-		DisableCompression: true,
-	}
-
-	// If a bearer token is provided, create a round tripper that will set the
-	// Authorization header correctly on each request.
-	bearerToken := cfg.BearerToken
-	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
-		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
-		}
-		bearerToken = strings.TrimSpace(string(b))
-	}
-
-	if len(bearerToken) > 0 {
-		rt = httputil.NewBearerAuthRoundTripper(bearerToken, rt)
-	}
-
-	if cfg.BasicAuth != nil {
-		rt = httputil.NewBasicAuthRoundTripper(cfg.BasicAuth.Username, cfg.BasicAuth.Password, rt)
-	}
-
-	// Return a new client with the configured round tripper.
-	return httputil.NewClient(rt), nil
 }
 
 func (t *Target) String() string {
@@ -228,6 +188,8 @@ func (ts Targets) Len() int           { return len(ts) }
 func (ts Targets) Less(i, j int) bool { return ts[i].URL().String() < ts[j].URL().String() }
 func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 
+var errSampleLimit = errors.New("sample limit exceeded")
+
 // limitAppender limits the number of total appended samples in a batch.
 type limitAppender struct {
 	storage.Appender
@@ -237,26 +199,29 @@ type limitAppender struct {
 }
 
 func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	if app.i+1 > app.limit {
-		return "", fmt.Errorf("sample limit of %d exceeded", app.limit)
+	if !value.IsStaleNaN(v) {
+		app.i++
+		if app.i > app.limit {
+			return "", errSampleLimit
+		}
 	}
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
 		return "", err
 	}
-	app.i++
 	return ref, nil
 }
 
 func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
-	if app.i+1 > app.limit {
-		return fmt.Errorf("sample limit of %d exceeded", app.limit)
+	if !value.IsStaleNaN(v) {
+		app.i++
+		if app.i > app.limit {
+			return errSampleLimit
+		}
 	}
-
 	if err := app.Appender.AddFast(ref, t, v); err != nil {
 		return err
 	}
-	app.i++
 	return nil
 }
 

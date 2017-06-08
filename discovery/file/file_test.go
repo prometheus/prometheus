@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -41,7 +42,7 @@ func testFileSD(t *testing.T, ext string) {
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (
-		fsd         = NewDiscovery(&conf)
+		fsd         = NewDiscovery(&conf, log.Base())
 		ch          = make(chan []*config.TargetGroup)
 		ctx, cancel = context.WithCancel(context.Background())
 	)
@@ -60,7 +61,7 @@ func testFileSD(t *testing.T, ext string) {
 	}
 	defer newf.Close()
 
-	f, err := os.Open("fixtures/target_groups" + ext)
+	f, err := os.Open("fixtures/valid" + ext)
 	if err != nil {
 		t.Fatal(err)
 	}

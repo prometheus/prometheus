@@ -95,8 +95,8 @@ func Main() int {
 	// reloadables = append(reloadables, remoteStorage)
 
 	var (
-		notifier       = notifier.New(&cfg.notifier)
-		targetManager  = retrieval.NewTargetManager(localStorage)
+		notifier       = notifier.New(&cfg.notifier, log.Base())
+		targetManager  = retrieval.NewTargetManager(localStorage, log.Base())
 		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
