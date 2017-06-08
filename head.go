@@ -719,12 +719,7 @@ func (h *HeadBlock) get(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (h *HeadBlock) create(hash uint64, lset labels.Labels) *memSeries {
-	s := &memSeries{
-		lset: lset,
-		ref:  uint32(len(h.series)),
-	}
-	// create the initial chunk and appender
-	s.cut()
+	s := newMemSeries(lset, uint32(len(h.series)), h.meta.MaxTime)
 
 	// Allocate empty space until we can insert at the given index.
 	h.series = append(h.series, s)
@@ -759,15 +754,18 @@ type memSeries struct {
 	lset   labels.Labels
 	chunks []*memChunk
 
+	nextAt    int64 // timestamp at which to cut the next chunk.
+	maxt      int64 // maximum timestamp for the series.
 	lastValue float64
 	sampleBuf [4]sample
 
 	app chunks.Appender // Current appender for the chunk.
 }
 
-func (s *memSeries) cut() *memChunk {
+func (s *memSeries) cut(mint int64) *memChunk {
 	c := &memChunk{
 		chunk:   chunks.NewXORChunk(),
+		minTime: mint,
 		maxTime: math.MinInt64,
 	}
 	s.chunks = append(s.chunks, c)
@@ -776,31 +774,46 @@ func (s *memSeries) cut() *memChunk {
 	if err != nil {
 		panic(err)
 	}
-
 	s.app = app
 	return c
 }
 
+func newMemSeries(lset labels.Labels, id uint32, maxt int64) *memSeries {
+	s := &memSeries{
+		lset:   lset,
+		ref:    id,
+		maxt:   maxt,
+		nextAt: math.MinInt64,
+	}
+	return s
+}
+
 func (s *memSeries) append(t int64, v float64) bool {
+	const samplesPerChunk = 120
+
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	var c *memChunk
 
-	if s.head().samples > 130 {
-		c = s.cut()
-		c.minTime = t
-	} else {
-		c = s.head()
-		// Skip duplicate and out of order samples.
-		if c.maxTime >= t {
-			return false
-		}
+	if len(s.chunks) == 0 {
+		c = s.cut(t)
+	}
+	c = s.head()
+	if c.maxTime >= t {
+		return false
+	}
+	if c.samples > samplesPerChunk/4 && t >= s.nextAt {
+		c = s.cut(t)
 	}
 	s.app.Append(t, v)
 
 	c.maxTime = t
 	c.samples++
+
+	if c.samples == samplesPerChunk/4 {
+		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.maxt)
+	}
 
 	s.lastValue = v
 
@@ -810,6 +823,17 @@ func (s *memSeries) append(t int64, v float64) bool {
 	s.sampleBuf[3] = sample{t: t, v: v}
 
 	return true
+}
+
+// computeChunkEndTime estimates the end timestamp based the beginning of a chunk,
+// its current timestamp and the upper bound up to which we insert data.
+// It assumes that the time range is 1/4 full.
+func computeChunkEndTime(start, cur, max int64) int64 {
+	a := (max - start) / ((cur - start + 1) * 4)
+	if a == 0 {
+		return max
+	}
+	return start + (max-start)/a
 }
 
 func (s *memSeries) iterator(i int) chunks.Iterator {

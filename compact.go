@@ -314,6 +314,8 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 	var metas []BlockMeta
 
 	for i, b := range blocks {
+		metas = append(metas, b.Meta())
+
 		all, err := b.Index().Postings("", "")
 		if err != nil {
 			return nil, err
@@ -328,7 +330,6 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 		if err != nil {
 			return nil, err
 		}
-		metas = append(metas, b.Meta())
 	}
 
 	// We fully rebuild the postings list index from merged series.
