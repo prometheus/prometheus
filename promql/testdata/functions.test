@@ -243,6 +243,11 @@ eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "e
   testmetric{src="a",src1="b",src2="c"} 0
   testmetric{src="d",src1="e",src2="f"} 1
 
+# test without src label for label_join
+eval instant at 0m label_join(testmetric, "dst", ", ")
+	  testmetric{src="a",src1="b",src2="c"} 0
+	  testmetric{src="d",src1="e",src2="f"} 1
+
 # test without dst label for label_join
 load 5m
   testmetric1{src="foo",src1="bar",src2="foobar"} 0

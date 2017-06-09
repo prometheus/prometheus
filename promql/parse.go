@@ -1086,15 +1086,21 @@ func (p *parser) checkType(node Node) (typ model.ValueType) {
 
 	case *Call:
 		nargs := len(n.Func.ArgTypes)
-		if na := nargs - n.Func.Variadic; n.Func.Variadic >= 0 && na > len(n.Args) {
-			p.errorf("expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
+		if n.Func.Variadic == 0 {
+			if nargs > len(n.Args) {
+				p.errorf("expected at least %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
+			} else if nargs < len(n.Args) {
+				p.errorf("expected at most %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
+			}
+		} else {
+			na := nargs - 1
+			if na > len(n.Args) {
+				p.errorf("expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
+			} else if nargsmax := na + n.Func.Variadic; n.Func.Variadic > 0 && nargsmax < len(n.Args) {
+				p.errorf("expected at most %d argument(s) in call to %q, got %d", nargsmax, n.Func.Name, len(n.Args))
+			}
 		}
-		if n.Func.Variadic >= 0 && nargs < len(n.Args) {
-			p.errorf("expected at most %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
-		}
-		if n.Func.Variadic < 0 && nargs > len(n.Args)+1 {
-			p.errorf("expected at least %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
-		}
+
 		for i, arg := range n.Args {
 			if i >= len(n.Func.ArgTypes) {
 				i = len(n.Func.ArgTypes) - 1
