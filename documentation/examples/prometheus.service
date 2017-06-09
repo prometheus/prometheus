@@ -1,0 +1,41 @@
+[Unit]
+Description=Monitoring system and time series database
+Documentation=https://prometheus.io/docs/introduction/overview/
+
+[Service]
+Restart=always
+User=prometheus
+Group=prometheus
+EnvironmentFile=/etc/default/prometheus
+ExecStart=/usr/bin/prometheus $ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=30s
+SendSIGKILL=no
+
+WorkingDirectory=/var/lib/prometheus
+
+# Hardening
+SystemCallFilter=~@clock,~@cpu-emulation,~@debug,~@ipc,~@keyring,~@module
+SystemCallFilter=~@mount,~@obsolete,~@privileged,~@raw-io,~@reboot
+SystemCallFilter=~@resources,~@swap
+
+NoNewPrivileges=true
+PermissionsStartOnly=true
+CapabilityBoundingSet=
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+ReadOnlyDirectories=/
+ReadWriteDirectories=/proc/self
+ReadWriteDirectories=/var/lib/prometheus
+
+StandardOutput=syslog+console
+StandardError=syslog+console
+
+[Install]
+WantedBy=multi-user.target
