@@ -80,10 +80,12 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 
 // Next advances the iterator to the next element.
 func (b *BufferedSeriesIterator) Next() bool {
-	// Add current element to buffer before advancing.
-	if !b.done {
-		b.buf.add(b.it.At())
+	if b.done {
+		return false
 	}
+
+	// Add current element to buffer before advancing.
+	b.buf.add(b.it.At())
 
 	ok := b.it.Next()
 	if ok {
