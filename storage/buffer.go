@@ -61,6 +61,7 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 
 		ok := b.it.Seek(t0)
 		if !ok {
+			b.done = true
 			return false
 		}
 		b.lastTime, _ = b.Values()
