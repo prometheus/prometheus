@@ -253,12 +253,22 @@ load 10s
 		{
 			Query: "metric",
 			Result: Matrix{Series{
-				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 2, T: 2000}},
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
 				Metric: labels.FromStrings("__name__", "metric")},
 			},
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(2, 0),
 			Interval: time.Second,
+		},
+		{
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
 		},
 	}
 
