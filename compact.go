@@ -300,6 +300,8 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "sync block dir")
 	}
+	defer df.Close()
+
 	if err := fileutil.Fsync(df); err != nil {
 		return errors.Wrap(err, "sync block dir")
 	}
@@ -583,6 +585,8 @@ func renameFile(from, to string) error {
 	if err != nil {
 		return err
 	}
+	defer pdir.Close()
+
 	if err = fileutil.Fsync(pdir); err != nil {
 		return err
 	}

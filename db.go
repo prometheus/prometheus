@@ -386,6 +386,8 @@ func retentionCutoff(dir string, mint int64) (bool, error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "open directory")
 	}
+	defer df.Close()
+
 	dirs, err := blockDirs(dir)
 	if err != nil {
 		return false, errors.Wrapf(err, "list block dirs %s", dir)
