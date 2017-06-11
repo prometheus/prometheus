@@ -197,7 +197,7 @@ func TestHandlerSendAll(t *testing.T) {
 }
 
 func TestCustomDo(t *testing.T) {
-	const testURL = "http://testurl.com/"
+	const testURL = "http://testurl.com:80/"
 	const testBody = "testbody"
 
 	var received bool
