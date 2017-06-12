@@ -46,8 +46,9 @@ func (g *RuleGroups) Validate() (errs []error) {
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name  string `json:"name"`
-	Rules []Rule `json:"rules"`
+	Name     string `json:"name"`
+	Interval string `json:"interval"`
+	Rules    []Rule `json:"rules"`
 }
 
 // Rule describes an alerting or recording rule.
