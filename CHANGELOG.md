@@ -1,3 +1,7 @@
+## 1.7.1 / 2017-06-12
+
+* [BUGFIX] Fix double prefix redirect.
+
 ## 1.7.0 / 2017-06-06
 
 * [CHANGE] Compress remote storage requests and responses with unframed/raw snappy.
