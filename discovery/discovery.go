@@ -140,10 +140,15 @@ type StaticProvider struct {
 // NewStaticProvider returns a StaticProvider configured with the given
 // target groups.
 func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
+	gps := make([]*config.TargetGroup, len(groups))
 	for i, tg := range groups {
-		tg.Source = fmt.Sprintf("%d", i)
+		gps = append(gps, &config.TargetGroup{
+			Targets: tg.Targets,
+			Labels:  tg.Labels,
+			Source:  fmt.Sprintf("%d", i),
+		})
 	}
-	return &StaticProvider{groups}
+	return &StaticProvider{gps}
 }
 
 // Run implements the TargetProvider interface.
