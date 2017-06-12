@@ -529,8 +529,8 @@ func (a *headAppender) createSeries() error {
 	base0 := len(a.series)
 
 	a.mtx.RUnlock()
-	a.mtx.Lock()
 	defer a.mtx.RLock()
+	a.mtx.Lock()
 	defer a.mtx.Unlock()
 
 	base1 := len(a.series)
