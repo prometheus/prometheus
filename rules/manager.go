@@ -15,7 +15,6 @@ package rules
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"path/filepath"
@@ -32,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
@@ -270,18 +270,10 @@ func typeForRule(r Rule) ruleType {
 // In the future a single group will be evaluated sequentially to properly handle
 // rule dependency.
 func (g *Group) Eval(ts time.Time) {
-	var (
-		wg sync.WaitGroup
-	)
-
 	for i, rule := range g.rules {
 		rtyp := string(typeForRule(rule))
 
-		wg.Add(1)
-		// BUG(julius): Look at fixing thundering herd.
-		go func(i int, rule Rule) {
-			defer wg.Done()
-
+		func(i int, rule Rule) {
 			defer func(t time.Time) {
 				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
 			}(time.Now())
@@ -358,7 +350,6 @@ func (g *Group) Eval(ts time.Time) {
 			}
 		}(i, rule)
 	}
-	wg.Wait()
 }
 
 // sendAlerts sends alert notifications for the given rule.
@@ -506,38 +497,59 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
 func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, error) {
-	rules := []Rule{}
+	groups := make(map[string]*Group)
+
 	for _, fn := range filenames {
-		content, err := ioutil.ReadFile(fn)
+		rgs, err := rulefmt.ParseFile(fn)
 		if err != nil {
-			return nil, err
-		}
-		stmts, err := promql.ParseStmts(string(content))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing %s: %s", fn, err)
+			// TODO(gouthamve): Use multi-error?
+			return nil, err[0]
 		}
 
-		for _, stmt := range stmts {
-			var rule Rule
+		for _, rg := range rgs.Groups {
+			itv := interval
+			if rg.Interval != "" {
+				dur, err := model.ParseDuration(rg.Interval)
+				if err != nil {
+					return nil, err
+				}
 
-			switch r := stmt.(type) {
-			case *promql.AlertStmt:
-				rule = NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Annotations)
-
-			case *promql.RecordStmt:
-				rule = NewRecordingRule(r.Name, r.Expr, r.Labels)
-
-			default:
-				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
+				itv = time.Duration(dur)
 			}
-			rules = append(rules, rule)
+
+			rules := make([]Rule, len(rg.Rules), 0)
+			for _, r := range rg.Rules {
+				expr, err := promql.ParseExpr(r.Expr)
+				if err != nil {
+					return nil, err
+				}
+
+				if r.Alert != "" {
+					fordur, err := model.ParseDuration(r.For)
+					if err != nil {
+						return nil, err
+					}
+
+					rules = append(rules, NewAlertingRule(
+						r.Alert,
+						expr,
+						time.Duration(fordur),
+						labels.FromMap(r.Labels),
+						labels.FromMap(r.Annotations),
+					))
+					continue
+				}
+				rules = append(rules, NewRecordingRule(
+					r.Record,
+					expr,
+					labels.FromMap(r.Labels),
+				))
+			}
+
+			groups[rg.Name] = NewGroup(rg.Name, itv, rules, m.opts)
 		}
 	}
 
-	// Currently there is no group syntax implemented. Thus all rules
-	// are read into a single default group.
-	g := NewGroup("default", interval, rules, m.opts)
-	groups := map[string]*Group{g.name: g}
 	return groups, nil
 }
 
