@@ -1027,6 +1027,22 @@ func TestSeriesIterator(t *testing.T) {
 	return
 }
 
+// Regression for: https://github.com/prometheus/tsdb/pull/97
+func TestCSIteratorDoubleSeek(t *testing.T) {
+	chkMetas := []*ChunkMeta{
+		chunkFromSamples([]sample{}),
+		chunkFromSamples([]sample{{1, 1}, {2, 2}, {3, 3}}),
+		chunkFromSamples([]sample{{4, 4}, {5, 5}}),
+	}
+
+	res := newChunkSeriesIterator(chkMetas, nil, 2, 8)
+	require.True(t, res.Seek(1))
+	require.True(t, res.Seek(2))
+	ts, v := res.At()
+	require.Equal(t, int64(2), ts)
+	require.Equal(t, float64(2), v)
+}
+
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
 	chunkMetas := [][]*ChunkMeta{
