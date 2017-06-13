@@ -51,4 +51,4 @@ spec:
               path: prometheus.yml
       - name: host-volume
         hostPath:
-        path: /home/lincai/prometheus/documentation/examples
+          path: /home/lincai/prometheus/documentation/examples
