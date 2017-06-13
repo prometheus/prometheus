@@ -9,12 +9,11 @@ metadata:
 spec:
   selector:
     app: prometheus
-  type: NodePort
   ports:
   - name: prometheus
     protocol: TCP
     port: 9090
-    nodePort: 30900
+
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
