@@ -119,16 +119,49 @@ type DB struct {
 	compactc chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
+
+	// cmtx is used to control compactions and deletions.
+	cmtx       sync.Mutex
+	compacting bool
 }
 
 type dbMetrics struct {
+	activeAppenders      prometheus.Gauge
+	loadedBlocks         prometheus.GaugeFunc
+	reloads              prometheus.Counter
+	reloadsFailed        prometheus.Counter
+	reloadDuration       prometheus.Summary
 	samplesAppended      prometheus.Counter
 	compactionsTriggered prometheus.Counter
 }
 
-func newDBMetrics(r prometheus.Registerer) *dbMetrics {
+func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m := &dbMetrics{}
 
+	m.activeAppenders = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "tsdb_active_appenders",
+		Help: "Number of currently active appender transactions",
+	})
+	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "tsdb_blocks_loaded",
+		Help: "Number of currently loaded data blocks",
+	}, func() float64 {
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		return float64(len(db.blocks))
+	})
+	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_reloads_total",
+		Help: "Number of times the database reloaded block data from disk.",
+	})
+	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_reloads_failures_total",
+		Help: "Number of times the database failed to reload black data from disk.",
+	})
+	m.reloadDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "tsdb_reload_duration_seconds",
+		Help: "Duration of block reloads.",
+	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "tsdb_samples_appended_total",
 		Help: "Total number of appended sampledb.",
@@ -140,6 +173,11 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 
 	if r != nil {
 		r.MustRegister(
+			m.activeAppenders,
+			m.loadedBlocks,
+			m.reloads,
+			m.reloadsFailed,
+			m.reloadDuration,
 			m.samplesAppended,
 			m.compactionsTriggered,
 		)
@@ -163,14 +201,16 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 
 	db = &DB{
-		dir:      dir,
-		logger:   l,
-		metrics:  newDBMetrics(r),
-		opts:     opts,
-		compactc: make(chan struct{}, 1),
-		donec:    make(chan struct{}),
-		stopc:    make(chan struct{}),
+		dir:        dir,
+		logger:     l,
+		opts:       opts,
+		compactc:   make(chan struct{}, 1),
+		donec:      make(chan struct{}),
+		stopc:      make(chan struct{}),
+		compacting: true,
 	}
+	db.metrics = newDBMetrics(db, r)
+
 	if !opts.NoLockfile {
 		absdir, err := filepath.Abs(dir)
 		if err != nil {
@@ -196,6 +236,11 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	go db.run()
 
 	return db, nil
+}
+
+// Dir returns the directory of the database.
+func (db *DB) Dir() string {
+	return db.dir
 }
 
 func (db *DB) run() {
@@ -261,6 +306,9 @@ func (db *DB) retentionCutoff() (bool, error) {
 }
 
 func (db *DB) compact() (changes bool, err error) {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
 	db.headmtx.RLock()
 
 	// Check whether we have pending head blocks that are ready to be persisted.
@@ -338,6 +386,8 @@ func retentionCutoff(dir string, mint int64) (bool, error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "open directory")
 	}
+	defer df.Close()
+
 	dirs, err := blockDirs(dir)
 	if err != nil {
 		return false, errors.Wrapf(err, "list block dirs %s", dir)
@@ -374,7 +424,15 @@ func (db *DB) getBlock(id ulid.ULID) (Block, bool) {
 	return nil, false
 }
 
-func (db *DB) reloadBlocks() error {
+func (db *DB) reloadBlocks() (err error) {
+	defer func(t time.Time) {
+		if err != nil {
+			db.metrics.reloadsFailed.Inc()
+		}
+		db.metrics.reloads.Inc()
+		db.metrics.reloadDuration.Observe(time.Since(t).Seconds())
+	}(time.Now())
+
 	var cs []io.Closer
 	defer func() { closeAll(cs...) }()
 
@@ -418,6 +476,7 @@ func (db *DB) reloadBlocks() error {
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
 	}
+
 	// Close all opened blocks that no longer exist after we returned all locks.
 	for _, b := range db.blocks {
 		if _, ok := exist[b.Meta().ULID]; !ok {
@@ -447,7 +506,7 @@ func validateBlockSequence(bs []Block) error {
 	prev := bs[0]
 	for _, b := range bs[1:] {
 		if b.Meta().MinTime < prev.Meta().MaxTime {
-			return errors.Errorf("block time ranges overlap", b.Meta().MinTime, prev.Meta().MaxTime)
+			return errors.Errorf("block time ranges overlap (%d, %d)", b.Meta().MinTime, prev.Meta().MaxTime)
 		}
 	}
 	return nil
@@ -478,8 +537,47 @@ func (db *DB) Close() error {
 	return merr.Err()
 }
 
+// DisableCompactions disables compactions.
+func (db *DB) DisableCompactions() {
+	if db.compacting {
+		db.cmtx.Lock()
+		db.compacting = false
+		db.logger.Log("msg", "compactions disabled")
+	}
+}
+
+// EnableCompactions enables compactions.
+func (db *DB) EnableCompactions() {
+	if !db.compacting {
+		db.cmtx.Unlock()
+		db.compacting = true
+		db.logger.Log("msg", "compactions enabled")
+	}
+}
+
+// Snapshot writes the current data to the directory.
+func (db *DB) Snapshot(dir string) error {
+	db.mtx.Lock() // To block any appenders.
+	defer db.mtx.Unlock()
+
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	blocks := db.blocks[:]
+	for _, b := range blocks {
+		db.logger.Log("msg", "snapshotting block", "block", b)
+		if err := b.Snapshot(dir); err != nil {
+			return errors.Wrap(err, "error snapshotting headblock")
+		}
+	}
+
+	return nil
+}
+
 // Appender returns a new Appender on the database.
 func (db *DB) Appender() Appender {
+	db.metrics.activeAppenders.Inc()
+
 	db.mtx.RLock()
 	return &dbAppender{db: db}
 }
@@ -619,6 +717,7 @@ func (db *DB) ensureHead(t int64) error {
 }
 
 func (a *dbAppender) Commit() error {
+	defer a.db.metrics.activeAppenders.Dec()
 	defer a.db.mtx.RUnlock()
 
 	// Commits to partial appenders must be concurrent as concurrent appenders
@@ -649,6 +748,7 @@ func (a *dbAppender) Commit() error {
 }
 
 func (a *dbAppender) Rollback() error {
+	defer a.db.metrics.activeAppenders.Dec()
 	defer a.db.mtx.RUnlock()
 
 	var g errgroup.Group
@@ -658,6 +758,30 @@ func (a *dbAppender) Rollback() error {
 	}
 
 	return g.Wait()
+}
+
+// Delete implements deletion of metrics.
+func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
+	blocks := db.blocksForInterval(mint, maxt)
+
+	var g errgroup.Group
+
+	for _, b := range blocks {
+		g.Go(func(b Block) func() error {
+			return func() error { return b.Delete(mint, maxt, ms...) }
+		}(b))
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // appendable returns a copy of a slice of HeadBlocks that can still be appended to.
@@ -673,13 +797,8 @@ func (db *DB) appendable() (r []headBlock) {
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	if bmin >= amin && bmin <= amax {
-		return true
-	}
-	if amin >= bmin && amin <= bmax {
-		return true
-	}
-	return false
+	// Checks Overlap: http://stackoverflow.com/questions/3269434/
+	return amin <= bmax && bmin <= amax
 }
 
 func intervalContains(min, max, t int64) bool {
