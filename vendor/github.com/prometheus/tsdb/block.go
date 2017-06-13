@@ -1,4 +1,5 @@
 // Copyright 2017 The Prometheus Authors
+
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,6 +22,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // DiskBlock handles reads against a Block of time series data.
@@ -37,6 +39,12 @@ type DiskBlock interface {
 	// Chunks returns a ChunkReader over the block's data.
 	Chunks() ChunkReader
 
+	// Tombstones returns a TombstoneReader over the block's deleted data.
+	Tombstones() TombstoneReader
+
+	// Delete deletes data from the block.
+	Delete(mint, maxt int64, ms ...labels.Matcher) error
+
 	// Close releases all underlying resources of the block.
 	Close() error
 }
@@ -45,12 +53,18 @@ type DiskBlock interface {
 type Block interface {
 	DiskBlock
 	Queryable
+	Snapshottable
 }
 
 // headBlock is a regular block that can still be appended to.
 type headBlock interface {
 	Block
 	Appendable
+}
+
+// Snapshottable defines an entity that can be backedup online.
+type Snapshottable interface {
+	Snapshot(dir string) error
 }
 
 // Appendable defines an entity to which data can be appended.
@@ -78,16 +92,27 @@ type BlockMeta struct {
 	MaxTime int64 `json:"maxTime"`
 
 	// Stats about the contents of the block.
-	Stats struct {
-		NumSamples uint64 `json:"numSamples,omitempty"`
-		NumSeries  uint64 `json:"numSeries,omitempty"`
-		NumChunks  uint64 `json:"numChunks,omitempty"`
-	} `json:"stats,omitempty"`
+	Stats BlockStats `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.
-	Compaction struct {
-		Generation int `json:"generation"`
-	} `json:"compaction"`
+	Compaction BlockMetaCompaction `json:"compaction"`
+}
+
+// BlockStats contains stats about contents of a block.
+type BlockStats struct {
+	NumSamples    uint64 `json:"numSamples,omitempty"`
+	NumSeries     uint64 `json:"numSeries,omitempty"`
+	NumChunks     uint64 `json:"numChunks,omitempty"`
+	NumTombstones uint64 `json:"numTombstones,omitempty"`
+}
+
+// BlockMetaCompaction holds information about compactions a block went through.
+type BlockMetaCompaction struct {
+	// Maximum number of compaction cycles any source block has
+	// gone through.
+	Generation int `json:"generation"`
+	// ULIDs of all source head blocks that went into the block.
+	Sources []ulid.ULID `json:"sources,omitempty"`
 }
 
 const (
@@ -136,7 +161,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	var merr MultiError
 	if merr.Add(enc.Encode(&blockMeta{Version: 1, BlockMeta: meta})); merr.Err() != nil {
 		merr.Add(f.Close())
-		return merr
+		return merr.Err()
 	}
 	if err := f.Close(); err != nil {
 		return err
@@ -150,6 +175,8 @@ type persistedBlock struct {
 
 	chunkr *chunkReader
 	indexr *indexReader
+
+	tombstones tombstoneReader
 }
 
 func newPersistedBlock(dir string) (*persistedBlock, error) {
@@ -167,11 +194,17 @@ func newPersistedBlock(dir string) (*persistedBlock, error) {
 		return nil, err
 	}
 
+	tr, err := readTombstones(dir)
+	if err != nil {
+		return nil, err
+	}
+
 	pb := &persistedBlock{
-		dir:    dir,
-		meta:   *meta,
-		chunkr: cr,
-		indexr: ir,
+		dir:        dir,
+		meta:       *meta,
+		chunkr:     cr,
+		indexr:     ir,
+		tombstones: tr,
 	}
 	return pb, nil
 }
@@ -191,20 +224,123 @@ func (pb *persistedBlock) String() string {
 
 func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
 	return &blockQuerier{
-		mint:   mint,
-		maxt:   maxt,
-		index:  pb.Index(),
-		chunks: pb.Chunks(),
+		mint:       mint,
+		maxt:       maxt,
+		index:      pb.Index(),
+		chunks:     pb.Chunks(),
+		tombstones: pb.Tombstones(),
 	}
 }
 
 func (pb *persistedBlock) Dir() string         { return pb.dir }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
-func (pb *persistedBlock) Meta() BlockMeta     { return pb.meta }
+func (pb *persistedBlock) Tombstones() TombstoneReader {
+	return pb.tombstones
+}
+func (pb *persistedBlock) Meta() BlockMeta { return pb.meta }
+
+func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	pr := newPostingsReader(pb.indexr)
+	p, absent := pr.Select(ms...)
+
+	ir := pb.indexr
+
+	// Choose only valid postings which have chunks in the time-range.
+	stones := map[uint32]intervals{}
+
+Outer:
+	for p.Next() {
+		lset, chunks, err := ir.Series(p.At())
+		if err != nil {
+			return err
+		}
+
+		for _, abs := range absent {
+			if lset.Get(abs) != "" {
+				continue Outer
+			}
+		}
+
+		for _, chk := range chunks {
+			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
+				// Delete only until the current vlaues and not beyond.
+				tmin, tmax := clampInterval(mint, maxt, chunks[0].MinTime, chunks[len(chunks)-1].MaxTime)
+				stones[p.At()] = intervals{{tmin, tmax}}
+				continue Outer
+			}
+		}
+	}
+
+	if p.Err() != nil {
+		return p.Err()
+	}
+
+	// Merge the current and new tombstones.
+	for k, v := range stones {
+		pb.tombstones.add(k, v[0])
+	}
+
+	if err := writeTombstoneFile(pb.dir, pb.tombstones); err != nil {
+		return err
+	}
+
+	pb.meta.Stats.NumTombstones = uint64(len(pb.tombstones))
+	return writeMetaFile(pb.dir, &pb.meta)
+}
+
+func (pb *persistedBlock) Snapshot(dir string) error {
+	blockDir := filepath.Join(dir, pb.meta.ULID.String())
+	if err := os.MkdirAll(blockDir, 0777); err != nil {
+		return errors.Wrap(err, "create snapshot block dir")
+	}
+
+	chunksDir := chunkDir(blockDir)
+	if err := os.MkdirAll(chunksDir, 0777); err != nil {
+		return errors.Wrap(err, "create snapshot chunk dir")
+	}
+
+	// Hardlink meta, index and tombstones
+	for _, fname := range []string{
+		metaFilename,
+		indexFilename,
+		tombstoneFilename,
+	} {
+		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
+			return errors.Wrapf(err, "create snapshot %s", fname)
+		}
+	}
+
+	// Hardlink the chunks
+	curChunkDir := chunkDir(pb.dir)
+	files, err := ioutil.ReadDir(curChunkDir)
+	if err != nil {
+		return errors.Wrap(err, "ReadDir the current chunk dir")
+	}
+
+	for _, f := range files {
+		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
+		if err != nil {
+			return errors.Wrap(err, "hardlink a chunk")
+		}
+	}
+
+	return nil
+}
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 func walDir(dir string) string   { return filepath.Join(dir, "wal") }
+
+func clampInterval(a, b, mint, maxt int64) (int64, int64) {
+	if a < mint {
+		a = mint
+	}
+	if b > maxt {
+		b = maxt
+	}
+
+	return a, b
+}
 
 type mmapFile struct {
 	f *os.File
