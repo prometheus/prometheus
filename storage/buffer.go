@@ -13,7 +13,9 @@
 
 package storage
 
-import "math"
+import (
+	"math"
+)
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
@@ -21,6 +23,7 @@ type BufferedSeriesIterator struct {
 	buf *sampleRing
 
 	lastTime int64
+	ok       bool
 }
 
 // NewBuffer returns a new iterator that buffers the values within the time range
@@ -30,6 +33,7 @@ func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 		it:       it,
 		buf:      newSampleRing(delta, 16),
 		lastTime: math.MinInt64,
+		ok:       true,
 	}
 	it.Next()
 
@@ -56,8 +60,8 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	if t0 > b.lastTime {
 		b.buf.reset()
 
-		ok := b.it.Seek(t0)
-		if !ok {
+		b.ok = b.it.Seek(t0)
+		if !b.ok {
 			return false
 		}
 		b.lastTime, _ = b.Values()
@@ -77,14 +81,19 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 
 // Next advances the iterator to the next element.
 func (b *BufferedSeriesIterator) Next() bool {
+	if !b.ok {
+		return false
+	}
+
 	// Add current element to buffer before advancing.
 	b.buf.add(b.it.At())
 
-	ok := b.it.Next()
-	if ok {
+	b.ok = b.it.Next()
+	if b.ok {
 		b.lastTime, _ = b.Values()
 	}
-	return ok
+
+	return b.ok
 }
 
 // Values returns the current element of the iterator.
