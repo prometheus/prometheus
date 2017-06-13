@@ -358,33 +358,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
-	r.ParseForm()
-	if len(r.Form["match[]"]) == 0 {
-		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
-	}
-
-	// TODO(fabxc): temporarily disabled
-	return nil, &apiError{errorExec, fmt.Errorf("temporarily disabled")}
-
-	// numDeleted := 0
-	// for _, s := range r.Form["match[]"] {
-	// 	matchers, err := promql.ParseMetricSelector(s)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorBadData, err}
-	// 	}
-	// 	n, err := api.Storage.DropMetricsForLabelMatchers(context.TODO(), matchers...)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorExec, err}
-	// 	}
-	// 	numDeleted += n
-	// }
-
-	// res := struct {
-	// 	NumDeleted int `json:"numDeleted"`
-	// }{
-	// 	NumDeleted: numDeleted,
-	// }
-	// return res, nil
+	return nil, &apiError{errorExec, fmt.Errorf("use /api/v2/admin/delete instead")}
 }
 
 // Target has the information for one target.

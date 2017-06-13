@@ -400,51 +400,8 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			endpoint: api.dropSeries,
-			errType:  errorBadData,
+			errType:  errorExec,
 		},
-		// The following tests delete time series from the test storage. They
-		// must remain at the end and are fixed in their order.
-		// {
-		// 	endpoint: api.dropSeries,
-		// 	query: url.Values{
-		// 		"match[]": []string{`test_metric1{foo=~".+o"}`},
-		// 	},
-		// 	response: struct {
-		// 		NumDeleted int `json:"numDeleted"`
-		// 	}{1},
-		// },
-		// {
-		// 	endpoint: api.series,
-		// 	query: url.Values{
-		// 		"match[]": []string{`test_metric1`},
-		// 	},
-		// 	response: []model.Metric{
-		// 		{
-		// 			"__name__": "test_metric1",
-		// 			"foo":      "bar",
-		// 		},
-		// 	},
-		// }, {
-		// 	endpoint: api.dropSeries,
-		// 	query: url.Values{
-		// 		"match[]": []string{`{__name__=~".+"}`},
-		// 	},
-		// 	response: struct {
-		// 		NumDeleted int `json:"numDeleted"`
-		// 	}{2},
-		// }, {
-		// 	endpoint: api.targets,
-		// 	response: &TargetDiscovery{
-		// 		ActiveTargets: []*Target{
-		// 			{
-		// 				DiscoveredLabels: model.LabelSet{},
-		// 				Labels:           model.LabelSet{},
-		// 				ScrapeURL:        "http://example.com:8080/metrics",
-		// 				Health:           "unknown",
-		// 			},
-		// 		},
-		// 	},
-		// },
 		{
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{

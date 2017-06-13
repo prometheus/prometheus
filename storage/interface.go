@@ -34,6 +34,9 @@ type Storage interface {
 	// Appender returns a new appender against the storage.
 	Appender() (Appender, error)
 
+	// Delete deletes the seleted metrics from storage.
+	Delete(mint, maxt int64, ms ...*labels.Matcher) error
+
 	// Close closes the storage and all its underlying resources.
 	Close() error
 }
