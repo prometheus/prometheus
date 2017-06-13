@@ -43,12 +43,6 @@ spec:
         - name: host-volume
           mountPath: /etc/prometheus
       volumes:
-      - name: config-volume
-        configMap:
-          name: prometheus
-          items:
-            - key: prometheus-kubernetes.yml
-              path: prometheus.yml
       - name: host-volume
         hostPath:
           path: /home/lincai/prometheus/documentation/examples
