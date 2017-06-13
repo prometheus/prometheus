@@ -35,12 +35,12 @@ spec:
       - name: prometheus
         image: prometheus:travis
         args:
-          - '-config.file=/etc/prometheus/prometheus.yml'
+          - '-config.file=/etc/prometheus/prometheus-kubernetes.yml'
         ports:
         - name: web
           containerPort: 9090
         volumeMounts:
-        - name: config-volume
+        - name: host-volume
           mountPath: /etc/prometheus
       volumes:
       - name: config-volume
@@ -49,3 +49,6 @@ spec:
           items:
             - key: prometheus-kubernetes.yml
               path: prometheus.yml
+      - name: host-volume
+        hostPath:
+        path: /home/lincai/prometheus/documentation/examples
