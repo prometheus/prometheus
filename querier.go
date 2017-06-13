@@ -661,10 +661,6 @@ func newChunkSeriesIterator(cs []*ChunkMeta, dranges intervals, mint, maxt int64
 	}
 }
 
-func (it *chunkSeriesIterator) inBounds(t int64) bool {
-	return t >= it.mint && t <= it.maxt
-}
-
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	if t > it.maxt {
 		return false
@@ -677,7 +673,9 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 
 	// Only do binary search forward to stay in line with other iterators
 	// that can only move forward.
-	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool { return it.chunks[i].MinTime >= t })
+	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool {
+		return it.chunks[it.i+i].MinTime >= t
+	})
 	x += it.i
 
 	// If the timestamp was not found, it might be in the last chunk.
@@ -712,9 +710,15 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 func (it *chunkSeriesIterator) Next() bool {
 	for it.cur.Next() {
 		t, _ := it.cur.At()
-		if it.inBounds(t) {
-			return true
+		if t < it.mint {
+			return it.Seek(it.mint)
 		}
+
+		if t > it.maxt {
+			return false
+		}
+
+		return true
 	}
 
 	if err := it.cur.Err(); err != nil {
