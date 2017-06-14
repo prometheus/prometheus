@@ -9,11 +9,12 @@ metadata:
 spec:
   selector:
     app: prometheus
+  type: NodePort
   ports:
   - name: prometheus
     protocol: TCP
     port: 9090
-
+    nodePort: 30900
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -34,14 +35,14 @@ spec:
       - name: prometheus
         image: prometheus:travis
         args:
-          - '-config.file=/etc/prometheus/prometheus-kubernetes.yml'
+          - '-config.file=/etc/prometheus/prometheus.yml'
         ports:
         - name: web
           containerPort: 9090
         volumeMounts:
-        - name: host-volume
+        - name: config-volume
           mountPath: /etc/prometheus
       volumes:
-      - name: host-volume
-        hostPath:
-          path: /home/lincai/prometheus/documentation/examples
+      - name: config-volume
+        configMap:
+          name: prometheus
