@@ -57,6 +57,14 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "noexpr.bad.yaml",
 			errMsg:   "field 'expr' must be set in rule",
 		},
+		{
+			filename: "bad_lname.bad.yaml",
+			errMsg:   "invalid label name",
+		},
+		{
+			filename: "bad_annotation.bad.yaml",
+			errMsg:   "invalid annotation name",
+		},
 	}
 
 	for _, c := range table {

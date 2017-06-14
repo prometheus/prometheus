@@ -18,6 +18,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -111,6 +112,23 @@ func (r *Rule) Validate() (errs []error) {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
 		}
 	}
+
+	for k, v := range r.Labels {
+		if !model.LabelName(k).IsValid() {
+			errs = append(errs, errors.Errorf("invalid label name: %s", k))
+		}
+
+		if !model.LabelValue(v).IsValid() {
+			errs = append(errs, errors.Errorf("invalid label value: %s", v))
+		}
+	}
+
+	for k := range r.Annotations {
+		if !model.LabelName(k).IsValid() {
+			errs = append(errs, errors.Errorf("invalid annotation name: %s", k))
+		}
+	}
+
 	return errs
 }
 

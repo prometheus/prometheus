@@ -6,7 +6,8 @@ groups:
   - alert: HighErrors
     expr: |
       sum without(instance) (rate(errors_total[5m]))
-      / sum without(instance) (rate(requests_total[5m]))
+      / 
+      sum without(instance) (rate(requests_total[5m]))
     for: 5m
     labels:
       severity: critical
@@ -17,7 +18,8 @@ groups:
   - record: "new_metric"
     expr: |
       sum without(instance) (rate(errors_total[5m]))
-      / sum without(instance) (rate(requests_total[5m]))
+      / 
+      sum without(instance) (rate(requests_total[5m]))
     labels:
       abc: edf
       uvw: xyz
@@ -25,7 +27,8 @@ groups:
   - alert: HighErrors
     expr: | 
       sum without(instance) (rate(errors_total[5m]))
-      / sum without(instance) (rate(requests_total[5m]))
+      / 
+      sum without(instance) (rate(requests_total[5m]))
     for: 5m
     labels:
       severity: critical
@@ -38,7 +41,8 @@ groups:
   - alert: HighErrors
     expr: | 
       sum without(instance) (rate(errors_total[5m]))
-      / sum without(instance) (rate(requests_total[5m]))
+      / 
+      sum without(instance) (rate(requests_total[5m]))
     for: 5m
     labels:
       severity: critical
@@ -46,12 +50,14 @@ groups:
   - record: "new_metric"
     expr: |
       sum without(instance) (rate(errors_total[5m]))
-      / sum without(instance) (rate(requests_total[5m]))
+      / 
+      sum without(instance) (rate(requests_total[5m]))
 
   - alert: HighErrors
     expr: | 
       sum without(instance) (rate(errors_total[5m]))
-      / sum without(instance) (rate(requests_total[5m]))
+      / 
+      sum without(instance) (rate(requests_total[5m]))
     for: 5m
     labels:
       severity: critical
