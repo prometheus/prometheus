@@ -32,7 +32,7 @@ groups:
     annotations:
       description: "stuff's happening with {{ $.labels.service }}"
       
-- name: my-group-name
+- name: my-another-name
   interval: 30s   # defaults to global interval
   rules:
   - alert: HighErrors

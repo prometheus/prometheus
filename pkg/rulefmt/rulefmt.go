@@ -33,6 +33,10 @@ func (g *RuleGroups) Validate() (errs []error) {
 	set := map[string]struct{}{}
 
 	for _, g := range g.Groups {
+		if g.Name == "" {
+			errs = append(errs, errors.Errorf("Groupname should not be empty"))
+		}
+
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
@@ -80,6 +84,7 @@ func (r *Rule) Validate() (errs []error) {
 	if r.Record == "" && r.Alert == "" {
 		errs = append(errs, errors.Errorf("one of 'record' or 'alert' must be set"))
 	}
+
 	if r.Expr == "" {
 		errs = append(errs, errors.Errorf("field 'expr' must be set in rule"))
 	} else if _, err := promql.ParseExpr(r.Expr); err != nil {

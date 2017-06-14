@@ -1,0 +1,7 @@
+Version: 1
+Groups:
+- name: yolo
+  rules:
+  - record: Hi
+    alert: Hello
+    expr: 1
