@@ -390,6 +390,7 @@ type Manager struct {
 	block  chan struct{}
 }
 
+// Appendable returns an Appender.
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }
@@ -517,7 +518,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				itv = time.Duration(dur)
 			}
 
-			rules := make([]Rule, len(rg.Rules), 0)
+			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
 				expr, err := promql.ParseExpr(r.Expr)
 				if err != nil {
