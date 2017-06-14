@@ -172,7 +172,7 @@ func TestStaleness(t *testing.T) {
 		t.Fatal(err)
 	}
 	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup("default", time.Second, []Rule{rule}, opts)
+	group := NewGroup("default", "", time.Second, []Rule{rule}, opts)
 
 	// A time series that has two samples and then goes stale.
 	app, _ := storage.Appender()

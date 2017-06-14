@@ -128,6 +128,7 @@ type Rule interface {
 // Group is a set of rules that have a logical relation.
 type Group struct {
 	name                 string
+	file                 string
 	interval             time.Duration
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
@@ -138,7 +139,7 @@ type Group struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
-func NewGroup(name string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
+func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
 		name:                 name,
 		interval:             interval,
@@ -201,7 +202,10 @@ func (g *Group) stop() {
 }
 
 func (g *Group) fingerprint() model.Fingerprint {
-	l := model.LabelSet{"name": model.LabelValue(g.name)}
+	l := model.LabelSet{
+		"name":     model.LabelValue(g.name),
+		"filename": model.LabelValue(g.file),
+	}
 	return l.Fingerprint()
 }
 
@@ -545,8 +549,8 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			// Groups need not be unique across filenames.
-			groups[rg.Name+";"+fn] = NewGroup(rg.Name, itv, rules, m.opts)
+			// Group names need not be unique across filenames.
+			groups[rg.Name+";"+fn] = NewGroup(rg.Name, fn, itv, rules, m.opts)
 		}
 	}
 
