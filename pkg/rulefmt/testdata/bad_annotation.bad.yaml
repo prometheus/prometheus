@@ -1,0 +1,8 @@
+Version: 1
+Groups:
+  - name: yolo
+    rules:
+    - alert: hola
+      expr: 1
+      annotations:
+        ins-tance: localhost 

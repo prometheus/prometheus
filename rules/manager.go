@@ -267,9 +267,7 @@ func typeForRule(r Rule) ruleType {
 	panic(fmt.Errorf("unknown rule type: %T", r))
 }
 
-// Eval runs a single evaluation cycle in which all rules are evaluated in parallel.
-// In the future a single group will be evaluated sequentially to properly handle
-// rule dependency.
+// Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ts time.Time) {
 	for i, rule := range g.rules {
 		rtyp := string(typeForRule(rule))
