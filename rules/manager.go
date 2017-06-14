@@ -18,6 +18,7 @@ import (
 	"math"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -142,6 +143,7 @@ type Group struct {
 func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
 		name:                 name,
+		file:                 file,
 		interval:             interval,
 		rules:                rules,
 		opts:                 opts,
@@ -150,6 +152,15 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *Man
 		terminated:           make(chan struct{}),
 	}
 }
+
+// Name returns the group name.
+func (g *Group) Name() string { return g.name }
+
+// File returns the group's file.
+func (g *Group) File() string { return g.file }
+
+// Rules returns the group's rules.
+func (g *Group) Rules() []Rule { return g.rules }
 
 func (g *Group) run() {
 	defer close(g.terminated)
@@ -555,6 +566,23 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 	}
 
 	return groups, nil
+}
+
+// RuleGroups returns the list of manager's rule groups.
+func (m *Manager) RuleGroups() []*Group {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+
+	rgs := make([]*Group, 0, len(m.groups))
+	for _, g := range m.groups {
+		rgs = append(rgs, g)
+	}
+
+	sort.Slice(rgs, func(i, j int) bool {
+		return rgs[i].file < rgs[j].file && rgs[i].name < rgs[j].name
+	})
+
+	return rgs
 }
 
 // Rules returns the list of the manager's rules.
