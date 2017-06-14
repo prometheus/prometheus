@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
 	"github.com/prometheus/prometheus/util/promlint"
+	"github.com/prometheus/tsdb"
 )
 
 // CheckConfigCmd validates configuration files.
@@ -175,16 +176,17 @@ func checkRules(t cli.Term, filename string) (int, error) {
 		return 0, fmt.Errorf("is a directory")
 	}
 
-	content, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return 0, err
+	rgs, errs := rulefmt.ParseFile(filename)
+	if errs != nil {
+		return 0, tsdb.MultiError(errs)
 	}
 
-	rules, err := promql.ParseStmts(string(content))
-	if err != nil {
-		return 0, err
+	numRules := 0
+	for _, rg := range rgs.Groups {
+		numRules += len(rg.Rules)
 	}
-	return len(rules), nil
+
+	return numRules, nil
 }
 
 // UpdateRulesCmd updates the rule files.
