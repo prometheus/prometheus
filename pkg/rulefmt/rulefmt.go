@@ -16,7 +16,7 @@ type Error struct {
 }
 
 func (err *Error) Error() string {
-	return errors.Wrapf(err, "group %q, rule %d", err.Group, err.Rule).Error()
+	return errors.Wrapf(err.Err, "group %q, rule %d", err.Group, err.Rule).Error()
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
@@ -30,7 +30,18 @@ func (g *RuleGroups) Validate() (errs []error) {
 	if g.Version != 1 {
 		errs = append(errs, errors.Errorf("invalid rule group version %d", g.Version))
 	}
+	set := map[string]struct{}{}
+
 	for _, g := range g.Groups {
+		if _, ok := set[g.Name]; ok {
+			errs = append(
+				errs,
+				errors.Errorf("groupname: \"%s\" is repeated in the same file", g.Name),
+			)
+		}
+
+		set[g.Name] = struct{}{}
+
 		for i, r := range g.Rules {
 			for _, err := range r.Validate() {
 				errs = append(errs, &Error{

@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/tsdb"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
@@ -501,10 +502,9 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 	groups := make(map[string]*Group)
 
 	for _, fn := range filenames {
-		rgs, err := rulefmt.ParseFile(fn)
-		if err != nil {
-			// TODO(gouthamve): Use multi-error?
-			return nil, err[0]
+		rgs, errs := rulefmt.ParseFile(fn)
+		if errs != nil {
+			return nil, tsdb.MultiError(errs)
 		}
 
 		for _, rg := range rgs.Groups {
@@ -547,7 +547,8 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			groups[rg.Name] = NewGroup(rg.Name, itv, rules, m.opts)
+			// Groups need not be unique across filenames.
+			groups[rg.Name+";"+fn] = NewGroup(rg.Name, itv, rules, m.opts)
 		}
 	}
 
