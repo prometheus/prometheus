@@ -579,7 +579,6 @@ mainLoop:
 		}
 
 		var (
-			total, added      int
 			start             = time.Now()
 			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
 		)
@@ -591,18 +590,20 @@ mainLoop:
 			)
 		}
 
-		err := sl.scraper.scrape(scrapeCtx, buf)
+		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
 		var b []byte
-		if err == nil {
+		if scrapeErr == nil {
 			b = buf.Bytes()
 		} else if errc != nil {
-			errc <- err
+			errc <- scrapeErr
 		}
+
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
-		if total, added, err = sl.append(b, start); err != nil {
-			sl.l.With("err", err).Warn("append failed")
+		total, added, appErr := sl.append(b, start)
+		if appErr != nil {
+			sl.l.With("err", appErr).Warn("append failed")
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, err := sl.append([]byte{}, start); err != nil {
@@ -610,7 +611,11 @@ mainLoop:
 			}
 		}
 
-		sl.report(start, time.Since(start), total, added, err)
+		if scrapeErr == nil {
+			scrapeErr = appErr
+		}
+
+		sl.report(start, time.Since(start), total, added, scrapeErr)
 		last = start
 
 		select {
