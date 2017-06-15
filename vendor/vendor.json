@@ -775,11 +775,16 @@
 			"revisionTime": "2016-10-28T23:23:40Z"
 		},
 		{
-			"checksumSHA1": "YuPBOVkkE3uuBh4RcRUTF0n+frs=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/spf13/pflag",
+			"checksumSHA1": "suXMIWAx0XtlQR2zippibpr3Yjg=",
+			"path": "github.com/spf13/cobra",
+			"revision": "b4dbd37a01839e0653eec12aa4bbb2a2ce7b2a37",
+			"revisionTime": "2017-06-12T06:36:10Z"
+		},
+		{
+			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
 			"path": "github.com/spf13/pflag",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "e57e3eeb33f795204c1ca35f56c44f83227c6e66",
+			"revisionTime": "2017-05-08T18:43:26Z"
 		},
 		{
 			"checksumSHA1": "iydUphwYqZRq3WhstEdGsbvBAKs=",
