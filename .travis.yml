@@ -24,5 +24,5 @@ script:
   - kubectl get all -n kube-system -o wide
   - make k8s
   - sleep 30
-  - kubectl get all -o wide
+  - kubectl describe pod -l app=prometheus
   - curl -v http://localhost:30900/graph
