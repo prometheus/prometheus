@@ -75,22 +75,26 @@ func (s *DB) Querier(mint, maxt int64) Querier {
 }
 
 func (q *querier) LabelValues(n string) ([]string, error) {
-	if len(q.blocks) == 0 {
+	return q.lvals(q.blocks, n)
+}
+
+func (q *querier) lvals(qs []Querier, n string) ([]string, error) {
+	if len(qs) == 0 {
 		return nil, nil
 	}
-	res, err := q.blocks[0].LabelValues(n)
+	if len(qs) == 1 {
+		return qs[0].LabelValues(n)
+	}
+	l := len(qs) / 2
+	s1, err := q.lvals(qs[:l], n)
 	if err != nil {
 		return nil, err
 	}
-	for _, bq := range q.blocks[1:] {
-		pr, err := bq.LabelValues(n)
-		if err != nil {
-			return nil, err
-		}
-		// Merge new values into deduplicated result.
-		res = mergeStrings(res, pr)
+	s2, err := q.lvals(qs[l:], n)
+	if err != nil {
+		return nil, err
 	}
-	return res, nil
+	return mergeStrings(s1, s2), nil
 }
 
 func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
@@ -98,19 +102,19 @@ func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
 }
 
 func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
-	// Sets from different blocks have no time overlap. The reference numbers
-	// they emit point to series sorted in lexicographic order.
-	// We can fully connect partial series by simply comparing with the previous
-	// label set.
-	if len(q.blocks) == 0 {
+	return q.sel(q.blocks, ms)
+
+}
+
+func (q *querier) sel(qs []Querier, ms []labels.Matcher) SeriesSet {
+	if len(qs) == 0 {
 		return nopSeriesSet{}
 	}
-	r := q.blocks[0].Select(ms...)
-
-	for _, s := range q.blocks[1:] {
-		r = newMergedSeriesSet(r, s.Select(ms...))
+	if len(qs) == 1 {
+		return qs[0].Select(ms...)
 	}
-	return r
+	l := len(qs) / 2
+	return newMergedSeriesSet(q.sel(qs[:l], ms), q.sel(qs[l:], ms))
 }
 
 func (q *querier) Close() error {
@@ -657,10 +661,6 @@ func newChunkSeriesIterator(cs []*ChunkMeta, dranges intervals, mint, maxt int64
 	}
 }
 
-func (it *chunkSeriesIterator) inBounds(t int64) bool {
-	return t >= it.mint && t <= it.maxt
-}
-
 func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	if t > it.maxt {
 		return false
@@ -673,7 +673,9 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 
 	// Only do binary search forward to stay in line with other iterators
 	// that can only move forward.
-	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool { return it.chunks[i].MinTime >= t })
+	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool {
+		return it.chunks[it.i+i].MinTime >= t
+	})
 	x += it.i
 
 	// If the timestamp was not found, it might be in the last chunk.
@@ -708,9 +710,15 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 func (it *chunkSeriesIterator) Next() bool {
 	for it.cur.Next() {
 		t, _ := it.cur.At()
-		if it.inBounds(t) {
-			return true
+		if t < it.mint {
+			return it.Seek(it.mint)
 		}
+
+		if t > it.maxt {
+			return false
+		}
+
+		return true
 	}
 
 	if err := it.cur.Err(); err != nil {

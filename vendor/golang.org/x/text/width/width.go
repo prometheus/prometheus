@@ -13,7 +13,7 @@
 // layout.
 //
 // For more information, see http://unicode.org/reports/tr11/.
-package width
+package width // import "golang.org/x/text/width"
 
 import (
 	"unicode/utf8"
@@ -153,15 +153,20 @@ func (p Properties) Wide() rune {
 
 // Transformer implements the transform.Transformer interface.
 type Transformer struct {
-	t transform.Transformer
+	t transform.SpanningTransformer
 }
 
 // Reset implements the transform.Transformer interface.
 func (t Transformer) Reset() { t.t.Reset() }
 
-// Transform implements the Transformer interface.
+// Transform implements the transform.Transformer interface.
 func (t Transformer) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
 	return t.t.Transform(dst, src, atEOF)
+}
+
+// Span implements the transform.SpanningTransformer interface.
+func (t Transformer) Span(src []byte, atEOF bool) (n int, err error) {
+	return t.t.Span(src, atEOF)
 }
 
 // Bytes returns a new byte slice with the result of applying t to b.

@@ -49,8 +49,12 @@ type Options struct {
 	NoLockfile bool
 }
 
+func Adapter(db *tsdb.DB) storage.Storage {
+	return &adapter{db: db}
+}
+
 // Open returns a new storage backed by a tsdb database.
-func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage, error) {
+func Open(path string, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
 		MinBlockDuration:  uint64(opts.MinBlockDuration.Seconds() * 1000),
@@ -61,7 +65,7 @@ func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage,
 	if err != nil {
 		return nil, err
 	}
-	return adapter{db: db}, nil
+	return db, nil
 }
 
 func (a adapter) Querier(mint, maxt int64) (storage.Querier, error) {
