@@ -100,10 +100,6 @@ func newRootCmd() *cobra.Command {
 		"Prefix for the internal routes of web endpoints. Defaults to path of -web.external-url.",
 	)
 	rootCmd.PersistentFlags().StringVar(
-		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
-		"Path under which to expose metrics.",
-	)
-	rootCmd.PersistentFlags().StringVar(
 		&cfg.web.UserAssetsPath, "web.user-assets", "",
 		"Path to static asset directory, available at /user.",
 	)
@@ -122,7 +118,7 @@ func newRootCmd() *cobra.Command {
 
 	// Storage.
 	rootCmd.PersistentFlags().StringVar(
-		&cfg.localStoragePath, "storage.local.path", "data",
+		&cfg.localStoragePath, "storage.tsdb.path", "data",
 		"Base path for metrics storage.",
 	)
 	rootCmd.PersistentFlags().BoolVar(
@@ -140,10 +136,6 @@ func newRootCmd() *cobra.Command {
 	rootCmd.PersistentFlags().Var(
 		&cfg.tsdb.Retention, "storage.tsdb.retention",
 		"How long to retain samples in the storage.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.localStorageEngine, "storage.local.engine", "persisted",
-		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
 	)
 
 	// Alertmanager.
