@@ -25,5 +25,5 @@ script:
   - make k8s
   - sleep 30
   - kubectl describe pod -l app=prometheus
-  - kubectl logs -l app=prometheus
+  - kubectl logs -l app=prometheus|grep "Container ID:"
   - curl -v http://localhost:30900/graph
