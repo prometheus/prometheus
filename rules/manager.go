@@ -285,6 +285,12 @@ func typeForRule(r Rule) ruleType {
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ts time.Time) {
 	for i, rule := range g.rules {
+		select {
+		case <-g.done:
+			return
+		default:
+		}
+
 		rtyp := string(typeForRule(rule))
 
 		func(i int, rule Rule) {
