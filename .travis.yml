@@ -25,4 +25,4 @@ script:
   - make k8spull
   - sleep 30
   - kubectl get deploy -o wide
-  - kubectl describe pod -l app=prometheus |grep "Ready   True"
+  - kubectl describe pod -l app=prometheus |grep "State:"|grep Running
