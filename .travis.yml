@@ -14,7 +14,6 @@ install:
   - sudo apt-get install -y python python-dev systemd python-netaddr python-apt
   - sudo pip install ansible
   - git clone https://github.com/reachlin/k8s0.git
-  - go get github.com/urfave/cli
 
 before_script:
   - ansible-playbook -i k8s0/inventory/local k8s0/images.yml
@@ -23,7 +22,7 @@ before_script:
 script:
   - make check_license style test
   - kubectl get all -n kube-system -o wide
-  - make k8s
+  - make k8spull
   - sleep 10
   - kubectl describe pod -l app=prometheus
   - export uuid=$(kubectl describe pod -l app=prometheus|grep "docker://")

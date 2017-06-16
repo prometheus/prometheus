@@ -64,6 +64,12 @@ docker:
 	@echo ">> building docker image"
 	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
+k8spull:
+	@docker pull quay.io/coreos/prometheus
+	@docker tag quay.io/coreos/prometheus prometheus:travis
+	@kubectl create configmap prometheus --from-file=$(shell pwd)/documentation/examples/
+	@kubectl create -f $(shell pwd)/documentation/examples/prometheus-deployment.yaml
+
 k8s: build docker
 	@echo ">> running in k8s on Travis"
 	@docker tag "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" prometheus:travis
