@@ -104,6 +104,37 @@ go_goroutines 33  	123123`
 
 }
 
+func TestParseErrors(t *testing.T) {
+	cases := []struct {
+		input string
+		err   string
+	}{
+		{
+			input: "a",
+			err:   "no token found",
+		},
+		{
+			input: "a{\xff=\"foo\"} 1\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{b=\"\xff\"} 1\n",
+			err:   "Invalid UTF-8 label value.",
+		},
+		{
+			input: "a true\n",
+			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
+		},
+	}
+
+	for _, c := range cases {
+		p := New([]byte(c.input))
+		for p.Next() {
+		}
+		require.Equal(t, c.err, p.Err().Error())
+	}
+}
+
 const (
 	testdataSampleCount = 410
 )

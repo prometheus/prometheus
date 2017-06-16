@@ -843,6 +843,29 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	}
 }
 
+func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
+	var (
+		scraper        = &testScraper{}
+		reportAppender = &collectResultAppender{}
+		reportApp      = func() storage.Appender { return reportAppender }
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx, scraper, func() storage.Appender { return nopAppender{} }, reportApp, nil)
+
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		cancel()
+		w.Write([]byte("a{l=\"\xff\"} 0\n"))
+		return nil
+	}
+
+	sl.run(10*time.Millisecond, time.Hour, nil)
+
+	if reportAppender.result[0].v != 0 {
+		t.Fatalf("bad 'up' value; want 0, got %v", reportAppender.result[0].v)
+	}
+}
+
 type errorAppender struct {
 	collectResultAppender
 }
