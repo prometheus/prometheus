@@ -56,9 +56,8 @@ var cfg = struct {
 	alertmanagerURLs stringset
 	prometheusURL    string
 
-	// Deprecated storage flags, kept for backwards compatibility.
-	deprecatedMemoryChunks       uint64
-	deprecatedMaxChunksToPersist uint64
+	logFormat string
+	logLevel  string
 }{
 	alertmanagerURLs: stringset{},
 	notifier: notifier.Options{

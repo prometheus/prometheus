@@ -102,10 +102,12 @@ type AlertingRule struct {
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
+
+	logger log.Logger
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels) *AlertingRule {
+func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, logger log.Logger) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		vector:       vec,
@@ -113,6 +115,7 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 		labels:       lbls,
 		annotations:  anns,
 		active:       map[uint64]*Alert{},
+		logger:       logger.With("alert", name),
 	}
 }
 
@@ -197,7 +200,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.En
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = fmt.Sprintf("<error expanding template: %s>", err)
-				log.Warnf("Error expanding alert template %v with data '%v': %s", r.Name(), tmplData, err)
+				r.logger.Warnf("Error expanding alert template %v with data '%v': %s", r.Name(), tmplData, err)
 			}
 			return result
 		}

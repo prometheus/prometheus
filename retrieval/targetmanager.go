@@ -106,7 +106,7 @@ func (tm *TargetManager) reload() {
 			ts = &targetSet{
 				ctx:    ctx,
 				cancel: cancel,
-				sp:     newScrapePool(ctx, scfg, tm.append),
+				sp:     newScrapePool(ctx, scfg, tm.append, tm.logger),
 			}
 			ts.ts = discovery.NewTargetSet(ts.sp)
 

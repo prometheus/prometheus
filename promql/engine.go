@@ -205,6 +205,8 @@ type Engine struct {
 	// The gate limiting the maximum number of concurrent and waiting queries.
 	gate    *queryGate
 	options *EngineOptions
+
+	logger log.Logger
 }
 
 // Queryable allows opening a storage querier.
@@ -222,6 +224,7 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 		queryable: queryable,
 		gate:      newQueryGate(o.MaxConcurrentQueries),
 		options:   o,
+		logger:    o.Logger,
 	}
 }
 
@@ -229,12 +232,14 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 type EngineOptions struct {
 	MaxConcurrentQueries int
 	Timeout              time.Duration
+	Logger               log.Logger
 }
 
 // DefaultEngineOptions are the default engine options.
 var DefaultEngineOptions = &EngineOptions{
 	MaxConcurrentQueries: 20,
 	Timeout:              2 * time.Minute,
+	Logger:               log.Base(),
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -374,6 +379,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		evaluator := &evaluator{
 			Timestamp: start,
 			ctx:       ctx,
+			logger:    ng.logger,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -409,6 +415,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		evaluator := &evaluator{
 			Timestamp: t,
 			ctx:       ctx,
+			logger:    ng.logger,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -510,7 +517,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
 				// TODO(fabxc): use multi-error.
-				log.Errorln("expand series set:", err)
+				ng.logger.Errorln("expand series set:", err)
 				return false
 			}
 			for _, s := range n.series {
@@ -521,7 +528,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 		case *MatrixSelector:
 			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
-				log.Errorln("expand series set:", err)
+				ng.logger.Errorln("expand series set:", err)
 				return false
 			}
 			for _, s := range n.series {
@@ -550,6 +557,8 @@ type evaluator struct {
 	Timestamp int64 // time in milliseconds
 
 	finalizers []func()
+
+	logger log.Logger
 }
 
 func (ev *evaluator) close() {
@@ -577,7 +586,7 @@ func (ev *evaluator) recover(errp *error) {
 			buf := make([]byte, 64<<10)
 			buf = buf[:runtime.Stack(buf, false)]
 
-			log.Errorf("parser panic: %v\n%s", e, buf)
+			ev.logger.Errorf("parser panic: %v\n%s", e, buf)
 			*errp = fmt.Errorf("unexpected error")
 		} else {
 			*errp = e.(error)
