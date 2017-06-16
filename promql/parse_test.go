@@ -1356,11 +1356,11 @@ var testExpr = []struct {
 	}, {
 		input:  "floor()",
 		fail:   true,
-		errMsg: "expected at least 1 argument(s) in call to \"floor\", got 0",
+		errMsg: "expected 1 argument(s) in call to \"floor\", got 0",
 	}, {
 		input:  "floor(some_metric, other_metric)",
 		fail:   true,
-		errMsg: "expected at most 1 argument(s) in call to \"floor\", got 2",
+		errMsg: "expected 1 argument(s) in call to \"floor\", got 2",
 	}, {
 		input:  "floor(1)",
 		fail:   true,
