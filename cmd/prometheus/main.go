@@ -83,8 +83,8 @@ func newRootCmd() *cobra.Command {
 		"Address to listen on for the web interface, API, and telemetry.",
 	)
 
-	rootCmd.PersistentFlags().DurationVar(
-		&cfg.web.ReadTimeout, "web.read-timeout", 30*time.Second,
+	rootCmd.PersistentFlags().Var(
+		&cfg.webTimeout, "web.read-timeout",
 		"Maximum duration before timing out read of the request, and closing idle connections.",
 	)
 	rootCmd.PersistentFlags().IntVar(
@@ -129,16 +129,16 @@ func newRootCmd() *cobra.Command {
 		&cfg.tsdb.NoLockfile, "storage.tsdb.no-lockfile", false,
 		"Disable lock file usage.",
 	)
-	rootCmd.PersistentFlags().DurationVar(
-		&cfg.tsdb.MinBlockDuration, "storage.tsdb.min-block-duration", 2*time.Hour,
+	rootCmd.PersistentFlags().Var(
+		&cfg.tsdb.MinBlockDuration, "storage.tsdb.min-block-duration",
 		"Minimum duration of a data block before being persisted.",
 	)
-	rootCmd.PersistentFlags().DurationVar(
-		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration", 0,
+	rootCmd.PersistentFlags().Var(
+		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration",
 		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)",
 	)
-	rootCmd.PersistentFlags().DurationVar(
-		&cfg.tsdb.Retention, "storage.tsdb.retention", 15*24*time.Hour,
+	rootCmd.PersistentFlags().Var(
+		&cfg.tsdb.Retention, "storage.tsdb.retention",
 		"How long to retain samples in the storage.",
 	)
 	rootCmd.PersistentFlags().StringVar(
@@ -151,18 +151,18 @@ func newRootCmd() *cobra.Command {
 		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
 		"The capacity of the queue for pending alert manager notifications.",
 	)
-	rootCmd.PersistentFlags().DurationVar(
-		&cfg.notifierTimeout, "alertmanager.timeout", 10*time.Second,
+	rootCmd.PersistentFlags().Var(
+		&cfg.notifierTimeout, "alertmanager.timeout",
 		"Alert manager HTTP API timeout.",
 	)
 
 	// Query engine.
-	rootCmd.PersistentFlags().DurationVar(
-		&promql.StalenessDelta, "query.staleness-delta", promql.StalenessDelta,
-		"Staleness delta allowance during expression evaluations.",
+	rootCmd.PersistentFlags().Var(
+		&cfg.lookbackDelta, "query.lookback-delta",
+		"The delta difference allowed for retrieving metrics during expression evaluations.",
 	)
-	rootCmd.PersistentFlags().DurationVar(
-		&cfg.queryEngine.Timeout, "query.timeout", 2*time.Minute,
+	rootCmd.PersistentFlags().Var(
+		&cfg.queryTimeout, "query.timeout",
 		"Maximum time a query may take before being aborted.",
 	)
 	rootCmd.PersistentFlags().IntVar(

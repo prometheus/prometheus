@@ -48,10 +48,13 @@ var cfg = struct {
 	localStoragePath   string
 	localStorageEngine string
 	notifier           notifier.Options
-	notifierTimeout    time.Duration
+	notifierTimeout    model.Duration
 	queryEngine        promql.EngineOptions
 	web                web.Options
 	tsdb               tsdb.Options
+	lookbackDelta      model.Duration
+	webTimeout         model.Duration
+	queryTimeout       model.Duration
 
 	alertmanagerURLs stringset
 	prometheusURL    string
@@ -59,6 +62,16 @@ var cfg = struct {
 	logFormat string
 	logLevel  string
 }{
+	// The defaults for model.Duration flag parsing.
+	notifierTimeout: model.Duration(10 * time.Second),
+	tsdb: tsdb.Options{
+		MinBlockDuration: model.Duration(2 * time.Hour),
+		Retention:        model.Duration(15 * 24 * time.Hour),
+	},
+	lookbackDelta: model.Duration(5 * time.Minute),
+	webTimeout:    model.Duration(30 * time.Second),
+	queryTimeout:  model.Duration(2 * time.Minute),
+
 	alertmanagerURLs: stringset{},
 	notifier: notifier.Options{
 		Registerer: prometheus.DefaultRegisterer,
@@ -77,13 +90,11 @@ func parse(args []string) error {
 		return err
 	}
 
-	if promql.StalenessDelta < 0 {
-		return fmt.Errorf("negative staleness delta: %s", promql.StalenessDelta)
-	}
-
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
+
+	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
 	if cfg.web.RoutePrefix == "" {
 		cfg.web.RoutePrefix = cfg.web.ExternalURL.Path
@@ -100,6 +111,12 @@ func parse(args []string) error {
 	if cfg.tsdb.MaxBlockDuration == 0 {
 		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
 	}
+
+	if cfg.lookbackDelta > 0 {
+		promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	}
+
+	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
 
 	return nil
 }
@@ -160,7 +177,7 @@ func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error)
 	acfg := &config.AlertmanagerConfig{
 		Scheme:     u.Scheme,
 		PathPrefix: u.Path,
-		Timeout:    cfg.notifierTimeout,
+		Timeout:    time.Duration(cfg.notifierTimeout),
 		ServiceDiscoveryConfig: config.ServiceDiscoveryConfig{
 			StaticConfigs: []*config.TargetGroup{
 				{
