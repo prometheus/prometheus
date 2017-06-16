@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	yaml "github.com/ghodss/yaml"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -244,7 +244,7 @@ func updateRules(t cli.Term, filename string) error {
 			yamlRules = append(yamlRules, rulefmt.Rule{
 				Alert:       r.Name,
 				Expr:        r.Expr.String(),
-				For:         model.Duration(r.Duration).String(),
+				For:         model.Duration(r.Duration),
 				Labels:      r.Labels.Map(),
 				Annotations: r.Annotations.Map(),
 			})

@@ -1,5 +1,5 @@
-Version: 1
-Groups:
+version: 1
+groups:
   - name: yolo
     rules:
       - record: hola
