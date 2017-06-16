@@ -22,7 +22,7 @@ before_script:
 script:
   - make check_license style test
   - kubectl get all -n kube-system -o wide
-  - make k8s
+  - make k8spull
   - sleep 30
   - kubectl get deploy -o wide
   - kubectl describe pod -l app=prometheus
