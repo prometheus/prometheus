@@ -14,7 +14,9 @@
 package rulefmt
 
 import (
+	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -37,6 +39,9 @@ func (err *Error) Error() string {
 type RuleGroups struct {
 	Version int         `yaml:"version"`
 	Groups  []RuleGroup `yaml:"groups"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // Validate validates all rules in the rule groups.
@@ -58,6 +63,10 @@ func (g *RuleGroups) Validate() (errs []error) {
 			)
 		}
 
+		if err := checkOverflow(g.XXX, "rule_group"); err != nil {
+			errs = append(errs, errors.Wrapf(err, "Group: %s", g.Name))
+		}
+
 		set[g.Name] = struct{}{}
 
 		for i, r := range g.Rules {
@@ -70,6 +79,11 @@ func (g *RuleGroups) Validate() (errs []error) {
 			}
 		}
 	}
+
+	if err := checkOverflow(g.XXX, "config_file"); err != nil {
+		errs = append(errs, err)
+	}
+
 	return errs
 }
 
@@ -78,6 +92,9 @@ type RuleGroup struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
 	Rules    []Rule         `yaml:"rules"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // Rule describes an alerting or recording rule.
@@ -88,6 +105,9 @@ type Rule struct {
 	For         model.Duration    `yaml:"for,omitempty"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -129,7 +149,22 @@ func (r *Rule) Validate() (errs []error) {
 		}
 	}
 
+	if err := checkOverflow(r.XXX, "rule"); err != nil {
+		errs = append(errs, err)
+	}
+
 	return errs
+}
+
+func checkOverflow(m map[string]interface{}, ctx string) error {
+	if len(m) > 0 {
+		var keys []string
+		for k := range m {
+			keys = append(keys, k)
+		}
+		return fmt.Errorf("unknown fields in %s: %s", ctx, strings.Join(keys, ", "))
+	}
+	return nil
 }
 
 // ParseFile parses the rule file and validates it.

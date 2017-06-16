@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -26,8 +27,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/tsdb"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
@@ -212,12 +211,13 @@ func (g *Group) stop() {
 	<-g.terminated
 }
 
-func (g *Group) fingerprint() model.Fingerprint {
-	l := model.LabelSet{
-		"name":     model.LabelValue(g.name),
-		"filename": model.LabelValue(g.file),
-	}
-	return l.Fingerprint()
+func (g *Group) hash() uint64 {
+	l := labels.New(
+		labels.Label{"name", g.name},
+		labels.Label{"file", g.file},
+	)
+
+	return l.Hash()
 }
 
 // offset returns until the next consistently slotted evaluation interval.
@@ -226,7 +226,7 @@ func (g *Group) offset() time.Duration {
 
 	var (
 		base   = now - (now % int64(g.interval))
-		offset = uint64(g.fingerprint()) % uint64(g.interval)
+		offset = g.hash() % uint64(g.interval)
 		next   = base + int64(offset)
 	)
 
@@ -466,9 +466,13 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	}
 
 	// To be replaced with a configurable per-group interval.
-	groups, err := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
-	if err != nil {
-		return fmt.Errorf("error loading rules, previous rule set restored: %s", err)
+	groups, errs := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
+	if errs != nil {
+		for _, e := range errs {
+			// TODO(gouthamve): Move to non-global logger.
+			log.Errorln(e)
+		}
+		return errors.New("error loading rules, previous rule set restored")
 	}
 
 	var wg sync.WaitGroup
@@ -511,13 +515,13 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 // loadGroups reads groups from a list of files.
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
-func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, error) {
+func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
 	for _, fn := range filenames {
 		rgs, errs := rulefmt.ParseFile(fn)
 		if errs != nil {
-			return nil, tsdb.MultiError(errs)
+			return nil, errs
 		}
 
 		for _, rg := range rgs.Groups {
@@ -530,7 +534,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 			for _, r := range rg.Rules {
 				expr, err := promql.ParseExpr(r.Expr)
 				if err != nil {
-					return nil, err
+					return nil, []error{err}
 				}
 
 				if r.Alert != "" {
