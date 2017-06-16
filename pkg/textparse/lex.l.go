@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/prometheus/prometheus/pkg/value"
 )
@@ -413,6 +414,10 @@ yyrule9: // {S}({L}|{D})*=
 yyrule10: // \"(\\.|[^\\"]|\0)*\"
 	{
 		s = lstateLabels
+		if !utf8.Valid(l.b[l.offsets[len(l.offsets)-1]+2 : l.i-1]) {
+			l.err = fmt.Errorf("Invalid UTF-8 label value.")
+			return -1
+		}
 		l.offsets = append(l.offsets, l.i-1)
 		goto yystate0
 	}
