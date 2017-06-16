@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
 	"github.com/prometheus/prometheus/util/promlint"
-	"github.com/prometheus/tsdb"
 )
 
 // CheckConfigCmd validates configuration files.
@@ -153,8 +152,11 @@ func CheckRulesCmd(t cli.Term, args ...string) int {
 	failed := false
 
 	for _, arg := range args {
-		if n, err := checkRules(t, arg); err != nil {
-			t.Errorf("  FAILED: %s", err)
+		if n, errs := checkRules(t, arg); errs != nil {
+			t.Errorf("  FAILED:")
+			for _, e := range errs {
+				t.Errorf(e.Error())
+			}
 			failed = true
 		} else {
 			t.Infof("  SUCCESS: %d rules found", n)
@@ -167,18 +169,18 @@ func CheckRulesCmd(t cli.Term, args ...string) int {
 	return 0
 }
 
-func checkRules(t cli.Term, filename string) (int, error) {
+func checkRules(t cli.Term, filename string) (int, []error) {
 	t.Infof("Checking %s", filename)
 
 	if stat, err := os.Stat(filename); err != nil {
-		return 0, fmt.Errorf("cannot get file info")
+		return 0, []error{fmt.Errorf("cannot get file info")}
 	} else if stat.IsDir() {
-		return 0, fmt.Errorf("is a directory")
+		return 0, []error{fmt.Errorf("is a directory")}
 	}
 
 	rgs, errs := rulefmt.ParseFile(filename)
 	if errs != nil {
-		return 0, tsdb.MultiError(errs)
+		return 0, errs
 	}
 
 	numRules := 0
@@ -265,7 +267,7 @@ func updateRules(t cli.Term, filename string) error {
 		return err
 	}
 
-	return ioutil.WriteFile(filename+".yaml", y, 0777)
+	return ioutil.WriteFile(filename+".yaml", y, 0666)
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
@@ -329,7 +331,7 @@ func main() {
 	})
 
 	app.Register("update-rules", &cli.Command{
-		Desc: "update the rules to the new YAML format",
+		Desc: "update rules to the new YAML format",
 		Run:  UpdateRulesCmd,
 	})
 
