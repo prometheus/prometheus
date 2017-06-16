@@ -16,10 +16,10 @@ package rulefmt
 import (
 	"io/ioutil"
 
-	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
+	yaml "gopkg.in/yaml.v2"
 )
 
 // Error represents semantical errors on parsing rule groups.
@@ -35,8 +35,8 @@ func (err *Error) Error() string {
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
-	Version int         `json:"version"`
-	Groups  []RuleGroup `json:"groups"`
+	Version int         `yaml:"version"`
+	Groups  []RuleGroup `yaml:"groups"`
 }
 
 // Validate validates all rules in the rule groups.
@@ -75,19 +75,19 @@ func (g *RuleGroups) Validate() (errs []error) {
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name     string `json:"name"`
-	Interval string `json:"interval,omitempty"`
-	Rules    []Rule `json:"rules"`
+	Name     string         `yaml:"name"`
+	Interval model.Duration `yaml:"interval,omitempty"`
+	Rules    []Rule         `yaml:"rules"`
 }
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record      string            `json:"record,omitempty"`
-	Alert       string            `json:"alert,omitempty"`
-	Expr        string            `json:"expr"`
-	For         string            `json:"for,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty"`
+	Record      string            `yaml:"record,omitempty"`
+	Alert       string            `yaml:"alert,omitempty"`
+	Expr        string            `yaml:"expr"`
+	For         model.Duration    `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -108,7 +108,7 @@ func (r *Rule) Validate() (errs []error) {
 		if len(r.Annotations) > 0 {
 			errs = append(errs, errors.Errorf("invalid field 'annotations' in recording rule"))
 		}
-		if r.For != "" {
+		if r.For != 0 {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
 		}
 	}

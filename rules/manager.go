@@ -522,13 +522,8 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 
 		for _, rg := range rgs.Groups {
 			itv := interval
-			if rg.Interval != "" {
-				dur, err := model.ParseDuration(rg.Interval)
-				if err != nil {
-					return nil, err
-				}
-
-				itv = time.Duration(dur)
+			if rg.Interval != 0 {
+				itv = time.Duration(rg.Interval)
 			}
 
 			rules := make([]Rule, 0, len(rg.Rules))
@@ -539,15 +534,10 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				}
 
 				if r.Alert != "" {
-					fordur, err := model.ParseDuration(r.For)
-					if err != nil {
-						return nil, err
-					}
-
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
 						expr,
-						time.Duration(fordur),
+						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
 					))
