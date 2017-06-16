@@ -25,5 +25,5 @@ script:
   - make k8spull
   - sleep 30
   - kubectl get deploy -o wide
-  - kubectl describe pod -l app=prometheus
-  - curl -v http://localhost:30900/graph
+  - kubectl describe pod -l app=prometheus |grep "Ready   True"
+  - nc -w3 -v 127.0.0.1 30900
