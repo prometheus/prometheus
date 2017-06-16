@@ -121,7 +121,6 @@ type Options struct {
 	MaxConnections       int
 	ExternalURL          *url.URL
 	RoutePrefix          string
-	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
 	ConsoleTemplatesPath string
@@ -186,7 +185,7 @@ func New(o *Options) *Handler {
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
-	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
+	router.Get("/metrics", prometheus.Handler().ServeHTTP)
 
 	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),
