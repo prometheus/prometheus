@@ -19,6 +19,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
@@ -37,13 +38,13 @@ type Options struct {
 
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
-	MinBlockDuration time.Duration
+	MinBlockDuration model.Duration
 
 	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration time.Duration
+	MaxBlockDuration model.Duration
 
 	// Duration for how long to retain data.
-	Retention time.Duration
+	Retention model.Duration
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
@@ -53,9 +54,9 @@ type Options struct {
 func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage, error) {
 	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
-		MinBlockDuration:  uint64(opts.MinBlockDuration.Seconds() * 1000),
-		MaxBlockDuration:  uint64(opts.MaxBlockDuration.Seconds() * 1000),
-		RetentionDuration: uint64(opts.Retention.Seconds() * 1000),
+		MinBlockDuration:  uint64(time.Duration(opts.MinBlockDuration).Seconds() * 1000),
+		MaxBlockDuration:  uint64(time.Duration(opts.MaxBlockDuration).Seconds() * 1000),
+		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
 		NoLockfile:        opts.NoLockfile,
 	})
 	if err != nil {

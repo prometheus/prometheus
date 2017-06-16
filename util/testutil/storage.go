@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/tsdb"
 )
@@ -36,8 +37,8 @@ func NewStorage(t T) storage.Storage {
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
 	db, err := tsdb.Open(dir, nil, &tsdb.Options{
-		MinBlockDuration: 24 * time.Hour,
-		MaxBlockDuration: 24 * time.Hour,
+		MinBlockDuration: model.Duration(24 * time.Hour),
+		MaxBlockDuration: model.Duration(24 * time.Hour),
 	})
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)

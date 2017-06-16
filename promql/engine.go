@@ -487,11 +487,11 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < StalenessDelta {
-				maxOffset = StalenessDelta
+			if maxOffset < LookbackDelta {
+				maxOffset = LookbackDelta
 			}
-			if n.Offset+StalenessDelta > maxOffset {
-				maxOffset = n.Offset + StalenessDelta
+			if n.Offset+LookbackDelta > maxOffset {
+				maxOffset = n.Offset + LookbackDelta
 			}
 		case *MatrixSelector:
 			if maxOffset < n.Range {
@@ -521,7 +521,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 				return false
 			}
 			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(StalenessDelta))
+				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
 				n.iterators = append(n.iterators, it)
 			}
 
@@ -763,8 +763,8 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 		peek := 1
 		if !ok || t > refTime {
 			t, v, ok = it.PeekBack(peek)
-			peek += 1
-			if !ok || t < refTime-durationMilliseconds(StalenessDelta) {
+			peek++
+			if !ok || t < refTime-durationMilliseconds(LookbackDelta) {
 				continue
 			}
 		}
@@ -773,7 +773,7 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 		}
 		// Find timestamp before this point, within the staleness delta.
 		prevT, _, ok := it.PeekBack(peek)
-		if ok && prevT >= refTime-durationMilliseconds(StalenessDelta) {
+		if ok && prevT >= refTime-durationMilliseconds(LookbackDelta) {
 			interval := t - prevT
 			if interval*4+interval/10 < refTime-t {
 				// It is more than 4 (+10% for safety) intervals
@@ -1460,9 +1460,9 @@ func shouldDropMetricName(op itemType) bool {
 	}
 }
 
-// StalenessDelta determines the time since the last sample after which a time
+// LookbackDelta determines the time since the last sample after which a time
 // series is considered stale.
-var StalenessDelta = 5 * time.Minute
+var LookbackDelta = 5 * time.Minute
 
 // A queryGate controls the maximum number of concurrently running and waiting queries.
 type queryGate struct {
