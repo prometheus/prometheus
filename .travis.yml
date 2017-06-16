@@ -28,6 +28,6 @@ script:
   - export uuid=$(kubectl describe pod -l app=prometheus|grep "docker://")
   - export uuid2=$(python -c "import os;uuid=os.environ['uuid'];print uuid[27:33]")
   - echo $uuid2
-  - docker logs $uuid2
+  - docker logs $uuid2 2>&1
   - docker ps -a
   - curl -v http://localhost:30900/graph
