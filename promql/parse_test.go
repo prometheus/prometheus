@@ -905,6 +905,10 @@ var testExpr = []struct {
 		// messages from the parser - consider if this is an option.
 		errMsg: "unexpected character inside braces: '>'",
 	}, {
+		input:  "some_metric{a=\"\xff\"}",
+		fail:   true,
+		errMsg: "parse error at char 15: invalid UTF-8 rune",
+	}, {
 		input:  `foo{gibberish}`,
 		fail:   true,
 		errMsg: "expected label matching operator but got }",
@@ -1373,6 +1377,10 @@ var testExpr = []struct {
 		input:  "rate(some_metric)",
 		fail:   true,
 		errMsg: "expected type range vector in call to function \"rate\", got instant vector",
+	}, {
+		input:  "label_replace(a, `b`, `c\xff`, `d`, `.*`)",
+		fail:   true,
+		errMsg: "parse error at char 23: invalid UTF-8 rune",
 	},
 	// Fuzzing regression tests.
 	{

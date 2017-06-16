@@ -713,6 +713,8 @@ Loop:
 		switch l.next() {
 		case '\\':
 			lexEscape(l)
+		case utf8.RuneError:
+			return l.errorf("invalid UTF-8 rune")
 		case eof, '\n':
 			return l.errorf("unterminated quoted string")
 		case l.stringOpen:
@@ -728,6 +730,8 @@ func lexRawString(l *lexer) stateFn {
 Loop:
 	for {
 		switch l.next() {
+		case utf8.RuneError:
+			return l.errorf("invalid UTF-8 rune")
 		case eof:
 			return l.errorf("unterminated raw string")
 		case l.stringOpen:
