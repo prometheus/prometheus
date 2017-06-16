@@ -62,8 +62,7 @@ func init() {
 func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "prometheus",
-		Short: "./prometheus --config.file=\"prometheus.yaml\"",
-		//Long:  usage(),
+		Short: "prometheus --config.file=prometheus.yaml",
 		Run: func(cmd *cobra.Command, args []string) {
 			os.Exit(Main())
 		},
