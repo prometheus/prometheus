@@ -171,10 +171,17 @@ func newRootCmd() *cobra.Command {
 		"Maximum number of queries executed concurrently.",
 	)
 
-	cfg.fs = rootCmd.PersistentFlags()
+	// Logging.
+	rootCmd.PersistentFlags().StringVar(
+		&cfg.logLevel, "log.level", "info",
+		"Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal]",
+	)
+	rootCmd.PersistentFlags().StringVar(
+		&cfg.logFormat, "log.format", "logger:stderr",
+		`Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`,
+	)
 
-	// TODO(gouthamve): Flags from the log package have to be added explicitly to our custom flag set.
-	//log.AddFlags(rootCmd.PersistentFlags())
+	cfg.fs = rootCmd.PersistentFlags()
 	return rootCmd
 }
 
@@ -185,14 +192,18 @@ func Main() int {
 		return 2
 	}
 
+	logger := log.NewLogger(os.Stdout)
+	logger.SetLevel(cfg.logLevel)
+	logger.SetFormat(cfg.logFormat)
+
 	if cfg.printVersion {
 		fmt.Fprintln(os.Stdout, version.Print("prometheus"))
 		return 0
 	}
 
-	log.Infoln("Starting prometheus", version.Info())
-	log.Infoln("Build context", version.BuildContext())
-	log.Infoln("Host details", Uname())
+	logger.Infoln("Starting prometheus", version.Info())
+	logger.Infoln("Build context", version.BuildContext())
+	logger.Infoln("Host details", Uname())
 
 	var (
 		// sampleAppender = storage.Fanout{}
@@ -204,21 +215,22 @@ func Main() int {
 	hup := make(chan os.Signal)
 	hupReady := make(chan bool)
 	signal.Notify(hup, syscall.SIGHUP)
-	log.Infoln("Starting tsdb")
+	logger.Infoln("Starting tsdb")
 	localStorage, err := tsdb.Open(cfg.localStoragePath, prometheus.DefaultRegisterer, &cfg.tsdb)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
 		return 1
 	}
-	log.Infoln("tsdb started")
+	logger.Infoln("tsdb started")
 
 	// remoteStorage := &remote.Storage{}
 	// sampleAppender = append(sampleAppender, remoteStorage)
 	// reloadables = append(reloadables, remoteStorage)
 
+	cfg.queryEngine.Logger = logger
 	var (
-		notifier       = notifier.New(&cfg.notifier, log.Base())
-		targetManager  = retrieval.NewTargetManager(localStorage, log.Base())
+		notifier       = notifier.New(&cfg.notifier, logger)
+		targetManager  = retrieval.NewTargetManager(localStorage, logger)
 		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
@@ -229,6 +241,7 @@ func Main() int {
 		QueryEngine: queryEngine,
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
+		Logger:      logger,
 	})
 
 	cfg.web.Context = ctx
@@ -256,8 +269,8 @@ func Main() int {
 
 	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
-	if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
-		log.Errorf("Error loading config: %s", err)
+	if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+		logger.Errorf("Error loading config: %s", err)
 		return 1
 	}
 
@@ -269,12 +282,12 @@ func Main() int {
 		for {
 			select {
 			case <-hup:
-				if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
-					log.Errorf("Error reloading config: %s", err)
+				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+					logger.Errorf("Error reloading config: %s", err)
 				}
 			case rc := <-webHandler.Reload():
-				if err := reloadConfig(cfg.configFile, reloadables...); err != nil {
-					log.Errorf("Error reloading config: %s", err)
+				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+					logger.Errorf("Error reloading config: %s", err)
 					rc <- err
 				} else {
 					rc <- nil
@@ -286,7 +299,7 @@ func Main() int {
 	// Start all components. The order is NOT arbitrary.
 	defer func() {
 		if err := localStorage.Close(); err != nil {
-			log.Errorln("Error stopping storage:", err)
+			logger.Errorln("Error stopping storage:", err)
 		}
 	}()
 
@@ -319,14 +332,14 @@ func Main() int {
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-term:
-		log.Warn("Received SIGTERM, exiting gracefully...")
+		logger.Warn("Received SIGTERM, exiting gracefully...")
 	case <-webHandler.Quit():
-		log.Warn("Received termination request via web service, exiting gracefully...")
+		logger.Warn("Received termination request via web service, exiting gracefully...")
 	case err := <-webHandler.ListenError():
-		log.Errorln("Error starting web server, exiting gracefully:", err)
+		logger.Errorln("Error starting web server, exiting gracefully:", err)
 	}
 
-	log.Info("See you next time!")
+	logger.Info("See you next time!")
 	return 0
 }
 
@@ -336,8 +349,8 @@ type Reloadable interface {
 	ApplyConfig(*config.Config) error
 }
 
-func reloadConfig(filename string, rls ...Reloadable) (err error) {
-	log.Infof("Loading configuration file %s", filename)
+func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err error) {
+	logger.Infof("Loading configuration file %s", filename)
 	defer func() {
 		if err == nil {
 			configSuccess.Set(1)
@@ -355,7 +368,7 @@ func reloadConfig(filename string, rls ...Reloadable) (err error) {
 	failed := false
 	for _, rl := range rls {
 		if err := rl.ApplyConfig(conf); err != nil {
-			log.Error("Failed to apply configuration: ", err)
+			logger.Error("Failed to apply configuration: ", err)
 			failed = true
 		}
 	}
