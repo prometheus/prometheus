@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -28,11 +29,11 @@ import (
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	Name         string
-	ArgTypes     []model.ValueType
-	OptionalArgs int
-	ReturnType   model.ValueType
-	Call         func(ev *evaluator, args Expressions) model.Value
+	Name       string
+	ArgTypes   []model.ValueType
+	Variadic   int
+	ReturnType model.ValueType
+	Call       func(ev *evaluator, args Expressions) model.Value
 }
 
 // === time() model.SampleValue ===
@@ -849,6 +850,50 @@ func funcLabelReplace(ev *evaluator, args Expressions) model.Value {
 	return vector
 }
 
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
+func funcLabelJoin(ev *evaluator, args Expressions) model.Value {
+	var (
+		vector    = ev.evalVector(args[0])
+		dst       = model.LabelName(ev.evalString(args[1]).Value)
+		sep       = ev.evalString(args[2]).Value
+		srcLabels = make([]model.LabelName, len(args)-3)
+	)
+	for i := 3; i < len(args); i++ {
+		src := model.LabelName(ev.evalString(args[i]).Value)
+		if !model.LabelNameRE.MatchString(string(src)) {
+			ev.errorf("invalid source label name in label_join(): %s", src)
+		}
+		srcLabels[i-3] = src
+	}
+
+	if !model.LabelNameRE.MatchString(string(dst)) {
+		ev.errorf("invalid destination label name in label_join(): %s", dst)
+	}
+
+	outSet := make(map[model.Fingerprint]struct{}, len(vector))
+	for _, el := range vector {
+		srcVals := make([]string, len(srcLabels))
+		for i, src := range srcLabels {
+			srcVals[i] = string(el.Metric.Metric[src])
+		}
+
+		strval := strings.Join(srcVals, sep)
+		if strval == "" {
+			el.Metric.Del(dst)
+		} else {
+			el.Metric.Set(dst, model.LabelValue(strval))
+		}
+
+		fp := el.Metric.Metric.Fingerprint()
+		if _, exists := outSet[fp]; exists {
+			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric.Metric)
+		} else {
+			outSet[fp] = struct{}{}
+		}
+	}
+	return vector
+}
+
 // === vector(s scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) model.Value {
 	return vector{
@@ -986,25 +1031,25 @@ var functions = map[string]*Function{
 		Call:       funcCountScalar,
 	},
 	"days_in_month": {
-		Name:         "days_in_month",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcDaysInMonth,
+		Name:       "days_in_month",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcDaysInMonth,
 	},
 	"day_of_month": {
-		Name:         "day_of_month",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcDayOfMonth,
+		Name:       "day_of_month",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcDayOfMonth,
 	},
 	"day_of_week": {
-		Name:         "day_of_week",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcDayOfWeek,
+		Name:       "day_of_week",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcDayOfWeek,
 	},
 	"delta": {
 		Name:       "delta",
@@ -1049,11 +1094,11 @@ var functions = map[string]*Function{
 		Call:       funcHoltWinters,
 	},
 	"hour": {
-		Name:         "hour",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcHour,
+		Name:       "hour",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcHour,
 	},
 	"idelta": {
 		Name:       "idelta",
@@ -1078,6 +1123,13 @@ var functions = map[string]*Function{
 		ArgTypes:   []model.ValueType{model.ValVector, model.ValString, model.ValString, model.ValString, model.ValString},
 		ReturnType: model.ValVector,
 		Call:       funcLabelReplace,
+	},
+	"label_join": {
+		Name:       "label_join",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValString, model.ValString, model.ValString},
+		Variadic:   -1,
+		ReturnType: model.ValVector,
+		Call:       funcLabelJoin,
 	},
 	"ln": {
 		Name:       "ln",
@@ -1110,18 +1162,18 @@ var functions = map[string]*Function{
 		Call:       funcMinOverTime,
 	},
 	"minute": {
-		Name:         "minute",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcMinute,
+		Name:       "minute",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcMinute,
 	},
 	"month": {
-		Name:         "month",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcMonth,
+		Name:       "month",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcMonth,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
@@ -1148,11 +1200,11 @@ var functions = map[string]*Function{
 		Call:       funcResets,
 	},
 	"round": {
-		Name:         "round",
-		ArgTypes:     []model.ValueType{model.ValVector, model.ValScalar},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcRound,
+		Name:       "round",
+		ArgTypes:   []model.ValueType{model.ValVector, model.ValScalar},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcRound,
 	},
 	"scalar": {
 		Name:       "scalar",
@@ -1209,11 +1261,11 @@ var functions = map[string]*Function{
 		Call:       funcVector,
 	},
 	"year": {
-		Name:         "year",
-		ArgTypes:     []model.ValueType{model.ValVector},
-		OptionalArgs: 1,
-		ReturnType:   model.ValVector,
-		Call:         funcYear,
+		Name:       "year",
+		ArgTypes:   []model.ValueType{model.ValVector},
+		Variadic:   1,
+		ReturnType: model.ValVector,
+		Call:       funcYear,
 	},
 }
 
