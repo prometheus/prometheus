@@ -44,7 +44,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(context.Background(), cfg, app)
+		sp  = newScrapePool(context.Background(), cfg, app, log.Base())
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -167,6 +167,7 @@ func TestScrapePoolReload(t *testing.T) {
 		targets:    map[uint64]*Target{},
 		loops:      map[uint64]loop{},
 		newLoop:    newLoop,
+		logger:     log.Base(),
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -236,7 +237,7 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppendable{}
 
-	sp := newScrapePool(context.Background(), cfg, app)
+	sp := newScrapePool(context.Background(), cfg, app, log.Base())
 
 	cfg.HonorLabels = false
 	wrapped := sp.reportAppender(target)
@@ -271,7 +272,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppendable{}
 
-	sp := newScrapePool(context.Background(), cfg, app)
+	sp := newScrapePool(context.Background(), cfg, app, log.Base())
 
 	cfg.HonorLabels = false
 	wrapped := sp.sampleAppender(target)

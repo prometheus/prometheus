@@ -25,15 +25,15 @@ func TestParse(t *testing.T) {
 			valid: true,
 		},
 		{
-			input: []string{"-web.external-url", ""},
+			input: []string{"--web.external-url", ""},
 			valid: true,
 		},
 		{
-			input: []string{"-web.external-url", "http://proxy.com/prometheus"},
+			input: []string{"--web.external-url", "http://proxy.com/prometheus"},
 			valid: true,
 		},
 		{
-			input: []string{"-web.external-url", "'https://url/prometheus'"},
+			input: []string{"--web.external-url", "'https://url/prometheus'"},
 			valid: false,
 		},
 	}
@@ -42,6 +42,8 @@ func TestParse(t *testing.T) {
 		// reset "immutable" config
 		cfg.prometheusURL = ""
 		cfg.alertmanagerURLs = stringset{}
+
+		newRootCmd() // To register the flags and flagset.
 
 		err := parse(test.input)
 		if test.valid && err != nil {
