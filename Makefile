@@ -66,8 +66,8 @@ docker:
 
 k8s: promu
 	@$(PROMU) crossbuild
-	@ln -s $(shell pwd)/.build/linux-amd64/prometheus prometheus
-	@ln -s $(shell pwd)/.build/linux-amd64/promtool promtool
+	@cp $(shell pwd)/.build/linux-amd64/prometheus $(shell pwd)/prometheus
+	@cp $(shell pwd)/.build/linux-amd64/promtool $(shell pwd)/promtool
 	@docker build -t prometheus:travis .
 	@echo ">> running in k8s on Travis"
 	@kubectl create configmap prometheus --from-file=$(shell pwd)/documentation/examples/
