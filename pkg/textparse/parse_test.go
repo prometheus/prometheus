@@ -114,6 +114,14 @@ func TestParseErrors(t *testing.T) {
 			err:   "no token found",
 		},
 		{
+			input: "a{b='c'} 1\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{b=\n",
+			err:   "no token found",
+		},
+		{
 			input: "a{\xff=\"foo\"} 1\n",
 			err:   "no token found",
 		},

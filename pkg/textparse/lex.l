@@ -88,8 +88,6 @@ M     [a-zA-Z_:]
                                         return -1
                                       }
                                       l.offsets = append(l.offsets, l.i-1)
-<lstateLValue>\'(\\.|[^\\']|\0)*\'    s = lstateLabels
-                                      l.offsets = append(l.offsets, l.i-1)
 
 <lstateValue>[ \t]+                   l.vstart = l.i
 <lstateValue>(NaN)                    l.val = math.Float64frombits(value.NormalNaN)
