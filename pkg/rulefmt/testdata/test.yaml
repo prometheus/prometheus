@@ -1,4 +1,3 @@
-version: 1
 groups:
 - name: my-group-name
   interval: 30s   # defaults to global interval
