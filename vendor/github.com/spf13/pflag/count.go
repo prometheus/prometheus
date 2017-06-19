@@ -1,9 +1,6 @@
 package pflag
 
-import (
-	"fmt"
-	"strconv"
-)
+import "strconv"
 
 // -- count Value
 type countValue int
@@ -28,7 +25,7 @@ func (i *countValue) Type() string {
 	return "count"
 }
 
-func (i *countValue) String() string { return fmt.Sprintf("%v", *i) }
+func (i *countValue) String() string { return strconv.Itoa(int(*i)) }
 
 func countConv(sval string) (interface{}, error) {
 	i, err := strconv.Atoi(sval)
@@ -86,7 +83,9 @@ func (f *FlagSet) CountP(name, shorthand string, usage string) *int {
 	return p
 }
 
-// Count like Count only the flag is placed on the CommandLine isntead of a given flag set
+// Count defines a count flag with specified name, default value, and usage string.
+// The return value is the address of an int variable that stores the value of the flag.
+// A count flag will add 1 to its value evey time it is found on the command line
 func Count(name string, usage string) *int {
 	return CommandLine.CountP(name, "", usage)
 }

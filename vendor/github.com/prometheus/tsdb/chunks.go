@@ -54,6 +54,46 @@ func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 	return nil
 }
 
+// deletedIterator wraps an Iterator and makes sure any deleted metrics are not
+// returned.
+type deletedIterator struct {
+	it chunks.Iterator
+
+	intervals intervals
+}
+
+func (it *deletedIterator) At() (int64, float64) {
+	return it.it.At()
+}
+
+func (it *deletedIterator) Next() bool {
+Outer:
+	for it.it.Next() {
+		ts, _ := it.it.At()
+
+		for _, tr := range it.intervals {
+			if tr.inBounds(ts) {
+				continue Outer
+			}
+
+			if ts > tr.maxt {
+				it.intervals = it.intervals[1:]
+				continue
+			}
+
+			return true
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func (it *deletedIterator) Err() error {
+	return it.it.Err()
+}
+
 // ChunkWriter serializes a time block of chunked series data.
 type ChunkWriter interface {
 	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas

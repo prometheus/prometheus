@@ -136,6 +136,8 @@ type Group struct {
 
 	done       chan struct{}
 	terminated chan struct{}
+
+	logger log.Logger
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -149,6 +151,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *Man
 		seriesInPreviousEval: make([]map[string]labels.Labels, len(rules)),
 		done:                 make(chan struct{}),
 		terminated:           make(chan struct{}),
+		logger:               opts.Logger.With("group", name),
 	}
 }
 
@@ -305,7 +308,7 @@ func (g *Group) Eval(ts time.Time) {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
-					log.Warnf("Error while evaluating rule %q: %s", rule, err)
+					g.logger.Warnf("Error while evaluating rule %q: %s", rule, err)
 				}
 				evalFailures.WithLabelValues(rtyp).Inc()
 				return
@@ -321,7 +324,7 @@ func (g *Group) Eval(ts time.Time) {
 
 			app, err := g.opts.Appendable.Appender()
 			if err != nil {
-				log.With("err", err).Warn("creating appender failed")
+				g.logger.With("err", err).Warn("creating appender failed")
 				return
 			}
 
@@ -331,22 +334,22 @@ func (g *Group) Eval(ts time.Time) {
 					switch err {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
-						log.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
+						g.logger.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
 					case storage.ErrDuplicateSampleForTimestamp:
 						numDuplicates++
-						log.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
+						g.logger.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
 					default:
-						log.With("sample", s).With("err", err).Warn("Rule evaluation result discarded")
+						g.logger.With("sample", s).With("err", err).Warn("Rule evaluation result discarded")
 					}
 				} else {
 					seriesReturned[s.Metric.String()] = s.Metric
 				}
 			}
 			if numOutOfOrder > 0 {
-				log.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order result from rule evaluation")
+				g.logger.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order result from rule evaluation")
 			}
 			if numDuplicates > 0 {
-				log.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
+				g.logger.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
 			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
@@ -359,12 +362,12 @@ func (g *Group) Eval(ts time.Time) {
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
-						log.With("sample", metric).With("err", err).Warn("adding stale sample failed")
+						g.logger.With("sample", metric).With("err", err).Warn("adding stale sample failed")
 					}
 				}
 			}
 			if err := app.Commit(); err != nil {
-				log.With("err", err).Warn("rule sample appending failed")
+				g.logger.With("err", err).Warn("rule sample appending failed")
 			} else {
 				g.seriesInPreviousEval[i] = seriesReturned
 			}
@@ -408,6 +411,8 @@ type Manager struct {
 	groups map[string]*Group
 	mtx    sync.RWMutex
 	block  chan struct{}
+
+	logger log.Logger
 }
 
 // Appendable returns an Appender.
@@ -422,17 +427,18 @@ type ManagerOptions struct {
 	Context     context.Context
 	Notifier    *notifier.Notifier
 	Appendable  Appendable
+	Logger      log.Logger
 }
 
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
-	manager := &Manager{
+	return &Manager{
 		groups: map[string]*Group{},
 		opts:   o,
 		block:  make(chan struct{}),
+		logger: o.Logger,
 	}
-	return manager
 }
 
 // Run starts processing of the rule manager.
@@ -445,13 +451,13 @@ func (m *Manager) Stop() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	log.Info("Stopping rule manager...")
+	m.logger.Info("Stopping rule manager...")
 
 	for _, eg := range m.groups {
 		eg.stop()
 	}
 
-	log.Info("Rule manager stopped.")
+	m.logger.Info("Rule manager stopped.")
 }
 
 // ApplyConfig updates the rule manager's state as the config requires. If
@@ -475,8 +481,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	groups, errs := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
 	if errs != nil {
 		for _, e := range errs {
-			// TODO(gouthamve): Move to non-global logger.
-			log.Errorln(e)
+			m.logger.Errorln(e)
 		}
 		return errors.New("error loading rules, previous rule set restored")
 	}
@@ -550,6 +555,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
+						m.logger,
 					))
 					continue
 				}

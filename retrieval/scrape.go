@@ -112,13 +112,15 @@ type scrapePool struct {
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(context.Context, scraper, func() storage.Appender, func() storage.Appender, log.Logger) loop
+
+	logger log.Logger
 }
 
-func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable) *scrapePool {
+func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
 	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
-		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+		logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
 	}
 
 	newLoop := func(
@@ -138,6 +140,7 @@ func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable
 		targets:    map[uint64]*Target{},
 		loops:      map[uint64]loop{},
 		newLoop:    newLoop,
+		logger:     logger,
 	}
 }
 
@@ -175,7 +178,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
-		log.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+		sp.logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
 	}
 	sp.config = cfg
 	sp.client = client
@@ -197,7 +200,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 				func() storage.Appender {
 					return sp.reportAppender(t)
 				},
-				log.With("target", t.labels.String()),
+				sp.logger.With("target", t.labels.String()),
 			)
 		)
 		wg.Add(1)
@@ -227,7 +230,7 @@ func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
 	for _, tg := range tgs {
 		targets, err := targetsFromGroup(tg, sp.config)
 		if err != nil {
-			log.With("err", err).Error("creating targets failed")
+			sp.logger.With("err", err).Error("creating targets failed")
 			continue
 		}
 		all = append(all, targets...)
@@ -267,7 +270,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				func() storage.Appender {
 					return sp.reportAppender(t)
 				},
-				log.With("target", t.labels.String()),
+				sp.logger.With("target", t.labels.String()),
 			)
 
 			sp.targets[hash] = t
@@ -579,7 +582,6 @@ mainLoop:
 		}
 
 		var (
-			total, added      int
 			start             = time.Now()
 			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
 		)
@@ -591,18 +593,20 @@ mainLoop:
 			)
 		}
 
-		err := sl.scraper.scrape(scrapeCtx, buf)
+		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
 		var b []byte
-		if err == nil {
+		if scrapeErr == nil {
 			b = buf.Bytes()
 		} else if errc != nil {
-			errc <- err
+			errc <- scrapeErr
 		}
+
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
-		if total, added, err = sl.append(b, start); err != nil {
-			sl.l.With("err", err).Warn("append failed")
+		total, added, appErr := sl.append(b, start)
+		if appErr != nil {
+			sl.l.With("err", appErr).Warn("append failed")
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, err := sl.append([]byte{}, start); err != nil {
@@ -610,7 +614,11 @@ mainLoop:
 			}
 		}
 
-		sl.report(start, time.Since(start), total, added, err)
+		if scrapeErr == nil {
+			scrapeErr = appErr
+		}
+
+		sl.report(start, time.Since(start), total, added, scrapeErr)
 		last = start
 
 		select {

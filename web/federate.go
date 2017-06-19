@@ -55,7 +55,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var (
-		mint   = timestamp.FromTime(h.now().Time().Add(-promql.StalenessDelta))
+		mint   = timestamp.FromTime(h.now().Time().Add(-promql.LookbackDelta))
 		maxt   = timestamp.FromTime(h.now().Time())
 		format = expfmt.Negotiate(req.Header)
 		enc    = expfmt.NewEncoder(w, format)
@@ -86,7 +86,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it := storage.NewBuffer(s.Iterator(), int64(promql.StalenessDelta/1e6))
+		it := storage.NewBuffer(s.Iterator(), int64(promql.LookbackDelta/1e6))
 
 		var t int64
 		var v float64

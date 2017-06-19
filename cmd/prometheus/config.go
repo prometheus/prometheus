@@ -34,12 +34,13 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/web"
+	"github.com/spf13/pflag"
 )
 
 // cfg contains immutable configuration parameters for a running Prometheus
 // server. It is populated by its flag set.
 var cfg = struct {
-	fs *flag.FlagSet
+	fs *pflag.FlagSet
 
 	printVersion bool
 	configFile   string
@@ -47,131 +48,34 @@ var cfg = struct {
 	localStoragePath   string
 	localStorageEngine string
 	notifier           notifier.Options
-	notifierTimeout    time.Duration
+	notifierTimeout    model.Duration
 	queryEngine        promql.EngineOptions
 	web                web.Options
 	tsdb               tsdb.Options
+	lookbackDelta      model.Duration
+	webTimeout         model.Duration
+	queryTimeout       model.Duration
 
 	alertmanagerURLs stringset
 	prometheusURL    string
 
-	// Deprecated storage flags, kept for backwards compatibility.
-	deprecatedMemoryChunks       uint64
-	deprecatedMaxChunksToPersist uint64
+	logFormat string
+	logLevel  string
 }{
+	// The defaults for model.Duration flag parsing.
+	notifierTimeout: model.Duration(10 * time.Second),
+	tsdb: tsdb.Options{
+		MinBlockDuration: model.Duration(2 * time.Hour),
+		Retention:        model.Duration(15 * 24 * time.Hour),
+	},
+	lookbackDelta: model.Duration(5 * time.Minute),
+	webTimeout:    model.Duration(30 * time.Second),
+	queryTimeout:  model.Duration(2 * time.Minute),
+
 	alertmanagerURLs: stringset{},
 	notifier: notifier.Options{
 		Registerer: prometheus.DefaultRegisterer,
 	},
-}
-
-func init() {
-	cfg.fs = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-	cfg.fs.Usage = usage
-
-	cfg.fs.BoolVar(
-		&cfg.printVersion, "version", false,
-		"Print version information.",
-	)
-	cfg.fs.StringVar(
-		&cfg.configFile, "config.file", "prometheus.yml",
-		"Prometheus configuration file name.",
-	)
-
-	// Web.
-	cfg.fs.StringVar(
-		&cfg.web.ListenAddress, "web.listen-address", ":9090",
-		"Address to listen on for the web interface, API, and telemetry.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.web.ReadTimeout, "web.read-timeout", 30*time.Second,
-		"Maximum duration before timing out read of the request, and closing idle connections.",
-	)
-	cfg.fs.IntVar(
-		&cfg.web.MaxConnections, "web.max-connections", 512,
-		"Maximum number of simultaneous connections.",
-	)
-	cfg.fs.StringVar(
-		&cfg.prometheusURL, "web.external-url", "",
-		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
-	)
-	cfg.fs.StringVar(
-		&cfg.web.RoutePrefix, "web.route-prefix", "",
-		"Prefix for the internal routes of web endpoints. Defaults to path of -web.external-url.",
-	)
-	cfg.fs.StringVar(
-		&cfg.web.MetricsPath, "web.telemetry-path", "/metrics",
-		"Path under which to expose metrics.",
-	)
-	cfg.fs.StringVar(
-		&cfg.web.UserAssetsPath, "web.user-assets", "",
-		"Path to static asset directory, available at /user.",
-	)
-	cfg.fs.BoolVar(
-		&cfg.web.EnableQuit, "web.enable-remote-shutdown", false,
-		"Enable remote service shutdown.",
-	)
-	cfg.fs.StringVar(
-		&cfg.web.ConsoleTemplatesPath, "web.console.templates", "consoles",
-		"Path to the console template directory, available at /consoles.",
-	)
-	cfg.fs.StringVar(
-		&cfg.web.ConsoleLibrariesPath, "web.console.libraries", "console_libraries",
-		"Path to the console library directory.",
-	)
-
-	// Storage.
-	cfg.fs.StringVar(
-		&cfg.localStoragePath, "storage.local.path", "data",
-		"Base path for metrics storage.",
-	)
-	cfg.fs.BoolVar(
-		&cfg.tsdb.NoLockfile, "storage.tsdb.no-lockfile", false,
-		"Disable lock file usage.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.tsdb.MinBlockDuration, "storage.tsdb.min-block-duration", 2*time.Hour,
-		"Minimum duration of a data block before being persisted.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration", 0,
-		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)",
-	)
-	cfg.fs.DurationVar(
-		&cfg.tsdb.Retention, "storage.tsdb.retention", 15*24*time.Hour,
-		"How long to retain samples in the storage.",
-	)
-	cfg.fs.StringVar(
-		&cfg.localStorageEngine, "storage.local.engine", "persisted",
-		"Local storage engine. Supported values are: 'persisted' (full local storage with on-disk persistence) and 'none' (no local storage).",
-	)
-
-	// Alertmanager.
-	cfg.fs.IntVar(
-		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
-		"The capacity of the queue for pending alert manager notifications.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.notifierTimeout, "alertmanager.timeout", 10*time.Second,
-		"Alert manager HTTP API timeout.",
-	)
-
-	// Query engine.
-	cfg.fs.DurationVar(
-		&promql.StalenessDelta, "query.staleness-delta", promql.StalenessDelta,
-		"Staleness delta allowance during expression evaluations.",
-	)
-	cfg.fs.DurationVar(
-		&cfg.queryEngine.Timeout, "query.timeout", 2*time.Minute,
-		"Maximum time a query may take before being aborted.",
-	)
-	cfg.fs.IntVar(
-		&cfg.queryEngine.MaxConcurrentQueries, "query.max-concurrency", 20,
-		"Maximum number of queries executed concurrently.",
-	)
-
-	// Flags from the log package have to be added explicitly to our custom flag set.
-	log.AddFlags(cfg.fs)
 }
 
 func parse(args []string) error {
@@ -186,13 +90,11 @@ func parse(args []string) error {
 		return err
 	}
 
-	if promql.StalenessDelta < 0 {
-		return fmt.Errorf("negative staleness delta: %s", promql.StalenessDelta)
-	}
-
 	if err := parsePrometheusURL(); err != nil {
 		return err
 	}
+
+	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
 	if cfg.web.RoutePrefix == "" {
 		cfg.web.RoutePrefix = cfg.web.ExternalURL.Path
@@ -209,6 +111,12 @@ func parse(args []string) error {
 	if cfg.tsdb.MaxBlockDuration == 0 {
 		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
 	}
+
+	if cfg.lookbackDelta > 0 {
+		promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
+	}
+
+	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
 
 	return nil
 }
@@ -269,7 +177,7 @@ func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error)
 	acfg := &config.AlertmanagerConfig{
 		Scheme:     u.Scheme,
 		PathPrefix: u.Path,
-		Timeout:    cfg.notifierTimeout,
+		Timeout:    time.Duration(cfg.notifierTimeout),
 		ServiceDiscoveryConfig: config.ServiceDiscoveryConfig{
 			StaticConfigs: []*config.TargetGroup{
 				{
@@ -335,10 +243,10 @@ func usage() {
 	})
 	t = template.Must(t.Parse(helpTmpl))
 
-	groups := make(map[string][]*flag.Flag)
+	groups := make(map[string][]*pflag.Flag)
 
 	// Bucket flags into groups based on the first of their dot-separated levels.
-	cfg.fs.VisitAll(func(fl *flag.Flag) {
+	cfg.fs.VisitAll(func(fl *pflag.Flag) {
 		parts := strings.SplitN(fl.Name, ".", 2)
 		if len(parts) == 1 {
 			groups["."] = append(groups["."], fl)

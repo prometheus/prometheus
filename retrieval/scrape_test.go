@@ -44,7 +44,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(context.Background(), cfg, app)
+		sp  = newScrapePool(context.Background(), cfg, app, log.Base())
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -167,6 +167,7 @@ func TestScrapePoolReload(t *testing.T) {
 		targets:    map[uint64]*Target{},
 		loops:      map[uint64]loop{},
 		newLoop:    newLoop,
+		logger:     log.Base(),
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -236,7 +237,7 @@ func TestScrapePoolReportAppender(t *testing.T) {
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppendable{}
 
-	sp := newScrapePool(context.Background(), cfg, app)
+	sp := newScrapePool(context.Background(), cfg, app, log.Base())
 
 	cfg.HonorLabels = false
 	wrapped := sp.reportAppender(target)
@@ -271,7 +272,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
 	app := &nopAppendable{}
 
-	sp := newScrapePool(context.Background(), cfg, app)
+	sp := newScrapePool(context.Background(), cfg, app, log.Base())
 
 	cfg.HonorLabels = false
 	wrapped := sp.sampleAppender(target)
@@ -818,6 +819,28 @@ func TestScrapeLoopRunAppliesScrapeLimit(t *testing.T) {
 		if reportAppender.result[3].v != c.scrapeSamplesScrapedPostMetricRelabelling {
 			t.Fatalf("Case %d appended scrape_samples_scraped_post_metric_relabeling sample not as expected. Wanted: %f Got: %+v", i, c.scrapeSamplesScrapedPostMetricRelabelling, reportAppender.result[3])
 		}
+	}
+}
+
+func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
+	var (
+		scraper        = &testScraper{}
+		reportAppender = &collectResultAppender{}
+		reportApp      = func() storage.Appender { return reportAppender }
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx, scraper, func() storage.Appender { return nopAppender{} }, reportApp, nil)
+
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		cancel()
+		return fmt.Errorf("scrape failed")
+	}
+
+	sl.run(10*time.Millisecond, time.Hour, nil)
+
+	if reportAppender.result[0].v != 0 {
+		t.Fatalf("bad 'up' value; want 0, got %v", reportAppender.result[0].v)
 	}
 }
 
