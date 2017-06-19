@@ -14,11 +14,12 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -26,12 +27,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
@@ -127,6 +128,7 @@ type Rule interface {
 // Group is a set of rules that have a logical relation.
 type Group struct {
 	name                 string
+	file                 string
 	interval             time.Duration
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
@@ -139,9 +141,10 @@ type Group struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
-func NewGroup(name string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
+func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
 	return &Group{
 		name:                 name,
+		file:                 file,
 		interval:             interval,
 		rules:                rules,
 		opts:                 opts,
@@ -151,6 +154,15 @@ func NewGroup(name string, interval time.Duration, rules []Rule, opts *ManagerOp
 		logger:               opts.Logger.With("group", name),
 	}
 }
+
+// Name returns the group name.
+func (g *Group) Name() string { return g.name }
+
+// File returns the group's file.
+func (g *Group) File() string { return g.file }
+
+// Rules returns the group's rules.
+func (g *Group) Rules() []Rule { return g.rules }
 
 func (g *Group) run() {
 	defer close(g.terminated)
@@ -202,9 +214,13 @@ func (g *Group) stop() {
 	<-g.terminated
 }
 
-func (g *Group) fingerprint() model.Fingerprint {
-	l := model.LabelSet{"name": model.LabelValue(g.name)}
-	return l.Fingerprint()
+func (g *Group) hash() uint64 {
+	l := labels.New(
+		labels.Label{"name", g.name},
+		labels.Label{"file", g.file},
+	)
+
+	return l.Hash()
 }
 
 // offset returns until the next consistently slotted evaluation interval.
@@ -213,7 +229,7 @@ func (g *Group) offset() time.Duration {
 
 	var (
 		base   = now - (now % int64(g.interval))
-		offset = uint64(g.fingerprint()) % uint64(g.interval)
+		offset = g.hash() % uint64(g.interval)
 		next   = base + int64(offset)
 	)
 
@@ -269,22 +285,18 @@ func typeForRule(r Rule) ruleType {
 	panic(fmt.Errorf("unknown rule type: %T", r))
 }
 
-// Eval runs a single evaluation cycle in which all rules are evaluated in parallel.
-// In the future a single group will be evaluated sequentially to properly handle
-// rule dependency.
+// Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ts time.Time) {
-	var (
-		wg sync.WaitGroup
-	)
-
 	for i, rule := range g.rules {
+		select {
+		case <-g.done:
+			return
+		default:
+		}
+
 		rtyp := string(typeForRule(rule))
 
-		wg.Add(1)
-		// BUG(julius): Look at fixing thundering herd.
-		go func(i int, rule Rule) {
-			defer wg.Done()
-
+		func(i int, rule Rule) {
 			defer func(t time.Time) {
 				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
 			}(time.Now())
@@ -361,7 +373,6 @@ func (g *Group) Eval(ts time.Time) {
 			}
 		}(i, rule)
 	}
-	wg.Wait()
 }
 
 // sendAlerts sends alert notifications for the given rule.
@@ -404,6 +415,7 @@ type Manager struct {
 	logger log.Logger
 }
 
+// Appendable returns an Appender.
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }
@@ -466,9 +478,12 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	}
 
 	// To be replaced with a configurable per-group interval.
-	groups, err := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
-	if err != nil {
-		return fmt.Errorf("error loading rules, previous rule set restored: %s", err)
+	groups, errs := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
+	if errs != nil {
+		for _, e := range errs {
+			m.logger.Errorln(e)
+		}
+		return errors.New("error loading rules, previous rule set restored")
 	}
 
 	var wg sync.WaitGroup
@@ -511,40 +526,69 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 // loadGroups reads groups from a list of files.
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
-func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, error) {
-	rules := []Rule{}
+func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
+	groups := make(map[string]*Group)
+
 	for _, fn := range filenames {
-		content, err := ioutil.ReadFile(fn)
-		if err != nil {
-			return nil, err
-		}
-		stmts, err := promql.ParseStmts(string(content))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing %s: %s", fn, err)
+		rgs, errs := rulefmt.ParseFile(fn)
+		if errs != nil {
+			return nil, errs
 		}
 
-		for _, stmt := range stmts {
-			var rule Rule
-
-			switch r := stmt.(type) {
-			case *promql.AlertStmt:
-				rule = NewAlertingRule(r.Name, r.Expr, r.Duration, r.Labels, r.Annotations, m.logger)
-
-			case *promql.RecordStmt:
-				rule = NewRecordingRule(r.Name, r.Expr, r.Labels)
-
-			default:
-				panic("retrieval.Manager.LoadRuleFiles: unknown statement type")
+		for _, rg := range rgs.Groups {
+			itv := interval
+			if rg.Interval != 0 {
+				itv = time.Duration(rg.Interval)
 			}
-			rules = append(rules, rule)
+
+			rules := make([]Rule, 0, len(rg.Rules))
+			for _, r := range rg.Rules {
+				expr, err := promql.ParseExpr(r.Expr)
+				if err != nil {
+					return nil, []error{err}
+				}
+
+				if r.Alert != "" {
+					rules = append(rules, NewAlertingRule(
+						r.Alert,
+						expr,
+						time.Duration(r.For),
+						labels.FromMap(r.Labels),
+						labels.FromMap(r.Annotations),
+						m.logger,
+					))
+					continue
+				}
+				rules = append(rules, NewRecordingRule(
+					r.Record,
+					expr,
+					labels.FromMap(r.Labels),
+				))
+			}
+
+			// Group names need not be unique across filenames.
+			groups[rg.Name+";"+fn] = NewGroup(rg.Name, fn, itv, rules, m.opts)
 		}
 	}
 
-	// Currently there is no group syntax implemented. Thus all rules
-	// are read into a single default group.
-	g := NewGroup("default", interval, rules, m.opts)
-	groups := map[string]*Group{g.name: g}
 	return groups, nil
+}
+
+// RuleGroups returns the list of manager's rule groups.
+func (m *Manager) RuleGroups() []*Group {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+
+	rgs := make([]*Group, 0, len(m.groups))
+	for _, g := range m.groups {
+		rgs = append(rgs, g)
+	}
+
+	sort.Slice(rgs, func(i, j int) bool {
+		return rgs[i].file < rgs[j].file && rgs[i].name < rgs[j].name
+	})
+
+	return rgs
 }
 
 // Rules returns the list of the manager's rules.

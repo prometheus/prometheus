@@ -20,8 +20,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	yaml "gopkg.in/yaml.v2"
+
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/cli"
 	"github.com/prometheus/prometheus/util/promlint"
@@ -148,8 +152,11 @@ func CheckRulesCmd(t cli.Term, args ...string) int {
 	failed := false
 
 	for _, arg := range args {
-		if n, err := checkRules(t, arg); err != nil {
-			t.Errorf("  FAILED: %s", err)
+		if n, errs := checkRules(t, arg); errs != nil {
+			t.Errorf("  FAILED:")
+			for _, e := range errs {
+				t.Errorf(e.Error())
+			}
 			failed = true
 		} else {
 			t.Infof("  SUCCESS: %d rules found", n)
@@ -162,25 +169,104 @@ func CheckRulesCmd(t cli.Term, args ...string) int {
 	return 0
 }
 
-func checkRules(t cli.Term, filename string) (int, error) {
+func checkRules(t cli.Term, filename string) (int, []error) {
 	t.Infof("Checking %s", filename)
 
 	if stat, err := os.Stat(filename); err != nil {
-		return 0, fmt.Errorf("cannot get file info")
+		return 0, []error{fmt.Errorf("cannot get file info")}
 	} else if stat.IsDir() {
-		return 0, fmt.Errorf("is a directory")
+		return 0, []error{fmt.Errorf("is a directory")}
+	}
+
+	rgs, errs := rulefmt.ParseFile(filename)
+	if errs != nil {
+		return 0, errs
+	}
+
+	numRules := 0
+	for _, rg := range rgs.Groups {
+		numRules += len(rg.Rules)
+	}
+
+	return numRules, nil
+}
+
+// UpdateRulesCmd updates the rule files.
+func UpdateRulesCmd(t cli.Term, args ...string) int {
+	if len(args) == 0 {
+		t.Infof("usage: promtool update-rules <files>")
+		return 2
+	}
+	failed := false
+
+	for _, arg := range args {
+		if err := updateRules(t, arg); err != nil {
+			t.Errorf("  FAILED: %s", err)
+			failed = true
+		}
+	}
+
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func updateRules(t cli.Term, filename string) error {
+	t.Infof("Updating %s", filename)
+
+	if stat, err := os.Stat(filename); err != nil {
+		return fmt.Errorf("cannot get file info")
+	} else if stat.IsDir() {
+		return fmt.Errorf("is a directory")
 	}
 
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	rules, err := promql.ParseStmts(string(content))
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return len(rules), nil
+
+	yamlRG := &rulefmt.RuleGroups{
+		Groups: []rulefmt.RuleGroup{{
+			Name: filename,
+		}},
+	}
+
+	yamlRules := make([]rulefmt.Rule, 0, len(rules))
+
+	for _, rule := range rules {
+		switch r := rule.(type) {
+		case *promql.AlertStmt:
+			yamlRules = append(yamlRules, rulefmt.Rule{
+				Alert:       r.Name,
+				Expr:        r.Expr.String(),
+				For:         model.Duration(r.Duration),
+				Labels:      r.Labels.Map(),
+				Annotations: r.Annotations.Map(),
+			})
+		case *promql.RecordStmt:
+			yamlRules = append(yamlRules, rulefmt.Rule{
+				Record: r.Name,
+				Expr:   r.Expr.String(),
+				Labels: r.Labels.Map(),
+			})
+		default:
+			panic("unknown statement type")
+		}
+	}
+
+	yamlRG.Groups[0].Rules = yamlRules
+	y, err := yaml.Marshal(yamlRG)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(filename+".yaml", y, 0666)
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
@@ -241,6 +327,11 @@ func main() {
 	app.Register("check-metrics", &cli.Command{
 		Desc: "validate metrics for correctness",
 		Run:  CheckMetricsCmd,
+	})
+
+	app.Register("update-rules", &cli.Command{
+		Desc: "update rules to the new YAML format",
+		Run:  UpdateRulesCmd,
 	})
 
 	app.Register("version", &cli.Command{

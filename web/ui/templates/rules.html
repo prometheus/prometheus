@@ -3,6 +3,7 @@
 {{define "content"}}
   <div class="container-fluid">
     <h2 id="rules">Rules</h2>
-    <pre>{{range .Rules}}{{.HTMLSnippet pathPrefix}}<br/>{{end}}</pre>
+    <pre>{{range .RuleGroups}}File: {{.File}}; Group name: {{.Name}}
+{{range .Rules}}{{.HTMLSnippet pathPrefix}} </br>{{end}}{{end}}</pre>
   </div>
 {{end}}
