@@ -37,8 +37,7 @@ func (err *Error) Error() string {
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
-	Version int         `yaml:"version"`
-	Groups  []RuleGroup `yaml:"groups"`
+	Groups []RuleGroup `yaml:"groups"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -46,9 +45,6 @@ type RuleGroups struct {
 
 // Validate validates all rules in the rule groups.
 func (g *RuleGroups) Validate() (errs []error) {
-	if g.Version != 1 {
-		errs = append(errs, errors.Errorf("invalid rule group version %d", g.Version))
-	}
 	set := map[string]struct{}{}
 
 	for _, g := range g.Groups {

@@ -1,4 +1,3 @@
-version: 1
 groups:
 - name: yolo
   rules:

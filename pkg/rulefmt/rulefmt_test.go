@@ -38,10 +38,6 @@ func TestParseFileFailure(t *testing.T) {
 			errMsg:   "groupname: \"yolo\" is repeated in the same file",
 		},
 		{
-			filename: "noversion.bad.yaml",
-			errMsg:   "invalid rule group version 0",
-		},
-		{
 			filename: "bad_expr.bad.yaml",
 			errMsg:   "parse error",
 		},

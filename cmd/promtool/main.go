@@ -232,7 +232,6 @@ func updateRules(t cli.Term, filename string) error {
 	}
 
 	yamlRG := &rulefmt.RuleGroups{
-		Version: 1,
 		Groups: []rulefmt.RuleGroup{{
 			Name: filename,
 		}},
