@@ -63,13 +63,15 @@ type Discovery struct {
 	// and how many target groups they contained.
 	// This is used to detect deleted target groups.
 	lastRefresh map[string]int
+	logger      log.Logger
 }
 
 // NewDiscovery returns a new file discovery for the given paths.
-func NewDiscovery(conf *config.FileSDConfig) *Discovery {
+func NewDiscovery(conf *config.FileSDConfig, logger log.Logger) *Discovery {
 	return &Discovery{
 		paths:    conf.Files,
 		interval: time.Duration(conf.RefreshInterval),
+		logger:   logger,
 	}
 }
 
@@ -79,7 +81,7 @@ func (d *Discovery) listFiles() []string {
 	for _, p := range d.paths {
 		files, err := filepath.Glob(p)
 		if err != nil {
-			log.Errorf("Error expanding glob %q: %s", p, err)
+			d.logger.Errorf("Error expanding glob %q: %s", p, err)
 			continue
 		}
 		paths = append(paths, files...)
@@ -100,7 +102,7 @@ func (d *Discovery) watchFiles() {
 			p = "./"
 		}
 		if err := d.watcher.Add(p); err != nil {
-			log.Errorf("Error adding file watch for %q: %s", p, err)
+			d.logger.Errorf("Error adding file watch for %q: %s", p, err)
 		}
 	}
 }
@@ -111,7 +113,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Errorf("Error creating file watcher: %s", err)
+		d.logger.Errorf("Error creating file watcher: %s", err)
 		return
 	}
 	d.watcher = watcher
@@ -149,7 +151,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 		case err := <-d.watcher.Errors:
 			if err != nil {
-				log.Errorf("Error on file watch: %s", err)
+				d.logger.Errorf("Error on file watch: %s", err)
 			}
 		}
 	}
@@ -157,7 +159,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 // stop shuts down the file watcher.
 func (d *Discovery) stop() {
-	log.Debugf("Stopping file discovery for %s...", d.paths)
+	d.logger.Debugf("Stopping file discovery for %s...", d.paths)
 
 	done := make(chan struct{})
 	defer close(done)
@@ -175,10 +177,10 @@ func (d *Discovery) stop() {
 		}
 	}()
 	if err := d.watcher.Close(); err != nil {
-		log.Errorf("Error closing file watcher for %s: %s", d.paths, err)
+		d.logger.Errorf("Error closing file watcher for %s: %s", d.paths, err)
 	}
 
-	log.Debugf("File discovery for %s stopped.", d.paths)
+	d.logger.Debugf("File discovery for %s stopped.", d.paths)
 }
 
 // refresh reads all files matching the discovery's patterns and sends the respective
@@ -194,7 +196,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup
 		tgroups, err := readFile(p)
 		if err != nil {
 			fileSDReadErrorsCount.Inc()
-			log.Errorf("Error reading file %q: %s", p, err)
+			d.logger.Errorf("Error reading file %q: %s", p, err)
 			// Prevent deletion down below.
 			ref[p] = d.lastRefresh[p]
 			continue

@@ -364,7 +364,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
 
   var startTime = new Date().getTime();
   var rangeSeconds = self.parseDuration(self.rangeInput.val());
-  var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
+  var resolution = parseInt(self.queryForm.find("input[name=step_input]").val()) || Math.max(Math.floor(rangeSeconds / 250), 1);
   var endDate = self.getEndDate() / 1000;
 
   if (self.queryXhr) {
@@ -386,6 +386,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
     url = PATH_PREFIX + "/api/v1/query";
     success = function(json, textStatus) { self.handleConsoleResponse(json, textStatus); };
   }
+  self.params = params;
 
   self.queryXhr = $.ajax({
       method: self.queryForm.attr("method"),
@@ -518,7 +519,21 @@ Prometheus.Graph.prototype.transformData = function(json) {
       color: palette.color()
     };
   });
-  Rickshaw.Series.zeroFill(data);
+  data.forEach(function(s) {
+    // Insert nulls for all missing steps.
+    var newSeries = [];
+    var pos = 0;
+    for (var t = self.params.start; t <= self.params.end; t += self.params.step) {
+      // Allow for floating point inaccuracy.
+      if (s.data.length > pos && s.data[pos].x < t + self.params.step / 100) {
+        newSeries.push(s.data[pos]);
+        pos++;
+      } else {
+        newSeries.push({x: t, y: null});
+      }
+    }
+    s.data = newSeries;
+  });
   return data;
 };
 

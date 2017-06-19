@@ -223,6 +223,43 @@ eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
 
 clear
 
+# Tests for label_join.
+load 5m
+  testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
+  testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+
+# label_join joins all src values in order.
+eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
+  testmetric{src="a",src1="b",src2="c",dst="a-b-c"} 0
+  testmetric{src="d",src1="e",src2="f",dst="d-e-f"} 1
+
+# label_join treats non existent src labels as empty strings.
+eval instant at 0m label_join(testmetric, "dst", "-", "src", "src3", "src1")
+  testmetric{src="a",src1="b",src2="c",dst="a--b"} 0
+  testmetric{src="d",src1="e",src2="f",dst="d--e"} 1
+
+# label_join overwrites the destination label even if the resulting dst label is empty string
+eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "emptysrc2")
+  testmetric{src="a",src1="b",src2="c"} 0
+  testmetric{src="d",src1="e",src2="f"} 1
+
+# test without src label for label_join
+eval instant at 0m label_join(testmetric, "dst", ", ")
+	  testmetric{src="a",src1="b",src2="c"} 0
+	  testmetric{src="d",src1="e",src2="f"} 1
+
+# test without dst label for label_join
+load 5m
+  testmetric1{src="foo",src1="bar",src2="foobar"} 0
+  testmetric1{src="fizz",src1="buzz",src2="fizzbuzz"} 1
+
+# label_join creates dst label if not present.
+eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
+  testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
+  testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
+
+clear
+
 # Tests for vector.
 eval instant at 0m vector(1)
   {} 1

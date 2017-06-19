@@ -354,6 +354,96 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "ndG2xmm2bas4/t+kIEUp2xIni8c=",
+			"path": "github.com/gophercloud/gophercloud",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "24DO5BEQdFKNl1rfWgI2b4+ry5U=",
+			"path": "github.com/gophercloud/gophercloud/openstack",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "Au6MAsI90lewLByg9n+Yjtdqdh8=",
+			"path": "github.com/gophercloud/gophercloud/openstack/common/extensions",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "4XWDCGMYqipwJymi9xJo9UffD7g=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "e7AW3YDVYJPKUjpqsB4AL9RRlTw=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "vTyXSR+Znw7/o/70UBOWG0F09r8=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/flavors",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "Rnzx2YgOD41k8KoPA08tR992PxQ=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/images",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "IjCvcaNnRW++hclt21WUkMYinaA=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/servers",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "9z5GwbsfpB49gzkHu10pDH5roKA=",
+			"path": "github.com/gophercloud/gophercloud/openstack/identity/v2",
+			"revision": "0bf921da554eacc1552a70204be7a1201937c1e1",
+			"revisionTime": "2017-05-04T01:40:32Z"
+		},
+		{
+			"checksumSHA1": "1sVqsZBZBNhDXLY9XzjMkcOkcbg=",
+			"path": "github.com/gophercloud/gophercloud/openstack/identity/v2/tenants",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "AvUU5En9YpG25iLlcAPDgcQODjI=",
+			"path": "github.com/gophercloud/gophercloud/openstack/identity/v2/tokens",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "vsgZmEVQLtCmxuxf/q4u8XJGWpE=",
+			"path": "github.com/gophercloud/gophercloud/openstack/identity/v3",
+			"revision": "0bf921da554eacc1552a70204be7a1201937c1e1",
+			"revisionTime": "2017-05-04T01:40:32Z"
+		},
+		{
+			"checksumSHA1": "fHOkQNWyeGoMPjkYvqiOrOifTUw=",
+			"path": "github.com/gophercloud/gophercloud/openstack/identity/v3/tokens",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "TDOZnaS0TO0NirpxV1QwPerAQTY=",
+			"path": "github.com/gophercloud/gophercloud/openstack/utils",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
+			"checksumSHA1": "FNy075ydQZXvnL2bNNIOCmy/ghs=",
+			"path": "github.com/gophercloud/gophercloud/pagination",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
 			"checksumSHA1": "LclVLJYrBi03PBjsVPpgoMbUDQ8=",
 			"path": "github.com/hashicorp/consul/api",
 			"revision": "daacc4be8bee214e3fc4b32a6dd385f5ef1b4c36",
@@ -531,10 +621,10 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "+49Vr4Me28p3cR+gxX5SUQHbbas=",
+			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
 			"path": "github.com/samuel/go-zookeeper/zk",
-			"revision": "177002e16a0061912f02377e2dd8951a8b3551bc",
-			"revisionTime": "2015-08-17T10:50:50-07:00"
+			"revision": "1d7be4effb13d2d908342d349d71a284a7542693",
+			"revisionTime": "2016-10-28T23:23:40Z"
 		},
 		{
 			"checksumSHA1": "YuPBOVkkE3uuBh4RcRUTF0n+frs=",
@@ -554,6 +644,12 @@
 			"path": "github.com/stretchr/testify/require",
 			"revision": "d77da356e56a7428ad25149ca77381849a6a5232",
 			"revisionTime": "2016-06-15T09:26:46Z"
+		},
+		{
+			"checksumSHA1": "Dp8TnT65nINpRF/PrxrgmnYLsyA=",
+			"path": "github.com/stretchr/testify/suite",
+			"revision": "4d4bfba8f1d1027c4fdbe371823030df51419987",
+			"revisionTime": "2017-01-30T11:31:45Z"
 		},
 		{
 			"checksumSHA1": "VhcnDY37sYAnL8WjfYQN9YYl+W4=",

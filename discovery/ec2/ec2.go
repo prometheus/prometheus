@@ -72,11 +72,12 @@ type Discovery struct {
 	interval time.Duration
 	profile  string
 	port     int
+	logger   log.Logger
 }
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *config.EC2SDConfig) *Discovery {
-	creds := credentials.NewStaticCredentials(conf.AccessKey, conf.SecretKey, "")
+func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
+	creds := credentials.NewStaticCredentials(conf.AccessKey, string(conf.SecretKey), "")
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = nil
 	}
@@ -88,6 +89,7 @@ func NewDiscovery(conf *config.EC2SDConfig) *Discovery {
 		profile:  conf.Profile,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
+		logger:   logger,
 	}
 }
 
@@ -99,7 +101,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		log.Error(err)
+		d.logger.Error(err)
 	} else {
 		select {
 		case ch <- []*config.TargetGroup{tg}:
@@ -113,7 +115,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				log.Error(err)
+				d.logger.Error(err)
 				continue
 			}
 

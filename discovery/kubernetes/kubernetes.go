@@ -124,7 +124,7 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
 				Insecure: conf.TLSConfig.InsecureSkipVerify,
 			},
 		}
-		token := conf.BearerToken
+		token := string(conf.BearerToken)
 		if conf.BearerTokenFile != "" {
 			bf, err := ioutil.ReadFile(conf.BearerTokenFile)
 			if err != nil {
@@ -136,7 +136,7 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
 
 		if conf.BasicAuth != nil {
 			kcfg.Username = conf.BasicAuth.Username
-			kcfg.Password = conf.BasicAuth.Password
+			kcfg.Password = string(conf.BasicAuth.Password)
 		}
 	}
 
