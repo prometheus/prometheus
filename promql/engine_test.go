@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -295,7 +296,9 @@ load 10s
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	var ev *evaluator
+	ev := &evaluator{
+		logger: log.Base(),
+	}
 	var err error
 	defer ev.recover(&err)
 
@@ -309,7 +312,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
-	var ev *evaluator
+	ev := &evaluator{logger: log.Base()}
 	var err error
 
 	e := fmt.Errorf("custom error")
