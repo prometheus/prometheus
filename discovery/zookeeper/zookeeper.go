@@ -77,7 +77,7 @@ func NewDiscovery(
 		logger:  logger,
 	}
 	for _, path := range paths {
-		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates))
+		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates, logger))
 	}
 	return sd
 }

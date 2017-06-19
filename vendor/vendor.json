@@ -59,12 +59,6 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "DYv6Q1+VfnUVxMwvk5IshAClLvw=",
-			"path": "github.com/Sirupsen/logrus",
-			"revision": "5e5dc898656f695e2a086b8e12559febbfc01562",
-			"revisionTime": "2017-05-15T10:45:16Z"
-		},
-		{
 			"checksumSHA1": "ddYc7mKe3g1x1UUKBrGR4vArJs8=",
 			"path": "github.com/asaskevich/govalidator",
 			"revision": "065ea97278837088c52c0cd0d963473f61b2d98c",
@@ -568,6 +562,12 @@
 			"revisionTime": "2016-10-07T00:41:22Z"
 		},
 		{
+			"checksumSHA1": "40vJyUB4ezQSn/NSadsKEOrudMc=",
+			"path": "github.com/inconshreveable/mousetrap",
+			"revision": "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75",
+			"revisionTime": "2014-10-17T20:07:13Z"
+		},
+		{
 			"path": "github.com/influxdata/influxdb/client/v2",
 			"revision": "15e594fc09f112cb696c084a20beaca25538a5fa",
 			"revisionTime": "2017-03-31T16:09:02-05:00"
@@ -721,16 +721,16 @@
 			"revisionTime": "2017-04-18T15:52:10Z"
 		},
 		{
-			"checksumSHA1": "vfkLfDs6hXtxdJNGdWQglsxFu40=",
+			"checksumSHA1": "esljoY35OOHttvpjBctA6WGZc70=",
 			"path": "github.com/prometheus/common/log",
-			"revision": "75882ff176da1a10e2705adadd81edfd3a50d743",
-			"revisionTime": "2017-04-27T09:48:40Z"
+			"revision": "94eb3fe3a55f1b5d12d335b27a4f6e37cd73ed7e",
+			"revisionTime": "2017-06-16T09:39:39Z"
 		},
 		{
-			"checksumSHA1": "0LL9u9tfv1KPBjNEiMDP6q7lpog=",
+			"checksumSHA1": "3VoqH7TFfzA6Ds0zFzIbKCUvBmw=",
 			"path": "github.com/prometheus/common/model",
-			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",
-			"revisionTime": "2017-04-18T15:52:10Z"
+			"revision": "0d0c3d572886e0f2323ed376557f9eb99b97d25b",
+			"revisionTime": "2017-06-16T14:41:04Z"
 		},
 		{
 			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",
@@ -751,10 +751,10 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "q2GxuO+ppV/gqBir/Z6ijx7aOOU=",
+			"checksumSHA1": "XXXDHMZe3Y3gosaF/1staHm3INc=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "4f2eb2057ee0a7f2b984503886bff970a9dab1a8",
-			"revisionTime": "2017-05-22T06:49:09Z"
+			"revision": "9963a4c7c3b2a742e00a63c54084b051e3174b06",
+			"revisionTime": "2017-06-12T09:17:49Z"
 		},
 		{
 			"checksumSHA1": "9EH3v+JdbikCUJAgD4VEOPIaWfs=",
@@ -775,11 +775,22 @@
 			"revisionTime": "2016-10-28T23:23:40Z"
 		},
 		{
-			"checksumSHA1": "YuPBOVkkE3uuBh4RcRUTF0n+frs=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/spf13/pflag",
+			"checksumSHA1": "VHULZdEZKBxJvlZnlhX7Ug19lgY=",
+			"path": "github.com/sirupsen/logrus",
+			"revision": "85b1699d505667d13f8ac4478c1debbf85d6c5de",
+			"revisionTime": "2017-06-08T22:14:41Z"
+		},
+		{
+			"checksumSHA1": "suXMIWAx0XtlQR2zippibpr3Yjg=",
+			"path": "github.com/spf13/cobra",
+			"revision": "b4dbd37a01839e0653eec12aa4bbb2a2ce7b2a37",
+			"revisionTime": "2017-06-12T06:36:10Z"
+		},
+		{
+			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
 			"path": "github.com/spf13/pflag",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "e57e3eeb33f795204c1ca35f56c44f83227c6e66",
+			"revisionTime": "2017-05-08T18:43:26Z"
 		},
 		{
 			"checksumSHA1": "iydUphwYqZRq3WhstEdGsbvBAKs=",
