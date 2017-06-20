@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,40 +15,31 @@ package main
 
 import "testing"
 
-func TestParse(t *testing.T) {
+func TestComputeExternalURL(t *testing.T) {
 	tests := []struct {
-		input []string
-		valid bool
+		extURL string
+		valid  bool
 	}{
 		{
-			input: []string{},
-			valid: true,
+			extURL: "",
+			valid:  true,
 		},
 		{
-			input: []string{"--web.external-url", ""},
-			valid: true,
+			extURL: "http://proxy.com/prometheus",
+			valid:  true,
 		},
 		{
-			input: []string{"--web.external-url", "http://proxy.com/prometheus"},
-			valid: true,
-		},
-		{
-			input: []string{"--web.external-url", "'https://url/prometheus'"},
-			valid: false,
+			extURL: "https:/proxy.com/prometheus",
+			valid:  false,
 		},
 	}
 
 	for i, test := range tests {
-		// reset "immutable" config
-		cfg.prometheusURL = ""
-		cfg.alertmanagerURLs = stringset{}
-
-		newRootCmd() // To register the flags and flagset.
-
-		err := parse(test.input)
+		r, err := computeExternalURL(test.extURL, "0.0.0.0:9090")
 		if test.valid && err != nil {
 			t.Errorf("%d. expected input to be valid, got %s", i, err)
 		} else if !test.valid && err == nil {
+			t.Logf("%+v", r)
 			t.Errorf("%d. expected input to be invalid", i)
 		}
 	}

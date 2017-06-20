@@ -16,15 +16,21 @@ package main
 
 import (
 	"fmt"
+	"net"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/asaskevich/govalidator"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -38,7 +44,48 @@ import (
 	"github.com/prometheus/prometheus/web"
 )
 
+var (
+	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "prometheus",
+		Name:      "config_last_reload_successful",
+		Help:      "Whether the last configuration reload attempt was successful.",
+	})
+	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "prometheus",
+		Name:      "config_last_reload_success_timestamp_seconds",
+		Help:      "Timestamp of the last successful configuration reload.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(version.NewCollector("prometheus"))
+}
+
 func main() {
+	cfg := struct {
+		printVersion bool
+		configFile   string
+
+		localStoragePath string
+		notifier         notifier.Options
+		notifierTimeout  model.Duration
+		queryEngine      promql.EngineOptions
+		web              web.Options
+		tsdb             tsdb.Options
+		lookbackDelta    model.Duration
+		webTimeout       model.Duration
+		queryTimeout     model.Duration
+
+		prometheusURL string
+
+		logFormat string
+		logLevel  string
+	}{
+		notifier: notifier.Options{
+			Registerer: prometheus.DefaultRegisterer,
+		},
+	}
+
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
 
 	a.Version(version.Print("prometheus"))
@@ -103,57 +150,48 @@ func main() {
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager").
-		SetValue(&cfg.notifierTimeout)
+		Default("10s").SetValue(&cfg.notifierTimeout)
 
 	a.Flag("query.lookback-delta", "The delta difference allowed for retrieving metrics during expression evaluations.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
 	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
-		SetValue(&cfg.queryTimeout)
+		Default("2m").SetValue(&cfg.queryTimeout)
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryEngine.MaxConcurrentQueries)
 
-	if _, err := a.Parse(os.Args[1:]); err != nil {
+	_, err := a.Parse(os.Args[1:])
+	if err != nil {
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
-	fmt.Printf("a %+v\n", cfg)
-	if err := validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "invalid argument: %s\n", err)
+
+	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "parse external URL %q", cfg.prometheusURL))
 		os.Exit(2)
 	}
 
-	os.Exit(Main(a))
-}
+	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
+	// Default -web.route-prefix to path of -web.external-url.
+	if cfg.web.RoutePrefix == "" {
+		cfg.web.RoutePrefix = cfg.web.ExternalURL.Path
+	}
+	// RoutePrefix must always be at least '/'.
+	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
-var (
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_successful",
-		Help:      "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_success_timestamp_seconds",
-		Help:      "Timestamp of the last successful configuration reload.",
-	})
-)
+	if cfg.tsdb.MaxBlockDuration == 0 {
+		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
+	}
 
-func init() {
-	prometheus.MustRegister(version.NewCollector("prometheus"))
-}
+	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
-// Main manages the stup and shutdown lifecycle of the entire Prometheus server.
-func Main(a *kingpin.Application) int {
+	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
+
 	logger := log.NewLogger(os.Stdout)
 	logger.SetLevel(cfg.logLevel)
 	logger.SetFormat(cfg.logFormat)
-
-	if cfg.printVersion {
-		fmt.Fprintln(os.Stdout, version.Print("prometheus"))
-		return 0
-	}
 
 	logger.Infoln("Starting prometheus", version.Info())
 	logger.Infoln("Build context", version.BuildContext())
@@ -173,7 +211,7 @@ func Main(a *kingpin.Application) int {
 	localStorage, err := tsdb.Open(cfg.localStoragePath, prometheus.DefaultRegisterer, &cfg.tsdb)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
-		return 1
+		os.Exit(1)
 	}
 	logger.Infoln("tsdb started")
 
@@ -225,7 +263,7 @@ func Main(a *kingpin.Application) int {
 
 	if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
 		logger.Errorf("Error loading config: %s", err)
-		return 1
+		os.Exit(1)
 	}
 
 	// Wait for reload or termination signals. Start the handler for SIGHUP as
@@ -294,7 +332,6 @@ func Main(a *kingpin.Application) int {
 	}
 
 	logger.Info("See you next time!")
-	return 0
 }
 
 // Reloadable things can change their internal state to match a new config
@@ -330,4 +367,37 @@ func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err er
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (-config.file=%s)", filename)
 	}
 	return nil
+}
+
+// computeExternalURL computes a sanitized external URL from a raw input. It infers unset
+// URL parts from the OS and the given listen address.
+func computeExternalURL(u, listenAddr string) (*url.URL, error) {
+	if u == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			return nil, err
+		}
+		_, port, err := net.SplitHostPort(listenAddr)
+		if err != nil {
+			return nil, err
+		}
+		u = fmt.Sprintf("http://%s:%s/", hostname, port)
+	}
+
+	if ok := govalidator.IsURL(u); !ok {
+		return nil, fmt.Errorf("invalid external URL %q", u)
+	}
+
+	eu, err := url.Parse(u)
+	if err != nil {
+		return nil, err
+	}
+
+	ppref := strings.TrimRight(eu.Path, "/")
+	if ppref != "" && !strings.HasPrefix(ppref, "/") {
+		ppref = "/" + ppref
+	}
+	eu.Path = ppref
+
+	return eu, nil
 }
