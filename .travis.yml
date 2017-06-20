@@ -1,4 +1,5 @@
 sudo: true
+group: edge
 
 language: go
 
