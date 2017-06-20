@@ -19,15 +19,15 @@ import (
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"golang.org/x/net/context"
+	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -39,7 +39,92 @@ import (
 )
 
 func main() {
-	newRootCmd().Execute()
+	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
+
+	a.Version(version.Print("prometheus"))
+
+	a.HelpFlag.Short('h')
+
+	a.Flag("log.level",
+		"Only log messages with the given severity or above. One of: [debug, info, warn, error, fatal]").
+		Default("info").StringVar(&cfg.logLevel)
+
+	a.Flag("log.format",
+		`Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`).
+		Default("logger:stderr").StringVar(&cfg.logFormat)
+
+	a.Flag("config.file", "Prometheus configuration file path.").
+		Default("prometheus.yml").StringVar(&cfg.configFile)
+
+	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemtry.").
+		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
+
+	a.Flag("web.read-timeout",
+		"Maximum duration before timing out read of the request, and closing idle connections.").
+		Default("5m").SetValue(&cfg.webTimeout)
+
+	a.Flag("web.max-connections", "Maximum number of simultaneous connections.").
+		Default("512").IntVar(&cfg.web.MaxConnections)
+
+	a.Flag("web.external-url",
+		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.").
+		PlaceHolder("<URL>").StringVar(&cfg.prometheusURL)
+
+	a.Flag("web.route-prefix",
+		"Prefix for the internal routes of web endpoints. Defaults to path of --web.external-url.").
+		PlaceHolder("<path>").StringVar(&cfg.web.RoutePrefix)
+
+	a.Flag("web.user-assets", "Path to static asset directory, available at /user.").
+		PlaceHolder("<path>").StringVar(&cfg.web.UserAssetsPath)
+
+	a.Flag("web.enable-remote-shutdown", "Enable shutdown via HTTP request.").
+		Default("false").BoolVar(&cfg.web.EnableQuit)
+
+	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
+		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
+
+	a.Flag("web.console.libraries", "Path to the console library directory.").
+		Default("console_libraries").StringVar(&cfg.web.ConsoleLibrariesPath)
+
+	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
+		Default("data/").StringVar(&cfg.localStoragePath)
+
+	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted.").
+		Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
+
+	a.Flag("storage.tsdb.max-block-duration",
+		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)").
+		PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
+
+	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
+		Default("15d").SetValue(&cfg.tsdb.Retention)
+
+	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending alert manager notifications.").
+		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
+
+	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager").
+		SetValue(&cfg.notifierTimeout)
+
+	a.Flag("query.lookback-delta", "The delta difference allowed for retrieving metrics during expression evaluations.").
+		Default("5m").SetValue(&cfg.lookbackDelta)
+
+	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
+		SetValue(&cfg.queryTimeout)
+
+	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
+		Default("20").IntVar(&cfg.queryEngine.MaxConcurrentQueries)
+
+	if _, err := a.Parse(os.Args[1:]); err != nil {
+		a.Usage(os.Args[1:])
+		os.Exit(2)
+	}
+	fmt.Printf("a %+v\n", cfg)
+	if err := validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid argument: %s\n", err)
+		os.Exit(2)
+	}
+
+	os.Exit(Main(a))
 }
 
 var (
@@ -59,130 +144,8 @@ func init() {
 	prometheus.MustRegister(version.NewCollector("prometheus"))
 }
 
-func newRootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "prometheus",
-		Short: "prometheus --config.file=prometheus.yaml",
-		Run: func(cmd *cobra.Command, args []string) {
-			os.Exit(Main())
-		},
-	}
-
-	rootCmd.PersistentFlags().BoolVar(
-		&cfg.printVersion, "version", false,
-		"Print version information.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.configFile, "config.file", "prometheus.yml",
-		"Prometheus configuration file name.",
-	)
-
-	// Web.
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.web.ListenAddress, "web.listen-address", ":9090",
-		"Address to listen on for the web interface, API, and telemetry.",
-	)
-
-	rootCmd.PersistentFlags().Var(
-		&cfg.webTimeout, "web.read-timeout",
-		"Maximum duration before timing out read of the request, and closing idle connections.",
-	)
-	rootCmd.PersistentFlags().IntVar(
-		&cfg.web.MaxConnections, "web.max-connections", 512,
-		"Maximum number of simultaneous connections.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.prometheusURL, "web.external-url", "",
-		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.web.RoutePrefix, "web.route-prefix", "",
-		"Prefix for the internal routes of web endpoints. Defaults to path of -web.external-url.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.web.UserAssetsPath, "web.user-assets", "",
-		"Path to static asset directory, available at /user.",
-	)
-	rootCmd.PersistentFlags().BoolVar(
-		&cfg.web.EnableQuit, "web.enable-remote-shutdown", false,
-		"Enable remote service shutdown.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.web.ConsoleTemplatesPath, "web.console.templates", "consoles",
-		"Path to the console template directory, available at /consoles.",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.web.ConsoleLibrariesPath, "web.console.libraries", "console_libraries",
-		"Path to the console library directory.",
-	)
-
-	// Storage.
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.localStoragePath, "storage.tsdb.path", "data",
-		"Base path for metrics storage.",
-	)
-	rootCmd.PersistentFlags().BoolVar(
-		&cfg.tsdb.NoLockfile, "storage.tsdb.no-lockfile", false,
-		"Disable lock file usage.",
-	)
-	rootCmd.PersistentFlags().Var(
-		&cfg.tsdb.MinBlockDuration, "storage.tsdb.min-block-duration",
-		"Minimum duration of a data block before being persisted.",
-	)
-	rootCmd.PersistentFlags().Var(
-		&cfg.tsdb.MaxBlockDuration, "storage.tsdb.max-block-duration",
-		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)",
-	)
-	rootCmd.PersistentFlags().Var(
-		&cfg.tsdb.Retention, "storage.tsdb.retention",
-		"How long to retain samples in the storage.",
-	)
-
-	// Alertmanager.
-	rootCmd.PersistentFlags().IntVar(
-		&cfg.notifier.QueueCapacity, "alertmanager.notification-queue-capacity", 10000,
-		"The capacity of the queue for pending alert manager notifications.",
-	)
-	rootCmd.PersistentFlags().Var(
-		&cfg.notifierTimeout, "alertmanager.timeout",
-		"Alert manager HTTP API timeout.",
-	)
-
-	// Query engine.
-	rootCmd.PersistentFlags().Var(
-		&cfg.lookbackDelta, "query.lookback-delta",
-		"The delta difference allowed for retrieving metrics during expression evaluations.",
-	)
-	rootCmd.PersistentFlags().Var(
-		&cfg.queryTimeout, "query.timeout",
-		"Maximum time a query may take before being aborted.",
-	)
-	rootCmd.PersistentFlags().IntVar(
-		&cfg.queryEngine.MaxConcurrentQueries, "query.max-concurrency", 20,
-		"Maximum number of queries executed concurrently.",
-	)
-
-	// Logging.
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.logLevel, "log.level", "info",
-		"Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal]",
-	)
-	rootCmd.PersistentFlags().StringVar(
-		&cfg.logFormat, "log.format", "logger:stderr",
-		`Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`,
-	)
-
-	cfg.fs = rootCmd.PersistentFlags()
-	return rootCmd
-}
-
 // Main manages the stup and shutdown lifecycle of the entire Prometheus server.
-func Main() int {
-	if err := parse(os.Args[1:]); err != nil {
-		log.Error(err)
-		return 2
-	}
-
+func Main(a *kingpin.Application) int {
 	logger := log.NewLogger(os.Stdout)
 	logger.SetLevel(cfg.logLevel)
 	logger.SetFormat(cfg.logFormat)
@@ -252,9 +215,9 @@ func Main() int {
 	}
 
 	cfg.web.Flags = map[string]string{}
-	cfg.fs.VisitAll(func(f *pflag.Flag) {
+	for _, f := range a.Model().Flags {
 		cfg.web.Flags[f.Name] = f.Value.String()
-	})
+	}
 
 	webHandler := web.New(&cfg.web)
 
