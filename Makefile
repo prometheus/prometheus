@@ -65,7 +65,8 @@ docker:
 	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
 k8s: promu
-	@$(PROMU) crossbuild
+	@sed -e '/linux\/amd64/{n;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;d;}' $(shell pwd)/.promu.yml > $(shell pwd)/.promu4travis.yml
+	@$(PROMU) --config $(shell pwd)/.promu4travis.yml crossbuild
 	@cp $(shell pwd)/.build/linux-amd64/prometheus $(shell pwd)/prometheus
 	@cp $(shell pwd)/.build/linux-amd64/promtool $(shell pwd)/promtool
 	@docker build -t prometheus:travis .
