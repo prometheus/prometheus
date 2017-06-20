@@ -59,6 +59,24 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "KmjnydoAbofMieIWm+it5OWERaM=",
+			"path": "github.com/alecthomas/template",
+			"revision": "a0175ee3bccc567396460bf5acd36800cb10c49c",
+			"revisionTime": "2016-04-05T07:15:01Z"
+		},
+		{
+			"checksumSHA1": "3wt0pTXXeS+S93unwhGoLIyGX/Q=",
+			"path": "github.com/alecthomas/template/parse",
+			"revision": "a0175ee3bccc567396460bf5acd36800cb10c49c",
+			"revisionTime": "2016-04-05T07:15:01Z"
+		},
+		{
+			"checksumSHA1": "fCc3grA7vIxfBru7R3SqjcW+oLI=",
+			"path": "github.com/alecthomas/units",
+			"revision": "2efee857e7cfd4f3d0138cc3cbb1b4966962b93a",
+			"revisionTime": "2015-10-22T06:55:26Z"
+		},
+		{
 			"checksumSHA1": "ddYc7mKe3g1x1UUKBrGR4vArJs8=",
 			"path": "github.com/asaskevich/govalidator",
 			"revision": "065ea97278837088c52c0cd0d963473f61b2d98c",
@@ -472,12 +490,6 @@
 			"revisionTime": "2017-05-04T01:40:32Z"
 		},
 		{
-			"checksumSHA1": "4XWDCGMYqipwJymi9xJo9UffD7g=",
-			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions",
-			"revision": "caa61b3ca9f504196fd3b338f43cd99d830f7e2e",
-			"revisionTime": "2017-05-11T18:09:16Z"
-		},
-		{
 			"checksumSHA1": "e7AW3YDVYJPKUjpqsB4AL9RRlTw=",
 			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips",
 			"revision": "caa61b3ca9f504196fd3b338f43cd99d830f7e2e",
@@ -560,12 +572,6 @@
 			"path": "github.com/hashicorp/serf/coordinate",
 			"revision": "1d4fa605f6ff3ed628d7ae5eda7c0e56803e72a5",
 			"revisionTime": "2016-10-07T00:41:22Z"
-		},
-		{
-			"checksumSHA1": "40vJyUB4ezQSn/NSadsKEOrudMc=",
-			"path": "github.com/inconshreveable/mousetrap",
-			"revision": "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75",
-			"revisionTime": "2014-10-17T20:07:13Z"
 		},
 		{
 			"path": "github.com/influxdata/influxdb/client/v2",
@@ -779,12 +785,6 @@
 			"path": "github.com/sirupsen/logrus",
 			"revision": "85b1699d505667d13f8ac4478c1debbf85d6c5de",
 			"revisionTime": "2017-06-08T22:14:41Z"
-		},
-		{
-			"checksumSHA1": "suXMIWAx0XtlQR2zippibpr3Yjg=",
-			"path": "github.com/spf13/cobra",
-			"revision": "b4dbd37a01839e0653eec12aa4bbb2a2ce7b2a37",
-			"revisionTime": "2017-06-12T06:36:10Z"
 		},
 		{
 			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
@@ -1070,6 +1070,12 @@
 			"path": "google.golang.org/cloud/internal",
 			"revision": "0a83eba2cadb60eb22123673c8fb6fca02b03c94",
 			"revisionTime": "2016-06-21T15:59:29Z"
+		},
+		{
+			"checksumSHA1": "QPs8F/aqKAAQJr8dLc3CVQ5SxlM=",
+			"path": "gopkg.in/alecthomas/kingpin.v2",
+			"revision": "8cccfa8eb2e3183254457fb1749b2667fbc364c7",
+			"revisionTime": "2016-02-17T09:03:01Z"
 		},
 		{
 			"checksumSHA1": "JfVmsMwyeeepbdw4q4wpN07BuFg=",
