@@ -14,34 +14,28 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
-	"text/template"
 	"time"
-	"unicode"
 
 	"github.com/asaskevich/govalidator"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/web"
-	"github.com/spf13/pflag"
 )
 
 // cfg contains immutable configuration parameters for a running Prometheus
 // server. It is populated by its flag set.
 var cfg = struct {
-	fs *pflag.FlagSet
-
 	printVersion bool
 	configFile   string
 
@@ -78,20 +72,9 @@ var cfg = struct {
 	},
 }
 
-func parse(args []string) error {
-	err := cfg.fs.Parse(args)
-	if err != nil || len(cfg.fs.Args()) != 0 {
-		if err != flag.ErrHelp {
-			log.Errorf("Invalid command line arguments. Help: %s -h", os.Args[0])
-		}
-		if err == nil {
-			err = fmt.Errorf("Non-flag argument on command line: %q", cfg.fs.Args()[0])
-		}
-		return err
-	}
-
+func validate() error {
 	if err := parsePrometheusURL(); err != nil {
-		return err
+		return errors.Wrapf(err, "parse external URL %q", cfg.prometheusURL)
 	}
 
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
@@ -112,9 +95,7 @@ func parse(args []string) error {
 		cfg.tsdb.MaxBlockDuration = cfg.tsdb.Retention / 10
 	}
 
-	if cfg.lookbackDelta > 0 {
-		promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
-	}
+	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
 	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
 
@@ -122,11 +103,13 @@ func parse(args []string) error {
 }
 
 func parsePrometheusURL() error {
+	fmt.Println("promurl", cfg.prometheusURL)
 	if cfg.prometheusURL == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
 			return err
 		}
+		fmt.Println("listenaddr", cfg.web.ListenAddress)
 		_, port, err := net.SplitHostPort(cfg.web.ListenAddress)
 		if err != nil {
 			return err
@@ -204,67 +187,6 @@ func parseAlertmanagerURLToConfig(us string) (*config.AlertmanagerConfig, error)
 	}
 
 	return acfg, nil
-}
-
-var helpTmpl = `
-usage: prometheus [<args>]
-{{ range $cat, $flags := . }}{{ if ne $cat "." }} == {{ $cat | upper }} =={{ end }}
-  {{ range $flags }}
-   -{{ .Name }} {{ .DefValue | quote }}
-      {{ .Usage | wrap 80 6 }}
-  {{ end }}
-{{ end }}
-`
-
-func usage() {
-	helpTmpl = strings.TrimSpace(helpTmpl)
-	t := template.New("usage")
-	t = t.Funcs(template.FuncMap{
-		"wrap": func(width, indent int, s string) (ns string) {
-			width = width - indent
-			length := indent
-			for _, w := range strings.SplitAfter(s, " ") {
-				if length+len(w) > width {
-					ns += "\n" + strings.Repeat(" ", indent)
-					length = 0
-				}
-				ns += w
-				length += len(w)
-			}
-			return strings.TrimSpace(ns)
-		},
-		"quote": func(s string) string {
-			if len(s) == 0 || s == "false" || s == "true" || unicode.IsDigit(rune(s[0])) {
-				return s
-			}
-			return fmt.Sprintf("%q", s)
-		},
-		"upper": strings.ToUpper,
-	})
-	t = template.Must(t.Parse(helpTmpl))
-
-	groups := make(map[string][]*pflag.Flag)
-
-	// Bucket flags into groups based on the first of their dot-separated levels.
-	cfg.fs.VisitAll(func(fl *pflag.Flag) {
-		parts := strings.SplitN(fl.Name, ".", 2)
-		if len(parts) == 1 {
-			groups["."] = append(groups["."], fl)
-		} else {
-			name := parts[0]
-			groups[name] = append(groups[name], fl)
-		}
-	})
-	for cat, fl := range groups {
-		if len(fl) < 2 && cat != "." {
-			groups["."] = append(groups["."], fl...)
-			delete(groups, cat)
-		}
-	}
-
-	if err := t.Execute(os.Stdout, groups); err != nil {
-		panic(fmt.Errorf("error executing usage template: %s", err))
-	}
 }
 
 type stringset map[string]struct{}
