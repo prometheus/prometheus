@@ -65,14 +65,13 @@ docker:
 	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
 k8s: promu
-	@sed -e '/linux\/amd64/{n;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;N;d;}' $(shell pwd)/.promu.yml > $(shell pwd)/.promu4travis.yml
-	@$(PROMU) --config $(shell pwd)/.promu4travis.yml crossbuild
-	@cp $(shell pwd)/.build/linux-amd64/prometheus $(shell pwd)/prometheus
-	@cp $(shell pwd)/.build/linux-amd64/promtool $(shell pwd)/promtool
+	@$(PROMU) --config promu4travis.config crossbuild
+	@cp .build/linux-amd64/prometheus prometheus
+	@cp .build/linux-amd64/promtool promtool
 	@docker build -t prometheus:travis .
 	@echo ">> running in k8s on Travis"
-	@kubectl create configmap prometheus --from-file=$(shell pwd)/documentation/examples/
-	@kubectl create -f $(shell pwd)/documentation/examples/prometheus-deployment.yaml
+	@kubectl create configmap prometheus --from-file=$(CURDIR)/documentation/examples/
+	@kubectl create -f $(CURDIR)/documentation/examples/prometheus-deployment.yaml
 
 assets:
 	@echo ">> writing assets"
