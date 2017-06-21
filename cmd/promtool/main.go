@@ -278,7 +278,7 @@ func updateRules(filename string) error {
 		return err
 	}
 
-	return ioutil.WriteFile(filename+".yaml", y, 0666)
+	return ioutil.WriteFile(filename+".yml", y, 0666)
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
