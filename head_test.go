@@ -277,7 +277,7 @@ func TestHeadBlock_e2e(t *testing.T) {
 			if ts >= minTime && ts <= maxTime {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, ErrOutOfBounds, err)
+				require.EqualError(t, err, ErrOutOfBounds.Error())
 			}
 
 			ts += rand.Int63n(timeInterval) + 1
@@ -582,7 +582,7 @@ func TestDelete_e2e(t *testing.T) {
 			if ts >= minTime && ts <= maxTime {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, ErrOutOfBounds, err)
+				require.EqualError(t, err, ErrOutOfBounds.Error())
 			}
 
 			ts += rand.Int63n(timeInterval) + 1
