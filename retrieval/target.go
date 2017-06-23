@@ -286,9 +286,6 @@ func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (string, 
 // It returns a label set before relabeling was applied as the second return value.
 // Returns a nil label set if the target is dropped during relabeling.
 func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
-	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, fmt.Errorf("no address")
-	}
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -315,6 +312,9 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	// Check if the target was dropped.
 	if lset == nil {
 		return nil, nil, nil
+	}
+	if v := lset.Get(model.AddressLabel); v == "" {
+		return nil, nil, fmt.Errorf("no address")
 	}
 
 	lb = labels.NewBuilder(lset)
@@ -362,7 +362,15 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	if v := lset.Get(model.InstanceLabel); v == "" {
 		lb.Set(model.InstanceLabel, addr)
 	}
-	return lb.Labels(), preRelabelLabels, nil
+
+	res = lb.Labels()
+	for _, l := range res {
+		// Check label values are valid, drop the target if not.
+		if !model.LabelValue(l.Value).IsValid() {
+			return nil, nil, fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+		}
+	}
+	return res, preRelabelLabels, nil
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
