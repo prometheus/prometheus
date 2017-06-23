@@ -14,6 +14,7 @@
 package retrieval
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -36,6 +37,7 @@ func TestPopulateLabels(t *testing.T) {
 		cfg     *config.ScrapeConfig
 		res     labels.Labels
 		resOrig labels.Labels
+		err     error
 	}{
 		// Regular population of scrape config options.
 		{
@@ -118,34 +120,104 @@ func TestPopulateLabels(t *testing.T) {
 				model.JobLabel:         "job",
 			}),
 		},
-		// Apply relabeling.
+		// Address label missing.
 		{
-			in: labels.FromMap(map[string]string{
-				model.AddressLabel: "1.2.3.4:1000",
-				"custom":           "value",
-			}),
+			in: labels.FromStrings("custom", "value"),
+			cfg: &config.ScrapeConfig{
+				Scheme:      "https",
+				MetricsPath: "/metrics",
+				JobName:     "job",
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     fmt.Errorf("no address"),
+		},
+		// Address label missing, but added in relabelling.
+		{
+			in: labels.FromStrings("custom", "host:1234"),
 			cfg: &config.ScrapeConfig{
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
 				RelabelConfigs: []*config.RelabelConfig{
 					{
-						Action:       config.RelabelDrop,
-						Regex:        mustNewRegexp(".*"),
-						SourceLabels: model.LabelNames{"job"},
+						Action:       config.RelabelReplace,
+						Regex:        mustNewRegexp("(.*)"),
+						SourceLabels: model.LabelNames{"custom"},
+						Replacement:  "${1}",
+						TargetLabel:  string(model.AddressLabel),
 					},
 				},
 			},
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:     "host:1234",
+				model.InstanceLabel:    "host:1234",
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/metrics",
+				model.JobLabel:         "job",
+				"custom":               "host:1234",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/metrics",
+				model.JobLabel:         "job",
+				"custom":               "host:1234",
+			}),
+		},
+		// Address label missing, but added in relabelling.
+		{
+			in: labels.FromStrings("custom", "host:1234"),
+			cfg: &config.ScrapeConfig{
+				Scheme:      "https",
+				MetricsPath: "/metrics",
+				JobName:     "job",
+				RelabelConfigs: []*config.RelabelConfig{
+					{
+						Action:       config.RelabelReplace,
+						Regex:        mustNewRegexp("(.*)"),
+						SourceLabels: model.LabelNames{"custom"},
+						Replacement:  "${1}",
+						TargetLabel:  string(model.AddressLabel),
+					},
+				},
+			},
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:     "host:1234",
+				model.InstanceLabel:    "host:1234",
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/metrics",
+				model.JobLabel:         "job",
+				"custom":               "host:1234",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.SchemeLabel:      "https",
+				model.MetricsPathLabel: "/metrics",
+				model.JobLabel:         "job",
+				"custom":               "host:1234",
+			}),
+		},
+		// Invalid UTF-8 in label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel: "1.2.3.4:1000",
+				"custom":           "\xbd",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:      "https",
+				MetricsPath: "/metrics",
+				JobName:     "job",
+			},
 			res:     nil,
 			resOrig: nil,
+			err:     fmt.Errorf("invalid label value for \"custom\": \"\\xbd\""),
 		},
 	}
 	for i, c := range cases {
 		in := c.in.Copy()
 
 		res, orig, err := populateLabels(c.in, c.cfg)
-		if err != nil {
-			t.Fatalf("case %d: %s", i, err)
+		if !reflect.DeepEqual(err, c.err) {
+			t.Fatalf("case %d: wanted %v error, got %v", i, c.err, err)
 		}
 		if !reflect.DeepEqual(c.in, in) {
 			t.Errorf("case %d: input lset was changed was\n\t%+v\n now\n\t%+v", i, in, c.in)

@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -27,11 +28,11 @@ import (
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	Name         string
-	ArgTypes     []ValueType
-	OptionalArgs int
-	ReturnType   ValueType
-	Call         func(ev *evaluator, args Expressions) Value
+	Name       string
+	ArgTypes   []ValueType
+	Variadic   int
+	ReturnType ValueType
+	Call       func(ev *evaluator, args Expressions) Value
 }
 
 // === time() float64 ===
@@ -876,6 +877,56 @@ func funcVector(ev *evaluator, args Expressions) Value {
 	}
 }
 
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
+func funcLabelJoin(ev *evaluator, args Expressions) Value {
+	var (
+		vector    = ev.evalVector(args[0])
+		dst       = ev.evalString(args[1]).V
+		sep       = ev.evalString(args[2]).V
+		srcLabels = make([]string, len(args)-3)
+	)
+	for i := 3; i < len(args); i++ {
+		src := ev.evalString(args[i]).V
+		if !model.LabelName(src).IsValid() {
+			ev.errorf("invalid source label name in label_join(): %s", src)
+		}
+		srcLabels[i-3] = src
+	}
+
+	if !model.LabelName(dst).IsValid() {
+		ev.errorf("invalid destination label name in label_join(): %s", dst)
+	}
+
+	outSet := make(map[uint64]struct{}, len(vector))
+	for i := range vector {
+		el := &vector[i]
+
+		srcVals := make([]string, len(srcLabels))
+		for i, src := range srcLabels {
+			srcVals[i] = el.Metric.Get(src)
+		}
+
+		lb := labels.NewBuilder(el.Metric)
+
+		strval := strings.Join(srcVals, sep)
+		if strval == "" {
+			lb.Del(dst)
+		} else {
+			lb.Set(dst, strval)
+		}
+
+		el.Metric = lb.Labels()
+		h := el.Metric.Hash()
+
+		if _, exists := outSet[h]; exists {
+			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric)
+		} else {
+			outSet[h] = struct{}{}
+		}
+	}
+	return vector
+}
+
 // Common code for date related functions.
 func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Value {
 	var v Vector
@@ -1004,25 +1055,25 @@ var functions = map[string]*Function{
 		Call:       funcCountScalar,
 	},
 	"days_in_month": {
-		Name:         "days_in_month",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcDaysInMonth,
+		Name:       "days_in_month",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcDaysInMonth,
 	},
 	"day_of_month": {
-		Name:         "day_of_month",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcDayOfMonth,
+		Name:       "day_of_month",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcDayOfMonth,
 	},
 	"day_of_week": {
-		Name:         "day_of_week",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcDayOfWeek,
+		Name:       "day_of_week",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcDayOfWeek,
 	},
 	"delta": {
 		Name:       "delta",
@@ -1067,11 +1118,11 @@ var functions = map[string]*Function{
 		Call:       funcHoltWinters,
 	},
 	"hour": {
-		Name:         "hour",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcHour,
+		Name:       "hour",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcHour,
 	},
 	"idelta": {
 		Name:       "idelta",
@@ -1096,6 +1147,13 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString, ValueTypeString},
 		ReturnType: ValueTypeVector,
 		Call:       funcLabelReplace,
+	},
+	"label_join": {
+		Name:       "label_join",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString},
+		Variadic:   -1,
+		ReturnType: ValueTypeVector,
+		Call:       funcLabelJoin,
 	},
 	"ln": {
 		Name:       "ln",
@@ -1128,18 +1186,18 @@ var functions = map[string]*Function{
 		Call:       funcMinOverTime,
 	},
 	"minute": {
-		Name:         "minute",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcMinute,
+		Name:       "minute",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcMinute,
 	},
 	"month": {
-		Name:         "month",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcMonth,
+		Name:       "month",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcMonth,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
@@ -1166,11 +1224,11 @@ var functions = map[string]*Function{
 		Call:       funcResets,
 	},
 	"round": {
-		Name:         "round",
-		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeScalar},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcRound,
+		Name:       "round",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcRound,
 	},
 	"scalar": {
 		Name:       "scalar",
@@ -1233,11 +1291,11 @@ var functions = map[string]*Function{
 		Call:       funcVector,
 	},
 	"year": {
-		Name:         "year",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcYear,
+		Name:       "year",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcYear,
 	},
 }
 

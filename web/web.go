@@ -171,7 +171,7 @@ func New(o *Options) *Handler {
 	instrf := prometheus.InstrumentHandlerFunc
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		router.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
 	})
 
 	router.Get("/alerts", instrf("alerts", h.alerts))

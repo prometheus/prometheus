@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 )
@@ -1134,7 +1136,16 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Region == "" {
-		return fmt.Errorf("EC2 SD configuration requires a region")
+		sess, err := session.NewSession()
+		if err != nil {
+			return err
+		}
+		metadata := ec2metadata.New(sess)
+		region, err := metadata.Region()
+		if err != nil {
+			return fmt.Errorf("EC2 SD configuration requires a region")
+		}
+		c.Region = region
 	}
 	return nil
 }
