@@ -508,6 +508,11 @@ func (c *scrapeCache) getRef(met string) (string, bool) {
 }
 
 func (c *scrapeCache) addRef(met, ref string, lset labels.Labels) {
+	// Clean up the label set cache before overwriting the ref for a previously seen
+	// metric representation. It won't be caught by the cleanup in iterDone otherwise.
+	if e, ok := c.refs[met]; ok {
+		delete(c.lsets, e.ref)
+	}
 	c.refs[met] = &refEntry{ref: ref, lastIter: c.iter}
 	// met is the raw string the metric was ingested as. The label set is not ordered
 	// and thus it's not suitable to uniquely identify cache entries.
