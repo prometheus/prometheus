@@ -80,6 +80,7 @@ type Appender interface {
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
+	// If the reference is the empty string it must not be used for caching.
 	Add(l labels.Labels, t int64, v float64) (string, error)
 
 	// Add adds a sample pair for the referenced series. It is generally faster
@@ -616,6 +617,9 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (string, error)
 	}
 	a.samples++
 
+	if ref == "" {
+		return "", nil
+	}
 	return string(append(h.meta.ULID[:], ref...)), nil
 }
 

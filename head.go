@@ -450,7 +450,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (string, erro
 		// XXX(fabxc): there's no fast path for multiple samples for the same new series
 		// in the same transaction. We always return the invalid empty ref. It's has not
 		// been a relevant use case so far and is not worth the trouble.
-		return nullRef, a.AddFast(string(refb), t, v)
+		return "", a.AddFast(string(refb), t, v)
 	}
 
 	// The series is completely new.
@@ -471,10 +471,8 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (string, erro
 	a.newHashes[hash] = ref
 	binary.BigEndian.PutUint64(refb, ref)
 
-	return nullRef, a.AddFast(string(refb), t, v)
+	return "", a.AddFast(string(refb), t, v)
 }
-
-var nullRef = string([]byte{0, 0, 0, 0, 0, 0, 0, 0})
 
 func (a *headAppender) AddFast(ref string, t int64, v float64) error {
 	if len(ref) != 8 {
