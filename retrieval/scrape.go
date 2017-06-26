@@ -428,8 +428,9 @@ type loop interface {
 }
 
 type lsetCacheEntry struct {
-	lset labels.Labels
-	hash uint64
+	metric string
+	lset   labels.Labels
+	hash   uint64
 }
 
 type refEntry struct {
@@ -507,7 +508,10 @@ func (c *scrapeCache) getRef(met string) (string, bool) {
 	return e.ref, true
 }
 
-func (c *scrapeCache) addRef(met, ref string, lset labels.Labels) {
+func (c *scrapeCache) addRef(met, ref string, lset labels.Labels, hash uint64) {
+	if ref == "" {
+		return
+	}
 	// Clean up the label set cache before overwriting the ref for a previously seen
 	// metric representation. It won't be caught by the cleanup in iterDone otherwise.
 	if e, ok := c.refs[met]; ok {
@@ -517,12 +521,11 @@ func (c *scrapeCache) addRef(met, ref string, lset labels.Labels) {
 	// met is the raw string the metric was ingested as. The label set is not ordered
 	// and thus it's not suitable to uniquely identify cache entries.
 	// We store a hash over the label set instead.
-	c.lsets[ref] = &lsetCacheEntry{lset: lset, hash: lset.Hash()}
+	c.lsets[ref] = &lsetCacheEntry{metric: met, lset: lset, hash: hash}
 }
 
-func (c *scrapeCache) trackStaleness(ref string) {
-	e := c.lsets[ref]
-	c.seriesCur[e.hash] = e.lset
+func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels) {
+	c.seriesCur[hash] = lset
 }
 
 func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
@@ -742,7 +745,8 @@ loop:
 			switch err = app.AddFast(ref, t, v); err {
 			case nil:
 				if tp == nil {
-					sl.cache.trackStaleness(ref)
+					e := sl.cache.lsets[ref]
+					sl.cache.trackStaleness(e.hash, e.lset)
 				}
 			case storage.ErrNotFound:
 				ok = false
@@ -768,8 +772,19 @@ loop:
 			}
 		}
 		if !ok {
-			var lset labels.Labels
-			mets := p.Metric(&lset)
+			var (
+				lset labels.Labels
+				mets string
+				hash uint64
+			)
+			if e, ok := sl.cache.lsets[ref]; ok {
+				mets = e.metric
+				lset = e.lset
+				hash = e.hash
+			} else {
+				mets = p.Metric(&lset)
+				hash = lset.Hash()
+			}
 
 			var ref string
 			ref, err = app.Add(lset, t, v)
@@ -796,13 +811,11 @@ loop:
 			default:
 				break loop
 			}
-
-			sl.cache.addRef(mets, ref, lset)
-
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(ref)
+				sl.cache.trackStaleness(hash, lset)
 			}
+			sl.cache.addRef(mets, ref, lset, hash)
 		}
 		added++
 	}
@@ -933,7 +946,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	ref, err := app.Add(met, t, v)
 	switch err {
 	case nil:
-		sl.cache.addRef(s2, ref, met)
+		sl.cache.addRef(s2, ref, met, met.Hash())
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil
