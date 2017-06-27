@@ -27,3 +27,4 @@ script:
   - sleep 10
   - kubectl get deploy -o wide
   - kubectl describe pod -l app=prometheus |grep "State:"|grep Running
+  - curl http://$(kubectl describe pod -l app=prometheus|grep IP:|sed 's/IP:\s\+//g'):9090/api/v1/targets
