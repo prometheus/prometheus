@@ -12,7 +12,7 @@ go:
 go_import_path: github.com/prometheus/prometheus
 
 install:
-  - sudo apt-get install -y python python-dev systemd python-netaddr python-apt
+  - sudo apt-get install -y python python-dev python-netaddr python-apt
   - sudo pip install ansible
   - git clone https://github.com/reachlin/k8s0.git
 
