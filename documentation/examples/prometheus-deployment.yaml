@@ -35,7 +35,7 @@ spec:
       - name: prometheus
         image: prometheus:travis
         args:
-          - '-config.file=/etc/prometheus/prometheus.yml'
+          - '-config.file=/etc/prometheus/prometheus-kubernetes.yml'
         ports:
         - name: web
           containerPort: 9090
