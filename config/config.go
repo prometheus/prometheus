@@ -1549,7 +1549,7 @@ type AzureServiceFabricSDConfig struct {
 	Endpoints            map[string]struct{} `yaml:"endpoints"`
 	RefreshInterval      model.Duration      `yaml:"refresh_interval,omitempty"`
 	ClientCertAndKeyFile string              `yaml:"client_cert_and_key_file"` // populate only for secure clusters. Comma separated
-	TlsSkipVerify        bool                `yaml:"tls_skip_verify"`
+	TLSSkipVerify        bool                `yaml:"tls_skip_verify"`
 
 	XXX map[string]interface{} `yaml:",inline"` // Catches all undefined fields and must be empty after parsing.
 }
