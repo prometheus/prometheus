@@ -64,7 +64,10 @@ type ErrMissingFiles struct {
 	Fds []storage.FileDesc
 }
 
-func (e *ErrMissingFiles) Error() string { return "file missing" }
+func (e *ErrMissingFiles) Error() string {
+	msg := fmt.Sprintf("file missing : %s ", e.Fds)
+	return msg
+}
 
 // SetFd sets 'file info' of the given error with the given file.
 // Currently only ErrCorrupted is supported, otherwise will do nothing.

@@ -168,7 +168,7 @@ func newPersistence(
 		}
 		fis, err := ioutil.ReadDir(basePath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot read base path %s: %s", basePath, err)
 		}
 		filesPresent := len(fis)
 		for i := range fis {
@@ -185,7 +185,7 @@ func newPersistence(
 		// Finally we can write our own version into a new version file.
 		file, err := os.Create(versionPath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot create version path %s: %s", versionPath, err)
 		}
 		defer file.Close()
 		if _, err := fmt.Fprintf(file, "%d\n", Version); err != nil {
