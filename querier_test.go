@@ -1028,7 +1028,7 @@ func TestSeriesIterator(t *testing.T) {
 }
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
-func TestCSIteratorDoubleSeek(t *testing.T) {
+func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 	chkMetas := []*ChunkMeta{
 		chunkFromSamples([]sample{}),
 		chunkFromSamples([]sample{{1, 1}, {2, 2}, {3, 3}}),
@@ -1041,6 +1041,28 @@ func TestCSIteratorDoubleSeek(t *testing.T) {
 	ts, v := res.At()
 	require.Equal(t, int64(2), ts)
 	require.Equal(t, float64(2), v)
+}
+
+// Regression when seeked chunks were still found via binary search and we always
+// skipped to the end when seeking a value in the current chunk.
+func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
+	metas := []*ChunkMeta{
+		chunkFromSamples([]sample{}),
+		chunkFromSamples([]sample{{1, 2}, {3, 4}, {5, 6}, {7, 8}}),
+		chunkFromSamples([]sample{}),
+	}
+
+	it := newChunkSeriesIterator(metas, nil, 1, 7)
+
+	require.True(t, it.Next())
+	ts, v := it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, float64(2), v)
+
+	require.True(t, it.Seek(4))
+	ts, v = it.At()
+	require.Equal(t, int64(5), ts)
+	require.Equal(t, float64(6), v)
 }
 
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {

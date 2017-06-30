@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/prometheus/tsdb/chunks"
@@ -671,25 +670,13 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 		t = it.mint
 	}
 
-	// Only do binary search forward to stay in line with other iterators
-	// that can only move forward.
-	x := sort.Search(len(it.chunks[it.i:]), func(i int) bool {
-		return it.chunks[it.i+i].MinTime >= t
-	})
-	x += it.i
-
-	// If the timestamp was not found, it might be in the last chunk.
-	if x == len(it.chunks) {
-		x--
-
-		// Go to previous chunk if the chunk doesn't exactly start with t.
-		// If we are already at the first chunk, we use it as it's the best we have.
-	} else if x > 0 && it.chunks[x].MinTime > t {
-		x--
+	for ; it.chunks[it.i].MaxTime < t; it.i++ {
+		if it.i == len(it.chunks)-1 {
+			return false
+		}
 	}
 
-	it.i = x
-	it.cur = it.chunks[x].Chunk.Iterator()
+	it.cur = it.chunks[it.i].Chunk.Iterator()
 	if len(it.intervals) > 0 {
 		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
 	}
