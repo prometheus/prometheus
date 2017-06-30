@@ -38,7 +38,7 @@ type Querier interface {
 	Close() error
 }
 
-// Series represents a single time series.
+// Series exposes a single time series.
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
 	Labels() labels.Labels

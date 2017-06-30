@@ -60,6 +60,11 @@ type Block interface {
 type headBlock interface {
 	Block
 	Appendable
+
+	// ActiveWriters returns the number of currently active appenders.
+	ActiveWriters() int
+	// HighTimestamp returns the highest currently inserted timestamp.
+	HighTimestamp() int64
 }
 
 // Snapshottable defines an entity that can be backedup online.
@@ -71,9 +76,6 @@ type Snapshottable interface {
 type Appendable interface {
 	// Appender returns a new Appender against an underlying store.
 	Appender() Appender
-
-	// Busy returns whether there are any currently active appenders.
-	Busy() bool
 }
 
 // Queryable defines an entity which provides a Querier.
