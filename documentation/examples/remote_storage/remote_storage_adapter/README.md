@@ -1,9 +1,9 @@
 # Remote storage adapter
 
 This is a write adapter that receives samples via Prometheus's remote write
-protocol and stores them in Graphite, InfluxDB, or OpenTSDB. It is meant as a
-replacement for the built-in specific remote storage implementations that have
-been removed from Prometheus.
+protocol and stores them in Graphite, InfluxDB, OpenTSDB, or Elasticsearch.
+It is meant as a replacement for the built-in specific remote storage implementations
+that have been removed from Prometheus.
 
 For InfluxDB, this binary is also a read adapter that supports reading back
 data through Prometheus via Prometheus's remote read protocol.
@@ -32,6 +32,12 @@ InfluxDB example:
 
 ```
 ./remote_storage_adapter -influxdb-url=http://localhost:8086/ -influxdb.database=prometheus -influxdb.retention-policy=autogen
+```
+
+Elasticsearch example:
+
+```
+./remote_storage_adapter -elasticsearch-url=http://localhost:9200/ -elasticsearch.max-retries=1 -elasticsearch.index-perfix=prometheus -elasticsearch.type=prom-metric
 ```
 
 To show all flags:

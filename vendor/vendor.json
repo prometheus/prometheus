@@ -1016,6 +1016,24 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "usMgyYFyh4B2B8ynVh1fZgt3GN4=",
+			"path": "gopkg.in/olivere/elastic.v3",
+			"revision": "787ebbb5a7600662bca364e4e8ca959f315e442f",
+			"revisionTime": "2016-07-27T17:08:39Z"
+		},
+		{
+			"checksumSHA1": "lLdKOn9RPtFoTtPUNq5+sIInAiE=",
+			"path": "gopkg.in/olivere/elastic.v3/backoff",
+			"revision": "787ebbb5a7600662bca364e4e8ca959f315e442f",
+			"revisionTime": "2016-07-27T17:08:39Z"
+		},
+		{
+			"checksumSHA1": "XQg6xG6l15Ke43KolthYYnVDCYo=",
+			"path": "gopkg.in/olivere/elastic.v3/uritemplates",
+			"revision": "787ebbb5a7600662bca364e4e8ca959f315e442f",
+			"revisionTime": "2016-07-27T17:08:39Z"
+		},
+		{
 			"checksumSHA1": "KgT+peLCcuh0/m2mpoOZXuxXmwc=",
 			"path": "gopkg.in/yaml.v2",
 			"revision": "7ad95dd0798a40da1ccdff6dff35fd177b5edf40",
