@@ -78,12 +78,11 @@ func Intersect(its ...Postings) Postings {
 	if len(its) == 0 {
 		return emptyPostings
 	}
-	a := its[0]
-
-	for _, b := range its[1:] {
-		a = newIntersectPostings(a, b)
+	if len(its) == 1 {
+		return its[0]
 	}
-	return a
+	l := len(its) / 2
+	return newIntersectPostings(Intersect(its[:l]...), Intersect(its[l:]...))
 }
 
 type intersectPostings struct {
@@ -145,12 +144,11 @@ func Merge(its ...Postings) Postings {
 	if len(its) == 0 {
 		return nil
 	}
-	a := its[0]
-
-	for _, b := range its[1:] {
-		a = newMergedPostings(a, b)
+	if len(its) == 1 {
+		return its[0]
 	}
-	return a
+	l := len(its) / 2
+	return newMergedPostings(Merge(its[:l]...), Merge(its[l:]...))
 }
 
 type mergedPostings struct {

@@ -80,6 +80,7 @@ type Appender interface {
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
+	// If the reference is the empty string it must not be used for caching.
 	Add(l labels.Labels, t int64, v float64) (string, error)
 
 	// Add adds a sample pair for the referenced series. It is generally faster
@@ -305,6 +306,15 @@ func (db *DB) retentionCutoff() (bool, error) {
 	return retentionCutoff(db.dir, mint)
 }
 
+// headFullness returns up to which fraction of a blocks time range samples
+// were already inserted.
+func headFullness(h headBlock) float64 {
+	m := h.Meta()
+	a := float64(h.HighTimestamp() - m.MinTime)
+	b := float64(m.MaxTime - m.MinTime)
+	return a / b
+}
+
 func (db *DB) compact() (changes bool, err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
@@ -319,12 +329,14 @@ func (db *DB) compact() (changes bool, err error) {
 	// returning the lock to not block Appenders.
 	// Selected blocks are semantically ensured to not be written to afterwards
 	// by appendable().
-	if len(db.heads) > 2 {
-		for _, h := range db.heads[:len(db.heads)-2] {
+	if len(db.heads) > 1 {
+		f := headFullness(db.heads[len(db.heads)-1])
+
+		for _, h := range db.heads[:len(db.heads)-1] {
 			// Blocks that won't be appendable when instantiating a new appender
 			// might still have active appenders on them.
 			// Abort at the first one we encounter.
-			if h.Busy() {
+			if h.ActiveWriters() > 0 || f < 0.5 {
 				break
 			}
 			singles = append(singles, h)
@@ -605,6 +617,9 @@ func (a *dbAppender) Add(lset labels.Labels, t int64, v float64) (string, error)
 	}
 	a.samples++
 
+	if ref == "" {
+		return "", nil
+	}
 	return string(append(h.meta.ULID[:], ref...)), nil
 }
 
@@ -848,6 +863,8 @@ func (db *DB) createHeadBlock(mint, maxt int64) (headBlock, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	db.logger.Log("msg", "created head block", "ulid", newHead.meta.ULID, "mint", mint, "maxt", maxt)
 
 	db.blocks = append(db.blocks, newHead) // TODO(fabxc): this is a race!
 	db.heads = append(db.heads, newHead)
