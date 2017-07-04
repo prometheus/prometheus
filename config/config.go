@@ -281,6 +281,11 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			consulcfg.TLSConfig.CertFile = join(consulcfg.TLSConfig.CertFile)
 			consulcfg.TLSConfig.KeyFile = join(consulcfg.TLSConfig.KeyFile)
 		}
+		for _, filecfg := range cfg.FileSDConfigs {
+			for i, fn := range filecfg.Files {
+				filecfg.Files[i] = join(fn)
+			}
+		}
 	}
 
 	for _, cfg := range cfg.ScrapeConfigs {
