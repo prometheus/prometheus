@@ -19,10 +19,12 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
+// The errors exposed.
 var (
 	ErrNotFound                    = errors.New("not found")
 	ErrOutOfOrderSample            = errors.New("out of order sample")
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
+	ErrOutOfBounds                 = errors.New("out of bounds")
 )
 
 // Storage ingests and manages samples, along with various indexes. All methods
