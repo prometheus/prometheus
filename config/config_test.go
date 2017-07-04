@@ -104,11 +104,11 @@ var expectedConf = &Config{
 
 				FileSDConfigs: []*FileSDConfig{
 					{
-						Files:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
+						Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
 						RefreshInterval: model.Duration(10 * time.Minute),
 					},
 					{
-						Files:           []string{"bar/*.yaml"},
+						Files:           []string{"testdata/bar/*.yaml"},
 						RefreshInterval: model.Duration(5 * time.Minute),
 					},
 				},
