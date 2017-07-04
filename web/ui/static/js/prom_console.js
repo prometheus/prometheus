@@ -426,7 +426,7 @@ PromConsole.Graph.prototype._render = function(data) {
   if (this.params.colorScheme === null) {
     palette = new Rickshaw.Color.Palette();
   } else {
-    palette = new Rickshaw.Color.Palette(scheme=this.params.colorScheme);
+    palette = new Rickshaw.Color.Palette({scheme: this.params.colorScheme});
   }
   var series = [];
 
