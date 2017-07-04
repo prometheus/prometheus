@@ -113,7 +113,8 @@ type scrapePool struct {
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(context.Context, scraper, func() storage.Appender, func() storage.Appender, log.Logger) loop
 
-	logger log.Logger
+	logger       log.Logger
+	maxAheadTime time.Duration
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
@@ -133,14 +134,15 @@ func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable
 	}
 
 	return &scrapePool{
-		appendable: app,
-		config:     cfg,
-		ctx:        ctx,
-		client:     client,
-		targets:    map[uint64]*Target{},
-		loops:      map[uint64]loop{},
-		newLoop:    newLoop,
-		logger:     logger,
+		appendable:   app,
+		config:       cfg,
+		ctx:          ctx,
+		client:       client,
+		targets:      map[uint64]*Target{},
+		loops:        map[uint64]loop{},
+		newLoop:      newLoop,
+		logger:       logger,
+		maxAheadTime: 10 * time.Minute,
 	}
 }
 
@@ -308,6 +310,13 @@ func (sp *scrapePool) sampleAppender(target *Target) storage.Appender {
 	app, err := sp.appendable.Appender()
 	if err != nil {
 		panic(err)
+	}
+
+	if sp.maxAheadTime > 0 {
+		app = &timeLimitAppender{
+			Appender: app,
+			maxTime:  timestamp.FromTime(time.Now().Add(sp.maxAheadTime)),
+		}
 	}
 
 	// The limit is applied after metrics are potentially dropped via relabeling.
@@ -810,6 +819,7 @@ loop:
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
 			case storage.ErrOutOfBounds:
+				err = nil
 				numOutOfBounds++
 				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
 				continue
