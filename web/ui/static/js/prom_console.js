@@ -311,7 +311,8 @@ PromConsole.graphDefaults = {
   yAxisFormatter: PromConsole.NumberFormatter.humanize,
   // Number formatter for y values hover detail.
   yHoverFormatter: PromConsole.NumberFormatter.humanizeExact,
-  // Color scheme to be used by the plots. A list of hex color codes.
+  // Color scheme to be used by the plots. Can be either a list of hex color
+  // codes or one of the color scheme names supported by Rickshaw.
   colorScheme: null,
 };
 
@@ -422,12 +423,7 @@ PromConsole.Graph.prototype._escapeHTML = function(string) {
 
 PromConsole.Graph.prototype._render = function(data) {
   var self = this;
-  var palette;
-  if (this.params.colorScheme === null) {
-    palette = new Rickshaw.Color.Palette();
-  } else {
-    palette = new Rickshaw.Color.Palette({scheme: this.params.colorScheme});
-  }
+  var palette = new Rickshaw.Color.Palette({scheme: this.params.colorScheme});
   var series = [];
 
   // This will be used on resize.
