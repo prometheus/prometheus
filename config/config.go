@@ -1137,6 +1137,7 @@ type EC2SDConfig struct {
 	AccessKey       string         `yaml:"access_key,omitempty"`
 	SecretKey       Secret         `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
+	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 
