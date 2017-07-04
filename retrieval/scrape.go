@@ -722,11 +722,12 @@ func (s samples) Less(i, j int) bool {
 
 func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err error) {
 	var (
-		app           = sl.appender()
-		p             = textparse.New(b)
-		defTime       = timestamp.FromTime(ts)
-		numOutOfOrder = 0
-		numDuplicates = 0
+		app            = sl.appender()
+		p              = textparse.New(b)
+		defTime        = timestamp.FromTime(ts)
+		numOutOfOrder  = 0
+		numDuplicates  = 0
+		numOutOfBounds = 0
 	)
 	var sampleLimitErr error
 
@@ -760,6 +761,10 @@ loop:
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				continue
+			case storage.ErrOutOfBounds:
+				numOutOfBounds++
+				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
 				continue
 			case errSampleLimit:
 				// Keep on parsing output if we hit the limit, so we report the correct
@@ -804,6 +809,10 @@ loop:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
+			case storage.ErrOutOfBounds:
+				numOutOfBounds++
+				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				continue
 			case errSampleLimit:
 				sampleLimitErr = err
 				added++
@@ -831,6 +840,9 @@ loop:
 	}
 	if numDuplicates > 0 {
 		sl.l.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
+	}
+	if numOutOfBounds > 0 {
+		sl.l.With("numOutOfBounds", numOutOfBounds).Warn("Error on ingesting samples that are too old")
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
