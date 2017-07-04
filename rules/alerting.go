@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	yaml "gopkg.in/yaml.v2"
+
 	"golang.org/x/net/context"
 
 	html_template "html/template"
@@ -27,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/template"
@@ -305,18 +308,20 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 }
 
 func (r *AlertingRule) String() string {
-	s := fmt.Sprintf("ALERT %s", r.name)
-	s += fmt.Sprintf("\n\tIF %s", r.vector)
-	if r.holdDuration > 0 {
-		s += fmt.Sprintf("\n\tFOR %s", model.Duration(r.holdDuration))
+	ar := rulefmt.Rule{
+		Alert:       r.name,
+		Expr:        r.vector.String(),
+		For:         model.Duration(r.holdDuration),
+		Labels:      r.labels.Map(),
+		Annotations: r.annotations.Map(),
 	}
-	if len(r.labels) > 0 {
-		s += fmt.Sprintf("\n\tLABELS %s", r.labels)
+
+	byt, err := yaml.Marshal(ar)
+	if err != nil {
+		return fmt.Sprintf("error marshalling alerting rule: %s", err.Error())
 	}
-	if len(r.annotations) > 0 {
-		s += fmt.Sprintf("\n\tANNOTATIONS %s", r.annotations)
-	}
-	return s
+
+	return string(byt)
 }
 
 // HTMLSnippet returns an HTML snippet representing this alerting rule. The
@@ -327,16 +332,28 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		model.MetricNameLabel: alertMetricName,
 		alertNameLabel:        model.LabelValue(r.name),
 	}
-	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), r.name)
-	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String()))
-	if r.holdDuration > 0 {
-		s += fmt.Sprintf("\n  FOR %s", model.Duration(r.holdDuration))
+
+	labels := make(map[string]string, len(r.labels))
+	for _, l := range r.labels {
+		labels[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
-	if len(r.labels) > 0 {
-		s += fmt.Sprintf("\n  LABELS %s", html_template.HTMLEscapeString(r.labels.String()))
+
+	annotations := make(map[string]string, len(r.annotations))
+	for _, l := range r.annotations {
+		annotations[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
-	if len(r.annotations) > 0 {
-		s += fmt.Sprintf("\n  ANNOTATIONS %s", html_template.HTMLEscapeString(r.annotations.String()))
+
+	ar := rulefmt.Rule{
+		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), r.name),
+		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		For:         model.Duration(r.holdDuration),
+		Labels:      labels,
+		Annotations: annotations,
 	}
-	return html_template.HTML(s)
+
+	byt, err := yaml.Marshal(ar)
+	if err != nil {
+		return html_template.HTML(fmt.Sprintf("error marshalling alerting rule: %q", err.Error()))
+	}
+	return html_template.HTML(byt)
 }
