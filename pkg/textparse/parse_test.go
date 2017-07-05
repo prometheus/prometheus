@@ -33,6 +33,12 @@ func TestParse(t *testing.T) {
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
 go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
+go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
+go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
+go_gc_duration_seconds{ quantile="1.0", a="b" } 8.3835e-05
+go_gc_duration_seconds { quantile="1.0", a="b" } 8.3835e-05
+go_gc_duration_seconds { quantile= "1.0", a= "b" } 8.3835e-05
+go_gc_duration_seconds { quantile = "1.0", a = "b" } 8.3835e-05
 go_gc_duration_seconds_count 99
 some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
@@ -60,6 +66,30 @@ go_goroutines 33  	123123`
 			m:    `go_gc_duration_seconds{quantile="0.5",a="b"}`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds{quantile="0.8", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.8", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds { quantile= "1.0", a= "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
 		}, {
 			m:    `go_gc_duration_seconds_count`,
 			v:    99,
@@ -139,6 +169,7 @@ func TestParseErrors(t *testing.T) {
 		p := New([]byte(c.input))
 		for p.Next() {
 		}
+		require.NotNil(t, p.Err())
 		require.Equal(t, c.err, p.Err().Error())
 	}
 }

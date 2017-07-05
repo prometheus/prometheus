@@ -30,11 +30,13 @@ import (
 func (l *lexer) Lex() int {
     const (
         lstateInit = iota
+        lstateName
         lstateValue
         lstateTimestamp
         lstateLabels
         lstateLName
         lstateLValue
+        lstateLValueIn
     )
     s := lstateInit
     
@@ -53,7 +55,7 @@ S     [a-zA-Z]
 L     [a-zA-Z_]
 M     [a-zA-Z_:]
 
-%x lstateValue lstateTimestamp lstateLabels lstateLName lstateLValue
+%x lstateName lstateValue lstateTimestamp lstateLabels lstateLName lstateLValue lstateLValueIn
 
 
 %yyc c
@@ -67,23 +69,30 @@ M     [a-zA-Z_:]
 #[^\r\n]*\n                           l.mstart = l.i
 [\r\n \t]+                            l.mstart = l.i
 
-{S}({M}|{D})*\{                       s = lstateLabels
-                                      l.offsets = append(l.offsets, l.i-1)
-{S}({M}|{D})*                         s = lstateValue
-                                      l.mend = l.i
+{S}({M}|{D})*                         s = lstateName
                                       l.offsets = append(l.offsets, l.i)
+                                      l.mend = l.i
+
+<lstateName>([ \t]*)\{                 s = lstateLabels
+
+<lstateName>[ \t]+                    s = lstateValue
+                                      l.vstart = l.i
+
 
 <lstateLabels>[ \t]+
 <lstateLabels>,?\}                    s = lstateValue
                                       l.mend = l.i
-<lstateLabels>,?                      s = lstateLName
+<lstateLabels>(,?[ \t]*)              s = lstateLName
                                       l.offsets = append(l.offsets, l.i)
 
-<lstateLName>{S}({L}|{D})*=           s = lstateLValue
-                                      l.offsets = append(l.offsets, l.i-1)
+<lstateLName>{S}({L}|{D})*            l.offsets = append(l.offsets, l.i)
+<lstateLName>[ \t]*=                  s = lstateLValue
 
-<lstateLValue>\"(\\.|[^\\"]|\0)*\"    s = lstateLabels
-                                      if !utf8.Valid(l.b[l.offsets[len(l.offsets)-1]+2:l.i-1]) {
+<lstateLValue>[ \t]+
+<lstateLValue>\"                      s = lstateLValueIn
+                                      l.offsets = append(l.offsets, l.i)
+<lstateLValueIn>(\\.|[^\\"]|\0)*\"    s = lstateLabels
+                                      if !utf8.Valid(l.b[l.offsets[len(l.offsets)-1]:l.i-1]) {
                                         l.err = fmt.Errorf("Invalid UTF-8 label value.")
                                         return -1
                                       }
