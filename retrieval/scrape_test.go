@@ -273,6 +273,7 @@ func TestScrapePoolSampleAppender(t *testing.T) {
 	app := &nopAppendable{}
 
 	sp := newScrapePool(context.Background(), cfg, app, log.Base())
+	sp.maxAheadTime = 0
 
 	cfg.HonorLabels = false
 	wrapped := sp.sampleAppender(target)
@@ -872,19 +873,23 @@ type errorAppender struct {
 }
 
 func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	if lset.Get(model.MetricNameLabel) == "out_of_order" {
+	switch lset.Get(model.MetricNameLabel) {
+	case "out_of_order":
 		return "", storage.ErrOutOfOrderSample
-	} else if lset.Get(model.MetricNameLabel) == "amend" {
+	case "amend":
 		return "", storage.ErrDuplicateSampleForTimestamp
+	case "out_of_bounds":
+		return "", storage.ErrOutOfBounds
+	default:
+		return app.collectResultAppender.Add(lset, t, v)
 	}
-	return app.collectResultAppender.Add(lset, t, v)
 }
 
 func (app *errorAppender) AddFast(ref string, t int64, v float64) error {
 	return app.collectResultAppender.AddFast(ref, t, v)
 }
 
-func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
+func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {
 	app := &errorAppender{}
 	sl := newScrapeLoop(context.Background(), nil,
 		func() storage.Appender { return app },
@@ -893,7 +898,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 	)
 
 	now := time.Unix(1, 0)
-	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\n"), now)
+	_, _, err := sl.append([]byte("out_of_order 1\namend 1\nnormal 1\nout_of_bounds 1\n"), now)
 	if err != nil {
 		t.Fatalf("Unexpected append error: %s", err)
 	}
@@ -907,7 +912,35 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrder(t *testing.T) {
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
+}
 
+func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
+	app := &collectResultAppender{}
+	sl := newScrapeLoop(context.Background(), nil,
+		func() storage.Appender {
+			return &timeLimitAppender{
+				Appender: app,
+				maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
+			}
+		},
+		func() storage.Appender { return nopAppender{} },
+		nil,
+	)
+
+	now := time.Now().Add(20 * time.Minute)
+	total, added, err := sl.append([]byte("normal 1\n"), now)
+	if total != 1 {
+		t.Error("expected 1 metric")
+		return
+	}
+
+	if added != 0 {
+		t.Error("no metric should be added")
+	}
+
+	if err != nil {
+		t.Errorf("expect no error, got %s", err.Error())
+	}
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {
