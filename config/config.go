@@ -1278,7 +1278,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type RelabelConfig struct {
 	// A list of labels from which values are taken and concatenated
 	// with the configured separator in order.
-	SourceLabels model.LabelNames `yaml:"source_labels,flow"`
+	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
