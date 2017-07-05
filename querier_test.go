@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -1138,4 +1139,63 @@ func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta, intervals) {
 
 func (m *mockChunkSeriesSet) Err() error {
 	return nil
+}
+
+// Test the cost of merging series sets for different number of merged sets and their size.
+// The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
+func BenchmarkMergedSeriesSet(b *testing.B) {
+	var sel func(sets []SeriesSet) SeriesSet
+
+	sel = func(sets []SeriesSet) SeriesSet {
+		if len(sets) == 0 {
+			return nopSeriesSet{}
+		}
+		if len(sets) == 1 {
+			return sets[0]
+		}
+		l := len(sets) / 2
+		return newMergedSeriesSet(sel(sets[:l]), sel(sets[l:]))
+	}
+
+	for _, k := range []int{
+		100,
+		1000,
+		10000,
+		100000,
+	} {
+		for _, j := range []int{1, 2, 4, 8, 16, 32} {
+			b.Run(fmt.Sprintf("series=%d,blocks=%d", k, j), func(b *testing.B) {
+				lbls, err := readPrometheusLabels("testdata/1m.series", k)
+				require.NoError(b, err)
+
+				sort.Sort(labels.Slice(lbls))
+
+				in := make([][]Series, j)
+
+				for _, l := range lbls {
+					l2 := l
+					for j := range in {
+						in[j] = append(in[j], &mockSeries{labels: func() labels.Labels { return l2 }})
+					}
+				}
+
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					var sets []SeriesSet
+					for _, s := range in {
+						sets = append(sets, newListSeriesSet(s))
+					}
+					ms := sel(sets)
+
+					i := 0
+					for ms.Next() {
+						i++
+					}
+					require.NoError(b, ms.Err())
+					require.Equal(b, len(lbls), i)
+				}
+			})
+		}
+	}
 }
