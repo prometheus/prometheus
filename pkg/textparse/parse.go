@@ -110,12 +110,13 @@ func (p *Parser) Metric(l *labels.Labels) string {
 		Value: s[:p.l.offsets[0]-p.l.mstart],
 	})
 
-	for i := 1; i < len(p.l.offsets); i += 3 {
+	for i := 1; i < len(p.l.offsets); i += 4 {
 		a := p.l.offsets[i] - p.l.mstart
 		b := p.l.offsets[i+1] - p.l.mstart
 		c := p.l.offsets[i+2] - p.l.mstart
+		d := p.l.offsets[i+3] - p.l.mstart
 
-		*l = append(*l, labels.Label{Name: s[a:b], Value: s[b+2 : c]})
+		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
 	sort.Sort((*l)[1:])
