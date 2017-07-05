@@ -303,7 +303,7 @@ func (t *QueueManager) calculateDesiredShards() {
 
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
-	// (received - send) so we can catch up with any backlog. We use the average
+	// (received - sent) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
 		samplesIn          = t.samplesIn.rate()
