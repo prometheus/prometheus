@@ -225,6 +225,34 @@ func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
 	return nil
 }
 
+type timeLimitAppender struct {
+	storage.Appender
+
+	maxTime int64
+}
+
+func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+	if t > app.maxTime {
+		return "", storage.ErrOutOfBounds
+	}
+
+	ref, err := app.Appender.Add(lset, t, v)
+	if err != nil {
+		return "", err
+	}
+	return ref, nil
+}
+
+func (app *timeLimitAppender) AddFast(ref string, t int64, v float64) error {
+	if t > app.maxTime {
+		return storage.ErrOutOfBounds
+	}
+	if err := app.Appender.AddFast(ref, t, v); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Merges the ingested sample's metric with the label set. On a collision the
 // value of the ingested label is stored in a label prefixed with 'exported_'.
 type ruleLabelsAppender struct {

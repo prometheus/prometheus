@@ -113,7 +113,8 @@ type scrapePool struct {
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(context.Context, scraper, func() storage.Appender, func() storage.Appender, log.Logger) loop
 
-	logger log.Logger
+	logger       log.Logger
+	maxAheadTime time.Duration
 }
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
@@ -133,14 +134,15 @@ func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable
 	}
 
 	return &scrapePool{
-		appendable: app,
-		config:     cfg,
-		ctx:        ctx,
-		client:     client,
-		targets:    map[uint64]*Target{},
-		loops:      map[uint64]loop{},
-		newLoop:    newLoop,
-		logger:     logger,
+		appendable:   app,
+		config:       cfg,
+		ctx:          ctx,
+		client:       client,
+		targets:      map[uint64]*Target{},
+		loops:        map[uint64]loop{},
+		newLoop:      newLoop,
+		logger:       logger,
+		maxAheadTime: 10 * time.Minute,
 	}
 }
 
@@ -308,6 +310,13 @@ func (sp *scrapePool) sampleAppender(target *Target) storage.Appender {
 	app, err := sp.appendable.Appender()
 	if err != nil {
 		panic(err)
+	}
+
+	if sp.maxAheadTime > 0 {
+		app = &timeLimitAppender{
+			Appender: app,
+			maxTime:  timestamp.FromTime(time.Now().Add(sp.maxAheadTime)),
+		}
 	}
 
 	// The limit is applied after metrics are potentially dropped via relabeling.
@@ -722,11 +731,12 @@ func (s samples) Less(i, j int) bool {
 
 func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err error) {
 	var (
-		app           = sl.appender()
-		p             = textparse.New(b)
-		defTime       = timestamp.FromTime(ts)
-		numOutOfOrder = 0
-		numDuplicates = 0
+		app            = sl.appender()
+		p              = textparse.New(b)
+		defTime        = timestamp.FromTime(ts)
+		numOutOfOrder  = 0
+		numDuplicates  = 0
+		numOutOfBounds = 0
 	)
 	var sampleLimitErr error
 
@@ -760,6 +770,10 @@ loop:
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				continue
+			case storage.ErrOutOfBounds:
+				numOutOfBounds++
+				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
 				continue
 			case errSampleLimit:
 				// Keep on parsing output if we hit the limit, so we report the correct
@@ -804,6 +818,11 @@ loop:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
 				continue
+			case storage.ErrOutOfBounds:
+				err = nil
+				numOutOfBounds++
+				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				continue
 			case errSampleLimit:
 				sampleLimitErr = err
 				added++
@@ -831,6 +850,9 @@ loop:
 	}
 	if numDuplicates > 0 {
 		sl.l.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
+	}
+	if numOutOfBounds > 0 {
+		sl.l.With("numOutOfBounds", numOutOfBounds).Warn("Error on ingesting samples that are too old")
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
