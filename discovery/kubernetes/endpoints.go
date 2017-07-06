@@ -321,11 +321,12 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *config.TargetGroup) {
 
 	obj, exists, err := e.serviceStore.Get(svc)
 	if !exists || err != nil {
+		if err != nil {
+			e.logger.With("err", err).Errorln("retrieving service failed")
+		}
 		return
 	}
-	if err != nil {
-		e.logger.With("err", err).Errorln("retrieving service failed")
-	}
+
 	svc = obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
