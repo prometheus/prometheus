@@ -46,7 +46,6 @@ var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
 	MinBlockDuration:  3 * 60 * 60 * 1000,       // 2 hours in milliseconds
-	MaxBlockDuration:  24 * 60 * 60 * 1000,      // 1 days in milliseconds
 	NoLockfile:        false,
 }
 
@@ -61,9 +60,6 @@ type Options struct {
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
 	MinBlockDuration uint64
-
-	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration uint64
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
@@ -227,9 +223,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = &lockf
 	}
 
-	db.compactor = newCompactor(dir, r, l, &compactorOptions{
-		maxBlockRange: opts.MaxBlockDuration,
-	})
+	db.compactor = newCompactor(dir, r, l, &compactorOptions{})
 
 	if err := db.reloadBlocks(); err != nil {
 		return nil, err
