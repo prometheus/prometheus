@@ -86,7 +86,7 @@ func (tm *TargetManager) Stop() {
 	// Wait for all scrape inserts to complete.
 	tm.wg.Wait()
 
-	tm.logger.Debugln("Target manager stopped")
+	tm.logger.Infoln("Target manager stopped.")
 }
 
 func (tm *TargetManager) reload() {
