@@ -399,6 +399,15 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 	if err != nil {
 		return err
 	}
+
+	host, port, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		return err
+	}
+	if port == "80" || port == "443" {
+		req.Host = host
+	}
+
 	req.Header.Set("Content-Type", contentTypeJSON)
 	resp, err := n.opts.Do(ctx, c, req)
 	if err != nil {
