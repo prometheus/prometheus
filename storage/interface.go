@@ -14,17 +14,16 @@
 package storage
 
 import (
-	"errors"
-
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/tsdb"
 )
 
 // The errors exposed.
 var (
-	ErrNotFound                    = errors.New("not found")
-	ErrOutOfOrderSample            = errors.New("out of order sample")
-	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
-	ErrOutOfBounds                 = errors.New("out of bounds")
+	ErrNotFound                    = tsdb.ErrNotFound
+	ErrOutOfOrderSample            = tsdb.ErrOutOfOrderSample
+	ErrDuplicateSampleForTimestamp = tsdb.ErrAmendSample
+	ErrOutOfBounds                 = tsdb.ErrOutOfBounds
 )
 
 // Storage ingests and manages samples, along with various indexes. All methods

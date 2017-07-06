@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 
@@ -875,11 +876,11 @@ type errorAppender struct {
 func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	switch lset.Get(model.MetricNameLabel) {
 	case "out_of_order":
-		return "", storage.ErrOutOfOrderSample
+		return "", tsdb.ErrOutOfOrderSample
 	case "amend":
-		return "", storage.ErrDuplicateSampleForTimestamp
+		return "", tsdb.ErrAmendSample
 	case "out_of_bounds":
-		return "", storage.ErrOutOfBounds
+		return "", tsdb.ErrOutOfBounds
 	default:
 		return app.collectResultAppender.Add(lset, t, v)
 	}
