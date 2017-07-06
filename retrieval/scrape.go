@@ -852,7 +852,7 @@ loop:
 		sl.l.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
 	}
 	if numOutOfBounds > 0 {
-		sl.l.With("numOutOfBounds", numOutOfBounds).Warn("Error on ingesting samples that are too old")
+		sl.l.With("numOutOfBounds", numOutOfBounds).Warn("Error on ingesting samples that are too old or are too far into the future")
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {

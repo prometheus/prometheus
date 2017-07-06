@@ -125,6 +125,8 @@ func (a appender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 		return "", storage.ErrOutOfOrderSample
 	case tsdb.ErrAmendSample:
 		return "", storage.ErrDuplicateSampleForTimestamp
+	case tsdb.ErrOutOfBounds:
+		return "", storage.ErrOutOfBounds
 	}
 	return ref, err
 }
@@ -139,6 +141,8 @@ func (a appender) AddFast(ref string, t int64, v float64) error {
 		return storage.ErrOutOfOrderSample
 	case tsdb.ErrAmendSample:
 		return storage.ErrDuplicateSampleForTimestamp
+	case tsdb.ErrOutOfBounds:
+		return storage.ErrOutOfBounds
 	}
 	return err
 }
