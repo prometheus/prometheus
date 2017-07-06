@@ -225,13 +225,13 @@ func main() {
 	cfg.queryEngine.Logger = logger
 	var (
 		notifier       = notifier.New(&cfg.notifier, logger)
-		targetManager  = retrieval.NewTargetManager(localStorage, logger)
-		queryEngine    = promql.NewEngine(localStorage, &cfg.queryEngine)
+		targetManager  = retrieval.NewTargetManager(tsdb.Adapter(localStorage), logger)
+		queryEngine    = promql.NewEngine(tsdb.Adapter(localStorage), &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		Appendable:  localStorage,
+		Appendable:  tsdb.Adapter(localStorage),
 		Notifier:    notifier,
 		QueryEngine: queryEngine,
 		Context:     ctx,
@@ -318,7 +318,8 @@ func main() {
 	// to be canceled and ensures a quick shutdown of the rule manager.
 	defer cancelCtx()
 
-	go webHandler.Run()
+	errc := make(chan error)
+	go func() { errc <- webHandler.Run(ctx) }()
 
 	// Wait for reload or termination signals.
 	close(hupReady) // Unblock SIGHUP handler.
@@ -330,7 +331,7 @@ func main() {
 		logger.Warn("Received SIGTERM, exiting gracefully...")
 	case <-webHandler.Quit():
 		logger.Warn("Received termination request via web service, exiting gracefully...")
-	case err := <-webHandler.ListenError():
+	case err := <-errc:
 		logger.Errorln("Error starting web server, exiting gracefully:", err)
 	}
 
