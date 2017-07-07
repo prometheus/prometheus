@@ -74,6 +74,7 @@ promu:
 	@echo ">> fetching promu"
 	@GOOS=$(shell uname -s | tr A-Z a-z) \
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
+	GO="$(GO)" \
 	$(GO) get -u github.com/prometheus/promu
 
 
