@@ -49,6 +49,10 @@ func (l *lexer) next() byte {
 		return eof
 	}
 	c := l.b[l.i]
+
+	if c == eof {
+		return l.next()
+	}
 	return c
 }
 

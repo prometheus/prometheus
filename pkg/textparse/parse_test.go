@@ -163,6 +163,10 @@ func TestParseErrors(t *testing.T) {
 			input: "a true\n",
 			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
 		},
+		{
+			input: "something_weird{problem=\"",
+			err:   "no token found",
+		},
 	}
 
 	for _, c := range cases {

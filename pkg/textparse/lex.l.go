@@ -386,22 +386,26 @@ yystate33:
 yystart33:
 	switch {
 	default:
-		goto yystate34 // c >= '\x00' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ'
+		goto yyabort
 	case c == '"':
 		goto yystate35
 	case c == '\\':
 		goto yystate36
+	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
+		goto yystate34
 	}
 
 yystate34:
 	c = l.next()
 	switch {
 	default:
-		goto yystate34 // c >= '\x00' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ'
+		goto yyabort
 	case c == '"':
 		goto yystate35
 	case c == '\\':
 		goto yystate36
+	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
+		goto yystate34
 	}
 
 yystate35:
@@ -483,7 +487,7 @@ yyrule13: // \"
 		l.offsets = append(l.offsets, l.i)
 		goto yystate0
 	}
-yyrule14: // (\\.|[^\\"]|\0)*\"
+yyrule14: // (\\.|[^\\"])*\"
 	{
 		s = lstateLabels
 		if !utf8.Valid(l.b[l.offsets[len(l.offsets)-1] : l.i-1]) {
