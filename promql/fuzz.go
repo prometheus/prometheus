@@ -16,6 +16,8 @@
 
 package promql
 
+import "github.com/prometheus/prometheus/pkg/textparse"
+
 // PromQL parser fuzzing instrumentation for use with
 // https://github.com/dvyukov/go-fuzz.
 //
@@ -48,8 +50,11 @@ const (
 // Note that his is not the parser for the text-based exposition-format; that
 // lives in github.com/prometheus/client_golang/text.
 func FuzzParseMetric(in []byte) int {
-	_, err := ParseMetric(string(in))
-	if err == nil {
+	p := textparse.New(in)
+	for p.Next() {
+	}
+
+	if p.Err() == nil {
 		return fuzzInteresting
 	}
 

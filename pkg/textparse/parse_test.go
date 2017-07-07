@@ -163,6 +163,10 @@ func TestParseErrors(t *testing.T) {
 			input: "a true\n",
 			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
 		},
+		{
+			input: "something_weird{problem=\"",
+			err:   "no token found",
+		},
 	}
 
 	for _, c := range cases {
@@ -170,6 +174,60 @@ func TestParseErrors(t *testing.T) {
 		for p.Next() {
 		}
 		require.NotNil(t, p.Err())
+		require.Equal(t, c.err, p.Err().Error())
+	}
+}
+
+func TestNullByteHandling(t *testing.T) {
+	cases := []struct {
+		input string
+		err   string
+	}{
+		{
+			input: "null_byte_metric{a=\"abc\x00\"} 1",
+			err:   "",
+		},
+		{
+			input: "a{b=\"\x00ss\"} 1\n",
+			err:   "",
+		},
+		{
+			input: "a{b=\"\x00\"} 1\n",
+			err:   "",
+		},
+		{
+			input: "a{b=\"\x00\"} 1\n",
+			err:   "",
+		},
+		{
+			input: "a{b=\x00\"ssss\"} 1\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{b=\"\x00",
+			err:   "no token found",
+		},
+		{
+			input: "a{b\x00=\"hiih\"}	1",
+			err: "no token found",
+		},
+		{
+			input: "a\x00{b=\"ddd\"} 1",
+			err:   "no token found",
+		},
+	}
+
+	for _, c := range cases {
+		p := New([]byte(c.input))
+		for p.Next() {
+		}
+
+		if c.err == "" {
+			require.NoError(t, p.Err())
+			continue
+		}
+
+		require.Error(t, p.Err())
 		require.Equal(t, c.err, p.Err().Error())
 	}
 }
