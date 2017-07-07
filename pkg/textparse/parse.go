@@ -38,6 +38,8 @@ type lexer struct {
 	offsets      []int
 	mstart, mend int
 	nextMstart   int
+
+	state int
 }
 
 const eof = 0
@@ -49,6 +51,11 @@ func (l *lexer) next() byte {
 		return eof
 	}
 	c := l.b[l.i]
+
+	// Consume null byte when encountered in label-value.
+	if c == eof && (l.state == lstateLValueIn || l.state == lstateLValue) {
+		return l.next()
+	}
 	return c
 }
 
