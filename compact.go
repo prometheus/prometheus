@@ -30,6 +30,18 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
+// ExponentialBlockRanges returns the time ranges based on the stepSize
+func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
+	ranges := make([]int64, 0, steps)
+	curRange := minSize
+	for i := 0; i < steps; i++ {
+		ranges = append(ranges, curRange)
+		curRange = curRange * int64(stepSize)
+	}
+
+	return ranges
+}
+
 // Compactor provides compaction against an underlying storage
 // of time series data.
 type Compactor interface {
@@ -91,15 +103,6 @@ type compactorOptions struct {
 }
 
 func newCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
-	if opts.blockRanges == nil {
-		opts.blockRanges = []int64{
-			int64(2 * time.Hour),
-			int64(6 * time.Hour),
-			int64(24 * time.Hour),
-			int64(72 * time.Hour),  // 3d
-			int64(216 * time.Hour), // 9d
-		}
-	}
 	return &compactor{
 		dir:     dir,
 		opts:    opts,
@@ -161,6 +164,11 @@ func (c *compactor) Plan() ([][]string, error) {
 }
 
 func (c *compactor) selectDirs(ds []dirMeta) []dirMeta {
+	// The way to skip compaction is to not have blockRanges.
+	if len(c.opts.blockRanges) == 1 {
+		return nil
+	}
+
 	return selectRecurse(ds, c.opts.blockRanges)
 }
 
@@ -184,6 +192,8 @@ func selectRecurse(dms []dirMeta, intervals []int64) []dirMeta {
 	// If there are too many blocks, see if a smaller interval will catch them.
 	// i.e, if we have 0-20, 60-80, 80-100; all fall under 0-240, but we'd rather compact 60-100
 	// than all at once.
+	// Again if have 0-1d, 1d-2d, 3-6d we compact 0-1d, 1d-2d to compact it into the 0-3d block instead of compacting all three
+	// This is to honor the boundaries as much as possible.
 	if len(dirs) > 2 {
 		smallerDirs := selectRecurse(dirs, intervals[:len(intervals)-1])
 		if len(smallerDirs) > 1 {
@@ -194,29 +204,28 @@ func selectRecurse(dms []dirMeta, intervals []int64) []dirMeta {
 	return dirs
 }
 
+// splitByRange splits the directories by the time range.
+// for example if we have blocks 0-10, 10-20, 50-60, 90-100 and want to split them into 30 interval ranges
+// splitByRange returns [0-10, 10-20], [50-60], [90-100].
 func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
-	splitDirs := [][]dirMeta{}
-	t0 := ds[0].meta.MinTime - ds[0].meta.MinTime%tr
-	dirs := []dirMeta{}
+	var splitDirs [][]dirMeta
 
-	for _, dir := range ds {
-		if intervalContains(t0, t0+tr, dir.meta.MinTime) && intervalContains(t0, t0+tr, dir.meta.MaxTime) {
-			dirs = append(dirs, dir)
-			continue
-		}
+	for i := 0; i < len(ds); {
+		var group []dirMeta
+		// Compute start of aligned time range of size tr closest to the current block's start.
+		t0 := ds[i].meta.MinTime - (ds[i].meta.MinTime % tr)
 
-		if dir.meta.MinTime >= t0+tr {
-			splitDirs = append(splitDirs, dirs)
-			dirs = []dirMeta{}
-			t0 = dir.meta.MinTime - dir.meta.MinTime%tr
-			if intervalContains(t0, t0+tr, dir.meta.MinTime) && intervalContains(t0, t0+tr, dir.meta.MaxTime) {
-				dirs = append(dirs, dir)
+		// Add all dirs to the current group that are within [t0, t0+tr].
+		for ; i < len(ds); i++ {
+			if ds[i].meta.MinTime < t0 || ds[i].meta.MaxTime > t0+tr {
+				break
 			}
+			group = append(group, ds[i])
 		}
-	}
 
-	if len(dirs) > 0 {
-		splitDirs = append(splitDirs, dirs)
+		if len(group) > 0 {
+			splitDirs = append(splitDirs, group)
+		}
 	}
 
 	return splitDirs
