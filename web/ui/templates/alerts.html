@@ -30,7 +30,7 @@
             {{range $activeAlerts}}
             <tr>
               <td>
-                {{range $label, $value := .Labels}}
+                {{range $label, $value := .Labels.Map}}
                   <span class="label label-primary">{{$label}}="{{$value}}"</span>
                 {{end}}
               </td>
