@@ -28,10 +28,13 @@ func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	}
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), log.Base())
 
-	const want = `ALERT <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=0">testrule</a>
-  IF <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
-  LABELS {html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;}
-  ANNOTATIONS {html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;}`
+	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=0">testrule</a>
+expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
+labels:
+  html: '&lt;b&gt;BOLD&lt;/b&gt;'
+annotations:
+  html: '&lt;b&gt;BOLD&lt;/b&gt;'
+`
 
 	got := rule.HTMLSnippet("/test/prefix")
 	if got != want {

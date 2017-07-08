@@ -19,9 +19,12 @@ import (
 	"net/url"
 	"time"
 
+	yaml "gopkg.in/yaml.v2"
+
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -97,17 +100,38 @@ func (rule RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql
 }
 
 func (rule RecordingRule) String() string {
-	return fmt.Sprintf("%s%s = %s\n", rule.name, rule.labels, rule.vector)
+	r := rulefmt.Rule{
+		Record: rule.name,
+		Expr:   rule.vector.String(),
+		Labels: rule.labels.Map(),
+	}
+
+	byt, err := yaml.Marshal(r)
+	if err != nil {
+		return fmt.Sprintf("error marshalling recording rule: %q", err.Error())
+	}
+
+	return string(byt)
 }
 
 // HTMLSnippet returns an HTML snippet representing this rule.
 func (rule RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	ruleExpr := rule.vector.String()
-	return template.HTML(fmt.Sprintf(
-		`<a href="%s">%s</a>%s = <a href="%s">%s</a>`,
-		pathPrefix+strutil.GraphLinkForExpression(rule.name),
-		rule.name,
-		template.HTMLEscapeString(rule.labels.String()),
-		pathPrefix+strutil.GraphLinkForExpression(ruleExpr),
-		template.HTMLEscapeString(ruleExpr)))
+	labels := make(map[string]string, len(rule.labels))
+	for _, l := range rule.labels {
+		labels[l.Name] = template.HTMLEscapeString(l.Value)
+	}
+
+	r := rulefmt.Rule{
+		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.GraphLinkForExpression(rule.name), rule.name),
+		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.GraphLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
+		Labels: labels,
+	}
+
+	byt, err := yaml.Marshal(r)
+	if err != nil {
+		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", err.Error()))
+	}
+
+	return template.HTML(byt)
 }
