@@ -15,7 +15,7 @@
     "application/json"
   ],
   "paths": {
-    "/admin/v1/tsdb/delete_series": {
+    "/v2/admin/tsdb/delete_series": {
       "post": {
         "summary": "DeleteSeries deletes data for a selection of series in a time range.",
         "operationId": "DeleteSeries",
@@ -42,9 +42,9 @@
         ]
       }
     },
-    "/admin/v1/tsdb/snapshot": {
+    "/v2/admin/tsdb/snapshot": {
       "post": {
-        "summary": "Snapshot creates a snapshot of all current data into 'snapshots/\u003cdatetime\u003e-\u003crand\u003e' under\nthe TSDB's date directory.",
+        "summary": "Snapshot creates a snapshot of all current data into 'snapshots/\u003cdatetime\u003e-\u003crand\u003e' under\nthe TSDB's data directory.",
         "operationId": "TSDBSnapshot",
         "responses": {
           "200": {
