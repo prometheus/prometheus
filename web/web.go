@@ -133,6 +133,7 @@ type Options struct {
 	ConsoleTemplatesPath string
 	ConsoleLibrariesPath string
 	EnableQuit           bool
+	EnableAdminAPI       bool
 }
 
 // New initializes a new web Handler.
@@ -301,6 +302,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		func() []*url.URL {
 			return h.options.Notifier.Alertmanagers()
 		},
+		h.options.EnableAdminAPI,
 	)
 	av2.RegisterGRPC(grpcSrv)
 

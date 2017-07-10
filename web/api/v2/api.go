@@ -44,6 +44,7 @@ import (
 
 // API encapsulates all API services.
 type API struct {
+	enableAdmin   bool
 	now           func() time.Time
 	db            *tsdb.DB
 	q             func(mint, maxt int64) storage.Querier
@@ -59,6 +60,7 @@ func New(
 	q func(mint, maxt int64) storage.Querier,
 	targets func() []*retrieval.Target,
 	alertmanagers func() []*url.URL,
+	enableAdmin bool,
 ) *API {
 	return &API{
 		now:           now,
@@ -66,12 +68,17 @@ func New(
 		q:             q,
 		targets:       targets,
 		alertmanagers: alertmanagers,
+		enableAdmin:   enableAdmin,
 	}
 }
 
 // RegisterGRPC registers all API services with the given server.
 func (api *API) RegisterGRPC(srv *grpc.Server) {
-	pb.RegisterAdminServer(srv, NewAdmin(api.db))
+	if api.enableAdmin {
+		pb.RegisterAdminServer(srv, NewAdmin(api.db))
+	} else {
+		pb.RegisterAdminServer(srv, &adminDisabled{})
+	}
 }
 
 // HTTPHandler returns an HTTP handler for a REST API gateway to the given grpc address.
@@ -123,6 +130,21 @@ func labelsToProto(lset labels.Labels) pb.Labels {
 		r.Labels = append(r.Labels, pb.Label{Name: l.Name, Value: l.Value})
 	}
 	return r
+}
+
+// adminDisabled implements the administration interface that informs
+// that the API endpoints are disbaled.
+type adminDisabled struct {
+}
+
+// TSDBSnapshot implements pb.AdminServer.
+func (s *adminDisabled) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+}
+
+// DeleteSeries imeplements pb.AdminServer.
+func (s *adminDisabled) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
 // Admin provides an administration interface to Prometheus.
