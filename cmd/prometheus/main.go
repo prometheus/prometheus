@@ -127,6 +127,9 @@ func main() {
 	a.Flag("web.enable-remote-shutdown", "Enable shutdown via HTTP request.").
 		Default("false").BoolVar(&cfg.web.EnableQuit)
 
+	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions").
+		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
+
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
 
