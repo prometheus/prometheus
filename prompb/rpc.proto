@@ -29,17 +29,17 @@ option (gogoproto.goproto_getters_all) = false;
 
 service Admin {
   // Snapshot creates a snapshot of all current data into 'snapshots/<datetime>-<rand>' under
-  // the TSDB's date directory.
+  // the TSDB's data directory.
   rpc TSDBSnapshot(TSDBSnapshotRequest) returns (TSDBSnapshotResponse) {
     option (google.api.http) = {
-      post: "/admin/v1/tsdb/snapshot"
+      post: "/v2/admin/tsdb/snapshot"
     };
   }
 
   // DeleteSeries deletes data for a selection of series in a time range.
   rpc DeleteSeries(SeriesDeleteRequest) returns (SeriesDeleteResponse) {
     option (google.api.http) = {
-      post: "/admin/v1/tsdb/delete_series"
+      post: "/v2/admin/tsdb/delete_series"
       body: "*"
     };
   }

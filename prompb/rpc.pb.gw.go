@@ -139,9 +139,9 @@ func RegisterAdminHandler(ctx context.Context, mux *runtime.ServeMux, conn *grpc
 }
 
 var (
-	pattern_Admin_TSDBSnapshot_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"admin", "v1", "tsdb", "snapshot"}, ""))
+	pattern_Admin_TSDBSnapshot_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "snapshot"}, ""))
 
-	pattern_Admin_DeleteSeries_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"admin", "v1", "tsdb", "delete_series"}, ""))
+	pattern_Admin_DeleteSeries_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v2", "admin", "tsdb", "delete_series"}, ""))
 )
 
 var (

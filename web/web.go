@@ -57,7 +57,7 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	apiv2 "github.com/prometheus/prometheus/web/api/v2"
+	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -132,7 +132,7 @@ type Options struct {
 	UserAssetsPath       string
 	ConsoleTemplatesPath string
 	ConsoleLibrariesPath string
-	EnableQuit           bool
+	EnableLifecycle      bool
 	EnableAdminAPI       bool
 }
 
@@ -207,14 +207,26 @@ func New(o *Options) *Handler {
 		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
 	}
 
-	if o.EnableQuit {
+	if o.EnableLifecycle {
 		router.Post("/-/quit", h.quit)
+		router.Post("/-/reload", h.reload)
+	} else {
+		router.Post("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Lifecycle APIs are not enabled"))
+		})
+		router.Post("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Lifecycle APIs are not enabled"))
+		})
 	}
-
-	router.Post("/-/reload", h.reload)
-	router.Get("/-/reload", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintf(w, "This endpoint requires a POST request.\n")
+		w.Write([]byte("Only POST requests allowed"))
+	})
+	router.Get("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.Write([]byte("Only POST requests allowed"))
 	})
 
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
@@ -285,7 +297,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		httpl   = m.Match(cmux.HTTP1Fast())
 		grpcSrv = grpc.NewServer()
 	)
-	av2 := apiv2.New(
+	av2 := api_v2.New(
 		time.Now,
 		h.options.Storage,
 		h.options.QueryEngine,
