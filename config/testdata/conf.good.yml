@@ -10,7 +10,6 @@ global:
 
 rule_files:
 - "first.rules"
-- "/absolute/second.rules"
 - "my/*.rules"
 
 remote_write:
