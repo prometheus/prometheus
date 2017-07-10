@@ -33,6 +33,7 @@ import (
 
 	influx "github.com/influxdata/influxdb/client/v2"
 
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/elasticsearch"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
@@ -49,6 +50,10 @@ type config struct {
 	influxdbUsername        string
 	influxdbDatabase        string
 	influxdbPassword        string
+	elasticsearchURL        string
+	elasticsearchMaxRetries int
+	elasticIndexPerfix      string
+	elasticType             string
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
@@ -129,6 +134,18 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.influxdbDatabase, "influxdb.database", "prometheus",
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
+	flag.StringVar(&cfg.elasticsearchURL, "elasticsearch-url", "",
+		"The URL of the remote Elasticsearch to send samples to. None, if empty",
+	)
+	flag.IntVar(&cfg.elasticsearchMaxRetries, "elasticsearch.max-retries", 1,
+		"The max retries number while sending samples to elasticsearch. Default is 1",
+	)
+	flag.StringVar(&cfg.elasticIndexPerfix, "elasticsearch.index-perfix", "prometheus",
+		"The document index perfix for the samples in elasticsearch, the full index fomrmat will be `<index-perfix>-YYYY-mm-dd`. prometheus, if empty.",
+	)
+	flag.StringVar(&cfg.elasticType, "elasticsearch.type", "",
+		"The document type for the samples in elasticsearch. None, if empty.",
+	)
 	flag.DurationVar(&cfg.remoteTimeout, "send-timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
 	)
@@ -178,6 +195,16 @@ func buildClients(cfg *config) ([]writer, []reader) {
 		prometheus.MustRegister(c)
 		writers = append(writers, c)
 		readers = append(readers, c)
+	}
+	if cfg.elasticsearchURL != "" {
+		url, err := url.Parse(cfg.elasticsearchURL)
+		if err != nil {
+			log.Fatalf("Failed to parse Elasticsearch URL %q: %v", cfg.elasticsearchURL, err)
+		}
+		c := elasticsearch.NewClient(url.String(), cfg.elasticsearchMaxRetries,
+			cfg.elasticIndexPerfix, cfg.elasticType, cfg.remoteTimeout)
+		prometheus.MustRegister(c)
+		writers = append(writers, c)
 	}
 	return writers, readers
 }
