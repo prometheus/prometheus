@@ -43,7 +43,7 @@ func NewStorage(t T) storage.Storage {
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
-	return testStorage{Storage: db, dir: dir}
+	return testStorage{Storage: tsdb.Adapter(db), dir: dir}
 }
 
 type testStorage struct {
