@@ -97,7 +97,7 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Storage     storage.Storage
+	Queryable   promql.Queryable
 	QueryEngine *promql.Engine
 
 	targetRetriever       targetRetriever
@@ -107,10 +107,10 @@ type API struct {
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st storage.Storage, tr targetRetriever, ar alertmanagerRetriever) *API {
+func NewAPI(qe *promql.Engine, q promql.Queryable, tr targetRetriever, ar alertmanagerRetriever) *API {
 	return &API{
 		QueryEngine:           qe,
-		Storage:               st,
+		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 		now: time.Now,
@@ -276,7 +276,7 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
 	}
-	q, err := api.Storage.Querier(math.MinInt64, math.MaxInt64)
+	q, err := api.Queryable.Querier(math.MinInt64, math.MaxInt64)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
@@ -333,7 +333,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Storage.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
@@ -358,33 +358,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
-	r.ParseForm()
-	if len(r.Form["match[]"]) == 0 {
-		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
-	}
-
-	// TODO(fabxc): temporarily disabled
-	return nil, &apiError{errorExec, fmt.Errorf("temporarily disabled")}
-
-	// numDeleted := 0
-	// for _, s := range r.Form["match[]"] {
-	// 	matchers, err := promql.ParseMetricSelector(s)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorBadData, err}
-	// 	}
-	// 	n, err := api.Storage.DropMetricsForLabelMatchers(context.TODO(), matchers...)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorExec, err}
-	// 	}
-	// 	numDeleted += n
-	// }
-
-	// res := struct {
-	// 	NumDeleted int `json:"numDeleted"`
-	// }{
-	// 	NumDeleted: numDeleted,
-	// }
-	// return res, nil
+	return nil, &apiError{errorInternal, fmt.Errorf("not implemented")}
 }
 
 // Target has the information for one target.

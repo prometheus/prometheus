@@ -30,15 +30,21 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+
 	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
+	"github.com/cockroachdb/cmux"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/prometheus/storage"
+	ptsdb "github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/tsdb"
 	"golang.org/x/net/context"
 	"golang.org/x/net/netutil"
 
@@ -48,10 +54,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
+	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -63,13 +69,13 @@ type Handler struct {
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
 	context       context.Context
+	tsdb          *tsdb.DB
 	storage       storage.Storage
 	notifier      *notifier.Notifier
 
 	apiV1 *api_v1.API
 
 	router       *route.Router
-	listenErrCh  chan error
 	quitCh       chan struct{}
 	reloadCh     chan chan error
 	options      *Options
@@ -108,7 +114,7 @@ type PrometheusVersion struct {
 // Options for the web Handler.
 type Options struct {
 	Context       context.Context
-	Storage       storage.Storage
+	Storage       *tsdb.DB
 	QueryEngine   *promql.Engine
 	TargetManager *retrieval.TargetManager
 	RuleManager   *rules.Manager
@@ -121,11 +127,13 @@ type Options struct {
 	MaxConnections       int
 	ExternalURL          *url.URL
 	RoutePrefix          string
+	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
 	ConsoleTemplatesPath string
 	ConsoleLibrariesPath string
-	EnableQuit           bool
+	EnableLifecycle      bool
+	EnableAdminAPI       bool
 }
 
 // New initializes a new web Handler.
@@ -139,7 +147,6 @@ func New(o *Options) *Handler {
 
 	h := &Handler{
 		router:      router,
-		listenErrCh: make(chan error),
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan chan error),
 		options:     o,
@@ -152,12 +159,13 @@ func New(o *Options) *Handler {
 		targetManager: o.TargetManager,
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
-		storage:       o.Storage,
+		tsdb:          o.Storage,
+		storage:       ptsdb.Adapter(o.Storage),
 		notifier:      o.Notifier,
-
-		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager, o.Notifier),
-		now:   model.Now,
+		now:           model.Now,
 	}
+
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.targetManager, h.notifier)
 
 	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
@@ -171,7 +179,7 @@ func New(o *Options) *Handler {
 	instrf := prometheus.InstrumentHandlerFunc
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
+		router.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
 	})
 
 	router.Get("/alerts", instrf("alerts", h.alerts))
@@ -191,8 +199,6 @@ func New(o *Options) *Handler {
 		Handler: http.HandlerFunc(h.federation),
 	}))
 
-	h.apiV1.Register(router.WithPrefix("/api/v1"))
-
 	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
 
 	router.Get("/static/*filepath", instrf("static", serveStaticAsset))
@@ -201,20 +207,46 @@ func New(o *Options) *Handler {
 		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
 	}
 
-	if o.EnableQuit {
+	if o.EnableLifecycle {
 		router.Post("/-/quit", h.quit)
+		router.Post("/-/reload", h.reload)
+	} else {
+		router.Post("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Lifecycle APIs are not enabled"))
+		})
+		router.Post("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Lifecycle APIs are not enabled"))
+		})
 	}
-
-	router.Post("/-/reload", h.reload)
-	router.Get("/-/reload", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintf(w, "This endpoint requires a POST request.\n")
+		w.Write([]byte("Only POST requests allowed"))
+	})
+	router.Get("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.Write([]byte("Only POST requests allowed"))
 	})
 
 	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
 
 	return h
+}
+
+var corsHeaders = map[string]string{
+	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
+	"Access-Control-Allow-Methods":  "GET, OPTIONS",
+	"Access-Control-Allow-Origin":   "*",
+	"Access-Control-Expose-Headers": "Date",
+}
+
+// Enables cross-site script calls.
+func setCORS(w http.ResponseWriter) {
+	for h, v := range corsHeaders {
+		w.Header().Set(h, v)
+	}
 }
 
 func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
@@ -239,11 +271,6 @@ func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
 	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
 }
 
-// ListenError returns the receive-only channel that signals errors while starting the web server.
-func (h *Handler) ListenError() <-chan error {
-	return h.listenErrCh
-}
-
 // Quit returns the receive-only quit channel.
 func (h *Handler) Quit() <-chan struct{} {
 	return h.quitCh
@@ -255,24 +282,74 @@ func (h *Handler) Reload() <-chan chan error {
 }
 
 // Run serves the HTTP endpoints.
-func (h *Handler) Run() {
+func (h *Handler) Run(ctx context.Context) error {
 	log.Infof("Listening on %s", h.options.ListenAddress)
+
+	l, err := net.Listen("tcp", h.options.ListenAddress)
+	if err != nil {
+		return err
+	}
+	l = netutil.LimitListener(l, h.options.MaxConnections)
+
+	var (
+		m       = cmux.New(l)
+		grpcl   = m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
+		httpl   = m.Match(cmux.HTTP1Fast())
+		grpcSrv = grpc.NewServer()
+	)
+	av2 := api_v2.New(
+		time.Now,
+		h.options.Storage,
+		h.options.QueryEngine,
+		func(mint, maxt int64) storage.Querier {
+			q, err := ptsdb.Adapter(h.options.Storage).Querier(mint, maxt)
+			if err != nil {
+				panic(err)
+			}
+			return q
+		},
+		func() []*retrieval.Target {
+			return h.options.TargetManager.Targets()
+		},
+		func() []*url.URL {
+			return h.options.Notifier.Alertmanagers()
+		},
+		h.options.EnableAdminAPI,
+	)
+	av2.RegisterGRPC(grpcSrv)
+
+	hh, err := av2.HTTPHandler(grpcl.Addr().String())
+	if err != nil {
+		return err
+	}
+
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
-	server := &http.Server{
-		Addr:        h.options.ListenAddress,
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), h.router, operationName),
+	mux := http.NewServeMux()
+	mux.Handle("/", h.router)
+
+	av1 := route.New()
+	h.apiV1.Register(av1)
+	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", av1))
+
+	mux.Handle("/api/", http.StripPrefix("/api",
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			setCORS(w)
+			hh.ServeHTTP(w, r)
+		}),
+	))
+
+	httpSrv := &http.Server{
+		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
 		ErrorLog:    log.NewErrorLogger(),
 		ReadTimeout: h.options.ReadTimeout,
 	}
-	listener, err := net.Listen("tcp", h.options.ListenAddress)
-	if err != nil {
-		h.listenErrCh <- err
-	} else {
-		limitedListener := netutil.LimitListener(listener, h.options.MaxConnections)
-		h.listenErrCh <- server.Serve(limitedListener)
-	}
+
+	go httpSrv.Serve(httpl)
+	go grpcSrv.Serve(grpcl)
+
+	return m.Serve()
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
