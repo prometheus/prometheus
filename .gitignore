@@ -13,6 +13,7 @@
 .*.swo
 *.iml
 .idea
+tags
 
 /prometheus
 /promtool
