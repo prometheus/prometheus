@@ -1,0 +1,57 @@
+# test the positive and negative time-shifts
+load 5m
+	http_requests{path="/foo"}	1 2 3 4 5 6 7 8 9 10
+	http_requests{path="/bar"}	2 3 4 5 6 7 8 9 10 11
+	http_requests{path="/qux"}	2 4 6 8 10 12 14 16 18 20
+
+# first off straight tests
+eval instant at 0m http_requests
+	http_requests{path="/foo"} 1
+	http_requests{path="/bar"} 2
+	http_requests{path="/qux"} 2
+
+eval instant at 10m http_requests
+	http_requests{path="/foo"} 3
+	http_requests{path="/bar"} 4
+	http_requests{path="/qux"} 6
+
+eval instant at 20m http_requests
+	http_requests{path="/foo"} 5
+	http_requests{path="/bar"} 6
+	http_requests{path="/qux"} 10
+
+# then straight time-shift tests to things with values
+eval instant at 10m http_requests offset 10m
+	http_requests{path="/foo"} 1
+	http_requests{path="/bar"} 2
+	http_requests{path="/qux"} 2
+
+eval instant at 10m http_requests offset -10m
+	http_requests{path="/foo"} 5
+	http_requests{path="/bar"} 6
+	http_requests{path="/qux"} 10
+
+# show that we don't get data outside our data series for an existing offset
+eval instant at 5m http_requests offset 10m
+
+eval instant at 0m http_requests offset 10m
+
+eval instant at 45m http_requests
+	http_requests{path="/foo"} 10
+	http_requests{path="/bar"} 11
+	http_requests{path="/qux"} 20
+
+eval instant at 35m http_requests offset -10m
+	http_requests{path="/foo"} 10
+	http_requests{path="/bar"} 11
+	http_requests{path="/qux"} 20
+
+# show that we don't get data outside our data series for a reverse offset
+# this looks like it's an off-by-one error - but possibly valid because of
+# the duration of data validity for the last data point.
+eval instant at 40m http_requests offset -10m
+	http_requests{path="/foo"} 10
+	http_requests{path="/bar"} 11
+	http_requests{path="/qux"} 20
+
+eval instant at 45m http_requests offset -10m

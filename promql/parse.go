@@ -925,8 +925,15 @@ func (p *parser) metric() model.Metric {
 //
 func (p *parser) offset() time.Duration {
 	const ctx = "offset"
+	var sign time.Duration = 1
 
 	p.next()
+
+	if p.peek().typ == itemSUB {
+		p.next()
+		sign = -1
+	}
+
 	offi := p.expect(itemDuration, ctx)
 
 	offset, err := parseDuration(offi.val)
@@ -934,7 +941,7 @@ func (p *parser) offset() time.Duration {
 		p.error(err)
 	}
 
-	return offset
+	return sign * offset
 }
 
 // vectorSelector parses a new (instant) vector selector.
