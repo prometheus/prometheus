@@ -64,6 +64,15 @@ docker:
 	@echo ">> building docker image"
 	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
+k8s: promu
+	@$(PROMU) --config .promu4travis.yml crossbuild
+	@cp .build/linux-amd64/prometheus prometheus
+	@cp .build/linux-amd64/promtool promtool
+	@docker build -t prometheus:travis .
+	@echo ">> running in k8s on Travis"
+	@kubectl create configmap prometheus --from-file=$(CURDIR)/documentation/examples/
+	@kubectl create -f $(CURDIR)/documentation/examples/prometheus-deployment.yaml
+
 assets:
 	@echo ">> writing assets"
 	@$(GO) get -u github.com/jteeuwen/go-bindata/...
@@ -77,4 +86,4 @@ promu:
 	$(GO) get -u github.com/prometheus/promu
 
 
-.PHONY: all style check_license format build test vet assets tarball docker promu
+.PHONY: all style check_license format build test vet assets tarball docker promu k8s
