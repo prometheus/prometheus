@@ -26,6 +26,9 @@ const (
 
 	// NilCloser is a no-op Closer.
 	NilCloser = nilCloser(true)
+
+	// The number of times that a TemporaryDirectory will retry its removal
+	temporaryDirectoryRemoveRetries = 2
 )
 
 type (
@@ -84,14 +87,19 @@ func NewCallbackCloser(fn func()) Closer {
 }
 
 func (t temporaryDirectory) Close() {
+	retries := temporaryDirectoryRemoveRetries
 	err := os.RemoveAll(t.path)
-	if err != nil {
+	for err != nil && retries > 0 {
 		switch {
 		case os.IsNotExist(err):
-			return
+			err = nil
 		default:
-			t.tester.Fatal(err)
+			retries--
+			err = os.RemoveAll(t.path)
 		}
+	}
+	if err != nil {
+		t.tester.Fatal(err)
 	}
 }
 

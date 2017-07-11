@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -48,9 +49,8 @@ var expectedConf = &Config{
 	},
 
 	RuleFiles: []string{
-		"testdata/first.rules",
-		"/absolute/second.rules",
-		"testdata/my/*.rules",
+		filepath.FromSlash("testdata/first.rules"),
+		filepath.FromSlash("testdata/my/*.rules"),
 	},
 
 	RemoteWriteConfigs: []*RemoteWriteConfig{
@@ -85,7 +85,7 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			HTTPClientConfig: HTTPClientConfig{
-				BearerTokenFile: "testdata/valid_token_file",
+				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
 			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
@@ -252,9 +252,9 @@ var expectedConf = &Config{
 						TagSeparator: DefaultConsulSDConfig.TagSeparator,
 						Scheme:       "https",
 						TLSConfig: TLSConfig{
-							CertFile:           "testdata/valid_cert_file",
-							KeyFile:            "testdata/valid_key_file",
-							CAFile:             "testdata/valid_ca_file",
+							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
+							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
 							InsecureSkipVerify: false,
 						},
 					},
@@ -283,8 +283,8 @@ var expectedConf = &Config{
 
 			HTTPClientConfig: HTTPClientConfig{
 				TLSConfig: TLSConfig{
-					CertFile: "testdata/valid_cert_file",
-					KeyFile:  "testdata/valid_key_file",
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 
 				BearerToken: "mysecret",
@@ -354,8 +354,8 @@ var expectedConf = &Config{
 						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
 						TLSConfig: TLSConfig{
-							CertFile: "testdata/valid_cert_file",
-							KeyFile:  "testdata/valid_key_file",
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
 					},
 				},
@@ -547,6 +547,29 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("config's String method reveals authentication credentials.")
 	}
 
+}
+
+func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
+	// Parse a valid file that sets a rule files with an absolute path
+	c, err := LoadFile(ruleFilesConfigFile)
+	if err != nil {
+		t.Errorf("Error parsing %s: %s", ruleFilesConfigFile, err)
+	}
+
+	bgot, err := yaml.Marshal(c)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	bexp, err := yaml.Marshal(ruleFilesExpectedConf)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	ruleFilesExpectedConf.original = c.original
+
+	if !reflect.DeepEqual(c, ruleFilesExpectedConf) {
+		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", ruleFilesConfigFile, bgot, bexp)
+	}
 }
 
 var expectedErrors = []struct {
