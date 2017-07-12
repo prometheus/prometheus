@@ -43,6 +43,7 @@ type Chunk interface {
 	Encoding() Encoding
 	Appender() (Appender, error)
 	Iterator() Iterator
+	NumSamples() int
 }
 
 // FromData returns a chunk from a byte slice of chunk data.
