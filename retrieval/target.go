@@ -212,14 +212,14 @@ func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, e
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
+func (app *limitAppender) AddFast(lset labels.Labels, ref string, t int64, v float64) error {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return errSampleLimit
 		}
 	}
-	if err := app.Appender.AddFast(ref, t, v); err != nil {
+	if err := app.Appender.AddFast(lset, ref, t, v); err != nil {
 		return err
 	}
 	return nil
@@ -243,11 +243,11 @@ func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (strin
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AddFast(ref string, t int64, v float64) error {
+func (app *timeLimitAppender) AddFast(lset labels.Labels, ref string, t int64, v float64) error {
 	if t > app.maxTime {
 		return storage.ErrOutOfBounds
 	}
-	if err := app.Appender.AddFast(ref, t, v); err != nil {
+	if err := app.Appender.AddFast(lset, ref, t, v); err != nil {
 		return err
 	}
 	return nil

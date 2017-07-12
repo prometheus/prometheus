@@ -751,8 +751,10 @@ loop:
 		}
 
 		ref, ok := sl.cache.getRef(yoloString(met))
+		var lset labels.Labels
+		p.Metric(&lset)
 		if ok {
-			switch err = app.AddFast(ref, t, v); err {
+			switch err = app.AddFast(lset, ref, t, v); err {
 			case nil:
 				if tp == nil {
 					e := sl.cache.lsets[ref]
@@ -945,10 +947,12 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	// Suffix s with the invalid \xff unicode rune to avoid collisions
 	// with scraped metrics.
 	s2 := s + "\xff"
-
+	met := labels.Labels{
+		labels.Label{Name: labels.MetricName, Value: s},
+	}
 	ref, ok := sl.cache.getRef(s2)
 	if ok {
-		err := app.AddFast(ref, t, v)
+		err := app.AddFast(met, ref, t, v)
 		switch err {
 		case nil:
 			return nil
@@ -962,9 +966,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 			return err
 		}
 	}
-	met := labels.Labels{
-		labels.Label{Name: labels.MetricName, Value: s},
-	}
+
 	ref, err := app.Add(met, t, v)
 	switch err {
 	case nil:
