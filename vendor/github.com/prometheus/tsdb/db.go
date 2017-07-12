@@ -710,7 +710,7 @@ func (db *DB) ensureHead(t int64) error {
 	}
 	// Create another block of buffer in front if the DB is initialized or retrieving
 	// new data after a long gap.
-	// This ensures we always have a full block width if append window.
+	// This ensures we always have a full block width of append window.
 	if addBuffer {
 		if _, err := db.createHeadBlock(mint-int64(db.opts.MinBlockDuration), mint); err != nil {
 			return err

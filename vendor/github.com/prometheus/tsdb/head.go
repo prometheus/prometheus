@@ -302,6 +302,7 @@ func (h *HeadBlock) Snapshot(snapshotDir string) error {
 		return errors.Wrap(err, "write snapshot")
 	}
 	meta.ULID = uid
+	meta.MaxTime = h.highTimestamp
 
 	if err = writeMetaFile(tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
