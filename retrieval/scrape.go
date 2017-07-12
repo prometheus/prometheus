@@ -751,9 +751,8 @@ loop:
 		}
 
 		ref, ok := sl.cache.getRef(yoloString(met))
-		var lset labels.Labels
-		p.Metric(&lset)
 		if ok {
+			lset := sl.cache.lsets[ref].lset
 			switch err = app.AddFast(lset, ref, t, v); err {
 			case nil:
 				if tp == nil {
