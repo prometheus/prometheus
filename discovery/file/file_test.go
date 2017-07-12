@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -89,12 +90,12 @@ retry:
 			if _, ok := tg.Labels["foo"]; !ok {
 				t.Fatalf("Label not parsed")
 			}
-			if tg.String() != fmt.Sprintf("fixtures/_test%s:0", ext) {
+			if tg.String() != filepath.FromSlash(fmt.Sprintf("fixtures/_test%s:0", ext)) {
 				t.Fatalf("Unexpected target group %s", tg)
 			}
 
 			tg = tgs[1]
-			if tg.String() != fmt.Sprintf("fixtures/_test%s:1", ext) {
+			if tg.String() != filepath.FromSlash(fmt.Sprintf("fixtures/_test%s:1", ext)) {
 				t.Fatalf("Unexpected target groups %s", tg)
 			}
 			break retry
