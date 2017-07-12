@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -71,23 +72,23 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	}
 }
 
-func labelMatchersToProto(matchers []*labels.Matcher) []*LabelMatcher {
-	pbMatchers := make([]*LabelMatcher, 0, len(matchers))
+func labelMatchersToProto(matchers []*labels.Matcher) []*prompb.LabelMatcher {
+	pbMatchers := make([]*prompb.LabelMatcher, 0, len(matchers))
 	for _, m := range matchers {
-		var mType MatchType
+		var mType prompb.LabelMatcher_Type
 		switch m.Type {
 		case labels.MatchEqual:
-			mType = MatchType_EQUAL
+			mType = prompb.LabelMatcher_EQ
 		case labels.MatchNotEqual:
-			mType = MatchType_NOT_EQUAL
+			mType = prompb.LabelMatcher_NEQ
 		case labels.MatchRegexp:
-			mType = MatchType_REGEX_MATCH
+			mType = prompb.LabelMatcher_RE
 		case labels.MatchNotRegexp:
-			mType = MatchType_REGEX_NO_MATCH
+			mType = prompb.LabelMatcher_NRE
 		default:
 			panic("invalid matcher type")
 		}
-		pbMatchers = append(pbMatchers, &LabelMatcher{
+		pbMatchers = append(pbMatchers, &prompb.LabelMatcher{
 			Type:  mType,
 			Name:  string(m.Name),
 			Value: string(m.Value),
@@ -96,7 +97,7 @@ func labelMatchersToProto(matchers []*labels.Matcher) []*LabelMatcher {
 	return pbMatchers
 }
 
-func labelPairsToLabels(labelPairs []*LabelPair) labels.Labels {
+func labelPairsToLabels(labelPairs []*prompb.Label) labels.Labels {
 	result := make(labels.Labels, 0, len(labelPairs))
 	for _, l := range labelPairs {
 		result = append(result, labels.Label{
@@ -164,7 +165,7 @@ func (c *concreteSeriesSet) Err() error {
 // concreteSeries implementes storage.Series.
 type concreteSeries struct {
 	labels  labels.Labels
-	samples []*Sample
+	samples []*prompb.Sample
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
@@ -185,14 +186,14 @@ type concreteSeriesIterator struct {
 
 func (c *concreteSeriesIterator) Seek(t int64) bool {
 	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[c.cur].TimestampMs > t
+		return c.series.samples[c.cur].Timestamp > t
 	})
 	return c.cur == 0
 }
 
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	s := c.series.samples[c.cur]
-	return s.TimestampMs, s.Value
+	return s.Timestamp, s.Value
 }
 
 func (c *concreteSeriesIterator) Next() bool {
