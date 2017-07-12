@@ -885,8 +885,8 @@ func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (string, e
 	}
 }
 
-func (app *errorAppender) AddFast(ref string, t int64, v float64) error {
-	return app.collectResultAppender.AddFast(ref, t, v)
+func (app *errorAppender) AddFast(lset labels.Labels, ref string, t int64, v float64) error {
+	return app.collectResultAppender.AddFast(lset, ref, t, v)
 }
 
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {

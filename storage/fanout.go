@@ -87,9 +87,13 @@ func (f *fanoutAppender) Add(l labels.Labels, t int64, v float64) (string, error
 	return "", nil
 }
 
-func (f *fanoutAppender) AddFast(ref string, t int64, v float64) error {
-	// TODO this is a cheat, and causes us to fall back to slow path even for local writes.
-	return ErrNotFound
+func (f *fanoutAppender) AddFast(l labels.Labels, ref string, t int64, v float64) error {
+	for _, appender := range f.appenders {
+		if err := appender.AddFast(l, ref, t, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (f *fanoutAppender) Commit() error {

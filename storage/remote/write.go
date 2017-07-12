@@ -44,8 +44,9 @@ func labelsToMetric(ls labels.Labels) model.Metric {
 	return metric
 }
 
-func (*Storage) AddFast(ref string, t int64, v float64) error {
-	return storage.ErrNotFound
+func (s *Storage) AddFast(l labels.Labels, _ string, t int64, v float64) error {
+	_, err := s.Add(l, t, v)
+	return err
 }
 
 func (*Storage) Commit() error {
