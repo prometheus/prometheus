@@ -29,6 +29,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -69,24 +70,24 @@ type recoverableError struct {
 
 // Store sends a batch of samples to the HTTP endpoint.
 func (c *Client) Store(samples model.Samples) error {
-	req := &WriteRequest{
-		Timeseries: make([]*TimeSeries, 0, len(samples)),
+	req := &prompb.WriteRequest{
+		Timeseries: make([]*prompb.TimeSeries, 0, len(samples)),
 	}
 	for _, s := range samples {
-		ts := &TimeSeries{
-			Labels: make([]*LabelPair, 0, len(s.Metric)),
+		ts := &prompb.TimeSeries{
+			Labels: make([]*prompb.Label, 0, len(s.Metric)),
 		}
 		for k, v := range s.Metric {
 			ts.Labels = append(ts.Labels,
-				&LabelPair{
+				&prompb.Label{
 					Name:  string(k),
 					Value: string(v),
 				})
 		}
-		ts.Samples = []*Sample{
+		ts.Samples = []*prompb.Sample{
 			{
-				Value:       float64(s.Value),
-				TimestampMs: int64(s.Timestamp),
+				Value:     float64(s.Value),
+				Timestamp: int64(s.Timestamp),
 			},
 		}
 		req.Timeseries = append(req.Timeseries, ts)
@@ -139,11 +140,11 @@ func (c Client) Name() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, from, through int64, matchers []*LabelMatcher) ([]*TimeSeries, error) {
-	req := &ReadRequest{
+func (c *Client) Read(ctx context.Context, from, through int64, matchers []*prompb.LabelMatcher) ([]*prompb.TimeSeries, error) {
+	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
-		Queries: []*Query{{
+		Queries: []*prompb.Query{{
 			StartTimestampMs: from,
 			EndTimestampMs:   through,
 			Matchers:         matchers,
@@ -186,7 +187,7 @@ func (c *Client) Read(ctx context.Context, from, through int64, matchers []*Labe
 		return nil, fmt.Errorf("error reading response: %v", err)
 	}
 
-	var resp ReadResponse
+	var resp prompb.ReadResponse
 	err = proto.Unmarshal(uncompressed, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
