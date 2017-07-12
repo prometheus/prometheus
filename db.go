@@ -45,8 +45,7 @@ import (
 var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
-	MinBlockDuration:  3 * 60 * 60 * 1000,       // 2 hours in milliseconds
-	MaxBlockDuration:  24 * 60 * 60 * 1000,      // 1 days in milliseconds
+	BlockRanges:       ExponentialBlockRanges(int64(2*time.Hour), 3, 5),
 	NoLockfile:        false,
 }
 
@@ -58,12 +57,8 @@ type Options struct {
 	// Duration of persisted data to keep.
 	RetentionDuration uint64
 
-	// The timestamp range of head blocks after which they get persisted.
-	// It's the minimum duration of any persisted block.
-	MinBlockDuration uint64
-
-	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration uint64
+	// The sizes of the Blocks.
+	BlockRanges []int64
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
@@ -227,9 +222,24 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = &lockf
 	}
 
-	db.compactor = newCompactor(dir, r, l, &compactorOptions{
-		maxBlockRange: opts.MaxBlockDuration,
-	})
+	copts := &compactorOptions{
+		blockRanges: opts.BlockRanges,
+	}
+
+	if len(copts.blockRanges) == 0 {
+		return nil, errors.New("at least one block-range must exist")
+	}
+
+	for float64(copts.blockRanges[len(copts.blockRanges)-1])/float64(opts.RetentionDuration) > 0.2 {
+		if len(copts.blockRanges) == 1 {
+			break
+		}
+
+		// Max overflow is restricted to 20%.
+		copts.blockRanges = copts.blockRanges[:len(copts.blockRanges)-1]
+	}
+
+	db.compactor = newCompactor(dir, r, l, copts)
 
 	if err := db.reloadBlocks(); err != nil {
 		return nil, err
@@ -699,20 +709,20 @@ func rangeForTimestamp(t int64, width int64) (mint, maxt int64) {
 // it is within or after the currently appendable window.
 func (db *DB) ensureHead(t int64) error {
 	var (
-		mint, maxt = rangeForTimestamp(t, int64(db.opts.MinBlockDuration))
+		mint, maxt = rangeForTimestamp(t, int64(db.opts.BlockRanges[0]))
 		addBuffer  = len(db.blocks) == 0
 		last       BlockMeta
 	)
 
 	if !addBuffer {
 		last = db.blocks[len(db.blocks)-1].Meta()
-		addBuffer = last.MaxTime <= mint-int64(db.opts.MinBlockDuration)
+		addBuffer = last.MaxTime <= mint-int64(db.opts.BlockRanges[0])
 	}
 	// Create another block of buffer in front if the DB is initialized or retrieving
 	// new data after a long gap.
 	// This ensures we always have a full block width of append window.
 	if addBuffer {
-		if _, err := db.createHeadBlock(mint-int64(db.opts.MinBlockDuration), mint); err != nil {
+		if _, err := db.createHeadBlock(mint-int64(db.opts.BlockRanges[0]), mint); err != nil {
 			return err
 		}
 		// If the previous block reaches into our new window, make it smaller.

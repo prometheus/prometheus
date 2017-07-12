@@ -30,6 +30,18 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
+// ExponentialBlockRanges returns the time ranges based on the stepSize
+func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
+	ranges := make([]int64, 0, steps)
+	curRange := minSize
+	for i := 0; i < steps; i++ {
+		ranges = append(ranges, curRange)
+		curRange = curRange * int64(stepSize)
+	}
+
+	return ranges
+}
+
 // Compactor provides compaction against an underlying storage
 // of time series data.
 type Compactor interface {
@@ -87,7 +99,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 type compactorOptions struct {
-	maxBlockRange uint64
+	blockRanges []int64
 }
 
 func newCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
@@ -133,37 +145,90 @@ func (c *compactor) Plan() ([][]string, error) {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
 
-	if len(dms) == 0 {
+	if len(dms) <= 1 {
 		return nil, nil
 	}
 
-	sliceDirs := func(i, j int) [][]string {
+	sliceDirs := func(dms []dirMeta) [][]string {
+		if len(dms) == 0 {
+			return nil
+		}
 		var res []string
-		for k := i; k < j; k++ {
-			res = append(res, dms[k].dir)
+		for _, dm := range dms {
+			res = append(res, dm.dir)
 		}
 		return [][]string{res}
 	}
 
-	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(dms)-compactionBlocksLen+1; i++ {
-		if c.match(dms[i : i+3]) {
-			return sliceDirs(i, i+compactionBlocksLen), nil
-		}
-	}
-
-	return nil, nil
+	return sliceDirs(c.selectDirs(dms)), nil
 }
 
-func (c *compactor) match(dirs []dirMeta) bool {
-	g := dirs[0].meta.Compaction.Generation
+func (c *compactor) selectDirs(ds []dirMeta) []dirMeta {
+	// The way to skip compaction is to not have blockRanges.
+	if len(c.opts.blockRanges) == 1 {
+		return nil
+	}
 
-	for _, d := range dirs {
-		if d.meta.Compaction.Generation != g {
-			return false
+	return selectRecurse(ds, c.opts.blockRanges)
+}
+
+func selectRecurse(dms []dirMeta, intervals []int64) []dirMeta {
+	if len(intervals) == 0 {
+		return dms
+	}
+
+	// Get the blocks by the max interval
+	blocks := splitByRange(dms, intervals[len(intervals)-1])
+	dirs := []dirMeta{}
+	for i := len(blocks) - 1; i >= 0; i-- {
+		// We need to choose the oldest blocks to compact. If there are a couple of blocks in
+		// the largest interval, we should compact those first.
+		if len(blocks[i]) > 1 {
+			dirs = blocks[i]
+			break
 		}
 	}
-	return uint64(dirs[len(dirs)-1].meta.MaxTime-dirs[0].meta.MinTime) <= c.opts.maxBlockRange
+
+	// If there are too many blocks, see if a smaller interval will catch them.
+	// i.e, if we have 0-20, 60-80, 80-100; all fall under 0-240, but we'd rather compact 60-100
+	// than all at once.
+	// Again if have 0-1d, 1d-2d, 3-6d we compact 0-1d, 1d-2d to compact it into the 0-3d block instead of compacting all three
+	// This is to honor the boundaries as much as possible.
+	if len(dirs) > 2 {
+		smallerDirs := selectRecurse(dirs, intervals[:len(intervals)-1])
+		if len(smallerDirs) > 1 {
+			return smallerDirs
+		}
+	}
+
+	return dirs
+}
+
+// splitByRange splits the directories by the time range.
+// for example if we have blocks 0-10, 10-20, 50-60, 90-100 and want to split them into 30 interval ranges
+// splitByRange returns [0-10, 10-20], [50-60], [90-100].
+func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
+	var splitDirs [][]dirMeta
+
+	for i := 0; i < len(ds); {
+		var group []dirMeta
+		// Compute start of aligned time range of size tr closest to the current block's start.
+		t0 := ds[i].meta.MinTime - (ds[i].meta.MinTime % tr)
+
+		// Add all dirs to the current group that are within [t0, t0+tr].
+		for ; i < len(ds); i++ {
+			if ds[i].meta.MinTime < t0 || ds[i].meta.MaxTime > t0+tr {
+				break
+			}
+			group = append(group, ds[i])
+		}
+
+		if len(group) > 0 {
+			splitDirs = append(splitDirs, group)
+		}
+	}
+
+	return splitDirs
 }
 
 func compactBlockMetas(blocks ...BlockMeta) (res BlockMeta) {
