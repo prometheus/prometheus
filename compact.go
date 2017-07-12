@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"os"
@@ -461,7 +460,7 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
 		for _, chk := range chks {
-			meta.Stats.NumSamples += uint64(binary.BigEndian.Uint16(chk.Chunk.Bytes()))
+			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
 		}
 
 		for _, l := range lset {
