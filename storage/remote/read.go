@@ -173,9 +173,7 @@ func (c *concreteSeries) Labels() labels.Labels {
 }
 
 func (c *concreteSeries) Iterator() storage.SeriesIterator {
-	return &concreteSeriesIterator{
-		series: c,
-	}
+	return newConcreteSeriersIterator(c)
 }
 
 // concreteSeriesIterator implements storage.SeriesIterator.
@@ -184,11 +182,18 @@ type concreteSeriesIterator struct {
 	series *concreteSeries
 }
 
+func newConcreteSeriersIterator(series *concreteSeries) storage.SeriesIterator {
+	return &concreteSeriesIterator{
+		cur:    -1,
+		series: series,
+	}
+}
+
 func (c *concreteSeriesIterator) Seek(t int64) bool {
 	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[c.cur].Timestamp > t
+		return c.series.samples[n].Timestamp >= t
 	})
-	return c.cur == 0
+	return c.cur < len(c.series.samples)
 }
 
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
@@ -240,18 +245,3 @@ func removeLabels(l labels.Labels, toDelete model.LabelSet) {
 		}
 	}
 }
-
-//// MatrixToIterators returns series iterators for a given matrix.
-//func MatrixToIterators(m model.Matrix, err error) ([]local.SeriesIterator, error) {
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	its := make([]local.SeriesIterator, 0, len(m))
-//	for _, ss := range m {
-//		its = append(its, sampleStreamIterator{
-//			ss: ss,
-//		})
-//	}
-//	return its, nil
-//}
