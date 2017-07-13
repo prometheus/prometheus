@@ -341,9 +341,7 @@ func (m *mergeSeries) Iterator() SeriesIterator {
 	for _, s := range m.series {
 		iterators = append(iterators, s.Iterator())
 	}
-	return &mergeIterator{
-		iterators: iterators,
-	}
+	return newMergeIterator(iterators)
 }
 
 type mergeIterator struct {
@@ -369,6 +367,11 @@ func (c *mergeIterator) Seek(t int64) bool {
 }
 
 func (c *mergeIterator) At() (t int64, v float64) {
+	if len(c.h) == 0 {
+		log.Error("mergeIterator.At() called after .Next() returned false.")
+		return 0, 0
+	}
+
 	// TODO do I need to dedupe or just merge?
 	return c.h[0].At()
 }
