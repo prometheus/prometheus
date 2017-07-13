@@ -229,11 +229,24 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 
 	for i := 0; i < len(ds); {
 		var group []dirMeta
+		var t0 int64
+		m := ds[i].meta
 		// Compute start of aligned time range of size tr closest to the current block's start.
-		t0 := ds[i].meta.MinTime - (ds[i].meta.MinTime % tr)
+		if m.MinTime >= 0 {
+			t0 = tr * (m.MinTime / tr)
+		} else {
+			t0 = tr * ((m.MinTime - tr + 1) / tr)
+		}
+		// Skip blocks that don't fall into the range. This can happen via mis-alignment or
+		// by being the multiple of the intended range.
+		if ds[i].meta.MinTime < t0 || ds[i].meta.MaxTime > t0+tr {
+			i++
+			continue
+		}
 
 		// Add all dirs to the current group that are within [t0, t0+tr].
 		for ; i < len(ds); i++ {
+			// Either the block falls into the next range or doesn't fit at all (checked above).
 			if ds[i].meta.MinTime < t0 || ds[i].meta.MaxTime > t0+tr {
 				break
 			}
