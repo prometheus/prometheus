@@ -162,6 +162,7 @@ type mergeQuerier struct {
 	queriers []Querier
 }
 
+// NewMergeQuerier returns a new Querier that merges results of input queriers.
 func NewMergeQuerier(queriers []Querier) Querier {
 	return &mergeQuerier{
 		queriers: queriers,
