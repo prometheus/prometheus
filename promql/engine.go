@@ -752,13 +752,19 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 	)
 
 	for i, it := range node.iterators {
+		var t int64
+		var v float64
+
 		ok := it.Seek(refTime)
 		if !ok {
 			if it.Err() != nil {
 				ev.error(it.Err())
 			}
 		}
-		t, v := it.Values()
+
+		if ok {
+			t, v = it.Values()
+		}
 
 		peek := 1
 		if !ok || t > refTime {
@@ -851,7 +857,6 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 				ev.error(it.Err())
 			}
 		}
-		t, v := it.Values()
 
 		buf := it.Buffer()
 		for buf.Next() {
@@ -865,9 +870,11 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 			}
 		}
 		// The seeked sample might also be in the range.
-		t, v = it.Values()
-		if t == maxt && !value.IsStaleNaN(v) {
-			allPoints = append(allPoints, Point{T: t, V: v})
+		if ok {
+			t, v := it.Values()
+			if t == maxt && !value.IsStaleNaN(v) {
+				allPoints = append(allPoints, Point{T: t, V: v})
+			}
 		}
 
 		ss.Points = allPoints[start:]
