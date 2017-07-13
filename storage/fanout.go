@@ -216,16 +216,16 @@ func mergeTwoStringSlices(a, b []string) []string {
 			result = append(result, a[i])
 			i++
 			j++
-		case 1:
+		case -1:
 			result = append(result, a[i])
 			i++
-		case -1:
+		case 1:
 			result = append(result, b[j])
 			j++
 		}
 	}
-	copy(result, a[i:])
-	copy(result, b[j:])
+	result = append(result, a[i:]...)
+	result = append(result, b[j:]...)
 	return result
 }
 
@@ -373,18 +373,24 @@ func (c *mergeIterator) At() (t int64, v float64) {
 }
 
 func (c *mergeIterator) Next() bool {
-	// Detect the case where Next is called before At
 	if c.h == nil {
-		panic("Next() called before Seek()")
+		for _, iter := range c.iterators {
+			if iter.Next() {
+				heap.Push(&c.h, iter)
+			}
+		}
+		return len(c.h) > 0
 	}
 
 	if len(c.h) == 0 {
 		return false
 	}
+
 	iter := heap.Pop(&c.h).(SeriesIterator)
 	if iter.Next() {
 		heap.Push(&c.h, iter)
 	}
+
 	return len(c.h) > 0
 }
 
