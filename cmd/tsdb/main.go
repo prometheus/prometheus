@@ -112,8 +112,8 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	st, err := tsdb.Open(dir, nil, nil, &tsdb.Options{
 		WALFlushInterval:  200 * time.Millisecond,
-		RetentionDuration: 2 * 24 * 60 * 60 * 1000, // 1 days in milliseconds
-		BlockRanges:       tsdb.ExponentialBlockRanges(int64(2*time.Hour), 3, 5),
+		RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
+		BlockRanges:       tsdb.ExponentialBlockRanges(3*60*60*1000, 3, 5),
 	})
 	if err != nil {
 		exitWithError(err)
@@ -188,6 +188,7 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 		}
 		wg.Wait()
 	}
+	fmt.Println("ingestion completed")
 
 	return total, nil
 }

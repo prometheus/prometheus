@@ -325,37 +325,52 @@ func headFullness(h headBlock) float64 {
 	return a / b
 }
 
+// appendableHeads returns a copy of a slice of HeadBlocks that can still be appended to.
+func (db *DB) appendableHeads() (r []headBlock) {
+	switch l := len(db.heads); l {
+	case 0:
+	case 1:
+		r = append(r, db.heads[0])
+	default:
+		if headFullness(db.heads[l-1]) < 0.5 {
+			r = append(r, db.heads[l-2])
+		}
+		r = append(r, db.heads[l-1])
+	}
+	return r
+}
+
+func (db *DB) completedHeads() (r []headBlock) {
+	db.headmtx.RLock()
+	defer db.headmtx.RUnlock()
+
+	if len(db.heads) < 2 {
+		return nil
+	}
+
+	// Select all old heads unless they still have pending appenders.
+	for _, h := range db.heads[:len(db.heads)-2] {
+		if h.ActiveWriters() > 0 {
+			return r
+		}
+		r = append(r, h)
+	}
+	// Add the 2nd last head if the last head is more than 50% filled.
+	// Compacting it early allows us to free its memory before allocating
+	// more for the next block and thus reduces spikes.
+	if h2 := db.heads[len(db.heads)-2]; headFullness(h2) >= 0.5 && h2.ActiveWriters() == 0 {
+		r = append(r, h2)
+	}
+	return r
+}
+
 func (db *DB) compact() (changes bool, err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	db.headmtx.RLock()
-
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
-	var singles []Block
-
-	// Collect head blocks that are ready for compaction. Write them after
-	// returning the lock to not block Appenders.
-	// Selected blocks are semantically ensured to not be written to afterwards
-	// by appendable().
-	if len(db.heads) > 1 {
-		f := headFullness(db.heads[len(db.heads)-1])
-
-		for _, h := range db.heads[:len(db.heads)-1] {
-			// Blocks that won't be appendable when instantiating a new appender
-			// might still have active appenders on them.
-			// Abort at the first one we encounter.
-			if h.ActiveWriters() > 0 || f < 0.5 {
-				break
-			}
-			singles = append(singles, h)
-		}
-	}
-
-	db.headmtx.RUnlock()
-
-	for _, h := range singles {
+	for _, h := range db.completedHeads() {
 		select {
 		case <-db.stopc:
 			return changes, nil
@@ -677,7 +692,7 @@ func (a *dbAppender) appenderAt(t int64) (*metaAppender, error) {
 	}
 
 	var hb headBlock
-	for _, h := range a.db.appendable() {
+	for _, h := range a.db.appendableHeads() {
 		m := h.Meta()
 
 		if intervalContains(m.MinTime, m.MaxTime-1, t) {
@@ -807,18 +822,6 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	}
 
 	return nil
-}
-
-// appendable returns a copy of a slice of HeadBlocks that can still be appended to.
-func (db *DB) appendable() (r []headBlock) {
-	switch len(db.heads) {
-	case 0:
-	case 1:
-		r = append(r, db.heads[0])
-	default:
-		r = append(r, db.heads[len(db.heads)-2:]...)
-	}
-	return r
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {
