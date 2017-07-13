@@ -946,6 +946,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	// Suffix s with the invalid \xff unicode rune to avoid collisions
 	// with scraped metrics.
 	s2 := s + "\xff"
+
 	ref, ok := sl.cache.getRef(s2)
 	if ok {
 		met := sl.cache.lsets[ref].lset
@@ -963,7 +964,6 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 			return err
 		}
 	}
-
 	met := labels.Labels{
 		labels.Label{Name: labels.MetricName, Value: s},
 	}
