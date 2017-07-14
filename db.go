@@ -100,7 +100,6 @@ type DB struct {
 	opts    *Options
 
 	// Mutex for that must be held when modifying the general block layout.
-	// cmtx must be held before acquiring it.
 	mtx    sync.RWMutex
 	blocks []Block
 
@@ -117,8 +116,8 @@ type DB struct {
 	stopc    chan struct{}
 
 	// cmtx is used to control compactions and deletions.
-	cmtx       sync.Mutex
-	compacting bool
+	cmtx               sync.Mutex
+	compactionsEnabled bool
 }
 
 type dbMetrics struct {
@@ -197,13 +196,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 
 	db = &DB{
-		dir:        dir,
-		logger:     l,
-		opts:       opts,
-		compactc:   make(chan struct{}, 1),
-		donec:      make(chan struct{}),
-		stopc:      make(chan struct{}),
-		compacting: true,
+		dir:                dir,
+		logger:             l,
+		opts:               opts,
+		compactc:           make(chan struct{}, 1),
+		donec:              make(chan struct{}),
+		stopc:              make(chan struct{}),
+		compactionsEnabled: true,
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -370,6 +369,10 @@ func (db *DB) completedHeads() (r []headBlock) {
 func (db *DB) compact() (changes bool, err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+
+	if !db.compactionsEnabled {
+		return false, nil
+	}
 
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
@@ -579,20 +582,20 @@ func (db *DB) Close() error {
 
 // DisableCompactions disables compactions.
 func (db *DB) DisableCompactions() {
-	if db.compacting {
-		db.cmtx.Lock()
-		db.compacting = false
-		db.logger.Log("msg", "compactions disabled")
-	}
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	db.compactionsEnabled = false
+	db.logger.Log("msg", "compactions disabled")
 }
 
 // EnableCompactions enables compactions.
 func (db *DB) EnableCompactions() {
-	if !db.compacting {
-		db.cmtx.Unlock()
-		db.compacting = true
-		db.logger.Log("msg", "compactions enabled")
-	}
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	db.compactionsEnabled = true
+	db.logger.Log("msg", "compactions enabled")
 }
 
 // Snapshot writes the current data to the directory.
