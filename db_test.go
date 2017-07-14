@@ -60,10 +60,10 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	querier := db.Querier(0, 1)
-	defer querier.Close()
 	seriesSet, err := readSeriesSet(querier.Select(labels.NewEqualMatcher("foo", "bar")))
 	require.NoError(t, err)
 	require.Equal(t, seriesSet, map[string][]sample{})
+	require.NoError(t, querier.Close())
 
 	err = app.Commit()
 	require.NoError(t, err)

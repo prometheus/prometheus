@@ -99,14 +99,14 @@ type DB struct {
 	metrics *dbMetrics
 	opts    *Options
 
-	// Mutex for that must be held when modifying the general
-	// block layout.
+	// Mutex for that must be held when modifying the general block layout.
+	// cmtx must be held before acquiring it.
 	mtx    sync.RWMutex
 	blocks []Block
 
 	// Mutex that must be held when modifying just the head blocks
 	// or the general layout.
-	// Must never be held when acquiring a blocks's mutex!
+	// mtx must be held before acquiring.
 	headmtx sync.RWMutex
 	heads   []headBlock
 
@@ -341,6 +341,9 @@ func (db *DB) appendableHeads() (r []headBlock) {
 }
 
 func (db *DB) completedHeads() (r []headBlock) {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
 	db.headmtx.RLock()
 	defer db.headmtx.RUnlock()
 
@@ -594,11 +597,11 @@ func (db *DB) EnableCompactions() {
 
 // Snapshot writes the current data to the directory.
 func (db *DB) Snapshot(dir string) error {
-	db.mtx.Lock() // To block any appenders.
-	defer db.mtx.Unlock()
-
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+
+	db.mtx.Lock() // To block any appenders.
+	defer db.mtx.Unlock()
 
 	blocks := db.blocks[:]
 	for _, b := range blocks {
@@ -804,6 +807,7 @@ func (a *dbAppender) Rollback() error {
 func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 

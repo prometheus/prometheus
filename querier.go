@@ -53,8 +53,8 @@ type querier struct {
 	blocks []Querier
 }
 
-// Querier returns a new querier over the data partition for the given
-// time range.
+// Querier returns a new querier over the data partition for the given time range.
+// A goroutine must not handle more than one open Querier.
 func (s *DB) Querier(mint, maxt int64) Querier {
 	s.mtx.RLock()
 
