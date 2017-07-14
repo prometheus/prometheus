@@ -42,7 +42,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
-		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
+		Proxy:             newTransportProxy(cfg.ProxyURL.URL),
 		DisableKeepAlives: true,
 		TLSClientConfig:   tlsConfig,
 	}
@@ -74,8 +74,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 // long running requests.
 func NewDeadlineRoundTripper(timeout time.Duration, proxyURL *url.URL) http.RoundTripper {
 	return &http.Transport{
-		// Set proxy (if null, then becomes a direct connection)
-		Proxy: http.ProxyURL(proxyURL),
+		Proxy: newTransportProxy(proxyURL),
 		// We need to disable keepalive, because we set a deadline on the
 		// underlying connection.
 		DisableKeepAlives: true,
@@ -150,6 +149,16 @@ func cloneRequest(r *http.Request) *http.Request {
 		r2.Header[k] = s
 	}
 	return r2
+}
+
+// newTransportProxy returns a function for setting the proxy in an http transport.
+// It evaluates the supplied information: Null or value 'localhost' result in a direct connection.
+// If no value is supplied, it falls backs on the process' environment.
+func newTransportProxy(proxyURL *url.URL) func(*http.Request) (*url.URL, error) {
+	if proxyURL != nil {
+		return http.ProxyURL(proxyURL)
+	}
+	return http.ProxyFromEnvironment
 }
 
 // NewTLSConfig creates a new tls.Config from the given config.TLSConfig.
