@@ -3,7 +3,7 @@ sudo: false
 language: go
 
 go:
-- 1.8
+- 1.8.x
 
 go_import_path: github.com/prometheus/tsdb
 
@@ -14,6 +14,6 @@ install:
 - go get -t ./...
 
 script:
-- go test ./...
+- go test -timeout 5m ./...
 
 
