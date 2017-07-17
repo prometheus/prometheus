@@ -13,7 +13,7 @@ what makes a good SD and covers some of the common implementation issues.
 
 The first question to be asked is does it make sense to add this particular
 SD? An SD mechanism should be reasonably well established, and at a minimum in
-use across multiple orgnaisations. It should allow discovering of machines
+use across multiple organisations. It should allow discovering of machines
 and/or services running somewhere. When exactly an SD is popular enough to
 justify being added to Prometheus natively is an open question.
 
@@ -29,7 +29,7 @@ discovery. In that case the SD you should be looking at is whatever decides
 that a machine is going to be a Kafka server, likely a machine database or
 configuration management system.
 
-If something is particlarly custom or unusual, `file_sd` is the generic
+If something is particularly custom or unusual, `file_sd` is the generic
 mechanism provided for users to hook in. Generally with Prometheus we offer a
 single generic mechanism for things with infinite variations, rather than
 trying to support everything natively (see also, alertmanager webhook, remote
@@ -39,7 +39,7 @@ instead.
 
 For configuration management systems like Chef, while they do have a
 database/API that'd in principle make sense to talk to for service discovery,
-the idomatic approach is to use Chef's templating facilities to write out a
+the idiomatic approach is to use Chef's templating facilities to write out a
 file for use with `file_sd`.
 
 
@@ -74,7 +74,7 @@ may only contain `[_a-zA-Z0-9]`, sanitize by replacing with underscores as neede
 
 For targets with multiple potential ports, you can a) expose them as a list, b)
 if they're named expose them as a map or c) expose them each as their own
-target. Kuberenetes SD takes the target per port approach. a) and b) can be
+target. Kubernetes SD takes the target per port approach. a) and b) can be
 combined.
 
 For machine-like SDs (OpenStack, EC2, Kubernetes to some extent) there may
@@ -99,9 +99,9 @@ whatever functionality the SD itself offers.
 It is a general rule with Prometheus that all configuration comes from the
 configuration file. While the libraries you use to talk to the SD may also
 offer other mechanisms for providing configuration/authentication under the
-covers (EC2's use of enviroment variables being a prime example), using your SD
+covers (EC2's use of environment variables being a prime example), using your SD
 mechanism should not require this. Put another way, your SD implementation
-should not read enviroment variables or files to obtain configuration.
+should not read environment variables or files to obtain configuration.
 
 Some SD mechanisms have rate limits that make them challenging to use. As an
 example we have unfortunately had to reject Amazon ECS service discovery due to
