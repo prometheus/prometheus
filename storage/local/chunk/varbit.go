@@ -105,7 +105,7 @@ import (
 // - If ΔΔt is between [-65536,65535], store '110' followed by a 17 bit
 //   value. This will typically happen if a scrape is missed completely.
 //
-// - If ΔΔt is betwees [-4194304,4194303], store '111' followed by a 23 bit
+// - If ΔΔt is between [-4194304,4194303], store '111' followed by a 23 bit
 //   value.  This spans more than 1h, which is usually enough as we close a
 //   chunk anyway if it doesn't receive any sample in 1h.
 //
