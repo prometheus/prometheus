@@ -36,7 +36,7 @@ func NewStorage(t T) storage.Storage {
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
-	db, err := tsdb.Open(dir, nil, &tsdb.Options{
+	db, err := tsdb.Open(dir, nil, nil, &tsdb.Options{
 		MinBlockDuration: model.Duration(24 * time.Hour),
 		MaxBlockDuration: model.Duration(24 * time.Hour),
 	})
