@@ -43,7 +43,9 @@ go_gc_duration_seconds_count 99
 some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
-go_goroutines 33  	123123`
+go_goroutines 33  	123123
+_metric_starting_with_underscore 1
+testmetric{_label_starting_with_underscore="foo"} 1`
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
 	int64p := func(x int64) *int64 { return &x }
@@ -103,6 +105,14 @@ go_goroutines 33  	123123`
 			v:    33,
 			t:    int64p(123123),
 			lset: labels.FromStrings("__name__", "go_goroutines"),
+		}, {
+			m:    "_metric_starting_with_underscore",
+			v:    1,
+			lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
+		}, {
+			m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
 		}, {
 			m:    "null_byte_metric{a=\"abc\x00\"}",
 			v:    1,

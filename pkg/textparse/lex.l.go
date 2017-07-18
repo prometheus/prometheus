@@ -83,12 +83,12 @@ yystart1:
 		goto yyabort
 	case c == '#':
 		goto yystate4
+	case c == ':' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yystate6
 	case c == '\t' || c == '\n' || c == '\r' || c == ' ':
 		goto yystate3
 	case c == '\x00':
 		goto yystate2
-	case c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
-		goto yystate6
 	}
 
 yystate2:
@@ -327,7 +327,7 @@ yystart26:
 		goto yystate28
 	case c == '\t' || c == ' ':
 		goto yystate27
-	case c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z':
+	case c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
 		goto yystate29
 	}
 
@@ -436,7 +436,7 @@ yyrule3: // [\r\n \t]+
 		l.mstart = l.i
 		goto yystate0
 	}
-yyrule4: // {S}({M}|{D})*
+yyrule4: // {M}({M}|{D})*
 	{
 		l.state = lstateName
 		l.offsets = append(l.offsets, l.i)
@@ -469,7 +469,7 @@ yyrule9: // (,?[ \t]*)
 		l.offsets = append(l.offsets, l.i)
 		goto yystate0
 	}
-yyrule10: // {S}({L}|{D})*
+yyrule10: // {L}({L}|{D})*
 	{
 		l.offsets = append(l.offsets, l.i)
 		goto yystate0
@@ -543,7 +543,6 @@ yyrule20: // [\r\n]+
 yyrule21: // \0
 	{
 		return 1
-
 	}
 	panic("unreachable")
 
