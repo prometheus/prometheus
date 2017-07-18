@@ -39,7 +39,7 @@ const (
 // the end of the file.
 func (l *lexer) Lex() int {
     l.state = lstateInit
-    
+
     if l.i >= len(l.b) {
         return eof
     }
@@ -51,7 +51,6 @@ func (l *lexer) Lex() int {
 %}
 
 D     [0-9]
-S     [a-zA-Z]
 L     [a-zA-Z_]
 M     [a-zA-Z_:]
 
@@ -69,7 +68,7 @@ M     [a-zA-Z_:]
 #[^\r\n]*\n                           l.mstart = l.i
 [\r\n \t]+                            l.mstart = l.i
 
-{S}({M}|{D})*                         l.state = lstateName
+{M}({M}|{D})*                         l.state = lstateName
                                       l.offsets = append(l.offsets, l.i)
                                       l.mend = l.i
 
@@ -85,7 +84,7 @@ M     [a-zA-Z_:]
 <lstateLabels>(,?[ \t]*)              l.state = lstateLName
                                       l.offsets = append(l.offsets, l.i)
 
-<lstateLName>{S}({L}|{D})*            l.offsets = append(l.offsets, l.i)
+<lstateLName>{L}({L}|{D})*            l.offsets = append(l.offsets, l.i)
 <lstateLName>[ \t]*=                  l.state = lstateLValue
 
 <lstateLValue>[ \t]+
@@ -110,7 +109,7 @@ M     [a-zA-Z_:]
                                       }
                                       l.state = lstateTimestamp
 
-<lstateTimestamp>[ \t]+               l.tstart = l.i         
+<lstateTimestamp>[ \t]+               l.tstart = l.i
 <lstateTimestamp>{D}+                 ts, err := strconv.ParseInt(yoloString(l.b[l.tstart:l.i]), 10, 64)
                                       if err != nil {
                                           l.err = err
@@ -119,8 +118,8 @@ M     [a-zA-Z_:]
                                       l.ts = &ts
 <lstateTimestamp>[\r\n]+              l.nextMstart = l.i
                                       return 1
-<lstateTimestamp>\0                   return 1              
-   
+<lstateTimestamp>\0                   return 1
+
 %%
     l.err = fmt.Errorf("no token found")
     return -1
