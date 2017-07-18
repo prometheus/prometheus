@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 )
 
 const (
@@ -11,6 +12,15 @@ const (
 	HealthPassing  = "passing"
 	HealthWarning  = "warning"
 	HealthCritical = "critical"
+	HealthMaint    = "maintenance"
+)
+
+const (
+	// NodeMaint is the special key set by a node in maintenance mode.
+	NodeMaint = "_node_maintenance"
+
+	// ServiceMaintPrefix is the prefix for a service in maintenance mode.
+	ServiceMaintPrefix = "_service_maintenance:"
 )
 
 // HealthCheck is used to represent a single check
@@ -25,11 +35,56 @@ type HealthCheck struct {
 	ServiceName string
 }
 
+// HealthChecks is a collection of HealthCheck structs.
+type HealthChecks []*HealthCheck
+
+// AggregatedStatus returns the "best" status for the list of health checks.
+// Because a given entry may have many service and node-level health checks
+// attached, this function determines the best representative of the status as
+// as single string using the following heuristic:
+//
+//  maintenance > critical > warning > passing
+//
+func (c HealthChecks) AggregatedStatus() string {
+	var passing, warning, critical, maintenance bool
+	for _, check := range c {
+		id := string(check.CheckID)
+		if id == NodeMaint || strings.HasPrefix(id, ServiceMaintPrefix) {
+			maintenance = true
+			continue
+		}
+
+		switch check.Status {
+		case HealthPassing:
+			passing = true
+		case HealthWarning:
+			warning = true
+		case HealthCritical:
+			critical = true
+		default:
+			return ""
+		}
+	}
+
+	switch {
+	case maintenance:
+		return HealthMaint
+	case critical:
+		return HealthCritical
+	case warning:
+		return HealthWarning
+	case passing:
+		return HealthPassing
+	default:
+		return HealthPassing
+	}
+}
+
 // ServiceEntry is used for the health service endpoint
 type ServiceEntry struct {
 	Node    *Node
 	Service *AgentService
-	Checks  []*HealthCheck
+	Checks  HealthChecks
 }
 
 // Health can be used to query the Health endpoints
@@ -43,7 +98,7 @@ func (c *Client) Health() *Health {
 }
 
 // Node is used to query for checks belonging to a given node
-func (h *Health) Node(node string, q *QueryOptions) ([]*HealthCheck, *QueryMeta, error) {
+func (h *Health) Node(node string, q *QueryOptions) (HealthChecks, *QueryMeta, error) {
 	r := h.c.newRequest("GET", "/v1/health/node/"+node)
 	r.setQueryOptions(q)
 	rtt, resp, err := requireOK(h.c.doRequest(r))
@@ -56,7 +111,7 @@ func (h *Health) Node(node string, q *QueryOptions) ([]*HealthCheck, *QueryMeta,
 	parseQueryMeta(resp, qm)
 	qm.RequestTime = rtt
 
-	var out []*HealthCheck
+	var out HealthChecks
 	if err := decodeBody(resp, &out); err != nil {
 		return nil, nil, err
 	}
@@ -64,7 +119,7 @@ func (h *Health) Node(node string, q *QueryOptions) ([]*HealthCheck, *QueryMeta,
 }
 
 // Checks is used to return the checks associated with a service
-func (h *Health) Checks(service string, q *QueryOptions) ([]*HealthCheck, *QueryMeta, error) {
+func (h *Health) Checks(service string, q *QueryOptions) (HealthChecks, *QueryMeta, error) {
 	r := h.c.newRequest("GET", "/v1/health/checks/"+service)
 	r.setQueryOptions(q)
 	rtt, resp, err := requireOK(h.c.doRequest(r))
@@ -77,7 +132,7 @@ func (h *Health) Checks(service string, q *QueryOptions) ([]*HealthCheck, *Query
 	parseQueryMeta(resp, qm)
 	qm.RequestTime = rtt
 
-	var out []*HealthCheck
+	var out HealthChecks
 	if err := decodeBody(resp, &out); err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +170,7 @@ func (h *Health) Service(service, tag string, passingOnly bool, q *QueryOptions)
 
 // State is used to retrieve all the checks in a given state.
 // The wildcard "any" state can also be used for all checks.
-func (h *Health) State(state string, q *QueryOptions) ([]*HealthCheck, *QueryMeta, error) {
+func (h *Health) State(state string, q *QueryOptions) (HealthChecks, *QueryMeta, error) {
 	switch state {
 	case HealthAny:
 	case HealthWarning:
@@ -136,7 +191,7 @@ func (h *Health) State(state string, q *QueryOptions) ([]*HealthCheck, *QueryMet
 	parseQueryMeta(resp, qm)
 	qm.RequestTime = rtt
 
-	var out []*HealthCheck
+	var out HealthChecks
 	if err := decodeBody(resp, &out); err != nil {
 		return nil, nil, err
 	}

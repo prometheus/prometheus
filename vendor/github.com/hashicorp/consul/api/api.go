@@ -20,6 +20,28 @@ import (
 	"github.com/hashicorp/go-cleanhttp"
 )
 
+const (
+	// HTTPAddrEnvName defines an environment variable name which sets
+	// the HTTP address if there is no -http-addr specified.
+	HTTPAddrEnvName = "CONSUL_HTTP_ADDR"
+
+	// HTTPTokenEnvName defines an environment variable name which sets
+	// the HTTP token.
+	HTTPTokenEnvName = "CONSUL_HTTP_TOKEN"
+
+	// HTTPAuthEnvName defines an environment variable name which sets
+	// the HTTP authentication header.
+	HTTPAuthEnvName = "CONSUL_HTTP_AUTH"
+
+	// HTTPSSLEnvName defines an environment variable name which sets
+	// whether or not to use HTTPS.
+	HTTPSSLEnvName = "CONSUL_HTTP_SSL"
+
+	// HTTPSSLVerifyEnvName defines an environment variable name which sets
+	// whether or not to disable certificate checking.
+	HTTPSSLVerifyEnvName = "CONSUL_HTTP_SSL_VERIFY"
+)
+
 // QueryOptions are used to parameterize a query
 type QueryOptions struct {
 	// Providing a datacenter overwrites the DC provided
@@ -52,6 +74,11 @@ type QueryOptions struct {
 	// that node. Setting this to "_agent" will use the agent's node
 	// for the sort.
 	Near string
+
+	// NodeMeta is used to filter results by nodes with the given
+	// metadata key/value pairs. Currently, only one key/value pair can
+	// be provided for filtering.
+	NodeMeta map[string]string
 }
 
 // WriteOptions are used to parameterize a write
@@ -181,15 +208,15 @@ func defaultConfig(transportFn func() *http.Transport) *Config {
 		},
 	}
 
-	if addr := os.Getenv("CONSUL_HTTP_ADDR"); addr != "" {
+	if addr := os.Getenv(HTTPAddrEnvName); addr != "" {
 		config.Address = addr
 	}
 
-	if token := os.Getenv("CONSUL_HTTP_TOKEN"); token != "" {
+	if token := os.Getenv(HTTPTokenEnvName); token != "" {
 		config.Token = token
 	}
 
-	if auth := os.Getenv("CONSUL_HTTP_AUTH"); auth != "" {
+	if auth := os.Getenv(HTTPAuthEnvName); auth != "" {
 		var username, password string
 		if strings.Contains(auth, ":") {
 			split := strings.SplitN(auth, ":", 2)
@@ -205,10 +232,10 @@ func defaultConfig(transportFn func() *http.Transport) *Config {
 		}
 	}
 
-	if ssl := os.Getenv("CONSUL_HTTP_SSL"); ssl != "" {
+	if ssl := os.Getenv(HTTPSSLEnvName); ssl != "" {
 		enabled, err := strconv.ParseBool(ssl)
 		if err != nil {
-			log.Printf("[WARN] client: could not parse CONSUL_HTTP_SSL: %s", err)
+			log.Printf("[WARN] client: could not parse %s: %s", HTTPSSLEnvName, err)
 		}
 
 		if enabled {
@@ -216,10 +243,10 @@ func defaultConfig(transportFn func() *http.Transport) *Config {
 		}
 	}
 
-	if verify := os.Getenv("CONSUL_HTTP_SSL_VERIFY"); verify != "" {
+	if verify := os.Getenv(HTTPSSLVerifyEnvName); verify != "" {
 		doVerify, err := strconv.ParseBool(verify)
 		if err != nil {
-			log.Printf("[WARN] client: could not parse CONSUL_HTTP_SSL_VERIFY: %s", err)
+			log.Printf("[WARN] client: could not parse %s: %s", HTTPSSLVerifyEnvName, err)
 		}
 
 		if !doVerify {
@@ -363,6 +390,11 @@ func (r *request) setQueryOptions(q *QueryOptions) {
 	}
 	if q.Near != "" {
 		r.params.Set("near", q.Near)
+	}
+	if len(q.NodeMeta) > 0 {
+		for key, value := range q.NodeMeta {
+			r.params.Add("node-meta", key+":"+value)
+		}
 	}
 }
 
