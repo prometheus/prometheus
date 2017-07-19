@@ -378,7 +378,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
   if (self.options.tab === 0) {
     params.start = endDate - rangeSeconds;
     params.end = endDate;
-    params.step = resolution;
+    params.step = parseInt(resolution, 10);
     url = PATH_PREFIX + "/api/v1/query_range";
     success = function(json, textStatus) { self.handleGraphResponse(json, textStatus); };
   } else {
