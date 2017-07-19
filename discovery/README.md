@@ -121,3 +121,40 @@ or incorrect metadata.
 The information obtained from service discovery is not considered sensitive
 security wise. Do not return secrets in metadata, anyone with access to
 the Prometheus server will be able to see them.
+
+
+## Writing an SD mechanism
+
+### The SD Interface
+
+A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. It has to send the targets down to Prometheus in the form of [`[]TargetGroup`](https://godoc.org/github.com/prometheus/prometheus/config#TargetGroup).
+
+```
+- targets: ['10.11.150.1:7870', '10.11.150.4:7870']
+  labels:
+    job: mysql
+
+- targets: ['10.11.122.11:6001', '10.11.122.15:6002']
+  labels:
+    job: postgres
+```
+
+Here there are two `TargetGroups` for that file, one group with `job: mysql` and another with `job: postgres`. The grouping is implementation specific and even could be one target per Group but every target group sent by an SD instance should have a `Source` which is unique across all the TargetGroups of that SD instance. 
+
+<!-- TODO: Add best-practices -->
+
+A SD mechanism has to implement the `TargetProvider Interface`:
+```go
+type TargetProvider interface {
+	Run(ctx context.Context, up chan<- []*config.TargetGroup)
+}
+```
+Prometheus will call the Run() method on a provider to initialise the discovery mechanism. The mechanism will then send *all* the TargetGroups into the channel. Now the mechanism will watch for changes and then send only the changes down the channel.
+
+
+For example, if there were two files with each having two groups, there would be 4 `TargetGroups` sent down the channel for the first time.
+
+For an update, it will send the TargetGroup with all its targets.
+
+For example, if a group with Source as `s1` has targets `[t1, t2, t3, t4]` and the target `t2` has been deleted, then `{Source: s1, Targets: [t1, t3, t4]}` is sent down the channel.
+If an entire group is deleted, then `{Source: s1, Targets: [t1, t3, t4]}` is sent down the channel.
