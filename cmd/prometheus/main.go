@@ -127,7 +127,7 @@ func main() {
 	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request.").
 		Default("false").BoolVar(&cfg.web.EnableLifecycle)
 
-	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions").
+	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
@@ -155,7 +155,7 @@ func main() {
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending alert manager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
-	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager").
+	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
 		Default("10s").SetValue(&cfg.notifierTimeout)
 
 	a.Flag("query.lookback-delta", "The delta difference allowed for retrieving metrics during expression evaluations.").
