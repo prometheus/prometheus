@@ -1040,7 +1040,7 @@ func (it *varbitChunkIterator) FindAtOrBefore(t model.Time) bool {
 		prevT = model.Earliest
 		prevV model.SampleValue
 	)
-	for it.Scan() && t.After(it.t) {
+	for it.Scan() && !t.Before(it.t) {
 		prevT = it.t
 		prevV = it.v
 		// TODO(beorn7): If we are in a repeat, we could iterate forward
