@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"fmt"
+        "sort"
 	"strings"
 
 	"github.com/prometheus/tsdb/chunks"
@@ -220,6 +221,37 @@ func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
 	return p, absent
 }
 
+// tuplesByPrefix uses binary search to find prefix matches within ts.
+func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) {
+	var outErr error
+	tslen := ts.Len()
+	i := sort.Search(tslen, func(i int) bool {
+		vs, err := ts.At(i)
+		if err != nil {
+			outErr = fmt.Errorf("Failed to read tuple %d/%d: %v", i, tslen, err)
+			return true
+		}
+		val := vs[0]
+		l := len(m.Prefix())
+		if l > len(vs) {
+			l = len(val)
+		}
+		return val[:l] >= m.Prefix()
+	})
+	if outErr != nil {
+		return nil, outErr
+	}
+	var matches []string
+	for ; i < tslen; i++ {
+		vs, err := ts.At(i)
+		if err != nil || !m.Matches(vs[0]) {
+			return matches, err
+		}
+		matches = append(matches, vs[0])
+	}
+	return matches, nil
+}
+
 func (r *postingsReader) selectSingle(m labels.Matcher) Postings {
 	// Fast-path for equal matching.
 	if em, ok := m.(*labels.EqualMatcher); ok {
@@ -230,22 +262,27 @@ func (r *postingsReader) selectSingle(m labels.Matcher) Postings {
 		return it
 	}
 
-	// TODO(fabxc): use interface upgrading to provide fast solution
-	// for prefix matches. Tuples are lexicographically sorted.
 	tpls, err := r.index.LabelValues(m.Name())
 	if err != nil {
 		return errPostings{err: err}
 	}
 
 	var res []string
-
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
+	if pm, ok := m.(*labels.PrefixMatcher); ok {
+		res, err = tuplesByPrefix(pm, tpls)
 		if err != nil {
 			return errPostings{err: err}
 		}
-		if m.Matches(vals[0]) {
-			res = append(res, vals[0])
+
+	} else {
+		for i := 0; i < tpls.Len(); i++ {
+			vals, err := tpls.At(i)
+			if err != nil {
+				return errPostings{err: err}
+			}
+			if m.Matches(vals[0]) {
+				res = append(res, vals[0])
+			}
 		}
 	}
 

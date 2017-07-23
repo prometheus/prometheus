@@ -230,6 +230,7 @@ func createIdxChkReaders(tc []struct {
 
 	postings := &memPostings{m: make(map[term][]uint32, 512)}
 	chkReader := mockChunkReader(make(map[uint64]chunks.Chunk))
+	lblIdx := make(map[string]stringset)
 	mi := newMockIndex()
 
 	for i, s := range tc {
@@ -253,16 +254,28 @@ func createIdxChkReaders(tc []struct {
 			chkReader[ref] = chunk
 		}
 
-		mi.AddSeries(uint32(i), labels.FromMap(s.lset), metas...)
+		ls := labels.FromMap(s.lset)
+		mi.AddSeries(uint32(i), ls, metas...)
 
 		postings.add(uint32(i), term{})
-		for _, l := range labels.FromMap(s.lset) {
+		for _, l := range ls {
 			postings.add(uint32(i), term{l.Name, l.Value})
+
+			vs, present := lblIdx[l.Name]
+			if !present {
+				vs = stringset{}
+				lblIdx[l.Name] = vs
+			}
+			vs.set(l.Value)
 		}
 	}
 
+	for l, vs := range lblIdx {
+		mi.WriteLabelIndex([]string{l}, vs.slice())
+	}
+
 	for tm := range postings.m {
-		mi.WritePostings(tm.name, tm.name, postings.get(tm))
+		mi.WritePostings(tm.name, tm.value, postings.get(tm))
 	}
 
 	return mi, chkReader
@@ -334,6 +347,47 @@ func TestBlockQuerier(t *testing.T) {
 					},
 				},
 			},
+			{
+				lset: map[string]string{
+					"p": "abcd",
+					"x": "xyz",
+				},
+				chunks: [][]sample{
+					{
+						{1, 2}, {2, 3}, {3, 4},
+					},
+					{
+						{5, 2}, {6, 3}, {7, 4},
+					},
+				},
+			},
+			{
+				lset: map[string]string{
+					"a": "ab",
+					"p": "abce",
+				},
+				chunks: [][]sample{
+					{
+						{1, 1}, {2, 2}, {3, 3},
+					},
+					{
+						{5, 3}, {6, 6},
+					},
+				},
+			},
+			{
+				lset: map[string]string{
+					"p": "xyz",
+				},
+				chunks: [][]sample{
+					{
+						{1, 1}, {2, 2}, {3, 3},
+					},
+					{
+						{4, 4}, {5, 5}, {6, 6},
+					},
+				},
+			},
 		},
 
 		queries: []query{
@@ -373,11 +427,30 @@ func TestBlockQuerier(t *testing.T) {
 					),
 				}),
 			},
+			{
+				mint: 2,
+				maxt: 6,
+				ms:   []labels.Matcher{labels.NewPrefixMatcher("p", "abc")},
+				exp: newListSeriesSet([]Series{
+					newSeries(map[string]string{
+						"p": "abcd",
+						"x": "xyz",
+					},
+						[]sample{{2, 3}, {3, 4}, {5, 2}, {6, 3}},
+					),
+					newSeries(map[string]string{
+						"a": "ab",
+						"p": "abce",
+					},
+						[]sample{{2, 2}, {3, 3}, {5, 3}, {6, 6}},
+					),
+				}),
+			},
 		},
 	}
 
 Outer:
-	for _, c := range cases.queries {
+	for i, c := range cases.queries {
 		ir, cr := createIdxChkReaders(cases.data)
 		querier := &blockQuerier{
 			index:      ir,
@@ -392,7 +465,7 @@ Outer:
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
-			require.Equal(t, eok, rok, "next")
+			require.Equal(t, eok, rok, "%d: next", i)
 
 			if !eok {
 				continue Outer
@@ -400,13 +473,13 @@ Outer:
 			sexp := c.exp.At()
 			sres := res.At()
 
-			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+			require.Equal(t, sexp.Labels(), sres.Labels(), "%d: labels", i)
 
 			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
 			smplRes, errRes := expandSeriesIterator(sres.Iterator())
 
-			require.Equal(t, errExp, errRes, "samples error")
-			require.Equal(t, smplExp, smplRes, "samples")
+			require.Equal(t, errExp, errRes, "%d: samples error", i)
+			require.Equal(t, smplExp, smplRes, "%d: samples", i)
 		}
 	}
 
