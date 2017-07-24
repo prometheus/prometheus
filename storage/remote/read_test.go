@@ -22,6 +22,115 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
+func TestValidateLabelsAndMetricName(t *testing.T) {
+	tests := []struct {
+		result      model.Matrix
+		expectedErr string
+		shouldPass  bool
+	}{
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":  "name",
+						"labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "",
+			shouldPass:  true,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":   "name",
+						"_labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "",
+			shouldPass:  true,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":   "name",
+						"@labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "Invalid label name: @labelName",
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":     "name",
+						"123labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "Invalid label name: 123labelName",
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__": "name",
+						"":         "labelValue",
+					},
+				},
+			},
+			expectedErr: "Invalid label name: ",
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":  "name",
+						"labelName": model.LabelValue([]byte{0xff}),
+					},
+				},
+			},
+			expectedErr: "Invalid label value: " + string([]byte{0xff}),
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__": "@invalid_name",
+					},
+				},
+			},
+			expectedErr: "Invalid metric name: @invalid_name",
+			shouldPass:  false,
+		},
+	}
+
+	for _, test := range tests {
+		err := validateLabelsAndMetricName(test.result)
+		if test.shouldPass {
+			if err != nil {
+				t.Fatalf("Test should pass, got unexpected error: %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			if err.Error() != test.expectedErr {
+				t.Fatalf("Unexpected error, got: %v, expected: %v", err, test.expectedErr)
+			}
+		} else {
+			t.Fatalf("Expected error, got none")
+		}
+	}
+}
+
 func mustNewLabelMatcher(mt metric.MatchType, name model.LabelName, val model.LabelValue) *metric.LabelMatcher {
 	m, err := metric.NewLabelMatcher(mt, name, val)
 	if err != nil {
