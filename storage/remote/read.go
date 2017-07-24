@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -77,6 +78,10 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	for _, ts := range res {
 		labels := labelPairsToLabels(ts.Labels)
 		removeLabels(&labels, added)
+		if err := validateLabelsAndMetricName(labels); err != nil {
+			return errSeriesSet{err: err}
+		}
+
 		series = append(series, &concreteSeries{
 			labels:  labels,
 			samples: ts.Samples,
@@ -202,6 +207,22 @@ func (c *concreteSeriesIterator) Next() bool {
 
 // Err implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Err() error {
+	return nil
+}
+
+// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
+func validateLabelsAndMetricName(ls labels.Labels) error {
+	for _, l := range ls {
+		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+			return fmt.Errorf("Invalid metric name: %v", l.Value)
+		}
+		if !model.LabelName(l.Name).IsValid() {
+			return fmt.Errorf("Invalid label name: %v", l.Name)
+		}
+		if !model.LabelValue(l.Value).IsValid() {
+			return fmt.Errorf("Invalid label value: %v", l.Value)
+		}
+	}
 	return nil
 }
 
