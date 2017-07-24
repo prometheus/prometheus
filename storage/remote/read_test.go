@@ -27,6 +27,128 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+func TestValidateLabelsAndMetricName(t *testing.T) {
+	tests := []struct {
+		result      model.Matrix
+		expectedErr string
+		shouldPass  bool
+	}{
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":  "name",
+						"labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "",
+			shouldPass:  true,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":   "name",
+						"_labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "",
+			shouldPass:  true,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":   "name",
+						"@labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "Invalid label name: @labelName",
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":     "name",
+						"123labelName": "labelValue",
+					},
+				},
+			},
+			expectedErr: "Invalid label name: 123labelName",
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__": "name",
+						"":         "labelValue",
+					},
+				},
+			},
+			expectedErr: "Invalid label name: ",
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__":  "name",
+						"labelName": model.LabelValue([]byte{0xff}),
+					},
+				},
+			},
+			expectedErr: "Invalid label value: " + string([]byte{0xff}),
+			shouldPass:  false,
+		},
+		{
+			result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{
+						"__name__": "@invalid_name",
+					},
+				},
+			},
+			expectedErr: "Invalid metric name: @invalid_name",
+			shouldPass:  false,
+		},
+	}
+
+	for _, test := range tests {
+		var err error
+		for _, ss := range test.result {
+			ls := make(labels.Labels, 0, len(ss.Metric))
+			for k, v := range ss.Metric {
+				ls = append(ls, labels.Label{
+					Name:  string(k),
+					Value: string(v),
+				})
+			}
+			err = validateLabelsAndMetricName(ls)
+			if err != nil {
+				break
+			}
+		}
+		if test.shouldPass {
+			if err != nil {
+				t.Fatalf("Test should pass, got unexpected error: %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			if err.Error() != test.expectedErr {
+				t.Fatalf("Unexpected error, got: %v, expected: %v", err, test.expectedErr)
+			}
+		} else {
+			t.Fatalf("Expected error, got none")
+		}
+	}
+}
+
 func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 	m, err := labels.NewMatcher(mt, name, val)
 	if err != nil {
