@@ -136,7 +136,7 @@ The sequence of label index sections is finalized by an offset table pointing to
 
 ### Postings
 
-Postings sections store monotinically increasing lists of series references that contain a given label pair associated with the list.  
+Postings sections store monotonically increasing lists of series references that contain a given label pair associated with the list.  
 
 ```
 ┌────────────────────┬────────────────────┐
