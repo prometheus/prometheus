@@ -172,7 +172,26 @@ var (
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
-		RemoteTimeout: model.Duration(30 * time.Second),
+		RemoteTimeout:      model.Duration(30 * time.Second),
+		QueueManagerConfig: DefaultQueueManagerConfig,
+	}
+
+	// DefaultQueueManagerConfig is the default remote queue configuration.
+	DefaultQueueManagerConfig = QueueManagerConfig{
+		// With a maximum of 1000 shards, assuming an average of 100ms remote write
+		// time and 100 samples per batch, we will be able to push 1M samples/s.
+		MaxShards:         1000,
+		MaxSamplesPerSend: 100,
+
+		// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
+		// 1000 shards, this will buffer 100M samples total.
+		QueueCapacity:     100 * 1000,
+		BatchSendDeadline: 5 * time.Second,
+
+		// Max number of times to retry a batch on recoverable errors.
+		MaxRetries: 10,
+		MinBackoff: 30 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
@@ -1391,7 +1410,8 @@ type RemoteWriteConfig struct {
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig   HTTPClientConfig   `yaml:",inline"`
+	QueueManagerConfig QueueManagerConfig `yaml:",inline"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1404,10 +1424,41 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+
+	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.HTTPClientConfig.validate(); err != nil {
+		return err
+	}
+
 	if err := checkOverflow(c.XXX, "remote_write"); err != nil {
 		return err
 	}
 	return nil
+}
+
+// QueueManagerConfig is the configuration for the queue used to write to remote
+// storage.
+type QueueManagerConfig struct {
+	// Number of samples to buffer per shard before we start dropping them.
+	QueueCapacity int
+
+	// Max number of shards, i.e. amount of concurrency.
+	MaxShards int
+
+	// Maximum number of samples per send.
+	MaxSamplesPerSend int
+
+	// Maximum time sample will wait in buffer.
+	BatchSendDeadline time.Duration
+
+	// Max number of times to retry a batch on recoverable errors.
+	MaxRetries int
+
+	// On recoverable errors, backoff exponentially.
+	MinBackoff time.Duration
+	MaxBackoff time.Duration
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
@@ -1430,6 +1481,14 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+
+	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
+	// We cannot make it a pointer as the parser panics for inlined pointer structs.
+	// Thus we just do its validation here.
+	if err := c.HTTPClientConfig.validate(); err != nil {
+		return err
+	}
+
 	if err := checkOverflow(c.XXX, "remote_read"); err != nil {
 		return err
 	}
