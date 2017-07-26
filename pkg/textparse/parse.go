@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strings"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -123,6 +124,12 @@ func (p *Parser) Metric(l *labels.Labels) string {
 		c := p.l.offsets[i+2] - p.l.mstart
 		d := p.l.offsets[i+3] - p.l.mstart
 
+		// Replacer causes allocations. Replace only when necessary.
+		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
+			*l = append(*l, labels.Label{Name: s[a:b], Value: replacer.Replace(s[c:d])})
+			continue
+		}
+
 		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
@@ -130,6 +137,14 @@ func (p *Parser) Metric(l *labels.Labels) string {
 
 	return s
 }
+
+var replacer = strings.NewReplacer(
+	`\"`, `"`,
+	`\\`, `\`,
+	`\n`, `
+`,
+	`\t`, `	`,
+)
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
