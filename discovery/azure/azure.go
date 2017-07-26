@@ -66,14 +66,16 @@ type Discovery struct {
 	cfg      *config.AzureSDConfig
 	interval time.Duration
 	port     int
+	logger   log.Logger
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *config.AzureSDConfig) *Discovery {
+func NewDiscovery(cfg *config.AzureSDConfig, logger log.Logger) *Discovery {
 	return &Discovery{
 		cfg:      cfg,
 		interval: time.Duration(cfg.RefreshInterval),
 		port:     cfg.Port,
+		logger:   logger,
 	}
 }
 
@@ -91,7 +93,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 		tg, err := d.refresh()
 		if err != nil {
-			log.Errorf("unable to refresh during Azure discovery: %s", err)
+			d.logger.Errorf("unable to refresh during Azure discovery: %s", err)
 		} else {
 			select {
 			case <-ctx.Done():
@@ -120,7 +122,7 @@ func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
 	if err != nil {
 		return azureClient{}, err
 	}
-	spt, err := azure.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, cfg.ClientSecret, azure.PublicCloud.ResourceManagerEndpoint)
+	spt, err := azure.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), azure.PublicCloud.ResourceManagerEndpoint)
 	if err != nil {
 		return azureClient{}, err
 	}
@@ -141,13 +143,13 @@ type azureResource struct {
 }
 
 // Create a new azureResource object from an ID string.
-func newAzureResourceFromID(id string) (azureResource, error) {
+func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error) {
 	// Resource IDs have the following format.
 	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME
 	s := strings.Split(id, "/")
 	if len(s) != 9 {
 		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource", id)
-		log.Error(err)
+		logger.Error(err)
 		return azureResource{}, err
 	}
 	return azureResource{
@@ -185,7 +187,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 		machines = append(machines, *result.Value...)
 	}
-	log.Debugf("Found %d virtual machines during Azure discovery.", len(machines))
+	d.logger.Debugf("Found %d virtual machines during Azure discovery.", len(machines))
 
 	// We have the slice of machines. Now turn them into targets.
 	// Doing them in go routines because the network interface calls are slow.
@@ -197,7 +199,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	ch := make(chan target, len(machines))
 	for i, vm := range machines {
 		go func(i int, vm compute.VirtualMachine) {
-			r, err := newAzureResourceFromID(*vm.ID)
+			r, err := newAzureResourceFromID(*vm.ID, d.logger)
 			if err != nil {
 				ch <- target{labelSet: nil, err: err}
 				return
@@ -219,14 +221,14 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nic := range *vm.Properties.NetworkProfile.NetworkInterfaces {
-				r, err := newAzureResourceFromID(*nic.ID)
+				r, err := newAzureResourceFromID(*nic.ID, d.logger)
 				if err != nil {
 					ch <- target{labelSet: nil, err: err}
 					return
 				}
 				networkInterface, err := client.nic.Get(r.ResourceGroup, r.Name, "")
 				if err != nil {
-					log.Errorf("Unable to get network interface %s: %s", r.Name, err)
+					d.logger.Errorf("Unable to get network interface %s: %s", r.Name, err)
 					ch <- target{labelSet: nil, err: err}
 					// Get out of this routine because we cannot continue without a network interface.
 					return
@@ -237,7 +239,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 				// yet support this. On deallocated machines, this value happens to be nil so it
 				// is a cheap and easy way to determine if a machine is allocated or not.
 				if networkInterface.Properties.Primary == nil {
-					log.Debugf("Virtual machine %s is deallocated. Skipping during Azure SD.", *vm.Name)
+					d.logger.Debugf("Virtual machine %s is deallocated. Skipping during Azure SD.", *vm.Name)
 					ch <- target{}
 					return
 				}
@@ -272,6 +274,6 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 	}
 
-	log.Debugf("Azure discovery completed.")
+	d.logger.Debugf("Azure discovery completed.")
 	return tg, nil
 }

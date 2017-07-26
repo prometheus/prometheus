@@ -1,3 +1,40 @@
+## 1.7.1 / 2017-06-12
+
+* [BUGFIX] Fix double prefix redirect.
+
+## 1.7.0 / 2017-06-06
+
+* [CHANGE] Compress remote storage requests and responses with unframed/raw snappy.
+* [CHANGE] Properly ellide secrets in config.
+* [FEATURE] Add OpenStack service discovery.
+* [FEATURE] Add ability to limit Kubernetes service discovery to certain namespaces.
+* [FEATURE] Add metric for discovered number of Alertmanagers.
+* [ENHANCEMENT] Print system information (uname) on start up.
+* [ENHANCEMENT] Show gaps in graphs on expression browser.
+* [ENHANCEMENT] Promtool linter checks counter naming and more reserved labels.
+* [BUGFIX] Fix broken Mesos discovery.
+* [BUGFIX] Fix redirect when external URL is set.
+* [BUGFIX] Fix mutation of active alert elements by notifier.
+* [BUGFIX] Fix HTTP error handling for remote write.
+* [BUGFIX] Fix builds for Solaris/Illumos.
+* [BUGFIX] Fix overflow checking in global config.
+* [BUGFIX] Fix log level reporting issue.
+* [BUGFIX] Fix ZooKeeper serverset discovery can become out-of-sync.
+
+## 1.6.3 / 2017-05-18
+
+* [BUGFIX] Fix disappearing Alertmanger targets in Alertmanager discovery.
+* [BUGFIX] Fix panic with remote_write on ARMv7.
+* [BUGFIX] Fix stacked graphs to adapt min/max values.
+
+## 1.6.2 / 2017-05-11
+
+* [BUGFIX] Fix potential memory leak in Kubernetes service discovery
+
+## 1.6.1 / 2017-04-19
+
+* [BUGFIX] Don't panic if storage has no FPs even after initial wait
+
 ## 1.6.0 / 2017-04-14
 
 * [CHANGE] Replaced the remote write implementations for various backends by a
@@ -62,6 +99,10 @@
 * [BUGFIX] Fix int64 overflow in timestamps in the HTTP API.
 * [BUGFIX] Fix deadlock in Zookeeper SD.
 * [BUGFIX] Fix fuzzy search problems in the web-UI auto-completion.
+
+## 1.5.3 / 2017-05-11
+
+* [BUGFIX] Fix potential memory leak in Kubernetes service discovery
 
 ## 1.5.2 / 2017-02-10
 

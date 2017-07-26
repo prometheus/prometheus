@@ -104,7 +104,7 @@ func (c *Client) Write(samples model.Samples) error {
 func (c *Client) Read(req *remote.ReadRequest) (*remote.ReadResponse, error) {
 	labelsToSeries := map[string]*remote.TimeSeries{}
 	for _, q := range req.Queries {
-		command, err := buildCommand(q)
+		command, err := c.buildCommand(q)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +134,7 @@ func (c *Client) Read(req *remote.ReadRequest) (*remote.ReadResponse, error) {
 	return &resp, nil
 }
 
-func buildCommand(q *remote.Query) (string, error) {
+func (c *Client) buildCommand(q *remote.Query) (string, error) {
 	matchers := make([]string, 0, len(q.Matchers))
 	// If we don't find a metric name matcher, query all metrics
 	// (InfluxDB measurements) by default.
@@ -143,9 +143,9 @@ func buildCommand(q *remote.Query) (string, error) {
 		if m.Name == model.MetricNameLabel {
 			switch m.Type {
 			case remote.MatchType_EQUAL:
-				from = fmt.Sprintf("FROM %q", m.Value)
+				from = fmt.Sprintf("FROM %q.%q", c.retentionPolicy, m.Value)
 			case remote.MatchType_REGEX_MATCH:
-				from = fmt.Sprintf("FROM /^%s$/", escapeSlashes(m.Value))
+				from = fmt.Sprintf("FROM %q./^%s$/", c.retentionPolicy, escapeSlashes(m.Value))
 			default:
 				// TODO: Figure out how to support these efficiently.
 				return "", fmt.Errorf("non-equal or regex-non-equal matchers are not supported on the metric name yet")

@@ -19,12 +19,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
 
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 )
@@ -62,7 +64,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{})
+	h := New(&Options{}, log.Base())
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &model.Alert{
@@ -149,7 +151,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{})
+	h := New(&Options{}, log.Base())
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -216,7 +218,7 @@ func TestCustomDo(t *testing.T) {
 				Body: ioutil.NopCloser(nil),
 			}, nil
 		},
-	})
+	}, log.Base())
 
 	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
 
@@ -238,7 +240,7 @@ func TestExternalLabels(t *testing.T) {
 				Replacement:  "c",
 			},
 		},
-	})
+	}, log.Base())
 
 	// This alert should get the external label attached.
 	h.Send(&model.Alert{
@@ -292,7 +294,7 @@ func TestHandlerRelabel(t *testing.T) {
 				Replacement:  "renamed",
 			},
 		},
-	})
+	}, log.Base())
 
 	// This alert should be dropped due to the configuration
 	h.Send(&model.Alert{
@@ -346,7 +348,9 @@ func TestHandlerQueueing(t *testing.T) {
 
 	h := New(&Options{
 		QueueCapacity: 3 * maxBatchSize,
-	})
+	},
+		log.Base(),
+	)
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -415,6 +419,37 @@ type alertmanagerMock struct {
 	urlf func() string
 }
 
-func (a alertmanagerMock) url() string {
-	return a.urlf()
+func (a alertmanagerMock) url() *url.URL {
+	u, err := url.Parse(a.urlf())
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+func TestLabelSetNotReused(t *testing.T) {
+	tg := makeInputTargetGroup()
+	_, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(tg, makeInputTargetGroup()) {
+		t.Fatal("Target modified during alertmanager extraction")
+	}
+}
+
+func makeInputTargetGroup() *config.TargetGroup {
+	return &config.TargetGroup{
+		Targets: []model.LabelSet{
+			model.LabelSet{
+				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),
+				model.LabelName("notcommon1"): model.LabelValue("label"),
+			},
+		},
+		Labels: model.LabelSet{
+			model.LabelName("common"): model.LabelValue("label"),
+		},
+		Source: "testsource",
+	}
 }

@@ -266,9 +266,6 @@ func (app *countingAppender) Append(s *model.Sample) error {
 // Returns a nil label set if the target is dropped during relabeling.
 func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig model.LabelSet, err error) {
 	lset = lset.Clone()
-	if _, ok := lset[model.AddressLabel]; !ok {
-		return nil, nil, fmt.Errorf("no address")
-	}
 	// Copy labels into the labelset for the target if they are not
 	// set already. Apply the labelsets in order of decreasing precedence.
 	scrapeLabels := model.LabelSet{
@@ -294,6 +291,9 @@ func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig mo
 	// Check if the target was dropped.
 	if lset == nil {
 		return nil, nil, nil
+	}
+	if _, ok := lset[model.AddressLabel]; !ok {
+		return nil, nil, fmt.Errorf("no address")
 	}
 
 	// addPort checks whether we should add a default port to the address.
@@ -327,9 +327,14 @@ func populateLabels(lset model.LabelSet, cfg *config.ScrapeConfig) (res, orig mo
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
-	for ln := range lset {
+	for ln, lv := range lset {
 		if strings.HasPrefix(string(ln), model.MetaLabelPrefix) {
 			delete(lset, ln)
+			continue
+		}
+		// Check label values are valid, drop the target if not.
+		if !lv.IsValid() {
+			return nil, nil, fmt.Errorf("invalid label value for %q: %q", ln, lv)
 		}
 	}
 

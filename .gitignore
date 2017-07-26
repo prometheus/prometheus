@@ -13,6 +13,7 @@
 .*.swo
 *.iml
 .idea
+tags
 
 /prometheus
 /promtool
@@ -25,3 +26,5 @@ benchmark.txt
 !/circle.yml
 !/.travis.yml
 !/.promu.yml
+/documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
+/documentation/examples/remote_storage/example_write_adapter/example_writer_adapter

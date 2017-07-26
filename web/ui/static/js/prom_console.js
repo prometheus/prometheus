@@ -311,6 +311,9 @@ PromConsole.graphDefaults = {
   yAxisFormatter: PromConsole.NumberFormatter.humanize,
   // Number formatter for y values hover detail.
   yHoverFormatter: PromConsole.NumberFormatter.humanizeExact,
+  // Color scheme to be used by the plots. Can be either a list of hex color
+  // codes or one of the color scheme names supported by Rickshaw.
+  colorScheme: null,
 };
 
 PromConsole.Graph = function(params) {
@@ -420,7 +423,7 @@ PromConsole.Graph.prototype._escapeHTML = function(string) {
 
 PromConsole.Graph.prototype._render = function(data) {
   var self = this;
-  var palette = new Rickshaw.Color.Palette();
+  var palette = new Rickshaw.Color.Palette({scheme: this.params.colorScheme});
   var series = [];
 
   // This will be used on resize.
@@ -447,13 +450,30 @@ PromConsole.Graph.prototype._render = function(data) {
 
   // Get the data into the right format.
   var seriesLen = 0;
+
   for (var e = 0; e < data.length; e++) {
     for (var i = 0; i < data[e].data.result.length; i++) {
-      series[seriesLen++] = {
+      series[seriesLen] = {
             data: data[e].data.result[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
             color: palette.color(),
             name: self._escapeHTML(nameFuncs[e](data[e].data.result[i].metric)),
       };
+			// Insert nulls for all missing steps.
+			var newSeries = [];
+			var pos = 0;
+			var start = self.params.endTime - self.params.duration;
+      var step = self.params.duration / this.graphTd.offsetWidth;
+			for (var t = start; t <= self.params.endTime; t += step) {
+				// Allow for floating point inaccuracy.
+				if (series[seriesLen].data.length > pos && series[seriesLen].data[pos].x < t + step / 100) {
+					newSeries.push(series[seriesLen].data[pos]);
+					pos++;
+				} else {
+					newSeries.push({x: t, y: null});
+				}
+			}
+			series[seriesLen].data = newSeries;
+      seriesLen++;
     }
   }
   this._clearGraph();
@@ -490,6 +510,9 @@ PromConsole.Graph.prototype._render = function(data) {
         }
       },
       yFormatter: function(y) {
+        if (y === null) {
+          return "";
+        }
         return this.params.yHoverFormatter(y) + this.params.yUnits;
       }.bind(this)
   });

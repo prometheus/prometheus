@@ -396,6 +396,13 @@ var tests = []struct {
 	}, {
 		input: `]`, fail: true,
 	},
+	// Test encoding issues.
+	{
+		input: "\"\xff\"", fail: true,
+	},
+	{
+		input: "`\xff`", fail: true,
+	},
 	// Test series description.
 	{
 		input: `{} _ 1 x .3`,

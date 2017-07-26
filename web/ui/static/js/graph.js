@@ -364,7 +364,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
 
   var startTime = new Date().getTime();
   var rangeSeconds = self.parseDuration(self.rangeInput.val());
-  var resolution = self.queryForm.find("input[name=step_input]").val() || Math.max(Math.floor(rangeSeconds / 250), 1);
+  var resolution = parseInt(self.queryForm.find("input[name=step_input]").val()) || Math.max(Math.floor(rangeSeconds / 250), 1);
   var endDate = self.getEndDate() / 1000;
 
   if (self.queryXhr) {
@@ -386,6 +386,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
     url = PATH_PREFIX + "/api/v1/query";
     success = function(json, textStatus) { self.handleConsoleResponse(json, textStatus); };
   }
+  self.params = params;
 
   self.queryXhr = $.ajax({
       method: self.queryForm.attr("method"),
@@ -415,7 +416,14 @@ Prometheus.Graph.prototype.submitQuery = function() {
           return;
         }
         var duration = new Date().getTime() - startTime;
-        var totalTimeSeries = xhr.responseJSON.data.result.length;
+        var totalTimeSeries = 0;
+        if (xhr.responseJSON.data !== undefined) {
+          if (xhr.responseJSON.data.resultType === "scalar") {
+            totalTimeSeries = 1;
+          } else {
+            totalTimeSeries = xhr.responseJSON.data.result.length;
+          }
+        }
         self.evalStats.html("Load time: " + duration + "ms <br /> Resolution: " + resolution + "s <br />" + "Total time series: " + totalTimeSeries);
         self.spinner.hide();
       }
@@ -511,7 +519,21 @@ Prometheus.Graph.prototype.transformData = function(json) {
       color: palette.color()
     };
   });
-  Rickshaw.Series.zeroFill(data);
+  data.forEach(function(s) {
+    // Insert nulls for all missing steps.
+    var newSeries = [];
+    var pos = 0;
+    for (var t = self.params.start; t <= self.params.end; t += self.params.step) {
+      // Allow for floating point inaccuracy.
+      if (s.data.length > pos && s.data[pos].x < t + self.params.step / 100) {
+        newSeries.push(s.data[pos]);
+        pos++;
+      } else {
+        newSeries.push({x: t, y: null});
+      }
+    }
+    s.data = newSeries;
+  });
   return data;
 };
 
@@ -557,24 +579,40 @@ Prometheus.Graph.prototype.updateGraph = function() {
   });
 
   // Find and set graph's max/min
-  var min = Infinity;
-  var max = -Infinity;
-  self.data.forEach(function(timeSeries) {
-    timeSeries.data.forEach(function(dataPoint) {
+  if (self.isStacked() === true) {
+    // When stacked is toggled
+    var max = 0;
+    self.data.forEach(function(timeSeries) {
+      var currSeriesMax = 0;
+      timeSeries.data.forEach(function(dataPoint) {
+        if (dataPoint.y > currSeriesMax && dataPoint.y != null) {
+          currSeriesMax = dataPoint.y;
+        }
+      });
+      max += currSeriesMax;
+    });
+    self.rickshawGraph.max = max*1.05;
+    self.rickshawGraph.min = 0;
+  } else {
+    var min = Infinity;
+    var max = -Infinity;
+    self.data.forEach(function(timeSeries) {
+      timeSeries.data.forEach(function(dataPoint) {
         if (dataPoint.y < min && dataPoint.y != null) {
           min = dataPoint.y;
         }
         if (dataPoint.y > max && dataPoint.y != null) {
           max = dataPoint.y;
         }
+      });
     });
-  });
-  if (min === max) {
-    self.rickshawGraph.max = max + 1;
-    self.rickshawGraph.min = min - 1;
-  } else {
-    self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
-    self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+    if (min === max) {
+      self.rickshawGraph.max = max + 1;
+      self.rickshawGraph.min = min - 1;
+    } else {
+      self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
+      self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+    }
   }
 
   var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.rickshawGraph });
@@ -889,7 +927,7 @@ function redirectToMigratedURL() {
     });
   });
   var query = $.param(queryObject);
-  window.location = "/graph?" + query;
+  window.location = PATH_PREFIX + "/graph?" + query;
 }
 
 $(init);
