@@ -2,15 +2,7 @@ package kingpin
 
 import (
 	"fmt"
-	"os"
-	"regexp"
 	"strings"
-)
-
-var (
-	envVarValuesSeparator = "\r?\n"
-	envVarValuesTrimmer   = regexp.MustCompile(envVarValuesSeparator + "$")
-	envVarValuesSplitter  = regexp.MustCompile(envVarValuesSeparator)
 )
 
 type flagGroup struct {
@@ -61,7 +53,7 @@ func (f *flagGroup) init(defaultEnvarPrefix string) error {
 }
 
 func (f *flagGroup) checkDuplicates() error {
-	seenShort := map[byte]bool{}
+	seenShort := map[rune]bool{}
 	seenLong := map[string]bool{}
 	for _, flag := range f.flagOrder {
 		if flag.shorthand != 0 {
@@ -97,11 +89,14 @@ loop:
 
 			name := token.Value
 			if token.Type == TokenLong {
-				if strings.HasPrefix(name, "no-") {
-					name = name[3:]
-					invert = true
-				}
 				flag, ok = f.long[name]
+				if !ok {
+					if strings.HasPrefix(name, "no-") {
+						name = name[3:]
+						invert = true
+					}
+					flag, ok = f.long[name]
+				}
 				if !ok {
 					return nil, fmt.Errorf("unknown long flag '%s'", flagToken)
 				}
@@ -145,26 +140,15 @@ loop:
 	return nil, nil
 }
 
-func (f *flagGroup) visibleFlags() int {
-	count := 0
-	for _, flag := range f.long {
-		if !flag.hidden {
-			count++
-		}
-	}
-	return count
-}
-
 // FlagClause is a fluid interface used to build flags.
 type FlagClause struct {
 	parserMixin
 	actionMixin
 	completionsMixin
+	envarMixin
 	name          string
-	shorthand     byte
+	shorthand     rune
 	help          string
-	envar         string
-	noEnvar       bool
 	defaultValues []string
 	placeholder   string
 	hidden        bool
@@ -179,21 +163,17 @@ func newFlag(name, help string) *FlagClause {
 }
 
 func (f *FlagClause) setDefault() error {
-	if !f.noEnvar && f.envar != "" {
-		if envarValue := os.Getenv(f.envar); envarValue != "" {
-			if v, ok := f.value.(repeatableFlag); !ok || !v.IsCumulative() {
-				// Use the value as-is
-				return f.value.Set(envarValue)
-			} else {
-				// Split by new line to extract multiple values, if any.
-				trimmed := envVarValuesTrimmer.ReplaceAllString(envarValue, "")
-				for _, value := range envVarValuesSplitter.Split(trimmed, -1) {
-					if err := f.value.Set(value); err != nil {
-						return err
-					}
+	if f.HasEnvarValue() {
+		if v, ok := f.value.(repeatableFlag); !ok || !v.IsCumulative() {
+			// Use the value as-is
+			return f.value.Set(f.GetEnvarValue())
+		} else {
+			for _, value := range f.GetSplitEnvarValue() {
+				if err := f.value.Set(value); err != nil {
+					return err
 				}
-				return nil
 			}
+			return nil
 		}
 	}
 
@@ -211,8 +191,7 @@ func (f *FlagClause) setDefault() error {
 
 func (f *FlagClause) needsValue() bool {
 	haveDefault := len(f.defaultValues) > 0
-	haveEnvar := !f.noEnvar && f.envar != "" && os.Getenv(f.envar) != ""
-	return f.required && !(haveDefault || haveEnvar)
+	return f.required && !(haveDefault || f.HasEnvarValue())
 }
 
 func (f *FlagClause) init() error {
@@ -316,7 +295,7 @@ func (f *FlagClause) Required() *FlagClause {
 }
 
 // Short sets the short flag name.
-func (f *FlagClause) Short(name byte) *FlagClause {
+func (f *FlagClause) Short(name rune) *FlagClause {
 	f.shorthand = name
 	return f
 }
