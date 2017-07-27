@@ -96,6 +96,7 @@ type ArgModel struct {
 	Name     string
 	Help     string
 	Default  []string
+	Envar    string
 	Required bool
 	Value    Value
 }
@@ -170,6 +171,7 @@ func (a *ArgClause) Model() *ArgModel {
 		Name:     a.name,
 		Help:     a.help,
 		Default:  a.defaultValues,
+		Envar:    a.envar,
 		Required: a.required,
 		Value:    a.value,
 	}

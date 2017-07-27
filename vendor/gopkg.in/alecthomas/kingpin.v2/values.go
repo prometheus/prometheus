@@ -332,6 +332,10 @@ func (u *urlListValue) String() string {
 	return strings.Join(out, ",")
 }
 
+func (u *urlListValue) IsCumulative() bool {
+	return true
+}
+
 // A flag whose value must be in a set of options.
 type enumValue struct {
 	value   *string

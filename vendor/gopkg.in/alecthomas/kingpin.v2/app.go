@@ -13,7 +13,7 @@ var (
 )
 
 var (
-	envarTransformRegexp = regexp.MustCompile(`[^a-zA-Z_]+`)
+	envarTransformRegexp = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
 )
 
 type ApplicationValidator func(*Application) error
@@ -29,7 +29,8 @@ type Application struct {
 
 	author         string
 	version        string
-	writer         io.Writer // Destination for usage and errors.
+	errorWriter    io.Writer // Destination for errors.
+	usageWriter    io.Writer // Destination for usage
 	usageTemplate  string
 	validator      ApplicationValidator
 	terminate      func(status int) // See Terminate()
@@ -50,7 +51,8 @@ func New(name, help string) *Application {
 	a := &Application{
 		Name:          name,
 		Help:          help,
-		writer:        os.Stderr,
+		errorWriter:   os.Stderr, // Left for backwards compatibility purposes.
+		usageWriter:   os.Stderr,
 		usageTemplate: DefaultUsageTemplate,
 		terminate:     os.Exit,
 	}
@@ -124,9 +126,23 @@ func (a *Application) Terminate(terminate func(int)) *Application {
 	return a
 }
 
-// Specify the writer to use for usage and errors. Defaults to os.Stderr.
+// Writer specifies the writer to use for usage and errors. Defaults to os.Stderr.
+// DEPRECATED: See ErrorWriter and UsageWriter.
 func (a *Application) Writer(w io.Writer) *Application {
-	a.writer = w
+	a.errorWriter = w
+	a.usageWriter = w
+	return a
+}
+
+// ErrorWriter sets the io.Writer to use for errors.
+func (a *Application) ErrorWriter(w io.Writer) *Application {
+	a.errorWriter = w
+	return a
+}
+
+// UsageWriter sets the io.Writer to use for errors.
+func (a *Application) UsageWriter(w io.Writer) *Application {
+	a.usageWriter = w
 	return a
 }
 
@@ -218,45 +234,28 @@ func (a *Application) writeUsage(context *ParseContext, err error) {
 	if err := a.UsageForContext(context); err != nil {
 		panic(err)
 	}
-	a.terminate(1)
+	if err != nil {
+		a.terminate(1)
+	} else {
+		a.terminate(0)
+	}
 }
 
 func (a *Application) maybeHelp(context *ParseContext) {
 	for _, element := range context.Elements {
 		if flag, ok := element.Clause.(*FlagClause); ok && flag == a.HelpFlag {
+			// Re-parse the command-line ignoring defaults, so that help works correctly.
+			context, _ = a.parseContext(true, context.rawArgs)
 			a.writeUsage(context, nil)
 		}
 	}
-}
-
-// findCommandFromArgs finds a command (if any) from the given command line arguments.
-func (a *Application) findCommandFromArgs(args []string) (command string, err error) {
-	if err := a.init(); err != nil {
-		return "", err
-	}
-	context := tokenize(args, false)
-	if _, err := a.parse(context); err != nil {
-		return "", err
-	}
-	return a.findCommandFromContext(context), nil
-}
-
-// findCommandFromContext finds a command (if any) from a parsed context.
-func (a *Application) findCommandFromContext(context *ParseContext) string {
-	commands := []string{}
-	for _, element := range context.Elements {
-		if c, ok := element.Clause.(*CmdClause); ok {
-			commands = append(commands, c.name)
-		}
-	}
-	return strings.Join(commands, " ")
 }
 
 // Version adds a --version flag for displaying the application version.
 func (a *Application) Version(version string) *Application {
 	a.version = version
 	a.VersionFlag = a.Flag("version", "Show application version.").PreAction(func(*ParseContext) error {
-		fmt.Fprintln(a.writer, version)
+		fmt.Fprintln(a.usageWriter, version)
 		a.terminate(0)
 		return nil
 	})
@@ -264,6 +263,7 @@ func (a *Application) Version(version string) *Application {
 	return a
 }
 
+// Author sets the author output by some help templates.
 func (a *Application) Author(author string) *Application {
 	a.author = author
 	return a
@@ -424,11 +424,8 @@ func (a *Application) setDefaults(context *ParseContext) error {
 
 	for _, arg := range context.arguments.args {
 		if argElements[arg.name] == nil {
-			// Set defaults, if any.
-			for _, defaultValue := range arg.defaultValues {
-				if err := arg.value.Set(defaultValue); err != nil {
-					return err
-				}
+			if err := arg.setDefault(); err != nil {
+				return err
 			}
 		}
 	}
@@ -463,7 +460,7 @@ func (a *Application) validateRequired(context *ParseContext) error {
 
 	for _, arg := range context.arguments.args {
 		if argElements[arg.name] == nil {
-			if arg.required {
+			if arg.needsValue() {
 				return fmt.Errorf("required argument '%s' not provided", arg.name)
 			}
 		}
@@ -564,7 +561,7 @@ func (a *Application) applyActions(context *ParseContext) error {
 
 // Errorf prints an error message to w in the format "<appname>: error: <message>".
 func (a *Application) Errorf(format string, args ...interface{}) {
-	fmt.Fprintf(a.writer, a.Name+": error: "+format+"\n", args...)
+	fmt.Fprintf(a.errorWriter, a.Name+": error: "+format+"\n", args...)
 }
 
 // Fatalf writes a formatted error to w then terminates with exit status 1.
@@ -577,6 +574,8 @@ func (a *Application) Fatalf(format string, args ...interface{}) {
 // exits with a non-zero status.
 func (a *Application) FatalUsage(format string, args ...interface{}) {
 	a.Errorf(format, args...)
+	// Force usage to go to error output.
+	a.usageWriter = a.errorWriter
 	a.Usage([]string{})
 	a.terminate(1)
 }
@@ -650,15 +649,15 @@ func (a *Application) completionOptions(context *ParseContext) []string {
 		options, flagMatched, valueMatched := target.FlagCompletion(flagName, flagValue)
 		if valueMatched {
 			// Value Matched. Show cmdCompletions
-			return target.CmdCompletion()
+			return target.CmdCompletion(context)
 		}
 
 		// Add top level flags if we're not at the top level and no match was found.
-		if context.SelectedCommand != nil && flagMatched == false {
+		if context.SelectedCommand != nil && !flagMatched {
 			topOptions, topFlagMatched, topValueMatched := a.FlagCompletion(flagName, flagValue)
 			if topValueMatched {
 				// Value Matched. Back to cmdCompletions
-				return target.CmdCompletion()
+				return target.CmdCompletion(context)
 			}
 
 			if topFlagMatched {
@@ -670,10 +669,10 @@ func (a *Application) completionOptions(context *ParseContext) []string {
 			}
 		}
 		return options
-	} else {
-		// Perform completion for sub commands.
-		return target.CmdCompletion()
 	}
+
+	// Perform completion for sub commands and arguments.
+	return target.CmdCompletion(context)
 }
 
 func (a *Application) generateBashCompletion(context *ParseContext) {
