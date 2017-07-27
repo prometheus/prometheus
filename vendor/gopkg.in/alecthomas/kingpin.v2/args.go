@@ -1,6 +1,8 @@
 package kingpin
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type argGroup struct {
 	args []*ArgClause
@@ -64,6 +66,8 @@ func (a *argGroup) init() error {
 type ArgClause struct {
 	actionMixin
 	parserMixin
+	completionsMixin
+	envarMixin
 	name          string
 	help          string
 	defaultValues []string
@@ -76,6 +80,37 @@ func newArg(name, help string) *ArgClause {
 		help: help,
 	}
 	return a
+}
+
+func (a *ArgClause) setDefault() error {
+	if a.HasEnvarValue() {
+		if v, ok := a.value.(remainderArg); !ok || !v.IsCumulative() {
+			// Use the value as-is
+			return a.value.Set(a.GetEnvarValue())
+		}
+		for _, value := range a.GetSplitEnvarValue() {
+			if err := a.value.Set(value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if len(a.defaultValues) > 0 {
+		for _, defaultValue := range a.defaultValues {
+			if err := a.value.Set(defaultValue); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return nil
+}
+
+func (a *ArgClause) needsValue() bool {
+	haveDefault := len(a.defaultValues) > 0
+	return a.required && !(haveDefault || a.HasEnvarValue())
 }
 
 func (a *ArgClause) consumesRemainder() bool {
@@ -97,6 +132,23 @@ func (a *ArgClause) Default(values ...string) *ArgClause {
 	return a
 }
 
+// Envar overrides the default value(s) for a flag from an environment variable,
+// if it is set. Several default values can be provided by using new lines to
+// separate them.
+func (a *ArgClause) Envar(name string) *ArgClause {
+	a.envar = name
+	a.noEnvar = false
+	return a
+}
+
+// NoEnvar forces environment variable defaults to be disabled for this flag.
+// Most useful in conjunction with app.DefaultEnvars().
+func (a *ArgClause) NoEnvar() *ArgClause {
+	a.envar = ""
+	a.noEnvar = true
+	return a
+}
+
 func (a *ArgClause) Action(action Action) *ArgClause {
 	a.addAction(action)
 	return a
@@ -104,6 +156,20 @@ func (a *ArgClause) Action(action Action) *ArgClause {
 
 func (a *ArgClause) PreAction(action Action) *ArgClause {
 	a.addPreAction(action)
+	return a
+}
+
+// HintAction registers a HintAction (function) for the arg to provide completions
+func (a *ArgClause) HintAction(action HintAction) *ArgClause {
+	a.addHintAction(action)
+	return a
+}
+
+// HintOptions registers any number of options for the flag to provide completions
+func (a *ArgClause) HintOptions(options ...string) *ArgClause {
+	a.addHintAction(func() []string {
+		return options
+	})
 	return a
 }
 

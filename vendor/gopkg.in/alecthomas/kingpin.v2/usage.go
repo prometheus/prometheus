@@ -113,7 +113,7 @@ func (a *Application) UsageForContext(context *ParseContext) error {
 
 // UsageForContextWithTemplate is the base usage function. You generally don't need to use this.
 func (a *Application) UsageForContextWithTemplate(context *ParseContext, indent int, tmpl string) error {
-	width := guessWidth(a.writer)
+	width := guessWidth(a.usageWriter)
 	funcs := template.FuncMap{
 		"Indent": func(level int) string {
 			return strings.Repeat(" ", level*indent)
@@ -121,7 +121,7 @@ func (a *Application) UsageForContextWithTemplate(context *ParseContext, indent 
 		"Wrap": func(indent int, s string) string {
 			buf := bytes.NewBuffer(nil)
 			indentText := strings.Repeat(" ", indent)
-			doc.ToText(buf, s, indentText, indentText, width-indent)
+			doc.ToText(buf, s, indentText, "  "+indentText, width-indent)
 			return buf.String()
 		},
 		"FormatFlag": formatFlag,
@@ -144,7 +144,7 @@ func (a *Application) UsageForContextWithTemplate(context *ParseContext, indent 
 		"RequiredFlags": func(f []*FlagModel) []*FlagModel {
 			requiredFlags := []*FlagModel{}
 			for _, flag := range f {
-				if flag.Required == true {
+				if flag.Required {
 					requiredFlags = append(requiredFlags, flag)
 				}
 			}
@@ -153,7 +153,7 @@ func (a *Application) UsageForContextWithTemplate(context *ParseContext, indent 
 		"OptionalFlags": func(f []*FlagModel) []*FlagModel {
 			optionalFlags := []*FlagModel{}
 			for _, flag := range f {
-				if flag.Required == false {
+				if !flag.Required {
 					optionalFlags = append(optionalFlags, flag)
 				}
 			}
@@ -207,5 +207,5 @@ func (a *Application) UsageForContextWithTemplate(context *ParseContext, indent 
 			ArgGroupModel:   context.arguments.Model(),
 		},
 	}
-	return t.Execute(a.writer, ctx)
+	return t.Execute(a.usageWriter, ctx)
 }
