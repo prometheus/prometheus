@@ -47,10 +47,12 @@ file for use with `file_sd`.
 
 The general principle with SD is to extract all the potentially useful
 information we can out of the SD, and let the user choose what they need of it
-using relabelling. This information is generally termed metadata.
+using
+[relabelling](https://prometheus.io/docs/operating/configuration/#<relabel_config>).
+This information is generally termed metadata.
 
 Metadata is exposed as a set of key/value pairs (labels) per target. The keys
-are prefixed with `__meta_sdname_`, and there should also be an `__address__`
+are prefixed with `__meta_<sdname>_<key>`, and there should also be an `__address__`
 label with the host:port of the target (preferably an IP address to avoid DNS
 lookups). No other labelnames should be exposed.
 
@@ -79,7 +81,7 @@ combined.
 
 For machine-like SDs (OpenStack, EC2, Kubernetes to some extent) there may
 be multiple network interfaces for a target. Thus far reporting the details
-of only the first network interface has sufficed.
+of only the first/primary network interface has sufficed.
 
 
 ### Other implementation considerations
