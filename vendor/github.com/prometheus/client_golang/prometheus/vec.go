@@ -20,12 +20,12 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// MetricVec is a Collector to bundle metrics of the same name that
-// differ in their label values. MetricVec is usually not used directly but as a
-// building block for implementations of vectors of a given metric
-// type. GaugeVec, CounterVec, SummaryVec, and UntypedVec are examples already
-// provided in this package.
-type MetricVec struct {
+// metricVec is a Collector to bundle metrics of the same name that differ in
+// their label values. metricVec is not used directly (and therefore
+// unexported). It is used as a building block for implementations of vectors of
+// a given metric type, like GaugeVec, CounterVec, SummaryVec, HistogramVec, and
+// UntypedVec.
+type metricVec struct {
 	mtx      sync.RWMutex // Protects the children.
 	children map[uint64][]metricWithLabelValues
 	desc     *Desc
@@ -35,10 +35,9 @@ type MetricVec struct {
 	hashAddByte func(h uint64, b byte) uint64
 }
 
-// newMetricVec returns an initialized MetricVec. The concrete value is
-// returned for embedding into another struct.
-func newMetricVec(desc *Desc, newMetric func(lvs ...string) Metric) *MetricVec {
-	return &MetricVec{
+// newMetricVec returns an initialized metricVec.
+func newMetricVec(desc *Desc, newMetric func(lvs ...string) Metric) *metricVec {
+	return &metricVec{
 		children:    map[uint64][]metricWithLabelValues{},
 		desc:        desc,
 		newMetric:   newMetric,
@@ -56,12 +55,12 @@ type metricWithLabelValues struct {
 
 // Describe implements Collector. The length of the returned slice
 // is always one.
-func (m *MetricVec) Describe(ch chan<- *Desc) {
+func (m *metricVec) Describe(ch chan<- *Desc) {
 	ch <- m.desc
 }
 
 // Collect implements Collector.
-func (m *MetricVec) Collect(ch chan<- Metric) {
+func (m *metricVec) Collect(ch chan<- Metric) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
@@ -72,31 +71,7 @@ func (m *MetricVec) Collect(ch chan<- Metric) {
 	}
 }
 
-// GetMetricWithLabelValues returns the Metric for the given slice of label
-// values (same order as the VariableLabels in Desc). If that combination of
-// label values is accessed for the first time, a new Metric is created.
-//
-// It is possible to call this method without using the returned Metric to only
-// create the new Metric but leave it at its start value (e.g. a Summary or
-// Histogram without any observations). See also the SummaryVec example.
-//
-// Keeping the Metric for later use is possible (and should be considered if
-// performance is critical), but keep in mind that Reset, DeleteLabelValues and
-// Delete can be used to delete the Metric from the MetricVec. In that case, the
-// Metric will still exist, but it will not be exported anymore, even if a
-// Metric with the same label values is created later. See also the CounterVec
-// example.
-//
-// An error is returned if the number of label values is not the same as the
-// number of VariableLabels in Desc.
-//
-// Note that for more than one label value, this method is prone to mistakes
-// caused by an incorrect order of arguments. Consider GetMetricWith(Labels) as
-// an alternative to avoid that type of mistake. For higher label numbers, the
-// latter has a much more readable (albeit more verbose) syntax, but it comes
-// with a performance overhead (for creating and processing the Labels map).
-// See also the GaugeVec example.
-func (m *MetricVec) GetMetricWithLabelValues(lvs ...string) (Metric, error) {
+func (m *metricVec) getMetricWithLabelValues(lvs ...string) (Metric, error) {
 	h, err := m.hashLabelValues(lvs)
 	if err != nil {
 		return nil, err
@@ -105,19 +80,7 @@ func (m *MetricVec) GetMetricWithLabelValues(lvs ...string) (Metric, error) {
 	return m.getOrCreateMetricWithLabelValues(h, lvs), nil
 }
 
-// GetMetricWith returns the Metric for the given Labels map (the label names
-// must match those of the VariableLabels in Desc). If that label map is
-// accessed for the first time, a new Metric is created. Implications of
-// creating a Metric without using it and keeping the Metric for later use are
-// the same as for GetMetricWithLabelValues.
-//
-// An error is returned if the number and names of the Labels are inconsistent
-// with those of the VariableLabels in Desc.
-//
-// This method is used for the same purpose as
-// GetMetricWithLabelValues(...string). See there for pros and cons of the two
-// methods.
-func (m *MetricVec) GetMetricWith(labels Labels) (Metric, error) {
+func (m *metricVec) getMetricWith(labels Labels) (Metric, error) {
 	h, err := m.hashLabels(labels)
 	if err != nil {
 		return nil, err
@@ -126,22 +89,16 @@ func (m *MetricVec) GetMetricWith(labels Labels) (Metric, error) {
 	return m.getOrCreateMetricWithLabels(h, labels), nil
 }
 
-// WithLabelValues works as GetMetricWithLabelValues, but panics if an error
-// occurs. The method allows neat syntax like:
-//     httpReqs.WithLabelValues("404", "POST").Inc()
-func (m *MetricVec) WithLabelValues(lvs ...string) Metric {
-	metric, err := m.GetMetricWithLabelValues(lvs...)
+func (m *metricVec) withLabelValues(lvs ...string) Metric {
+	metric, err := m.getMetricWithLabelValues(lvs...)
 	if err != nil {
 		panic(err)
 	}
 	return metric
 }
 
-// With works as GetMetricWith, but panics if an error occurs. The method allows
-// neat syntax like:
-//     httpReqs.With(Labels{"status":"404", "method":"POST"}).Inc()
-func (m *MetricVec) With(labels Labels) Metric {
-	metric, err := m.GetMetricWith(labels)
+func (m *metricVec) with(labels Labels) Metric {
+	metric, err := m.getMetricWith(labels)
 	if err != nil {
 		panic(err)
 	}
@@ -153,8 +110,8 @@ func (m *MetricVec) With(labels Labels) Metric {
 // returns true if a metric was deleted.
 //
 // It is not an error if the number of label values is not the same as the
-// number of VariableLabels in Desc.  However, such inconsistent label count can
-// never match an actual Metric, so the method will always return false in that
+// number of VariableLabels in Desc. However, such inconsistent label count can
+// never match an actual metric, so the method will always return false in that
 // case.
 //
 // Note that for more than one label value, this method is prone to mistakes
@@ -163,7 +120,7 @@ func (m *MetricVec) With(labels Labels) Metric {
 // latter has a much more readable (albeit more verbose) syntax, but it comes
 // with a performance overhead (for creating and processing the Labels map).
 // See also the CounterVec example.
-func (m *MetricVec) DeleteLabelValues(lvs ...string) bool {
+func (m *metricVec) DeleteLabelValues(lvs ...string) bool {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -178,13 +135,13 @@ func (m *MetricVec) DeleteLabelValues(lvs ...string) bool {
 // passed in as labels. It returns true if a metric was deleted.
 //
 // It is not an error if the number and names of the Labels are inconsistent
-// with those of the VariableLabels in the Desc of the MetricVec. However, such
-// inconsistent Labels can never match an actual Metric, so the method will
-// always return false in that case.
+// with those of the VariableLabels in Desc. However, such inconsistent Labels
+// can never match an actual metric, so the method will always return false in
+// that case.
 //
 // This method is used for the same purpose as DeleteLabelValues(...string). See
 // there for pros and cons of the two methods.
-func (m *MetricVec) Delete(labels Labels) bool {
+func (m *metricVec) Delete(labels Labels) bool {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -199,7 +156,7 @@ func (m *MetricVec) Delete(labels Labels) bool {
 // deleteByHashWithLabelValues removes the metric from the hash bucket h. If
 // there are multiple matches in the bucket, use lvs to select a metric and
 // remove only that metric.
-func (m *MetricVec) deleteByHashWithLabelValues(h uint64, lvs []string) bool {
+func (m *metricVec) deleteByHashWithLabelValues(h uint64, lvs []string) bool {
 	metrics, ok := m.children[h]
 	if !ok {
 		return false
@@ -221,7 +178,7 @@ func (m *MetricVec) deleteByHashWithLabelValues(h uint64, lvs []string) bool {
 // deleteByHashWithLabels removes the metric from the hash bucket h. If there
 // are multiple matches in the bucket, use lvs to select a metric and remove
 // only that metric.
-func (m *MetricVec) deleteByHashWithLabels(h uint64, labels Labels) bool {
+func (m *metricVec) deleteByHashWithLabels(h uint64, labels Labels) bool {
 	metrics, ok := m.children[h]
 	if !ok {
 		return false
@@ -240,7 +197,7 @@ func (m *MetricVec) deleteByHashWithLabels(h uint64, labels Labels) bool {
 }
 
 // Reset deletes all metrics in this vector.
-func (m *MetricVec) Reset() {
+func (m *metricVec) Reset() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -249,7 +206,7 @@ func (m *MetricVec) Reset() {
 	}
 }
 
-func (m *MetricVec) hashLabelValues(vals []string) (uint64, error) {
+func (m *metricVec) hashLabelValues(vals []string) (uint64, error) {
 	if len(vals) != len(m.desc.variableLabels) {
 		return 0, errInconsistentCardinality
 	}
@@ -261,7 +218,7 @@ func (m *MetricVec) hashLabelValues(vals []string) (uint64, error) {
 	return h, nil
 }
 
-func (m *MetricVec) hashLabels(labels Labels) (uint64, error) {
+func (m *metricVec) hashLabels(labels Labels) (uint64, error) {
 	if len(labels) != len(m.desc.variableLabels) {
 		return 0, errInconsistentCardinality
 	}
@@ -281,9 +238,9 @@ func (m *MetricVec) hashLabels(labels Labels) (uint64, error) {
 // or creates it and returns the new one.
 //
 // This function holds the mutex.
-func (m *MetricVec) getOrCreateMetricWithLabelValues(hash uint64, lvs []string) Metric {
+func (m *metricVec) getOrCreateMetricWithLabelValues(hash uint64, lvs []string) Metric {
 	m.mtx.RLock()
-	metric, ok := m.getMetricWithLabelValues(hash, lvs)
+	metric, ok := m.getMetricWithHashAndLabelValues(hash, lvs)
 	m.mtx.RUnlock()
 	if ok {
 		return metric
@@ -291,7 +248,7 @@ func (m *MetricVec) getOrCreateMetricWithLabelValues(hash uint64, lvs []string) 
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	metric, ok = m.getMetricWithLabelValues(hash, lvs)
+	metric, ok = m.getMetricWithHashAndLabelValues(hash, lvs)
 	if !ok {
 		// Copy to avoid allocation in case wo don't go down this code path.
 		copiedLVs := make([]string, len(lvs))
@@ -306,9 +263,9 @@ func (m *MetricVec) getOrCreateMetricWithLabelValues(hash uint64, lvs []string) 
 // or creates it and returns the new one.
 //
 // This function holds the mutex.
-func (m *MetricVec) getOrCreateMetricWithLabels(hash uint64, labels Labels) Metric {
+func (m *metricVec) getOrCreateMetricWithLabels(hash uint64, labels Labels) Metric {
 	m.mtx.RLock()
-	metric, ok := m.getMetricWithLabels(hash, labels)
+	metric, ok := m.getMetricWithHashAndLabels(hash, labels)
 	m.mtx.RUnlock()
 	if ok {
 		return metric
@@ -316,7 +273,7 @@ func (m *MetricVec) getOrCreateMetricWithLabels(hash uint64, labels Labels) Metr
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	metric, ok = m.getMetricWithLabels(hash, labels)
+	metric, ok = m.getMetricWithHashAndLabels(hash, labels)
 	if !ok {
 		lvs := m.extractLabelValues(labels)
 		metric = m.newMetric(lvs...)
@@ -325,9 +282,9 @@ func (m *MetricVec) getOrCreateMetricWithLabels(hash uint64, labels Labels) Metr
 	return metric
 }
 
-// getMetricWithLabelValues gets a metric while handling possible collisions in
-// the hash space. Must be called while holding read mutex.
-func (m *MetricVec) getMetricWithLabelValues(h uint64, lvs []string) (Metric, bool) {
+// getMetricWithHashAndLabelValues gets a metric while handling possible
+// collisions in the hash space. Must be called while holding the read mutex.
+func (m *metricVec) getMetricWithHashAndLabelValues(h uint64, lvs []string) (Metric, bool) {
 	metrics, ok := m.children[h]
 	if ok {
 		if i := m.findMetricWithLabelValues(metrics, lvs); i < len(metrics) {
@@ -337,9 +294,9 @@ func (m *MetricVec) getMetricWithLabelValues(h uint64, lvs []string) (Metric, bo
 	return nil, false
 }
 
-// getMetricWithLabels gets a metric while handling possible collisions in
+// getMetricWithHashAndLabels gets a metric while handling possible collisions in
 // the hash space. Must be called while holding read mutex.
-func (m *MetricVec) getMetricWithLabels(h uint64, labels Labels) (Metric, bool) {
+func (m *metricVec) getMetricWithHashAndLabels(h uint64, labels Labels) (Metric, bool) {
 	metrics, ok := m.children[h]
 	if ok {
 		if i := m.findMetricWithLabels(metrics, labels); i < len(metrics) {
@@ -351,7 +308,7 @@ func (m *MetricVec) getMetricWithLabels(h uint64, labels Labels) (Metric, bool) 
 
 // findMetricWithLabelValues returns the index of the matching metric or
 // len(metrics) if not found.
-func (m *MetricVec) findMetricWithLabelValues(metrics []metricWithLabelValues, lvs []string) int {
+func (m *metricVec) findMetricWithLabelValues(metrics []metricWithLabelValues, lvs []string) int {
 	for i, metric := range metrics {
 		if m.matchLabelValues(metric.values, lvs) {
 			return i
@@ -362,7 +319,7 @@ func (m *MetricVec) findMetricWithLabelValues(metrics []metricWithLabelValues, l
 
 // findMetricWithLabels returns the index of the matching metric or len(metrics)
 // if not found.
-func (m *MetricVec) findMetricWithLabels(metrics []metricWithLabelValues, labels Labels) int {
+func (m *metricVec) findMetricWithLabels(metrics []metricWithLabelValues, labels Labels) int {
 	for i, metric := range metrics {
 		if m.matchLabels(metric.values, labels) {
 			return i
@@ -371,7 +328,7 @@ func (m *MetricVec) findMetricWithLabels(metrics []metricWithLabelValues, labels
 	return len(metrics)
 }
 
-func (m *MetricVec) matchLabelValues(values []string, lvs []string) bool {
+func (m *metricVec) matchLabelValues(values []string, lvs []string) bool {
 	if len(values) != len(lvs) {
 		return false
 	}
@@ -383,7 +340,7 @@ func (m *MetricVec) matchLabelValues(values []string, lvs []string) bool {
 	return true
 }
 
-func (m *MetricVec) matchLabels(values []string, labels Labels) bool {
+func (m *metricVec) matchLabels(values []string, labels Labels) bool {
 	if len(labels) != len(values) {
 		return false
 	}
@@ -395,7 +352,7 @@ func (m *MetricVec) matchLabels(values []string, labels Labels) bool {
 	return true
 }
 
-func (m *MetricVec) extractLabelValues(labels Labels) []string {
+func (m *metricVec) extractLabelValues(labels Labels) []string {
 	labelValues := make([]string, len(labels))
 	for i, k := range m.desc.variableLabels {
 		labelValues[i] = labels[k]

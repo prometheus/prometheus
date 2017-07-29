@@ -399,12 +399,11 @@ func (s quantSort) Less(i, j int) bool {
 // (e.g. HTTP request latencies, partitioned by status code and method). Create
 // instances with NewSummaryVec.
 type SummaryVec struct {
-	*MetricVec
+	*metricVec
 }
 
 // NewSummaryVec creates a new SummaryVec based on the provided SummaryOpts and
-// partitioned by the given label names. At least one label name must be
-// provided.
+// partitioned by the given label names.
 func NewSummaryVec(opts SummaryOpts, labelNames []string) *SummaryVec {
 	desc := NewDesc(
 		BuildFQName(opts.Namespace, opts.Subsystem, opts.Name),
@@ -413,30 +412,60 @@ func NewSummaryVec(opts SummaryOpts, labelNames []string) *SummaryVec {
 		opts.ConstLabels,
 	)
 	return &SummaryVec{
-		MetricVec: newMetricVec(desc, func(lvs ...string) Metric {
+		metricVec: newMetricVec(desc, func(lvs ...string) Metric {
 			return newSummary(desc, opts, lvs...)
 		}),
 	}
 }
 
-// GetMetricWithLabelValues replaces the method of the same name in
-// MetricVec. The difference is that this method returns a Summary and not a
-// Metric so that no type conversion is required.
-func (m *SummaryVec) GetMetricWithLabelValues(lvs ...string) (Summary, error) {
-	metric, err := m.MetricVec.GetMetricWithLabelValues(lvs...)
+// GetMetricWithLabelValues returns the Summary for the given slice of label
+// values (same order as the VariableLabels in Desc). If that combination of
+// label values is accessed for the first time, a new Summary is created.
+//
+// It is possible to call this method without using the returned Summary to only
+// create the new Summary but leave it at its starting value, a Summary without
+// any observations.
+//
+// Keeping the Summary for later use is possible (and should be considered if
+// performance is critical), but keep in mind that Reset, DeleteLabelValues and
+// Delete can be used to delete the Summary from the SummaryVec. In that case, the
+// Summary will still exist, but it will not be exported anymore, even if a
+// Summary with the same label values is created later. See also the CounterVec
+// example.
+//
+// An error is returned if the number of label values is not the same as the
+// number of VariableLabels in Desc.
+//
+// Note that for more than one label value, this method is prone to mistakes
+// caused by an incorrect order of arguments. Consider GetMetricWith(Labels) as
+// an alternative to avoid that type of mistake. For higher label numbers, the
+// latter has a much more readable (albeit more verbose) syntax, but it comes
+// with a performance overhead (for creating and processing the Labels map).
+// See also the GaugeVec example.
+func (m *SummaryVec) GetMetricWithLabelValues(lvs ...string) (Observer, error) {
+	metric, err := m.metricVec.getMetricWithLabelValues(lvs...)
 	if metric != nil {
-		return metric.(Summary), err
+		return metric.(Observer), err
 	}
 	return nil, err
 }
 
-// GetMetricWith replaces the method of the same name in MetricVec. The
-// difference is that this method returns a Summary and not a Metric so that no
-// type conversion is required.
-func (m *SummaryVec) GetMetricWith(labels Labels) (Summary, error) {
-	metric, err := m.MetricVec.GetMetricWith(labels)
+// GetMetricWith returns the Summary for the given Labels map (the label names
+// must match those of the VariableLabels in Desc). If that label map is
+// accessed for the first time, a new Summary is created. Implications of
+// creating a Summary without using it and keeping the Summary for later use are
+// the same as for GetMetricWithLabelValues.
+//
+// An error is returned if the number and names of the Labels are inconsistent
+// with those of the VariableLabels in Desc.
+//
+// This method is used for the same purpose as
+// GetMetricWithLabelValues(...string). See there for pros and cons of the two
+// methods.
+func (m *SummaryVec) GetMetricWith(labels Labels) (Observer, error) {
+	metric, err := m.metricVec.getMetricWith(labels)
 	if metric != nil {
-		return metric.(Summary), err
+		return metric.(Observer), err
 	}
 	return nil, err
 }
@@ -445,15 +474,15 @@ func (m *SummaryVec) GetMetricWith(labels Labels) (Summary, error) {
 // GetMetricWithLabelValues would have returned an error. By not returning an
 // error, WithLabelValues allows shortcuts like
 //     myVec.WithLabelValues("404", "GET").Observe(42.21)
-func (m *SummaryVec) WithLabelValues(lvs ...string) Summary {
-	return m.MetricVec.WithLabelValues(lvs...).(Summary)
+func (m *SummaryVec) WithLabelValues(lvs ...string) Observer {
+	return m.metricVec.withLabelValues(lvs...).(Observer)
 }
 
 // With works as GetMetricWith, but panics where GetMetricWithLabels would have
 // returned an error. By not returning an error, With allows shortcuts like
 //     myVec.With(Labels{"code": "404", "method": "GET"}).Observe(42.21)
-func (m *SummaryVec) With(labels Labels) Summary {
-	return m.MetricVec.With(labels).(Summary)
+func (m *SummaryVec) With(labels Labels) Observer {
+	return m.metricVec.with(labels).(Observer)
 }
 
 type constSummary struct {

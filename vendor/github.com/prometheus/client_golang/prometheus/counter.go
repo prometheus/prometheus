@@ -70,16 +70,12 @@ func (c *counter) Add(v float64) {
 // if you want to count the same thing partitioned by various dimensions
 // (e.g. number of HTTP requests, partitioned by response code and
 // method). Create instances with NewCounterVec.
-//
-// CounterVec embeds MetricVec. See there for a full list of methods with
-// detailed documentation.
 type CounterVec struct {
-	*MetricVec
+	*metricVec
 }
 
 // NewCounterVec creates a new CounterVec based on the provided CounterOpts and
-// partitioned by the given label names. At least one label name must be
-// provided.
+// partitioned by the given label names.
 func NewCounterVec(opts CounterOpts, labelNames []string) *CounterVec {
 	desc := NewDesc(
 		BuildFQName(opts.Namespace, opts.Subsystem, opts.Name),
@@ -88,7 +84,7 @@ func NewCounterVec(opts CounterOpts, labelNames []string) *CounterVec {
 		opts.ConstLabels,
 	)
 	return &CounterVec{
-		MetricVec: newMetricVec(desc, func(lvs ...string) Metric {
+		metricVec: newMetricVec(desc, func(lvs ...string) Metric {
 			result := &counter{value: value{
 				desc:       desc,
 				valType:    CounterValue,
@@ -100,22 +96,51 @@ func NewCounterVec(opts CounterOpts, labelNames []string) *CounterVec {
 	}
 }
 
-// GetMetricWithLabelValues replaces the method of the same name in
-// MetricVec. The difference is that this method returns a Counter and not a
-// Metric so that no type conversion is required.
+// GetMetricWithLabelValues returns the Counter for the given slice of label
+// values (same order as the VariableLabels in Desc). If that combination of
+// label values is accessed for the first time, a new Counter is created.
+//
+// It is possible to call this method without using the returned Counter to only
+// create the new Counter but leave it at its starting value 0. See also the
+// SummaryVec example.
+//
+// Keeping the Counter for later use is possible (and should be considered if
+// performance is critical), but keep in mind that Reset, DeleteLabelValues and
+// Delete can be used to delete the Counter from the CounterVec. In that case,
+// the Counter will still exist, but it will not be exported anymore, even if a
+// Counter with the same label values is created later.
+//
+// An error is returned if the number of label values is not the same as the
+// number of VariableLabels in Desc.
+//
+// Note that for more than one label value, this method is prone to mistakes
+// caused by an incorrect order of arguments. Consider GetMetricWith(Labels) as
+// an alternative to avoid that type of mistake. For higher label numbers, the
+// latter has a much more readable (albeit more verbose) syntax, but it comes
+// with a performance overhead (for creating and processing the Labels map).
+// See also the GaugeVec example.
 func (m *CounterVec) GetMetricWithLabelValues(lvs ...string) (Counter, error) {
-	metric, err := m.MetricVec.GetMetricWithLabelValues(lvs...)
+	metric, err := m.metricVec.getMetricWithLabelValues(lvs...)
 	if metric != nil {
 		return metric.(Counter), err
 	}
 	return nil, err
 }
 
-// GetMetricWith replaces the method of the same name in MetricVec. The
-// difference is that this method returns a Counter and not a Metric so that no
-// type conversion is required.
+// GetMetricWith returns the Counter for the given Labels map (the label names
+// must match those of the VariableLabels in Desc). If that label map is
+// accessed for the first time, a new Counter is created. Implications of
+// creating a Counter without using it and keeping the Counter for later use are
+// the same as for GetMetricWithLabelValues.
+//
+// An error is returned if the number and names of the Labels are inconsistent
+// with those of the VariableLabels in Desc.
+//
+// This method is used for the same purpose as
+// GetMetricWithLabelValues(...string). See there for pros and cons of the two
+// methods.
 func (m *CounterVec) GetMetricWith(labels Labels) (Counter, error) {
-	metric, err := m.MetricVec.GetMetricWith(labels)
+	metric, err := m.metricVec.getMetricWith(labels)
 	if metric != nil {
 		return metric.(Counter), err
 	}
@@ -127,14 +152,14 @@ func (m *CounterVec) GetMetricWith(labels Labels) (Counter, error) {
 // error, WithLabelValues allows shortcuts like
 //     myVec.WithLabelValues("404", "GET").Add(42)
 func (m *CounterVec) WithLabelValues(lvs ...string) Counter {
-	return m.MetricVec.WithLabelValues(lvs...).(Counter)
+	return m.metricVec.withLabelValues(lvs...).(Counter)
 }
 
 // With works as GetMetricWith, but panics where GetMetricWithLabels would have
 // returned an error. By not returning an error, With allows shortcuts like
 //     myVec.With(Labels{"code": "404", "method": "GET"}).Add(42)
 func (m *CounterVec) With(labels Labels) Counter {
-	return m.MetricVec.With(labels).(Counter)
+	return m.metricVec.with(labels).(Counter)
 }
 
 // CounterFunc is a Counter whose value is determined at collect time by calling a

@@ -287,12 +287,11 @@ func (h *histogram) Write(out *dto.Metric) error {
 // (e.g. HTTP request latencies, partitioned by status code and method). Create
 // instances with NewHistogramVec.
 type HistogramVec struct {
-	*MetricVec
+	*metricVec
 }
 
 // NewHistogramVec creates a new HistogramVec based on the provided HistogramOpts and
-// partitioned by the given label names. At least one label name must be
-// provided.
+// partitioned by the given label names.
 func NewHistogramVec(opts HistogramOpts, labelNames []string) *HistogramVec {
 	desc := NewDesc(
 		BuildFQName(opts.Namespace, opts.Subsystem, opts.Name),
@@ -301,30 +300,60 @@ func NewHistogramVec(opts HistogramOpts, labelNames []string) *HistogramVec {
 		opts.ConstLabels,
 	)
 	return &HistogramVec{
-		MetricVec: newMetricVec(desc, func(lvs ...string) Metric {
+		metricVec: newMetricVec(desc, func(lvs ...string) Metric {
 			return newHistogram(desc, opts, lvs...)
 		}),
 	}
 }
 
-// GetMetricWithLabelValues replaces the method of the same name in
-// MetricVec. The difference is that this method returns a Histogram and not a
-// Metric so that no type conversion is required.
-func (m *HistogramVec) GetMetricWithLabelValues(lvs ...string) (Histogram, error) {
-	metric, err := m.MetricVec.GetMetricWithLabelValues(lvs...)
+// GetMetricWithLabelValues returns the Histogram for the given slice of label
+// values (same order as the VariableLabels in Desc). If that combination of
+// label values is accessed for the first time, a new Histogram is created.
+//
+// It is possible to call this method without using the returned Histogram to only
+// create the new Histogram but leave it at its starting value, a Histogram without
+// any observations.
+//
+// Keeping the Histogram for later use is possible (and should be considered if
+// performance is critical), but keep in mind that Reset, DeleteLabelValues and
+// Delete can be used to delete the Histogram from the HistogramVec. In that case, the
+// Histogram will still exist, but it will not be exported anymore, even if a
+// Histogram with the same label values is created later. See also the CounterVec
+// example.
+//
+// An error is returned if the number of label values is not the same as the
+// number of VariableLabels in Desc.
+//
+// Note that for more than one label value, this method is prone to mistakes
+// caused by an incorrect order of arguments. Consider GetMetricWith(Labels) as
+// an alternative to avoid that type of mistake. For higher label numbers, the
+// latter has a much more readable (albeit more verbose) syntax, but it comes
+// with a performance overhead (for creating and processing the Labels map).
+// See also the GaugeVec example.
+func (m *HistogramVec) GetMetricWithLabelValues(lvs ...string) (Observer, error) {
+	metric, err := m.metricVec.getMetricWithLabelValues(lvs...)
 	if metric != nil {
-		return metric.(Histogram), err
+		return metric.(Observer), err
 	}
 	return nil, err
 }
 
-// GetMetricWith replaces the method of the same name in MetricVec. The
-// difference is that this method returns a Histogram and not a Metric so that no
-// type conversion is required.
-func (m *HistogramVec) GetMetricWith(labels Labels) (Histogram, error) {
-	metric, err := m.MetricVec.GetMetricWith(labels)
+// GetMetricWith returns the Histogram for the given Labels map (the label names
+// must match those of the VariableLabels in Desc). If that label map is
+// accessed for the first time, a new Histogram is created. Implications of
+// creating a Histogram without using it and keeping the Histogram for later use
+// are the same as for GetMetricWithLabelValues.
+//
+// An error is returned if the number and names of the Labels are inconsistent
+// with those of the VariableLabels in Desc.
+//
+// This method is used for the same purpose as
+// GetMetricWithLabelValues(...string). See there for pros and cons of the two
+// methods.
+func (m *HistogramVec) GetMetricWith(labels Labels) (Observer, error) {
+	metric, err := m.metricVec.getMetricWith(labels)
 	if metric != nil {
-		return metric.(Histogram), err
+		return metric.(Observer), err
 	}
 	return nil, err
 }
@@ -333,15 +362,15 @@ func (m *HistogramVec) GetMetricWith(labels Labels) (Histogram, error) {
 // GetMetricWithLabelValues would have returned an error. By not returning an
 // error, WithLabelValues allows shortcuts like
 //     myVec.WithLabelValues("404", "GET").Observe(42.21)
-func (m *HistogramVec) WithLabelValues(lvs ...string) Histogram {
-	return m.MetricVec.WithLabelValues(lvs...).(Histogram)
+func (m *HistogramVec) WithLabelValues(lvs ...string) Observer {
+	return m.metricVec.withLabelValues(lvs...).(Observer)
 }
 
 // With works as GetMetricWith, but panics where GetMetricWithLabels would have
 // returned an error. By not returning an error, With allows shortcuts like
 //     myVec.With(Labels{"code": "404", "method": "GET"}).Observe(42.21)
-func (m *HistogramVec) With(labels Labels) Histogram {
-	return m.MetricVec.With(labels).(Histogram)
+func (m *HistogramVec) With(labels Labels) Observer {
+	return m.metricVec.with(labels).(Observer)
 }
 
 type constHistogram struct {
