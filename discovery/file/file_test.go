@@ -17,9 +17,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -41,7 +43,7 @@ func testFileSD(t *testing.T, ext string) {
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (
-		fsd         = NewDiscovery(&conf)
+		fsd         = NewDiscovery(&conf, log.Base())
 		ch          = make(chan []*config.TargetGroup)
 		ctx, cancel = context.WithCancel(context.Background())
 	)
@@ -60,7 +62,7 @@ func testFileSD(t *testing.T, ext string) {
 	}
 	defer newf.Close()
 
-	f, err := os.Open("fixtures/target_groups" + ext)
+	f, err := os.Open("fixtures/valid" + ext)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,12 +90,12 @@ retry:
 			if _, ok := tg.Labels["foo"]; !ok {
 				t.Fatalf("Label not parsed")
 			}
-			if tg.String() != fmt.Sprintf("fixtures/_test%s:0", ext) {
+			if tg.String() != filepath.FromSlash(fmt.Sprintf("fixtures/_test%s:0", ext)) {
 				t.Fatalf("Unexpected target group %s", tg)
 			}
 
 			tg = tgs[1]
-			if tg.String() != fmt.Sprintf("fixtures/_test%s:1", ext) {
+			if tg.String() != filepath.FromSlash(fmt.Sprintf("fixtures/_test%s:1", ext)) {
 				t.Fatalf("Unexpected target groups %s", tg)
 			}
 			break retry

@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -93,9 +94,31 @@ func (q *querier) read(ctx context.Context, from, through model.Time, matchers m
 	if err != nil {
 		return nil, err
 	}
-
 	removeLabels(res, added)
+	err = validateLabelsAndMetricName(res)
+	if err != nil {
+		return nil, err
+	}
+
 	return res, err
+}
+
+// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
+func validateLabelsAndMetricName(res model.Matrix) error {
+	for _, r := range res {
+		if !model.IsValidMetricName(r.Metric[model.MetricNameLabel]) {
+			return fmt.Errorf("Invalid metric name: %v", r.Metric[model.MetricNameLabel])
+		}
+		for name, value := range r.Metric {
+			if !name.IsValid() {
+				return fmt.Errorf("Invalid label name: %v", name)
+			}
+			if !value.IsValid() {
+				return fmt.Errorf("Invalid label value: %v", value)
+			}
+		}
+	}
+	return nil
 }
 
 // addExternalLabels adds matchers for each external label. External labels

@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 )
@@ -30,7 +32,6 @@ import (
 var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
-	patAuthLine   = regexp.MustCompile(`((?:password|bearer_token|secret_key|client_secret):\s+)(".+"|'.+'|[^\s]+)`)
 	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
 )
 
@@ -150,6 +151,12 @@ var (
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
+	// DefaultOpenstackSDConfig is the default OpenStack SD configuration.
+	DefaultOpenstackSDConfig = OpenstackSDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+
 	// DefaultAzureSDConfig is the default Azure SD configuration.
 	DefaultAzureSDConfig = AzureSDConfig{
 		Port:            80,
@@ -219,6 +226,23 @@ type Config struct {
 	original string
 }
 
+// Secret special type for storing secrets.
+type Secret string
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface for Secrets.
+func (s *Secret) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain Secret
+	return unmarshal((*plain)(s))
+}
+
+// MarshalYAML implements the yaml.Marshaler interface for Secrets.
+func (s Secret) MarshalYAML() (interface{}, error) {
+	if s != "" {
+		return "<secret>", nil
+	}
+	return nil, nil
+}
+
 // resolveFilepaths joins all relative paths in a configuration
 // with a given base directory.
 func resolveFilepaths(baseDir string, cfg *Config) {
@@ -281,17 +305,11 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 }
 
 func (c Config) String() string {
-	var s string
-	if c.original != "" {
-		s = c.original
-	} else {
-		b, err := yaml.Marshal(c)
-		if err != nil {
-			return fmt.Sprintf("<error creating config string: %s>", err)
-		}
-		s = string(b)
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
-	return patAuthLine.ReplaceAllString(s, "${1}<hidden>")
+	return string(b)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -370,7 +388,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "global config"); err != nil {
+	if err := checkOverflow(gc.XXX, "global config"); err != nil {
 		return err
 	}
 	// First set the correct scrape interval, then check that the timeout
@@ -454,6 +472,8 @@ type ServiceDiscoveryConfig struct {
 	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	// List of OpenStack service discovery configurations.
+	OpenstackSDConfigs []*OpenstackSDConfig `yaml:"openstack_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
@@ -480,7 +500,7 @@ type HTTPClientConfig struct {
 	// The HTTP basic authentication credentials for the targets.
 	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
 	// The bearer token for the targets.
-	BearerToken string `yaml:"bearer_token,omitempty"`
+	BearerToken Secret `yaml:"bearer_token,omitempty"`
 	// The bearer token file for the targets.
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
@@ -544,7 +564,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "scrape_config"); err != nil {
+	if err = checkOverflow(c.XXX, "scrape_config"); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {
@@ -554,7 +574,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.validate(); err != nil {
+	if err = c.HTTPClientConfig.validate(); err != nil {
 		return err
 	}
 
@@ -660,7 +680,7 @@ func CheckTargetAddress(address model.LabelValue) error {
 // BasicAuth contains basic HTTP authentication credentials.
 type BasicAuth struct {
 	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	Password Secret `yaml:"password"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -669,7 +689,7 @@ type BasicAuth struct {
 // ClientCert contains client cert credentials.
 type ClientCert struct {
 	Cert string `yaml:"cert"`
-	Key  string `yaml:"key"`
+	Key  Secret `yaml:"key"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -718,7 +738,7 @@ func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		})
 	}
 	tg.Labels = g.Labels
-	return checkOverflow(g.XXX, "target_group")
+	return checkOverflow(g.XXX, "static_config")
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
@@ -825,12 +845,12 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // ConsulSDConfig is the configuration for Consul service discovery.
 type ConsulSDConfig struct {
 	Server       string `yaml:"server"`
-	Token        string `yaml:"token,omitempty"`
+	Token        Secret `yaml:"token,omitempty"`
 	Datacenter   string `yaml:"datacenter,omitempty"`
 	TagSeparator string `yaml:"tag_separator,omitempty"`
 	Scheme       string `yaml:"scheme,omitempty"`
 	Username     string `yaml:"username,omitempty"`
-	Password     string `yaml:"password,omitempty"`
+	Password     Secret `yaml:"password,omitempty"`
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
@@ -933,7 +953,7 @@ type MarathonSDConfig struct {
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-	BearerToken     string         `yaml:"bearer_token,omitempty"`
+	BearerToken     Secret         `yaml:"bearer_token,omitempty"`
 	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -987,12 +1007,13 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
-	APIServer       URL            `yaml:"api_server"`
-	Role            KubernetesRole `yaml:"role"`
-	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
-	BearerToken     string         `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
-	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	APIServer          URL                          `yaml:"api_server"`
+	Role               KubernetesRole               `yaml:"role"`
+	BasicAuth          *BasicAuth                   `yaml:"basic_auth,omitempty"`
+	BearerToken        Secret                       `yaml:"bearer_token,omitempty"`
+	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
+	TLSConfig          TLSConfig                    `yaml:"tls_config,omitempty"`
+	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1022,6 +1043,28 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
 			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
 		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
+	}
+	return nil
+}
+
+// KubernetesNamespaceDiscovery is the configuration for discovering
+// Kubernetes namespaces.
+type KubernetesNamespaceDiscovery struct {
+	Names []string `yaml:"names"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = KubernetesNamespaceDiscovery{}
+	type plain KubernetesNamespaceDiscovery
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "namespaces"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1072,7 +1115,7 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type EC2SDConfig struct {
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
-	SecretKey       string         `yaml:"secret_key,omitempty"`
+	SecretKey       Secret         `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
@@ -1093,9 +1136,47 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Region == "" {
-		return fmt.Errorf("EC2 SD configuration requires a region")
+		sess, err := session.NewSession()
+		if err != nil {
+			return err
+		}
+		metadata := ec2metadata.New(sess)
+		region, err := metadata.Region()
+		if err != nil {
+			return fmt.Errorf("EC2 SD configuration requires a region")
+		}
+		c.Region = region
 	}
 	return nil
+}
+
+// OpenstackSDConfig is the configuration for OpenStack based service discovery.
+type OpenstackSDConfig struct {
+	IdentityEndpoint string         `yaml:"identity_endpoint"`
+	Username         string         `yaml:"username"`
+	UserID           string         `yaml:"userid"`
+	Password         Secret         `yaml:"password"`
+	ProjectName      string         `yaml:"project_name"`
+	ProjectID        string         `yaml:"project_id"`
+	DomainName       string         `yaml:"domain_name"`
+	DomainID         string         `yaml:"domain_id"`
+	Region           string         `yaml:"region"`
+	RefreshInterval  model.Duration `yaml:"refresh_interval,omitempty"`
+	Port             int            `yaml:"port"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OpenstackSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultOpenstackSDConfig
+	type plain OpenstackSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	return checkOverflow(c.XXX, "openstack_sd_config")
 }
 
 // AzureSDConfig is the configuration for Azure based service discovery.
@@ -1104,7 +1185,7 @@ type AzureSDConfig struct {
 	SubscriptionID  string         `yaml:"subscription_id"`
 	TenantID        string         `yaml:"tenant_id,omitempty"`
 	ClientID        string         `yaml:"client_id,omitempty"`
-	ClientSecret    string         `yaml:"client_secret,omitempty"`
+	ClientSecret    Secret         `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -1197,7 +1278,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type RelabelConfig struct {
 	// A list of labels from which values are taken and concatenated
 	// with the configured separator in order.
-	SourceLabels model.LabelNames `yaml:"source_labels,flow"`
+	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
 	// Regex against which the concatenation is matched.

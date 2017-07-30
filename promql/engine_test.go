@@ -190,7 +190,7 @@ func TestEngineShutdown(t *testing.T) {
 		t.Fatalf("expected error on querying with canceled context but got none")
 	}
 	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
-		t.Fatalf("expected cancelation error, got %q", res2.Err)
+		t.Fatalf("expected cancellation error, got %q", res2.Err)
 	}
 }
 

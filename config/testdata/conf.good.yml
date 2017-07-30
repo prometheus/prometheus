@@ -10,7 +10,6 @@ global:
 
 rule_files:
 - "first.rules"
-- "/absolute/second.rules"
 - "my/*.rules"
 
 remote_write:
@@ -67,7 +66,7 @@ scrape_configs:
 
   basic_auth:
     username: admin_name
-    password: admin_password
+    password: "multiline\nmysecret\ntest"
 
   scrape_interval: 50s
   scrape_timeout:  5s
@@ -113,6 +112,7 @@ scrape_configs:
 
   consul_sd_configs:
   - server: 'localhost:1234'
+    token: mysecret
     services: ['nginx', 'cache', 'mysql']
     scheme: https
     tls_config:
@@ -134,7 +134,7 @@ scrape_configs:
     cert_file: valid_cert_file
     key_file: valid_key_file
 
-  bearer_token: avalidtoken
+  bearer_token: mysecret
 
 - job_name: service-kubernetes
 
@@ -144,7 +144,16 @@ scrape_configs:
 
     basic_auth:
       username: 'myusername'
-      password: 'mypassword'
+      password: 'mysecret'
+
+- job_name: service-kubernetes-namespaces
+
+  kubernetes_sd_configs:
+  - role: endpoints
+    api_server: 'https://localhost:1234'
+    namespaces:
+      names:
+        - default
 
 - job_name: service-marathon
   marathon_sd_configs:
@@ -159,7 +168,7 @@ scrape_configs:
   ec2_sd_configs:
     - region: us-east-1
       access_key: access
-      secret_key: secret
+      secret_key: mysecret
       profile: profile
 
 - job_name: service-azure
@@ -167,7 +176,7 @@ scrape_configs:
     - subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
       tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
       client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
-      client_secret: nAdvAK2oBuVym4IXix
+      client_secret: mysecret
       port: 9100
 
 - job_name: service-nerve

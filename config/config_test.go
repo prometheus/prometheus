@@ -17,7 +17,9 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -47,9 +49,8 @@ var expectedConf = &Config{
 	},
 
 	RuleFiles: []string{
-		"testdata/first.rules",
-		"/absolute/second.rules",
-		"testdata/my/*.rules",
+		filepath.FromSlash("testdata/first.rules"),
+		filepath.FromSlash("testdata/my/*.rules"),
 	},
 
 	RemoteWriteConfigs: []*RemoteWriteConfig{
@@ -84,7 +85,7 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			HTTPClientConfig: HTTPClientConfig{
-				BearerTokenFile: "testdata/valid_token_file",
+				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
 			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
@@ -144,6 +145,7 @@ var expectedConf = &Config{
 			},
 		},
 		{
+
 			JobName: "service-x",
 
 			ScrapeInterval: model.Duration(50 * time.Second),
@@ -153,7 +155,7 @@ var expectedConf = &Config{
 			HTTPClientConfig: HTTPClientConfig{
 				BasicAuth: &BasicAuth{
 					Username: "admin_name",
-					Password: "admin_password",
+					Password: "multiline\nmysecret\ntest",
 				},
 			},
 			MetricsPath: "/my_path",
@@ -245,13 +247,14 @@ var expectedConf = &Config{
 				ConsulSDConfigs: []*ConsulSDConfig{
 					{
 						Server:       "localhost:1234",
+						Token:        "mysecret",
 						Services:     []string{"nginx", "cache", "mysql"},
 						TagSeparator: DefaultConsulSDConfig.TagSeparator,
 						Scheme:       "https",
 						TLSConfig: TLSConfig{
-							CertFile:           "testdata/valid_cert_file",
-							KeyFile:            "testdata/valid_key_file",
-							CAFile:             "testdata/valid_ca_file",
+							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
+							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
 							InsecureSkipVerify: false,
 						},
 					},
@@ -280,11 +283,11 @@ var expectedConf = &Config{
 
 			HTTPClientConfig: HTTPClientConfig{
 				TLSConfig: TLSConfig{
-					CertFile: "testdata/valid_cert_file",
-					KeyFile:  "testdata/valid_key_file",
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 
-				BearerToken: "avalidtoken",
+				BearerToken: "mysecret",
 			},
 		},
 		{
@@ -303,7 +306,31 @@ var expectedConf = &Config{
 						Role:      KubernetesRoleEndpoint,
 						BasicAuth: &BasicAuth{
 							Username: "myusername",
-							Password: "mypassword",
+							Password: "mysecret",
+						},
+						NamespaceDiscovery: KubernetesNamespaceDiscovery{},
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-kubernetes-namespaces",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
+				KubernetesSDConfigs: []*KubernetesSDConfig{
+					{
+						APIServer: kubernetesSDHostURL(),
+						Role:      KubernetesRoleEndpoint,
+						NamespaceDiscovery: KubernetesNamespaceDiscovery{
+							Names: []string{
+								"default",
+							},
 						},
 					},
 				},
@@ -327,8 +354,8 @@ var expectedConf = &Config{
 						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
 						TLSConfig: TLSConfig{
-							CertFile: "testdata/valid_cert_file",
-							KeyFile:  "testdata/valid_key_file",
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
 					},
 				},
@@ -348,7 +375,7 @@ var expectedConf = &Config{
 					{
 						Region:          "us-east-1",
 						AccessKey:       "access",
-						SecretKey:       "secret",
+						SecretKey:       "mysecret",
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
@@ -371,7 +398,7 @@ var expectedConf = &Config{
 						SubscriptionID:  "11AAAA11-A11A-111A-A111-1111A1111A11",
 						TenantID:        "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
 						ClientID:        "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
-						ClientSecret:    "nAdvAK2oBuVym4IXix",
+						ClientSecret:    "mysecret",
 						RefreshInterval: model.Duration(5 * time.Minute),
 						Port:            9100,
 					},
@@ -514,8 +541,34 @@ func TestLoadConfig(t *testing.T) {
 
 	// String method must not reveal authentication credentials.
 	s := c.String()
-	if strings.Contains(s, "admin_password") {
+	secretRe := regexp.MustCompile("<secret>")
+	matches := secretRe.FindAllStringIndex(s, -1)
+	if len(matches) != 6 || strings.Contains(s, "mysecret") {
 		t.Fatalf("config's String method reveals authentication credentials.")
+	}
+
+}
+
+func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
+	// Parse a valid file that sets a rule files with an absolute path
+	c, err := LoadFile(ruleFilesConfigFile)
+	if err != nil {
+		t.Errorf("Error parsing %s: %s", ruleFilesConfigFile, err)
+	}
+
+	bgot, err := yaml.Marshal(c)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	bexp, err := yaml.Marshal(ruleFilesExpectedConf)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	ruleFilesExpectedConf.original = c.original
+
+	if !reflect.DeepEqual(c, ruleFilesExpectedConf) {
+		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", ruleFilesConfigFile, bgot, bexp)
 	}
 }
 
@@ -593,6 +646,9 @@ var expectedErrors = []struct {
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
 	}, {
+		filename: "kubernetes_namespace_discovery.bad.yml",
+		errMsg:   "unknown fields in namespaces",
+	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
@@ -607,6 +663,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "target_label_hashmod_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
+	}, {
+		filename: "unknown_global_attr.bad.yml",
+		errMsg:   "unknown fields in global config: nonexistent_field",
 	},
 }
 

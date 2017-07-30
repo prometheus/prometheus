@@ -184,7 +184,13 @@ func buildClients(cfg *config) ([]writer, []reader) {
 
 func serve(addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		reqBuf, err := ioutil.ReadAll(snappy.NewReader(r.Body))
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -211,7 +217,13 @@ func serve(addr string, writers []writer, readers []reader) error {
 	})
 
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
-		reqBuf, err := ioutil.ReadAll(snappy.NewReader(r.Body))
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -245,7 +257,10 @@ func serve(addr string, writers []writer, readers []reader) error {
 		}
 
 		w.Header().Set("Content-Type", "application/x-protobuf")
-		if _, err := snappy.NewWriter(w).Write(data); err != nil {
+		w.Header().Set("Content-Encoding", "snappy")
+
+		compressed = snappy.Encode(nil, data)
+		if _, err := w.Write(compressed); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

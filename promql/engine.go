@@ -21,6 +21,7 @@ import (
 	"sort"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -34,6 +35,7 @@ import (
 const (
 	namespace = "prometheus"
 	subsystem = "engine"
+	queryTag  = "query"
 
 	// The largest SampleValue that can be converted to an int64 without overflow.
 	maxInt64 model.SampleValue = 9223372036854774784
@@ -246,7 +248,7 @@ type query struct {
 	stmt Statement
 	// Timer stats for the query execution.
 	stats *stats.TimerGroup
-	// Cancelation function for the query.
+	// Cancellation function for the query.
 	cancel func()
 
 	// The engine against which the query is executed.
@@ -272,6 +274,10 @@ func (q *query) Cancel() {
 
 // Exec implements the Query interface.
 func (q *query) Exec(ctx context.Context) *Result {
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		span.SetTag(queryTag, q.stmt.String())
+	}
+
 	res, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res}
 }
@@ -726,7 +732,7 @@ func (ev *evaluator) Eval(expr Expr) (v model.Value, err error) {
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(expr Expr) model.Value {
 	// This is the top-level evaluation method.
-	// Thus, we check for timeout/cancelation here.
+	// Thus, we check for timeout/cancellation here.
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
