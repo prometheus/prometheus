@@ -476,14 +476,15 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			}
 			return u
 		},
-		"isHealthy": func(pool []*retrieval.Target) bool {
+		"numHealthy": func(pool []*retrieval.Target) int {
+			alive := len(pool)
 			for _, p := range pool {
-				if p.Health() == retrieval.HealthBad {
-					return false
+				if p.Health() != retrieval.HealthGood {
+					alive--
 				}
 			}
 
-			return true
+			return alive
 		},
 		"healthToClass": func(th retrieval.TargetHealth) string {
 			switch th {

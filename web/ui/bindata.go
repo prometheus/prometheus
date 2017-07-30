@@ -12,6 +12,7 @@
 // web/ui/static/css/graph.css
 // web/ui/static/css/prom_console.css
 // web/ui/static/css/prometheus.css
+// web/ui/static/css/targets.css
 // web/ui/static/img/ajax-loader.gif
 // web/ui/static/img/favicon.ico
 // web/ui/static/js/alerts.js
@@ -68,7 +69,7 @@ type asset struct {
 
 // webUiTemplates_baseHtml reads file data from disk. It returns an error on failure.
 func webUiTemplates_baseHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/_base.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/_base.html"
 	name := "web/ui/templates/_base.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -86,7 +87,7 @@ func webUiTemplates_baseHtml() (*asset, error) {
 
 // webUiTemplatesAlertsHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesAlertsHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/alerts.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/alerts.html"
 	name := "web/ui/templates/alerts.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -104,7 +105,7 @@ func webUiTemplatesAlertsHtml() (*asset, error) {
 
 // webUiTemplatesConfigHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesConfigHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/config.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/config.html"
 	name := "web/ui/templates/config.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -122,7 +123,7 @@ func webUiTemplatesConfigHtml() (*asset, error) {
 
 // webUiTemplatesFlagsHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesFlagsHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/flags.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/flags.html"
 	name := "web/ui/templates/flags.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -140,7 +141,7 @@ func webUiTemplatesFlagsHtml() (*asset, error) {
 
 // webUiTemplatesGraphHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesGraphHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/graph.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/graph.html"
 	name := "web/ui/templates/graph.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -158,7 +159,7 @@ func webUiTemplatesGraphHtml() (*asset, error) {
 
 // webUiTemplatesRulesHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesRulesHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/rules.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/rules.html"
 	name := "web/ui/templates/rules.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -176,7 +177,7 @@ func webUiTemplatesRulesHtml() (*asset, error) {
 
 // webUiTemplatesStatusHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesStatusHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/status.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/status.html"
 	name := "web/ui/templates/status.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -194,7 +195,7 @@ func webUiTemplatesStatusHtml() (*asset, error) {
 
 // webUiTemplatesTargetsHtml reads file data from disk. It returns an error on failure.
 func webUiTemplatesTargetsHtml() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/templates/targets.html"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/templates/targets.html"
 	name := "web/ui/templates/targets.html"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -212,7 +213,7 @@ func webUiTemplatesTargetsHtml() (*asset, error) {
 
 // webUiStaticCssAlertsCss reads file data from disk. It returns an error on failure.
 func webUiStaticCssAlertsCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/css/alerts.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/css/alerts.css"
 	name := "web/ui/static/css/alerts.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -230,7 +231,7 @@ func webUiStaticCssAlertsCss() (*asset, error) {
 
 // webUiStaticCssGraphCss reads file data from disk. It returns an error on failure.
 func webUiStaticCssGraphCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/css/graph.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/css/graph.css"
 	name := "web/ui/static/css/graph.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -248,7 +249,7 @@ func webUiStaticCssGraphCss() (*asset, error) {
 
 // webUiStaticCssProm_consoleCss reads file data from disk. It returns an error on failure.
 func webUiStaticCssProm_consoleCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/css/prom_console.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/css/prom_console.css"
 	name := "web/ui/static/css/prom_console.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -266,8 +267,26 @@ func webUiStaticCssProm_consoleCss() (*asset, error) {
 
 // webUiStaticCssPrometheusCss reads file data from disk. It returns an error on failure.
 func webUiStaticCssPrometheusCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/css/prometheus.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/css/prometheus.css"
 	name := "web/ui/static/css/prometheus.css"
+	bytes, err := bindataRead(path, name)
+	if err != nil {
+		return nil, err
+	}
+
+	fi, err := os.Stat(path)
+	if err != nil {
+		err = fmt.Errorf("Error reading asset info %s at %s: %v", name, path, err)
+	}
+
+	a := &asset{bytes: bytes, info: fi}
+	return a, err
+}
+
+// webUiStaticCssTargetsCss reads file data from disk. It returns an error on failure.
+func webUiStaticCssTargetsCss() (*asset, error) {
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/css/targets.css"
+	name := "web/ui/static/css/targets.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
 		return nil, err
@@ -284,7 +303,7 @@ func webUiStaticCssPrometheusCss() (*asset, error) {
 
 // webUiStaticImgAjaxLoaderGif reads file data from disk. It returns an error on failure.
 func webUiStaticImgAjaxLoaderGif() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/img/ajax-loader.gif"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/img/ajax-loader.gif"
 	name := "web/ui/static/img/ajax-loader.gif"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -302,7 +321,7 @@ func webUiStaticImgAjaxLoaderGif() (*asset, error) {
 
 // webUiStaticImgFaviconIco reads file data from disk. It returns an error on failure.
 func webUiStaticImgFaviconIco() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/img/favicon.ico"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/img/favicon.ico"
 	name := "web/ui/static/img/favicon.ico"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -320,7 +339,7 @@ func webUiStaticImgFaviconIco() (*asset, error) {
 
 // webUiStaticJsAlertsJs reads file data from disk. It returns an error on failure.
 func webUiStaticJsAlertsJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/js/alerts.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/js/alerts.js"
 	name := "web/ui/static/js/alerts.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -338,7 +357,7 @@ func webUiStaticJsAlertsJs() (*asset, error) {
 
 // webUiStaticJsGraphJs reads file data from disk. It returns an error on failure.
 func webUiStaticJsGraphJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/js/graph.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/js/graph.js"
 	name := "web/ui/static/js/graph.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -356,7 +375,7 @@ func webUiStaticJsGraphJs() (*asset, error) {
 
 // webUiStaticJsGraph_templateHandlebar reads file data from disk. It returns an error on failure.
 func webUiStaticJsGraph_templateHandlebar() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/js/graph_template.handlebar"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/js/graph_template.handlebar"
 	name := "web/ui/static/js/graph_template.handlebar"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -374,7 +393,7 @@ func webUiStaticJsGraph_templateHandlebar() (*asset, error) {
 
 // webUiStaticJsProm_consoleJs reads file data from disk. It returns an error on failure.
 func webUiStaticJsProm_consoleJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/js/prom_console.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/js/prom_console.js"
 	name := "web/ui/static/js/prom_console.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -392,7 +411,7 @@ func webUiStaticJsProm_consoleJs() (*asset, error) {
 
 // webUiStaticJsTargetsJs reads file data from disk. It returns an error on failure.
 func webUiStaticJsTargetsJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/js/targets.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/js/targets.js"
 	name := "web/ui/static/js/targets.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -410,7 +429,7 @@ func webUiStaticJsTargetsJs() (*asset, error) {
 
 // webUiStaticVendorBootstrap331CssBootstrapThemeMinCss reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331CssBootstrapThemeMinCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap-theme.min.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap-theme.min.css"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap-theme.min.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -428,7 +447,7 @@ func webUiStaticVendorBootstrap331CssBootstrapThemeMinCss() (*asset, error) {
 
 // webUiStaticVendorBootstrap331CssBootstrapMinCss reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331CssBootstrapMinCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -446,7 +465,7 @@ func webUiStaticVendorBootstrap331CssBootstrapMinCss() (*asset, error) {
 
 // webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularEot reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularEot() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.eot"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.eot"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.eot"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -464,7 +483,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularEot() (*asset, 
 
 // webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularSvg reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularSvg() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.svg"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.svg"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.svg"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -482,7 +501,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularSvg() (*asset, 
 
 // webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularTtf reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularTtf() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.ttf"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.ttf"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.ttf"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -500,7 +519,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularTtf() (*asset, 
 
 // webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularWoff reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularWoff() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.woff"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.woff"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.woff"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -518,7 +537,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularWoff() (*asset,
 
 // webUiStaticVendorBootstrap331JsBootstrapMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331JsBootstrapMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -536,7 +555,7 @@ func webUiStaticVendorBootstrap331JsBootstrapMinJs() (*asset, error) {
 
 // webUiStaticVendorBootstrap331JsNpmJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap331JsNpmJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap-3.3.1/js/npm.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap-3.3.1/js/npm.js"
 	name := "web/ui/static/vendor/bootstrap-3.3.1/js/npm.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -554,7 +573,7 @@ func webUiStaticVendorBootstrap331JsNpmJs() (*asset, error) {
 
 // webUiStaticVendorBootstrap3TypeaheadBootstrap3TypeaheadMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorBootstrap3TypeaheadBootstrap3TypeaheadMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js"
 	name := "web/ui/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -572,7 +591,7 @@ func webUiStaticVendorBootstrap3TypeaheadBootstrap3TypeaheadMinJs() (*asset, err
 
 // webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinCss reads file data from disk. It returns an error on failure.
 func webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css"
 	name := "web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -590,7 +609,7 @@ func webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinC
 
 // webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.js"
 	name := "web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -608,7 +627,7 @@ func webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinJ
 
 // webUiStaticVendorFuzzyFuzzyJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorFuzzyFuzzyJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/fuzzy/fuzzy.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/fuzzy/fuzzy.js"
 	name := "web/ui/static/vendor/fuzzy/fuzzy.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -626,7 +645,7 @@ func webUiStaticVendorFuzzyFuzzyJs() (*asset, error) {
 
 // webUiStaticVendorJsJqueryHotkeysJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorJsJqueryHotkeysJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/js/jquery.hotkeys.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/js/jquery.hotkeys.js"
 	name := "web/ui/static/vendor/js/jquery.hotkeys.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -644,7 +663,7 @@ func webUiStaticVendorJsJqueryHotkeysJs() (*asset, error) {
 
 // webUiStaticVendorJsJqueryMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorJsJqueryMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/js/jquery.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/js/jquery.min.js"
 	name := "web/ui/static/vendor/js/jquery.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -662,7 +681,7 @@ func webUiStaticVendorJsJqueryMinJs() (*asset, error) {
 
 // webUiStaticVendorJsJquerySelectionJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorJsJquerySelectionJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/js/jquery.selection.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/js/jquery.selection.js"
 	name := "web/ui/static/vendor/js/jquery.selection.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -680,7 +699,7 @@ func webUiStaticVendorJsJquerySelectionJs() (*asset, error) {
 
 // webUiStaticVendorMomentMomentMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorMomentMomentMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/moment/moment.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/moment/moment.min.js"
 	name := "web/ui/static/vendor/moment/moment.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -698,7 +717,7 @@ func webUiStaticVendorMomentMomentMinJs() (*asset, error) {
 
 // webUiStaticVendorMustacheMustacheMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorMustacheMustacheMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/mustache/mustache.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/mustache/mustache.min.js"
 	name := "web/ui/static/vendor/mustache/mustache.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -716,7 +735,7 @@ func webUiStaticVendorMustacheMustacheMinJs() (*asset, error) {
 
 // webUiStaticVendorRickshawRickshawMinCss reads file data from disk. It returns an error on failure.
 func webUiStaticVendorRickshawRickshawMinCss() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/rickshaw/rickshaw.min.css"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/rickshaw/rickshaw.min.css"
 	name := "web/ui/static/vendor/rickshaw/rickshaw.min.css"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -734,7 +753,7 @@ func webUiStaticVendorRickshawRickshawMinCss() (*asset, error) {
 
 // webUiStaticVendorRickshawRickshawMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorRickshawRickshawMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/rickshaw/rickshaw.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/rickshaw/rickshaw.min.js"
 	name := "web/ui/static/vendor/rickshaw/rickshaw.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -752,7 +771,7 @@ func webUiStaticVendorRickshawRickshawMinJs() (*asset, error) {
 
 // webUiStaticVendorRickshawVendorD3LayoutMinJs reads file data from disk. It returns an error on failure.
 func webUiStaticVendorRickshawVendorD3LayoutMinJs() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/rickshaw/vendor/d3.layout.min.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/rickshaw/vendor/d3.layout.min.js"
 	name := "web/ui/static/vendor/rickshaw/vendor/d3.layout.min.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -770,7 +789,7 @@ func webUiStaticVendorRickshawVendorD3LayoutMinJs() (*asset, error) {
 
 // webUiStaticVendorRickshawVendorD3V3Js reads file data from disk. It returns an error on failure.
 func webUiStaticVendorRickshawVendorD3V3Js() (*asset, error) {
-	path := "/Users/hagen/PhpstormProjects/go/src/github.com/prometheus/prometheus/web/ui/static/vendor/rickshaw/vendor/d3.v3.js"
+	path := "/Users/hagen/PhpstormProjects/go/src/github.com/hagen1778/prometheus/web/ui/static/vendor/rickshaw/vendor/d3.v3.js"
 	name := "web/ui/static/vendor/rickshaw/vendor/d3.v3.js"
 	bytes, err := bindataRead(path, name)
 	if err != nil {
@@ -850,6 +869,7 @@ var _bindata = map[string]func() (*asset, error){
 	"web/ui/static/css/graph.css":                                                             webUiStaticCssGraphCss,
 	"web/ui/static/css/prom_console.css":                                                      webUiStaticCssProm_consoleCss,
 	"web/ui/static/css/prometheus.css":                                                        webUiStaticCssPrometheusCss,
+	"web/ui/static/css/targets.css":                                                           webUiStaticCssTargetsCss,
 	"web/ui/static/img/ajax-loader.gif":                                                       webUiStaticImgAjaxLoaderGif,
 	"web/ui/static/img/favicon.ico":                                                           webUiStaticImgFaviconIco,
 	"web/ui/static/js/alerts.js":                                                              webUiStaticJsAlertsJs,
@@ -929,6 +949,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 					"graph.css":        &bintree{webUiStaticCssGraphCss, map[string]*bintree{}},
 					"prom_console.css": &bintree{webUiStaticCssProm_consoleCss, map[string]*bintree{}},
 					"prometheus.css":   &bintree{webUiStaticCssPrometheusCss, map[string]*bintree{}},
+					"targets.css":      &bintree{webUiStaticCssTargetsCss, map[string]*bintree{}},
 				}},
 				"img": &bintree{nil, map[string]*bintree{
 					"ajax-loader.gif": &bintree{webUiStaticImgAjaxLoaderGif, map[string]*bintree{}},
