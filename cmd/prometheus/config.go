@@ -334,7 +334,7 @@ func parsePrometheusURL() error {
 	}
 
 	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
-		return fmt.Errorf("invalid Prometheus URL: %s, allowed characters: [A-Za-z0-9\.-]", cfg.prometheusURL)
+		return fmt.Errorf("invalid Prometheus URL: %s, allowed characters: [A-Za-z0-9.-]", cfg.prometheusURL)
 	}
 
 	promURL, err := url.Parse(cfg.prometheusURL)
@@ -356,7 +356,7 @@ func validateAlertmanagerURL(u string) error {
 		return nil
 	}
 	if ok := govalidator.IsURL(u); !ok {
-		return fmt.Errorf("invalid Alertmanager URL: %s, allowed characters: [A-Za-z0-9\.-]", u)
+		return fmt.Errorf("invalid Alertmanager URL: %s, allowed characters: [A-Za-z0-9.-]", u)
 	}
 	url, err := url.Parse(u)
 	if err != nil {
