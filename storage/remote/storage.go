@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+// Storage represents all the remote read and write endpoints.  It implements
+// storage.Storage.
 type Storage struct {
 	mtx sync.RWMutex
 
@@ -88,7 +90,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-// Stop the background processing of the storage queues.
+// Close the background processing of the storage queues.
 func (s *Storage) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
