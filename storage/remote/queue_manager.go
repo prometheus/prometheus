@@ -135,7 +135,7 @@ type StorageClient interface {
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided StorageClient.
 type QueueManager struct {
-	cfg            config.QueueManagerConfig
+	cfg            config.QueueConfig
 	externalLabels model.LabelSet
 	relabelConfigs []*config.RelabelConfig
 	client         StorageClient
@@ -154,7 +154,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(cfg config.QueueManagerConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
+func NewQueueManager(cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
 	t := &QueueManager{
 		cfg:            cfg,
 		externalLabels: externalLabels,
@@ -173,7 +173,7 @@ func NewQueueManager(cfg config.QueueManagerConfig, externalLabels model.LabelSe
 	}
 	t.shards = t.newShards(t.numShards)
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
-	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.QueueCapacity))
+	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
 
 	return t
 }
@@ -359,7 +359,7 @@ type shards struct {
 func (t *QueueManager) newShards(numShards int) *shards {
 	queues := make([]chan *model.Sample, numShards)
 	for i := 0; i < numShards; i++ {
-		queues[i] = make(chan *model.Sample, t.cfg.QueueCapacity)
+		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
 	}
 	s := &shards{
 		qm:     t,

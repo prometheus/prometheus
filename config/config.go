@@ -172,12 +172,12 @@ var (
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
-		RemoteTimeout:      model.Duration(30 * time.Second),
-		QueueManagerConfig: DefaultQueueManagerConfig,
+		RemoteTimeout: model.Duration(30 * time.Second),
+		QueueConfig:   DefaultQueueConfig,
 	}
 
-	// DefaultQueueManagerConfig is the default remote queue configuration.
-	DefaultQueueManagerConfig = QueueManagerConfig{
+	// DefaultQueueConfig is the default remote queue configuration.
+	DefaultQueueConfig = QueueConfig{
 		// With a maximum of 1000 shards, assuming an average of 100ms remote write
 		// time and 100 samples per batch, we will be able to push 1M samples/s.
 		MaxShards:         1000,
@@ -185,7 +185,7 @@ var (
 
 		// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
 		// 1000 shards, this will buffer 100M samples total.
-		QueueCapacity:     100 * 1000,
+		Capacity:          100 * 1000,
 		BatchSendDeadline: 5 * time.Second,
 
 		// Max number of times to retry a batch on recoverable errors.
@@ -1410,8 +1410,8 @@ type RemoteWriteConfig struct {
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig   HTTPClientConfig   `yaml:",inline"`
-	QueueManagerConfig QueueManagerConfig `yaml:",inline"`
+	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
+	QueueConfig      QueueConfig      `yaml:"queue_config,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1438,27 +1438,27 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	return nil
 }
 
-// QueueManagerConfig is the configuration for the queue used to write to remote
+// QueueConfig is the configuration for the queue used to write to remote
 // storage.
-type QueueManagerConfig struct {
+type QueueConfig struct {
 	// Number of samples to buffer per shard before we start dropping them.
-	QueueCapacity int
+	Capacity int `yaml:"capacity,omitempty"`
 
 	// Max number of shards, i.e. amount of concurrency.
-	MaxShards int
+	MaxShards int `yaml:"max_shards,omitempty"`
 
 	// Maximum number of samples per send.
-	MaxSamplesPerSend int
+	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 
 	// Maximum time sample will wait in buffer.
-	BatchSendDeadline time.Duration
+	BatchSendDeadline time.Duration `yaml:"batch_send_deadline,omitempty"`
 
 	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries int
+	MaxRetries int `yaml:"max_retries,omitempty"`
 
 	// On recoverable errors, backoff exponentially.
-	MinBackoff time.Duration
-	MaxBackoff time.Duration
+	MinBackoff time.Duration `yaml:"min_backoff,omitempty"`
+	MaxBackoff time.Duration `yaml:"max_backoff,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

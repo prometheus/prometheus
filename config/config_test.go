@@ -66,12 +66,12 @@ var expectedConf = &Config{
 					Action:       RelabelDrop,
 				},
 			},
-			QueueManagerConfig: DefaultQueueManagerConfig,
+			QueueConfig: DefaultQueueConfig,
 		},
 		{
-			URL:                mustParseURL("http://remote2/push"),
-			RemoteTimeout:      model.Duration(30 * time.Second),
-			QueueManagerConfig: DefaultQueueManagerConfig,
+			URL:           mustParseURL("http://remote2/push"),
+			RemoteTimeout: model.Duration(30 * time.Second),
+			QueueConfig:   DefaultQueueConfig,
 		},
 	},
 
