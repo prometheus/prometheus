@@ -199,7 +199,7 @@ func main() {
 	logger.SetLevel(cfg.logLevel)
 	logger.SetFormat(cfg.logFormat)
 
-	logger.Infoln("Starting prometheus", version.Info())
+	logger.Infoln("Starting Prometheus", version.Info())
 	logger.Infoln("Build context", version.BuildContext())
 	logger.Infoln("Host details", Uname())
 
@@ -214,7 +214,7 @@ func main() {
 	hupReady := make(chan bool)
 	signal.Notify(hup, syscall.SIGHUP)
 	logger.Infoln("Starting tsdb")
-	localStorage, err := tsdb.Open(cfg.localStoragePath, prometheus.DefaultRegisterer, &cfg.tsdb)
+	localStorage, err := tsdb.Open(cfg.localStoragePath, logger.With("component", "tsdb"), prometheus.DefaultRegisterer, &cfg.tsdb)
 	if err != nil {
 		log.Errorf("Opening storage failed: %s", err)
 		os.Exit(1)
@@ -225,10 +225,10 @@ func main() {
 	// sampleAppender = append(sampleAppender, remoteStorage)
 	// reloadables = append(reloadables, remoteStorage)
 
-	cfg.queryEngine.Logger = logger
+	cfg.queryEngine.Logger = logger.With("component", "queryEngine")
 	var (
-		notifier       = notifier.New(&cfg.notifier, logger)
-		targetManager  = retrieval.NewTargetManager(tsdb.Adapter(localStorage), logger)
+		notifier       = notifier.New(&cfg.notifier, logger.With("component", "notifier"))
+		targetManager  = retrieval.NewTargetManager(tsdb.Adapter(localStorage), logger.With("component", "targetManager"))
 		queryEngine    = promql.NewEngine(tsdb.Adapter(localStorage), &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
@@ -239,7 +239,7 @@ func main() {
 		QueryEngine: queryEngine,
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
-		Logger:      logger,
+		Logger:      logger.With("component", "ruleManager"),
 	})
 
 	cfg.web.Context = ctx
@@ -276,15 +276,16 @@ func main() {
 	// early as possible, but ignore it until we are ready to handle reloading
 	// our config.
 	go func() {
+		lc := logger.With("component", "config")
 		<-hupReady
 		for {
 			select {
 			case <-hup:
-				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+				if err := reloadConfig(cfg.configFile, lc, reloadables...); err != nil {
 					logger.Errorf("Error reloading config: %s", err)
 				}
 			case rc := <-webHandler.Reload():
-				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+				if err := reloadConfig(cfg.configFile, lc, reloadables...); err != nil {
 					logger.Errorf("Error reloading config: %s", err)
 					rc <- err
 				} else {

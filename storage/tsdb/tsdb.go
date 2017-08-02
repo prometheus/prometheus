@@ -14,11 +14,14 @@
 package tsdb
 
 import (
+	"fmt"
 	"time"
 	"unsafe"
 
+	goKitLog "github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -26,6 +29,7 @@ import (
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
+// Adapter wraps a tsdb.DB as a storage.Storage.
 func Adapter(db *tsdb.DB) storage.Storage {
 	return &adapter{db: db}
 }
@@ -54,9 +58,52 @@ type Options struct {
 	NoLockfile bool
 }
 
+type loggerAdapter struct {
+	l log.Logger
+}
+
+func (l loggerAdapter) Log(kv ...interface{}) error {
+	logger := l.l
+	if len(kv) == 0 {
+		return nil
+	}
+	if len(kv)%2 == 1 {
+		kv = append(kv, nil)
+	}
+	msg := ""
+	isErr := false
+	for i := 0; i < len(kv); i += 2 {
+		k, ok := kv[i].(string)
+		if !ok {
+			return fmt.Errorf("even-indexed log argument must be of string type")
+		}
+		if v, ok := kv[i+1].(string); k == "msg" && ok {
+			msg = v
+			continue
+		}
+		if k == "err" {
+			isErr = true
+		}
+		logger = logger.With(k, kv[i+1])
+	}
+
+	if isErr {
+		logger.Errorln(msg)
+	} else {
+		logger.Infoln(msg)
+	}
+
+	return nil
+}
+
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
-func Open(path string, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
-	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
+func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
+	var logger goKitLog.Logger
+	if l != nil {
+		logger = loggerAdapter{l}
+	}
+
+	db, err := tsdb.Open(path, logger, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
 		MinBlockDuration:  uint64(time.Duration(opts.MinBlockDuration).Seconds() * 1000),
 		MaxBlockDuration:  uint64(time.Duration(opts.MaxBlockDuration).Seconds() * 1000),
