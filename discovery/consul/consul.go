@@ -297,7 +297,6 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
 			}
 
-
 			target := model.LabelSet{
 				model.AddressLabel:  model.LabelValue(addr),
 				addressLabel:        model.LabelValue(node.Address),
@@ -311,10 +310,10 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 			for labelName, labelValue := range node.NodeMeta {
 				labelName = nodMetaLabelPrefix + strutil.SanitizeLabelName(labelName)
 				target[model.LabelName(labelName)] = model.LabelValue(labelValue)
+				srv.logger.Debugf("Mapping: %s %s", labelName, labelValue)
 			}
 
 			tgroup.Targets = append(tgroup.Targets, target)
-
 		}
 		// Check context twice to ensure we always catch cancelation.
 		select {
