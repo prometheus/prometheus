@@ -89,19 +89,19 @@ var (
 	targetScrapeSampleDuplicate = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_duplicate_timestamp_total",
-			Help: "Total number of samples ingested with different values but the same timestamp",
+			Help: "Total number of samples rejected due to duplicate timestamps but different values",
 		},
 	)
 	targetScrapeSampleOutOfOrder = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_out_of_order_total",
-			Help: "Total number of samples ingested out of the expected order",
+			Help: "Total number of samples rejected due to not being out of the expected order",
 		},
 	)
 	targetScrapeSampleOutOfBounds = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_sample_out_of_bounds_total",
-			Help: "Total number of samples ingested out of bounds",
+			Help: "Total number of samples rejected due to timestamp falling outside of the time bounds",
 		},
 	)
 )
@@ -785,8 +785,9 @@ loop:
 				err = nil
 				continue
 			case storage.ErrOutOfOrderSample:
-				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
 				numOutOfOrder++
+				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
+				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates++
@@ -796,6 +797,7 @@ loop:
 			case storage.ErrOutOfBounds:
 				numOutOfBounds++
 				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
 				// Keep on parsing output if we hit the limit, so we report the correct
