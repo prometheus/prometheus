@@ -444,16 +444,22 @@
 			"revisionTime": "2017-06-07T03:48:29Z"
 		},
 		{
-			"checksumSHA1": "LclVLJYrBi03PBjsVPpgoMbUDQ8=",
+			"checksumSHA1": "Hh1wOSRBeoGnkdslDM4qURfSFJc=",
 			"path": "github.com/hashicorp/consul/api",
-			"revision": "daacc4be8bee214e3fc4b32a6dd385f5ef1b4c36",
-			"revisionTime": "2016-10-28T04:06:46Z"
+			"revision": "6852dec3f2578ff5f188c6be2b60289b7934d596",
+			"revisionTime": "2017-08-02T15:01:21Z"
 		},
 		{
 			"checksumSHA1": "Uzyon2091lmwacNsl1hCytjhHtg=",
 			"path": "github.com/hashicorp/go-cleanhttp",
 			"revision": "ad28ea4487f05916463e2423a55166280e8254b5",
 			"revisionTime": "2016-04-07T17:41:26Z"
+		},
+		{
+			"checksumSHA1": "A1PcINvF3UiwHRKn8UcgARgvGRs=",
+			"path": "github.com/hashicorp/go-rootcerts",
+			"revision": "6bb64b370b90e7ef1fa532be9e591a81c3493e00",
+			"revisionTime": "2016-05-03T14:34:40Z"
 		},
 		{
 			"checksumSHA1": "E3Xcanc9ouQwL+CZGOUyA/+giLg=",
@@ -527,6 +533,12 @@
 			"path": "github.com/miekg/dns",
 			"revision": "672033dedc09500ca4d340760d0b80b9c0b198bd",
 			"revisionTime": "2017-02-13T20:16:50Z"
+		},
+		{
+			"checksumSHA1": "V/quM7+em2ByJbWBLOsEwnY3j/Q=",
+			"path": "github.com/mitchellh/go-homedir",
+			"revision": "b8bc1bf767474819792c23f32d8286a45736f1c6",
+			"revisionTime": "2016-12-03T19:45:07Z"
 		},
 		{
 			"checksumSHA1": "IndbEEL1mdqqg4IpvyvbtEMGoo8=",
@@ -1712,5 +1724,5 @@
 			"revisionTime": "2017-03-31T20:34:26Z"
 		}
 	],
-	"rootPath": "github.com/prometheus/prometheus"
+	"rootPath": "github.com/omadawn/prometheus"
 }

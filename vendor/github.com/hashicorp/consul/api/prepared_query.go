@@ -43,6 +43,11 @@ type ServiceQuery struct {
 	// this list it must be present. If the tag is preceded with "!" then
 	// it is disallowed.
 	Tags []string
+
+	// NodeMeta is a map of required node metadata fields. If a key/value
+	// pair is in this map it must be present on the node in order for the
+	// service entry to be returned.
+	NodeMeta map[string]string
 }
 
 // QueryTemplate carries the arguments for creating a templated query.
@@ -167,19 +172,18 @@ func (c *PreparedQuery) Get(queryID string, q *QueryOptions) ([]*PreparedQueryDe
 }
 
 // Delete is used to delete a specific prepared query.
-func (c *PreparedQuery) Delete(queryID string, q *QueryOptions) (*QueryMeta, error) {
+func (c *PreparedQuery) Delete(queryID string, q *WriteOptions) (*WriteMeta, error) {
 	r := c.c.newRequest("DELETE", "/v1/query/"+queryID)
-	r.setQueryOptions(q)
+	r.setWriteOptions(q)
 	rtt, resp, err := requireOK(c.c.doRequest(r))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	qm := &QueryMeta{}
-	parseQueryMeta(resp, qm)
-	qm.RequestTime = rtt
-	return qm, nil
+	wm := &WriteMeta{}
+	wm.RequestTime = rtt
+	return wm, nil
 }
 
 // Execute is used to execute a specific prepared query. You can execute using

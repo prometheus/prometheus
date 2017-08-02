@@ -49,22 +49,23 @@ type KVPairs []*KVPair
 type KVOp string
 
 const (
-	KVSet          KVOp = "set"
-	KVDelete            = "delete"
-	KVDeleteCAS         = "delete-cas"
-	KVDeleteTree        = "delete-tree"
-	KVCAS               = "cas"
-	KVLock              = "lock"
-	KVUnlock            = "unlock"
-	KVGet               = "get"
-	KVGetTree           = "get-tree"
-	KVCheckSession      = "check-session"
-	KVCheckIndex        = "check-index"
+	KVSet            KVOp = "set"
+	KVDelete         KVOp = "delete"
+	KVDeleteCAS      KVOp = "delete-cas"
+	KVDeleteTree     KVOp = "delete-tree"
+	KVCAS            KVOp = "cas"
+	KVLock           KVOp = "lock"
+	KVUnlock         KVOp = "unlock"
+	KVGet            KVOp = "get"
+	KVGetTree        KVOp = "get-tree"
+	KVCheckSession   KVOp = "check-session"
+	KVCheckIndex     KVOp = "check-index"
+	KVCheckNotExists KVOp = "check-not-exists"
 )
 
 // KVTxnOp defines a single operation inside a transaction.
 type KVTxnOp struct {
-	Verb    string
+	Verb    KVOp
 	Key     string
 	Value   []byte
 	Flags   uint64
@@ -156,7 +157,7 @@ func (k *KV) Keys(prefix, separator string, q *QueryOptions) ([]string, *QueryMe
 }
 
 func (k *KV) getInternal(key string, params map[string]string, q *QueryOptions) (*http.Response, *QueryMeta, error) {
-	r := k.c.newRequest("GET", "/v1/kv/"+key)
+	r := k.c.newRequest("GET", "/v1/kv/"+strings.TrimPrefix(key, "/"))
 	r.setQueryOptions(q)
 	for param, val := range params {
 		r.params.Set(param, val)
@@ -277,7 +278,7 @@ func (k *KV) DeleteTree(prefix string, w *WriteOptions) (*WriteMeta, error) {
 }
 
 func (k *KV) deleteInternal(key string, params map[string]string, q *WriteOptions) (bool, *WriteMeta, error) {
-	r := k.c.newRequest("DELETE", "/v1/kv/"+key)
+	r := k.c.newRequest("DELETE", "/v1/kv/"+strings.TrimPrefix(key, "/"))
 	r.setWriteOptions(q)
 	for param, val := range params {
 		r.params.Set(param, val)
