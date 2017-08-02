@@ -85,6 +85,12 @@ var (
 			Help: "Total number of scrapes that hit the sample limit and were rejected.",
 		},
 	)
+	targetScrapeSampleDuplicate = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_duplicate_timestamp_total",
+			Help: "Total number of samples ingested with different values but the same timestamp",
+		},
+	)
 )
 
 func init() {
@@ -94,6 +100,7 @@ func init() {
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
 	prometheus.MustRegister(targetScrapeSampleLimit)
+	prometheus.MustRegister(targetScrapeSampleDuplicate)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -523,6 +530,7 @@ func (sl *scrapeLoop) append(samples model.Samples) (int, error) {
 				numOutOfOrder++
 				log.With("sample", s).With("error", err).Debug("Sample discarded")
 			case local.ErrDuplicateSampleForTimestamp:
+				targetScrapeSampleDuplicate.Inc()
 				numDuplicates++
 				log.With("sample", s).With("error", err).Debug("Sample discarded")
 			default:
