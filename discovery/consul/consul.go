@@ -51,8 +51,8 @@ const (
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
 	// serviceIDLabel is the name of the label containing the service ID.
 	serviceIDLabel = model.MetaLabelPrefix + "consul_service_id"
-	// nodMetaLabelPrefix will be
-	nodMetaLabelPrefix = model.MetaLabelPrefix + "consul_node_meta_"
+	// nodeMetaLabelPrefix is the prefix for node metadata labels
+	nodeMetaLabelPrefix = model.MetaLabelPrefix + "consul_node_meta_"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -308,7 +308,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 			}
 
 			for labelName, labelValue := range node.NodeMeta {
-				labelName = nodMetaLabelPrefix + strutil.SanitizeLabelName(labelName)
+				labelName = nodeMetaLabelPrefix + strutil.SanitizeLabelName(labelName)
 				target[model.LabelName(labelName)] = model.LabelValue(labelValue)
 				srv.logger.Debugf("Mapping: %s %s", labelName, labelValue)
 			}
