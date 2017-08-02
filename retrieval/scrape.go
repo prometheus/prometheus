@@ -86,6 +86,24 @@ var (
 			Help: "Total number of scrapes that hit the sample limit and were rejected.",
 		},
 	)
+	targetScrapeSampleDuplicate = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_sample_duplicate_timestamp_total",
+			Help: "Total number of samples rejected due to duplicate timestamps but different values",
+		},
+	)
+	targetScrapeSampleOutOfOrder = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_sample_out_of_order_total",
+			Help: "Total number of samples rejected due to not being out of the expected order",
+		},
+	)
+	targetScrapeSampleOutOfBounds = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_sample_out_of_bounds_total",
+			Help: "Total number of samples rejected due to timestamp falling outside of the time bounds",
+		},
+	)
 )
 
 func init() {
@@ -94,6 +112,9 @@ func init() {
 	prometheus.MustRegister(targetSyncIntervalLength)
 	prometheus.MustRegister(targetScrapePoolSyncsCounter)
 	prometheus.MustRegister(targetScrapeSampleLimit)
+	prometheus.MustRegister(targetScrapeSampleDuplicate)
+	prometheus.MustRegister(targetScrapeSampleOutOfOrder)
+	prometheus.MustRegister(targetScrapeSampleOutOfBounds)
 }
 
 // scrapePool manages scrapes for sets of targets.
@@ -764,16 +785,19 @@ loop:
 				err = nil
 				continue
 			case storage.ErrOutOfOrderSample:
-				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
 				numOutOfOrder++
+				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
+				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				targetScrapeSampleDuplicate.Inc()
 				continue
 			case storage.ErrOutOfBounds:
 				numOutOfBounds++
 				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
 				// Keep on parsing output if we hit the limit, so we report the correct
@@ -810,18 +834,21 @@ loop:
 				continue
 			case storage.ErrOutOfOrderSample:
 				err = nil
-				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
 				numOutOfOrder++
+				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
+				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				err = nil
 				numDuplicates++
 				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				targetScrapeSampleDuplicate.Inc()
 				continue
 			case storage.ErrOutOfBounds:
 				err = nil
 				numOutOfBounds++
 				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
 				sampleLimitErr = err
