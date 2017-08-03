@@ -14,10 +14,10 @@
 package remote
 
 import (
-	"context"
 	"sort"
 
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
