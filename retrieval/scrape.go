@@ -773,7 +773,8 @@ loop:
 
 		ref, ok := sl.cache.getRef(yoloString(met))
 		if ok {
-			switch err = app.AddFast(ref, t, v); err {
+			lset := sl.cache.lsets[ref].lset
+			switch err = app.AddFast(lset, ref, t, v); err {
 			case nil:
 				if tp == nil {
 					e := sl.cache.lsets[ref]
@@ -975,7 +976,8 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 
 	ref, ok := sl.cache.getRef(s2)
 	if ok {
-		err := app.AddFast(ref, t, v)
+		lset := sl.cache.lsets[ref].lset
+		err := app.AddFast(lset, ref, t, v)
 		switch err {
 		case nil:
 			return nil
@@ -989,13 +991,13 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 			return err
 		}
 	}
-	met := labels.Labels{
+	lset := labels.Labels{
 		labels.Label{Name: labels.MetricName, Value: s},
 	}
-	ref, err := app.Add(met, t, v)
+	ref, err := app.Add(lset, t, v)
 	switch err {
 	case nil:
-		sl.cache.addRef(s2, ref, met, met.Hash())
+		sl.cache.addRef(s2, ref, lset, lset.Hash())
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil

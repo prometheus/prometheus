@@ -40,6 +40,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/web"
 )
@@ -221,20 +223,20 @@ func main() {
 	}
 	logger.Infoln("tsdb started")
 
-	// remoteStorage := &remote.Storage{}
-	// sampleAppender = append(sampleAppender, remoteStorage)
-	// reloadables = append(reloadables, remoteStorage)
+	remoteStorage := &remote.Storage{}
+	reloadables = append(reloadables, remoteStorage)
+	fanoutStorage := storage.NewFanout(tsdb.Adapter(localStorage), remoteStorage)
 
 	cfg.queryEngine.Logger = logger
 	var (
 		notifier       = notifier.New(&cfg.notifier, logger)
-		targetManager  = retrieval.NewTargetManager(tsdb.Adapter(localStorage), logger)
-		queryEngine    = promql.NewEngine(tsdb.Adapter(localStorage), &cfg.queryEngine)
+		targetManager  = retrieval.NewTargetManager(fanoutStorage, logger)
+		queryEngine    = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		Appendable:  tsdb.Adapter(localStorage),
+		Appendable:  fanoutStorage,
 		Notifier:    notifier,
 		QueryEngine: queryEngine,
 		Context:     ctx,
@@ -296,8 +298,8 @@ func main() {
 
 	// Start all components. The order is NOT arbitrary.
 	defer func() {
-		if err := localStorage.Close(); err != nil {
-			logger.Errorln("Error stopping storage:", err)
+		if err := fanoutStorage.Close(); err != nil {
+			log.Errorln("Error stopping storage:", err)
 		}
 	}()
 

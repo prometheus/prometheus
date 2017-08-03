@@ -56,7 +56,7 @@ type Querier interface {
 type Appender interface {
 	Add(l labels.Labels, t int64, v float64) (string, error)
 
-	AddFast(ref string, t int64, v float64) error
+	AddFast(l labels.Labels, ref string, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
