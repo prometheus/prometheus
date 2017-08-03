@@ -123,42 +123,6 @@ func init() {
 	prometheus.MustRegister(numShards)
 }
 
-// QueueManagerConfig is the configuration for the queue used to write to remote
-// storage.
-type QueueManagerConfig struct {
-	// Number of samples to buffer per shard before we start dropping them.
-	QueueCapacity int
-	// Max number of shards, i.e. amount of concurrency.
-	MaxShards int
-	// Maximum number of samples per send.
-	MaxSamplesPerSend int
-	// Maximum time sample will wait in buffer.
-	BatchSendDeadline time.Duration
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries int
-	// On recoverable errors, backoff exponentially.
-	MinBackoff time.Duration
-	MaxBackoff time.Duration
-}
-
-// defaultQueueManagerConfig is the default remote queue configuration.
-var defaultQueueManagerConfig = QueueManagerConfig{
-	// With a maximum of 1000 shards, assuming an average of 100ms remote write
-	// time and 100 samples per batch, we will be able to push 1M samples/s.
-	MaxShards:         1000,
-	MaxSamplesPerSend: 100,
-
-	// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
-	// 1000 shards, this will buffer 100M samples total.
-	QueueCapacity:     100 * 1000,
-	BatchSendDeadline: 5 * time.Second,
-
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries: 10,
-	MinBackoff: 30 * time.Millisecond,
-	MaxBackoff: 100 * time.Millisecond,
-}
-
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
 type StorageClient interface {
@@ -171,7 +135,7 @@ type StorageClient interface {
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided StorageClient.
 type QueueManager struct {
-	cfg            QueueManagerConfig
+	cfg            config.QueueConfig
 	externalLabels model.LabelSet
 	relabelConfigs []*config.RelabelConfig
 	client         StorageClient
@@ -190,7 +154,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(cfg QueueManagerConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
+func NewQueueManager(cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
 	t := &QueueManager{
 		cfg:            cfg,
 		externalLabels: externalLabels,
@@ -209,7 +173,7 @@ func NewQueueManager(cfg QueueManagerConfig, externalLabels model.LabelSet, rela
 	}
 	t.shards = t.newShards(t.numShards)
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
-	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.QueueCapacity))
+	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
 
 	return t
 }
@@ -397,7 +361,7 @@ type shards struct {
 func (t *QueueManager) newShards(numShards int) *shards {
 	queues := make([]chan *model.Sample, numShards)
 	for i := 0; i < numShards; i++ {
-		queues[i] = make(chan *model.Sample, t.cfg.QueueCapacity)
+		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
 	}
 	s := &shards{
 		qm:     t,
