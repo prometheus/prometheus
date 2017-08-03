@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 )
 
 type TestStorageClient struct {
@@ -81,7 +82,7 @@ func (c *TestStorageClient) Name() string {
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
-	n := defaultQueueManagerConfig.QueueCapacity * 2
+	n := config.DefaultQueueConfig.Capacity * 2
 
 	samples := make(model.Samples, 0, n)
 	for i := 0; i < n; i++ {
@@ -97,7 +98,7 @@ func TestSampleDelivery(t *testing.T) {
 	c := NewTestStorageClient()
 	c.expectSamples(samples[:len(samples)/2])
 
-	cfg := defaultQueueManagerConfig
+	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
 	m := NewQueueManager(cfg, nil, nil, c)
 
@@ -117,7 +118,7 @@ func TestSampleDelivery(t *testing.T) {
 
 func TestSampleDeliveryOrder(t *testing.T) {
 	ts := 10
-	n := defaultQueueManagerConfig.MaxSamplesPerSend * ts
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
 
 	samples := make(model.Samples, 0, n)
 	for i := 0; i < n; i++ {
@@ -133,7 +134,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples)
-	m := NewQueueManager(defaultQueueManagerConfig, nil, nil, c)
+	m := NewQueueManager(config.DefaultQueueConfig, nil, nil, c)
 
 	// These should be received by the client.
 	for _, s := range samples {
@@ -194,7 +195,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	// `MaxSamplesPerSend*Shards` samples should be consumed by the
 	// per-shard goroutines, and then another `MaxSamplesPerSend`
 	// should be left on the queue.
-	n := defaultQueueManagerConfig.MaxSamplesPerSend * 2
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
 
 	samples := make(model.Samples, 0, n)
 	for i := 0; i < n; i++ {
@@ -208,9 +209,9 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	}
 
 	c := NewTestBlockedStorageClient()
-	cfg := defaultQueueManagerConfig
+	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
-	cfg.QueueCapacity = n
+	cfg.Capacity = n
 	m := NewQueueManager(cfg, nil, nil, c)
 
 	m.Start()
@@ -240,7 +241,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if m.queueLen() != defaultQueueManagerConfig.MaxSamplesPerSend {
+	if m.queueLen() != config.DefaultQueueConfig.MaxSamplesPerSend {
 		t.Fatalf("Failed to drain QueueManager queue, %d elements left",
 			m.queueLen(),
 		)

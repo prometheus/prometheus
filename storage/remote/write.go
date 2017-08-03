@@ -45,7 +45,7 @@ func (w *Writer) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 		newQueues = append(newQueues, NewQueueManager(
-			defaultQueueManagerConfig,
+			rwConf.QueueConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
 			c,
