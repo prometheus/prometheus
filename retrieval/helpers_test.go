@@ -27,16 +27,16 @@ func (a nopAppendable) Appender() (storage.Appender, error) {
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(labels.Labels, int64, float64) (string, error) { return "", nil }
-func (a nopAppender) AddFast(string, int64, float64) error              { return nil }
-func (a nopAppender) Commit() error                                     { return nil }
-func (a nopAppender) Rollback() error                                   { return nil }
+func (a nopAppender) Add(labels.Labels, int64, float64) (string, error)   { return "", nil }
+func (a nopAppender) AddFast(labels.Labels, string, int64, float64) error { return nil }
+func (a nopAppender) Commit() error                                       { return nil }
+func (a nopAppender) Rollback() error                                     { return nil }
 
 type collectResultAppender struct {
 	result []sample
 }
 
-func (a *collectResultAppender) AddFast(ref string, t int64, v float64) error {
+func (a *collectResultAppender) AddFast(m labels.Labels, ref string, t int64, v float64) error {
 	// Not implemented.
 	return storage.ErrNotFound
 }

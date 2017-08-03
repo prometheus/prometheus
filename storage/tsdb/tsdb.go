@@ -135,7 +135,7 @@ func (a appender) Add(lset labels.Labels, t int64, v float64) (string, error) {
 	return ref, err
 }
 
-func (a appender) AddFast(ref string, t int64, v float64) error {
+func (a appender) AddFast(_ labels.Labels, ref string, t int64, v float64) error {
 	err := a.a.AddFast(ref, t, v)
 
 	switch errors.Cause(err) {

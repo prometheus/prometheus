@@ -22,7 +22,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 func main() {
@@ -39,7 +39,7 @@ func main() {
 			return
 		}
 
-		var req remote.WriteRequest
+		var req prompb.WriteRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -53,7 +53,7 @@ func main() {
 			fmt.Println(m)
 
 			for _, s := range ts.Samples {
-				fmt.Printf("  %f %d\n", s.Value, s.TimestampMs)
+				fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
 			}
 		}
 	})
