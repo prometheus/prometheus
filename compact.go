@@ -180,57 +180,50 @@ func (c *compactor) Plan() ([][]string, error) {
 	return nil, nil
 }
 
+// selectDirs returns the dir metas that should be compacted into a single new block.
+// If only a single block range is configured, the result is always nil.
 func (c *compactor) selectDirs(ds []dirMeta) []dirMeta {
-	// The way to skip compaction is to not have blockRanges.
-	if len(c.opts.blockRanges) == 1 {
+	if len(c.opts.blockRanges) < 2 || len(ds) < 1 {
 		return nil
 	}
 
-	return selectRecurse(ds, c.opts.blockRanges)
-}
+	highTime := ds[len(ds)-1].meta.MinTime
 
-func selectRecurse(dms []dirMeta, intervals []int64) []dirMeta {
-	if len(intervals) == 0 {
-		return dms
-	}
+	for _, iv := range c.opts.blockRanges[1:] {
+		parts := splitByRange(ds, iv)
+		if len(parts) == 0 {
+			continue
+		}
 
-	// Get the blocks by the max interval
-	blocks := splitByRange(dms, intervals[len(intervals)-1])
-	dirs := []dirMeta{}
-	for i := len(blocks) - 1; i >= 0; i-- {
-		// We need to choose the oldest blocks to compact. If there are a couple of blocks in
-		// the largest interval, we should compact those first.
-		if len(blocks[i]) > 1 {
-			dirs = blocks[i]
-			break
+		for _, p := range parts {
+			mint := p[0].meta.MinTime
+			maxt := p[len(p)-1].meta.MaxTime
+			// Pick the range of blocks if it spans the full range (potentially with gaps)
+			// or is before the most recent block.
+			// This ensures we don't compact blocks prematurely when another one of the same
+			// size still fits in the range.
+			if (maxt-mint == iv || maxt <= highTime) && len(p) > 1 {
+				return p
+			}
 		}
 	}
 
-	// If there are too many blocks, see if a smaller interval will catch them.
-	// i.e, if we have 0-20, 60-80, 80-100; all fall under 0-240, but we'd rather compact 60-100
-	// than all at once.
-	// Again if have 0-1d, 1d-2d, 3-6d we compact 0-1d, 1d-2d to compact it into the 0-3d block instead of compacting all three
-	// This is to honor the boundaries as much as possible.
-	if len(dirs) > 2 {
-		smallerDirs := selectRecurse(dirs, intervals[:len(intervals)-1])
-		if len(smallerDirs) > 1 {
-			return smallerDirs
-		}
-	}
-
-	return dirs
+	return nil
 }
 
-// splitByRange splits the directories by the time range.
-// for example if we have blocks 0-10, 10-20, 50-60, 90-100 and want to split them into 30 interval ranges
-// splitByRange returns [0-10, 10-20], [50-60], [90-100].
+// splitByRange splits the directories by the time range. The range sequence starts at 0.
+//
+// For example, if we have blocks [0-10, 10-20, 50-60, 90-100] and the split range tr is 30
+// it returns [0-10, 10-20], [50-60], [90-100].
 func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 	var splitDirs [][]dirMeta
 
 	for i := 0; i < len(ds); {
-		var group []dirMeta
-		var t0 int64
-		m := ds[i].meta
+		var (
+			group []dirMeta
+			t0    int64
+			m     = ds[i].meta
+		)
 		// Compute start of aligned time range of size tr closest to the current block's start.
 		if m.MinTime >= 0 {
 			t0 = tr * (m.MinTime / tr)

@@ -49,6 +49,22 @@ func TestCompactionSelect(t *testing.T) {
 			planned: nil,
 		},
 		{
+			// We should wait for a third block of size 20 to appear before compacting
+			// the existing ones.
+			blocks: []dirMetaSimple{
+				{
+					dir: "1",
+					tr:  []int64{0, 20},
+				},
+				{
+					dir: "2",
+					tr:  []int64{20, 40},
+				},
+			},
+			planned: nil,
+		},
+		{
+			// Block to fill the entire parent range appeared – should be compacted.
 			blocks: []dirMetaSimple{
 				{
 					dir: "1",
@@ -64,6 +80,25 @@ func TestCompactionSelect(t *testing.T) {
 				},
 			},
 			planned: [][]string{{"1", "2", "3"}},
+		},
+		{
+			// Block for the next parent range appeared. Nothing will happen in the first one
+			// anymore and we should compact it.
+			blocks: []dirMetaSimple{
+				{
+					dir: "1",
+					tr:  []int64{0, 20},
+				},
+				{
+					dir: "2",
+					tr:  []int64{20, 40},
+				},
+				{
+					dir: "3",
+					tr:  []int64{60, 80},
+				},
+			},
+			planned: [][]string{{"1", "2"}},
 		},
 		{
 			blocks: []dirMetaSimple{
@@ -93,16 +128,8 @@ func TestCompactionSelect(t *testing.T) {
 		{
 			blocks: []dirMetaSimple{
 				{
-					dir: "1",
-					tr:  []int64{0, 20},
-				},
-				{
 					dir: "2",
 					tr:  []int64{20, 40},
-				},
-				{
-					dir: "3",
-					tr:  []int64{40, 60},
 				},
 				{
 					dir: "4",
@@ -121,24 +148,28 @@ func TestCompactionSelect(t *testing.T) {
 					tr:  []int64{1200, 1440},
 				},
 			},
-			planned: [][]string{{"6", "7"}},
+			planned: [][]string{{"2", "4", "5"}},
 		},
 		{
 			blocks: []dirMetaSimple{
 				{
 					dir: "1",
-					tr:  []int64{0, 20},
+					tr:  []int64{0, 60},
 				},
 				{
-					dir: "2",
+					dir: "4",
 					tr:  []int64{60, 80},
 				},
 				{
-					dir: "3",
+					dir: "5",
 					tr:  []int64{80, 100},
 				},
+				{
+					dir: "6",
+					tr:  []int64{100, 120},
+				},
 			},
-			planned: [][]string{{"2", "3"}},
+			planned: [][]string{{"4", "5", "6"}},
 		},
 	}
 
