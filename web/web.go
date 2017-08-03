@@ -182,6 +182,7 @@ func New(o *Options) *Handler {
 	router.Get("/rules", instrf("rules", h.rules))
 	router.Get("/targets", instrf("targets", h.targets))
 	router.Get("/version", instrf("version", h.version))
+	router.Get("/ping", instrf("ping", h.ping))
 
 	router.Get("/heap", instrf("heap", dumpHeap))
 
@@ -400,6 +401,10 @@ func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
 	if err := dec.Encode(h.versionInfo); err != nil {
 		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) ping(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "pong")
 }
 
 func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
