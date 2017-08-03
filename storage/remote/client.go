@@ -76,29 +76,7 @@ type recoverableError struct {
 
 // Store sends a batch of samples to the HTTP endpoint.
 func (c *Client) Store(samples model.Samples) error {
-	req := &WriteRequest{
-		Timeseries: make([]*TimeSeries, 0, len(samples)),
-	}
-	for _, s := range samples {
-		ts := &TimeSeries{
-			Labels: make([]*LabelPair, 0, len(s.Metric)),
-		}
-		for k, v := range s.Metric {
-			ts.Labels = append(ts.Labels,
-				&LabelPair{
-					Name:  string(k),
-					Value: string(v),
-				})
-		}
-		ts.Samples = []*Sample{
-			{
-				Value:       float64(s.Value),
-				TimestampMs: int64(s.Timestamp),
-			},
-		}
-		req.Timeseries = append(req.Timeseries, ts)
-	}
-
+	req := ToWriteRequest(samples)
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return err
@@ -147,14 +125,15 @@ func (c Client) Name() string {
 
 // Read reads from a remote endpoint.
 func (c *Client) Read(ctx context.Context, from, through model.Time, matchers metric.LabelMatchers) (model.Matrix, error) {
+	query, err := ToQuery(from, through, matchers)
+	if err != nil {
+		return nil, err
+	}
+
 	req := &ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
-		Queries: []*Query{{
-			StartTimestampMs: int64(from),
-			EndTimestampMs:   int64(through),
-			Matchers:         labelMatchersToProto(matchers),
-		}},
+		Queries: []*Query{query},
 	}
 
 	data, err := proto.Marshal(req)
@@ -203,56 +182,5 @@ func (c *Client) Read(ctx context.Context, from, through model.Time, matchers me
 		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	return matrixFromProto(resp.Results[0].Timeseries), nil
-}
-
-func labelMatchersToProto(matchers metric.LabelMatchers) []*LabelMatcher {
-	pbMatchers := make([]*LabelMatcher, 0, len(matchers))
-	for _, m := range matchers {
-		var mType MatchType
-		switch m.Type {
-		case metric.Equal:
-			mType = MatchType_EQUAL
-		case metric.NotEqual:
-			mType = MatchType_NOT_EQUAL
-		case metric.RegexMatch:
-			mType = MatchType_REGEX_MATCH
-		case metric.RegexNoMatch:
-			mType = MatchType_REGEX_NO_MATCH
-		default:
-			panic("invalid matcher type")
-		}
-		pbMatchers = append(pbMatchers, &LabelMatcher{
-			Type:  mType,
-			Name:  string(m.Name),
-			Value: string(m.Value),
-		})
-	}
-	return pbMatchers
-}
-
-func matrixFromProto(seriesSet []*TimeSeries) model.Matrix {
-	m := make(model.Matrix, 0, len(seriesSet))
-	for _, ts := range seriesSet {
-		var ss model.SampleStream
-		ss.Metric = labelPairsToMetric(ts.Labels)
-		ss.Values = make([]model.SamplePair, 0, len(ts.Samples))
-		for _, s := range ts.Samples {
-			ss.Values = append(ss.Values, model.SamplePair{
-				Value:     model.SampleValue(s.Value),
-				Timestamp: model.Time(s.TimestampMs),
-			})
-		}
-		m = append(m, &ss)
-	}
-
-	return m
-}
-
-func labelPairsToMetric(labelPairs []*LabelPair) model.Metric {
-	metric := make(model.Metric, len(labelPairs))
-	for _, l := range labelPairs {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return metric
+	return FromQueryResult(resp.Results[0]), nil
 }

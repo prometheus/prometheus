@@ -17,6 +17,7 @@ import (
 	"sort"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 )
 
@@ -62,3 +63,15 @@ func (it sampleStreamIterator) RangeValues(in metric.Interval) []model.SamplePai
 }
 
 func (it sampleStreamIterator) Close() {}
+
+// IteratorsToMatrix converts a list of iterators into a model.Matrix.
+func IteratorsToMatrix(iters []local.SeriesIterator, interval metric.Interval) model.Matrix {
+	result := make(model.Matrix, 0, len(iters))
+	for _, iter := range iters {
+		result = append(result, &model.SampleStream{
+			Metric: iter.Metric().Metric,
+			Values: iter.RangeValues(interval),
+		})
+	}
+	return result
+}
