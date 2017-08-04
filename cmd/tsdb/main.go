@@ -113,7 +113,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 	st, err := tsdb.Open(dir, nil, nil, &tsdb.Options{
 		WALFlushInterval:  200 * time.Millisecond,
 		RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
-		BlockRanges:       tsdb.ExponentialBlockRanges(3*60*60*1000, 3, 5),
+		BlockRanges:       tsdb.ExponentialBlockRanges(2*60*60*1000, 5, 3),
 	})
 	if err != nil {
 		exitWithError(err)

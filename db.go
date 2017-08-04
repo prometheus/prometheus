@@ -360,8 +360,11 @@ func (db *DB) completedHeads() (r []headBlock) {
 	// Add the 2nd last head if the last head is more than 50% filled.
 	// Compacting it early allows us to free its memory before allocating
 	// more for the next block and thus reduces spikes.
-	if h2 := db.heads[len(db.heads)-2]; headFullness(h2) >= 0.5 && h2.ActiveWriters() == 0 {
-		r = append(r, h2)
+	h0 := db.heads[len(db.heads)-1]
+	h1 := db.heads[len(db.heads)-2]
+
+	if headFullness(h0) >= 0.5 && h1.ActiveWriters() == 0 {
+		r = append(r, h1)
 	}
 	return r
 }
