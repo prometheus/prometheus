@@ -52,8 +52,7 @@ import (
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
-	b   *bstream
-	num uint16
+	b *bstream
 }
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
