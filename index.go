@@ -45,8 +45,8 @@ const compactionPageBytes = minSectorSize * 64
 
 type indexWriterSeries struct {
 	labels labels.Labels
-	chunks []*ChunkMeta // series file offset of chunks
-	offset uint32       // index file offset of series reference
+	chunks []ChunkMeta // series file offset of chunks
+	offset uint32      // index file offset of series reference
 }
 
 type indexWriterSeriesSlice []*indexWriterSeries
@@ -100,7 +100,7 @@ type IndexWriter interface {
 	// their labels.
 	// The reference numbers are used to resolve entries in postings lists that
 	// are added later.
-	AddSeries(ref uint32, l labels.Labels, chunks ...*ChunkMeta) error
+	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta) error
 
 	// WriteLabelIndex serializes an index from label names to values.
 	// The passed in values chained tuples of strings of the length of names.
@@ -261,7 +261,7 @@ func (w *indexWriter) writeMeta() error {
 	return w.write(w.buf1.get())
 }
 
-func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...*ChunkMeta) error {
+func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkMeta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
 	}
@@ -471,6 +471,7 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	for _, r := range refs {
 		w.buf2.putBE32(r)
 	}
+	w.uint32s = refs
 
 	w.buf1.reset()
 	w.buf1.putBE32int(w.buf2.len())
@@ -524,7 +525,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
-	Series(ref uint32, lset *labels.Labels, chks *[]*ChunkMeta) error
+	Series(ref uint32, lset *labels.Labels, chks *[]ChunkMeta) error
 
 	// LabelIndices returns the label pairs for which indices exist.
 	LabelIndices() ([][]string, error)
@@ -740,7 +741,7 @@ func (r *indexReader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-func (r *indexReader) Series(ref uint32, lbls *labels.Labels, chks *[]*ChunkMeta) error {
+func (r *indexReader) Series(ref uint32, lbls *labels.Labels, chks *[]ChunkMeta) error {
 	d1 := r.decbufAt(int(ref))
 	d2 := d1.decbuf(int(d1.uvarint()))
 
@@ -781,7 +782,7 @@ func (r *indexReader) Series(ref uint32, lbls *labels.Labels, chks *[]*ChunkMeta
 			return errors.Wrapf(d2.err(), "read meta for chunk %d", i)
 		}
 
-		*chks = append(*chks, &ChunkMeta{
+		*chks = append(*chks, ChunkMeta{
 			Ref:     off,
 			MinTime: mint,
 			MaxTime: maxt,

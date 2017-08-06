@@ -702,7 +702,7 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint32, lbls *labels.Labels, chks *[]*ChunkMeta) error {
+func (h *headIndexReader) Series(ref uint32, lbls *labels.Labels, chks *[]ChunkMeta) error {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -722,7 +722,7 @@ func (h *headIndexReader) Series(ref uint32, lbls *labels.Labels, chks *[]*Chunk
 	*chks = (*chks)[:0]
 
 	for i, c := range s.chunks {
-		*chks = append(*chks, &ChunkMeta{
+		*chks = append(*chks, ChunkMeta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     (uint64(ref) << 32) | uint64(i),

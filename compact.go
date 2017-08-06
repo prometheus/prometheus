@@ -497,7 +497,9 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 			}
 			valset.set(l.Value)
 
-			postings.add(i, term{name: l.Name, value: l.Value})
+			t := term{name: l.Name, value: l.Value}
+
+			postings.add(i, t)
 		}
 		i++
 	}
@@ -536,7 +538,7 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 
 type compactionSet interface {
 	Next() bool
-	At() (labels.Labels, []*ChunkMeta, intervals)
+	At() (labels.Labels, []ChunkMeta, intervals)
 	Err() error
 }
 
@@ -548,7 +550,7 @@ type compactionSeriesSet struct {
 	series     SeriesSet
 
 	l         labels.Labels
-	c         []*ChunkMeta
+	c         []ChunkMeta
 	intervals intervals
 	err       error
 }
@@ -574,7 +576,7 @@ func (c *compactionSeriesSet) Next() bool {
 
 	// Remove completely deleted chunks.
 	if len(c.intervals) > 0 {
-		chks := make([]*ChunkMeta, 0, len(c.c))
+		chks := make([]ChunkMeta, 0, len(c.c))
 		for _, chk := range c.c {
 			if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(c.intervals)) {
 				chks = append(chks, chk)
@@ -584,7 +586,9 @@ func (c *compactionSeriesSet) Next() bool {
 		c.c = chks
 	}
 
-	for _, chk := range c.c {
+	for i := range c.c {
+		chk := &c.c[i]
+
 		chk.Chunk, c.err = c.chunks.Chunk(chk.Ref)
 		if c.err != nil {
 			return false
@@ -601,7 +605,7 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []*ChunkMeta, intervals) {
+func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, intervals) {
 	return c.l, c.c, c.intervals
 }
 
@@ -610,7 +614,7 @@ type compactionMerger struct {
 
 	aok, bok  bool
 	l         labels.Labels
-	c         []*ChunkMeta
+	c         []ChunkMeta
 	intervals intervals
 }
 
@@ -651,7 +655,7 @@ func (c *compactionMerger) Next() bool {
 	// While advancing child iterators the memory used for labels and chunks
 	// may be reused. When picking a series we have to store the result.
 	var lset labels.Labels
-	var chks []*ChunkMeta
+	var chks []ChunkMeta
 
 	d := c.compare()
 	// Both sets contain the current series. Chain them into a single one.
@@ -691,7 +695,7 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []*ChunkMeta, intervals) {
+func (c *compactionMerger) At() (labels.Labels, []ChunkMeta, intervals) {
 	return c.l, c.c, c.intervals
 }
 

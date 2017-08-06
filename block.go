@@ -252,7 +252,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	stones := map[uint32]intervals{}
 
 	var lset labels.Labels
-	var chks []*ChunkMeta
+	var chks []ChunkMeta
 
 Outer:
 	for p.Next() {

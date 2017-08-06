@@ -100,7 +100,7 @@ type ChunkWriter interface {
 	// must be populated.
 	// After returning successfully, the Ref fields in the ChunkMetas
 	// are set and can be used to retrieve the chunks from the written data.
-	WriteChunks(chunks ...*ChunkMeta) error
+	WriteChunks(chunks ...ChunkMeta) error
 
 	// Close writes any required finalization and closes the resources
 	// associated with the underlying writer.
@@ -222,7 +222,7 @@ func (w *chunkWriter) write(b []byte) error {
 	return err
 }
 
-func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
+func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
 	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
@@ -239,17 +239,14 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 	}
 
 	b := make([]byte, binary.MaxVarintLen32)
-	n := binary.PutUvarint(b, uint64(len(chks)))
-
-	if err := w.write(b[:n]); err != nil {
-		return err
-	}
 	seq := uint64(w.seq()) << 32
 
-	for _, chk := range chks {
+	for i := range chks {
+		chk := &chks[i]
+
 		chk.Ref = seq | uint64(w.n)
 
-		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
+		n := binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
 
 		if err := w.write(b[:n]); err != nil {
 			return err
