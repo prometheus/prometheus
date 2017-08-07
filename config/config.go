@@ -1404,7 +1404,7 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *URL             `yaml:"url,omitempty"`
+	URL                 *URL             `yaml:"url"`
 	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
 	WriteRelabelConfigs []*RelabelConfig `yaml:"write_relabel_configs,omitempty"`
 
@@ -1423,6 +1423,9 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	type plain RemoteWriteConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
+	}
+	if c.URL == nil {
+		return fmt.Errorf("url for remote_write is empty")
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
@@ -1463,7 +1466,7 @@ type QueueConfig struct {
 
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
-	URL           *URL           `yaml:"url,omitempty"`
+	URL           *URL           `yaml:"url"`
 	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
@@ -1480,6 +1483,9 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	type plain RemoteReadConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
+	}
+	if c.URL == nil {
+		return fmt.Errorf("url for remote_read is empty")
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
