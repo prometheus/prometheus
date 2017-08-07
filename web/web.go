@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pprof_runtime "runtime/pprof"
@@ -81,6 +82,8 @@ type Handler struct {
 	externalLabels model.LabelSet
 	mtx            sync.RWMutex
 	now            func() model.Time
+
+	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
 // ApplyConfig updates the status state as the new config requires.
@@ -157,6 +160,8 @@ func New(o *Options) *Handler {
 
 		apiV1: api_v1.NewAPI(o.QueryEngine, o.Storage, o.TargetManager, o.Notifier),
 		now:   model.Now,
+
+		ready: 0,
 	}
 
 	if o.RoutePrefix != "/" {
@@ -169,50 +174,60 @@ func New(o *Options) *Handler {
 
 	instrh := prometheus.InstrumentHandler
 	instrf := prometheus.InstrumentHandlerFunc
+	readyf := h.testReady
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
 	})
 
-	router.Get("/alerts", instrf("alerts", h.alerts))
-	router.Get("/graph", instrf("graph", h.graph))
-	router.Get("/status", instrf("status", h.status))
-	router.Get("/flags", instrf("flags", h.flags))
-	router.Get("/config", instrf("config", h.config))
-	router.Get("/rules", instrf("rules", h.rules))
-	router.Get("/targets", instrf("targets", h.targets))
-	router.Get("/version", instrf("version", h.version))
+	router.Get("/alerts", readyf(instrf("alerts", h.alerts)))
+	router.Get("/graph", readyf(instrf("graph", h.graph)))
+	router.Get("/status", readyf(instrf("status", h.status)))
+	router.Get("/flags", readyf(instrf("flags", h.flags)))
+	router.Get("/config", readyf(instrf("config", h.config)))
+	router.Get("/rules", readyf(instrf("rules", h.rules)))
+	router.Get("/targets", readyf(instrf("targets", h.targets)))
+	router.Get("/version", readyf(instrf("version", h.version)))
 
-	router.Get("/heap", instrf("heap", dumpHeap))
+	router.Get("/heap", readyf(instrf("heap", dumpHeap)))
 
-	router.Get(o.MetricsPath, prometheus.Handler().ServeHTTP)
+	router.Get(o.MetricsPath, readyf(prometheus.Handler().ServeHTTP))
 
-	router.Get("/federate", instrh("federate", httputil.CompressionHandler{
+	router.Get("/federate", readyf(instrh("federate", httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),
-	}))
+	})))
 
 	h.apiV1.Register(router.WithPrefix("/api/v1"))
 
-	router.Get("/consoles/*filepath", instrf("consoles", h.consoles))
+	router.Get("/consoles/*filepath", readyf(instrf("consoles", h.consoles)))
 
-	router.Get("/static/*filepath", instrf("static", serveStaticAsset))
+	router.Get("/static/*filepath", readyf(instrf("static", serveStaticAsset)))
 
 	if o.UserAssetsPath != "" {
-		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
+		router.Get("/user/*filepath", readyf(instrf("user", route.FileServe(o.UserAssetsPath))))
 	}
 
 	if o.EnableQuit {
-		router.Post("/-/quit", h.quit)
+		router.Post("/-/quit", readyf(h.quit))
 	}
 
-	router.Post("/-/reload", h.reload)
+	router.Post("/-/reload", readyf(h.reload))
 	router.Get("/-/reload", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		fmt.Fprintf(w, "This endpoint requires a POST request.\n")
 	})
 
-	router.Get("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
-	router.Post("/debug/*subpath", http.DefaultServeMux.ServeHTTP)
+	router.Get("/debug/*subpath", readyf(http.DefaultServeMux.ServeHTTP))
+	router.Post("/debug/*subpath", readyf(http.DefaultServeMux.ServeHTTP))
+
+	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Prometheus is Healthy.\n")
+	})
+	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Prometheus is Ready.\n")
+	}))
 
 	return h
 }
@@ -237,6 +252,32 @@ func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
 	}
 
 	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
+}
+
+// Ready sets Handler to be ready.
+func (h *Handler) Ready() {
+	atomic.StoreUint32(&h.ready, 1)
+}
+
+// Verifies whether the server is ready or not.
+func (h *Handler) isReady() bool {
+	ready := atomic.LoadUint32(&h.ready)
+	if ready == 0 {
+		return false
+	}
+	return true
+}
+
+// Checks if server is ready, calls f if it is, returns 503 if it is not.
+func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.isReady() {
+			f(w, r)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "Service Unavailable")
+		}
+	}
 }
 
 // ListenError returns the receive-only channel that signals errors while starting the web server.
