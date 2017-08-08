@@ -270,62 +270,62 @@ Outer:
 // This has been ensured by acquiring a Lock on DB.mtx, but this limitation should
 // be removed in the future.
 func (h *HeadBlock) Snapshot(snapshotDir string) error {
-	if h.meta.Stats.NumSeries == 0 {
-		return nil
-	}
+	// if h.meta.Stats.NumSeries == 0 {
+	// 	return nil
+	// }
 
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid := ulid.MustNew(ulid.Now(), entropy)
+	// entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// uid := ulid.MustNew(ulid.Now(), entropy)
 
-	dir := filepath.Join(snapshotDir, uid.String())
-	tmp := dir + ".tmp"
+	// dir := filepath.Join(snapshotDir, uid.String())
+	// tmp := dir + ".tmp"
 
-	if err := os.RemoveAll(tmp); err != nil {
-		return err
-	}
+	// if err := os.RemoveAll(tmp); err != nil {
+	// 	return err
+	// }
 
-	if err := os.MkdirAll(tmp, 0777); err != nil {
-		return err
-	}
+	// if err := os.MkdirAll(tmp, 0777); err != nil {
+	// 	return err
+	// }
 
-	// Populate chunk and index files into temporary directory with
-	// data of all blocks.
-	chunkw, err := newChunkWriter(chunkDir(tmp))
-	if err != nil {
-		return errors.Wrap(err, "open chunk writer")
-	}
-	indexw, err := newIndexWriter(tmp)
-	if err != nil {
-		return errors.Wrap(err, "open index writer")
-	}
+	// // Populate chunk and index files into temporary directory with
+	// // data of all blocks.
+	// chunkw, err := newChunkWriter(chunkDir(tmp))
+	// if err != nil {
+	// 	return errors.Wrap(err, "open chunk writer")
+	// }
+	// indexw, err := newIndexWriter(tmp)
+	// if err != nil {
+	// 	return errors.Wrap(err, "open index writer")
+	// }
 
-	meta, err := populateBlock([]Block{h}, indexw, chunkw)
-	if err != nil {
-		return errors.Wrap(err, "write snapshot")
-	}
-	meta.ULID = uid
-	meta.MaxTime = h.highTimestamp
+	// meta, err := h.compactor.populateBlock([]Block{h}, indexw, chunkw, nil)
+	// if err != nil {
+	// 	return errors.Wrap(err, "write snapshot")
+	// }
+	// meta.ULID = uid
+	// meta.MaxTime = h.highTimestamp
 
-	if err = writeMetaFile(tmp, meta); err != nil {
-		return errors.Wrap(err, "write merged meta")
-	}
+	// if err = writeMetaFile(tmp, meta); err != nil {
+	// 	return errors.Wrap(err, "write merged meta")
+	// }
 
-	if err = chunkw.Close(); err != nil {
-		return errors.Wrap(err, "close chunk writer")
-	}
-	if err = indexw.Close(); err != nil {
-		return errors.Wrap(err, "close index writer")
-	}
+	// if err = chunkw.Close(); err != nil {
+	// 	return errors.Wrap(err, "close chunk writer")
+	// }
+	// if err = indexw.Close(); err != nil {
+	// 	return errors.Wrap(err, "close index writer")
+	// }
 
-	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
-		return errors.Wrap(err, "write new tombstones file")
-	}
+	// // Create an empty tombstones file.
+	// if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
+	// 	return errors.Wrap(err, "write new tombstones file")
+	// }
 
-	// Block successfully written, make visible
-	if err := renameFile(tmp, dir); err != nil {
-		return errors.Wrap(err, "rename block dir")
-	}
+	// // Block successfully written, make visible
+	// if err := renameFile(tmp, dir); err != nil {
+	// 	return errors.Wrap(err, "rename block dir")
+	// }
 
 	return nil
 }

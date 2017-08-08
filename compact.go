@@ -100,9 +100,15 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 
 type compactorOptions struct {
 	blockRanges []int64
+	chunkPool   chunks.Pool
 }
 
-func newCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
+func NewCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
+	if opts == nil {
+		opts = &compactorOptions{
+			chunkPool: chunks.NewPool(),
+		}
+	}
 	return &compactor{
 		dir:     dir,
 		opts:    opts,
@@ -288,7 +294,7 @@ func (c *compactor) Compact(dirs ...string) (err error) {
 	var blocks []Block
 
 	for _, d := range dirs {
-		b, err := newPersistedBlock(d)
+		b, err := newPersistedBlock(d, c.opts.chunkPool)
 		if err != nil {
 			return err
 		}
@@ -350,7 +356,7 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 		return errors.Wrap(err, "open index writer")
 	}
 
-	meta, err := populateBlock(blocks, indexw, chunkw)
+	meta, err := c.populateBlock(blocks, indexw, chunkw)
 	if err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
@@ -397,7 +403,7 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
-func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
+func (c *compactor) populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
 	var (
 		set        compactionSet
 		metas      []BlockMeta
@@ -474,7 +480,6 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 				}
 			}
 		}
-
 		if err := chunkw.WriteChunks(chks...); err != nil {
 			return nil, err
 		}
@@ -487,6 +492,10 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 		meta.Stats.NumSeries++
 		for _, chk := range chks {
 			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
+		}
+
+		for _, chk := range chks {
+			c.opts.chunkPool.Put(chk.Chunk)
 		}
 
 		for _, l := range lset {
@@ -685,6 +694,7 @@ func (c *compactionMerger) Next() bool {
 		c.aok = c.a.Next()
 		c.bok = c.b.Next()
 	}
+
 	return true
 }
 

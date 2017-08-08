@@ -37,6 +37,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -95,9 +96,10 @@ type DB struct {
 	dir   string
 	lockf *lockfile.Lockfile
 
-	logger  log.Logger
-	metrics *dbMetrics
-	opts    *Options
+	logger    log.Logger
+	metrics   *dbMetrics
+	opts      *Options
+	chunkPool chunks.Pool
 
 	// Mutex for that must be held when modifying the general block layout.
 	mtx    sync.RWMutex
@@ -203,6 +205,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:              make(chan struct{}),
 		stopc:              make(chan struct{}),
 		compactionsEnabled: true,
+		chunkPool:          chunks.NewPool(),
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -223,6 +226,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 
 	copts := &compactorOptions{
 		blockRanges: opts.BlockRanges,
+		chunkPool:   db.chunkPool,
 	}
 
 	if len(copts.blockRanges) == 0 {
@@ -238,7 +242,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		copts.blockRanges = copts.blockRanges[:len(copts.blockRanges)-1]
 	}
 
-	db.compactor = newCompactor(dir, r, l, copts)
+	db.compactor = NewCompactor(dir, r, l, copts)
 
 	if err := db.reloadBlocks(); err != nil {
 		return nil, err
@@ -508,7 +512,7 @@ func (db *DB) reloadBlocks() (err error) {
 			if meta.Compaction.Generation == 0 {
 				b, err = db.openHeadBlock(dir)
 			} else {
-				b, err = newPersistedBlock(dir)
+				b, err = newPersistedBlock(dir, db.chunkPool)
 			}
 			if err != nil {
 				return errors.Wrapf(err, "open block %s", dir)

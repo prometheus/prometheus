@@ -22,6 +22,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -181,13 +182,13 @@ type persistedBlock struct {
 	tombstones tombstoneReader
 }
 
-func newPersistedBlock(dir string) (*persistedBlock, error) {
+func newPersistedBlock(dir string, pool chunks.Pool) (*persistedBlock, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	cr, err := newChunkReader(chunkDir(dir))
+	cr, err := newChunkReader(chunkDir(dir), pool)
 	if err != nil {
 		return nil, err
 	}
