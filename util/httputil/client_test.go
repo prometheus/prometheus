@@ -39,7 +39,7 @@ const (
 	MissingKey            = "missing/secret.key"
 
 	ExpectedMessage        = "I'm here to serve you!!!"
-	BearerToken            = "meaningoflifeuniverseandeverithingelse"
+	BearerToken            = "theanswertothegreatquestionoflifetheuniverseandeverythingisfortytwo"
 	BearerTokenFile        = "testdata/bearer.token"
 	MissingBearerTokenFile = "missing/bearer.token"
 	ExpectedBearer         = "Bearer " + BearerToken
