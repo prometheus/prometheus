@@ -678,7 +678,10 @@ func funcDeriv(ev *evaluator, args Expressions) model.Value {
 		if len(samples.Values) < 2 {
 			continue
 		}
-		slope, _ := linearRegression(samples.Values, 0)
+		// We pass in an arbitrary timestamp that is near the values in use
+		// to avoid floating point accuracy issues, see
+		// https://github.com/prometheus/prometheus/issues/2674
+		slope, _ := linearRegression(samples.Values, samples.Values[0].Timestamp)
 		resultSample := &sample{
 			Metric:    samples.Metric,
 			Value:     slope,

@@ -47,10 +47,12 @@ file for use with `file_sd`.
 
 The general principle with SD is to extract all the potentially useful
 information we can out of the SD, and let the user choose what they need of it
-using relabelling. This information is generally termed metadata.
+using
+[relabelling](https://prometheus.io/docs/operating/configuration/#<relabel_config>).
+This information is generally termed metadata.
 
 Metadata is exposed as a set of key/value pairs (labels) per target. The keys
-are prefixed with `__meta_sdname_`, and there should also be an `__address__`
+are prefixed with `__meta_<sdname>_<key>`, and there should also be an `__address__`
 label with the host:port of the target (preferably an IP address to avoid DNS
 lookups). No other labelnames should be exposed.
 
@@ -79,7 +81,7 @@ combined.
 
 For machine-like SDs (OpenStack, EC2, Kubernetes to some extent) there may
 be multiple network interfaces for a target. Thus far reporting the details
-of only the first network interface has sufficed.
+of only the first/primary network interface has sufficed.
 
 
 ### Other implementation considerations
@@ -121,3 +123,93 @@ or incorrect metadata.
 The information obtained from service discovery is not considered sensitive
 security wise. Do not return secrets in metadata, anyone with access to
 the Prometheus server will be able to see them.
+
+
+## Writing an SD mechanism
+
+### The SD interface
+
+A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. We expect similar targets to be grouped together, in the form of a [`TargetGroup`](https://godoc.org/github.com/prometheus/prometheus/config#TargetGroup). The SD mechanism sends the targets down to prometheus as list of `TargetGroups`.
+
+An SD mechanism has to implement the `TargetProvider` Interface:
+```go
+type TargetProvider interface {
+	Run(ctx context.Context, up chan<- []*config.TargetGroup)
+}
+```
+
+Prometheus will call the `Run()` method on a provider to initialise the discovery mechanism. The mechanism will then send *all* the `TargetGroup`s into the channel. Now the mechanism will watch for changes and then send only changed and new `TargetGroup`s down the channel.
+
+For example if we had a discovery mechanism and it retrieves the following groups:
+
+```
+[]config.TargetGroup{
+  {
+    Targets: []model.LabelSet{
+       {
+          "__instance__": "10.11.150.1:7870",
+          "hostname": "demo-target-1",
+          "test": "simple-test",
+       },
+       {
+          "__instance__": "10.11.150.4:7870",
+          "hostname": "demo-target-2",
+          "test": "simple-test",
+       },
+    },
+    Labels: map[LabelName][LabelValue] {
+      "job": "mysql",
+    },
+    "Source": "file1", 
+  },
+  {
+    Targets: []model.LabelSet{
+       {
+          "__instance__": "10.11.122.11:6001",
+          "hostname": "demo-postgres-1",
+          "test": "simple-test",
+       },
+       {
+          "__instance__": "10.11.122.15:6001",
+          "hostname": "demo-postgres-2",
+          "test": "simple-test",
+       },
+    },
+    Labels: map[LabelName][LabelValue] {
+      "job": "postgres",
+    },
+    "Source": "file2", 
+  },
+}
+```
+
+Here there are two `TargetGroups` one group with source `file1` and another with `file2`. The grouping is implementation specific and could even be one target per group. But, one has to make sure every target group sent by an SD instance should have a `Source` which is unique across all the `TargetGroup`s of that SD instance. 
+
+In this case, both the `TargetGroup`s are sent down the channel the first time `Run()` is called. Now, for an update, we need to send the whole _changed_ `TargetGroup` down the channel. i.e, if the target with `hostname: demo-postgres-2` goes away, we send:
+```
+&config.TargetGroup{
+  Targets: []model.LabelSet{
+     {
+        "__instance__": "10.11.122.11:6001",
+        "hostname": "demo-postgres-1",
+        "test": "simple-test",
+     },
+  },
+  Labels: map[LabelName][LabelValue] {
+    "job": "postgres",
+  },
+  "Source": "file2", 
+}
+```
+down the channel.
+
+If all the targets in a group go away, we need to send the target groups with empty `Targets` down the channel. i.e, if all targets with `job: postgres` go away, we send:
+```
+&config.TargetGroup{
+  Targets: nil,
+  "Source": "file2", 
+}
+```
+down the channel.
+
+<!-- TODO: Add best-practices -->
