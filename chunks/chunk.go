@@ -104,6 +104,9 @@ func (p *pool) Put(c Chunk) error {
 	switch c.Encoding() {
 	case EncXOR:
 		xc, ok := c.(*XORChunk)
+		// This may happen often with wrapped chunks. Nothing we can really do about
+		// it but returning an error would cause a lot of allocations again. Thus,
+		// we just skip it.
 		if !ok {
 			return nil
 		}

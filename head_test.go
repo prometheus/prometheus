@@ -43,7 +43,7 @@ func openTestHeadBlock(t testing.TB, dir string) *HeadBlock {
 	wal, err := OpenSegmentWAL(dir, nil, 5*time.Second)
 	require.NoError(t, err)
 
-	h, err := OpenHeadBlock(dir, nil, wal)
+	h, err := OpenHeadBlock(dir, nil, wal, nil)
 	require.NoError(t, err)
 	return h
 }

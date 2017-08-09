@@ -113,7 +113,7 @@ type BlockStats struct {
 type BlockMetaCompaction struct {
 	// Maximum number of compaction cycles any source block has
 	// gone through.
-	Generation int `json:"generation"`
+	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
 }

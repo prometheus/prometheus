@@ -52,9 +52,10 @@ var (
 
 // HeadBlock handles reads and writes of time series data within a time window.
 type HeadBlock struct {
-	mtx sync.RWMutex
-	dir string
-	wal WAL
+	mtx       sync.RWMutex
+	dir       string
+	wal       WAL
+	compactor Compactor
 
 	activeWriters uint64
 	highTimestamp int64
@@ -106,7 +107,7 @@ func TouchHeadBlock(dir string, mint, maxt int64) (string, error) {
 }
 
 // OpenHeadBlock opens the head block in dir.
-func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
+func OpenHeadBlock(dir string, l log.Logger, wal WAL, c Compactor) (*HeadBlock, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
@@ -115,6 +116,7 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 	h := &HeadBlock{
 		dir:        dir,
 		wal:        wal,
+		compactor:  c,
 		series:     []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
 		hashes:     map[uint64][]*memSeries{},
 		values:     map[string]stringset{},
@@ -266,68 +268,14 @@ Outer:
 }
 
 // Snapshot persists the current state of the headblock to the given directory.
-// TODO(gouthamve): Snapshot must be called when there are no active appenders.
-// This has been ensured by acquiring a Lock on DB.mtx, but this limitation should
-// be removed in the future.
+// Callers must ensure that there are no active appenders against the block.
+// DB does this by acquiring its own write lock.
 func (h *HeadBlock) Snapshot(snapshotDir string) error {
-	// if h.meta.Stats.NumSeries == 0 {
-	// 	return nil
-	// }
+	if h.meta.Stats.NumSeries == 0 {
+		return nil
+	}
 
-	// entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	// uid := ulid.MustNew(ulid.Now(), entropy)
-
-	// dir := filepath.Join(snapshotDir, uid.String())
-	// tmp := dir + ".tmp"
-
-	// if err := os.RemoveAll(tmp); err != nil {
-	// 	return err
-	// }
-
-	// if err := os.MkdirAll(tmp, 0777); err != nil {
-	// 	return err
-	// }
-
-	// // Populate chunk and index files into temporary directory with
-	// // data of all blocks.
-	// chunkw, err := newChunkWriter(chunkDir(tmp))
-	// if err != nil {
-	// 	return errors.Wrap(err, "open chunk writer")
-	// }
-	// indexw, err := newIndexWriter(tmp)
-	// if err != nil {
-	// 	return errors.Wrap(err, "open index writer")
-	// }
-
-	// meta, err := h.compactor.populateBlock([]Block{h}, indexw, chunkw, nil)
-	// if err != nil {
-	// 	return errors.Wrap(err, "write snapshot")
-	// }
-	// meta.ULID = uid
-	// meta.MaxTime = h.highTimestamp
-
-	// if err = writeMetaFile(tmp, meta); err != nil {
-	// 	return errors.Wrap(err, "write merged meta")
-	// }
-
-	// if err = chunkw.Close(); err != nil {
-	// 	return errors.Wrap(err, "close chunk writer")
-	// }
-	// if err = indexw.Close(); err != nil {
-	// 	return errors.Wrap(err, "close index writer")
-	// }
-
-	// // Create an empty tombstones file.
-	// if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
-	// 	return errors.Wrap(err, "write new tombstones file")
-	// }
-
-	// // Block successfully written, make visible
-	// if err := renameFile(tmp, dir); err != nil {
-	// 	return errors.Wrap(err, "rename block dir")
-	// }
-
-	return nil
+	return h.compactor.Write(snapshotDir, h)
 }
 
 // Dir returns the directory of the block.

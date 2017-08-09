@@ -48,22 +48,22 @@ type Compactor interface {
 	// Plan returns a set of non-overlapping directories that can
 	// be compacted concurrently.
 	// Results returned when compactions are in progress are undefined.
-	Plan() ([][]string, error)
+	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
-	Write(b Block) error
+	Write(dest string, b Block) error
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
-	Compact(dirs ...string) error
+	Compact(dest string, dirs ...string) error
 }
 
-// compactor implements the Compactor interface.
-type compactor struct {
+// LeveledCompactor implements the Compactor interface.
+type LeveledCompactor struct {
 	dir     string
 	metrics *compactorMetrics
 	logger  log.Logger
-	opts    *compactorOptions
+	opts    *LeveledCompactorOptions
 }
 
 type compactorMetrics struct {
@@ -98,19 +98,18 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	return m
 }
 
-type compactorOptions struct {
+type LeveledCompactorOptions struct {
 	blockRanges []int64
 	chunkPool   chunks.Pool
 }
 
-func NewCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
+func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, opts *LeveledCompactorOptions) *LeveledCompactor {
 	if opts == nil {
-		opts = &compactorOptions{
+		opts = &LeveledCompactorOptions{
 			chunkPool: chunks.NewPool(),
 		}
 	}
-	return &compactor{
-		dir:     dir,
+	return &LeveledCompactor{
 		opts:    opts,
 		logger:  l,
 		metrics: newCompactorMetrics(r),
@@ -130,8 +129,9 @@ type dirMeta struct {
 	meta *BlockMeta
 }
 
-func (c *compactor) Plan() ([][]string, error) {
-	dirs, err := blockDirs(c.dir)
+// Plan returns a list of compactable blocks in the provided directory.
+func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
+	dirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (c *compactor) Plan() ([][]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if meta.Compaction.Generation > 0 {
+		if meta.Compaction.Level > 0 {
 			dms = append(dms, dirMeta{dir, meta})
 		}
 	}
@@ -155,20 +155,12 @@ func (c *compactor) Plan() ([][]string, error) {
 		return nil, nil
 	}
 
-	sliceDirs := func(dms []dirMeta) [][]string {
-		if len(dms) == 0 {
-			return nil
-		}
-		var res []string
-		for _, dm := range dms {
-			res = append(res, dm.dir)
-		}
-		return [][]string{res}
+	var res []string
+	for _, dm := range c.selectDirs(dms) {
+		res = append(res, dm.dir)
 	}
-
-	planDirs := sliceDirs(c.selectDirs(dms))
-	if len(dirs) > 1 {
-		return planDirs, nil
+	if len(res) > 0 {
+		return res, nil
 	}
 
 	// Compact any blocks that have >5% tombstones.
@@ -179,7 +171,7 @@ func (c *compactor) Plan() ([][]string, error) {
 		}
 
 		if meta.Stats.NumSeries/meta.Stats.NumTombstones <= 20 { // 5%
-			return [][]string{{dms[i].dir}}, nil
+			return []string{dms[i].dir}, nil
 		}
 	}
 
@@ -188,7 +180,7 @@ func (c *compactor) Plan() ([][]string, error) {
 
 // selectDirs returns the dir metas that should be compacted into a single new block.
 // If only a single block range is configured, the result is always nil.
-func (c *compactor) selectDirs(ds []dirMeta) []dirMeta {
+func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 	if len(c.opts.blockRanges) < 2 || len(ds) < 1 {
 		return nil
 	}
@@ -267,18 +259,18 @@ func compactBlockMetas(blocks ...BlockMeta) (res BlockMeta) {
 	sources := map[ulid.ULID]struct{}{}
 
 	for _, b := range blocks {
-		if b.Compaction.Generation > res.Compaction.Generation {
-			res.Compaction.Generation = b.Compaction.Generation
+		if b.Compaction.Level > res.Compaction.Level {
+			res.Compaction.Level = b.Compaction.Level
 		}
 		for _, s := range b.Compaction.Sources {
 			sources[s] = struct{}{}
 		}
 		// If it's an in memory block, its ULID goes into the sources.
-		if b.Compaction.Generation == 0 {
+		if b.Compaction.Level == 0 {
 			sources[b.ULID] = struct{}{}
 		}
 	}
-	res.Compaction.Generation++
+	res.Compaction.Level++
 
 	for s := range sources {
 		res.Compaction.Sources = append(res.Compaction.Sources, s)
@@ -290,7 +282,9 @@ func compactBlockMetas(blocks ...BlockMeta) (res BlockMeta) {
 	return res
 }
 
-func (c *compactor) Compact(dirs ...string) (err error) {
+// Compact creates a new block in the compactor's directory from the blocks in the
+// provided directories.
+func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	var blocks []Block
 
 	for _, d := range dirs {
@@ -306,24 +300,24 @@ func (c *compactor) Compact(dirs ...string) (err error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
-	return c.write(uid, blocks...)
+	return c.write(dest, uid, blocks...)
 }
 
-func (c *compactor) Write(b Block) error {
+func (c *LeveledCompactor) Write(dest string, b Block) error {
 	// Buffering blocks might have been created that often have no data.
 	if b.Meta().Stats.NumSeries == 0 {
-		return errors.Wrap(os.RemoveAll(b.Dir()), "remove empty block")
+		return nil
 	}
 
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
-	return c.write(uid, b)
+	return c.write(dest, uid, b)
 }
 
 // write creates a new block that is the union of the provided blocks into dir.
 // It cleans up all files of the old blocks after completing successfully.
-func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
+func (c *LeveledCompactor) write(dest string, uid ulid.ULID, blocks ...Block) (err error) {
 	c.logger.Log("msg", "compact blocks", "blocks", fmt.Sprintf("%v", blocks))
 
 	defer func(t time.Time) {
@@ -334,7 +328,7 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
-	dir := filepath.Join(c.dir, uid.String())
+	dir := filepath.Join(dest, uid.String())
 	tmp := dir + ".tmp"
 
 	if err = os.RemoveAll(tmp); err != nil {
@@ -382,11 +376,6 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 	if err := renameFile(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}
-	for _, b := range blocks {
-		if err := os.RemoveAll(b.Dir()); err != nil {
-			return err
-		}
-	}
 	// Properly sync parent dir to ensure changes are visible.
 	df, err := fileutil.OpenDir(dir)
 	if err != nil {
@@ -403,7 +392,7 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
-func (c *compactor) populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
+func (c *LeveledCompactor) populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
 	var (
 		set        compactionSet
 		metas      []BlockMeta
