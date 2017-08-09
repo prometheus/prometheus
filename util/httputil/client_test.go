@@ -75,101 +75,101 @@ func newTestServer(handler func(w http.ResponseWriter, r *http.Request)) (*httpt
 	return testServer, nil
 }
 
-var newClientValidConfig = []struct {
-	clientConfig config.HTTPClientConfig
-	handler      func(w http.ResponseWriter, r *http.Request)
-}{
-	{
-		clientConfig: config.HTTPClientConfig{
-			TLSConfig: config.TLSConfig{
-				CAFile:             "",
-				CertFile:           BarneyCertificatePath,
-				KeyFile:            BarneyKeyNoPassPath,
-				ServerName:         "",
-				InsecureSkipVerify: true},
-		},
-		handler: func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, ExpectedMessage)
-		},
-	}, {
-		clientConfig: config.HTTPClientConfig{
-			TLSConfig: config.TLSConfig{
-				CAFile:             TLSCAChainPath,
-				CertFile:           BarneyCertificatePath,
-				KeyFile:            BarneyKeyNoPassPath,
-				ServerName:         "",
-				InsecureSkipVerify: false},
-		},
-		handler: func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprint(w, ExpectedMessage)
-		},
-	}, {
-		clientConfig: config.HTTPClientConfig{
-			BearerToken: BearerToken,
-			TLSConfig: config.TLSConfig{
-				CAFile:             TLSCAChainPath,
-				CertFile:           BarneyCertificatePath,
-				KeyFile:            BarneyKeyNoPassPath,
-				ServerName:         "",
-				InsecureSkipVerify: false},
-		},
-		handler: func(w http.ResponseWriter, r *http.Request) {
-			bearer := r.Header.Get("Authorization")
-			if bearer != ExpectedBearer {
-				fmt.Fprintf(w, "The expected Bearer Authorization (%s) differs from the obtained Bearer Authorization (%s)",
-					ExpectedBearer, bearer)
-			} else {
-				fmt.Fprint(w, ExpectedMessage)
-			}
-		},
-	}, {
-		clientConfig: config.HTTPClientConfig{
-			BearerTokenFile: BearerTokenFile,
-			TLSConfig: config.TLSConfig{
-				CAFile:             TLSCAChainPath,
-				CertFile:           BarneyCertificatePath,
-				KeyFile:            BarneyKeyNoPassPath,
-				ServerName:         "",
-				InsecureSkipVerify: false},
-		},
-		handler: func(w http.ResponseWriter, r *http.Request) {
-			bearer := r.Header.Get("Authorization")
-			if bearer != ExpectedBearer {
-				fmt.Fprintf(w, "The expected Bearer Authorization (%s) differs from the obtained Bearer Authorization (%s)",
-					ExpectedBearer, bearer)
-			} else {
-				fmt.Fprint(w, ExpectedMessage)
-			}
-		},
-	}, {
-		clientConfig: config.HTTPClientConfig{
-			BasicAuth: &config.BasicAuth{
-				Username: ExpectedUsername,
-				Password: ExpectedPassword,
-			},
-			TLSConfig: config.TLSConfig{
-				CAFile:             TLSCAChainPath,
-				CertFile:           BarneyCertificatePath,
-				KeyFile:            BarneyKeyNoPassPath,
-				ServerName:         "",
-				InsecureSkipVerify: false},
-		},
-		handler: func(w http.ResponseWriter, r *http.Request) {
-			username, password, ok := r.BasicAuth()
-			if ok == false {
-				fmt.Fprintf(w, "The Authorization header wasn't set")
-			} else if ExpectedUsername != username {
-				fmt.Fprintf(w, "The expected username (%s) differs from the obtained username (%s).", ExpectedUsername, username)
-			} else if ExpectedPassword != password {
-				fmt.Fprintf(w, "The expected password (%s) differs from the obtained password (%s).", ExpectedPassword, password)
-			} else {
-				fmt.Fprint(w, ExpectedMessage)
-			}
-		},
-	},
-}
-
 func TestNewClientFromConfig(t *testing.T) {
+	var newClientValidConfig = []struct {
+		clientConfig config.HTTPClientConfig
+		handler      func(w http.ResponseWriter, r *http.Request)
+	}{
+		{
+			clientConfig: config.HTTPClientConfig{
+				TLSConfig: config.TLSConfig{
+					CAFile:             "",
+					CertFile:           BarneyCertificatePath,
+					KeyFile:            BarneyKeyNoPassPath,
+					ServerName:         "",
+					InsecureSkipVerify: true},
+			},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, ExpectedMessage)
+			},
+		}, {
+			clientConfig: config.HTTPClientConfig{
+				TLSConfig: config.TLSConfig{
+					CAFile:             TLSCAChainPath,
+					CertFile:           BarneyCertificatePath,
+					KeyFile:            BarneyKeyNoPassPath,
+					ServerName:         "",
+					InsecureSkipVerify: false},
+			},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, ExpectedMessage)
+			},
+		}, {
+			clientConfig: config.HTTPClientConfig{
+				BearerToken: BearerToken,
+				TLSConfig: config.TLSConfig{
+					CAFile:             TLSCAChainPath,
+					CertFile:           BarneyCertificatePath,
+					KeyFile:            BarneyKeyNoPassPath,
+					ServerName:         "",
+					InsecureSkipVerify: false},
+			},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				bearer := r.Header.Get("Authorization")
+				if bearer != ExpectedBearer {
+					fmt.Fprintf(w, "The expected Bearer Authorization (%s) differs from the obtained Bearer Authorization (%s)",
+						ExpectedBearer, bearer)
+				} else {
+					fmt.Fprint(w, ExpectedMessage)
+				}
+			},
+		}, {
+			clientConfig: config.HTTPClientConfig{
+				BearerTokenFile: BearerTokenFile,
+				TLSConfig: config.TLSConfig{
+					CAFile:             TLSCAChainPath,
+					CertFile:           BarneyCertificatePath,
+					KeyFile:            BarneyKeyNoPassPath,
+					ServerName:         "",
+					InsecureSkipVerify: false},
+			},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				bearer := r.Header.Get("Authorization")
+				if bearer != ExpectedBearer {
+					fmt.Fprintf(w, "The expected Bearer Authorization (%s) differs from the obtained Bearer Authorization (%s)",
+						ExpectedBearer, bearer)
+				} else {
+					fmt.Fprint(w, ExpectedMessage)
+				}
+			},
+		}, {
+			clientConfig: config.HTTPClientConfig{
+				BasicAuth: &config.BasicAuth{
+					Username: ExpectedUsername,
+					Password: ExpectedPassword,
+				},
+				TLSConfig: config.TLSConfig{
+					CAFile:             TLSCAChainPath,
+					CertFile:           BarneyCertificatePath,
+					KeyFile:            BarneyKeyNoPassPath,
+					ServerName:         "",
+					InsecureSkipVerify: false},
+			},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				username, password, ok := r.BasicAuth()
+				if ok == false {
+					fmt.Fprintf(w, "The Authorization header wasn't set")
+				} else if ExpectedUsername != username {
+					fmt.Fprintf(w, "The expected username (%s) differs from the obtained username (%s).", ExpectedUsername, username)
+				} else if ExpectedPassword != password {
+					fmt.Fprintf(w, "The expected password (%s) differs from the obtained password (%s).", ExpectedPassword, password)
+				} else {
+					fmt.Fprint(w, ExpectedMessage)
+				}
+			},
+		},
+	}
+
 	for _, validConfig := range newClientValidConfig {
 		testServer, err := newTestServer(validConfig.handler)
 		if err != nil {
@@ -203,35 +203,35 @@ func TestNewClientFromConfig(t *testing.T) {
 	}
 }
 
-var newClientInvalidConfig = []struct {
-	clientConfig config.HTTPClientConfig
-	errorMsg     string
-}{
-	{
-		clientConfig: config.HTTPClientConfig{
-			TLSConfig: config.TLSConfig{
-				CAFile:             MissingCA,
-				CertFile:           "",
-				KeyFile:            "",
-				ServerName:         "",
-				InsecureSkipVerify: true},
-		},
-		errorMsg: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
-	}, {
-		clientConfig: config.HTTPClientConfig{
-			BearerTokenFile: MissingBearerTokenFile,
-			TLSConfig: config.TLSConfig{
-				CAFile:             TLSCAChainPath,
-				CertFile:           BarneyCertificatePath,
-				KeyFile:            BarneyKeyNoPassPath,
-				ServerName:         "",
-				InsecureSkipVerify: false},
-		},
-		errorMsg: fmt.Sprintf("unable to read bearer token file %s:", MissingBearerTokenFile),
-	},
-}
-
 func TestNewClientFromInvalidConfig(t *testing.T) {
+	var newClientInvalidConfig = []struct {
+		clientConfig config.HTTPClientConfig
+		errorMsg     string
+	}{
+		{
+			clientConfig: config.HTTPClientConfig{
+				TLSConfig: config.TLSConfig{
+					CAFile:             MissingCA,
+					CertFile:           "",
+					KeyFile:            "",
+					ServerName:         "",
+					InsecureSkipVerify: true},
+			},
+			errorMsg: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
+		}, {
+			clientConfig: config.HTTPClientConfig{
+				BearerTokenFile: MissingBearerTokenFile,
+				TLSConfig: config.TLSConfig{
+					CAFile:             TLSCAChainPath,
+					CertFile:           BarneyCertificatePath,
+					KeyFile:            BarneyKeyNoPassPath,
+					ServerName:         "",
+					InsecureSkipVerify: false},
+			},
+			errorMsg: fmt.Sprintf("unable to read bearer token file %s:", MissingBearerTokenFile),
+		},
+	}
+
 	for _, invalidConfig := range newClientInvalidConfig {
 		client, err := NewClientFromConfig(invalidConfig.clientConfig)
 		if client != nil {
@@ -367,38 +367,38 @@ func TestTLSConfigEmpty(t *testing.T) {
 	}
 }
 
-var invalidTLSConfig = []struct {
-	configTLSConfig config.TLSConfig
-	errorMessage    string
-}{
-	{
-		configTLSConfig: config.TLSConfig{
-			CAFile:             MissingCA,
-			CertFile:           "",
-			KeyFile:            "",
-			ServerName:         "",
-			InsecureSkipVerify: false},
-		errorMessage: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
-	}, {
-		configTLSConfig: config.TLSConfig{
-			CAFile:             "",
-			CertFile:           MissingCert,
-			KeyFile:            BarneyKeyNoPassPath,
-			ServerName:         "",
-			InsecureSkipVerify: false},
-		errorMessage: fmt.Sprintf("unable to use specified client cert (%s) & key (%s):", MissingCert, BarneyKeyNoPassPath),
-	}, {
-		configTLSConfig: config.TLSConfig{
-			CAFile:             "",
-			CertFile:           BarneyCertificatePath,
-			KeyFile:            MissingKey,
-			ServerName:         "",
-			InsecureSkipVerify: false},
-		errorMessage: fmt.Sprintf("unable to use specified client cert (%s) & key (%s):", BarneyCertificatePath, MissingKey),
-	},
-}
-
 func TestTLSConfigInvalidCA(t *testing.T) {
+	var invalidTLSConfig = []struct {
+		configTLSConfig config.TLSConfig
+		errorMessage    string
+	}{
+		{
+			configTLSConfig: config.TLSConfig{
+				CAFile:             MissingCA,
+				CertFile:           "",
+				KeyFile:            "",
+				ServerName:         "",
+				InsecureSkipVerify: false},
+			errorMessage: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
+		}, {
+			configTLSConfig: config.TLSConfig{
+				CAFile:             "",
+				CertFile:           MissingCert,
+				KeyFile:            BarneyKeyNoPassPath,
+				ServerName:         "",
+				InsecureSkipVerify: false},
+			errorMessage: fmt.Sprintf("unable to use specified client cert (%s) & key (%s):", MissingCert, BarneyKeyNoPassPath),
+		}, {
+			configTLSConfig: config.TLSConfig{
+				CAFile:             "",
+				CertFile:           BarneyCertificatePath,
+				KeyFile:            MissingKey,
+				ServerName:         "",
+				InsecureSkipVerify: false},
+			errorMessage: fmt.Sprintf("unable to use specified client cert (%s) & key (%s):", BarneyCertificatePath, MissingKey),
+		},
+	}
+
 	for _, anInvalididTLSConfig := range invalidTLSConfig {
 		tlsConfig, err := NewTLSConfig(anInvalididTLSConfig.configTLSConfig)
 		if tlsConfig != nil && err == nil {
