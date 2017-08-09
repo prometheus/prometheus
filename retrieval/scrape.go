@@ -420,6 +420,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 
 		s.req = req
 	}
+
 	resp, err := ctxhttp.Do(ctx, s.client, s.req)
 	if err != nil {
 		return err
