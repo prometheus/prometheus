@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -44,6 +45,9 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 		DisableKeepAlives:  false,
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
+		// 5 minutes is typically above the maximum sane scrape interval. So we can
+		// use keepalive for all configurations.
+		IdleConnTimeout: 5 * time.Minute,
 	}
 
 	// If a bearer token is provided, create a round tripper that will set the
