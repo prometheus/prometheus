@@ -30,6 +30,18 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
+// ExponentialBlockRanges returns the time ranges based on the stepSize
+func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
+	ranges := make([]int64, 0, steps)
+	curRange := minSize
+	for i := 0; i < steps; i++ {
+		ranges = append(ranges, curRange)
+		curRange = curRange * int64(stepSize)
+	}
+
+	return ranges
+}
+
 // Compactor provides compaction against an underlying storage
 // of time series data.
 type Compactor interface {
@@ -87,7 +99,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 type compactorOptions struct {
-	maxBlockRange uint64
+	blockRanges []int64
 }
 
 func newCompactor(dir string, r prometheus.Registerer, l log.Logger, opts *compactorOptions) *compactor {
@@ -133,37 +145,113 @@ func (c *compactor) Plan() ([][]string, error) {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
 
-	if len(dms) == 0 {
+	if len(dms) <= 1 {
 		return nil, nil
 	}
 
-	sliceDirs := func(i, j int) [][]string {
+	sliceDirs := func(dms []dirMeta) [][]string {
+		if len(dms) == 0 {
+			return nil
+		}
 		var res []string
-		for k := i; k < j; k++ {
-			res = append(res, dms[k].dir)
+		for _, dm := range dms {
+			res = append(res, dm.dir)
 		}
 		return [][]string{res}
 	}
 
-	// Then we care about compacting multiple blocks, starting with the oldest.
-	for i := 0; i < len(dms)-compactionBlocksLen+1; i++ {
-		if c.match(dms[i : i+3]) {
-			return sliceDirs(i, i+compactionBlocksLen), nil
+	planDirs := sliceDirs(c.selectDirs(dms))
+	if len(dirs) > 1 {
+		return planDirs, nil
+	}
+
+	// Compact any blocks that have >5% tombstones.
+	for i := len(dms) - 1; i >= 0; i-- {
+		meta := dms[i].meta
+		if meta.MaxTime-meta.MinTime < c.opts.blockRanges[len(c.opts.blockRanges)/2] {
+			break
+		}
+
+		if meta.Stats.NumSeries/meta.Stats.NumTombstones <= 20 { // 5%
+			return [][]string{{dms[i].dir}}, nil
 		}
 	}
 
 	return nil, nil
 }
 
-func (c *compactor) match(dirs []dirMeta) bool {
-	g := dirs[0].meta.Compaction.Generation
+// selectDirs returns the dir metas that should be compacted into a single new block.
+// If only a single block range is configured, the result is always nil.
+func (c *compactor) selectDirs(ds []dirMeta) []dirMeta {
+	if len(c.opts.blockRanges) < 2 || len(ds) < 1 {
+		return nil
+	}
 
-	for _, d := range dirs {
-		if d.meta.Compaction.Generation != g {
-			return false
+	highTime := ds[len(ds)-1].meta.MinTime
+
+	for _, iv := range c.opts.blockRanges[1:] {
+		parts := splitByRange(ds, iv)
+		if len(parts) == 0 {
+			continue
+		}
+
+		for _, p := range parts {
+			mint := p[0].meta.MinTime
+			maxt := p[len(p)-1].meta.MaxTime
+			// Pick the range of blocks if it spans the full range (potentially with gaps)
+			// or is before the most recent block.
+			// This ensures we don't compact blocks prematurely when another one of the same
+			// size still fits in the range.
+			if (maxt-mint == iv || maxt <= highTime) && len(p) > 1 {
+				return p
+			}
 		}
 	}
-	return uint64(dirs[len(dirs)-1].meta.MaxTime-dirs[0].meta.MinTime) <= c.opts.maxBlockRange
+
+	return nil
+}
+
+// splitByRange splits the directories by the time range. The range sequence starts at 0.
+//
+// For example, if we have blocks [0-10, 10-20, 50-60, 90-100] and the split range tr is 30
+// it returns [0-10, 10-20], [50-60], [90-100].
+func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
+	var splitDirs [][]dirMeta
+
+	for i := 0; i < len(ds); {
+		var (
+			group []dirMeta
+			t0    int64
+			m     = ds[i].meta
+		)
+		// Compute start of aligned time range of size tr closest to the current block's start.
+		if m.MinTime >= 0 {
+			t0 = tr * (m.MinTime / tr)
+		} else {
+			t0 = tr * ((m.MinTime - tr + 1) / tr)
+		}
+		// Skip blocks that don't fall into the range. This can happen via mis-alignment or
+		// by being the multiple of the intended range.
+		if ds[i].meta.MinTime < t0 || ds[i].meta.MaxTime > t0+tr {
+			i++
+			continue
+		}
+
+		// Add all dirs to the current group that are within [t0, t0+tr].
+		for ; i < len(ds); i++ {
+			// Either the block falls into the next range or doesn't fit at all (checked above).
+			if ds[i].meta.MinTime < t0 || ds[i].meta.MaxTime > t0+tr {
+				break
+			}
+			group = append(group, ds[i])
+		}
+
+		if len(group) > 0 {
+			splitDirs = append(splitDirs, group)
+		}
+	}
+
+	return splitDirs
 }
 
 func compactBlockMetas(blocks ...BlockMeta) (res BlockMeta) {
@@ -173,8 +261,6 @@ func compactBlockMetas(blocks ...BlockMeta) (res BlockMeta) {
 	sources := map[ulid.ULID]struct{}{}
 
 	for _, b := range blocks {
-		res.Stats.NumSamples += b.Stats.NumSamples
-
 		if b.Compaction.Generation > res.Compaction.Generation {
 			res.Compaction.Generation = b.Compaction.Generation
 		}
@@ -312,17 +398,31 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
-	var set compactionSet
-	var metas []BlockMeta
-
+	var (
+		set        compactionSet
+		metas      []BlockMeta
+		allSymbols = make(map[string]struct{}, 1<<16)
+	)
 	for i, b := range blocks {
 		metas = append(metas, b.Meta())
 
-		all, err := b.Index().Postings("", "")
+		symbols, err := b.Index().Symbols()
+		if err != nil {
+			return nil, errors.Wrap(err, "read symbols")
+		}
+		for s := range symbols {
+			allSymbols[s] = struct{}{}
+		}
+
+		indexr := b.Index()
+
+		all, err := indexr.Postings("", "")
 		if err != nil {
 			return nil, err
 		}
-		s := newCompactionSeriesSet(b.Index(), b.Chunks(), b.Tombstones(), all)
+		all = indexr.SortedPostings(all)
+
+		s := newCompactionSeriesSet(indexr, b.Chunks(), b.Tombstones(), all)
 
 		if i == 0 {
 			set = s
@@ -342,8 +442,17 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 		meta     = compactBlockMetas(metas...)
 	)
 
+	if err := indexw.AddSymbols(allSymbols); err != nil {
+		return nil, errors.Wrap(err, "add symbols")
+	}
+
 	for set.Next() {
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
+
+		// Skip the series with all deleted chunks.
+		if len(chks) == 0 {
+			continue
+		}
 
 		if len(dranges) > 0 {
 			// Re-encode the chunk to not have deleted values.
@@ -370,10 +479,15 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 			return nil, err
 		}
 
-		indexw.AddSeries(i, lset, chks...)
+		if err := indexw.AddSeries(i, lset, chks...); err != nil {
+			return nil, errors.Wrapf(err, "add series")
+		}
 
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
+		for _, chk := range chks {
+			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
+		}
 
 		for _, l := range lset {
 			valset, ok := values[l.Name]
@@ -431,6 +545,7 @@ type compactionSeriesSet struct {
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
+	series     SeriesSet
 
 	l         labels.Labels
 	c         []*ChunkMeta
@@ -451,11 +566,9 @@ func (c *compactionSeriesSet) Next() bool {
 	if !c.p.Next() {
 		return false
 	}
-
 	c.intervals = c.tombstones.Get(c.p.At())
 
-	c.l, c.c, c.err = c.index.Series(c.p.At())
-	if c.err != nil {
+	if c.err = c.index.Series(c.p.At(), &c.l, &c.c); c.err != nil {
 		return false
 	}
 
@@ -535,14 +648,24 @@ func (c *compactionMerger) Next() bool {
 	if !c.aok && !c.bok || c.Err() != nil {
 		return false
 	}
+	// While advancing child iterators the memory used for labels and chunks
+	// may be reused. When picking a series we have to store the result.
+	var lset labels.Labels
+	var chks []*ChunkMeta
 
 	d := c.compare()
 	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
-		c.l, c.c, c.intervals = c.b.At()
+		lset, chks, c.intervals = c.b.At()
+		c.l = append(c.l[:0], lset...)
+		c.c = append(c.c[:0], chks...)
+
 		c.bok = c.b.Next()
 	} else if d < 0 {
-		c.l, c.c, c.intervals = c.a.At()
+		lset, chks, c.intervals = c.a.At()
+		c.l = append(c.l[:0], lset...)
+		c.c = append(c.c[:0], chks...)
+
 		c.aok = c.a.Next()
 	} else {
 		l, ca, ra := c.a.At()
@@ -551,8 +674,8 @@ func (c *compactionMerger) Next() bool {
 			ra = ra.add(r)
 		}
 
-		c.l = l
-		c.c = append(ca, cb...)
+		c.l = append(c.l[:0], l...)
+		c.c = append(append(c.c[:0], ca...), cb...)
 		c.intervals = ra
 
 		c.aok = c.a.Next()
