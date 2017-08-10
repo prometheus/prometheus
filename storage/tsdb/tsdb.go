@@ -56,11 +56,21 @@ type Options struct {
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
+	// Start with smallest block duration and create exponential buckets until the exceed the
+	// configured maximum block duration.
+	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 3, 10)
+
+	for i, v := range rngs {
+		if v > int64(time.Duration(opts.MaxBlockDuration).Seconds()*1000) {
+			rngs = rngs[:i]
+			break
+		}
+	}
+
 	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
-		MinBlockDuration:  uint64(time.Duration(opts.MinBlockDuration).Seconds() * 1000),
-		MaxBlockDuration:  uint64(time.Duration(opts.MaxBlockDuration).Seconds() * 1000),
 		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
+		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
 	})
 	if err != nil {
