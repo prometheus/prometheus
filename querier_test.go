@@ -235,12 +235,12 @@ func createIdxChkReaders(tc []struct {
 
 	for i, s := range tc {
 		i = i + 1 // 0 is not a valid posting.
-		metas := make([]*ChunkMeta, 0, len(s.chunks))
+		metas := make([]ChunkMeta, 0, len(s.chunks))
 		for _, chk := range s.chunks {
 			// Collisions can be there, but for tests, its fine.
 			ref := rand.Uint64()
 
-			metas = append(metas, &ChunkMeta{
+			metas = append(metas, ChunkMeta{
 				MinTime: chk[0].t,
 				MaxTime: chk[len(chk)-1].t,
 				Ref:     ref,
@@ -661,7 +661,7 @@ Outer:
 func TestBaseChunkSeries(t *testing.T) {
 	type refdSeries struct {
 		lset   labels.Labels
-		chunks []*ChunkMeta
+		chunks []ChunkMeta
 
 		ref uint32
 	}
@@ -677,7 +677,7 @@ func TestBaseChunkSeries(t *testing.T) {
 			series: []refdSeries{
 				{
 					lset: labels.New([]labels.Label{{"a", "a"}}...),
-					chunks: []*ChunkMeta{
+					chunks: []ChunkMeta{
 						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
 						{Ref: 121},
 					},
@@ -685,19 +685,19 @@ func TestBaseChunkSeries(t *testing.T) {
 				},
 				{
 					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
-					chunks: []*ChunkMeta{
+					chunks: []ChunkMeta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
 					lset:   labels.New([]labels.Label{{"b", "c"}}...),
-					chunks: []*ChunkMeta{{Ref: 8282}},
+					chunks: []ChunkMeta{{Ref: 8282}},
 					ref:    1,
 				},
 				{
 					lset: labels.New([]labels.Label{{"b", "b"}}...),
-					chunks: []*ChunkMeta{
+					chunks: []ChunkMeta{
 						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
 					},
 					ref: 108,
@@ -711,14 +711,14 @@ func TestBaseChunkSeries(t *testing.T) {
 			series: []refdSeries{
 				{
 					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
-					chunks: []*ChunkMeta{
+					chunks: []ChunkMeta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
 					lset:   labels.New([]labels.Label{{"b", "c"}}...),
-					chunks: []*ChunkMeta{{Ref: 8282}},
+					chunks: []ChunkMeta{{Ref: 8282}},
 					ref:    1,
 				},
 			},
@@ -766,7 +766,7 @@ type itSeries struct {
 func (s itSeries) Iterator() SeriesIterator { return s.si }
 func (s itSeries) Labels() labels.Labels    { return labels.Labels{} }
 
-func chunkFromSamples(s []sample) *ChunkMeta {
+func chunkFromSamples(s []sample) ChunkMeta {
 	mint, maxt := int64(0), int64(0)
 
 	if len(s) > 0 {
@@ -779,11 +779,10 @@ func chunkFromSamples(s []sample) *ChunkMeta {
 	for _, s := range s {
 		ca.Append(s.t, s.v)
 	}
-	return &ChunkMeta{
+	return ChunkMeta{
 		MinTime: mint,
 		MaxTime: maxt,
-
-		Chunk: c,
+		Chunk:   c,
 	}
 }
 
@@ -945,7 +944,7 @@ func TestSeriesIterator(t *testing.T) {
 
 	t.Run("Chunk", func(t *testing.T) {
 		for _, tc := range itcases {
-			chkMetas := []*ChunkMeta{
+			chkMetas := []ChunkMeta{
 				chunkFromSamples(tc.a),
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
@@ -1016,7 +1015,7 @@ func TestSeriesIterator(t *testing.T) {
 			seekcases2 := append(seekcases, extra...)
 
 			for _, tc := range seekcases2 {
-				chkMetas := []*ChunkMeta{
+				chkMetas := []ChunkMeta{
 					chunkFromSamples(tc.a),
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
@@ -1103,7 +1102,7 @@ func TestSeriesIterator(t *testing.T) {
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
 func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
-	chkMetas := []*ChunkMeta{
+	chkMetas := []ChunkMeta{
 		chunkFromSamples([]sample{}),
 		chunkFromSamples([]sample{{1, 1}, {2, 2}, {3, 3}}),
 		chunkFromSamples([]sample{{4, 4}, {5, 5}}),
@@ -1120,7 +1119,7 @@ func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 // Regression when seeked chunks were still found via binary search and we always
 // skipped to the end when seeking a value in the current chunk.
 func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
-	metas := []*ChunkMeta{
+	metas := []ChunkMeta{
 		chunkFromSamples([]sample{}),
 		chunkFromSamples([]sample{{1, 2}, {3, 4}, {5, 6}, {7, 8}}),
 		chunkFromSamples([]sample{}),
@@ -1141,7 +1140,7 @@ func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
-	chunkMetas := [][]*ChunkMeta{
+	chunkMetas := [][]ChunkMeta{
 		{
 			{MinTime: 1, MaxTime: 2, Ref: 1},
 			{MinTime: 3, MaxTime: 4, Ref: 2},
@@ -1173,7 +1172,7 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	require.False(t, p.Next())
 
 	// Test the case where 1 chunk could cause an unpopulated chunk to be returned.
-	chunkMetas = [][]*ChunkMeta{
+	chunkMetas = [][]ChunkMeta{
 		{
 			{MinTime: 1, MaxTime: 2, Ref: 1},
 		},
@@ -1193,7 +1192,7 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 
 type mockChunkSeriesSet struct {
 	l  []labels.Labels
-	cm [][]*ChunkMeta
+	cm [][]ChunkMeta
 
 	i int
 }
@@ -1206,7 +1205,7 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []*ChunkMeta, intervals) {
+func (m *mockChunkSeriesSet) At() (labels.Labels, []ChunkMeta, intervals) {
 	return m.l[m.i], m.cm[m.i], nil
 }
 

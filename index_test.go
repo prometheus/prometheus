@@ -29,7 +29,7 @@ import (
 
 type series struct {
 	l      labels.Labels
-	chunks []*ChunkMeta
+	chunks []ChunkMeta
 }
 
 type mockIndex struct {
@@ -52,7 +52,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 	return m.symbols, nil
 }
 
-func (m mockIndex) AddSeries(ref uint32, l labels.Labels, chunks ...*ChunkMeta) error {
+func (m mockIndex) AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -64,9 +64,8 @@ func (m mockIndex) AddSeries(ref uint32, l labels.Labels, chunks ...*ChunkMeta) 
 	s := series{l: l}
 	// Actual chunk data is not stored in the index.
 	for _, c := range chunks {
-		cc := *c
-		cc.Chunk = nil
-		s.chunks = append(s.chunks, &cc)
+		c.Chunk = nil
+		s.chunks = append(s.chunks, c)
 	}
 	m.series[ref] = s
 
@@ -126,7 +125,7 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return newListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint32, lset *labels.Labels, chks *[]*ChunkMeta) error {
+func (m mockIndex) Series(ref uint32, lset *labels.Labels, chks *[]ChunkMeta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return ErrNotFound
@@ -215,7 +214,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	require.NoError(t, err)
 
 	var l labels.Labels
-	var c []*ChunkMeta
+	var c []ChunkMeta
 
 	for i := 0; p.Next(); i++ {
 		err := ir.Series(p.At(), &l, &c)
@@ -252,10 +251,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	// Generate ChunkMetas for every label set.
 	for i, lset := range lbls {
-		var metas []*ChunkMeta
+		var metas []ChunkMeta
 
 		for j := 0; j <= (i % 20); j++ {
-			metas = append(metas, &ChunkMeta{
+			metas = append(metas, ChunkMeta{
 				MinTime: int64(j * 10000),
 				MaxTime: int64((j + 1) * 10000),
 				Ref:     rand.Uint64(),
@@ -333,7 +332,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		expp, err := mi.Postings(p.name, p.value)
 
 		var lset, explset labels.Labels
-		var chks, expchks []*ChunkMeta
+		var chks, expchks []ChunkMeta
 
 		for gotp.Next() {
 			require.True(t, expp.Next())

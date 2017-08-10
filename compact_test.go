@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCompactionSelect(t *testing.T) {
-	opts := &compactorOptions{
+func TestLeveledCompactor_Select(t *testing.T) {
+	opts := &LeveledCompactorOptions{
 		blockRanges: []int64{
 			20,
 			60,
@@ -173,7 +173,7 @@ func TestCompactionSelect(t *testing.T) {
 		},
 	}
 
-	c := &compactor{
+	c := &LeveledCompactor{
 		opts: opts,
 	}
 	sliceDirs := func(dms []dirMeta) [][]string {
