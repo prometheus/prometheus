@@ -35,20 +35,30 @@ type series struct {
 type mockIndex struct {
 	series     map[uint32]series
 	labelIndex map[string][]string
-	postings   map[labels.Label]Postings
+	postings   *memPostings
+	symbols    map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	return mockIndex{
 		series:     make(map[uint32]series),
 		labelIndex: make(map[string][]string),
-		postings:   make(map[labels.Label]Postings),
+		postings:   &memPostings{m: make(map[term][]uint32)},
+		symbols:    make(map[string]struct{}),
 	}
+}
+
+func (m mockIndex) Symbols() (map[string]struct{}, error) {
+	return m.symbols, nil
 }
 
 func (m mockIndex) AddSeries(ref uint32, l labels.Labels, chunks ...*ChunkMeta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
+	}
+	for _, lbl := range l {
+		m.symbols[lbl.Name] = struct{}{}
+		m.symbols[lbl.Value] = struct{}{}
 	}
 
 	s := series{l: l}
@@ -75,41 +85,16 @@ func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
 }
 
 func (m mockIndex) WritePostings(name, value string, it Postings) error {
-	lbl := labels.Label{
-		Name:  name,
-		Value: value,
+	if _, ok := m.postings.m[term{name, value}]; ok {
+		return errors.Errorf("postings for %s=%q already added", name, value)
 	}
-
-	type refdSeries struct {
-		ref    uint32
-		series series
-	}
-
-	// Re-Order so that the list is ordered by labels of the series.
-	// Internally that is how the series are laid out.
-	refs := make([]refdSeries, 0)
-	for it.Next() {
-		s, ok := m.series[it.At()]
-		if !ok {
-			return errors.Errorf("series for reference %d not found", it.At())
-		}
-		refs = append(refs, refdSeries{it.At(), s})
-	}
-	if err := it.Err(); err != nil {
+	ep, err := expandPostings(it)
+	if err != nil {
 		return err
 	}
+	m.postings.m[term{name, value}] = ep
 
-	sort.Slice(refs, func(i, j int) bool {
-		return labels.Compare(refs[i].series.l, refs[j].series.l) < 0
-	})
-
-	postings := make([]uint32, 0, len(refs))
-	for _, r := range refs {
-		postings = append(postings, r.ref)
-	}
-
-	m.postings[lbl] = newListPostings(postings)
-	return nil
+	return it.Err()
 }
 
 func (m mockIndex) Close() error {
@@ -126,26 +111,30 @@ func (m mockIndex) LabelValues(names ...string) (StringTuples, error) {
 }
 
 func (m mockIndex) Postings(name, value string) (Postings, error) {
-	lbl := labels.Label{
-		Name:  name,
-		Value: value,
-	}
-
-	p, ok := m.postings[lbl]
-	if !ok {
-		return nil, ErrNotFound
-	}
-
-	return p, nil
+	return m.postings.get(term{name, value}), nil
 }
 
-func (m mockIndex) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
-	s, ok := m.series[ref]
-	if !ok {
-		return nil, nil, ErrNotFound
+func (m mockIndex) SortedPostings(p Postings) Postings {
+	ep, err := expandPostings(p)
+	if err != nil {
+		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
 
-	return s.l, s.chunks, nil
+	sort.Slice(ep, func(i, j int) bool {
+		return labels.Compare(m.series[ep[i]].l, m.series[ep[j]].l) < 0
+	})
+	return newListPostings(ep)
+}
+
+func (m mockIndex) Series(ref uint32, lset *labels.Labels, chks *[]*ChunkMeta) error {
+	s, ok := m.series[ref]
+	if !ok {
+		return ErrNotFound
+	}
+	*lset = append((*lset)[:0], s.l...)
+	*chks = append((*chks)[:0], s.chunks...)
+
+	return nil
 }
 
 func (m mockIndex) LabelIndices() ([][]string, error) {
@@ -197,11 +186,21 @@ func TestIndexRW_Postings(t *testing.T) {
 		labels.FromStrings("a", "1", "b", "4"),
 	}
 
+	err = iw.AddSymbols(map[string]struct{}{
+		"a": struct{}{},
+		"b": struct{}{},
+		"1": struct{}{},
+		"2": struct{}{},
+		"3": struct{}{},
+		"4": struct{}{},
+	})
+	require.NoError(t, err)
+
 	// Postings lists are only written if a series with the respective
 	// reference was added before.
 	require.NoError(t, iw.AddSeries(1, series[0]))
-	require.NoError(t, iw.AddSeries(3, series[2]))
 	require.NoError(t, iw.AddSeries(2, series[1]))
+	require.NoError(t, iw.AddSeries(3, series[2]))
 	require.NoError(t, iw.AddSeries(4, series[3]))
 
 	err = iw.WritePostings("a", "1", newListPostings([]uint32{1, 2, 3, 4}))
@@ -215,8 +214,11 @@ func TestIndexRW_Postings(t *testing.T) {
 	p, err := ir.Postings("a", "1")
 	require.NoError(t, err)
 
+	var l labels.Labels
+	var c []*ChunkMeta
+
 	for i := 0; p.Next(); i++ {
-		l, c, err := ir.Series(p.At())
+		err := ir.Series(p.At(), &l, &c)
 
 		require.NoError(t, err)
 		require.Equal(t, 0, len(c))
@@ -234,6 +236,17 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	lbls, err := readPrometheusLabels("testdata/20k.series", 20000)
 	require.NoError(t, err)
+
+	// Sort labels as the index writer expects series in sorted order.
+	sort.Sort(labels.Slice(lbls))
+
+	symbols := map[string]struct{}{}
+	for _, lset := range lbls {
+		for _, l := range lset {
+			symbols[l.Name] = struct{}{}
+			symbols[l.Value] = struct{}{}
+		}
+	}
 
 	var input indexWriterSeriesSlice
 
@@ -257,6 +270,8 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	iw, err := newIndexWriter(dir)
 	require.NoError(t, err)
+
+	require.NoError(t, iw.AddSymbols(symbols))
 
 	// Population procedure as done by compaction.
 	var (
@@ -311,21 +326,24 @@ func TestPersistence_index_e2e(t *testing.T) {
 	ir, err := newIndexReader(dir)
 	require.NoError(t, err)
 
-	for p := range mi.postings {
-		gotp, err := ir.Postings(p.Name, p.Value)
+	for p := range mi.postings.m {
+		gotp, err := ir.Postings(p.name, p.value)
 		require.NoError(t, err)
 
-		expp, err := mi.Postings(p.Name, p.Value)
+		expp, err := mi.Postings(p.name, p.value)
+
+		var lset, explset labels.Labels
+		var chks, expchks []*ChunkMeta
 
 		for gotp.Next() {
 			require.True(t, expp.Next())
 
 			ref := gotp.At()
 
-			lset, chks, err := ir.Series(ref)
+			err := ir.Series(ref, &lset, &chks)
 			require.NoError(t, err)
 
-			explset, expchks, err := mi.Series(expp.At())
+			err = mi.Series(expp.At(), &explset, &expchks)
 			require.Equal(t, explset, lset)
 			require.Equal(t, expchks, chks)
 		}

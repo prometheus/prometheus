@@ -433,16 +433,16 @@ func TestBlockQuerier(t *testing.T) {
 				ms:   []labels.Matcher{labels.NewPrefixMatcher("p", "abc")},
 				exp: newListSeriesSet([]Series{
 					newSeries(map[string]string{
-						"p": "abcd",
-						"x": "xyz",
-					},
-						[]sample{{2, 3}, {3, 4}, {5, 2}, {6, 3}},
-					),
-					newSeries(map[string]string{
 						"a": "ab",
 						"p": "abce",
 					},
 						[]sample{{2, 2}, {3, 3}, {5, 3}, {6, 6}},
+					),
+					newSeries(map[string]string{
+						"p": "abcd",
+						"x": "xyz",
+					},
+						[]sample{{2, 3}, {3, 4}, {5, 2}, {6, 3}},
 					),
 				}),
 			},

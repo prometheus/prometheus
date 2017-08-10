@@ -398,17 +398,31 @@ func (c *compactor) write(uid ulid.ULID, blocks ...Block) (err error) {
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*BlockMeta, error) {
-	var set compactionSet
-	var metas []BlockMeta
-
+	var (
+		set        compactionSet
+		metas      []BlockMeta
+		allSymbols = make(map[string]struct{}, 1<<16)
+	)
 	for i, b := range blocks {
 		metas = append(metas, b.Meta())
 
-		all, err := b.Index().Postings("", "")
+		symbols, err := b.Index().Symbols()
+		if err != nil {
+			return nil, errors.Wrap(err, "read symbols")
+		}
+		for s := range symbols {
+			allSymbols[s] = struct{}{}
+		}
+
+		indexr := b.Index()
+
+		all, err := indexr.Postings("", "")
 		if err != nil {
 			return nil, err
 		}
-		s := newCompactionSeriesSet(b.Index(), b.Chunks(), b.Tombstones(), all)
+		all = indexr.SortedPostings(all)
+
+		s := newCompactionSeriesSet(indexr, b.Chunks(), b.Tombstones(), all)
 
 		if i == 0 {
 			set = s
@@ -427,6 +441,10 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 		i        = uint32(0)
 		meta     = compactBlockMetas(metas...)
 	)
+
+	if err := indexw.AddSymbols(allSymbols); err != nil {
+		return nil, errors.Wrap(err, "add symbols")
+	}
 
 	for set.Next() {
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
@@ -461,7 +479,9 @@ func populateBlock(blocks []Block, indexw IndexWriter, chunkw ChunkWriter) (*Blo
 			return nil, err
 		}
 
-		indexw.AddSeries(i, lset, chks...)
+		if err := indexw.AddSeries(i, lset, chks...); err != nil {
+			return nil, errors.Wrapf(err, "add series")
+		}
 
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
@@ -525,6 +545,7 @@ type compactionSeriesSet struct {
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
+	series     SeriesSet
 
 	l         labels.Labels
 	c         []*ChunkMeta
@@ -545,11 +566,9 @@ func (c *compactionSeriesSet) Next() bool {
 	if !c.p.Next() {
 		return false
 	}
-
 	c.intervals = c.tombstones.Get(c.p.At())
 
-	c.l, c.c, c.err = c.index.Series(c.p.At())
-	if c.err != nil {
+	if c.err = c.index.Series(c.p.At(), &c.l, &c.c); c.err != nil {
 		return false
 	}
 
@@ -629,14 +648,24 @@ func (c *compactionMerger) Next() bool {
 	if !c.aok && !c.bok || c.Err() != nil {
 		return false
 	}
+	// While advancing child iterators the memory used for labels and chunks
+	// may be reused. When picking a series we have to store the result.
+	var lset labels.Labels
+	var chks []*ChunkMeta
 
 	d := c.compare()
 	// Both sets contain the current series. Chain them into a single one.
 	if d > 0 {
-		c.l, c.c, c.intervals = c.b.At()
+		lset, chks, c.intervals = c.b.At()
+		c.l = append(c.l[:0], lset...)
+		c.c = append(c.c[:0], chks...)
+
 		c.bok = c.b.Next()
 	} else if d < 0 {
-		c.l, c.c, c.intervals = c.a.At()
+		lset, chks, c.intervals = c.a.At()
+		c.l = append(c.l[:0], lset...)
+		c.c = append(c.c[:0], chks...)
+
 		c.aok = c.a.Next()
 	} else {
 		l, ca, ra := c.a.At()
@@ -645,8 +674,8 @@ func (c *compactionMerger) Next() bool {
 			ra = ra.add(r)
 		}
 
-		c.l = l
-		c.c = append(ca, cb...)
+		c.l = append(c.l[:0], l...)
+		c.c = append(append(c.c[:0], ca...), cb...)
 		c.intervals = ra
 
 		c.aok = c.a.Next()

@@ -15,7 +15,7 @@ package tsdb
 
 import (
 	"fmt"
-        "sort"
+	"sort"
 	"strings"
 
 	"github.com/prometheus/tsdb/chunks"
@@ -134,8 +134,6 @@ type blockQuerier struct {
 	chunks     ChunkReader
 	tombstones TombstoneReader
 
-	postingsMapper func(Postings) Postings
-
 	mint, maxt int64
 }
 
@@ -143,10 +141,6 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	pr := newPostingsReader(q.index)
 
 	p, absent := pr.Select(ms...)
-
-	if q.postingsMapper != nil {
-		p = q.postingsMapper(p)
-	}
 
 	return &blockSeriesSet{
 		set: &populatedChunkSeries{
@@ -218,7 +212,7 @@ func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
 
 	p := Intersect(its...)
 
-	return p, absent
+	return r.index.SortedPostings(p), absent
 }
 
 // tuplesByPrefix uses binary search to find prefix matches within ts.
@@ -434,11 +428,14 @@ func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta, intervals) {
 func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
+	var (
+		lset   labels.Labels
+		chunks []*ChunkMeta
+	)
 Outer:
 	for s.p.Next() {
 		ref := s.p.At()
-		lset, chunks, err := s.index.Series(ref)
-		if err != nil {
+		if err := s.index.Series(ref, &lset, &chunks); err != nil {
 			s.err = err
 			return false
 		}
