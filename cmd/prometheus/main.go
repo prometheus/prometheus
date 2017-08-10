@@ -329,6 +329,10 @@ func main() {
 	// Wait for reload or termination signals.
 	close(hupReady) // Unblock SIGHUP handler.
 
+	// Set web server to ready.
+	webHandler.Ready()
+	log.Info("Server is Ready to receive requests.")
+
 	term := make(chan os.Signal)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	select {

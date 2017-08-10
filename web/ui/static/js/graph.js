@@ -927,7 +927,7 @@ function redirectToMigratedURL() {
     });
   });
   var query = $.param(queryObject);
-  window.location = "/graph?" + query;
+  window.location = PATH_PREFIX + "/graph?" + query;
 }
 
 $(init);
