@@ -145,7 +145,7 @@ type query struct {
 	stmt Statement
 	// Timer stats for the query execution.
 	stats *stats.TimerGroup
-	// Cancelation function for the query.
+	// Cancellation function for the query.
 	cancel func()
 
 	// The engine against which the query is executed.
@@ -669,7 +669,7 @@ func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(expr Expr) Value {
 	// This is the top-level evaluation method.
-	// Thus, we check for timeout/cancelation here.
+	// Thus, we check for timeout/cancellation here.
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}

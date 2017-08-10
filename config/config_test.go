@@ -66,10 +66,12 @@ var expectedConf = &Config{
 					Action:       RelabelDrop,
 				},
 			},
+			QueueConfig: DefaultQueueConfig,
 		},
 		{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
+			QueueConfig:   DefaultQueueConfig,
 		},
 	},
 
@@ -666,6 +668,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "unknown_global_attr.bad.yml",
 		errMsg:   "unknown fields in global config: nonexistent_field",
+	}, {
+		filename: "remote_read_url_missing.bad.yml",
+		errMsg:   `url for remote_read is empty`,
+	}, {
+		filename: "remote_write_url_missing.bad.yml",
+		errMsg:   `url for remote_write is empty`,
 	},
 }
 
