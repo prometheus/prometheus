@@ -346,8 +346,16 @@ func (h *Handler) Run(ctx context.Context) error {
 		ReadTimeout: h.options.ReadTimeout,
 	}
 
-	go httpSrv.Serve(httpl)
-	go grpcSrv.Serve(grpcl)
+	go func() {
+		if err := httpSrv.Serve(httpl); err != nil {
+			log.With("err", err).Warnf("error serving HTTP")
+		}
+	}()
+	go func() {
+		if err := grpcSrv.Serve(grpcl); err != nil {
+			log.With("err", err).Warnf("error serving HTTP")
+		}
+	}()
 
 	return m.Serve()
 }
