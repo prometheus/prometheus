@@ -13,10 +13,7 @@
 
 package chunks
 
-import (
-	"encoding/binary"
-	"fmt"
-)
+import "fmt"
 
 // Encoding is the identifier for a chunk encoding.
 type Encoding uint8
@@ -43,16 +40,14 @@ type Chunk interface {
 	Encoding() Encoding
 	Appender() (Appender, error)
 	Iterator() Iterator
+	NumSamples() int
 }
 
 // FromData returns a chunk from a byte slice of chunk data.
 func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
-		return &XORChunk{
-			b:   &bstream{count: 0, stream: d},
-			num: binary.BigEndian.Uint16(d),
-		}, nil
+		return &XORChunk{b: &bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("unknown chunk encoding: %d", e)
 }

@@ -45,8 +45,7 @@ import (
 var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
-	MinBlockDuration:  3 * 60 * 60 * 1000,       // 2 hours in milliseconds
-	MaxBlockDuration:  24 * 60 * 60 * 1000,      // 1 days in milliseconds
+	BlockRanges:       ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
 	NoLockfile:        false,
 }
 
@@ -58,12 +57,8 @@ type Options struct {
 	// Duration of persisted data to keep.
 	RetentionDuration uint64
 
-	// The timestamp range of head blocks after which they get persisted.
-	// It's the minimum duration of any persisted block.
-	MinBlockDuration uint64
-
-	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration uint64
+	// The sizes of the Blocks.
+	BlockRanges []int64
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
@@ -104,14 +99,13 @@ type DB struct {
 	metrics *dbMetrics
 	opts    *Options
 
-	// Mutex for that must be held when modifying the general
-	// block layout.
+	// Mutex for that must be held when modifying the general block layout.
 	mtx    sync.RWMutex
 	blocks []Block
 
 	// Mutex that must be held when modifying just the head blocks
 	// or the general layout.
-	// Must never be held when acquiring a blocks's mutex!
+	// mtx must be held before acquiring.
 	headmtx sync.RWMutex
 	heads   []headBlock
 
@@ -122,8 +116,8 @@ type DB struct {
 	stopc    chan struct{}
 
 	// cmtx is used to control compactions and deletions.
-	cmtx       sync.Mutex
-	compacting bool
+	cmtx               sync.Mutex
+	compactionsEnabled bool
 }
 
 type dbMetrics struct {
@@ -202,13 +196,13 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 
 	db = &DB{
-		dir:        dir,
-		logger:     l,
-		opts:       opts,
-		compactc:   make(chan struct{}, 1),
-		donec:      make(chan struct{}),
-		stopc:      make(chan struct{}),
-		compacting: true,
+		dir:                dir,
+		logger:             l,
+		opts:               opts,
+		compactc:           make(chan struct{}, 1),
+		donec:              make(chan struct{}),
+		stopc:              make(chan struct{}),
+		compactionsEnabled: true,
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -227,9 +221,24 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = &lockf
 	}
 
-	db.compactor = newCompactor(dir, r, l, &compactorOptions{
-		maxBlockRange: opts.MaxBlockDuration,
-	})
+	copts := &compactorOptions{
+		blockRanges: opts.BlockRanges,
+	}
+
+	if len(copts.blockRanges) == 0 {
+		return nil, errors.New("at least one block-range must exist")
+	}
+
+	for float64(copts.blockRanges[len(copts.blockRanges)-1])/float64(opts.RetentionDuration) > 0.2 {
+		if len(copts.blockRanges) == 1 {
+			break
+		}
+
+		// Max overflow is restricted to 20%.
+		copts.blockRanges = copts.blockRanges[:len(copts.blockRanges)-1]
+	}
+
+	db.compactor = newCompactor(dir, r, l, copts)
 
 	if err := db.reloadBlocks(); err != nil {
 		return nil, err
@@ -315,37 +324,62 @@ func headFullness(h headBlock) float64 {
 	return a / b
 }
 
+// appendableHeads returns a copy of a slice of HeadBlocks that can still be appended to.
+func (db *DB) appendableHeads() (r []headBlock) {
+	switch l := len(db.heads); l {
+	case 0:
+	case 1:
+		r = append(r, db.heads[0])
+	default:
+		if headFullness(db.heads[l-1]) < 0.5 {
+			r = append(r, db.heads[l-2])
+		}
+		r = append(r, db.heads[l-1])
+	}
+	return r
+}
+
+func (db *DB) completedHeads() (r []headBlock) {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	db.headmtx.RLock()
+	defer db.headmtx.RUnlock()
+
+	if len(db.heads) < 2 {
+		return nil
+	}
+
+	// Select all old heads unless they still have pending appenders.
+	for _, h := range db.heads[:len(db.heads)-2] {
+		if h.ActiveWriters() > 0 {
+			return r
+		}
+		r = append(r, h)
+	}
+	// Add the 2nd last head if the last head is more than 50% filled.
+	// Compacting it early allows us to free its memory before allocating
+	// more for the next block and thus reduces spikes.
+	h0 := db.heads[len(db.heads)-1]
+	h1 := db.heads[len(db.heads)-2]
+
+	if headFullness(h0) >= 0.5 && h1.ActiveWriters() == 0 {
+		r = append(r, h1)
+	}
+	return r
+}
+
 func (db *DB) compact() (changes bool, err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	db.headmtx.RLock()
+	if !db.compactionsEnabled {
+		return false, nil
+	}
 
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
-	var singles []Block
-
-	// Collect head blocks that are ready for compaction. Write them after
-	// returning the lock to not block Appenders.
-	// Selected blocks are semantically ensured to not be written to afterwards
-	// by appendable().
-	if len(db.heads) > 1 {
-		f := headFullness(db.heads[len(db.heads)-1])
-
-		for _, h := range db.heads[:len(db.heads)-1] {
-			// Blocks that won't be appendable when instantiating a new appender
-			// might still have active appenders on them.
-			// Abort at the first one we encounter.
-			if h.ActiveWriters() > 0 || f < 0.5 {
-				break
-			}
-			singles = append(singles, h)
-		}
-	}
-
-	db.headmtx.RUnlock()
-
-	for _, h := range singles {
+	for _, h := range db.completedHeads() {
 		select {
 		case <-db.stopc:
 			return changes, nil
@@ -551,29 +585,29 @@ func (db *DB) Close() error {
 
 // DisableCompactions disables compactions.
 func (db *DB) DisableCompactions() {
-	if db.compacting {
-		db.cmtx.Lock()
-		db.compacting = false
-		db.logger.Log("msg", "compactions disabled")
-	}
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	db.compactionsEnabled = false
+	db.logger.Log("msg", "compactions disabled")
 }
 
 // EnableCompactions enables compactions.
 func (db *DB) EnableCompactions() {
-	if !db.compacting {
-		db.cmtx.Unlock()
-		db.compacting = true
-		db.logger.Log("msg", "compactions enabled")
-	}
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	db.compactionsEnabled = true
+	db.logger.Log("msg", "compactions enabled")
 }
 
 // Snapshot writes the current data to the directory.
 func (db *DB) Snapshot(dir string) error {
-	db.mtx.Lock() // To block any appenders.
-	defer db.mtx.Unlock()
-
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+
+	db.mtx.Lock() // To block any appenders.
+	defer db.mtx.Unlock()
 
 	blocks := db.blocks[:]
 	for _, b := range blocks {
@@ -667,7 +701,7 @@ func (a *dbAppender) appenderAt(t int64) (*metaAppender, error) {
 	}
 
 	var hb headBlock
-	for _, h := range a.db.appendable() {
+	for _, h := range a.db.appendableHeads() {
 		m := h.Meta()
 
 		if intervalContains(m.MinTime, m.MaxTime-1, t) {
@@ -699,20 +733,20 @@ func rangeForTimestamp(t int64, width int64) (mint, maxt int64) {
 // it is within or after the currently appendable window.
 func (db *DB) ensureHead(t int64) error {
 	var (
-		mint, maxt = rangeForTimestamp(t, int64(db.opts.MinBlockDuration))
+		mint, maxt = rangeForTimestamp(t, int64(db.opts.BlockRanges[0]))
 		addBuffer  = len(db.blocks) == 0
 		last       BlockMeta
 	)
 
 	if !addBuffer {
 		last = db.blocks[len(db.blocks)-1].Meta()
-		addBuffer = last.MaxTime <= mint-int64(db.opts.MinBlockDuration)
+		addBuffer = last.MaxTime <= mint-int64(db.opts.BlockRanges[0])
 	}
 	// Create another block of buffer in front if the DB is initialized or retrieving
 	// new data after a long gap.
 	// This ensures we always have a full block width of append window.
 	if addBuffer {
-		if _, err := db.createHeadBlock(mint-int64(db.opts.MinBlockDuration), mint); err != nil {
+		if _, err := db.createHeadBlock(mint-int64(db.opts.BlockRanges[0]), mint); err != nil {
 			return err
 		}
 		// If the previous block reaches into our new window, make it smaller.
@@ -779,6 +813,7 @@ func (a *dbAppender) Rollback() error {
 func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -797,18 +832,6 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	}
 
 	return nil
-}
-
-// appendable returns a copy of a slice of HeadBlocks that can still be appended to.
-func (db *DB) appendable() (r []headBlock) {
-	switch len(db.heads) {
-	case 0:
-	case 1:
-		r = append(r, db.heads[0])
-	default:
-		r = append(r, db.heads[len(db.heads)-2:]...)
-	}
-	return r
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {

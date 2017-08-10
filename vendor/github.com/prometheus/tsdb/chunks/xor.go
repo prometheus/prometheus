@@ -52,8 +52,7 @@ import (
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
-	b   *bstream
-	num uint16
+	b *bstream
 }
 
 // NewXORChunk returns a new chunk with XOR encoding of the given size.
@@ -70,6 +69,11 @@ func (c *XORChunk) Encoding() Encoding {
 // Bytes returns the underlying byte slice of the chunk.
 func (c *XORChunk) Bytes() []byte {
 	return c.b.bytes()
+}
+
+// NumSamples returns the number of samples in the chunk.
+func (c *XORChunk) NumSamples() int {
+	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
 // Appender implements the Chunk interface.

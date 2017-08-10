@@ -67,6 +67,7 @@ type HeadBlock struct {
 	// to their chunk descs.
 	hashes map[uint64][]*memSeries
 
+	symbols  map[string]struct{}
 	values   map[string]stringset // label names to possible values
 	postings *memPostings         // postings lists for terms
 
@@ -117,6 +118,7 @@ func OpenHeadBlock(dir string, l log.Logger, wal WAL) (*HeadBlock, error) {
 		series:     []*memSeries{nil}, // 0 is not a valid posting, filled with nil.
 		hashes:     map[uint64][]*memSeries{},
 		values:     map[string]stringset{},
+		symbols:    map[string]struct{}{},
 		postings:   &memPostings{m: make(map[term][]uint32)},
 		meta:       *meta,
 		tombstones: newEmptyTombstoneReader(),
@@ -332,7 +334,12 @@ func (h *HeadBlock) Snapshot(snapshotDir string) error {
 func (h *HeadBlock) Dir() string { return h.dir }
 
 // Index returns an IndexReader against the block.
-func (h *HeadBlock) Index() IndexReader { return &headIndexReader{h} }
+func (h *HeadBlock) Index() IndexReader {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	return &headIndexReader{HeadBlock: h, maxSeries: uint32(len(h.series) - 1)}
+}
 
 // Chunks returns a ChunkReader against the block.
 func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
@@ -340,14 +347,10 @@ func (h *HeadBlock) Chunks() ChunkReader { return &headChunkReader{h} }
 // Querier returns a new Querier against the block for the range [mint, maxt].
 func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 	h.mtx.RLock()
-	defer h.mtx.RUnlock()
-
 	if h.closed {
 		panic(fmt.Sprintf("block %s already closed", h.dir))
 	}
-
-	// Reference on the original slice to use for postings mapping.
-	series := h.series[:]
+	h.mtx.RUnlock()
 
 	return &blockQuerier{
 		mint:       mint,
@@ -355,27 +358,6 @@ func (h *HeadBlock) Querier(mint, maxt int64) Querier {
 		index:      h.Index(),
 		chunks:     h.Chunks(),
 		tombstones: h.Tombstones(),
-
-		postingsMapper: func(p Postings) Postings {
-			ep := make([]uint32, 0, 64)
-
-			for p.Next() {
-				// Skip posting entries that include series added after we
-				// instantiated the querier.
-				if int(p.At()) >= len(series) {
-					break
-				}
-				ep = append(ep, p.At())
-			}
-			if err := p.Err(); err != nil {
-				return errPostings{err: errors.Wrap(err, "expand postings")}
-			}
-
-			sort.Slice(ep, func(i, j int) bool {
-				return labels.Compare(series[ep[i]].lset, series[ep[j]].lset) < 0
-			})
-			return newListPostings(ep)
-		},
 	}
 }
 
@@ -661,6 +643,12 @@ func (c *safeChunk) Iterator() chunks.Iterator {
 
 type headIndexReader struct {
 	*HeadBlock
+	// Highest series that existed when the index reader was instantiated.
+	maxSeries uint32
+}
+
+func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
+	return h.symbols, nil
 }
 
 // LabelValues returns the possible label values
@@ -689,33 +677,59 @@ func (h *headIndexReader) Postings(name, value string) (Postings, error) {
 	return h.postings.get(term{name: name, value: value}), nil
 }
 
-// Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint32) (labels.Labels, []*ChunkMeta, error) {
+func (h *headIndexReader) SortedPostings(p Postings) Postings {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
-	if int(ref) >= len(h.series) {
-		return nil, nil, ErrNotFound
+	ep := make([]uint32, 0, 1024)
+
+	for p.Next() {
+		// Skip posting entries that include series added after we
+		// instantiated the index reader.
+		if p.At() > h.maxSeries {
+			break
+		}
+		ep = append(ep, p.At())
+	}
+	if err := p.Err(); err != nil {
+		return errPostings{err: errors.Wrap(err, "expand postings")}
+	}
+
+	sort.Slice(ep, func(i, j int) bool {
+		return labels.Compare(h.series[ep[i]].lset, h.series[ep[j]].lset) < 0
+	})
+	return newListPostings(ep)
+}
+
+// Series returns the series for the given reference.
+func (h *headIndexReader) Series(ref uint32, lbls *labels.Labels, chks *[]*ChunkMeta) error {
+	h.mtx.RLock()
+	defer h.mtx.RUnlock()
+
+	if ref > h.maxSeries {
+		return ErrNotFound
 	}
 
 	s := h.series[ref]
 	if s == nil {
-		return nil, nil, ErrNotFound
+		return ErrNotFound
 	}
-	metas := make([]*ChunkMeta, 0, len(s.chunks))
+	*lbls = append((*lbls)[:0], s.lset...)
 
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
+	*chks = (*chks)[:0]
+
 	for i, c := range s.chunks {
-		metas = append(metas, &ChunkMeta{
+		*chks = append(*chks, &ChunkMeta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     (uint64(ref) << 32) | uint64(i),
 		})
 	}
 
-	return s.lset, metas, nil
+	return nil
 }
 
 func (h *headIndexReader) LabelIndices() ([][]string, error) {
@@ -760,6 +774,9 @@ func (h *HeadBlock) create(hash uint64, lset labels.Labels) *memSeries {
 		valset.set(l.Value)
 
 		h.postings.add(s.ref, term{name: l.Name, value: l.Value})
+
+		h.symbols[l.Name] = struct{}{}
+		h.symbols[l.Value] = struct{}{}
 	}
 
 	h.postings.add(s.ref, term{})
