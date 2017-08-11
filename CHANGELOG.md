@@ -1,3 +1,14 @@
+## v2.0.0-beta.1 / 2017-08-11
+
+This release includes numerous changes to the new storage layer. The main changes are:
+
+* [CHANGES] Deterministic block boundaries
+* [ENHANCEMENTS] Avoid memory usage spikes during compactions
+
+It's generally advised to start with a clean storage directory. As a best effort,
+running `sed -i .bkp 's/generation/level/g' */meta.json` from within the directory
+should be sufficient to migrate data written by v2.0.0-beta.0.
+
 ## 1.7.1 / 2017-06-12
 
 * [BUGFIX] Fix double prefix redirect.

@@ -37,6 +37,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -95,9 +96,10 @@ type DB struct {
 	dir   string
 	lockf *lockfile.Lockfile
 
-	logger  log.Logger
-	metrics *dbMetrics
-	opts    *Options
+	logger    log.Logger
+	metrics   *dbMetrics
+	opts      *Options
+	chunkPool chunks.Pool
 
 	// Mutex for that must be held when modifying the general block layout.
 	mtx    sync.RWMutex
@@ -203,6 +205,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:              make(chan struct{}),
 		stopc:              make(chan struct{}),
 		compactionsEnabled: true,
+		chunkPool:          chunks.NewPool(),
 	}
 	db.metrics = newDBMetrics(db, r)
 
@@ -221,8 +224,9 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = &lockf
 	}
 
-	copts := &compactorOptions{
+	copts := &LeveledCompactorOptions{
 		blockRanges: opts.BlockRanges,
+		chunkPool:   db.chunkPool,
 	}
 
 	if len(copts.blockRanges) == 0 {
@@ -238,7 +242,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		copts.blockRanges = copts.blockRanges[:len(copts.blockRanges)-1]
 	}
 
-	db.compactor = newCompactor(dir, r, l, copts)
+	db.compactor = NewLeveledCompactor(r, l, copts)
 
 	if err := db.reloadBlocks(); err != nil {
 		return nil, err
@@ -386,20 +390,24 @@ func (db *DB) compact() (changes bool, err error) {
 		default:
 		}
 
-		if err = db.compactor.Write(h); err != nil {
+		if err = db.compactor.Write(db.dir, h); err != nil {
 			return changes, errors.Wrap(err, "persist head block")
 		}
 		changes = true
+
+		if err := os.RemoveAll(h.Dir()); err != nil {
+			return changes, errors.Wrap(err, "delete compacted head block")
+		}
 		runtime.GC()
 	}
 
 	// Check for compactions of multiple blocks.
 	for {
-		plans, err := db.compactor.Plan()
+		plan, err := db.compactor.Plan(db.dir)
 		if err != nil {
 			return changes, errors.Wrap(err, "plan compaction")
 		}
-		if len(plans) == 0 {
+		if len(plan) == 0 {
 			break
 		}
 
@@ -409,17 +417,17 @@ func (db *DB) compact() (changes bool, err error) {
 		default:
 		}
 
-		// We just execute compactions sequentially to not cause too extreme
-		// CPU and memory spikes.
-		// TODO(fabxc): return more descriptive plans in the future that allow
-		// estimation of resource usage and conditional parallelization?
-		for _, p := range plans {
-			if err := db.compactor.Compact(p...); err != nil {
-				return changes, errors.Wrapf(err, "compact %s", p)
-			}
-			changes = true
-			runtime.GC()
+		if err := db.compactor.Compact(db.dir, plan...); err != nil {
+			return changes, errors.Wrapf(err, "compact %s", plan)
 		}
+		changes = true
+
+		for _, pd := range plan {
+			if err := os.RemoveAll(pd); err != nil {
+				return changes, errors.Wrap(err, "delete compacted block")
+			}
+		}
+		runtime.GC()
 	}
 
 	return changes, nil
@@ -505,10 +513,10 @@ func (db *DB) reloadBlocks() (err error) {
 
 		b, ok := db.getBlock(meta.ULID)
 		if !ok {
-			if meta.Compaction.Generation == 0 {
+			if meta.Compaction.Level == 0 {
 				b, err = db.openHeadBlock(dir)
 			} else {
-				b, err = newPersistedBlock(dir)
+				b, err = newPersistedBlock(dir, db.chunkPool)
 			}
 			if err != nil {
 				return errors.Wrapf(err, "open block %s", dir)
@@ -534,7 +542,7 @@ func (db *DB) reloadBlocks() (err error) {
 	db.heads = nil
 
 	for _, b := range blocks {
-		if b.Meta().Compaction.Generation == 0 {
+		if b.Meta().Compaction.Level == 0 {
 			db.heads = append(db.heads, b.(*HeadBlock))
 		}
 	}
@@ -603,6 +611,9 @@ func (db *DB) EnableCompactions() {
 
 // Snapshot writes the current data to the directory.
 func (db *DB) Snapshot(dir string) error {
+	if dir == db.dir {
+		return errors.Errorf("cannot snapshot into base directory")
+	}
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -869,7 +880,7 @@ func (db *DB) openHeadBlock(dir string) (*HeadBlock, error) {
 		return nil, errors.Wrap(err, "open WAL %s")
 	}
 
-	h, err := OpenHeadBlock(dir, log.With(db.logger, "block", dir), wal)
+	h, err := OpenHeadBlock(dir, log.With(db.logger, "block", dir), wal, db.compactor)
 	if err != nil {
 		return nil, errors.Wrapf(err, "open head block %s", dir)
 	}
