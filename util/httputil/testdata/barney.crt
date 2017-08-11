@@ -1,0 +1,96 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 2 (0x2)
+    Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=NO, O=Green AS, OU=Green Certificate Authority, CN=Green TLS CA
+        Validity
+            Not Before: Jul 13 04:02:47 2017 GMT
+            Not After : Jul 13 04:02:47 2019 GMT
+        Subject: C=NO, O=Telenor AS, OU=Support, CN=Barney Rubble
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:c6:66:23:7c:16:61:65:b0:2e:a7:db:92:50:b7:
+                    a1:a2:a3:c2:bf:f5:3e:ef:b1:13:c5:43:72:4b:69:
+                    ef:89:61:07:0c:06:ff:a4:54:bc:06:dc:78:a0:24:
+                    35:10:25:52:cb:17:14:99:74:a5:ae:f0:e3:31:8e:
+                    2c:8a:c3:87:be:77:4d:46:51:a2:db:be:0c:e5:af:
+                    10:e7:20:f5:05:4a:af:c6:ad:ee:5c:1f:fe:49:83:
+                    55:4a:10:73:6a:cc:2b:4a:3a:73:31:ef:3d:02:53:
+                    8f:c4:f8:e7:13:5e:0e:5e:1d:34:8f:68:47:ba:73:
+                    86:e2:38:65:5a:02:67:63:46:32:bd:44:10:61:63:
+                    ba:2a:b9:8a:32:26:78:32:09:98:d1:25:a1:fd:98:
+                    65:90:32:4f:b6:4a:77:69:45:4c:da:c8:5e:0a:bb:
+                    bf:ef:41:3d:be:22:c6:7d:d9:61:73:6a:48:32:c8:
+                    72:c0:da:78:ff:92:24:1c:16:70:6e:a5:c5:14:65:
+                    f8:b1:1b:52:5c:8f:da:b9:93:6f:70:73:81:b1:ef:
+                    b7:7b:70:68:9d:6b:c1:59:2d:a5:21:86:f3:a5:7d:
+                    ef:2c:1e:c1:13:d0:46:23:15:a7:d5:f8:0d:42:bd:
+                    78:c8:53:da:71:c4:ac:cc:1b:e0:b6:61:14:38:da:
+                    25:9f
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Digital Signature
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            X509v3 Extended Key Usage: 
+                TLS Web Client Authentication
+            X509v3 Subject Key Identifier: 
+                F4:17:02:DD:1B:01:AB:C5:BC:17:A4:5C:4B:75:8E:EC:B1:E0:C8:F1
+            X509v3 Authority Key Identifier: 
+                keyid:AE:42:88:75:DD:05:A6:8E:48:7F:50:69:F9:B7:34:23:49:B8:B4:71
+
+            Authority Information Access: 
+                CA Issuers - URI:http://green.no/ca/tls-ca.cer
+
+            X509v3 CRL Distribution Points: 
+
+                Full Name:
+                  URI:http://green.no/ca/tls-ca.crl
+
+            X509v3 Subject Alternative Name: 
+                email:barney@telenor.no
+    Signature Algorithm: sha1WithRSAEncryption
+         96:9a:c5:41:8a:2f:4a:c4:80:d9:2b:1a:cf:07:85:e9:b6:18:
+         01:20:41:b9:c3:d4:ca:d3:2d:66:c3:1d:52:7f:25:d7:92:0c:
+         e9:a9:ae:e6:2e:fa:9d:0a:cf:84:b9:03:f2:63:e3:d3:c9:70:
+         6a:ac:04:5e:a9:2d:a2:43:7a:34:60:f7:a9:32:e1:48:ec:c6:
+         03:ac:b3:06:2e:48:6e:d0:35:11:31:3d:0c:04:66:41:e6:b2:
+         ec:8c:68:f8:e4:bc:47:85:39:60:69:a9:8a:ee:2f:56:88:8a:
+         19:45:d0:84:8e:c2:27:2c:82:9c:07:6c:34:ae:41:61:63:f9:
+         32:cb:8b:33:ea:2c:15:5f:f9:35:b0:3c:51:4d:5f:30:de:0b:
+         88:28:94:79:f3:bd:69:37:ad:12:20:e1:6b:1d:b6:77:d9:83:
+         db:81:a4:53:6c:0f:6a:17:5e:2b:c1:94:c6:42:e3:73:cd:9e:
+         79:1b:8c:89:cd:da:ce:b0:f4:21:c5:32:25:04:6e:68:9f:a7:
+         ca:f4:c5:86:e5:4e:d9:fd:69:73:e6:15:50:6e:76:0f:73:5e:
+         7a:a3:f4:dc:15:4a:ab:bb:3c:9a:fa:9f:01:7a:5c:47:a9:a3:
+         68:1c:49:e0:37:37:77:af:87:07:16:e4:e1:d7:98:39:15:a6:
+         51:5d:4c:db
+-----BEGIN CERTIFICATE-----
+MIIEITCCAwmgAwIBAgIBAjANBgkqhkiG9w0BAQUFADBdMQswCQYDVQQGEwJOTzER
+MA8GA1UECgwIR3JlZW4gQVMxJDAiBgNVBAsMG0dyZWVuIENlcnRpZmljYXRlIEF1
+dGhvcml0eTEVMBMGA1UEAwwMR3JlZW4gVExTIENBMB4XDTE3MDcxMzA0MDI0N1oX
+DTE5MDcxMzA0MDI0N1owTDELMAkGA1UEBhMCTk8xEzARBgNVBAoMClRlbGVub3Ig
+QVMxEDAOBgNVBAsMB1N1cHBvcnQxFjAUBgNVBAMMDUJhcm5leSBSdWJibGUwggEi
+MA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDGZiN8FmFlsC6n25JQt6Gio8K/
+9T7vsRPFQ3JLae+JYQcMBv+kVLwG3HigJDUQJVLLFxSZdKWu8OMxjiyKw4e+d01G
+UaLbvgzlrxDnIPUFSq/Gre5cH/5Jg1VKEHNqzCtKOnMx7z0CU4/E+OcTXg5eHTSP
+aEe6c4biOGVaAmdjRjK9RBBhY7oquYoyJngyCZjRJaH9mGWQMk+2SndpRUzayF4K
+u7/vQT2+IsZ92WFzakgyyHLA2nj/kiQcFnBupcUUZfixG1Jcj9q5k29wc4Gx77d7
+cGida8FZLaUhhvOlfe8sHsET0EYjFafV+A1CvXjIU9pxxKzMG+C2YRQ42iWfAgMB
+AAGjgfwwgfkwDgYDVR0PAQH/BAQDAgeAMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYI
+KwYBBQUHAwIwHQYDVR0OBBYEFPQXAt0bAavFvBekXEt1juyx4MjxMB8GA1UdIwQY
+MBaAFK5CiHXdBaaOSH9Qafm3NCNJuLRxMDkGCCsGAQUFBwEBBC0wKzApBggrBgEF
+BQcwAoYdaHR0cDovL2dyZWVuLm5vL2NhL3Rscy1jYS5jZXIwLgYDVR0fBCcwJTAj
+oCGgH4YdaHR0cDovL2dyZWVuLm5vL2NhL3Rscy1jYS5jcmwwHAYDVR0RBBUwE4ER
+YmFybmV5QHRlbGVub3Iubm8wDQYJKoZIhvcNAQEFBQADggEBAJaaxUGKL0rEgNkr
+Gs8Hhem2GAEgQbnD1MrTLWbDHVJ/JdeSDOmpruYu+p0Kz4S5A/Jj49PJcGqsBF6p
+LaJDejRg96ky4UjsxgOsswYuSG7QNRExPQwEZkHmsuyMaPjkvEeFOWBpqYruL1aI
+ihlF0ISOwicsgpwHbDSuQWFj+TLLizPqLBVf+TWwPFFNXzDeC4golHnzvWk3rRIg
+4WsdtnfZg9uBpFNsD2oXXivBlMZC43PNnnkbjInN2s6w9CHFMiUEbmifp8r0xYbl
+Ttn9aXPmFVBudg9zXnqj9NwVSqu7PJr6nwF6XEepo2gcSeA3N3evhwcW5OHXmDkV
+plFdTNs=
+-----END CERTIFICATE-----

@@ -1,57 +1,72 @@
-{{define "head"}}<!-- nix -->{{end}}
+{{define "head"}}
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/targets.css?v={{ buildVersion }}">
+<script src="{{ pathPrefix }}/static/js/targets.js?v={{ buildVersion }}"></script>
+{{end}}
 
 {{define "content"}}
   <div class="container-fluid">
     <h2 id="targets">Targets</h2>
-      <table class="table table-condensed table-bordered table-striped table-hover">
+      <table class="table table-condensed table-bordered table-hover">
         {{range $job, $pool := .TargetPools }}
-          <thead>
-            <tr><th colspan="5" class="job_header"><a id="job-{{$job}}" href="#job-{{$job}}">{{$job}}</a></th></tr>
-            <tr>
-              <th>Endpoint</th>
-              <th>State</th>
-              <th>Labels</th>
-              <th>Last Scrape</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody>
-          {{range $pool}}
-            <tr>
-              <td>
-              <a href="{{.URL | globalURL}}">{{.URL.Scheme}}://{{.URL.Host}}{{.URL.Path}}</a><br>
-                {{range $label, $values := .URL.Query }}
-                  {{range $i, $value := $values}}
-                    <span class="label label-primary">{{$label}}="{{$value}}"</span>
-                  {{end}}
-                {{end}}
-              </td>
-              <td>
-                <span class="alert alert-{{ .Health | healthToClass }} state_indicator text-uppercase">
-                  {{.Health}}
-                </span>
-              </td>
-              <td>
-                <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .DiscoveredLabels.Map}}<br>{{$k | html | html}}=&quot;{{$v | html | html}}&quot;{{end}}">
-                  {{$labels := stripLabels .Labels.Map "job"}}
-                  {{range $label, $value := $labels}}
-                    <span class="label label-primary">{{$label}}="{{$value}}"</span>
-                  {{else}}
-                    <span class="label label-default">none</span>
-                  {{end}}
-                </span>
-              </td>
-              <td>
-                {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
-              </td>
-              <td>
-                {{if .LastError}}
-                <span class="alert alert-danger state_indicator">{{.LastError}}</span>
-                {{end}}
+          {{$healthy := numHealthy $pool}}
+          {{$total := len $pool}}
+            <tr class="job_header{{if lt $healthy $total}} danger{{end}}">
+              <td colspan="5">
+                <i class="icon-chevron-up"></i><a id="job-{{$job}}" href="#job-{{$job}}">{{$job}} ({{$healthy}}/{{$total}} up)</a>
               </td>
             </tr>
-          {{end}}
-          </tbody>
+            <tr class = "job_details">
+              <td>
+                <table class="table table-condensed table-bordered table-striped table-hover">
+                  <thead>
+                    <tr>
+                      <th>Endpoint</th>
+                      <th>State</th>
+                      <th>Labels</th>
+                      <th>Last Scrape</th>
+                      <th>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {{range $pool}}
+                    <tr>
+                      <td>
+                        <a href="{{.URL | globalURL}}">{{.URL.Scheme}}://{{.URL.Host}}{{.URL.Path}}</a><br>
+                        {{range $label, $values := .URL.Query }}
+                          {{range $i, $value := $values}}
+                            <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                          {{end}}
+                        {{end}}
+                      </td>
+                      <td>
+                        <span class="alert alert-{{ .Health | healthToClass }} state_indicator text-uppercase">
+                          {{.Health}}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .DiscoveredLabels}}<br>{{$k | html | html}}=&quot;{{$v | html | html}}&quot;{{end}}">
+                          {{$labels := stripLabels .Labels.Map "job"}}
+                          {{range $label, $value := $labels}}
+                            <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                          {{else}}
+                            <span class="label label-default">none</span>
+                          {{end}}
+                        </span>
+                      </td>
+                      <td>
+                        {{if .LastScrape.IsZero}}Never{{else}}{{since .LastScrape}} ago{{end}}
+                      </td>
+                      <td>
+                        {{if .LastError}}
+                        <span class="alert alert-danger state_indicator">{{.LastError}}</span>
+                        {{end}}
+                      </td>
+                    </tr>
+                  {{end}}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
         {{end}}
       </table>
   </div>

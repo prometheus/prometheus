@@ -4,12 +4,6 @@ body {
   padding-bottom: 20px;
 }
 
-th.job_header {
-  font-size: 20px;
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
-
 .state_indicator {
   padding: 0 4px 0 4px;
 }
