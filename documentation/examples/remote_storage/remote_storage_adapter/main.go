@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -193,7 +194,6 @@ func buildClients(cfg *config) ([]writer, []reader) {
 
 func serve(addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		log.Warnf("#################### write HTTP")
 		reqBuf, err := ioutil.ReadAll(snappy.NewReader(r.Body))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -269,7 +269,9 @@ func protoToSamples(req *remote.WriteRequest) model.Samples {
 	for _, ts := range req.Timeseries {
 		metric := make(model.Metric, len(ts.Labels))
 		for _, l := range ts.Labels {
-			metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+			if !strings.Contains(l.Value, "\n") {
+				metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+			}
 		}
 
 		for _, s := range ts.Samples {
