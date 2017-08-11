@@ -185,6 +185,10 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 
 		for _, s := range serverList {
+			if len(s.Addresses) == 0 {
+				log.Debugf("Got no IP address for instance %s", s.ID)
+				continue
+			}
 			labels := model.LabelSet{
 				openstackLabelInstanceID: model.LabelValue(s.ID),
 			}
