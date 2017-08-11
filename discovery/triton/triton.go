@@ -20,8 +20,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -77,6 +78,10 @@ type Discovery struct {
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *config.TritonSDConfig) (*Discovery, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -103,7 +108,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		d.logger.With("err", err).Error("Refreshing targets failed")
+		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 	} else {
 		ch <- []*config.TargetGroup{tg}
 	}
@@ -113,7 +118,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				d.logger.With("err", err).Error("Refreshing targets failed")
+				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 			} else {
 				ch <- []*config.TargetGroup{tg}
 			}

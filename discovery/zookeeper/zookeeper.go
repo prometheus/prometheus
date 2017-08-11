@@ -24,7 +24,7 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 	"golang.org/x/net/context"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
@@ -63,6 +63,10 @@ func NewDiscovery(
 	logger log.Logger,
 	pf func(data []byte, path string) (model.LabelSet, error),
 ) *Discovery {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	conn, _, err := zk.Connect(srvs, timeout)
 	conn.SetLogger(treecache.ZookeeperLogger{})
 	if err != nil {

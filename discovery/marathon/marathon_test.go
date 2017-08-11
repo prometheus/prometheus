@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -33,7 +32,7 @@ var (
 )
 
 func testUpdateServices(client AppListClient, ch chan []*config.TargetGroup) error {
-	md, err := NewDiscovery(&conf, log.Base())
+	md, err := NewDiscovery(&conf, nil)
 	if err != nil {
 		return err
 	}
@@ -141,7 +140,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 
 func TestMarathonSDRemoveApp(t *testing.T) {
 	var ch = make(chan []*config.TargetGroup, 1)
-	md, err := NewDiscovery(&conf, log.Base())
+	md, err := NewDiscovery(&conf, nil)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -177,7 +176,7 @@ func TestMarathonSDRunAndStop(t *testing.T) {
 		ch              = make(chan []*config.TargetGroup)
 		doneCh          = make(chan error)
 	)
-	md, err := NewDiscovery(&conf, log.Base())
+	md, err := NewDiscovery(&conf, nil)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}

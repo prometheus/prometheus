@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	stdlog "log"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -38,10 +39,11 @@ import (
 	template_text "text/template"
 
 	"github.com/cockroachdb/cmux"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/storage"
@@ -67,6 +69,8 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
+	logger log.Logger
+
 	targetManager *retrieval.TargetManager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
@@ -141,15 +145,19 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(o *Options) *Handler {
+func New(logger log.Logger, o *Options) *Handler {
 	router := route.New()
 	cwd, err := os.Getwd()
 
 	if err != nil {
 		cwd = "<error retrieving current working directory>"
 	}
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 
 	h := &Handler{
+		logger:      logger,
 		router:      router,
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan chan error),
@@ -205,7 +213,7 @@ func New(o *Options) *Handler {
 	router.Get("/targets", readyf(instrf("targets", h.targets)))
 	router.Get("/version", readyf(instrf("version", h.version)))
 
-	router.Get("/heap", readyf(instrf("heap", dumpHeap)))
+	router.Get("/heap", readyf(instrf("heap", h.dumpHeap)))
 
 	router.Get("/metrics", prometheus.Handler().ServeHTTP)
 
@@ -215,7 +223,7 @@ func New(o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(instrf("consoles", h.consoles)))
 
-	router.Get("/static/*filepath", readyf(instrf("static", serveStaticAsset)))
+	router.Get("/static/*filepath", readyf(instrf("static", h.serveStaticAsset)))
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", readyf(instrf("user", route.FileServe(o.UserAssetsPath))))
@@ -292,20 +300,20 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
+func (h *Handler) serveStaticAsset(w http.ResponseWriter, req *http.Request) {
 	fp := route.Param(req.Context(), "filepath")
 	fp = filepath.Join("web/ui/static", fp)
 
 	info, err := ui.AssetInfo(fp)
 	if err != nil {
-		log.With("file", fp).Warn("Could not get file info: ", err)
+		level.Warn(h.logger).Log("msg", "Could not get file info", "err", err, "file", fp)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	file, err := ui.Asset(fp)
 	if err != nil {
 		if err != io.EOF {
-			log.With("file", fp).Warn("Could not get file: ", err)
+			level.Warn(h.logger).Log("msg", "Could not get file", "err", err, "file", fp)
 		}
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -352,7 +360,7 @@ func (h *Handler) Reload() <-chan chan error {
 
 // Run serves the HTTP endpoints.
 func (h *Handler) Run(ctx context.Context) error {
-	log.Infof("Listening on %s", h.options.ListenAddress)
+	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
 
 	l, err := net.Listen("tcp", h.options.ListenAddress)
 	if err != nil {
@@ -409,20 +417,22 @@ func (h *Handler) Run(ctx context.Context) error {
 		}),
 	))
 
+	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
+
 	httpSrv := &http.Server{
 		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
-		ErrorLog:    log.NewErrorLogger(),
+		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
 
 	go func() {
 		if err := httpSrv.Serve(httpl); err != nil {
-			log.With("err", err).Warnf("error serving HTTP")
+			level.Warn(h.logger).Log("msg", "error serving HTTP", "err", err)
 		}
 	}()
 	go func() {
 		if err := grpcSrv.Serve(grpcl); err != nil {
-			log.With("err", err).Warnf("error serving HTTP")
+			level.Warn(h.logger).Log("msg", "error serving gRPC", "err", err)
 		}
 	}()
 
@@ -697,11 +707,11 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 	io.WriteString(w, result)
 }
 
-func dumpHeap(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) dumpHeap(w http.ResponseWriter, r *http.Request) {
 	target := fmt.Sprintf("/tmp/%d.heap", time.Now().Unix())
 	f, err := os.Create(target)
 	if err != nil {
-		log.Error("Could not dump heap: ", err)
+		level.Error(h.logger).Log("msg", "Could not dump heap", "err", err)
 	}
 	fmt.Fprintf(w, "Writing to %s...", target)
 	defer f.Close()

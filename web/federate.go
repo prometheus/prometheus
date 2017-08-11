@@ -17,11 +17,11 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -160,7 +160,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
 						federationErrors.Inc()
-						log.With("err", err).Error("federation failed")
+						level.Error(h.logger).Log("msg", "federation failed", "err", err)
 						return
 					}
 				}
@@ -180,7 +180,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		if !nameSeen {
-			log.With("metric", s.Metric).Warn("Ignoring nameless metric during federation.")
+			level.Warn(h.logger).Log("msg", "Ignoring nameless metric during federation", "metric", s.Metric)
 			continue
 		}
 		// Attach global labels if they do not exist yet.
@@ -203,7 +203,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
 			federationErrors.Inc()
-			log.With("err", err).Error("federation failed")
+			level.Error(h.logger).Log("msg", "federation failed", "err", err)
 		}
 	}
 }

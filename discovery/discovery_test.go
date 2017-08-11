@@ -16,7 +16,6 @@ package discovery
 import (
 	"testing"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/config"
 	"golang.org/x/net/context"
 	yaml "gopkg.in/yaml.v2"
@@ -54,7 +53,7 @@ static_configs:
 
 	go ts.Run(ctx)
 
-	ts.UpdateProviders(ProvidersFromConfig(*cfg, log.Base()))
+	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
 	<-called
 
 	verifyPresence(ts.tgroups, "static/0/0", true)
@@ -68,7 +67,7 @@ static_configs:
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 
-	ts.UpdateProviders(ProvidersFromConfig(*cfg, log.Base()))
+	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
 	<-called
 
 	verifyPresence(ts.tgroups, "static/0/0", true)

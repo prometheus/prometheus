@@ -25,8 +25,9 @@ import (
 
 	html_template "html/template"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
@@ -151,7 +152,7 @@ func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *Man
 		seriesInPreviousEval: make([]map[string]labels.Labels, len(rules)),
 		done:                 make(chan struct{}),
 		terminated:           make(chan struct{}),
-		logger:               opts.Logger.With("group", name),
+		logger:               log.With(opts.Logger, "group", name),
 	}
 }
 
@@ -308,7 +309,7 @@ func (g *Group) Eval(ts time.Time) {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
-					g.logger.Warnf("Error while evaluating rule %q: %s", rule, err)
+					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
 				evalFailures.WithLabelValues(rtyp).Inc()
 				return
@@ -324,7 +325,7 @@ func (g *Group) Eval(ts time.Time) {
 
 			app, err := g.opts.Appendable.Appender()
 			if err != nil {
-				g.logger.With("err", err).Warn("creating appender failed")
+				level.Warn(g.logger).Log("msg", "creating appender failed", "err", err)
 				return
 			}
 
@@ -334,22 +335,22 @@ func (g *Group) Eval(ts time.Time) {
 					switch err {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
-						g.logger.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
+						level.Debug(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					case storage.ErrDuplicateSampleForTimestamp:
 						numDuplicates++
-						g.logger.With("sample", s).With("err", err).Debug("Rule evaluation result discarded")
+						level.Debug(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					default:
-						g.logger.With("sample", s).With("err", err).Warn("Rule evaluation result discarded")
+						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
 					seriesReturned[s.Metric.String()] = s.Metric
 				}
 			}
 			if numOutOfOrder > 0 {
-				g.logger.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order result from rule evaluation")
+				level.Warn(g.logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
 			if numDuplicates > 0 {
-				g.logger.With("numDropped", numDuplicates).Warn("Error on ingesting results from rule evaluation with different value but same timestamp")
+				level.Warn(g.logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
@@ -362,12 +363,12 @@ func (g *Group) Eval(ts time.Time) {
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
-						g.logger.With("sample", metric).With("err", err).Warn("adding stale sample failed")
+						level.Warn(g.logger).Log("msg", "adding stale sample failed", "sample", metric, "err", err)
 					}
 				}
 			}
 			if err := app.Commit(); err != nil {
-				g.logger.With("err", err).Warn("rule sample appending failed")
+				level.Warn(g.logger).Log("msg", "rule sample appending failed", "err", err)
 			} else {
 				g.seriesInPreviousEval[i] = seriesReturned
 			}
@@ -451,13 +452,13 @@ func (m *Manager) Stop() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	m.logger.Info("Stopping rule manager...")
+	level.Info(m.logger).Log("msg", "Stopping rule manager...")
 
 	for _, eg := range m.groups {
 		eg.stop()
 	}
 
-	m.logger.Info("Rule manager stopped.")
+	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
 
 // ApplyConfig updates the rule manager's state as the config requires. If
@@ -481,7 +482,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	groups, errs := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
 	if errs != nil {
 		for _, e := range errs {
-			m.logger.Errorln(e)
+			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
 		}
 		return errors.New("error loading rules, previous rule set restored")
 	}
@@ -555,7 +556,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
-						m.logger,
+						log.With(m.logger, "alert", r.Alert),
 					))
 					continue
 				}
