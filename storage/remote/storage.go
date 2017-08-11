@@ -16,6 +16,7 @@ package remote
 import (
 	"sync"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 )
@@ -23,7 +24,8 @@ import (
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
-	mtx sync.RWMutex
+	logger log.Logger
+	mtx    sync.RWMutex
 
 	// For writes
 	queues []*QueueManager
@@ -31,6 +33,13 @@ type Storage struct {
 	// For reads
 	clients        []*Client
 	externalLabels model.LabelSet
+}
+
+func NewStorage(l log.Logger) *Storage {
+	if l == nil {
+		l = log.NewNopLogger()
+	}
+	return &Storage{logger: l}
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -53,6 +62,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 		newQueues = append(newQueues, NewQueueManager(
+			s.logger,
 			defaultQueueManagerConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,

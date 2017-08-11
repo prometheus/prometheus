@@ -88,7 +88,7 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(opts)
+	webHandler := New(nil, opts)
 	go webHandler.Run(context.Background())
 
 	// Give some time for the web goroutine to run since we need the server

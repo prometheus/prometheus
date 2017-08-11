@@ -23,9 +23,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -239,7 +240,7 @@ type EngineOptions struct {
 var DefaultEngineOptions = &EngineOptions{
 	MaxConcurrentQueries: 20,
 	Timeout:              2 * time.Minute,
-	Logger:               log.Base(),
+	Logger:               log.NewNopLogger(),
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -517,7 +518,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
 				// TODO(fabxc): use multi-error.
-				ng.logger.Errorln("expand series set:", err)
+				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false
 			}
 			for _, s := range n.series {
@@ -528,7 +529,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 		case *MatrixSelector:
 			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
 			if err != nil {
-				ng.logger.Errorln("expand series set:", err)
+				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false
 			}
 			for _, s := range n.series {
@@ -580,17 +581,18 @@ func (ev *evaluator) error(err error) {
 // recover is the handler that turns panics into returns from the top level of evaluation.
 func (ev *evaluator) recover(errp *error) {
 	e := recover()
-	if e != nil {
-		if _, ok := e.(runtime.Error); ok {
-			// Print the stack trace but do not inhibit the running application.
-			buf := make([]byte, 64<<10)
-			buf = buf[:runtime.Stack(buf, false)]
+	if e == nil {
+		return
+	}
+	if _, ok := e.(runtime.Error); ok {
+		// Print the stack trace but do not inhibit the running application.
+		buf := make([]byte, 64<<10)
+		buf = buf[:runtime.Stack(buf, false)]
 
-			ev.logger.Errorf("parser panic: %v\n%s", e, buf)
-			*errp = fmt.Errorf("unexpected error")
-		} else {
-			*errp = e.(error)
-		}
+		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
+		*errp = fmt.Errorf("unexpected error")
+	} else {
+		*errp = e.(error)
 	}
 }
 

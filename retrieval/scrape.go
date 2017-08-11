@@ -25,8 +25,9 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 
 	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
@@ -142,7 +143,7 @@ func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable
 	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
-		logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+		level.Error(logger).Log("msg", "Error creating HTTP client", "err", err)
 	}
 
 	newLoop := func(
@@ -201,7 +202,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
-		sp.logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
+		level.Error(sp.logger).Log("msg", "Error creating HTTP client", "err", err)
 	}
 	sp.config = cfg
 	sp.client = client
@@ -223,7 +224,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 				func() storage.Appender {
 					return sp.reportAppender(t)
 				},
-				sp.logger.With("target", t.labels.String()),
+				log.With(sp.logger, "target", t.labels),
 			)
 		)
 		wg.Add(1)
@@ -253,7 +254,7 @@ func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
 	for _, tg := range tgs {
 		targets, err := targetsFromGroup(tg, sp.config)
 		if err != nil {
-			sp.logger.With("err", err).Error("creating targets failed")
+			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
 			continue
 		}
 		all = append(all, targets...)
@@ -293,7 +294,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				func() storage.Appender {
 					return sp.reportAppender(t)
 				},
-				sp.logger.With("target", t.labels.String()),
+				log.With(sp.logger, "target", t.labels),
 			)
 
 			sp.targets[hash] = t
@@ -576,7 +577,7 @@ func newScrapeLoop(
 	l log.Logger,
 ) *scrapeLoop {
 	if l == nil {
-		l = log.Base()
+		l = log.NewNopLogger()
 	}
 	sl := &scrapeLoop{
 		scraper:        sc,
@@ -638,7 +639,7 @@ mainLoop:
 		if scrapeErr == nil {
 			b = buf.Bytes()
 		} else {
-			sl.l.With("err", scrapeErr.Error()).Debug("scrape failed")
+			level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
 			if errc != nil {
 				errc <- scrapeErr
 			}
@@ -648,11 +649,11 @@ mainLoop:
 		// we still call sl.append to trigger stale markers.
 		total, added, appErr := sl.append(b, start)
 		if appErr != nil {
-			sl.l.With("err", appErr).Warn("append failed")
+			level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
 			// Call sl.append again with an empty scrape to trigger stale markers.
 			if _, _, err := sl.append([]byte{}, start); err != nil {
-				sl.l.With("err", err).Error("append failed")
+				level.Warn(sl.l).Log("msg", "append failed", "err", err)
 			}
 		}
 
@@ -719,10 +720,10 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
 	if _, _, err := sl.append([]byte{}, staleTime); err != nil {
-		sl.l.With("err", err).Error("stale append failed")
+		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
 	}
 	if err := sl.reportStale(staleTime); err != nil {
-		sl.l.With("err", err).Error("stale report failed")
+		level.Error(sl.l).Log("msg", "stale report failed", "err", err)
 	}
 }
 
@@ -791,17 +792,17 @@ loop:
 				continue
 			case storage.ErrOutOfOrderSample:
 				numOutOfOrder++
-				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
+				level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
 				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				numDuplicates++
-				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
 				targetScrapeSampleDuplicate.Inc()
 				continue
 			case storage.ErrOutOfBounds:
 				numOutOfBounds++
-				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
@@ -840,19 +841,19 @@ loop:
 			case storage.ErrOutOfOrderSample:
 				err = nil
 				numOutOfOrder++
-				sl.l.With("timeseries", string(met)).Debug("Out of order sample")
+				level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
 				targetScrapeSampleOutOfOrder.Inc()
 				continue
 			case storage.ErrDuplicateSampleForTimestamp:
 				err = nil
 				numDuplicates++
-				sl.l.With("timeseries", string(met)).Debug("Duplicate sample for timestamp")
+				level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
 				targetScrapeSampleDuplicate.Inc()
 				continue
 			case storage.ErrOutOfBounds:
 				err = nil
 				numOutOfBounds++
-				sl.l.With("timeseries", string(met)).Debug("Out of bounds metric")
+				level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 				targetScrapeSampleOutOfBounds.Inc()
 				continue
 			case errSampleLimit:
@@ -878,13 +879,13 @@ loop:
 		err = sampleLimitErr
 	}
 	if numOutOfOrder > 0 {
-		sl.l.With("numDropped", numOutOfOrder).Warn("Error on ingesting out-of-order samples")
+		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", numOutOfOrder)
 	}
 	if numDuplicates > 0 {
-		sl.l.With("numDropped", numDuplicates).Warn("Error on ingesting samples with different value but same timestamp")
+		level.Warn(sl.l).Log("msg", "Error on ingesting samples with different value but same timestamp", "num_dropped", numDuplicates)
 	}
 	if numOutOfBounds > 0 {
-		sl.l.With("numOutOfBounds", numOutOfBounds).Warn("Error on ingesting samples that are too old or are too far into the future")
+		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", numOutOfBounds)
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
