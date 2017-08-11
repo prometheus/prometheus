@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -52,9 +53,13 @@ type config struct {
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
+	showVersion             bool
 }
 
 var (
+	branchID        string
+	commitID        string
+	buildDate       string
 	receivedSamples = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "received_samples_total",
@@ -94,6 +99,10 @@ func init() {
 
 func main() {
 	cfg := parseFlags()
+	if cfg.showVersion {
+		fmt.Fprintf(os.Stderr, "remote_storage_adapter-%s-%s-%s\n", branchID, commitID, buildDate)
+		os.Exit(1)
+	}
 	http.Handle(cfg.telemetryPath, prometheus.Handler())
 
 	writers, readers := buildClients(cfg)
@@ -134,6 +143,7 @@ func parseFlags() *config {
 	)
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
+	flag.BoolVar(&cfg.showVersion, "version", false, "Display program version and exits.")
 
 	flag.Parse()
 
@@ -259,7 +269,9 @@ func protoToSamples(req *remote.WriteRequest) model.Samples {
 	for _, ts := range req.Timeseries {
 		metric := make(model.Metric, len(ts.Labels))
 		for _, l := range ts.Labels {
-			metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+			if !strings.Contains(l.Value, "\n") {
+				metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+			}
 		}
 
 		for _, s := range ts.Samples {

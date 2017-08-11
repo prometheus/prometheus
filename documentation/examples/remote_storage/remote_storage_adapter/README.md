@@ -11,7 +11,7 @@ data through Prometheus via Prometheus's remote read protocol.
 ## Building
 
 ```
-go build
+./build.sh
 ```
 
 ## Running
