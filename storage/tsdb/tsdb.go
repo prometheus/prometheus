@@ -17,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -55,7 +56,7 @@ type Options struct {
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
-func Open(path string, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
+func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	// Start with smallest block duration and create exponential buckets until the exceed the
 	// configured maximum block duration.
 	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 3, 10)
@@ -67,7 +68,7 @@ func Open(path string, r prometheus.Registerer, opts *Options) (*tsdb.DB, error)
 		}
 	}
 
-	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
+	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
 		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
 		BlockRanges:       rngs,

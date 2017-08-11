@@ -16,13 +16,13 @@ package promql
 import (
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -342,7 +342,7 @@ func (p *parser) recover(errp *error) {
 			buf := make([]byte, 64<<10)
 			buf = buf[:runtime.Stack(buf, false)]
 
-			log.Errorf("parser panic: %v\n%s", e, buf)
+			fmt.Fprintf(os.Stderr, "parser panic: %v\n%s", e, buf)
 			*errp = errUnexpected
 		} else {
 			*errp = e.(error)

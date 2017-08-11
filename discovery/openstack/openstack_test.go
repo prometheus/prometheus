@@ -57,7 +57,7 @@ func (s *OpenstackSDTestSuite) openstackAuthSuccess() (*Discovery, error) {
 		Region:           "RegionOne",
 	}
 
-	return NewDiscovery(&conf)
+	return NewDiscovery(nil, &conf)
 }
 
 func (s *OpenstackSDTestSuite) TestOpenstackSDRefresh() {
