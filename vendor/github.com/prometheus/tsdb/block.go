@@ -22,6 +22,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -112,7 +113,7 @@ type BlockStats struct {
 type BlockMetaCompaction struct {
 	// Maximum number of compaction cycles any source block has
 	// gone through.
-	Generation int `json:"generation"`
+	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
 }
@@ -181,13 +182,13 @@ type persistedBlock struct {
 	tombstones tombstoneReader
 }
 
-func newPersistedBlock(dir string) (*persistedBlock, error) {
+func newPersistedBlock(dir string, pool chunks.Pool) (*persistedBlock, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	cr, err := newChunkReader(chunkDir(dir))
+	cr, err := newChunkReader(chunkDir(dir), pool)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +253,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	stones := map[uint32]intervals{}
 
 	var lset labels.Labels
-	var chks []*ChunkMeta
+	var chks []ChunkMeta
 
 Outer:
 	for p.Next() {
