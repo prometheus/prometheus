@@ -403,7 +403,7 @@ func (s *mergedSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []*ChunkMeta, intervals)
+	At() (labels.Labels, []ChunkMeta, intervals)
 	Err() error
 }
 
@@ -416,12 +416,12 @@ type baseChunkSeries struct {
 	absent     []string // labels that must be unset in results.
 
 	lset      labels.Labels
-	chks      []*ChunkMeta
+	chks      []ChunkMeta
 	intervals intervals
 	err       error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []*ChunkMeta, intervals) {
+func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, intervals) {
 	return s.lset, s.chks, s.intervals
 }
 
@@ -430,7 +430,7 @@ func (s *baseChunkSeries) Err() error { return s.err }
 func (s *baseChunkSeries) Next() bool {
 	var (
 		lset   labels.Labels
-		chunks []*ChunkMeta
+		chunks []ChunkMeta
 	)
 Outer:
 	for s.p.Next() {
@@ -453,7 +453,7 @@ Outer:
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.
-			chks := make([]*ChunkMeta, 0, len(s.chks))
+			chks := make([]ChunkMeta, 0, len(s.chks))
 			for _, chk := range s.chks {
 				if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
 					chks = append(chks, chk)
@@ -480,12 +480,12 @@ type populatedChunkSeries struct {
 	mint, maxt int64
 
 	err       error
-	chks      []*ChunkMeta
+	chks      []ChunkMeta
 	lset      labels.Labels
 	intervals intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []*ChunkMeta, intervals) {
+func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, intervals) {
 	return s.lset, s.chks, s.intervals
 }
 func (s *populatedChunkSeries) Err() error { return s.err }
@@ -501,8 +501,10 @@ func (s *populatedChunkSeries) Next() bool {
 			chks = chks[1:]
 		}
 
-		// Break out at the first chunk that has no overlap with mint, maxt.
-		for i, c := range chks {
+		for i := range chks {
+			c := &chks[i]
+
+			// Break out at the first chunk that has no overlap with mint, maxt.
 			if c.MinTime > s.maxt {
 				chks = chks[:i]
 				break
@@ -564,7 +566,7 @@ func (s *blockSeriesSet) Err() error { return s.err }
 // time series data.
 type chunkSeries struct {
 	labels labels.Labels
-	chunks []*ChunkMeta // in-order chunk refs
+	chunks []ChunkMeta // in-order chunk refs
 
 	mint, maxt int64
 
@@ -667,7 +669,7 @@ func (it *chainedSeriesIterator) Err() error {
 // chunkSeriesIterator implements a series iterator on top
 // of a list of time-sorted, non-overlapping chunks.
 type chunkSeriesIterator struct {
-	chunks []*ChunkMeta
+	chunks []ChunkMeta
 
 	i   int
 	cur chunks.Iterator
@@ -677,7 +679,7 @@ type chunkSeriesIterator struct {
 	intervals intervals
 }
 
-func newChunkSeriesIterator(cs []*ChunkMeta, dranges intervals, mint, maxt int64) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []ChunkMeta, dranges intervals, mint, maxt int64) *chunkSeriesIterator {
 	it := cs[0].Chunk.Iterator()
 	if len(dranges) > 0 {
 		it = &deletedIterator{it: it, intervals: dranges}

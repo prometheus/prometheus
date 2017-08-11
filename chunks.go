@@ -100,7 +100,7 @@ type ChunkWriter interface {
 	// must be populated.
 	// After returning successfully, the Ref fields in the ChunkMetas
 	// are set and can be used to retrieve the chunks from the written data.
-	WriteChunks(chunks ...*ChunkMeta) error
+	WriteChunks(chunks ...ChunkMeta) error
 
 	// Close writes any required finalization and closes the resources
 	// associated with the underlying writer.
@@ -222,7 +222,7 @@ func (w *chunkWriter) write(b []byte) error {
 	return err
 }
 
-func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
+func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
 	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
@@ -238,23 +238,22 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 		}
 	}
 
-	b := make([]byte, binary.MaxVarintLen32)
-	n := binary.PutUvarint(b, uint64(len(chks)))
+	var (
+		b   = [binary.MaxVarintLen32]byte{}
+		seq = uint64(w.seq()) << 32
+	)
+	for i := range chks {
+		chk := &chks[i]
 
-	if err := w.write(b[:n]); err != nil {
-		return err
-	}
-	seq := uint64(w.seq()) << 32
-
-	for _, chk := range chks {
 		chk.Ref = seq | uint64(w.n)
 
-		n = binary.PutUvarint(b, uint64(len(chk.Chunk.Bytes())))
+		n := binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
 
 		if err := w.write(b[:n]); err != nil {
 			return err
 		}
-		if err := w.write([]byte{byte(chk.Chunk.Encoding())}); err != nil {
+		b[0] = byte(chk.Chunk.Encoding())
+		if err := w.write(b[:1]); err != nil {
 			return err
 		}
 		if err := w.write(chk.Chunk.Bytes()); err != nil {
@@ -265,7 +264,7 @@ func (w *chunkWriter) WriteChunks(chks ...*ChunkMeta) error {
 		if err := chk.writeHash(w.crc32); err != nil {
 			return err
 		}
-		if err := w.write(w.crc32.Sum(nil)); err != nil {
+		if err := w.write(w.crc32.Sum(b[:0])); err != nil {
 			return err
 		}
 	}
@@ -298,15 +297,20 @@ type chunkReader struct {
 
 	// Closers for resources behind the byte slices.
 	cs []io.Closer
+
+	pool chunks.Pool
 }
 
 // newChunkReader returns a new chunkReader based on mmaped files found in dir.
-func newChunkReader(dir string) (*chunkReader, error) {
+func newChunkReader(dir string, pool chunks.Pool) (*chunkReader, error) {
 	files, err := sequenceFiles(dir, "")
 	if err != nil {
 		return nil, err
 	}
-	var cr chunkReader
+	if pool == nil {
+		pool = chunks.NewPool()
+	}
+	cr := chunkReader{pool: pool}
 
 	for _, fn := range files {
 		f, err := openMmapFile(fn)
@@ -353,11 +357,6 @@ func (s *chunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 		return nil, fmt.Errorf("reading chunk length failed")
 	}
 	b = b[n:]
-	enc := chunks.Encoding(b[0])
 
-	c, err := chunks.FromData(enc, b[1:1+l])
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
+	return s.pool.Get(chunks.Encoding(b[0]), b[1:1+l])
 }
