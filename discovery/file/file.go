@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,6 +34,54 @@ import (
 
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 
+// TimestampCollector is a Custom Collector for Timestamps of the files.
+type TimestampCollector struct {
+	filenames   []string
+	Description *prometheus.Desc
+
+	logger log.Logger
+}
+
+// Describe method sends the description to the channel.
+func (t *TimestampCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- t.Description
+}
+
+// SetFiles changes the filenames of the struct to the paths returned by listfiles().
+func (t *TimestampCollector) SetFiles(files []string) {
+	t.filenames = files
+}
+
+// Collect creates constant metrics for each file with last modified time of the file.
+func (t *TimestampCollector) Collect(ch chan<- prometheus.Metric) {
+	files := t.filenames
+	for i := 0; i < len(files); i++ {
+		info, err := os.Stat(files[i])
+		if err != nil {
+			t.logger.Errorf("Error getting the fileinfo of the file %q: %s", files[i], err)
+			continue
+		}
+		ch <- prometheus.MustNewConstMetric(
+			t.Description,
+			prometheus.GaugeValue,
+			float64(info.ModTime().Unix()),
+			files[i],
+		)
+	}
+}
+
+// NewTimestampCollector creates a TimestampCollector.
+func NewTimestampCollector() *TimestampCollector {
+	return &TimestampCollector{
+		Description: prometheus.NewDesc(
+			"prometheus_sd_file_timestamp",
+			"Timestamp of files read by FileSD",
+			[]string{"filename"},
+			nil,
+		),
+	}
+}
+
 var (
 	fileSDScanDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
@@ -44,11 +93,13 @@ var (
 			Name: "prometheus_sd_file_read_errors_total",
 			Help: "The number of File-SD read errors.",
 		})
+	fileSDTimeStamp = NewTimestampCollector()
 )
 
 func init() {
 	prometheus.MustRegister(fileSDScanDuration)
 	prometheus.MustRegister(fileSDReadErrorsCount)
+	prometheus.MustRegister(fileSDTimeStamp)
 }
 
 // Discovery provides service discovery functionality based
@@ -191,6 +242,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup
 		fileSDScanDuration.Observe(time.Since(t0).Seconds())
 	}()
 
+	fileSDTimeStamp.SetFiles(d.listFiles())
 	ref := map[string]int{}
 	for _, p := range d.listFiles() {
 		tgroups, err := readFile(p)
