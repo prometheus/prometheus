@@ -309,3 +309,28 @@ func TestSplitByRange(t *testing.T) {
 		require.Equal(t, exp, splitByRange(blocks, c.trange))
 	}
 }
+
+// See https://github.com/prometheus/prometheus/issues/3064
+func TestNoPanicFor0Tombstones(t *testing.T) {
+	metas := []dirMeta{
+		{
+			dir: "1",
+			meta: &BlockMeta{
+				MinTime: 0,
+				MaxTime: 100,
+			},
+		},
+		{
+			dir: "2",
+			meta: &BlockMeta{
+				MinTime: 101,
+				MaxTime: 200,
+			},
+		},
+	}
+
+	c := NewLeveledCompactor(nil, nil, &LeveledCompactorOptions{
+		blockRanges: []int64{50},
+	})
+	c.plan(metas)
+}
