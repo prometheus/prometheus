@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 )
@@ -43,6 +44,15 @@ type alertmanagerRetrieverFunc func() []*url.URL
 
 func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
 	return f()
+}
+
+var samplePrometheusCfg = config.Config{
+	GlobalConfig:       config.GlobalConfig{},
+	AlertingConfig:     config.AlertingConfig{},
+	RuleFiles:          []string{},
+	ScrapeConfigs:      []*config.ScrapeConfig{},
+	RemoteWriteConfigs: []*config.RemoteWriteConfig{},
+	RemoteReadConfigs:  []*config.RemoteReadConfig{},
 }
 
 func TestEndpoints(t *testing.T) {
@@ -91,6 +101,9 @@ func TestEndpoints(t *testing.T) {
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 		now: func() model.Time { return now },
+		config: func() config.Config {
+			return samplePrometheusCfg
+		},
 	}
 
 	start := model.Time(0)
@@ -445,7 +458,8 @@ func TestEndpoints(t *testing.T) {
 					"foo":      "bar",
 				},
 			},
-		}, {
+		},
+		{
 			endpoint: api.dropSeries,
 			query: url.Values{
 				"match[]": []string{`{__name__=~".+"}`},
@@ -453,7 +467,8 @@ func TestEndpoints(t *testing.T) {
 			response: struct {
 				NumDeleted int `json:"numDeleted"`
 			}{2},
-		}, {
+		},
+		{
 			endpoint: api.targets,
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
@@ -465,7 +480,8 @@ func TestEndpoints(t *testing.T) {
 					},
 				},
 			},
-		}, {
+		},
+		{
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{
 				ActiveAlertmanagers: []*AlertmanagerTarget{
@@ -473,6 +489,12 @@ func TestEndpoints(t *testing.T) {
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
 					},
 				},
+			},
+		},
+		{
+			endpoint: api.serveConfig,
+			response: &prometheusConfig{
+				YAML: samplePrometheusCfg.String(),
 			},
 		},
 	}
