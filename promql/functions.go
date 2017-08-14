@@ -914,8 +914,9 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) model.Sample
 	if len(args) == 0 {
 		v = vector{
 			&sample{
-				Metric: metric.Metric{},
-				Value:  model.SampleValue(ev.Timestamp.Unix()),
+				Metric:    metric.Metric{},
+				Value:     model.SampleValue(ev.Timestamp.Unix()),
+				Timestamp: ev.Timestamp,
 			},
 		}
 	} else {
