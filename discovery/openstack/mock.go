@@ -186,6 +186,67 @@ const serverListBody = `
 {
 	"servers": [
 		{
+			"status": "ERROR",
+			"updated": "2014-09-25T13:10:10Z",
+			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
+			"OS-EXT-SRV-ATTR:host": "devstack",
+			"addresses": {},
+			"links": [
+				{
+					"href": "http://104.130.131.164:8774/v2/fcad67a6189847c4aecfa3c81a05783b/servers/af9bcad9-3c87-477d-9347-b291eabf480e",
+					"rel": "self"
+				},
+				{
+					"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/servers/af9bcad9-3c87-477d-9347-b291eabf480e",
+					"rel": "bookmark"
+				}
+			],
+			"key_name": null,
+			"image": {
+				"id": "f90f6034-2570-4974-8351-6b49732ef2eb",
+				"links": [
+					{
+						"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/images/f90f6034-2570-4974-8351-6b49732ef2eb",
+						"rel": "bookmark"
+					}
+				]
+			},
+			"OS-EXT-STS:task_state": null,
+			"OS-EXT-STS:vm_state": "error",
+			"OS-EXT-SRV-ATTR:instance_name": "instance-00000010",
+			"OS-SRV-USG:launched_at": "2014-09-25T13:10:10.000000",
+			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
+			"flavor": {
+				"id": "1",
+				"links": [
+					{
+						"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/flavors/1",
+						"rel": "bookmark"
+					}
+				]
+			},
+			"id": "af9bcad9-3c87-477d-9347-b291eabf480e",
+			"security_groups": [
+				{
+					"name": "default"
+				}
+			],
+			"OS-SRV-USG:terminated_at": null,
+			"OS-EXT-AZ:availability_zone": "nova",
+			"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
+			"name": "herp2",
+			"created": "2014-09-25T13:10:02Z",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"OS-DCF:diskConfig": "MANUAL",
+			"os-extended-volumes:volumes_attached": [],
+			"accessIPv4": "",
+			"accessIPv6": "",
+			"progress": 0,
+			"OS-EXT-STS:power_state": 1,
+			"config_drive": "",
+			"metadata": {}
+		},
+		{
 			"status": "ACTIVE",
 			"updated": "2014-09-25T13:10:10Z",
 			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
