@@ -15,6 +15,7 @@ package file
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -256,6 +257,11 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 	}
 
 	for i, tg := range targetGroups {
+		if tg == nil {
+			err = errors.New("nil target group item found")
+			return nil, err
+		}
+
 		tg.Source = fileSource(filename, i)
 		if tg.Labels == nil {
 			tg.Labels = model.LabelSet{}
