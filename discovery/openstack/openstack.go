@@ -21,6 +21,7 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,6 +42,11 @@ const (
 	openstackLabelPublicIP       = openstackLabelPrefix + "public_ip"
 	openstackLabelPrivateIP      = openstackLabelPrefix + "private_ip"
 	openstackLabelTagPrefix      = openstackLabelPrefix + "tag_"
+	openstackLabelHostIP         = openstackLabelPrefix + "host_ip"
+	openstackLabelHostName       = openstackLabelPrefix + "host_name"
+	openstackLabelHostStatus     = openstackLabelPrefix + "host_status"
+	openstackLabelHostState      = openstackLabelPrefix + "host_state"
+	openstackLabelHostHypervisor = openstackLabelPrefix + "host_hypervisor_type"
 )
 
 var (
@@ -254,6 +260,31 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("could not describe instances: %s", err)
+	}
+
+	pagerHosts := hypervisors.List(client)
+	err = pagerHosts.EachPage(func(page pagination.Page) (bool, error) {
+		hostList, err := hypervisors.ExtractHypervisors(page)
+		if err != nil {
+			log.Warn(err)
+		}
+		for _, h := range hostList {
+			labels := model.LabelSet{
+				openstackLabelHostIP: model.LabelValue(h.HostIP),
+			}
+			addr := net.JoinHostPort(h.HostIP, fmt.Sprintf("%d", d.port))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+			labels[openstackLabelHostName] = model.LabelValue(h.HypervisorHostname)
+			labels[openstackLabelHostIP] = model.LabelValue(h.HostIP)
+			labels[openstackLabelHostStatus] = model.LabelValue(h.Status)
+			labels[openstackLabelHostState] = model.LabelValue(h.State)
+			labels[openstackLabelHostHypervisor] = model.LabelValue(h.HypervisorType)
+			tg.Targets = append(tg.Targets, labels)
+		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not describe Hypervisors: %s", err)
 	}
 
 	return tg, nil
