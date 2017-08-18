@@ -98,11 +98,13 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	return m
 }
 
+// LeveledCompactorOptions are the options for a LeveledCompactor.
 type LeveledCompactorOptions struct {
 	blockRanges []int64
 	chunkPool   chunks.Pool
 }
 
+// NewLeveledCompactor returns a LeveledCompactor.
 func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, opts *LeveledCompactorOptions) *LeveledCompactor {
 	if opts == nil {
 		opts = &LeveledCompactorOptions{
@@ -151,6 +153,10 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
 
+	return c.plan(dms)
+}
+
+func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	if len(dms) <= 1 {
 		return nil, nil
 	}
@@ -170,7 +176,7 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 			break
 		}
 
-		if meta.Stats.NumSeries/meta.Stats.NumTombstones <= 20 { // 5%
+		if meta.Stats.NumSeries/(meta.Stats.NumTombstones+1) <= 20 { // 5%
 			return []string{dms[i].dir}, nil
 		}
 	}
