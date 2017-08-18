@@ -1,4 +1,4 @@
-## v2.0.0-beta.1 / 2017-08-11
+## v2.0.0-beta.2 / 2017-08-18
 
 This release includes numerous changes to the new storage layer. The main changes are:
 
