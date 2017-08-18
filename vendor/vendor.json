@@ -853,22 +853,22 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "x7qome5K8QtwLWlHQDsR0ISrp48=",
+			"checksumSHA1": "WvgmP/a6PVjj33/h8L7XrNUmoQE=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "e0aca4bee9ae472d1c164c5562eed2a4bf4c700a",
-			"revisionTime": "2017-08-11T10:42:10Z"
+			"revision": "c4ca881685ae1266a75caf57da46d8b6934213c0",
+			"revisionTime": "2017-08-18T07:54:27Z"
 		},
 		{
 			"checksumSHA1": "Gua979gmISm4cJP/fR2hL8m5To8=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "e0aca4bee9ae472d1c164c5562eed2a4bf4c700a",
-			"revisionTime": "2017-08-11T10:42:10Z"
+			"revision": "c4ca881685ae1266a75caf57da46d8b6934213c0",
+			"revisionTime": "2017-08-18T07:54:27Z"
 		},
 		{
 			"checksumSHA1": "zhmlvc322RH1L3l9DaA9d/HVVWs=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "e0aca4bee9ae472d1c164c5562eed2a4bf4c700a",
-			"revisionTime": "2017-08-11T10:42:10Z"
+			"revision": "c4ca881685ae1266a75caf57da46d8b6934213c0",
+			"revisionTime": "2017-08-18T07:54:27Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
