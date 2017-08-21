@@ -384,6 +384,12 @@
 			"revisionTime": "2017-06-07T03:48:29Z"
 		},
 		{
+			"checksumSHA1": "SKxDWZElN5KwYPPf4QSs9pR0jKg=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors",
+			"revision": "caf34a65f60295108141f62929245943bd00f237",
+			"revisionTime": "2017-06-07T03:48:29Z"
+		},
+		{
 			"checksumSHA1": "vTyXSR+Znw7/o/70UBOWG0F09r8=",
 			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/flavors",
 			"revision": "caf34a65f60295108141f62929245943bd00f237",

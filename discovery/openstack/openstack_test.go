@@ -37,6 +37,7 @@ func (s *OpenstackSDTestSuite) SetupTest() {
 	s.Mock = NewSDMock(s.T())
 	s.Mock.Setup()
 
+	s.Mock.HandleHypervisorListSuccessfully()
 	s.Mock.HandleServerListSuccessfully()
 	s.Mock.HandleFloatingIPListSuccessfully()
 
@@ -67,7 +68,7 @@ func (s *OpenstackSDTestSuite) TestOpenstackSDRefresh() {
 	assert.Nil(s.T(), err)
 	require.NotNil(s.T(), tg)
 	require.NotNil(s.T(), tg.Targets)
-	require.Len(s.T(), tg.Targets, 3)
+	require.Len(s.T(), tg.Targets, 5)
 
 	assert.Equal(s.T(), tg.Targets[0]["__address__"], model.LabelValue("10.0.0.32:0"))
 	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_instance_flavor"], model.LabelValue("1"))
@@ -84,4 +85,17 @@ func (s *OpenstackSDTestSuite) TestOpenstackSDRefresh() {
 	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_status"], model.LabelValue("ACTIVE"))
 	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_private_ip"], model.LabelValue("10.0.0.31"))
 
+	assert.Equal(s.T(), tg.Targets[3]["__address__"], model.LabelValue("172.16.70.14:0"))
+	assert.Equal(s.T(), tg.Targets[3]["__meta_openstack_host_name"], model.LabelValue("nc14.cloud.com"))
+	assert.Equal(s.T(), tg.Targets[3]["__meta_openstack_host_hypervisor_type"], model.LabelValue("QEMU"))
+	assert.Equal(s.T(), tg.Targets[3]["__meta_openstack_host_ip"], model.LabelValue("172.16.70.14"))
+	assert.Equal(s.T(), tg.Targets[3]["__meta_openstack_host_state"], model.LabelValue("up"))
+	assert.Equal(s.T(), tg.Targets[3]["__meta_openstack_host_status"], model.LabelValue("enabled"))
+
+	assert.Equal(s.T(), tg.Targets[4]["__address__"], model.LabelValue("172.16.70.13:0"))
+	assert.Equal(s.T(), tg.Targets[4]["__meta_openstack_host_name"], model.LabelValue("cc13.cloud.com"))
+	assert.Equal(s.T(), tg.Targets[4]["__meta_openstack_host_hypervisor_type"], model.LabelValue("QEMU"))
+	assert.Equal(s.T(), tg.Targets[4]["__meta_openstack_host_ip"], model.LabelValue("172.16.70.13"))
+	assert.Equal(s.T(), tg.Targets[4]["__meta_openstack_host_state"], model.LabelValue("up"))
+	assert.Equal(s.T(), tg.Targets[4]["__meta_openstack_host_status"], model.LabelValue("enabled"))
 }
