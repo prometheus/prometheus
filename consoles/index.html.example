@@ -5,7 +5,7 @@
 
 {{ template "prom_content_head" . }}
 <h1>Overview</h1>
-<p>These are example consoles for Prometheus, they are still under development.</p>
+<p>These are example consoles for Prometheus.</p>
 
 <p>These consoles expect exporters to have the following job labels:</p>
 <table class="table table-condensed table-striped table-bordered" style="width: 0%">
@@ -20,26 +20,6 @@
 <tr>
   <td>Prometheus</td>
   <td><code>prometheus</code></td>
-</tr>
-<tr>
-  <td>SNMP Exporter</td>
-  <td><code>snmp</code></td>
-</tr>
-<tr>
-  <td>HAProxy Exporter</td>
-  <td><code>haproxy</code></td>
-</tr>
-<tr>
-  <td>CloudWatch Exporter</td>
-  <td><code>cloudwatch</code></td>
-</tr>
-<tr>
-  <td>Cassandra (JMX Exporter)</td>
-  <td><code>cassandra</code></td>
-</tr>
-<tr>
-  <td>Blackbox (Prober)</td>
-  <td><code>blackbox</code></td>
 </tr>
 </table>
 
