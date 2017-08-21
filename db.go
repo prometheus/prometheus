@@ -877,7 +877,7 @@ func (db *DB) openHeadBlock(dir string) (*HeadBlock, error) {
 	)
 	wal, err := OpenSegmentWAL(wdir, l, 5*time.Second)
 	if err != nil {
-		return nil, errors.Wrap(err, "open WAL %s")
+		return nil, errors.Wrapf(err, "open WAL %s", dir)
 	}
 
 	h, err := OpenHeadBlock(dir, log.With(db.logger, "block", dir), wal, db.compactor)
