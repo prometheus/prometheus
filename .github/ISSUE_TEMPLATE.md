@@ -1,4 +1,13 @@
-[NOTICE]: <> (If your question is around usage and not a bug in Prometheus please use: https://groups.google.com/forum/#!forum/prometheus-users)
+[NOTICE]: <> (                                                                 )
+[NOTICE]: <> (  Please do *NOT* ask usage questions in Github issues.          )
+[NOTICE]: <> (                                                                 )
+[NOTICE]: <> (  If your issue is not a feature request or bug report use:      )
+[NOTICE]: <> (  https://groups.google.com/forum/#!forum/prometheus-users. If   )
+[NOTICE]: <> (  you are unsure whether you hit a bug, search and ask in the    )
+[NOTICE]: <> (  mailing list first.                                            )
+[NOTICE]: <> (                                                                 )
+[NOTICE]: <> (  You can read more at: https://prometheus.io/community/         )
+[NOTICE]: <> (                                                                 )
 
 **What did you do?**
 
@@ -12,7 +21,7 @@
 
 	insert output of `uname -srm` here
 
-* Prometheus version: 
+* Prometheus version:
 
 	insert output of `prometheus -version` here
 
