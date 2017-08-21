@@ -31,40 +31,6 @@
 <ul>
 {{ template "_menuItem" (args . "index.html.example" "Overview") }}
 
-{{ if query "up{job='haproxy'}" }}
-{{ template "_menuItem" (args . "haproxy.html" "HAProxy") }}
-{{ if match "^haproxy" .Path }}
-  <ul>
-    {{ template "_menuItem" (args . "haproxy-frontends.html" "Frontends") }}
-    {{ if .Params.frontend }}
-    <li>
-      <ul>
-        <li>
-          <a href="haproxy-frontend.html?frontend={{ .Params.frontend }}">{{ .Params.frontend }}</a></li>
-      </ul>
-    </li>
-    {{ end }}
-    {{ template "_menuItem" (args . "haproxy-backends.html" "Backends") }}
-    {{ if .Params.backend }}
-    <li>
-      <ul>
-        <li>
-          <a href="haproxy-backend.html?backend={{ .Params.backend }}">{{ .Params.backend }}</a></li>
-      </ul>
-    </li>
-    {{ end }}
-  </ul>
-{{ end }}
-{{ end }}
-
-{{ if query "up{job='cassandra'}" }}
-{{ template "_menuItem" (args . "cassandra.html" "Cassandra") }}
-{{ end }}
-
-{{ if query "up{job='blackbox'}" }}
-{{ template "_menuItem" (args . "blackbox.html" "Blackbox") }}
-{{ end }}
-
 {{ if query "up{job='node'}" }}
 {{ template "_menuItem" (args . "node.html" "Node") }}
 {{ if match "^node" .Path }}
@@ -96,44 +62,6 @@
     </li>
   </ul>
   {{ end }}
-{{ end }}
-{{ end }}
-
-
-{{ if query "up{job='snmp'}" }}
-{{ template "_menuItem" (args . "snmp.html" "SNMP") }}
-{{ if match "^snmp" .Path }}
-  {{ if .Params.instance }}
-  <ul>
-    <li {{ if eq .Path "snmp-overview.html" }}class="prom_lhs_menu_selected"{{ end }}>
-      <a href="snmp-overview.html?instance={{ .Params.instance }}">{{.Params.instance }}</a>
-    </li>
-  </ul>
-  {{ end }}
-{{ end }}
-{{ end }}
-
-
-{{ if query "up{job='cloudwatch'}" }}
-{{ template "_menuItem" (args . "cloudwatch.html" "CloudWatch") }}
-{{ end }}
-
-{{ if query "aws_elasticache_cpuutilization_average{job='aws_elasticache'}" }}
-{{ template "_menuItem" (args . "aws_elasticache.html" "ElastiCache") }}
-{{ end }}
-
-{{ if query "aws_elb_healthy_host_count_average{job='aws_elb'}" }}
-{{ template "_menuItem" (args . "aws_elb.html" "ELB") }}
-{{ end }}
-
-{{ if query "aws_redshift_health_status_average{job='aws_redshift'}" }}
-{{ template "_menuItem" (args . "aws_redshift.html" "Redshift") }}
-{{ if and (eq "aws_redshift-cluster.html" .Path) .Params.cluster_identifier }}
-  <ul>
-    <li class="prom_lhs_menu_selected">
-      {{ reReplaceAll "^(.{8}).{8,}(.{8})$" "$1...$2" .Params.cluster_identifier }}
-    </li>
-  </ul>
 {{ end }}
 {{ end }}
 
