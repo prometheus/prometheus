@@ -1179,12 +1179,39 @@ type OpenstackSDConfig struct {
 	ProjectID        string         `yaml:"project_id"`
 	DomainName       string         `yaml:"domain_name"`
 	DomainID         string         `yaml:"domain_id"`
+	Role             OpenStackRole  `yaml:"role"`
 	Region           string         `yaml:"region"`
 	RefreshInterval  model.Duration `yaml:"refresh_interval,omitempty"`
 	Port             int            `yaml:"port"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// OpenStackRole is role of the target in OpenStack.
+type OpenStackRole string
+
+// The valid options for OpenStackRole.
+const (
+	// OpenStack document reference
+	// https://docs.openstack.org/nova/pike/admin/arch.html#hypervisors
+	OpenStackRoleHypervisor OpenStackRole = "hypervisor"
+	// OpenStack document reference
+	// https://docs.openstack.org/horizon/pike/user/launch-instances.html
+	OpenStackRoleInstance OpenStackRole = "instance"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OpenStackRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case OpenStackRoleHypervisor, OpenStackRoleInstance:
+		return nil
+	default:
+		return fmt.Errorf("Unknown OpenStack SD role %q", *c)
+	}
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1194,6 +1221,9 @@ func (c *OpenstackSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
+	}
+	if c.Role == "" {
+		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
 	return checkOverflow(c.XXX, "openstack_sd_config")
 }

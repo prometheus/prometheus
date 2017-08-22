@@ -182,6 +182,75 @@ func (m *SDMock) HandleAuthSuccessfully() {
 	})
 }
 
+const hypervisorListBody = `
+{
+    "hypervisors": [
+        {
+            "status": "enabled",
+            "service": {
+                "host": "nc14.cloud.com",
+                "disabled_reason": null,
+                "id": 16
+            },
+            "vcpus_used": 18,
+            "hypervisor_type": "QEMU",
+            "local_gb_used": 84,
+            "vcpus": 24,
+            "hypervisor_hostname": "nc14.cloud.com",
+            "memory_mb_used": 24064,
+            "memory_mb": 96484,
+            "current_workload": 1,
+            "state": "up",
+            "host_ip": "172.16.70.14",
+            "cpu_info": "{\"vendor\": \"Intel\", \"model\": \"IvyBridge\", \"arch\": \"x86_64\", \"features\": [\"pge\", \"avx\", \"clflush\", \"sep\", \"syscall\", \"vme\", \"dtes64\", \"msr\", \"fsgsbase\", \"xsave\", \"vmx\", \"erms\", \"xtpr\", \"cmov\", \"smep\", \"ssse3\", \"est\", \"pat\", \"monitor\", \"smx\", \"pbe\", \"lm\", \"tsc\", \"nx\", \"fxsr\", \"tm\", \"sse4.1\", \"pae\", \"sse4.2\", \"pclmuldq\", \"acpi\", \"tsc-deadline\", \"mmx\", \"osxsave\", \"cx8\", \"mce\", \"de\", \"tm2\", \"ht\", \"dca\", \"lahf_lm\", \"popcnt\", \"mca\", \"pdpe1gb\", \"apic\", \"sse\", \"f16c\", \"pse\", \"ds\", \"invtsc\", \"pni\", \"rdtscp\", \"aes\", \"sse2\", \"ss\", \"ds_cpl\", \"pcid\", \"fpu\", \"cx16\", \"pse36\", \"mtrr\", \"pdcm\", \"rdrand\", \"x2apic\"], \"topology\": {\"cores\": 6, \"cells\": 2, \"threads\": 2, \"sockets\": 1}}",
+            "running_vms": 10,
+            "free_disk_gb": 315,
+            "hypervisor_version": 2003000,
+            "disk_available_least": 304,
+            "local_gb": 399,
+            "free_ram_mb": 72420,
+            "id": 1
+        },
+        {
+            "status": "enabled",
+            "service": {
+                "host": "cc13.cloud.com",
+                "disabled_reason": null,
+                "id": 17
+            },
+            "vcpus_used": 1,
+            "hypervisor_type": "QEMU",
+            "local_gb_used": 20,
+            "vcpus": 24,
+            "hypervisor_hostname": "cc13.cloud.com",
+            "memory_mb_used": 2560,
+            "memory_mb": 96484,
+            "current_workload": 0,
+            "state": "up",
+            "host_ip": "172.16.70.13",
+            "cpu_info": "{\"vendor\": \"Intel\", \"model\": \"IvyBridge\", \"arch\": \"x86_64\", \"features\": [\"pge\", \"avx\", \"clflush\", \"sep\", \"syscall\", \"vme\", \"dtes64\", \"msr\", \"fsgsbase\", \"xsave\", \"vmx\", \"erms\", \"xtpr\", \"cmov\", \"smep\", \"ssse3\", \"est\", \"pat\", \"monitor\", \"smx\", \"pbe\", \"lm\", \"tsc\", \"nx\", \"fxsr\", \"tm\", \"sse4.1\", \"pae\", \"sse4.2\", \"pclmuldq\", \"acpi\", \"tsc-deadline\", \"mmx\", \"osxsave\", \"cx8\", \"mce\", \"de\", \"tm2\", \"ht\", \"dca\", \"lahf_lm\", \"popcnt\", \"mca\", \"pdpe1gb\", \"apic\", \"sse\", \"f16c\", \"pse\", \"ds\", \"invtsc\", \"pni\", \"rdtscp\", \"aes\", \"sse2\", \"ss\", \"ds_cpl\", \"pcid\", \"fpu\", \"cx16\", \"pse36\", \"mtrr\", \"pdcm\", \"rdrand\", \"x2apic\"], \"topology\": {\"cores\": 6, \"cells\": 2, \"threads\": 2, \"sockets\": 1}}",
+            "running_vms": 0,
+            "free_disk_gb": 379,
+            "hypervisor_version": 2003000,
+            "disk_available_least": 384,
+            "local_gb": 399,
+            "free_ram_mb": 93924,
+            "id": 721
+        }
+    ]
+}`
+
+// HandleHypervisorListSuccessfully mocks os-hypervisors detail call
+func (m *SDMock) HandleHypervisorListSuccessfully() {
+	m.Mux.HandleFunc("/os-hypervisors/detail", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(m.t, r, "GET")
+		testHeader(m.t, r, "X-Auth-Token", tokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		fmt.Fprintf(w, hypervisorListBody)
+	})
+}
+
 const serverListBody = `
 {
 	"servers": [
