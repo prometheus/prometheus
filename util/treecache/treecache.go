@@ -50,7 +50,9 @@ type ZookeeperLogger struct {
 
 // Implements zk.Logger
 func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
-	zl.logger.Infof(s, i...)
+	if zl.logger != nil {
+		zl.logger.Infof(s, i...)
+	}
 }
 
 type ZookeeperTreeCache struct {
