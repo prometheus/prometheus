@@ -17,7 +17,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"os"
 	"os/signal"
 	"runtime/debug"

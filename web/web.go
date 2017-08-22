@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"path"
@@ -226,8 +227,8 @@ func New(o *Options) *Handler {
 		fmt.Fprintf(w, "This endpoint requires a POST request.\n")
 	})
 
-	router.Get("/debug/*subpath", readyf(http.DefaultServeMux.ServeHTTP))
-	router.Post("/debug/*subpath", readyf(http.DefaultServeMux.ServeHTTP))
+	router.Get("/debug/*subpath", readyf(serveDebug))
+	router.Post("/debug/*subpath", readyf(serveDebug))
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -239,6 +240,26 @@ func New(o *Options) *Handler {
 	}))
 
 	return h
+}
+
+func serveDebug(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	subpath := route.Param(ctx, "subpath")
+
+	// Based off paths from init() in golang.org/src/net/http/pprof/pprof.go
+	if subpath == "/pprof/" {
+		pprof.Index(w, req)
+	} else if subpath == "/pprof/cmdline" {
+		pprof.Cmdline(w, req)
+	} else if subpath == "/pprof/profile" {
+		pprof.Profile(w, req)
+	} else if subpath == "/pprof/symbol" {
+		pprof.Symbol(w, req)
+	} else if subpath == "/pprof/trace" {
+		pprof.Trace(w, req)
+	} else {
+		http.NotFound(w, req)
+	}
 }
 
 func serveStaticAsset(w http.ResponseWriter, req *http.Request) {
