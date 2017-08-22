@@ -1179,6 +1179,7 @@ type OpenstackSDConfig struct {
 	ProjectID        string         `yaml:"project_id"`
 	DomainName       string         `yaml:"domain_name"`
 	DomainID         string         `yaml:"domain_id"`
+	Role             string         `yaml:"role"`
 	Region           string         `yaml:"region"`
 	RefreshInterval  model.Duration `yaml:"refresh_interval,omitempty"`
 	Port             int            `yaml:"port"`
