@@ -20,20 +20,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 )
 
-type OpenstackSDTestSuite struct {
+type OpenstackSDInstanceTestSuite struct {
 	suite.Suite
 	Mock *SDMock
 }
 
-func (s *OpenstackSDTestSuite) TearDownSuite() {
+func (s *OpenstackSDInstanceTestSuite) TearDownSuite() {
 	s.Mock.ShutdownServer()
 }
 
-func (s *OpenstackSDTestSuite) SetupTest() {
+func (s *OpenstackSDInstanceTestSuite) SetupTest() {
 	s.Mock = NewSDMock(s.T())
 	s.Mock.Setup()
 
@@ -44,26 +45,26 @@ func (s *OpenstackSDTestSuite) SetupTest() {
 	s.Mock.HandleAuthSuccessfully()
 }
 
-func TestOpenstackSDSuite(t *testing.T) {
-	suite.Run(t, new(OpenstackSDTestSuite))
+func TestOpenstackSDInstanceSuite(t *testing.T) {
+	suite.Run(t, new(OpenstackSDInstanceTestSuite))
 }
 
-func (s *OpenstackSDTestSuite) openstackAuthSuccess() (*Discovery, error) {
+func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error) {
 	conf := config.OpenstackSDConfig{
 		IdentityEndpoint: s.Mock.Endpoint(),
 		Password:         "test",
 		Username:         "test",
 		DomainName:       "12345",
 		Region:           "RegionOne",
+		Role:             "instance",
 	}
-
-	return NewDiscovery(&conf)
+	return NewDiscovery(&conf, log.Base())
 }
 
-func (s *OpenstackSDTestSuite) TestOpenstackSDRefresh() {
-	d, _ := s.openstackAuthSuccess()
+func (s *OpenstackSDInstanceTestSuite) TestOpenstackSDInstanceRefresh() {
+	instance, _ := s.openstackAuthSuccess()
+	tg, err := instance.refresh()
 
-	tg, err := d.refresh()
 	assert.Nil(s.T(), err)
 	require.NotNil(s.T(), tg)
 	require.NotNil(s.T(), tg.Targets)
@@ -83,5 +84,4 @@ func (s *OpenstackSDTestSuite) TestOpenstackSDRefresh() {
 	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_name"], model.LabelValue("derp"))
 	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_status"], model.LabelValue("ACTIVE"))
 	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_private_ip"], model.LabelValue("10.0.0.31"))
-
 }
