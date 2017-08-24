@@ -35,6 +35,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -472,6 +473,8 @@ type scrapeLoop struct {
 	l       log.Logger
 	cache   *scrapeCache
 
+	lastScrapeSize int
+
 	appender            func() storage.Appender
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
@@ -606,8 +609,10 @@ func newScrapeLoop(
 	sl := &scrapeLoop{
 		scraper:             sc,
 		appender:            appender,
+		cache:               newScrapeCache(),
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
+		lastScrapeSize:      16000,
 		stopped:             make(chan struct{}),
 		ctx:                 ctx,
 		l:                   l,
@@ -616,6 +621,8 @@ func newScrapeLoop(
 
 	return sl
 }
+
+var scrapeBuffers = pool.NewBytesPool(16e3, 100e6, 3)
 
 func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	select {
@@ -631,11 +638,8 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	buf := bytes.NewBuffer(make([]byte, 0, 16000))
-
 mainLoop:
 	for {
-		buf.Reset()
 		select {
 		case <-sl.ctx.Done():
 			close(sl.stopped)
@@ -657,11 +661,19 @@ mainLoop:
 			)
 		}
 
+		b := scrapeBuffers.Get(sl.lastScrapeSize)
+		buf := bytes.NewBuffer(b)
+
 		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
-		var b []byte
 		if scrapeErr == nil {
 			b = buf.Bytes()
+			// NOTE: There were issues with misbehaving clients in the past
+			// that occasionally returned empty results. We don't want those
+			// to falsely reset our buffer size.
+			if len(b) > 0 {
+				sl.lastScrapeSize = len(b)
+			}
 		} else if errc != nil {
 			errc <- scrapeErr
 		}
@@ -677,6 +689,7 @@ mainLoop:
 				sl.l.With("err", err).Error("append failed")
 			}
 		}
+		scrapeBuffers.Put(b)
 
 		if scrapeErr == nil {
 			scrapeErr = appErr
