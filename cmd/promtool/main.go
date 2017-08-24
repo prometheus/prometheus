@@ -152,6 +152,21 @@ func checkConfig(filename string) ([]string, error) {
 				return nil, err
 			}
 		}
+
+		for _, filesd := range scfg.ServiceDiscoveryConfig.FileSDConfigs {
+			for _, file := range filesd.Files {
+				files, err := filepath.Glob(file)
+				if err != nil {
+					return nil, err
+				}
+				if len(files) != 0 {
+					// There was at least one match for the glob and we can assume checkFileExists
+					// for all matches would pass, we can continue the loop.
+					continue
+				}
+				fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
+			}
+		}
 	}
 
 	return ruleFiles, nil
