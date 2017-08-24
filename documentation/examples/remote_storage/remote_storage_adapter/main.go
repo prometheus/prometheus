@@ -179,7 +179,7 @@ func buildClients(cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	log.Info("Starting up ... ")
+	log.Info("Starting up... ")
 	return writers, readers
 }
 
@@ -187,21 +187,21 @@ func serve(addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Errorln("Read Error: ", err)
+			log.Errorln("Read error:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Errorln("Decode Error: ", err)
+			log.Errorln("Decode error:", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req remote.WriteRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Errorln("Unmarshal Error: ", err)
+			log.Errorln("Unmarshal error:", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -223,21 +223,21 @@ func serve(addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Errorln("Read Error: ", err)
+			log.Errorln("Read error:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Errorln("Decode Error: ", err)
+			log.Errorln("Decode error:", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req remote.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Errorln("Unmarshal Error: ", err)
+			log.Errorln("Unmarshal error:", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
