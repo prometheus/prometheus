@@ -16,7 +16,8 @@ package retrieval
 import (
 	"sync"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
@@ -64,7 +65,7 @@ func NewTargetManager(app Appendable, logger log.Logger) *TargetManager {
 
 // Run starts background processing to handle target updates.
 func (tm *TargetManager) Run() {
-	tm.logger.Info("Starting target manager...")
+	level.Info(tm.logger).Log("msg", "Starting target manager...")
 
 	tm.mtx.Lock()
 
@@ -78,7 +79,7 @@ func (tm *TargetManager) Run() {
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
-	tm.logger.Infoln("Stopping target manager...")
+	level.Info(tm.logger).Log("msg", "Stopping target manager...")
 
 	tm.mtx.Lock()
 	// Cancel the base context, this will cause all target providers to shut down
@@ -90,7 +91,7 @@ func (tm *TargetManager) Stop() {
 	// Wait for all scrape inserts to complete.
 	tm.wg.Wait()
 
-	tm.logger.Infoln("Target manager stopped.")
+	level.Info(tm.logger).Log("msg", "Target manager stopped")
 }
 
 func (tm *TargetManager) reload() {
@@ -106,7 +107,7 @@ func (tm *TargetManager) reload() {
 			ts = &targetSet{
 				ctx:    ctx,
 				cancel: cancel,
-				sp:     newScrapePool(ctx, scfg, tm.append, tm.logger),
+				sp:     newScrapePool(ctx, scfg, tm.append, log.With(tm.logger, "scrape_pool", scfg.JobName)),
 			}
 			ts.ts = discovery.NewTargetSet(ts.sp)
 

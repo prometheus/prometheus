@@ -18,13 +18,14 @@ import (
 	"net"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -68,10 +69,15 @@ type Discovery struct {
 	region   string
 	interval time.Duration
 	port     int
+	logger   log.Logger
 }
 
 // NewDiscovery returns a new OpenStackDiscovery which periodically refreshes its targets.
-func NewDiscovery(conf *config.OpenstackSDConfig) (*Discovery, error) {
+func NewDiscovery(logger log.Logger, conf *config.OpenstackSDConfig) (*Discovery, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	opts := gophercloud.AuthOptions{
 		IdentityEndpoint: conf.IdentityEndpoint,
 		Username:         conf.Username,
@@ -88,6 +94,7 @@ func NewDiscovery(conf *config.OpenstackSDConfig) (*Discovery, error) {
 		region:   conf.Region,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
+		logger:   logger,
 	}, nil
 }
 
@@ -96,7 +103,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		log.Error(err)
+		level.Error(d.logger).Log("msg", "refresh failed", "err", err)
 	} else {
 		select {
 		case ch <- []*config.TargetGroup{tg}:
@@ -113,7 +120,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				log.Error(err)
+				level.Error(d.logger).Log("msg", "refresh failed", "err", err)
 				continue
 			}
 
@@ -163,7 +170,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
-			log.Warn(err)
+			level.Error(d.logger).Log("msg", "extracting IPs failed", "err", err)
 		}
 		for _, ip := range result {
 			// Skip not associated ips
@@ -192,24 +199,19 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			for _, address := range s.Addresses {
 				md, ok := address.([]interface{})
 				if !ok {
-					log.Warn("Invalid type for address, expected array")
 					continue
 				}
-
 				if len(md) == 0 {
-					log.Debugf("Got no IP address for instance %s", s.ID)
 					continue
 				}
 
 				md1, ok := md[0].(map[string]interface{})
 				if !ok {
-					log.Warn("Invalid type for address, expected dict")
 					continue
 				}
 
 				addr, ok := md1["addr"].(string)
 				if !ok {
-					log.Warn("Invalid type for address, expected string")
 					continue
 				}
 
@@ -233,7 +235,6 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			labels[openstackLabelInstanceName] = model.LabelValue(s.Name)
 			id, ok := s.Flavor["id"].(string)
 			if !ok {
-				log.Warn("Invalid type for instance id, excepted string")
 				continue
 			}
 			labels[openstackLabelInstanceFlavor] = model.LabelValue(id)

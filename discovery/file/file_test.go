@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -43,7 +42,7 @@ func testFileSD(t *testing.T, ext string) {
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (
-		fsd         = NewDiscovery(&conf, log.Base())
+		fsd         = NewDiscovery(&conf, nil)
 		ch          = make(chan []*config.TargetGroup)
 		ctx, cancel = context.WithCancel(context.Background())
 	)

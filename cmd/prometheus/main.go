@@ -26,10 +26,13 @@ import (
 	"syscall"
 	"time"
 
+	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
+
 	"github.com/asaskevich/govalidator"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
@@ -37,6 +40,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/promlog"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -80,8 +84,7 @@ func main() {
 
 		prometheusURL string
 
-		logFormat string
-		logLevel  string
+		logLevel promlog.AllowedLevel
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
@@ -94,13 +97,8 @@ func main() {
 
 	a.HelpFlag.Short('h')
 
-	a.Flag("log.level",
-		"Only log messages with the given severity or above. One of: [debug, info, warn, error, fatal]").
-		Default("info").StringVar(&cfg.logLevel)
-
-	a.Flag("log.format",
-		`Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`).
-		Default("logger:stderr").StringVar(&cfg.logFormat)
+	a.Flag(promlog.LevelFlagName, promlog.LevelFlagHelp).
+		Default("info").SetValue(&cfg.logLevel)
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
@@ -197,13 +195,20 @@ func main() {
 
 	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
 
-	logger := log.NewLogger(os.Stdout)
-	logger.SetLevel(cfg.logLevel)
-	logger.SetFormat(cfg.logFormat)
+	logger := promlog.New(cfg.logLevel)
 
-	logger.Infoln("Starting prometheus", version.Info())
-	logger.Infoln("Build context", version.BuildContext())
-	logger.Infoln("Host details", Uname())
+	// XXX(fabxc): The Kubernetes does background logging which we can only customize by modifying
+	// a global variable.
+	// Ultimately, here is the best place to set it.
+	k8s_runtime.ErrorHandlers = []func(error){
+		func(err error) {
+			level.Error(log.With(logger, "component", "k8s_client_runtime")).Log("err", err)
+		},
+	}
+
+	level.Info(logger).Log("msg", "Starting prometheus", "version", version.Info())
+	level.Info(logger).Log("build_context", version.BuildContext())
+	level.Info(logger).Log("host_details", Uname())
 
 	var (
 		// sampleAppender = storage.Fanout{}
@@ -215,22 +220,30 @@ func main() {
 	hup := make(chan os.Signal)
 	hupReady := make(chan bool)
 	signal.Notify(hup, syscall.SIGHUP)
-	logger.Infoln("Starting tsdb")
-	localStorage, err := tsdb.Open(cfg.localStoragePath, prometheus.DefaultRegisterer, &cfg.tsdb)
+
+	level.Info(logger).Log("msg", "Starting TSDB")
+
+	localStorage, err := tsdb.Open(
+		cfg.localStoragePath,
+		log.With(logger, "component", "tsdb"),
+		prometheus.DefaultRegisterer,
+		&cfg.tsdb,
+	)
 	if err != nil {
-		log.Errorf("Opening storage failed: %s", err)
+		level.Error(logger).Log("msg", "Opening TSDB failed", "err", err)
 		os.Exit(1)
 	}
-	logger.Infoln("tsdb started")
 
-	remoteStorage := &remote.Storage{}
+	level.Info(logger).Log("msg", "TSDB succesfully started")
+
+	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"))
 	reloadables = append(reloadables, remoteStorage)
-	fanoutStorage := storage.NewFanout(tsdb.Adapter(localStorage), remoteStorage)
+	fanoutStorage := storage.NewFanout(logger, tsdb.Adapter(localStorage), remoteStorage)
 
-	cfg.queryEngine.Logger = logger
+	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
-		notifier       = notifier.New(&cfg.notifier, logger)
-		targetManager  = retrieval.NewTargetManager(fanoutStorage, logger)
+		notifier       = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		targetManager  = retrieval.NewTargetManager(fanoutStorage, log.With(logger, "component", "target manager"))
 		queryEngine    = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ctx, cancelCtx = context.WithCancel(context.Background())
 	)
@@ -241,7 +254,7 @@ func main() {
 		QueryEngine: queryEngine,
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
-		Logger:      logger,
+		Logger:      log.With(logger, "component", "rule manager"),
 	})
 
 	cfg.web.Context = ctx
@@ -265,12 +278,12 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	webHandler := web.New(&cfg.web)
+	webHandler := web.New(log.With(logger, "componennt", "web"), &cfg.web)
 
 	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 
 	if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-		logger.Errorf("Error loading config: %s", err)
+		level.Error(logger).Log("msg", "Error loading config", "err", err)
 		os.Exit(1)
 	}
 
@@ -283,11 +296,11 @@ func main() {
 			select {
 			case <-hup:
 				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-					logger.Errorf("Error reloading config: %s", err)
+					level.Error(logger).Log("msg", "Error reloading config", "err", err)
 				}
 			case rc := <-webHandler.Reload():
 				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-					logger.Errorf("Error reloading config: %s", err)
+					level.Error(logger).Log("msg", "Error reloading config", "err", err)
 					rc <- err
 				} else {
 					rc <- nil
@@ -299,7 +312,7 @@ func main() {
 	// Start all components. The order is NOT arbitrary.
 	defer func() {
 		if err := fanoutStorage.Close(); err != nil {
-			log.Errorln("Error stopping storage:", err)
+			level.Error(logger).Log("msg", "Closing storage(s) failed", "err", err)
 		}
 	}()
 
@@ -331,20 +344,20 @@ func main() {
 
 	// Set web server to ready.
 	webHandler.Ready()
-	log.Info("Server is Ready to receive requests.")
+	level.Info(logger).Log("msg", "Server is Ready to receive requests.")
 
 	term := make(chan os.Signal)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-term:
-		logger.Warn("Received SIGTERM, exiting gracefully...")
+		level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
 	case <-webHandler.Quit():
-		logger.Warn("Received termination request via web service, exiting gracefully...")
+		level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 	case err := <-errc:
-		logger.Errorln("Error starting web server, exiting gracefully:", err)
+		level.Error(logger).Log("msg", "Error starting web server, exiting gracefully", "err", err)
 	}
 
-	logger.Info("See you next time!")
+	level.Info(logger).Log("msg", "See you next time!")
 }
 
 // Reloadable things can change their internal state to match a new config
@@ -354,7 +367,8 @@ type Reloadable interface {
 }
 
 func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err error) {
-	logger.Infof("Loading configuration file %s", filename)
+	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
+
 	defer func() {
 		if err == nil {
 			configSuccess.Set(1)
@@ -372,7 +386,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err er
 	failed := false
 	for _, rl := range rls {
 		if err := rl.ApplyConfig(conf); err != nil {
-			logger.Error("Failed to apply configuration: ", err)
+			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
 			failed = true
 		}
 	}

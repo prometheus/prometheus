@@ -25,7 +25,8 @@ import (
 
 	html_template "html/template"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -118,7 +119,7 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 		labels:       lbls,
 		annotations:  anns,
 		active:       map[uint64]*Alert{},
-		logger:       logger.With("alert", name),
+		logger:       logger,
 	}
 }
 
@@ -203,7 +204,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.En
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = fmt.Sprintf("<error expanding template: %s>", err)
-				r.logger.Warnf("Error expanding alert template %v with data '%v': %s", r.Name(), tmplData, err)
+				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", tmplData)
 			}
 			return result
 		}
