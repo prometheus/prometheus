@@ -58,7 +58,7 @@ type Options struct {
 func Open(path string, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	// Start with smallest block duration and create exponential buckets until the exceed the
 	// configured maximum block duration.
-	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 3, 10)
+	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
 
 	for i, v := range rngs {
 		if v > int64(time.Duration(opts.MaxBlockDuration).Seconds()*1000) {
