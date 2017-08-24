@@ -98,18 +98,18 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func convertToService(o interface{}) (*apiv1.Service, error) {
-	service, isService := o.(*apiv1.Service)
-	if !isService {
-		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return nil, fmt.Errorf("Received unexpected object: %v", o)
-		}
-		service, ok = deletedState.Obj.(*apiv1.Service)
-		if !ok {
-			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
-		}
+	service, ok := o.(*apiv1.Service)
+	if ok {
+		return service, nil
 	}
-
+	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+	if !ok {
+		return nil, fmt.Errorf("Received unexpected object: %v", o)
+	}
+	service, ok = deletedState.Obj.(*apiv1.Service)
+	if !ok {
+		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
+	}
 	return service, nil
 }
 
