@@ -1,13 +1,15 @@
-[NOTICE]: <> (                                                                 )
-[NOTICE]: <> (  Please do *NOT* ask usage questions in Github issues.          )
-[NOTICE]: <> (                                                                 )
-[NOTICE]: <> (  If your issue is not a feature request or bug report use:      )
-[NOTICE]: <> (  https://groups.google.com/forum/#!forum/prometheus-users. If   )
-[NOTICE]: <> (  you are unsure whether you hit a bug, search and ask in the    )
-[NOTICE]: <> (  mailing list first.                                            )
-[NOTICE]: <> (                                                                 )
-[NOTICE]: <> (  You can read more at: https://prometheus.io/community/         )
-[NOTICE]: <> (                                                                 )
+<!--
+
+    Please do *NOT* ask usage questions in Github issues.
+
+    If your issue is not a feature request or bug report use:
+    https://groups.google.com/forum/#!forum/prometheus-users. If
+    you are unsure whether you hit a bug, search and ask in the
+    mailing list first.
+
+    You can find more information at: https://prometheus.io/community/
+
+-->
 
 **What did you do?**
 
