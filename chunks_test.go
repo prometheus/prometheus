@@ -50,18 +50,18 @@ func TestDeletedIterator(t *testing.T) {
 	}
 
 	cases := []struct {
-		r intervals
+		r Intervals
 	}{
-		{r: intervals{{1, 20}}},
-		{r: intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
-		{r: intervals{{1, 10}, {12, 20}, {20, 30}}},
-		{r: intervals{{1, 10}, {12, 23}, {25, 30}}},
-		{r: intervals{{1, 23}, {12, 20}, {25, 30}}},
-		{r: intervals{{1, 23}, {12, 20}, {25, 3000}}},
-		{r: intervals{{0, 2000}}},
-		{r: intervals{{500, 2000}}},
-		{r: intervals{{0, 200}}},
-		{r: intervals{{1000, 20000}}},
+		{r: Intervals{{1, 20}}},
+		{r: Intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
+		{r: Intervals{{1, 10}, {12, 20}, {20, 30}}},
+		{r: Intervals{{1, 10}, {12, 23}, {25, 30}}},
+		{r: Intervals{{1, 23}, {12, 20}, {25, 30}}},
+		{r: Intervals{{1, 23}, {12, 20}, {25, 3000}}},
+		{r: Intervals{{0, 2000}}},
+		{r: Intervals{{500, 2000}}},
+		{r: Intervals{{0, 200}}},
+		{r: Intervals{{1000, 20000}}},
 	}
 
 	for _, c := range cases {
@@ -72,7 +72,7 @@ func TestDeletedIterator(t *testing.T) {
 			i++
 			for _, tr := range ranges {
 				if tr.inBounds(i) {
-					i = tr.maxt + 1
+					i = tr.Maxt + 1
 					ranges = ranges[1:]
 				}
 			}
@@ -87,7 +87,7 @@ func TestDeletedIterator(t *testing.T) {
 		i++
 		for _, tr := range ranges {
 			if tr.inBounds(i) {
-				i = tr.maxt + 1
+				i = tr.Maxt + 1
 				ranges = ranges[1:]
 			}
 		}

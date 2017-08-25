@@ -29,15 +29,15 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 	ref := uint32(0)
 
-	stones := make(map[uint32]intervals)
+	stones := make(map[uint32]Intervals)
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
 		ref += uint32(rand.Int31n(10)) + 1
 		numRanges := rand.Intn(5) + 1
-		dranges := make(intervals, 0, numRanges)
+		dranges := make(Intervals, 0, numRanges)
 		mint := rand.Int63n(time.Now().UnixNano())
 		for j := 0; j < numRanges; j++ {
-			dranges = dranges.add(interval{mint, mint + rand.Int63n(1000)})
+			dranges = dranges.add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
 		stones[ref] = dranges
@@ -54,64 +54,64 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 func TestAddingNewIntervals(t *testing.T) {
 	cases := []struct {
-		exist intervals
-		new   interval
+		exist Intervals
+		new   Interval
 
-		exp intervals
+		exp Intervals
 	}{
 		{
-			new: interval{1, 2},
-			exp: intervals{{1, 2}},
+			new: Interval{1, 2},
+			exp: Intervals{{1, 2}},
 		},
 		{
-			exist: intervals{{1, 2}},
-			new:   interval{1, 2},
-			exp:   intervals{{1, 2}},
+			exist: Intervals{{1, 2}},
+			new:   Interval{1, 2},
+			exp:   Intervals{{1, 2}},
 		},
 		{
-			exist: intervals{{1, 4}, {6, 6}},
-			new:   interval{5, 6},
-			exp:   intervals{{1, 6}},
+			exist: Intervals{{1, 4}, {6, 6}},
+			new:   Interval{5, 6},
+			exp:   Intervals{{1, 6}},
 		},
 		{
-			exist: intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   interval{21, 23},
-			exp:   intervals{{1, 10}, {12, 23}, {25, 30}},
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{21, 23},
+			exp:   Intervals{{1, 10}, {12, 23}, {25, 30}},
 		},
 		{
-			exist: intervals{{1, 2}, {3, 5}, {7, 7}},
-			new:   interval{6, 7},
-			exp:   intervals{{1, 2}, {3, 7}},
+			exist: Intervals{{1, 2}, {3, 5}, {7, 7}},
+			new:   Interval{6, 7},
+			exp:   Intervals{{1, 2}, {3, 7}},
 		},
 		{
-			exist: intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   interval{21, 25},
-			exp:   intervals{{1, 10}, {12, 30}},
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{21, 25},
+			exp:   Intervals{{1, 10}, {12, 30}},
 		},
 		{
-			exist: intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   interval{18, 23},
-			exp:   intervals{{1, 10}, {12, 23}, {25, 30}},
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{18, 23},
+			exp:   Intervals{{1, 10}, {12, 23}, {25, 30}},
 		},
 		{
-			exist: intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   interval{9, 23},
-			exp:   intervals{{1, 23}, {25, 30}},
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{9, 23},
+			exp:   Intervals{{1, 23}, {25, 30}},
 		},
 		{
-			exist: intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   interval{9, 230},
-			exp:   intervals{{1, 230}},
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{9, 230},
+			exp:   Intervals{{1, 230}},
 		},
 		{
-			exist: intervals{{5, 10}, {12, 20}, {25, 30}},
-			new:   interval{1, 4},
-			exp:   intervals{{1, 10}, {12, 20}, {25, 30}},
+			exist: Intervals{{5, 10}, {12, 20}, {25, 30}},
+			new:   Interval{1, 4},
+			exp:   Intervals{{1, 10}, {12, 20}, {25, 30}},
 		},
 		{
-			exist: intervals{{5, 10}, {12, 20}, {25, 30}},
-			new:   interval{11, 14},
-			exp:   intervals{{5, 20}, {25, 30}},
+			exist: Intervals{{5, 10}, {12, 20}, {25, 30}},
+			new:   Interval{11, 14},
+			exp:   Intervals{{5, 20}, {25, 30}},
 		},
 	}
 
