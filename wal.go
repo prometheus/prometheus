@@ -491,8 +491,8 @@ func (w *SegmentWAL) encodeDeletes(stones []Stone) error {
 		for _, itv := range s.intervals {
 			eb.reset()
 			eb.putUvarint32(s.ref)
-			eb.putVarint64(itv.mint)
-			eb.putVarint64(itv.maxt)
+			eb.putVarint64(itv.Mint)
+			eb.putVarint64(itv.Maxt)
 			buf = append(buf, eb.get()...)
 		}
 	}
@@ -794,7 +794,7 @@ func (r *walReader) decodeDeletes(flag byte, b []byte) ([]Stone, error) {
 	for db.len() > 0 {
 		var s Stone
 		s.ref = db.uvarint32()
-		s.intervals = intervals{{db.varint64(), db.varint64()}}
+		s.intervals = Intervals{{db.varint64(), db.varint64()}}
 		if db.err() != nil {
 			return nil, db.err()
 		}

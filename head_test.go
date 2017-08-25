@@ -399,27 +399,27 @@ func TestHBDeleteSimple(t *testing.T) {
 
 	require.NoError(t, app.Commit())
 	cases := []struct {
-		intervals intervals
+		intervals Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: intervals{{0, 3}},
+			intervals: Intervals{{0, 3}},
 			remaint:   []int64{4, 5, 6, 7, 8, 9},
 		},
 		{
-			intervals: intervals{{1, 3}},
+			intervals: Intervals{{1, 3}},
 			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
 		},
 		{
-			intervals: intervals{{1, 3}, {4, 7}},
+			intervals: Intervals{{1, 3}, {4, 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 		{
-			intervals: intervals{{1, 3}, {4, 700}},
+			intervals: Intervals{{1, 3}, {4, 700}},
 			remaint:   []int64{0},
 		},
 		{
-			intervals: intervals{{0, 9}},
+			intervals: Intervals{{0, 9}},
 			remaint:   []int64{},
 		},
 	}
@@ -431,7 +431,7 @@ Outer:
 
 		// Delete the ranges.
 		for _, r := range c.intervals {
-			require.NoError(t, hb.Delete(r.mint, r.maxt, labels.NewEqualMatcher("a", "b")))
+			require.NoError(t, hb.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
 		}
 
 		// Compare the result.
@@ -596,18 +596,18 @@ func TestDelete_e2e(t *testing.T) {
 	// Delete a time-range from each-selector.
 	dels := []struct {
 		ms     []labels.Matcher
-		drange intervals
+		drange Intervals
 	}{
 		{
 			ms:     []labels.Matcher{labels.NewEqualMatcher("a", "b")},
-			drange: intervals{{300, 500}, {600, 670}},
+			drange: Intervals{{300, 500}, {600, 670}},
 		},
 		{
 			ms: []labels.Matcher{
 				labels.NewEqualMatcher("a", "b"),
 				labels.NewEqualMatcher("job", "prom-k8s"),
 			},
-			drange: intervals{{300, 500}, {100, 670}},
+			drange: Intervals{{300, 500}, {100, 670}},
 		},
 		{
 			ms: []labels.Matcher{
@@ -615,7 +615,7 @@ func TestDelete_e2e(t *testing.T) {
 				labels.NewEqualMatcher("instance", "localhost:9090"),
 				labels.NewEqualMatcher("job", "prometheus"),
 			},
-			drange: intervals{{300, 400}, {100, 6700}},
+			drange: Intervals{{300, 400}, {100, 6700}},
 		},
 		// TODO: Add Regexp Matchers.
 	}
@@ -626,7 +626,7 @@ func TestDelete_e2e(t *testing.T) {
 		hb.tombstones = newEmptyTombstoneReader()
 
 		for _, r := range del.drange {
-			require.NoError(t, hb.Delete(r.mint, r.maxt, del.ms...))
+			require.NoError(t, hb.Delete(r.Mint, r.Maxt, del.ms...))
 		}
 
 		matched := labels.Slice{}
@@ -716,7 +716,7 @@ func boundedSamples(full []sample, mint, maxt int64) []sample {
 	return full
 }
 
-func deletedSamples(full []sample, dranges intervals) []sample {
+func deletedSamples(full []sample, dranges Intervals) []sample {
 	ds := make([]sample, 0, len(full))
 Outer:
 	for _, s := range full {

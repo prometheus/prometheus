@@ -250,7 +250,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	stones := map[uint32]intervals{}
+	stones := map[uint32]Intervals{}
 
 	var lset labels.Labels
 	var chks []ChunkMeta
@@ -272,7 +272,7 @@ Outer:
 			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
 				// Delete only until the current vlaues and not beyond.
 				tmin, tmax := clampInterval(mint, maxt, chks[0].MinTime, chks[len(chks)-1].MaxTime)
-				stones[p.At()] = intervals{{tmin, tmax}}
+				stones[p.At()] = Intervals{{tmin, tmax}}
 				continue Outer
 			}
 		}

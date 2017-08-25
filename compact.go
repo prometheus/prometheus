@@ -458,7 +458,7 @@ func (c *LeveledCompactor) populateBlock(blocks []Block, indexw IndexWriter, chu
 		if len(dranges) > 0 {
 			// Re-encode the chunk to not have deleted values.
 			for _, chk := range chks {
-				if intervalOverlap(dranges[0].mint, dranges[len(dranges)-1].maxt, chk.MinTime, chk.MaxTime) {
+				if intervalOverlap(dranges[0].Mint, dranges[len(dranges)-1].Maxt, chk.MinTime, chk.MaxTime) {
 					newChunk := chunks.NewXORChunk()
 					app, err := newChunk.Appender()
 					if err != nil {
@@ -542,7 +542,7 @@ func (c *LeveledCompactor) populateBlock(blocks []Block, indexw IndexWriter, chu
 
 type compactionSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta, intervals)
+	At() (labels.Labels, []ChunkMeta, Intervals)
 	Err() error
 }
 
@@ -555,7 +555,7 @@ type compactionSeriesSet struct {
 
 	l         labels.Labels
 	c         []ChunkMeta
-	intervals intervals
+	intervals Intervals
 	err       error
 }
 
@@ -582,7 +582,7 @@ func (c *compactionSeriesSet) Next() bool {
 	if len(c.intervals) > 0 {
 		chks := make([]ChunkMeta, 0, len(c.c))
 		for _, chk := range c.c {
-			if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(c.intervals)) {
+			if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(c.intervals)) {
 				chks = append(chks, chk)
 			}
 		}
@@ -609,7 +609,7 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, intervals) {
+func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return c.l, c.c, c.intervals
 }
 
@@ -619,7 +619,7 @@ type compactionMerger struct {
 	aok, bok  bool
 	l         labels.Labels
 	c         []ChunkMeta
-	intervals intervals
+	intervals Intervals
 }
 
 type compactionSeries struct {
@@ -700,7 +700,7 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []ChunkMeta, intervals) {
+func (c *compactionMerger) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return c.l, c.c, c.intervals
 }
 

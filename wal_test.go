@@ -220,7 +220,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			for j := 0; j < i*20; j++ {
 				ts := rand.Int63()
-				stones = append(stones, Stone{rand.Uint32(), intervals{{ts, ts + rand.Int63n(10000)}}})
+				stones = append(stones, Stone{rand.Uint32(), Intervals{{ts, ts + rand.Int63n(10000)}}})
 			}
 
 			lbls := series[i : i+stepSize]

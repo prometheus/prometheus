@@ -555,10 +555,10 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: newTombstoneReader(
-			map[uint32]intervals{
-				1: intervals{{1, 3}},
-				2: intervals{{1, 3}, {6, 10}},
-				3: intervals{{6, 10}},
+			map[uint32]Intervals{
+				1: Intervals{{1, 3}},
+				2: Intervals{{1, 3}, {6, 10}},
+				3: Intervals{{6, 10}},
 			},
 		),
 
@@ -1205,7 +1205,7 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []ChunkMeta, intervals) {
+func (m *mockChunkSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return m.l[m.i], m.cm[m.i], nil
 }
 

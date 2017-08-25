@@ -128,6 +128,18 @@ func (q *querier) Close() error {
 	return merr.Err()
 }
 
+// NewBlockQuerier returns a queries against the readers.
+func NewBlockQuerier(ir IndexReader, cr ChunkReader, tr TombstoneReader, mint, maxt int64) Querier {
+	return &blockQuerier{
+		index:      ir,
+		chunks:     cr,
+		tombstones: tr,
+
+		mint: mint,
+		maxt: maxt,
+	}
+}
+
 // blockQuerier provides querying access to a single block database.
 type blockQuerier struct {
 	index      IndexReader
@@ -348,6 +360,13 @@ type mergedSeriesSet struct {
 	adone, bdone bool
 }
 
+// NewMergedSeriesSet takes two series sets as a single series set. The input series sets
+// must be sorted and sequential in time, i.e. if they have the same label set,
+// the datapoints of a must be before the datapoints of b.
+func NewMergedSeriesSet(a, b SeriesSet) SeriesSet {
+	return newMergedSeriesSet(a, b)
+}
+
 func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
 	s := &mergedSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
@@ -403,7 +422,7 @@ func (s *mergedSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta, intervals)
+	At() (labels.Labels, []ChunkMeta, Intervals)
 	Err() error
 }
 
@@ -417,11 +436,11 @@ type baseChunkSeries struct {
 
 	lset      labels.Labels
 	chks      []ChunkMeta
-	intervals intervals
+	intervals Intervals
 	err       error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, intervals) {
+func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
 
@@ -455,7 +474,7 @@ Outer:
 			// Only those chunks that are not entirely deleted.
 			chks := make([]ChunkMeta, 0, len(s.chks))
 			for _, chk := range s.chks {
-				if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
+				if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
 					chks = append(chks, chk)
 				}
 			}
@@ -482,10 +501,10 @@ type populatedChunkSeries struct {
 	err       error
 	chks      []ChunkMeta
 	lset      labels.Labels
-	intervals intervals
+	intervals Intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, intervals) {
+func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
 func (s *populatedChunkSeries) Err() error { return s.err }
@@ -570,7 +589,7 @@ type chunkSeries struct {
 
 	mint, maxt int64
 
-	intervals intervals
+	intervals Intervals
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -676,10 +695,10 @@ type chunkSeriesIterator struct {
 
 	maxt, mint int64
 
-	intervals intervals
+	intervals Intervals
 }
 
-func newChunkSeriesIterator(cs []ChunkMeta, dranges intervals, mint, maxt int64) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []ChunkMeta, dranges Intervals, mint, maxt int64) *chunkSeriesIterator {
 	it := cs[0].Chunk.Iterator()
 	if len(dranges) > 0 {
 		it = &deletedIterator{it: it, intervals: dranges}
