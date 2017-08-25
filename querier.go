@@ -360,6 +360,13 @@ type mergedSeriesSet struct {
 	adone, bdone bool
 }
 
+// NewMergedSeriesSet takes two series sets as a single series set. The input series sets
+// must be sorted and sequential in time, i.e. if they have the same label set,
+// the datapoints of a must be before the datapoints of b.
+func NewMergedSeriesSet(a, b SeriesSet) SeriesSet {
+	return newMergedSeriesSet(a, b)
+}
+
 func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
 	s := &mergedSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
