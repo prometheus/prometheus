@@ -128,6 +128,18 @@ func (q *querier) Close() error {
 	return merr.Err()
 }
 
+// NewBlockQuerier returns a queries against the readers.
+func NewBlockQuerier(ir IndexReader, cr ChunkReader, tr TombstoneReader, mint, maxt int64) Querier {
+	return &blockQuerier{
+		index:      ir,
+		chunks:     cr,
+		tombstones: tr,
+
+		mint: mint,
+		maxt: maxt,
+	}
+}
+
 // blockQuerier provides querying access to a single block database.
 type blockQuerier struct {
 	index      IndexReader
