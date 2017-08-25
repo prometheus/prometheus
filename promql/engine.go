@@ -739,8 +739,7 @@ func (ev *evaluator) eval(expr Expr) model.Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, e.Param, vector)
+		return ev.aggregation(e.Op, e.Grouping, e.Without, e.KeepCommonLabels, e.Param, e.Expr)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, model.ValScalar, model.ValVector)
@@ -1189,7 +1188,7 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a vector.
-func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, param Expr, vec vector) vector {
+func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without bool, keepCommon bool, param Expr, expr Expr) vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
@@ -1209,6 +1208,21 @@ func (ev *evaluator) aggregation(op itemType, grouping model.LabelNames, without
 		if !without {
 			grouping = append(grouping, valueLabel)
 		}
+	}
+
+	var vec vector
+	// Optimisation: counts over vector selectors don't need to ever actually fetch
+	// samples, can just work off the timeseries index.
+	if node, ok := expr.(*VectorSelector); ok && op == itemCount {
+		for _, it := range node.iterators {
+			vec = append(vec, &sample{
+				Metric:    it.Metric(),
+				Value:     1,
+				Timestamp: ev.Timestamp,
+			})
+		}
+	} else {
+		vec = ev.evalVector(expr)
 	}
 
 	for _, s := range vec {
