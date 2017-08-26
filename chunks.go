@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
-	"hash/crc32"
 	"io"
 	"os"
 
@@ -136,7 +135,7 @@ func newChunkWriter(dir string) (*chunkWriter, error) {
 	cw := &chunkWriter{
 		dirFile:     dirFile,
 		n:           0,
-		crc32:       crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+		crc32:       newCRC32(),
 		segmentSize: defaultChunkSegmentSize,
 	}
 	return cw, nil
