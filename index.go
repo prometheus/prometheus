@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
-	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -177,7 +176,7 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 		// Caches.
 		symbols:       make(map[string]uint32, 1<<13),
 		seriesOffsets: make(map[uint32]uint64, 1<<16),
-		crc32:         crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+		crc32:         newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err

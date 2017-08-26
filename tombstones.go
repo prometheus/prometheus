@@ -16,7 +16,6 @@ package tsdb
 import (
 	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"os"
@@ -37,7 +36,7 @@ const (
 func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
-	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	hash := newCRC32()
 
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -114,7 +113,7 @@ func readTombstones(dir string) (tombstoneReader, error) {
 	}
 
 	// Verify checksum
-	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	hash := newCRC32()
 	if _, err := hash.Write(d.get()); err != nil {
 		return nil, errors.Wrap(err, "write to hash")
 	}

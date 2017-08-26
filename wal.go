@@ -112,6 +112,12 @@ func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
+// newCRC32 initializes a CRC32 hash with a preconfigured polynomial, so the
+// polynomial may be easily changed in one location at a later time, if necessary.
+func newCRC32() hash.Hash32 {
+	return crc32.New(castagnoliTable)
+}
+
 // OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) (*SegmentWAL, error) {
@@ -133,7 +139,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) 
 		donec:         make(chan struct{}),
 		stopc:         make(chan struct{}),
 		segmentSize:   walSegmentSizeBytes,
-		crc32:         crc32.New(castagnoliTable),
+		crc32:         newCRC32(),
 	}
 	if err := w.initSegments(); err != nil {
 		return nil, err
@@ -524,7 +530,7 @@ func newWALReader(w *SegmentWAL, l log.Logger) *walReader {
 		logger: l,
 		wal:    w,
 		buf:    make([]byte, 0, 128*4096),
-		crc32:  crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+		crc32:  newCRC32(),
 	}
 }
 
