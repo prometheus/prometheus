@@ -333,10 +333,6 @@ func parsePrometheusURL() error {
 		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
-	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
-		return fmt.Errorf("invalid Prometheus URL: %s", cfg.prometheusURL)
-	}
-
 	promURL, err := url.Parse(cfg.prometheusURL)
 	if err != nil {
 		return err
