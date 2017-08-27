@@ -157,162 +157,134 @@ func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*config.TargetGro
 	close(ch)
 }
 
-// TargetSet handles multiple TargetProviders and sends a full overview of their
-// discovered TargetGroups to a Syncer.
-type TargetSet struct {
-	mtx sync.RWMutex
-	// Sets of targets by a source string that is unique across target providers.
-	tgroups map[string]*config.TargetGroup
-
-	syncer Syncer
-
-	syncCh          chan struct{}
-	providerCh      chan map[string]TargetProvider
-	cancelProviders func()
-}
-
 // Syncer receives updates complete sets of TargetGroups.
 type Syncer interface {
 	Sync([]*config.TargetGroup)
 }
 
-// NewTargetSet returns a new target sending TargetGroups to the Syncer.
-func NewTargetSet(s Syncer) *TargetSet {
+// TargetSet holds a set of target groups that is continously updated by target providers.
+// The full set is flushed to a Syncer.
+type TargetSet struct {
+	providers map[string]TargetProvider
+	syncer    Syncer
+	syncCh    chan struct{}
+
+	mtx    sync.Mutex
+	groups map[string]*config.TargetGroup
+}
+
+// NewTargetSet returns a new target set backed by a set of named providers.
+func NewTargetSet(s Syncer, ps map[string]TargetProvider) *TargetSet {
 	return &TargetSet{
-		syncCh:     make(chan struct{}, 1),
-		providerCh: make(chan map[string]TargetProvider),
-		syncer:     s,
+		syncer:    s,
+		providers: ps,
+		groups:    map[string]*config.TargetGroup{},
+		syncCh:    make(chan struct{}),
 	}
 }
 
-// Run starts the processing of target providers and their updates.
-// It blocks until the context gets canceled.
-func (ts *TargetSet) Run(ctx context.Context) {
-Loop:
+// Runner lets you run something.
+type Runner interface {
+	Run(context.Context)
+}
+
+// SwapRunner allows running a runner that can be swapped out with a new runner.
+// The new runner is only started after the first one has terminated.
+type SwapRunner struct {
+	swapc chan Runner
+}
+
+func NewSwapRunner(r Runner) *SwapRunner {
+	return &SwapRunner{swapc: make(chan Runner)}
+}
+
+func (sr *SwapRunner) Swap(r Runner) {
+	sr.swapc <- r
+}
+
+func (sr *SwapRunner) Run(ctx context.Context) {
+	var cancel func()
+	var subCtx context.Context
+
+	termc := make(chan struct{})
+
 	for {
-		// Throttle syncing to once per five seconds.
 		select {
 		case <-ctx.Done():
-			break Loop
-		case p := <-ts.providerCh:
-			ts.updateProviders(ctx, p)
-		case <-time.After(5 * time.Second):
-		}
+			return
+		case r := <-sr.swapc:
+			if cancel != nil {
+				cancel()
+				<-termc
+			}
 
+			subCtx, cancel = context.WithCancel(ctx)
+
+			go func() {
+				r.Run(subCtx)
+				termc <- struct{}{}
+			}()
+		}
+	}
+}
+
+// Run starts retrieving updates from target providers and flushes them to the syncer.
+// It stops synchronization and returns when the context is canceled.
+func (ts *TargetSet) Run(ctx context.Context) {
+	// Start all target providers. We don't care about their completion before
+	// returning ourselves.
+	updates := make(chan []*config.TargetGroup)
+
+	for name, p := range ts.providers {
+		go p.Run(ctx, updates)
+		go ts.handleUpdates(name, updates)
+	}
+
+	// We propagate changes to the syncer but throttle it to once every 10 seconds.
+	for {
 		select {
 		case <-ctx.Done():
-			break Loop
+			return
 		case <-ts.syncCh:
-			ts.sync()
-		case p := <-ts.providerCh:
-			ts.updateProviders(ctx, p)
+			ts.syncer.Sync(ts.list())
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
 		}
 	}
 }
 
-func (ts *TargetSet) sync() {
-	ts.mtx.RLock()
-	var all []*config.TargetGroup
-	for _, tg := range ts.tgroups {
-		all = append(all, tg)
-	}
-	ts.mtx.RUnlock()
-
-	ts.syncer.Sync(all)
-}
-
-// UpdateProviders sets new target providers for the target set.
-func (ts *TargetSet) UpdateProviders(p map[string]TargetProvider) {
-	ts.providerCh <- p
-}
-
-func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]TargetProvider) {
-
-	// Stop all previous target providers of the target set.
-	if ts.cancelProviders != nil {
-		ts.cancelProviders()
-	}
-	ctx, ts.cancelProviders = context.WithCancel(ctx)
-
-	var wg sync.WaitGroup
-	// (Re-)create a fresh tgroups map to not keep stale targets around. We
-	// will retrieve all targets below anyway, so cleaning up everything is
-	// safe and doesn't inflict any additional cost.
-	ts.mtx.Lock()
-	ts.tgroups = map[string]*config.TargetGroup{}
-	ts.mtx.Unlock()
-
-	for name, prov := range providers {
-		wg.Add(1)
-
-		updates := make(chan []*config.TargetGroup)
-		go prov.Run(ctx, updates)
-
-		go func(name string, prov TargetProvider) {
-			select {
-			case <-ctx.Done():
-			case initial, ok := <-updates:
-				// Handle the case that a target provider exits and closes the channel
-				// before the context is done.
-				if !ok {
-					break
-				}
-				// First set of all targets the provider knows.
-				for _, tgroup := range initial {
-					ts.setTargetGroup(name, tgroup)
-				}
-			case <-time.After(5 * time.Second):
-				// Initial set didn't arrive. Act as if it was empty
-				// and wait for updates later on.
-			}
-			wg.Done()
-
-			// Start listening for further updates.
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case tgs, ok := <-updates:
-					// Handle the case that a target provider exits and closes the channel
-					// before the context is done.
-					if !ok {
-						return
-					}
-					for _, tg := range tgs {
-						ts.update(name, tg)
-					}
-				}
-			}
-		}(name, prov)
-	}
-
-	// We wait for a full initial set of target groups before releasing the mutex
-	// to ensure the initial sync is complete and there are no races with subsequent updates.
-	wg.Wait()
-	// Just signal that there are initial sets to sync now. Actual syncing must only
-	// happen in the runScraping loop.
-	select {
-	case ts.syncCh <- struct{}{}:
-	default:
-	}
-}
-
-// update handles a target group update from a target provider identified by the name.
-func (ts *TargetSet) update(name string, tgroup *config.TargetGroup) {
-	ts.setTargetGroup(name, tgroup)
-
-	select {
-	case ts.syncCh <- struct{}{}:
-	default:
-	}
-}
-
-func (ts *TargetSet) setTargetGroup(name string, tg *config.TargetGroup) {
+func (ts *TargetSet) list() []*config.TargetGroup {
 	ts.mtx.Lock()
 	defer ts.mtx.Unlock()
 
-	if tg == nil {
-		return
+	all := make([]*config.TargetGroup, 0, len(ts.groups))
+
+	for _, tg := range ts.groups {
+		all = append(all, tg)
 	}
-	ts.tgroups[name+"/"+tg.Source] = tg
+	return all
+}
+
+func (ts *TargetSet) handleUpdates(name string, updates <-chan []*config.TargetGroup) {
+	for tgs := range updates {
+		ts.mtx.Lock()
+
+		for _, tg := range tgs {
+			if tg == nil {
+				continue
+			}
+			ts.groups[name+"/"+tg.Source] = tg
+		}
+
+		ts.mtx.Unlock()
+
+		select {
+		case ts.syncCh <- struct{}{}:
+		default:
+		}
+	}
 }

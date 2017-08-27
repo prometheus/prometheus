@@ -129,77 +129,68 @@ type scrapePool struct {
 	mtx    sync.RWMutex
 	config *config.ScrapeConfig
 	client *http.Client
-	// Targets and loops must always be synchronized to have the same
-	// set of hashes.
-	targets map[uint64]*Target
-	loops   map[uint64]loop
+
+	targets map[uint64]*targetEntry
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(*Target, scraper) loop
 
-	logger       log.Logger
-	maxAheadTime time.Duration
+	logger log.Logger
 }
 
 type labelsMutator func(labels.Labels) labels.Labels
 
 func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
-	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
-	if err != nil {
-		// Any errors that could occur here should be caught during config validation.
-		logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
-	}
-
 	sp := &scrapePool{
-		appendable:   app,
-		config:       cfg,
-		ctx:          ctx,
-		client:       client,
-		targets:      map[uint64]*Target{},
-		loops:        map[uint64]loop{},
-		logger:       logger,
-		maxAheadTime: 10 * time.Minute,
+		appendable: app,
+		targets:    map[uint64]*targetEntry{},
+		logger:     logger,
 	}
-	sp.newLoop = func(t *Target, s scraper) loop {
-		return newScrapeLoop(sp.ctx, s,
-			logger.With("target", t),
-			func(l labels.Labels) labels.Labels { return sp.mutateSampleLabels(l, t) },
-			func(l labels.Labels) labels.Labels { return sp.mutateReportSampleLabels(l, t) },
-			sp.sampleAppender,
-		)
-	}
+	sp.updateConfig(cfg)
 
 	return sp
 }
 
-// stop terminates all scrape loops and returns after they all terminated.
-func (sp *scrapePool) stop() {
-	var wg sync.WaitGroup
+type loop interface {
+	// run starts the loop and runs until the context gets canceled.
+	run(context.Context)
+	// setInterval adjusts the iteration interval on the fly.
+	setInterval(time.Duration)
+	// wait blocks until the loop has terminated.
+	wait()
+}
+
+func (sp *scrapePool) wait() {
+	<-sp.ctx.Done()
 
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
-	for fp, l := range sp.loops {
-		wg.Add(1)
-
-		go func(l loop) {
-			l.stop()
-			wg.Done()
-		}(l)
-
-		delete(sp.loops, fp)
-		delete(sp.targets, fp)
+	for _, t := range sp.targets {
+		t.loop.wait()
 	}
-
-	wg.Wait()
 }
 
-// reload the scrape pool with the given scrape configuration. The target state is preserved
-// but all scrape loops are restarted with the new scrape configuration.
-// This method returns after all scrape loops that were stopped have stopped scraping.
-func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
-	start := time.Now()
+type targetEntry struct {
+	target *Target
+	loop   loop
+	cache  *scrapeCache
+	cancel func()
+}
 
+func (sp *scrapePool) getTargets() []*Target {
+	sp.mtx.RLock()
+	defer sp.mtx.RUnlock()
+
+	res := make([]*Target, 0, len(sp.targets))
+
+	for _, t := range sp.targets {
+		res = append(res, t.target)
+	}
+	return res
+}
+
+func (sp *scrapePool) updateConfig(cfg *config.ScrapeConfig) {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
 
@@ -208,54 +199,81 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		// Any errors that could occur here should be caught during config validation.
 		sp.logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
 	}
+
 	sp.config = cfg
 	sp.client = client
 
-	var (
-		wg       sync.WaitGroup
-		interval = time.Duration(sp.config.ScrapeInterval)
-		timeout  = time.Duration(sp.config.ScrapeTimeout)
-	)
-
-	for fp, oldLoop := range sp.loops {
-		var (
-			t       = sp.targets[fp]
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
-			newLoop = sp.newLoop(t, s)
-		)
-		wg.Add(1)
-
-		go func(oldLoop, newLoop loop) {
-			oldLoop.stop()
-			wg.Done()
-
-			go newLoop.run(interval, timeout, nil)
-		}(oldLoop, newLoop)
-
-		sp.loops[fp] = newLoop
+	sp.newLoop = func(interval time.Duration) loop {
+		return &
 	}
-
-	wg.Wait()
-	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
-		time.Since(start).Seconds(),
-	)
 }
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set.
 func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
+	sp.mtx.RLock()
+	defer sp.mtx.RUnlock()
+
 	start := time.Now()
 
-	var all []*Target
+	newTargets := map[uint64]*Target{}
+
 	for _, tg := range tgs {
 		targets, err := targetsFromGroup(tg, sp.config)
 		if err != nil {
 			sp.logger.With("err", err).Error("creating targets failed")
 			continue
 		}
-		all = append(all, targets...)
+		for _, t := range targets {
+			newTargets[t.hash()] = t
+		}
 	}
-	sp.sync(all)
+
+	var termwg sync.WaitGroup
+
+	for hash, t := range sp.targets {
+		// Kill loops for targets that were removed or if
+		newTarget, ok := newTargets[hash]
+		if !ok {
+			go func(t *targetEntry, hash uint64) {
+				t.cancel()
+				t.loop.wait()
+				termwg.Done()
+			}(t, hash)
+
+			delete(sp.targets, hash)
+			continue
+		}
+
+		// Update targets that remained. Scrape config options other than
+		// the interval are always applied on demand on every loop iteration.
+		// Scrape cache entries are invalidated automatically if config changes
+		// create different series.
+		t.target = newTarget
+		t.loop.setInterval(time.Duration(sp.config.ScrapeInterval))
+	}
+
+	// Create new targets.
+	for hash, newTarget := range newTargets {
+		if _, ok := sp.targets[hash]; ok {
+			continue
+		}
+		ctx, cancel := context.WithCancel(sp.ctx)
+
+		loop := sp.newLoop(time.Duration(sp.config.ScrapeInterval))
+		loop.run(ctx)
+
+		sp.targets[hash] = &targetEntry{
+			target: newTarget,
+			loop:   loop,
+			cache:  newScrapeCache(),
+			cancel: cancel,
+		}
+	}
+
+	// Wait for all terminated loops to exit so two successive calls to Sync
+	// do not cause overlapping loops for the same targets.
+	termwg.Wait()
 
 	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
 		time.Since(start).Seconds(),
@@ -263,62 +281,10 @@ func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
 	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
 }
 
-// sync takes a list of potentially duplicated targets, deduplicates them, starts
-// scrape loops for new targets, and stops scrape loops for disappeared targets.
-// It returns after all stopped scrape loops terminated.
-func (sp *scrapePool) sync(targets []*Target) {
-	sp.mtx.Lock()
-	defer sp.mtx.Unlock()
-
-	var (
-		uniqueTargets = map[uint64]struct{}{}
-		interval      = time.Duration(sp.config.ScrapeInterval)
-		timeout       = time.Duration(sp.config.ScrapeTimeout)
-	)
-
-	for _, t := range targets {
-		t := t
-		hash := t.hash()
-		uniqueTargets[hash] = struct{}{}
-
-		if _, ok := sp.targets[hash]; !ok {
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
-			l := sp.newLoop(t, s)
-
-			sp.targets[hash] = t
-			sp.loops[hash] = l
-
-			go l.run(interval, timeout, nil)
-		}
-	}
-
-	var wg sync.WaitGroup
-
-	// Stop and remove old targets and scraper loops.
-	for hash := range sp.targets {
-		if _, ok := uniqueTargets[hash]; !ok {
-			wg.Add(1)
-			go func(l loop) {
-				l.stop()
-				wg.Done()
-			}(sp.loops[hash])
-
-			delete(sp.loops, hash)
-			delete(sp.targets, hash)
-		}
-	}
-
-	// Wait for all potentially stopped scrapers to terminate.
-	// This covers the case of flapping targets. If the server is under high load, a new scraper
-	// may be active and tries to insert. The old scraper that didn't terminate yet could still
-	// be inserting a previous sample set.
-	wg.Wait()
-}
-
-func (sp *scrapePool) mutateSampleLabels(lset labels.Labels, target *Target) labels.Labels {
+func mutateSampleLabels(cfg *config.ScrapeConfig, lset labels.Labels, target *Target) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
-	if sp.config.HonorLabels {
+	if cfg.HonorLabels {
 		for _, l := range target.Labels() {
 			if lv := lset.Get(l.Name); lv == "" {
 				lb.Set(l.Name, l.Value)
@@ -336,14 +302,14 @@ func (sp *scrapePool) mutateSampleLabels(lset labels.Labels, target *Target) lab
 
 	res := lb.Labels()
 
-	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
+	if mrc := cfg.MetricRelabelConfigs; len(mrc) > 0 {
 		res = relabel.Process(res, mrc...)
 	}
 
 	return res
 }
 
-func (sp *scrapePool) mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
+func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range target.Labels() {
@@ -358,24 +324,22 @@ func (sp *scrapePool) mutateReportSampleLabels(lset labels.Labels, target *Targe
 }
 
 // sampleAppender returns an appender for ingested samples from the target.
-func (sp *scrapePool) sampleAppender() storage.Appender {
+func newSampleAppender(base Appendable, maxAheadTime int64, sampleLimit uint) storage.Appender {
 	app, err := sp.appendable.Appender()
 	if err != nil {
 		panic(err)
 	}
 
-	if sp.maxAheadTime > 0 {
-		app = &timeLimitAppender{
-			Appender: app,
-			maxTime:  timestamp.FromTime(time.Now().Add(sp.maxAheadTime)),
-		}
+	app = &timeLimitAppender{
+		Appender: app,
+		maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
 	}
 
 	// The limit is applied after metrics are potentially dropped via relabeling.
-	if sp.config.SampleLimit > 0 {
+	if sampleLimit > 0 {
 		app = &limitAppender{
 			Appender: app,
-			limit:    int(sp.config.SampleLimit),
+			limit:    sampleLimit,
 		}
 	}
 
@@ -400,6 +364,8 @@ type targetScraper struct {
 	gzipr *gzip.Reader
 	buf   *bufio.Reader
 }
+
+type ingestor func([]byte) error
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,*/*;q=0.1`
 
@@ -451,12 +417,6 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 	return err
 }
 
-// A loop can run and be stopped again. It must not be reused after it was stopped.
-type loop interface {
-	run(interval, timeout time.Duration, errc chan<- error)
-	stop()
-}
-
 type lsetCacheEntry struct {
 	metric string
 	lset   labels.Labels
@@ -476,14 +436,111 @@ type scrapeLoop struct {
 	lastScrapeSize int
 
 	appender            func() storage.Appender
-	sampleMutator       labelsMutator
-	reportSampleMutator labelsMutator
+	client func() *http.Client
+
+	sampleMutator      func() labelsMutator
+	reportSampleMutator func() labelsMutator
 
 	ctx       context.Context
 	scrapeCtx context.Context
 	cancel    func()
 	stopped   chan struct{}
 }
+
+type scrapeLoop2 struct {
+	scraper  scraper
+	ingestor ingestor
+}
+
+func (sl *scrapeLoop2) run(ctx context.Context, interval time.Duration) {
+	select {
+	case <-time.After(sl.scraper.offset(interval)):
+		// Continue after a scraping offset.
+	case <-sl.scrapeCtx.Done():
+		close(sl.stopped)
+		return
+	}
+
+	var last time.Time
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+mainLoop:
+	for {
+		select {
+		case <-sl.ctx.Done():
+			close(sl.stopped)
+			return
+		case <-sl.scrapeCtx.Done():
+			break mainLoop
+		default:
+		}
+
+		var (
+			start             = time.Now()
+			scrapeCtx, cancel = context.WithTimeout(sl.ctx, timeout)
+		)
+
+		// Only record after the first scrape.
+		if !last.IsZero() {
+			targetIntervalLength.WithLabelValues(interval.String()).Observe(
+				time.Since(last).Seconds(),
+			)
+		}
+
+		b := scrapeBuffers.Get(sl.lastScrapeSize)
+		buf := bytes.NewBuffer(b)
+
+		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
+		cancel()
+		if scrapeErr == nil {
+			b = buf.Bytes()
+			// NOTE: There were issues with misbehaving clients in the past
+			// that occasionally returned empty results. We don't want those
+			// to falsely reset our buffer size.
+			if len(b) > 0 {
+				sl.lastScrapeSize = len(b)
+			}
+		} else if errc != nil {
+			errc <- scrapeErr
+		}
+
+		// A failed scrape is the same as an empty scrape,
+		// we still call sl.append to trigger stale markers.
+		total, added, appErr := sl.append(b, start)
+		if appErr != nil {
+			sl.l.With("err", appErr).Warn("append failed")
+			// The append failed, probably due to a parse error or sample limit.
+			// Call sl.append again with an empty scrape to trigger stale markers.
+			if _, _, err := sl.append([]byte{}, start); err != nil {
+				sl.l.With("err", err).Error("append failed")
+			}
+		}
+		scrapeBuffers.Put(b)
+
+		if scrapeErr == nil {
+			scrapeErr = appErr
+		}
+
+		sl.report(start, time.Since(start), total, added, scrapeErr)
+		last = start
+
+		select {
+		case <-sl.ctx.Done():
+			close(sl.stopped)
+			return
+		case <-sl.scrapeCtx.Done():
+			break mainLoop
+		case <-ticker.C:
+		}
+	}
+
+	close(sl.stopped)
+
+	sl.endOfRunStaleness(last, ticker, interval)
+}
+
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
 // storage references. Additionally, it tracks staleness of series between
