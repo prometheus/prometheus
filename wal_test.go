@@ -103,7 +103,7 @@ func TestSegmentWAL_cut(t *testing.T) {
 
 	// Cutting creates a new file and close the previous tail file.
 	require.Equal(t, 2, len(w.files))
-	require.Equal(t, os.ErrInvalid.Error(), w.files[0].Close().Error())
+	require.Error(t, w.files[0].Close())
 
 	require.NoError(t, w.entry(WALEntrySeries, 1, []byte("Hello World!!")))
 
