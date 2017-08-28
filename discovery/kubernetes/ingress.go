@@ -15,7 +15,6 @@ package kubernetes
 
 import (
 	"fmt"
-	"net"
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -165,18 +164,15 @@ func (s *Ingress) buildIngress(ingress *v1beta1.Ingress) *config.TargetGroup {
 	tg.Labels = ingressLabels(ingress)
 
 	schema := "http"
-	port := "80"
 	if ingress.Spec.TLS != nil {
 		schema = "https"
-		port = "443"
 	}
 	for _, rule := range ingress.Spec.Rules {
-		addr := net.JoinHostPort(rule.Host, port)
 		paths := pathsFromIngressRule(&rule.IngressRuleValue)
 
 		for _, path := range paths {
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel: lv(addr),
+				model.AddressLabel: lv(rule.Host),
 				ingressSchemeLabel: lv(schema),
 				ingressHostLabel:   lv(rule.Host),
 				ingressPathLabel:   lv(path),

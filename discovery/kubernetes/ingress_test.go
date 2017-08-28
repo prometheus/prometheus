@@ -80,10 +80,8 @@ func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
 
 func expectedTargetGroups(tls bool) []*config.TargetGroup {
 	scheme := "http"
-	port := "80"
 	if tls {
 		scheme = "https"
-		port = "443"
 	}
 	return []*config.TargetGroup{
 		{
@@ -92,18 +90,18 @@ func expectedTargetGroups(tls bool) []*config.TargetGroup {
 					"__meta_kubernetes_ingress_scheme": lv(scheme),
 					"__meta_kubernetes_ingress_host":   "example.com",
 					"__meta_kubernetes_ingress_path":   "/",
-					"__address__":                      "example.com:" + lv(port),
+					"__address__":                      "example.com",
 				},
 				{
 					"__meta_kubernetes_ingress_scheme": lv(scheme),
 					"__meta_kubernetes_ingress_host":   "example.com",
 					"__meta_kubernetes_ingress_path":   "/foo",
-					"__address__":                      "example.com:" + lv(port),
+					"__address__":                      "example.com",
 				},
 				{
 					"__meta_kubernetes_ingress_scheme": lv(scheme),
 					"__meta_kubernetes_ingress_host":   "test.example.com",
-					"__address__":                      "test.example.com:" + lv(port),
+					"__address__":                      "test.example.com",
 					"__meta_kubernetes_ingress_path":   "/",
 				},
 			},
