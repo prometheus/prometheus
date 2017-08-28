@@ -229,7 +229,7 @@ func Main() int {
 	webHandler.Ready()
 	log.Info("Server is Ready to receive requests.")
 
-	term := make(chan os.Signal)
+	term := make(chan os.Signal, 1)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-term:
