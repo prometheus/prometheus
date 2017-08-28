@@ -26,14 +26,21 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
-// DiskBlock handles reads against a Block of time series data.
 type DiskBlock interface {
+	BlockReader
+
 	// Directory where block data is stored.
 	Dir() string
 
 	// Stats returns statistics about the block.
 	Meta() BlockMeta
 
+	Delete(mint, maxt int64, m ...labels.Matcher) error
+
+	Close() error
+}
+
+type BlockReader interface {
 	// Index returns an IndexReader over the block's data.
 	Index() IndexReader
 
@@ -42,31 +49,14 @@ type DiskBlock interface {
 
 	// Tombstones returns a TombstoneReader over the block's deleted data.
 	Tombstones() TombstoneReader
-
-	// Delete deletes data from the block.
-	Delete(mint, maxt int64, ms ...labels.Matcher) error
-
-	// Close releases all underlying resources of the block.
-	Close() error
 }
 
-// Block is an interface to a DiskBlock that can also be queried.
-type Block interface {
-	DiskBlock
-	Queryable
-	Snapshottable
-}
-
-// headBlock is a regular block that can still be appended to.
-type headBlock interface {
-	Block
-	Appendable
-
-	// ActiveWriters returns the number of currently active appenders.
-	ActiveWriters() int
-	// HighTimestamp returns the highest currently inserted timestamp.
-	HighTimestamp() int64
-}
+// // Block is an interface to a DiskBlock that can also be queried.
+// type Block interface {
+// 	DiskBlock
+// 	Queryable
+// 	Snapshottable
+// }
 
 // Snapshottable defines an entity that can be backedup online.
 type Snapshottable interface {
@@ -223,16 +213,6 @@ func (pb *persistedBlock) Close() error {
 
 func (pb *persistedBlock) String() string {
 	return pb.meta.ULID.String()
-}
-
-func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
-	return &blockQuerier{
-		mint:       mint,
-		maxt:       maxt,
-		index:      pb.Index(),
-		chunks:     pb.Chunks(),
-		tombstones: pb.Tombstones(),
-	}
 }
 
 func (pb *persistedBlock) Dir() string         { return pb.dir }

@@ -54,26 +54,6 @@ type querier struct {
 	blocks []Querier
 }
 
-// Querier returns a new querier over the data partition for the given time range.
-// A goroutine must not handle more than one open Querier.
-func (s *DB) Querier(mint, maxt int64) Querier {
-	s.mtx.RLock()
-
-	s.headmtx.RLock()
-	blocks := s.blocksForInterval(mint, maxt)
-	s.headmtx.RUnlock()
-
-	sq := &querier{
-		blocks: make([]Querier, 0, len(blocks)),
-		db:     s,
-	}
-	for _, b := range blocks {
-		sq.blocks = append(sq.blocks, b.Querier(mint, maxt))
-	}
-
-	return sq
-}
-
 func (q *querier) LabelValues(n string) ([]string, error) {
 	return q.lvals(q.blocks, n)
 }
@@ -700,6 +680,7 @@ type chunkSeriesIterator struct {
 
 func newChunkSeriesIterator(cs []ChunkMeta, dranges Intervals, mint, maxt int64) *chunkSeriesIterator {
 	it := cs[0].Chunk.Iterator()
+
 	if len(dranges) > 0 {
 		it = &deletedIterator{it: it, intervals: dranges}
 	}
@@ -750,19 +731,22 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *chunkSeriesIterator) Next() bool {
-	for it.cur.Next() {
+	if it.cur.Next() {
 		t, _ := it.cur.At()
-		if t < it.mint {
-			return it.Seek(it.mint)
-		}
 
+		if t < it.mint {
+			if !it.Seek(it.mint) {
+				return false
+			}
+			t, _ = it.At()
+
+			return t <= it.maxt
+		}
 		if t > it.maxt {
 			return false
 		}
-
 		return true
 	}
-
 	if err := it.cur.Err(); err != nil {
 		return false
 	}

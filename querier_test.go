@@ -1138,6 +1138,17 @@ func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 	require.Equal(t, float64(6), v)
 }
 
+// Regression when calling Next() with a time bounded to fit within two samples.
+// Seek gets called and advances beyond the max time, which was just accepted as a valid sample.
+func TestChunkSeriesIterator_NextWithMinTime(t *testing.T) {
+	metas := []ChunkMeta{
+		chunkFromSamples([]sample{{1, 6}, {5, 6}, {7, 8}}),
+	}
+
+	it := newChunkSeriesIterator(metas, nil, 2, 4)
+	require.False(t, it.Next())
+}
+
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
 	chunkMetas := [][]ChunkMeta{
