@@ -136,6 +136,9 @@ func testPersistLoadDropChunks(t *testing.T, encoding chunk.Encoding) {
 		}
 		// Load all chunk descs.
 		actualChunkDescs, err := p.loadChunkDescs(fp, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(actualChunkDescs) != 10 {
 			t.Errorf("Got %d chunkDescs, want %d.", len(actualChunkDescs), 10)
 		}

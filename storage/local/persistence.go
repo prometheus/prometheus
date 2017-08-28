@@ -462,7 +462,7 @@ func (p *persistence) persistChunks(fp model.Fingerprint, chunks []chunk.Chunk) 
 	}
 
 	// Determine index within the file.
-	offset, err := f.Seek(0, os.SEEK_CUR)
+	offset, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return -1, err
 	}
@@ -498,7 +498,7 @@ func (p *persistence) loadChunks(fp model.Fingerprint, indexes []int, indexOffse
 		// This loads chunks in batches. A batch is a streak of
 		// consecutive chunks, read from disk in one go.
 		batchSize := 1
-		if _, err := f.Seek(offsetForChunkIndex(indexes[i]+indexOffset), os.SEEK_SET); err != nil {
+		if _, err := f.Seek(offsetForChunkIndex(indexes[i]+indexOffset), io.SeekStart); err != nil {
 			return nil, err
 		}
 
@@ -561,7 +561,7 @@ func (p *persistence) loadChunkDescs(fp model.Fingerprint, offsetFromEnd int) ([
 	cds := make([]*chunk.Desc, numChunks)
 	chunkTimesBuf := make([]byte, 16)
 	for i := 0; i < numChunks; i++ {
-		_, err := f.Seek(offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, os.SEEK_SET)
+		_, err := f.Seek(offsetForChunkIndex(i)+chunkHeaderFirstTimeOffset, io.SeekStart)
 		if err != nil {
 			return nil, err
 		}
@@ -814,7 +814,7 @@ func (p *persistence) checkpointSeriesMapAndHeads(
 	if realNumberOfSeries != numberOfSeriesInHeader {
 		// The number of series has changed in the meantime.
 		// Rewrite it in the header.
-		if _, err = f.Seek(int64(numberOfSeriesOffset), os.SEEK_SET); err != nil {
+		if _, err = f.Seek(int64(numberOfSeriesOffset), io.SeekStart); err != nil {
 			return err
 		}
 		if err = codable.EncodeUint64(f, realNumberOfSeries); err != nil {
@@ -971,7 +971,7 @@ func (p *persistence) dropAndPersistChunks(
 	headerBuf := make([]byte, chunkHeaderLen)
 	// Find the first chunk in the file that should be kept.
 	for ; ; numDropped++ {
-		_, err = f.Seek(offsetForChunkIndex(numDropped), os.SEEK_SET)
+		_, err = f.Seek(offsetForChunkIndex(numDropped), io.SeekStart)
 		if err != nil {
 			return
 		}
@@ -1007,7 +1007,7 @@ func (p *persistence) dropAndPersistChunks(
 	if numDropped == chunkIndexToStartSeek {
 		// Nothing to drop. Just adjust the return values and append the chunks (if any).
 		numDropped = 0
-		_, err = f.Seek(offsetForChunkIndex(0), os.SEEK_SET)
+		_, err = f.Seek(offsetForChunkIndex(0), io.SeekStart)
 		if err != nil {
 			return
 		}
@@ -1033,7 +1033,7 @@ func (p *persistence) dropAndPersistChunks(
 		binary.LittleEndian.Uint64(headerBuf[chunkHeaderFirstTimeOffset:]),
 	)
 	chunk.Ops.WithLabelValues(chunk.Drop).Add(float64(numDropped))
-	_, err = f.Seek(-chunkHeaderLen, os.SEEK_CUR)
+	_, err = f.Seek(-chunkHeaderLen, io.SeekCurrent)
 	if err != nil {
 		return
 	}
@@ -1354,7 +1354,7 @@ func (p *persistence) openChunkFileForWriting(fp model.Fingerprint) (*os.File, e
 	}
 	return os.OpenFile(p.fileNameForFingerprint(fp), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0640)
 	// NOTE: Although the file was opened for append,
-	//     f.Seek(0, os.SEEK_CUR)
+	//     f.Seek(0, io.SeekCurrent)
 	// would now return '0, nil', so we cannot check for a consistent file length right now.
 	// However, the chunkIndexForOffset function is doing that check, so a wrong file length
 	// would still be detected.

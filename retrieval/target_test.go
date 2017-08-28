@@ -130,7 +130,7 @@ func TestTargetURL(t *testing.T) {
 func newTestTarget(targetURL string, deadline time.Duration, labels model.LabelSet) *Target {
 	labels = labels.Clone()
 	labels[model.SchemeLabel] = "http"
-	labels[model.AddressLabel] = model.LabelValue(strings.TrimLeft(targetURL, "http://"))
+	labels[model.AddressLabel] = model.LabelValue(strings.TrimPrefix(targetURL, "http://"))
 	labels[model.MetricsPathLabel] = "/metrics"
 
 	return &Target{
