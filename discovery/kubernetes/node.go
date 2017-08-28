@@ -127,7 +127,7 @@ const (
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
-	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+2)
+	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+1)
 
 	ls[nodeNameLabel] = lv(n.Name)
 

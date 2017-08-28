@@ -129,6 +129,7 @@ func serviceLabels(svc *apiv1.Service) model.LabelSet {
 	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
 
 	ls[serviceNameLabel] = lv(svc.Name)
+	ls[namespaceLabel] = lv(svc.Namespace)
 
 	for k, v := range svc.Labels {
 		ln := strutil.SanitizeLabelName(serviceLabelPrefix + k)
@@ -147,7 +148,6 @@ func (s *Service) buildService(svc *apiv1.Service) *config.TargetGroup {
 		Source: serviceSource(svc),
 	}
 	tg.Labels = serviceLabels(svc)
-	tg.Labels[namespaceLabel] = lv(svc.Namespace)
 
 	for _, port := range svc.Spec.Ports {
 		addr := net.JoinHostPort(svc.Name+"."+svc.Namespace+".svc", strconv.FormatInt(int64(port.Port), 10))

@@ -128,8 +128,8 @@ const (
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	ls := make(model.LabelSet, len(ingress.Labels)+len(ingress.Annotations)+2)
-
 	ls[ingressNameLabel] = lv(ingress.Name)
+	ls[namespaceLabel] = lv(ingress.Namespace)
 
 	for k, v := range ingress.Labels {
 		ln := strutil.SanitizeLabelName(ingressLabelPrefix + k)
@@ -163,7 +163,6 @@ func (s *Ingress) buildIngress(ingress *v1beta1.Ingress) *config.TargetGroup {
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)
-	tg.Labels[namespaceLabel] = lv(ingress.Namespace)
 
 	schema := "http"
 	port := "80"
