@@ -520,6 +520,13 @@ func validateBlockSequence(bs []DiskBlock) error {
 	return nil
 }
 
+func (db *DB) Blocks() []DiskBlock {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	return db.blocks
+}
+
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
