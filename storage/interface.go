@@ -31,6 +31,9 @@ var (
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
+	// StartTime returns the oldest timestamp stored in the storage.
+	StartTime() (int64, error)
+
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 

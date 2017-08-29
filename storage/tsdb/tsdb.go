@@ -40,11 +40,11 @@ type ReadyStorage struct {
 }
 
 // Set the storage.
-func (s *ReadyStorage) Set(db *tsdb.DB) {
+func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.a = &adapter{db: db}
+	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
 }
 
 // Get the storage.
@@ -60,6 +60,14 @@ func (s *ReadyStorage) get() *adapter {
 	x := s.a
 	s.mtx.RUnlock()
 	return x
+}
+
+// StartTime implements the Storage interface.
+func (s *ReadyStorage) StartTime() (int64, error) {
+	if x := s.get(); x != nil {
+		return x.StartTime()
+	}
+	return int64(model.Latest), ErrNotReady
 }
 
 // Querier implements the Storage interface.
@@ -86,13 +94,15 @@ func (s *ReadyStorage) Close() error {
 	return nil
 }
 
-func Adapter(db *tsdb.DB) storage.Storage {
-	return &adapter{db: db}
+// Adapter return an adapter as storage.Storage.
+func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
+	return &adapter{db: db, startTimeMargin: startTimeMargin}
 }
 
 // adapter implements a storage.Storage around TSDB.
 type adapter struct {
-	db *tsdb.DB
+	db              *tsdb.DB
+	startTimeMargin int64
 }
 
 // Options of the DB storage.
@@ -137,6 +147,57 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		return nil, err
 	}
 	return db, nil
+}
+
+// StartTime implements the Storage interface.
+func (a adapter) StartTime() (int64, error) {
+	startTime := int64(model.Latest)
+
+	var indexr tsdb.IndexReader
+	if len(a.db.Blocks()) > 0 {
+		var err error
+		indexr, err = a.db.Blocks()[0].Index()
+		if err != nil {
+			return startTime, err
+		}
+	} else {
+		var err error
+		indexr, err = a.db.Head().Index()
+		if err != nil {
+			return startTime, err
+		}
+	}
+
+	joblabel := "job"
+	tpls, err := indexr.LabelValues(joblabel)
+	if err != nil {
+		return startTime, err
+	}
+
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
+		if err != nil {
+			continue
+		}
+
+		for _, v := range vals {
+			p, err := indexr.Postings(joblabel, v)
+			if err != nil {
+				continue
+			}
+
+			if p.Next() {
+				var lset tsdbLabels.Labels
+				var chks []tsdb.ChunkMeta
+				indexr.Series(p.At(), &lset, &chks)
+				if startTime > chks[0].MinTime {
+					startTime = chks[0].MinTime
+				}
+			}
+		}
+	}
+	// Add a safety margin as it may take a few minutes for everything to spin up.
+	return startTime + a.startTimeMargin, nil
 }
 
 func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {

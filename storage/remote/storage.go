@@ -21,6 +21,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+// Callback func that return the oldest timestamp stored in a storage.
+type startTimeCallback func() (int64, error)
+
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
@@ -31,15 +34,17 @@ type Storage struct {
 	queues []*QueueManager
 
 	// For reads
-	clients        []*Client
-	externalLabels model.LabelSet
+	clients                []*Client
+	localStartTimeCallback startTimeCallback
+	externalLabels         model.LabelSet
 }
 
-func NewStorage(l log.Logger) *Storage {
+// NewStorage returns a remote.Storage.
+func NewStorage(l log.Logger, stCallback startTimeCallback) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Storage{logger: l}
+	return &Storage{logger: l, localStartTimeCallback: stCallback}
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -87,6 +92,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			url:              rrConf.URL,
 			timeout:          rrConf.RemoteTimeout,
 			httpClientConfig: rrConf.HTTPClientConfig,
+			readRecent:       rrConf.ReadRecent,
 		})
 		if err != nil {
 			return err
@@ -98,6 +104,11 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	return nil
+}
+
+// StartTime implements the Storage interface.
+func (s *Storage) StartTime() (int64, error) {
+	return int64(model.Latest), nil
 }
 
 // Close the background processing of the storage queues.

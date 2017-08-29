@@ -225,7 +225,7 @@ func main() {
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"))
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -326,7 +326,8 @@ func main() {
 		}
 		level.Info(logger).Log("msg", "TSDB started")
 
-		localStorage.Set(db)
+		startTimeMargin := int64(time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
+		localStorage.Set(db, startTimeMargin)
 	}()
 
 	prometheus.MustRegister(configSuccess)
