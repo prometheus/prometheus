@@ -179,7 +179,7 @@ func buildClients(cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	log.Info("Starting up... ")
+	log.Info("Starting up...")
 	return writers, readers
 }
 
