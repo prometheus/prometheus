@@ -442,7 +442,7 @@ func TestLabelSetNotReused(t *testing.T) {
 func makeInputTargetGroup() *config.TargetGroup {
 	return &config.TargetGroup{
 		Targets: []model.LabelSet{
-			model.LabelSet{
+			{
 				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),
 				model.LabelName("notcommon1"): model.LabelValue("label"),
 			},

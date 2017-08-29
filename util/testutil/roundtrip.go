@@ -37,7 +37,7 @@ func (rt *roundTripCheckRequest) RoundTrip(r *http.Request) (*http.Response, err
 }
 
 // NewRoundTripCheckRequest creates a new instance of a type that implements http.RoundTripper,
-// wich before returning theResponse and theError, executes checkRequest against a http.Request.
+// which before returning theResponse and theError, executes checkRequest against a http.Request.
 func NewRoundTripCheckRequest(checkRequest func(*http.Request), theResponse *http.Response, theError error) http.RoundTripper {
 	return &roundTripCheckRequest{
 		checkRequest: checkRequest,
