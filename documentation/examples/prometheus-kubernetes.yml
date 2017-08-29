@@ -202,6 +202,12 @@ scrape_configs:
   - source_labels: [__meta_kubernetes_service_name]
     target_label: kubernetes_name
 
+# Example scrape config for probing ingresses via the Blackbox Exporter.
+#
+# The relabeling allows the actual ingress scrape endpoint to be configured
+# via the following annotations:
+#
+# * `prometheus.io/probe`: Only probe services that have a value of `true`
 - job_name: 'kubernetes-ingresses'
 
   metrics_path: /probe
