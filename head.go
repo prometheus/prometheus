@@ -66,7 +66,7 @@ type Head struct {
 }
 
 // NewHead opens the head block in dir.
-func NewHead(l log.Logger, wal WALReader, chunkRange int64) (*Head, error) {
+func NewHead(l log.Logger, chunkRange int64) (*Head, error) {
 	h := &Head{
 		chunkRange: chunkRange,
 		minTime:    math.MaxInt64,
@@ -78,54 +78,15 @@ func NewHead(l log.Logger, wal WALReader, chunkRange int64) (*Head, error) {
 		postings:   &memPostings{m: make(map[term][]uint32)},
 		tombstones: newEmptyTombstoneReader(),
 	}
-	if wal == nil {
-		wal = NopWAL{}
-	}
-	return h, h.init(wal)
+	return h, nil
 }
 
 func (h *Head) String() string {
 	return "<head>"
 }
 
-func (h *Head) init(r WALReader) error {
-
-	seriesFunc := func(series []labels.Labels) error {
-		for _, lset := range series {
-			h.create(lset.Hash(), lset)
-		}
-		return nil
-	}
-	samplesFunc := func(samples []RefSample) error {
-		for _, s := range samples {
-			if int(s.Ref) >= len(h.series) {
-				return errors.Errorf("unknown series reference %d (max %d); abort WAL restore",
-					s.Ref, len(h.series))
-			}
-			h.series[uint32(s.Ref)].append(s.T, s.V)
-		}
-
-		return nil
-	}
-	deletesFunc := func(stones []Stone) error {
-		for _, s := range stones {
-			for _, itv := range s.intervals {
-				h.tombstones.add(s.ref, itv)
-			}
-		}
-
-		return nil
-	}
-
-	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
-		return errors.Wrap(err, "consume WAL")
-	}
-
-	return nil
-}
-
 // gc removes data before the minimum timestmap from the head.
-func (h *Head) gc() {
+func (h *Head) gc() (seriesRemoved, chunksRemoved int) {
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
 
@@ -136,7 +97,7 @@ func (h *Head) gc() {
 	for hash, ss := range h.hashes {
 		for _, s := range ss {
 			s.mtx.Lock()
-			s.truncateChunksBefore(mint)
+			chunksRemoved += s.truncateChunksBefore(mint)
 
 			if len(s.chunks) == 0 {
 				deletedHashes[hash] = append(deletedHashes[hash], s.ref)
@@ -186,6 +147,7 @@ func (h *Head) gc() {
 			h.hashes[hash] = rem
 		} else {
 			delete(h.hashes, hash)
+			seriesRemoved++
 		}
 	}
 
@@ -222,6 +184,8 @@ func (h *Head) gc() {
 
 	h.symbols = symbols
 	h.values = values
+
+	return seriesRemoved, chunksRemoved
 }
 
 func (h *Head) Tombstones() TombstoneReader {
@@ -574,7 +538,7 @@ func (s *memSeries) chunkID(pos int) int {
 
 // truncateChunksBefore removes all chunks from the series that have not timestamp
 // at or after mint. Chunk IDs remain unchanged.
-func (s *memSeries) truncateChunksBefore(mint int64) {
+func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
 	for i, c := range s.chunks {
 		if c.maxTime >= mint {
@@ -584,10 +548,12 @@ func (s *memSeries) truncateChunksBefore(mint int64) {
 	}
 	s.chunks = append(s.chunks[:0], s.chunks[k:]...)
 	s.firstChunkID += k
+
+	return k
 }
 
 // append adds the sample (t, v) to the series.
-func (s *memSeries) append(t int64, v float64) bool {
+func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	const samplesPerChunk = 120
 
 	s.mtx.Lock()
@@ -597,10 +563,11 @@ func (s *memSeries) append(t int64, v float64) bool {
 
 	if len(s.chunks) == 0 {
 		c = s.cut(t)
+		chunkCreated = true
 	}
 	c = s.head()
 	if c.maxTime >= t {
-		return false
+		return false, chunkCreated
 	}
 	if c.samples > samplesPerChunk/4 && t >= s.nextAt {
 		c = s.cut(t)
@@ -622,7 +589,7 @@ func (s *memSeries) append(t int64, v float64) bool {
 	s.sampleBuf[2] = s.sampleBuf[3]
 	s.sampleBuf[3] = sample{t: t, v: v}
 
-	return true
+	return true, chunkCreated
 }
 
 // computeChunkEndTime estimates the end timestamp based the beginning of a chunk,
