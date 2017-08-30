@@ -162,7 +162,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		// Set smaller segment size so we can actually write several files.
 		w.segmentSize = 1000 * 1000
 
-		r := w.Reader()
+		r := w.Reader(0)
 
 		var (
 			resultSeries  [][]labels.Labels
@@ -340,7 +340,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			w2, err := OpenSegmentWAL(dir, logger, 0)
 			require.NoError(t, err)
 
-			r := w2.Reader()
+			r := w2.Reader(0)
 			serf := func(l []labels.Labels) error {
 				require.Equal(t, 0, len(l))
 				return nil
@@ -370,7 +370,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			w3, err := OpenSegmentWAL(dir, logger, 0)
 			require.NoError(t, err)
 
-			r = w3.Reader()
+			r = w3.Reader(0)
 
 			i = 0
 			require.NoError(t, r.Read(serf, samplf, delf))

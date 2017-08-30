@@ -33,9 +33,7 @@ func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
 	require.NoError(t, err)
 
 	// Do not close the test database by default as it will deadlock on test failures.
-	return db, func() {
-		os.RemoveAll(tmpdir)
-	}
+	return db, func() { os.RemoveAll(tmpdir) }
 }
 
 // Convert a SeriesSet into a form useable with reflect.DeepEqual.

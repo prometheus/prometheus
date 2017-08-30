@@ -80,7 +80,7 @@ type SegmentWAL struct {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 type WAL interface {
-	Reader() WALReader
+	Reader(mint int64) WALReader
 	LogSeries([]labels.Labels) error
 	LogSamples([]RefSample) error
 	LogDeletes([]Stone) error
@@ -91,10 +91,11 @@ type WAL interface {
 type NopWAL struct{}
 
 func (NopWAL) Read(SeriesCB, SamplesCB, DeletesCB) error { return nil }
-func (w NopWAL) Reader() WALReader                       { return w }
+func (w NopWAL) Reader(int64) WALReader                  { return w }
 func (NopWAL) LogSeries([]labels.Labels) error           { return nil }
 func (NopWAL) LogSamples([]RefSample) error              { return nil }
 func (NopWAL) LogDeletes([]Stone) error                  { return nil }
+func (NopWAL) Truncate(int64) error                      { return nil }
 func (NopWAL) Close() error                              { return nil }
 
 // WALReader reads entries from a WAL.
@@ -162,7 +163,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) 
 
 // Reader returns a new reader over the the write ahead log data.
 // It must be completely consumed before writing to the WAL.
-func (w *SegmentWAL) Reader() WALReader {
+func (w *SegmentWAL) Reader(int64) WALReader {
 	return newWALReader(w, w.logger)
 }
 
@@ -210,7 +211,7 @@ func (w *SegmentWAL) LogDeletes(stones []Stone) error {
 // initSegments finds all existing segment files and opens them in the
 // appropriate file modes.
 func (w *SegmentWAL) initSegments() error {
-	fns, err := sequenceFiles(w.dirFile.Name(), "")
+	fns, err := sequenceFiles(w.dirFile.Name())
 	if err != nil {
 		return err
 	}
@@ -268,7 +269,7 @@ func (w *SegmentWAL) cut() error {
 		}
 	}
 
-	p, _, err := nextSequenceFile(w.dirFile.Name(), "")
+	p, _, err := nextSequenceFile(w.dirFile.Name())
 	if err != nil {
 		return err
 	}

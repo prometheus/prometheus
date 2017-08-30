@@ -37,6 +37,8 @@ type DiskBlock interface {
 
 	Delete(mint, maxt int64, m ...labels.Matcher) error
 
+	Snapshot(dir string) error
+
 	Close() error
 }
 

@@ -179,7 +179,7 @@ func (w *chunkWriter) cut() error {
 		return err
 	}
 
-	p, _, err := nextSequenceFile(w.dirFile.Name(), "")
+	p, _, err := nextSequenceFile(w.dirFile.Name())
 	if err != nil {
 		return err
 	}
@@ -302,7 +302,7 @@ type chunkReader struct {
 
 // newChunkReader returns a new chunkReader based on mmaped files found in dir.
 func newChunkReader(dir string, pool chunks.Pool) (*chunkReader, error) {
-	files, err := sequenceFiles(dir, "")
+	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err
 	}

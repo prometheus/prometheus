@@ -28,26 +28,20 @@ import (
 )
 
 func BenchmarkCreateSeries(b *testing.B) {
-	lbls, err := readPrometheusLabels("cmd/tsdb/testdata.1m", 1e6)
+	lbls, err := readPrometheusLabels("testdata/all.series", b.N)
 	require.NoError(b, err)
 
-	b.Run("", func(b *testing.B) {
-		dir, err := ioutil.TempDir("", "create_series_bench")
+	h, err := NewHead(nil, nil, nil, 10000)
+	if err != nil {
 		require.NoError(b, err)
-		defer os.RemoveAll(dir)
+	}
 
-		h, err := NewHead(nil, nil, 10000)
-		if err != nil {
-			require.NoError(b, err)
-		}
+	b.ReportAllocs()
+	b.ResetTimer()
 
-		b.ReportAllocs()
-		b.ResetTimer()
-
-		for _, l := range lbls[:b.N] {
-			h.create(l.Hash(), l)
-		}
-	})
+	for _, l := range lbls {
+		h.create(l.Hash(), l)
+	}
 }
 
 func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
