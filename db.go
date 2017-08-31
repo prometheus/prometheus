@@ -493,6 +493,7 @@ func (db *DB) reload() (err error) {
 		return nil
 	}
 	maxt := blocks[len(db.blocks)-1].Meta().MaxTime
+
 	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
 }
 

@@ -23,7 +23,6 @@ import (
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/tsdb/labels"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,7 +56,7 @@ func TestSegmentWAL_initSegments(t *testing.T) {
 
 	// Validate that files are locked properly.
 	for _, of := range w.files {
-		f, err := os.Open(of.Name())
+		f, err := os.Open(of.f.Name())
 		require.NoError(t, err, "open locked segment %s", f.Name())
 
 		_, err = f.Read([]byte{0})
@@ -74,7 +73,7 @@ func TestSegmentWAL_initSegments(t *testing.T) {
 	}
 
 	// Make initialization fail by corrupting the header of one file.
-	f, err := os.OpenFile(w.files[3].Name(), os.O_WRONLY, 0666)
+	f, err := os.OpenFile(w.files[3].f.Name(), os.O_WRONLY, 0666)
 	require.NoError(t, err)
 
 	_, err = f.WriteAt([]byte{0}, 4)
@@ -110,7 +109,7 @@ func TestSegmentWAL_cut(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	for _, of := range w.files {
-		f, err := os.Open(of.Name())
+		f, err := os.Open(of.f.Name())
 		require.NoError(t, err)
 
 		// Verify header data.
@@ -122,7 +121,7 @@ func TestSegmentWAL_cut(t *testing.T) {
 
 		// We cannot actually check for correct pre-allocation as it is
 		// optional per filesystem and handled transparently.
-		et, flag, b, err := newWALReader(nil, nil).entry(f)
+		et, flag, b, err := newWALReader(nil, 0, nil).entry(f)
 		require.NoError(t, err)
 		require.Equal(t, WALEntrySeries, et)
 		require.Equal(t, flag, byte(walSeriesSimple))
@@ -147,7 +146,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	var (
-		recordedSeries  [][]labels.Labels
+		recordedSeries  [][]RefSeries
 		recordedSamples [][]RefSample
 		recordedDeletes [][]Stone
 	)
@@ -165,16 +164,16 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 		r := w.Reader(0)
 
 		var (
-			resultSeries  [][]labels.Labels
+			resultSeries  [][]RefSeries
 			resultSamples [][]RefSample
 			resultDeletes [][]Stone
 		)
 
-		serf := func(lsets []labels.Labels) error {
-			if len(lsets) > 0 {
-				clsets := make([]labels.Labels, len(lsets))
-				copy(clsets, lsets)
-				resultSeries = append(resultSeries, clsets)
+		serf := func(series []RefSeries) error {
+			if len(series) > 0 {
+				clsets := make([]RefSeries, len(series))
+				copy(clsets, series)
+				resultSeries = append(resultSeries, series)
 			}
 
 			return nil
@@ -224,13 +223,20 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			}
 
 			lbls := series[i : i+stepSize]
+			series := make([]RefSeries, 0, len(series))
+			for j, l := range lbls {
+				series = append(series, RefSeries{
+					Ref:    uint64(i + j),
+					Labels: l,
+				})
+			}
 
-			require.NoError(t, w.LogSeries(lbls))
+			require.NoError(t, w.LogSeries(series))
 			require.NoError(t, w.LogSamples(samples))
 			require.NoError(t, w.LogDeletes(stones))
 
 			if len(lbls) > 0 {
-				recordedSeries = append(recordedSeries, lbls)
+				recordedSeries = append(recordedSeries, series)
 			}
 			if len(samples) > 0 {
 				recordedSamples = append(recordedSamples, samples)
@@ -254,7 +260,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "truncate_checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].f.Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -267,7 +273,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "truncate_body",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].f.Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -280,7 +286,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "body_content",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].f.Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -295,7 +301,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].f.Name(), os.O_WRONLY, 0666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -341,7 +347,8 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			require.NoError(t, err)
 
 			r := w2.Reader(0)
-			serf := func(l []labels.Labels) error {
+
+			serf := func(l []RefSeries) error {
 				require.Equal(t, 0, len(l))
 				return nil
 			}

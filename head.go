@@ -193,9 +193,9 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 func (h *Head) readWAL() error {
 	r := h.wal.Reader(h.MinTime())
 
-	seriesFunc := func(series []labels.Labels) error {
-		for _, lset := range series {
-			h.create(lset.Hash(), lset)
+	seriesFunc := func(series []RefSeries) error {
+		for _, s := range series {
+			h.create(s.Labels.Hash(), s.Labels)
 		}
 		return nil
 	}
@@ -252,7 +252,12 @@ func (h *Head) Truncate(mint int64) error {
 
 	start = time.Now()
 
-	if err := h.wal.Truncate(mint); err == nil {
+	p, err := h.indexRange(mint, math.MaxInt64).Postings("", "")
+	if err != nil {
+		return err
+	}
+
+	if err := h.wal.Truncate(mint, p); err == nil {
 		h.logger.Log("msg", "WAL truncation completed", "duration", time.Since(start))
 	} else {
 		h.logger.Log("msg", "WAL truncation failed", "err", err, "duration", time.Since(start))
@@ -356,9 +361,9 @@ type headAppender struct {
 	head *Head
 	mint int64
 
-	newSeries []*hashedLabels
-	newLabels []labels.Labels
-	newHashes map[uint64]uint64
+	newSeries     []*hashedLabels
+	createdSeries []RefSeries
+	newHashes     map[uint64]uint64
 
 	samples       []RefSample
 	highTimestamp int64
@@ -461,7 +466,7 @@ func (a *headAppender) createSeries() error {
 	if len(a.newSeries) == 0 {
 		return nil
 	}
-	a.newLabels = make([]labels.Labels, 0, len(a.newSeries))
+	a.createdSeries = make([]RefSeries, 0, len(a.newSeries))
 	base0 := len(a.head.series)
 
 	a.head.mtx.RUnlock()
@@ -481,14 +486,14 @@ func (a *headAppender) createSeries() error {
 			}
 		}
 		// Series is still new.
-		a.newLabels = append(a.newLabels, l.labels)
-
 		s := a.head.create(l.hash, l.labels)
 		l.ref = uint64(s.ref)
+
+		a.createdSeries = append(a.createdSeries, RefSeries{Ref: l.ref, Labels: l.labels})
 	}
 
 	// Write all new series to the WAL.
-	if err := a.head.wal.LogSeries(a.newLabels); err != nil {
+	if err := a.head.wal.LogSeries(a.createdSeries); err != nil {
 		return errors.Wrap(err, "WAL log series")
 	}
 
