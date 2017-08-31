@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/strutil"
 	"golang.org/x/net/context"
 )
 
@@ -50,6 +51,8 @@ const (
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
 	// serviceIDLabel is the name of the label containing the service ID.
 	serviceIDLabel = model.MetaLabelPrefix + "consul_service_id"
+	// nodeMetaLabelPrefix is the prefix for node metadata labels
+	nodeMetaLabelPrefix = model.MetaLabelPrefix + "consul_node_meta_"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -294,7 +297,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
 			}
 
-			tgroup.Targets = append(tgroup.Targets, model.LabelSet{
+			target := model.LabelSet{
 				model.AddressLabel:  model.LabelValue(addr),
 				addressLabel:        model.LabelValue(node.Address),
 				nodeLabel:           model.LabelValue(node.Node),
@@ -302,7 +305,15 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				serviceAddressLabel: model.LabelValue(node.ServiceAddress),
 				servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
 				serviceIDLabel:      model.LabelValue(node.ServiceID),
-			})
+			}
+
+			for labelName, labelValue := range node.NodeMeta {
+				labelName = nodeMetaLabelPrefix + strutil.SanitizeLabelName(labelName)
+				target[model.LabelName(labelName)] = model.LabelValue(labelValue)
+				srv.logger.Debugf("Mapping: %s %s", labelName, labelValue)
+			}
+
+			tgroup.Targets = append(tgroup.Targets, target)
 		}
 		// Check context twice to ensure we always catch cancelation.
 		select {

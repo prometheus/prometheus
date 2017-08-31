@@ -1,5 +1,9 @@
 package api
 
+import (
+	"time"
+)
+
 const (
 	// ACLCLientType is the client type token
 	ACLClientType = "client"
@@ -16,6 +20,16 @@ type ACLEntry struct {
 	Name        string
 	Type        string
 	Rules       string
+}
+
+// ACLReplicationStatus is used to represent the status of ACL replication.
+type ACLReplicationStatus struct {
+	Enabled          bool
+	Running          bool
+	SourceDatacenter string
+	ReplicatedIndex  uint64
+	LastSuccess      time.Time
+	LastError        time.Time
 }
 
 // ACL can be used to query the ACL endpoints
@@ -133,6 +147,27 @@ func (a *ACL) List(q *QueryOptions) ([]*ACLEntry, *QueryMeta, error) {
 	qm.RequestTime = rtt
 
 	var entries []*ACLEntry
+	if err := decodeBody(resp, &entries); err != nil {
+		return nil, nil, err
+	}
+	return entries, qm, nil
+}
+
+// Replication returns the status of the ACL replication process in the datacenter
+func (a *ACL) Replication(q *QueryOptions) (*ACLReplicationStatus, *QueryMeta, error) {
+	r := a.c.newRequest("GET", "/v1/acl/replication")
+	r.setQueryOptions(q)
+	rtt, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	qm := &QueryMeta{}
+	parseQueryMeta(resp, qm)
+	qm.RequestTime = rtt
+
+	var entries *ACLReplicationStatus
 	if err := decodeBody(resp, &entries); err != nil {
 		return nil, nil, err
 	}

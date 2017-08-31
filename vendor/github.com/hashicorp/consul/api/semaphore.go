@@ -155,22 +155,23 @@ func (s *Semaphore) Acquire(stopCh <-chan struct{}) (<-chan struct{}, error) {
 	// Check if we need to create a session first
 	s.lockSession = s.opts.Session
 	if s.lockSession == "" {
-		if sess, err := s.createSession(); err != nil {
+		sess, err := s.createSession()
+		if err != nil {
 			return nil, fmt.Errorf("failed to create session: %v", err)
-		} else {
-			s.sessionRenew = make(chan struct{})
-			s.lockSession = sess
-			session := s.c.Session()
-			go session.RenewPeriodic(s.opts.SessionTTL, sess, nil, s.sessionRenew)
-
-			// If we fail to acquire the lock, cleanup the session
-			defer func() {
-				if !s.isHeld {
-					close(s.sessionRenew)
-					s.sessionRenew = nil
-				}
-			}()
 		}
+
+		s.sessionRenew = make(chan struct{})
+		s.lockSession = sess
+		session := s.c.Session()
+		go session.RenewPeriodic(s.opts.SessionTTL, sess, nil, s.sessionRenew)
+
+		// If we fail to acquire the lock, cleanup the session
+		defer func() {
+			if !s.isHeld {
+				close(s.sessionRenew)
+				s.sessionRenew = nil
+			}
+		}()
 	}
 
 	// Create the contender entry
