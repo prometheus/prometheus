@@ -98,7 +98,7 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig, logger log.Logger) m
 		app("ec2", i, ec2.NewDiscovery(c, logger))
 	}
 	for i, c := range cfg.OpenstackSDConfigs {
-		openstackd, err := openstack.NewDiscovery(c)
+		openstackd, err := openstack.NewDiscovery(c, logger)
 		if err != nil {
 			log.Errorf("Cannot initialize OpenStack discovery: %s", err)
 			continue
