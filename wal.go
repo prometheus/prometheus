@@ -298,20 +298,39 @@ func (w *SegmentWAL) tail() *os.File {
 
 // Sync flushes the changes to disk.
 func (w *SegmentWAL) Sync() error {
-	w.mtx.Lock()
-	defer w.mtx.Unlock()
+	var tail *os.File
+	var err error
 
-	return w.sync()
+	// Flush the writer and retrieve the reference to the tail segment under mutex lock
+	func() {
+		w.mtx.Lock()
+		defer w.mtx.Unlock()
+		if err = w.flush(); err != nil {
+			return
+		}
+		tail = w.tail()
+	} ()
+
+	if err != nil {
+		return err
+	}
+
+	// But only fsync the tail segment after releasing the mutex as it will block on disk I/O
+	return fileutil.Fdatasync(tail)
 }
 
 func (w *SegmentWAL) sync() error {
-	if w.cur == nil {
-		return nil
-	}
-	if err := w.cur.Flush(); err != nil {
+	if err := w.flush(); err != nil {
 		return err
 	}
 	return fileutil.Fdatasync(w.tail())
+}
+
+func (w *SegmentWAL) flush() error {
+	if w.cur == nil {
+		return nil
+	}
+	return w.cur.Flush()
 }
 
 func (w *SegmentWAL) run(interval time.Duration) {
