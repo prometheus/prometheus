@@ -285,9 +285,9 @@ func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (string, erro
 	if a.app != nil {
 		return a.app.Add(lset, t, v)
 	}
-	if a.head.initTime(t) {
-		a.app = a.head.appender()
-	}
+	a.head.initTime(t)
+	a.app = a.head.appender()
+
 	return a.app.Add(lset, t, v)
 }
 
@@ -1071,7 +1071,6 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	const samplesPerChunk = 120
 
 	s.mtx.Lock()
-	defer s.mtx.Unlock()
 
 	var c *memChunk
 
@@ -1081,6 +1080,7 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	}
 	c = s.head()
 	if c.maxTime >= t {
+		s.mtx.Unlock()
 		return false, chunkCreated
 	}
 	if c.samples > samplesPerChunk/4 && t >= s.nextAt {
@@ -1103,6 +1103,8 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	s.sampleBuf[1] = s.sampleBuf[2]
 	s.sampleBuf[2] = s.sampleBuf[3]
 	s.sampleBuf[3] = sample{t: t, v: v}
+
+	s.mtx.Unlock()
 
 	return true, chunkCreated
 }
