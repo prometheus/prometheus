@@ -320,7 +320,7 @@ func (w *SegmentWAL) Sync() error {
 			return
 		}
 		tail = w.tail()
-	} ()
+	}()
 
 	if err != nil {
 		return err

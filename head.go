@@ -235,9 +235,12 @@ func (h *Head) String() string {
 }
 
 // Truncate removes all data before mint from the head block and truncates its WAL.
-func (h *Head) Truncate(mint int64) {
+func (h *Head) Truncate(mint int64) error {
+	if mint%h.chunkRange != 0 {
+		return errors.Errorf("truncating at %d not aligned", mint)
+	}
 	if h.minTime >= mint {
-		return
+		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
 
@@ -255,6 +258,8 @@ func (h *Head) Truncate(mint int64) {
 		h.logger.Log("msg", "WAL truncation failed", "err", err, "duration", time.Since(start))
 	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
+
+	return nil
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -764,10 +769,9 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	s.mtx.RUnlock()
 
 	// Do not expose chunks that are outside of the specified range.
-	if !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
+	if c == nil || !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
 		return nil, ErrNotFound
 	}
-
 	return &safeChunk{
 		Chunk: c.chunk,
 		s:     s,
@@ -1023,10 +1027,10 @@ func newMemSeries(lset labels.Labels, id uint32, chunkRange int64) *memSeries {
 
 // appendable checks whether the given sample is valid for appending to the series.
 func (s *memSeries) appendable(t int64, v float64) error {
-	if len(s.chunks) == 0 {
+	c := s.head()
+	if c == nil {
 		return nil
 	}
-	c := s.head()
 
 	if t > c.maxTime {
 		return nil
@@ -1043,7 +1047,11 @@ func (s *memSeries) appendable(t int64, v float64) error {
 }
 
 func (s *memSeries) chunk(id int) *memChunk {
-	return s.chunks[id-s.firstChunkID]
+	ix := id - s.firstChunkID
+	if ix < 0 || ix >= len(s.chunks) {
+		return nil
+	}
+	return s.chunks[ix]
 }
 
 func (s *memSeries) chunkID(pos int) int {
@@ -1072,27 +1080,25 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 
 	s.mtx.Lock()
 
-	var c *memChunk
+	c := s.head()
 
-	if len(s.chunks) == 0 {
+	if c == nil {
 		c = s.cut(t)
 		chunkCreated = true
 	}
-	c = s.head()
 	if c.maxTime >= t {
 		s.mtx.Unlock()
 		return false, chunkCreated
 	}
-	if c.samples > samplesPerChunk/4 && t >= s.nextAt {
+	if c.chunk.NumSamples() > samplesPerChunk/4 && t >= s.nextAt {
 		c = s.cut(t)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
 
 	c.maxTime = t
-	c.samples++
 
-	if c.samples == samplesPerChunk/4 {
+	if c.chunk.NumSamples() == samplesPerChunk/4 {
 		_, maxt := rangeForTimestamp(c.minTime, s.chunkRange)
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxt)
 	}
@@ -1123,7 +1129,6 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 func (s *memSeries) iterator(id int) chunks.Iterator {
 	c := s.chunk(id)
 
-	// TODO(fabxc): !!! Test this and everything around chunk ID != list pos.
 	if id-s.firstChunkID < len(s.chunks)-1 {
 		return c.chunk.Iterator()
 	}
@@ -1132,20 +1137,22 @@ func (s *memSeries) iterator(id int) chunks.Iterator {
 	it := &memSafeIterator{
 		Iterator: c.chunk.Iterator(),
 		i:        -1,
-		total:    c.samples,
+		total:    c.chunk.NumSamples(),
 		buf:      s.sampleBuf,
 	}
 	return it
 }
 
 func (s *memSeries) head() *memChunk {
+	if len(s.chunks) == 0 {
+		return nil
+	}
 	return s.chunks[len(s.chunks)-1]
 }
 
 type memChunk struct {
 	chunk            chunks.Chunk
 	minTime, maxTime int64
-	samples          int
 }
 
 type memSafeIterator struct {

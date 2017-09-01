@@ -82,6 +82,116 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 	return mets, nil
 }
 
+func TestHead_Truncate(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	require.NoError(t, err)
+
+	h.initTime(0)
+
+	s1 := h.create(1, labels.FromStrings("a", "1", "b", "1"))
+	s2 := h.create(2, labels.FromStrings("a", "2", "b", "1"))
+	s3 := h.create(3, labels.FromStrings("a", "1", "b", "2"))
+	s4 := h.create(4, labels.FromStrings("a", "2", "b", "2", "c", "1"))
+
+	s1.chunks = []*memChunk{
+		{minTime: 0, maxTime: 999},
+		{minTime: 1000, maxTime: 1999},
+		{minTime: 2000, maxTime: 2999},
+	}
+	s2.chunks = []*memChunk{
+		{minTime: 1000, maxTime: 1999},
+		{minTime: 2000, maxTime: 2999},
+		{minTime: 3000, maxTime: 3999},
+	}
+	s3.chunks = []*memChunk{
+		{minTime: 0, maxTime: 999},
+		{minTime: 1000, maxTime: 1999},
+	}
+	s4.chunks = []*memChunk{}
+
+	// Truncation must be aligned.
+	require.Error(t, h.Truncate(1))
+
+	h.Truncate(2000)
+
+	require.Equal(t, []*memChunk{
+		{minTime: 2000, maxTime: 2999},
+	}, h.series[s1.ref].chunks)
+
+	require.Equal(t, []*memChunk{
+		{minTime: 2000, maxTime: 2999},
+		{minTime: 3000, maxTime: 3999},
+	}, h.series[s2.ref].chunks)
+
+	require.Nil(t, h.series[s3.ref])
+	require.Nil(t, h.series[s4.ref])
+
+	postingsA1, _ := expandPostings(h.postings.get(term{"a", "1"}))
+	postingsA2, _ := expandPostings(h.postings.get(term{"a", "2"}))
+	postingsB1, _ := expandPostings(h.postings.get(term{"b", "1"}))
+	postingsB2, _ := expandPostings(h.postings.get(term{"b", "2"}))
+	postingsC1, _ := expandPostings(h.postings.get(term{"c", "1"}))
+	postingsAll, _ := expandPostings(h.postings.get(term{"", ""}))
+
+	require.Equal(t, []uint32{s1.ref}, postingsA1)
+	require.Equal(t, []uint32{s2.ref}, postingsA2)
+	require.Equal(t, []uint32{s1.ref, s2.ref}, postingsB1)
+	require.Equal(t, []uint32{s1.ref, s2.ref}, postingsAll)
+	require.Nil(t, postingsB2)
+	require.Nil(t, postingsC1)
+
+	require.Equal(t, map[string]struct{}{
+		"":  struct{}{}, // from 'all' postings list
+		"a": struct{}{},
+		"b": struct{}{},
+		"1": struct{}{},
+		"2": struct{}{},
+	}, h.symbols)
+
+	require.Equal(t, map[string]stringset{
+		"a": stringset{"1": struct{}{}, "2": struct{}{}},
+		"b": stringset{"1": struct{}{}},
+		"":  stringset{"": struct{}{}},
+	}, h.values)
+}
+
+// Validate various behaviors brought on by firstChunkID accounting for
+// garbage collected chunks.
+func TestMemSeries_truncateChunks(t *testing.T) {
+	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000)
+
+	for i := 0; i < 4000; i += 5 {
+		ok, _ := s.append(int64(i), float64(i))
+		require.True(t, ok, "sample appen failed")
+	}
+
+	// Check that truncate removes half of the chunks and afterwards
+	// that the ID of the last chunk still gives us the same chunk afterwards.
+	countBefore := len(s.chunks)
+	lastID := s.chunkID(countBefore - 1)
+	lastChunk := s.chunk(lastID)
+
+	require.NotNil(t, s.chunk(0))
+	require.NotNil(t, lastChunk)
+
+	s.truncateChunksBefore(2000)
+
+	require.Equal(t, int64(2000), s.chunks[0].minTime, "unexpected start time of first chunks")
+	require.Nil(t, s.chunk(0), "first chunk not gone")
+	require.Equal(t, countBefore/2, len(s.chunks), "chunks not truncated correctly")
+	require.Equal(t, lastChunk, s.chunk(lastID), "last chunk does not match")
+
+	// Validate that the series' sample buffer is applied correctly to the last chunk
+	// after truncation.
+	it1 := s.iterator(s.chunkID(len(s.chunks) - 1))
+	_, ok := it1.(*memSafeIterator)
+	require.True(t, ok, "last chunk not wrapped with sample buffer")
+
+	it2 := s.iterator(s.chunkID(len(s.chunks) - 2))
+	_, ok = it2.(*memSafeIterator)
+	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
+}
+
 // func TestHBDeleteSimple(t *testing.T) {
 // 	numSamples := int64(10)
 

@@ -492,11 +492,8 @@ func (db *DB) reload() (err error) {
 	if len(blocks) == 0 {
 		return nil
 	}
-
 	maxt := blocks[len(db.blocks)-1].Meta().MaxTime
-	db.head.Truncate(maxt)
-
-	return nil
+	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
 }
 
 func validateBlockSequence(bs []DiskBlock) error {
