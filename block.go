@@ -53,13 +53,6 @@ type BlockReader interface {
 	Tombstones() TombstoneReader
 }
 
-// // Block is an interface to a DiskBlock that can also be queried.
-// type Block interface {
-// 	DiskBlock
-// 	Queryable
-// 	Snapshottable
-// }
-
 // Snapshottable defines an entity that can be backedup online.
 type Snapshottable interface {
 	Snapshot(dir string) error

@@ -19,194 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLeveledCompactor_Select(t *testing.T) {
-	opts := &LeveledCompactorOptions{
-		blockRanges: []int64{
-			20,
-			60,
-			240,
-			720,
-			2160,
-		},
-	}
-
-	type dirMetaSimple struct {
-		dir string
-		tr  []int64
-	}
-
-	cases := []struct {
-		blocks  []dirMetaSimple
-		planned [][]string
-	}{
-		{
-			blocks: []dirMetaSimple{
-				{
-					dir: "1",
-					tr:  []int64{0, 20},
-				},
-			},
-			planned: nil,
-		},
-		{
-			// We should wait for a third block of size 20 to appear before compacting
-			// the existing ones.
-			blocks: []dirMetaSimple{
-				{
-					dir: "1",
-					tr:  []int64{0, 20},
-				},
-				{
-					dir: "2",
-					tr:  []int64{20, 40},
-				},
-			},
-			planned: nil,
-		},
-		{
-			// Block to fill the entire parent range appeared – should be compacted.
-			blocks: []dirMetaSimple{
-				{
-					dir: "1",
-					tr:  []int64{0, 20},
-				},
-				{
-					dir: "2",
-					tr:  []int64{20, 40},
-				},
-				{
-					dir: "3",
-					tr:  []int64{40, 60},
-				},
-			},
-			planned: [][]string{{"1", "2", "3"}},
-		},
-		{
-			// Block for the next parent range appeared. Nothing will happen in the first one
-			// anymore and we should compact it.
-			blocks: []dirMetaSimple{
-				{
-					dir: "1",
-					tr:  []int64{0, 20},
-				},
-				{
-					dir: "2",
-					tr:  []int64{20, 40},
-				},
-				{
-					dir: "3",
-					tr:  []int64{60, 80},
-				},
-			},
-			planned: [][]string{{"1", "2"}},
-		},
-		{
-			blocks: []dirMetaSimple{
-				{
-					dir: "1",
-					tr:  []int64{0, 20},
-				},
-				{
-					dir: "2",
-					tr:  []int64{20, 40},
-				},
-				{
-					dir: "3",
-					tr:  []int64{40, 60},
-				},
-				{
-					dir: "4",
-					tr:  []int64{60, 120},
-				},
-				{
-					dir: "5",
-					tr:  []int64{120, 180},
-				},
-			},
-			planned: [][]string{{"1", "2", "3"}}, // We still need 0-60 to compact 0-240
-		},
-		{
-			blocks: []dirMetaSimple{
-				{
-					dir: "2",
-					tr:  []int64{20, 40},
-				},
-				{
-					dir: "4",
-					tr:  []int64{60, 120},
-				},
-				{
-					dir: "5",
-					tr:  []int64{120, 180},
-				},
-				{
-					dir: "6",
-					tr:  []int64{720, 960},
-				},
-				{
-					dir: "7",
-					tr:  []int64{1200, 1440},
-				},
-			},
-			planned: [][]string{{"2", "4", "5"}},
-		},
-		{
-			blocks: []dirMetaSimple{
-				{
-					dir: "1",
-					tr:  []int64{0, 60},
-				},
-				{
-					dir: "4",
-					tr:  []int64{60, 80},
-				},
-				{
-					dir: "5",
-					tr:  []int64{80, 100},
-				},
-				{
-					dir: "6",
-					tr:  []int64{100, 120},
-				},
-			},
-			planned: [][]string{{"4", "5", "6"}},
-		},
-	}
-
-	c := &LeveledCompactor{
-		opts: opts,
-	}
-	sliceDirs := func(dms []dirMeta) [][]string {
-		if len(dms) == 0 {
-			return nil
-		}
-		var res []string
-		for _, dm := range dms {
-			res = append(res, dm.dir)
-		}
-		return [][]string{res}
-	}
-
-	dmFromSimple := func(dms []dirMetaSimple) []dirMeta {
-		dirs := make([]dirMeta, 0, len(dms))
-		for _, dir := range dms {
-			dirs = append(dirs, dirMeta{
-				dir: dir.dir,
-				meta: &BlockMeta{
-					MinTime: dir.tr[0],
-					MaxTime: dir.tr[1],
-				},
-			})
-		}
-
-		return dirs
-	}
-
-	for _, tc := range cases {
-		require.Equal(t, tc.planned, sliceDirs(c.selectDirs(dmFromSimple(tc.blocks))))
-	}
-}
-
 func TestSplitByRange(t *testing.T) {
 	cases := []struct {
 		trange int64
@@ -329,8 +141,136 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 		},
 	}
 
-	c := NewLeveledCompactor(nil, nil, &LeveledCompactorOptions{
-		blockRanges: []int64{50},
-	})
+	c, err := NewLeveledCompactor(nil, nil, []int64{50}, nil)
+	require.NoError(t, err)
+
 	c.plan(metas)
+}
+
+func TestLeveledCompactor_plan(t *testing.T) {
+	compactor, err := NewLeveledCompactor(nil, nil, []int64{
+		20,
+		60,
+		240,
+		720,
+		2160,
+	}, nil)
+	require.NoError(t, err)
+
+	metaRange := func(name string, mint, maxt int64, stats *BlockStats) dirMeta {
+		meta := &BlockMeta{MinTime: mint, MaxTime: maxt}
+		if stats != nil {
+			meta.Stats = *stats
+		}
+		return dirMeta{
+			dir:  name,
+			meta: meta,
+		}
+	}
+
+	cases := []struct {
+		metas    []dirMeta
+		expected []string
+	}{
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+			},
+			expected: nil,
+		},
+		// We should wait for a third block of size 20 to appear before compacting
+		// the existing ones.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+			},
+			expected: nil,
+		},
+		// Block to fill the entire parent range appeared – should be compacted.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 40, 60, nil),
+			},
+			expected: []string{"1", "2", "3"},
+		},
+		// Block for the next parent range appeared. Nothing will happen in the first one
+		// anymore and we should compact it.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 60, 80, nil),
+			},
+			expected: []string{"1", "2"},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 40, 60, nil),
+				metaRange("4", 60, 120, nil),
+				metaRange("5", 120, 180, nil),
+			},
+			expected: []string{"1", "2", "3"},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("2", 20, 40, nil),
+				metaRange("4", 60, 120, nil),
+				metaRange("5", 120, 180, nil),
+				metaRange("6", 720, 960, nil),
+			},
+			expected: []string{"2", "4", "5"},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 60, nil),
+				metaRange("4", 60, 80, nil),
+				metaRange("5", 80, 100, nil),
+				metaRange("6", 100, 120, nil),
+			},
+			expected: []string{"4", "5", "6"},
+		},
+		// Select large blocks that have many tombstones.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 720, &BlockStats{
+					NumSeries:     10,
+					NumTombstones: 3,
+				}),
+			},
+			expected: []string{"1"},
+		},
+		// For small blocks, do not compact tombstones.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 30, &BlockStats{
+					NumSeries:     10,
+					NumTombstones: 3,
+				}),
+			},
+			expected: nil,
+		},
+		// Regression test: we were stuck in a compact loop where we always recompacted
+		// the same block when tombstones and series counts were zero.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 720, &BlockStats{
+					NumSeries:     0,
+					NumTombstones: 0,
+				}),
+			},
+			expected: nil,
+		},
+	}
+
+	for i, c := range cases {
+		res, err := compactor.plan(c.metas)
+		require.NoError(t, err)
+
+		require.Equal(t, c.expected, res, "test case %d", i)
+	}
 }

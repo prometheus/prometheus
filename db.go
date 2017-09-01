@@ -199,30 +199,16 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		db.lockf = &lockf
 	}
 
-	copts := &LeveledCompactorOptions{
-		blockRanges: opts.BlockRanges,
-		chunkPool:   db.chunkPool,
+	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool)
+	if err != nil {
+		return nil, errors.Wrap(err, "create leveled compactor")
 	}
-
-	if len(copts.blockRanges) == 0 {
-		return nil, errors.New("at least one block-range must exist")
-	}
-
-	for float64(copts.blockRanges[len(copts.blockRanges)-1])/float64(opts.RetentionDuration) > 0.2 {
-		if len(copts.blockRanges) == 1 {
-			break
-		}
-		// Max overflow is restricted to 20%.
-		copts.blockRanges = copts.blockRanges[:len(copts.blockRanges)-1]
-	}
-
-	db.compactor = NewLeveledCompactor(r, l, copts)
 
 	wal, err := OpenSegmentWAL(filepath.Join(dir, "wal"), l, 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	db.head, err = NewHead(r, l, wal, copts.blockRanges[0])
+	db.head, err = NewHead(r, l, wal, opts.BlockRanges[0])
 	if err != nil {
 		return nil, err
 	}

@@ -59,10 +59,11 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	dir     string
-	metrics *compactorMetrics
-	logger  log.Logger
-	opts    *LeveledCompactorOptions
+	dir       string
+	metrics   *compactorMetrics
+	logger    log.Logger
+	ranges    []int64
+	chunkPool chunks.Pool
 }
 
 type compactorMetrics struct {
@@ -97,30 +98,20 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	return m
 }
 
-// LeveledCompactorOptions are the options for a LeveledCompactor.
-type LeveledCompactorOptions struct {
-	blockRanges []int64
-	chunkPool   chunks.Pool
-}
-
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, opts *LeveledCompactorOptions) *LeveledCompactor {
-	if opts == nil {
-		opts = &LeveledCompactorOptions{
-			chunkPool: chunks.NewPool(),
-		}
+func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunks.Pool) (*LeveledCompactor, error) {
+	if len(ranges) == 0 {
+		return nil, errors.Errorf("at least one range must be provided")
+	}
+	if pool == nil {
+		pool = chunks.NewPool()
 	}
 	return &LeveledCompactor{
-		opts:    opts,
-		logger:  l,
-		metrics: newCompactorMetrics(r),
-	}
-}
-
-type compactionInfo struct {
-	seq        int
-	generation int
-	mint, maxt int64
+		ranges:    ranges,
+		chunkPool: pool,
+		logger:    l,
+		metrics:   newCompactorMetrics(r),
+	}, nil
 }
 
 type dirMeta struct {
@@ -142,21 +133,15 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if meta.Compaction.Level > 0 {
-			dms = append(dms, dirMeta{dir, meta})
-		}
+		dms = append(dms, dirMeta{dir, meta})
 	}
-	sort.Slice(dms, func(i, j int) bool {
-		return dms[i].meta.MinTime < dms[j].meta.MinTime
-	})
-
 	return c.plan(dms)
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
-	if len(dms) <= 1 {
-		return nil, nil
-	}
+	sort.Slice(dms, func(i, j int) bool {
+		return dms[i].meta.MinTime < dms[j].meta.MinTime
+	})
 
 	var res []string
 	for _, dm := range c.selectDirs(dms) {
@@ -169,11 +154,11 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	// Compact any blocks that have >5% tombstones.
 	for i := len(dms) - 1; i >= 0; i-- {
 		meta := dms[i].meta
-		if meta.MaxTime-meta.MinTime < c.opts.blockRanges[len(c.opts.blockRanges)/2] {
+		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
 			break
 		}
 
-		if meta.Stats.NumSeries/(meta.Stats.NumTombstones+1) <= 20 { // 5%
+		if float64(meta.Stats.NumTombstones)/float64(meta.Stats.NumSeries+1) > 0.05 {
 			return []string{dms[i].dir}, nil
 		}
 	}
@@ -184,13 +169,13 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 // selectDirs returns the dir metas that should be compacted into a single new block.
 // If only a single block range is configured, the result is always nil.
 func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
-	if len(c.opts.blockRanges) < 2 || len(ds) < 1 {
+	if len(c.ranges) < 2 || len(ds) < 1 {
 		return nil
 	}
 
 	highTime := ds[len(ds)-1].meta.MinTime
 
-	for _, iv := range c.opts.blockRanges[1:] {
+	for _, iv := range c.ranges[1:] {
 		parts := splitByRange(ds, iv)
 		if len(parts) == 0 {
 			continue
@@ -291,7 +276,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	var metas []*BlockMeta
 
 	for _, d := range dirs {
-		b, err := newPersistedBlock(d, c.opts.chunkPool)
+		b, err := newPersistedBlock(d, c.chunkPool)
 		if err != nil {
 			return err
 		}
@@ -491,7 +476,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		for _, chk := range chks {
-			c.opts.chunkPool.Put(chk.Chunk)
+			c.chunkPool.Put(chk.Chunk)
 		}
 
 		for _, l := range lset {
