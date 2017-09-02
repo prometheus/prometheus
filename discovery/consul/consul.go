@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/strutil"
 	"golang.org/x/net/context"
 )
 
@@ -38,6 +39,8 @@ const (
 	addressLabel = model.MetaLabelPrefix + "consul_address"
 	// nodeLabel is the name for the label containing a target's node name.
 	nodeLabel = model.MetaLabelPrefix + "consul_node"
+	// metaDataLabel is the prefix for the labels mapping to a target's metadata.
+	metaDataLabel = model.MetaLabelPrefix + "consul_metadata_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
@@ -294,7 +297,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
 			}
 
-			tgroup.Targets = append(tgroup.Targets, model.LabelSet{
+			labels := model.LabelSet{
 				model.AddressLabel:  model.LabelValue(addr),
 				addressLabel:        model.LabelValue(node.Address),
 				nodeLabel:           model.LabelValue(node.Node),
@@ -302,7 +305,15 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				serviceAddressLabel: model.LabelValue(node.ServiceAddress),
 				servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
 				serviceIDLabel:      model.LabelValue(node.ServiceID),
-			})
+			}
+
+			// Add all key/value pairs from the node's metadata as their own labels
+			for k, v := range node.NodeMeta {
+				name := strutil.SanitizeLabelName(k)
+				labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
+			}
+
+			tgroup.Targets = append(tgroup.Targets, labels)
 		}
 		// Check context twice to ensure we always catch cancelation.
 		select {

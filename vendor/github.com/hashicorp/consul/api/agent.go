@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"fmt"
 )
 
@@ -73,6 +74,8 @@ type AgentServiceCheck struct {
 	HTTP              string `json:",omitempty"`
 	TCP               string `json:",omitempty"`
 	Status            string `json:",omitempty"`
+	Notes             string `json:",omitempty"`
+	TLSSkipVerify     bool   `json:",omitempty"`
 
 	// In Consul 0.7 and later, checks that are associated with a service
 	// may also contain this optional DeregisterCriticalServiceAfter field,
@@ -112,6 +115,17 @@ func (a *Agent) Self() (map[string]map[string]interface{}, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// Reload triggers a configuration reload for the agent we are connected to.
+func (a *Agent) Reload() error {
+	r := a.c.newRequest("PUT", "/v1/agent/reload")
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 // NodeName is used to get the node name of the agent
@@ -345,6 +359,17 @@ func (a *Agent) Join(addr string, wan bool) error {
 	return nil
 }
 
+// Leave is used to have the agent gracefully leave the cluster and shutdown
+func (a *Agent) Leave() error {
+	r := a.c.newRequest("PUT", "/v1/agent/leave")
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
 // ForceLeave is used to have the agent eject a failed node
 func (a *Agent) ForceLeave(node string) error {
 	r := a.c.newRequest("PUT", "/v1/agent/force-leave/"+node)
@@ -408,4 +433,39 @@ func (a *Agent) DisableNodeMaintenance() error {
 	}
 	resp.Body.Close()
 	return nil
+}
+
+// Monitor returns a channel which will receive streaming logs from the agent
+// Providing a non-nil stopCh can be used to close the connection and stop the
+// log stream
+func (a *Agent) Monitor(loglevel string, stopCh chan struct{}, q *QueryOptions) (chan string, error) {
+	r := a.c.newRequest("GET", "/v1/agent/monitor")
+	r.setQueryOptions(q)
+	if loglevel != "" {
+		r.params.Add("loglevel", loglevel)
+	}
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, err
+	}
+
+	logCh := make(chan string, 64)
+	go func() {
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		for {
+			select {
+			case <-stopCh:
+				close(logCh)
+				return
+			default:
+			}
+			if scanner.Scan() {
+				logCh <- scanner.Text()
+			}
+		}
+	}()
+
+	return logCh, nil
 }
