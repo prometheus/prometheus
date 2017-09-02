@@ -167,19 +167,18 @@ func (c *PreparedQuery) Get(queryID string, q *QueryOptions) ([]*PreparedQueryDe
 }
 
 // Delete is used to delete a specific prepared query.
-func (c *PreparedQuery) Delete(queryID string, q *QueryOptions) (*QueryMeta, error) {
+func (c *PreparedQuery) Delete(queryID string, q *WriteOptions) (*WriteMeta, error) {
 	r := c.c.newRequest("DELETE", "/v1/query/"+queryID)
-	r.setQueryOptions(q)
+	r.setWriteOptions(q)
 	rtt, resp, err := requireOK(c.c.doRequest(r))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	qm := &QueryMeta{}
-	parseQueryMeta(resp, qm)
-	qm.RequestTime = rtt
-	return qm, nil
+	wm := &WriteMeta{}
+	wm.RequestTime = rtt
+	return wm, nil
 }
 
 // Execute is used to execute a specific prepared query. You can execute using
