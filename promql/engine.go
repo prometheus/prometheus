@@ -36,8 +36,7 @@ import (
 )
 
 const (
-	namespace = "prometheus"
-	subsystem = "engine"
+	namespace = "promql"
 	queryTag  = "query"
 
 	// The largest SampleValue that can be converted to an int64 without overflow.
@@ -49,20 +48,17 @@ const (
 var (
 	currentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
-		Subsystem: subsystem,
 		Name:      "queries",
 		Help:      "The current number of queries being executed or waiting.",
 	})
 	maxConcurrentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
-		Subsystem: subsystem,
 		Name:      "queries_concurrent_max",
 		Help:      "The max number of concurrent queries.",
 	})
 	queryPrepareTime = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace:   namespace,
-			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
@@ -71,7 +67,6 @@ var (
 	queryInnerEval = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace:   namespace,
-			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
@@ -80,7 +75,6 @@ var (
 	queryResultAppend = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace:   namespace,
-			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_append"},
@@ -89,7 +83,6 @@ var (
 	queryResultSort = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace:   namespace,
-			Subsystem:   subsystem,
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_sort"},
