@@ -253,63 +253,6 @@ func (app *timeLimitAppender) AddFast(lset labels.Labels, ref string, t int64, v
 	return nil
 }
 
-// Merges the ingested sample's metric with the label set. On a collision the
-// value of the ingested label is stored in a label prefixed with 'exported_'.
-type ruleLabelsAppender struct {
-	storage.Appender
-	labels labels.Labels
-}
-
-func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	lb := labels.NewBuilder(lset)
-
-	for _, l := range app.labels {
-		lv := lset.Get(l.Name)
-		if lv != "" {
-			lb.Set(model.ExportedLabelPrefix+l.Name, lv)
-		}
-		lb.Set(l.Name, l.Value)
-	}
-
-	return app.Appender.Add(lb.Labels(), t, v)
-}
-
-type honorLabelsAppender struct {
-	storage.Appender
-	labels labels.Labels
-}
-
-// Merges the sample's metric with the given labels if the label is not
-// already present in the metric.
-// This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	lb := labels.NewBuilder(lset)
-
-	for _, l := range app.labels {
-		if lv := lset.Get(l.Name); lv == "" {
-			lb.Set(l.Name, l.Value)
-		}
-	}
-	return app.Appender.Add(lb.Labels(), t, v)
-}
-
-// Applies a set of relabel configurations to the sample's metric
-// before actually appending it.
-type relabelAppender struct {
-	storage.Appender
-	relabelings []*config.RelabelConfig
-}
-
-var errSeriesDropped = errors.New("series dropped")
-
-func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	lset = relabel.Process(lset, app.relabelings...)
-	if lset == nil {
-		return "", errSeriesDropped
-	}
-	return app.Appender.Add(lset, t, v)
-}
-
 // populateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns a nil label set if the target is dropped during relabeling.
