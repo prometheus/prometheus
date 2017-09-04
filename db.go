@@ -302,6 +302,8 @@ type dbAppender struct {
 func (a dbAppender) Commit() error {
 	err := a.Appender.Commit()
 
+	// We could just run this check every few minutes practically. But for benchmarks
+	// and high frequency use cases this is the safer way.
 	if a.db.head.MaxTime()-a.db.head.MinTime() > a.db.head.chunkRange/2*3 {
 		select {
 		case a.db.compactc <- struct{}{}:

@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"testing"
 	"unsafe"
@@ -192,95 +193,95 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
 }
 
-// func TestHBDeleteSimple(t *testing.T) {
-// 	numSamples := int64(10)
+func TestHeadDeleteSimple(t *testing.T) {
+	numSamples := int64(10)
 
-// 	hb, close := openTestDB(t, nil)
-// 	defer close()
+	head, err := NewHead(nil, nil, nil, 1000)
+	require.NoError(t, err)
 
-// 	app := hb.Appender()
+	app := head.Appender()
 
-// 	smpls := make([]float64, numSamples)
-// 	for i := int64(0); i < numSamples; i++ {
-// 		smpls[i] = rand.Float64()
-// 		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
-// 	}
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+	}
 
-// 	require.NoError(t, app.Commit())
-// 	cases := []struct {
-// 		intervals Intervals
-// 		remaint   []int64
-// 	}{
-// 		{
-// 			intervals: Intervals{{0, 3}},
-// 			remaint:   []int64{4, 5, 6, 7, 8, 9},
-// 		},
-// 		{
-// 			intervals: Intervals{{1, 3}},
-// 			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
-// 		},
-// 		{
-// 			intervals: Intervals{{1, 3}, {4, 7}},
-// 			remaint:   []int64{0, 8, 9},
-// 		},
-// 		{
-// 			intervals: Intervals{{1, 3}, {4, 700}},
-// 			remaint:   []int64{0},
-// 		},
-// 		{
-// 			intervals: Intervals{{0, 9}},
-// 			remaint:   []int64{},
-// 		},
-// 	}
+	require.NoError(t, app.Commit())
+	cases := []struct {
+		intervals Intervals
+		remaint   []int64
+	}{
+		{
+			intervals: Intervals{{0, 3}},
+			remaint:   []int64{4, 5, 6, 7, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}},
+			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}, {4, 7}},
+			remaint:   []int64{0, 8, 9},
+		},
+		{
+			intervals: Intervals{{1, 3}, {4, 700}},
+			remaint:   []int64{0},
+		},
+		{
+			intervals: Intervals{{0, 9}},
+			remaint:   []int64{},
+		},
+	}
 
-// Outer:
-// 	for _, c := range cases {
-// 		// Reset the tombstones.
-// 		hb.tombstones = newEmptyTombstoneReader()
+Outer:
+	for _, c := range cases {
+		// Reset the tombstones.
+		head.tombstones = newEmptyTombstoneReader()
 
-// 		// Delete the ranges.
-// 		for _, r := range c.intervals {
-// 			require.NoError(t, hb.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
-// 		}
+		// Delete the ranges.
+		for _, r := range c.intervals {
+			require.NoError(t, head.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+		}
 
-// 		// Compare the result.
-// 		q := hb.Querier(0, numSamples)
-// 		res := q.Select(labels.NewEqualMatcher("a", "b"))
+		// Compare the result.
+		q := NewBlockQuerier(head.Index(), head.Chunks(), head.Tombstones(), head.MinTime(), head.MaxTime())
+		res := q.Select(labels.NewEqualMatcher("a", "b"))
 
-// 		expSamples := make([]sample, 0, len(c.remaint))
-// 		for _, ts := range c.remaint {
-// 			expSamples = append(expSamples, sample{ts, smpls[ts]})
-// 		}
+		expSamples := make([]sample, 0, len(c.remaint))
+		for _, ts := range c.remaint {
+			expSamples = append(expSamples, sample{ts, smpls[ts]})
+		}
 
-// 		expss := newListSeriesSet([]Series{
-// 			newSeries(map[string]string{"a": "b"}, expSamples),
-// 		})
+		expss := newListSeriesSet([]Series{
+			newSeries(map[string]string{"a": "b"}, expSamples),
+		})
 
-// 		if len(expSamples) == 0 {
-// 			require.False(t, res.Next())
-// 			continue
-// 		}
+		if len(expSamples) == 0 {
+			require.False(t, res.Next())
+			continue
+		}
 
-// 		for {
-// 			eok, rok := expss.Next(), res.Next()
-// 			require.Equal(t, eok, rok, "next")
+		for {
+			eok, rok := expss.Next(), res.Next()
+			require.Equal(t, eok, rok, "next")
 
-// 			if !eok {
-// 				continue Outer
-// 			}
-// 			sexp := expss.At()
-// 			sres := res.At()
+			if !eok {
+				continue Outer
+			}
+			sexp := expss.At()
+			sres := res.At()
 
-// 			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
 
-// 			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
-// 			smplRes, errRes := expandSeriesIterator(sres.Iterator())
+			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
+			smplRes, errRes := expandSeriesIterator(sres.Iterator())
 
-// 			require.Equal(t, errExp, errRes, "samples error")
-// 			require.Equal(t, smplExp, smplRes, "samples")
-// 		}
-// 	}
-// }
+			require.Equal(t, errExp, errRes, "samples error")
+			require.Equal(t, smplExp, smplRes, "samples")
+		}
+	}
+}
 
 // func TestDeleteUntilCurMax(t *testing.T) {
 // 	numSamples := int64(10)
