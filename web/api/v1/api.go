@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -103,17 +104,19 @@ type API struct {
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 
-	now func() time.Time
+	now    func() time.Time
+	config func() config.Config
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, q promql.Queryable, tr targetRetriever, ar alertmanagerRetriever) *API {
+func NewAPI(qe *promql.Engine, q promql.Queryable, tr targetRetriever, ar alertmanagerRetriever, configFunc func() config.Config) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now: time.Now,
+		now:    time.Now,
+		config: configFunc,
 	}
 }
 
@@ -147,6 +150,8 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/targets", instr("targets", api.targets))
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
+
+	r.Get("/status/config", instr("config", api.serveConfig))
 }
 
 type queryData struct {
@@ -423,6 +428,17 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return ams, nil
+}
+
+type prometheusConfig struct {
+	YAML string `json:"yaml"`
+}
+
+func (api *API) serveConfig(r *http.Request) (interface{}, *apiError) {
+	cfg := &prometheusConfig{
+		YAML: api.config().String(),
+	}
+	return cfg, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {

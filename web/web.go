@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"path"
@@ -80,6 +81,7 @@ type Handler struct {
 	quitCh       chan struct{}
 	reloadCh     chan chan error
 	options      *Options
+	config       *config.Config
 	configString string
 	versionInfo  *PrometheusVersion
 	birth        time.Time
@@ -93,13 +95,12 @@ type Handler struct {
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
-// ApplyConfig updates the status state as the new config requires.
+// ApplyConfig updates the config field of the Handler struct
 func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 
-	h.externalLabels = conf.GlobalConfig.ExternalLabels
-	h.configString = conf.String()
+	h.config = conf
 
 	return nil
 }
@@ -166,11 +167,18 @@ func New(o *Options) *Handler {
 		storage:       ptsdb.Adapter(o.Storage),
 		notifier:      o.Notifier,
 
-		now:   model.Now,
+		now: model.Now,
+
 		ready: 0,
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.targetManager, h.notifier)
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.targetManager, h.notifier,
+		func() config.Config {
+			h.mtx.RLock()
+			defer h.mtx.RUnlock()
+			return *h.config
+		},
+	)
 
 	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
@@ -192,7 +200,7 @@ func New(o *Options) *Handler {
 	router.Get("/graph", readyf(instrf("graph", h.graph)))
 	router.Get("/status", readyf(instrf("status", h.status)))
 	router.Get("/flags", readyf(instrf("flags", h.flags)))
-	router.Get("/config", readyf(instrf("config", h.config)))
+	router.Get("/config", readyf(instrf("config", h.serveConfig)))
 	router.Get("/rules", readyf(instrf("rules", h.rules)))
 	router.Get("/targets", readyf(instrf("targets", h.targets)))
 	router.Get("/version", readyf(instrf("version", h.version)))
@@ -235,8 +243,8 @@ func New(o *Options) *Handler {
 		w.Write([]byte("Only POST requests allowed"))
 	})
 
-	router.Get("/debug/*subpath", readyf(http.DefaultServeMux.ServeHTTP))
-	router.Post("/debug/*subpath", readyf(http.DefaultServeMux.ServeHTTP))
+	router.Get("/debug/*subpath", readyf(serveDebug))
+	router.Post("/debug/*subpath", readyf(serveDebug))
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -261,6 +269,26 @@ var corsHeaders = map[string]string{
 func setCORS(w http.ResponseWriter) {
 	for h, v := range corsHeaders {
 		w.Header().Set(h, v)
+	}
+}
+
+func serveDebug(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	subpath := route.Param(ctx, "subpath")
+
+	// Based off paths from init() in golang.org/src/net/http/pprof/pprof.go
+	if subpath == "/pprof/" {
+		pprof.Index(w, req)
+	} else if subpath == "/pprof/cmdline" {
+		pprof.Cmdline(w, req)
+	} else if subpath == "/pprof/profile" {
+		pprof.Profile(w, req)
+	} else if subpath == "/pprof/symbol" {
+		pprof.Symbol(w, req)
+	} else if subpath == "/pprof/trace" {
+		pprof.Trace(w, req)
+	} else {
+		http.NotFound(w, req)
 	}
 }
 
@@ -489,11 +517,11 @@ func (h *Handler) flags(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "flags.html", h.flagsMap)
 }
 
-func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) serveConfig(w http.ResponseWriter, r *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
-	h.executeTemplate(w, "config.html", h.configString)
+	h.executeTemplate(w, "config.html", h.config.String())
 }
 
 func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
