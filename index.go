@@ -99,7 +99,7 @@ type IndexWriter interface {
 	// their labels.
 	// The reference numbers are used to resolve entries in postings lists that
 	// are added later.
-	AddSeries(ref uint32, l labels.Labels, chunks ...ChunkMeta) error
+	AddSeries(ref uint64, l labels.Labels, chunks ...ChunkMeta) error
 
 	// WriteLabelIndex serializes an index from label names to values.
 	// The passed in values chained tuples of strings of the length of names.
@@ -130,7 +130,7 @@ type indexWriter struct {
 	uint32s []uint32
 
 	symbols       map[string]uint32 // symbol offsets
-	seriesOffsets map[uint32]uint64 // offsets of series
+	seriesOffsets map[uint64]uint64 // offsets of series
 	labelIndexes  []hashEntry       // label index offsets
 	postings      []hashEntry       // postings lists offsets
 
@@ -175,7 +175,7 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 
 		// Caches.
 		symbols:       make(map[string]uint32, 1<<13),
-		seriesOffsets: make(map[uint32]uint64, 1<<16),
+		seriesOffsets: make(map[uint64]uint64, 1<<16),
 		crc32:         newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
@@ -260,7 +260,7 @@ func (w *indexWriter) writeMeta() error {
 	return w.write(w.buf1.get())
 }
 
-func (w *indexWriter) AddSeries(ref uint32, lset labels.Labels, chunks ...ChunkMeta) error {
+func (w *indexWriter) AddSeries(ref uint64, lset labels.Labels, chunks ...ChunkMeta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
 	}
@@ -457,7 +457,10 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 		if !ok {
 			return errors.Errorf("%p series for reference %d not found", w, it.At())
 		}
-		refs = append(refs, uint32(offset)) // XXX(fabxc): get uint64 vs uint32 sorted out.
+		if offset > (1<<32)-1 {
+			return errors.Errorf("series offset %d exceeds 4 bytes", offset)
+		}
+		refs = append(refs, uint32(offset))
 	}
 	if err := it.Err(); err != nil {
 		return err
@@ -524,7 +527,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
-	Series(ref uint32, lset *labels.Labels, chks *[]ChunkMeta) error
+	Series(ref uint64, lset *labels.Labels, chks *[]ChunkMeta) error
 
 	// LabelIndices returns the label pairs for which indices exist.
 	LabelIndices() ([][]string, error)
@@ -740,7 +743,7 @@ func (r *indexReader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-func (r *indexReader) Series(ref uint32, lbls *labels.Labels, chks *[]ChunkMeta) error {
+func (r *indexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkMeta) error {
 	d1 := r.decbufAt(int(ref))
 	d2 := d1.decbuf(int(d1.uvarint()))
 

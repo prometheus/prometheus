@@ -27,12 +27,12 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer os.RemoveAll(tmpdir)
 
-	ref := uint32(0)
+	ref := uint64(0)
 
-	stones := make(map[uint32]Intervals)
+	stones := make(map[uint64]Intervals)
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
-		ref += uint32(rand.Int31n(10)) + 1
+		ref += uint64(rand.Int31n(10)) + 1
 		numRanges := rand.Intn(5) + 1
 		dranges := make(Intervals, 0, numRanges)
 		mint := rand.Int63n(time.Now().UnixNano())

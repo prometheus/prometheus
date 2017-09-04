@@ -225,7 +225,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	stones := map[uint32]Intervals{}
+	stones := map[uint64]Intervals{}
 
 	var lset labels.Labels
 	var chks []ChunkMeta

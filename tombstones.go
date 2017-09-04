@@ -33,6 +33,11 @@ const (
 	tombstoneFormatV1 = 1
 )
 
+// TombstoneReader is the iterator over tombstones.
+type TombstoneReader interface {
+	Get(ref uint64) Intervals
+}
+
 func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
@@ -59,7 +64,7 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	for k, v := range tr {
 		for _, itv := range v {
 			buf.reset()
-			buf.putUvarint32(k)
+			buf.putUvarint64(k)
 			buf.putVarint64(itv.Mint)
 			buf.putVarint64(itv.Maxt)
 
@@ -81,13 +86,8 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 // Stone holds the information on the posting and time-range
 // that is deleted.
 type Stone struct {
-	ref       uint32
+	ref       uint64
 	intervals Intervals
-}
-
-// TombstoneReader is the iterator over tombstones.
-type TombstoneReader interface {
-	Get(ref uint32) Intervals
 }
 
 func readTombstones(dir string) (tombstoneReader, error) {
@@ -123,7 +123,7 @@ func readTombstones(dir string) (tombstoneReader, error) {
 
 	stonesMap := newEmptyTombstoneReader()
 	for d.len() > 0 {
-		k := d.uvarint32()
+		k := d.uvarint64()
 		mint := d.varint64()
 		maxt := d.varint64()
 		if d.err() != nil {
@@ -136,21 +136,21 @@ func readTombstones(dir string) (tombstoneReader, error) {
 	return newTombstoneReader(stonesMap), nil
 }
 
-type tombstoneReader map[uint32]Intervals
+type tombstoneReader map[uint64]Intervals
 
-func newTombstoneReader(ts map[uint32]Intervals) tombstoneReader {
+func newTombstoneReader(ts map[uint64]Intervals) tombstoneReader {
 	return tombstoneReader(ts)
 }
 
 func newEmptyTombstoneReader() tombstoneReader {
-	return tombstoneReader(make(map[uint32]Intervals))
+	return tombstoneReader(make(map[uint64]Intervals))
 }
 
-func (t tombstoneReader) Get(ref uint32) Intervals {
+func (t tombstoneReader) Get(ref uint64) Intervals {
 	return t[ref]
 }
 
-func (t tombstoneReader) add(ref uint32, itv Interval) {
+func (t tombstoneReader) add(ref uint64, itv Interval) {
 	t[ref] = t[ref].add(itv)
 }
 

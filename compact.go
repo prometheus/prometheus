@@ -477,9 +477,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	// We fully rebuild the postings list index from merged series.
 	var (
-		postings = &memPostings{m: make(map[term][]uint32, 512)}
+		postings = &memPostings{m: make(map[term][]uint64, 512)}
 		values   = map[string]stringset{}
-		i        = uint32(0)
+		i        = uint64(0)
 	)
 
 	if err := indexw.AddSymbols(allSymbols); err != nil {
@@ -568,9 +568,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 	// Write a postings list containing all series.
-	all := make([]uint32, i)
+	all := make([]uint64, i)
 	for i := range all {
-		all[i] = uint32(i)
+		all[i] = uint64(i)
 	}
 	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
 		return errors.Wrap(err, "write 'all' postings")

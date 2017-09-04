@@ -238,11 +238,11 @@ WRLoop:
 
 		activeSeries := make([]RefSeries, 0, len(series))
 		for _, s := range series {
-			if !p.Seek(uint32(s.Ref)) {
+			if !p.Seek(s.Ref) {
 				break WRLoop
 			}
 
-			if p.At() == uint32(s.Ref) {
+			if p.At() == s.Ref {
 				activeSeries = append(activeSeries, s)
 			}
 		}
@@ -596,11 +596,11 @@ func encodeSeries(buf []byte, series []RefSeries) []byte {
 	buf = append(buf, b[:8]...)
 
 	for _, s := range series {
-		n := binary.PutVarint(b, int64(s.Ref)-int64(first.Ref))
-		buf = append(buf, b[:n]...)
+		binary.BigEndian.PutUint64(b, s.Ref)
+		buf = append(buf, b[:8]...)
 
 		lset := s.Labels
-		n = binary.PutUvarint(b, uint64(len(lset)))
+		n := binary.PutUvarint(b, uint64(len(lset)))
 		buf = append(buf, b[:n]...)
 
 		for _, l := range lset {
@@ -662,7 +662,7 @@ func (w *SegmentWAL) encodeDeletes(stones []Stone) error {
 	for _, s := range stones {
 		for _, itv := range s.intervals {
 			eb.reset()
-			eb.putUvarint32(s.ref)
+			eb.putUvarint64(s.ref)
 			eb.putVarint64(itv.Mint)
 			eb.putVarint64(itv.Maxt)
 			buf = append(buf, eb.get()...)
@@ -913,18 +913,16 @@ func (r *walReader) decodeSeries(flag byte, b []byte) ([]RefSeries, error) {
 		return nil, errors.Wrap(errInvalidSize, "header length")
 	}
 
-	baseRef := binary.BigEndian.Uint64(b)
 	b = b[8:]
 
 	for len(b) > 0 {
 		var ser RefSeries
 		// TODO: Check again.
-		dref, n := binary.Varint(b)
-		if n < 1 {
-			return nil, errors.Wrap(errInvalidSize, "series ref delta")
+		if len(b) < 8 {
+			return nil, errors.Wrap(errInvalidSize, "series ref")
 		}
-		b = b[n:]
-		ser.Ref = uint64(int64(baseRef) + dref)
+		ser.Ref = binary.BigEndian.Uint64(b)
+		b = b[8:]
 
 		l, n := binary.Uvarint(b)
 		if n < 1 {
@@ -1002,7 +1000,7 @@ func (r *walReader) decodeDeletes(flag byte, b []byte) ([]Stone, error) {
 
 	for db.len() > 0 {
 		var s Stone
-		s.ref = db.uvarint32()
+		s.ref = db.uvarint64()
 		s.intervals = Intervals{{db.varint64(), db.varint64()}}
 		if db.err() != nil {
 			return nil, db.err()

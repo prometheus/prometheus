@@ -134,10 +134,10 @@ func TestHead_Truncate(t *testing.T) {
 	postingsC1, _ := expandPostings(h.postings.get(term{"c", "1"}))
 	postingsAll, _ := expandPostings(h.postings.get(term{"", ""}))
 
-	require.Equal(t, []uint32{s1.ref}, postingsA1)
-	require.Equal(t, []uint32{s2.ref}, postingsA2)
-	require.Equal(t, []uint32{s1.ref, s2.ref}, postingsB1)
-	require.Equal(t, []uint32{s1.ref, s2.ref}, postingsAll)
+	require.Equal(t, []uint64{s1.ref}, postingsA1)
+	require.Equal(t, []uint64{s2.ref}, postingsA2)
+	require.Equal(t, []uint64{s1.ref, s2.ref}, postingsB1)
+	require.Equal(t, []uint64{s1.ref, s2.ref}, postingsAll)
 	require.Nil(t, postingsB2)
 	require.Nil(t, postingsC1)
 

@@ -55,11 +55,11 @@ type Head struct {
 	appendPool sync.Pool
 
 	minTime, maxTime int64
-	lastSeriesID     uint32
+	lastSeriesID     uint64
 
 	// descs holds all chunk descs for the head block. Each chunk implicitly
 	// is assigned the index as its ID.
-	series map[uint32]*memSeries
+	series map[uint64]*memSeries
 	// hashes contains a collision map of label set hashes of chunks
 	// to their chunk descs.
 	hashes map[uint64][]*memSeries
@@ -178,11 +178,11 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		chunkRange: chunkRange,
 		minTime:    math.MaxInt64,
 		maxTime:    math.MinInt64,
-		series:     map[uint32]*memSeries{},
+		series:     map[uint64]*memSeries{},
 		hashes:     map[uint64][]*memSeries{},
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
-		postings:   &memPostings{m: make(map[term][]uint32)},
+		postings:   &memPostings{m: make(map[term][]uint64)},
 		tombstones: newEmptyTombstoneReader(),
 	}
 	h.metrics = newHeadMetrics(h, r)
@@ -201,7 +201,7 @@ func (h *Head) readWAL() error {
 	}
 	samplesFunc := func(samples []RefSample) error {
 		for _, s := range samples {
-			ms, ok := h.series[uint32(s.Ref)]
+			ms, ok := h.series[s.Ref]
 			if !ok {
 				return errors.Errorf("unknown series reference %d; abort WAL restore", s.Ref)
 			}
@@ -424,13 +424,13 @@ func (a *headAppender) AddFast(ref string, t int64, v float64) error {
 	}
 	var (
 		refn = binary.BigEndian.Uint64(yoloBytes(ref))
-		id   = uint32(refn)
+		id   = (refn << 1) >> 1
 		inTx = refn&(1<<63) != 0
 	)
 	// Distinguish between existing series and series created in
 	// this transaction.
 	if inTx {
-		if id > uint32(len(a.newSeries)-1) {
+		if id > uint64(len(a.newSeries)-1) {
 			return errors.Wrap(ErrNotFound, "transaction series ID too high")
 		}
 		// TODO(fabxc): we also have to validate here that the
@@ -527,7 +527,7 @@ func (a *headAppender) Commit() error {
 	total := uint64(len(a.samples))
 
 	for _, s := range a.samples {
-		series, ok := a.head.series[uint32(s.Ref)]
+		series, ok := a.head.series[s.Ref]
 		if !ok {
 			return errors.Errorf("series with ID %d not found", s.Ref)
 		}
@@ -614,7 +614,7 @@ func (h *Head) gc() {
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
 
-	deletedHashes := map[uint64][]uint32{}
+	deletedHashes := map[uint64][]uint64{}
 
 	h.mtx.RLock()
 
@@ -630,7 +630,7 @@ func (h *Head) gc() {
 		}
 	}
 
-	deletedIDs := make(map[uint32]struct{}, len(deletedHashes))
+	deletedIDs := make(map[uint64]struct{}, len(deletedHashes))
 
 	h.mtx.RUnlock()
 
@@ -639,7 +639,7 @@ func (h *Head) gc() {
 
 	for hash, ids := range deletedHashes {
 
-		inIDs := func(id uint32) bool {
+		inIDs := func(id uint64) bool {
 			for _, o := range ids {
 				if o == id {
 					return true
@@ -675,7 +675,7 @@ func (h *Head) gc() {
 	}
 
 	for t, p := range h.postings.m {
-		repl := make([]uint32, 0, len(p))
+		repl := make([]uint64, 0, len(p))
 
 		for _, id := range p {
 			if _, ok := deletedIDs[id]; !ok {
@@ -761,16 +761,32 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
+// packChunkID packs a seriesID and a chunkID within it into a global 8 byte ID.
+// It panicks if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
+func packChunkID(seriesID, chunkID uint64) uint64 {
+	if seriesID > (1<<40)-1 {
+		panic("series ID exceeds 5 bytes")
+	}
+	if chunkID > (1<<24)-1 {
+		panic("chunk ID exceeds 3 bytes")
+	}
+	return (seriesID << 24) | chunkID
+}
+
+func unpackChunkID(id uint64) (seriesID, chunkID uint64) {
+	return id >> 24, (id << 40) >> 40
+}
+
 // Chunk returns the chunk for the reference number.
 func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	h.head.mtx.RLock()
 	defer h.head.mtx.RUnlock()
 
-	s := h.head.series[uint32(ref>>32)]
+	sid, cid := unpackChunkID(ref)
+	s := h.head.series[sid]
 
 	s.mtx.RLock()
-	cid := int((ref << 32) >> 32)
-	c := s.chunk(cid)
+	c := s.chunk(int(cid))
 	s.mtx.RUnlock()
 
 	// Do not expose chunks that are outside of the specified range.
@@ -780,7 +796,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	return &safeChunk{
 		Chunk: c.chunk,
 		s:     s,
-		cid:   cid,
+		cid:   int(cid),
 	}, nil
 }
 
@@ -860,7 +876,7 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 	h.head.mtx.RLock()
 	defer h.head.mtx.RUnlock()
 
-	ep := make([]uint32, 0, 1024)
+	ep := make([]uint64, 0, 1024)
 
 	for p.Next() {
 		ep = append(ep, p.At())
@@ -890,7 +906,7 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint32, lbls *labels.Labels, chks *[]ChunkMeta) error {
+func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkMeta) error {
 	h.head.mtx.RLock()
 	defer h.head.mtx.RUnlock()
 
@@ -913,7 +929,7 @@ func (h *headIndexReader) Series(ref uint32, lbls *labels.Labels, chks *[]ChunkM
 		*chks = append(*chks, ChunkMeta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
-			Ref:     (uint64(ref) << 32) | uint64(s.chunkID(i)),
+			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
 		})
 	}
 
@@ -949,7 +965,7 @@ func (h *Head) create(hash uint64, lset labels.Labels) *memSeries {
 	h.metrics.series.Inc()
 	h.metrics.seriesCreated.Inc()
 
-	id := atomic.AddUint32(&h.lastSeriesID, 1)
+	id := atomic.AddUint64(&h.lastSeriesID, 1)
 
 	s := newMemSeries(lset, id, h.chunkRange)
 	h.series[id] = s
@@ -983,7 +999,7 @@ type sample struct {
 type memSeries struct {
 	mtx sync.RWMutex
 
-	ref          uint32
+	ref          uint64
 	lset         labels.Labels
 	chunks       []*memChunk
 	chunkRange   int64
@@ -1020,7 +1036,7 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	return c
 }
 
-func newMemSeries(lset labels.Labels, id uint32, chunkRange int64) *memSeries {
+func newMemSeries(lset labels.Labels, id uint64, chunkRange int64) *memSeries {
 	s := &memSeries{
 		lset:       lset,
 		ref:        id,

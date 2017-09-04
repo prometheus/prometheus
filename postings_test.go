@@ -23,17 +23,17 @@ import (
 
 type mockPostings struct {
 	next  func() bool
-	seek  func(uint32) bool
-	value func() uint32
+	seek  func(uint64) bool
+	value func() uint64
 	err   func() error
 }
 
 func (m *mockPostings) Next() bool         { return m.next() }
-func (m *mockPostings) Seek(v uint32) bool { return m.seek(v) }
-func (m *mockPostings) Value() uint32      { return m.value() }
+func (m *mockPostings) Seek(v uint64) bool { return m.seek(v) }
+func (m *mockPostings) Value() uint64      { return m.value() }
 func (m *mockPostings) Err() error         { return m.err() }
 
-func expandPostings(p Postings) (res []uint32, err error) {
+func expandPostings(p Postings) (res []uint64, err error) {
 	for p.Next() {
 		res = append(res, p.At())
 	}
@@ -42,27 +42,27 @@ func expandPostings(p Postings) (res []uint32, err error) {
 
 func TestIntersect(t *testing.T) {
 	var cases = []struct {
-		a, b []uint32
-		res  []uint32
+		a, b []uint64
+		res  []uint64
 	}{
 		{
-			a:   []uint32{1, 2, 3, 4, 5},
-			b:   []uint32{6, 7, 8, 9, 10},
+			a:   []uint64{1, 2, 3, 4, 5},
+			b:   []uint64{6, 7, 8, 9, 10},
 			res: nil,
 		},
 		{
-			a:   []uint32{1, 2, 3, 4, 5},
-			b:   []uint32{4, 5, 6, 7, 8},
-			res: []uint32{4, 5},
+			a:   []uint64{1, 2, 3, 4, 5},
+			b:   []uint64{4, 5, 6, 7, 8},
+			res: []uint64{4, 5},
 		},
 		{
-			a:   []uint32{1, 2, 3, 4, 9, 10},
-			b:   []uint32{1, 4, 5, 6, 7, 8, 10, 11},
-			res: []uint32{1, 4, 10},
+			a:   []uint64{1, 2, 3, 4, 9, 10},
+			b:   []uint64{1, 4, 5, 6, 7, 8, 10, 11},
+			res: []uint64{1, 4, 10},
 		}, {
-			a:   []uint32{1},
-			b:   []uint32{0, 1},
-			res: []uint32{1},
+			a:   []uint64{1},
+			b:   []uint64{0, 1},
+			res: []uint64{1},
 		},
 	}
 
@@ -78,29 +78,29 @@ func TestIntersect(t *testing.T) {
 
 func TestMultiIntersect(t *testing.T) {
 	var cases = []struct {
-		p   [][]uint32
-		res []uint32
+		p   [][]uint64
+		res []uint64
 	}{
 		{
-			p: [][]uint32{
+			p: [][]uint64{
 				{1, 2, 3, 4, 5, 6, 1000, 1001},
 				{2, 4, 5, 6, 7, 8, 999, 1001},
 				{1, 2, 5, 6, 7, 8, 1001, 1200},
 			},
-			res: []uint32{2, 5, 6, 1001},
+			res: []uint64{2, 5, 6, 1001},
 		},
 		// One of the reproduceable cases for:
 		// https://github.com/prometheus/prometheus/issues/2616
 		// The initialisation of intersectPostings was moving the iterator forward
 		// prematurely making us miss some postings.
 		{
-			p: [][]uint32{
+			p: [][]uint64{
 				{1, 2},
 				{1, 2},
 				{1, 2},
 				{2},
 			},
-			res: []uint32{2},
+			res: []uint64{2},
 		},
 	}
 
@@ -118,22 +118,22 @@ func TestMultiIntersect(t *testing.T) {
 }
 
 func BenchmarkIntersect(t *testing.B) {
-	var a, b, c, d []uint32
+	var a, b, c, d []uint64
 
 	for i := 0; i < 10000000; i += 2 {
-		a = append(a, uint32(i))
+		a = append(a, uint64(i))
 	}
 	for i := 5000000; i < 5000100; i += 4 {
-		b = append(b, uint32(i))
+		b = append(b, uint64(i))
 	}
 	for i := 5090000; i < 5090600; i += 4 {
-		b = append(b, uint32(i))
+		b = append(b, uint64(i))
 	}
 	for i := 4990000; i < 5100000; i++ {
-		c = append(c, uint32(i))
+		c = append(c, uint64(i))
 	}
 	for i := 4000000; i < 6000000; i++ {
-		d = append(d, uint32(i))
+		d = append(d, uint64(i))
 	}
 
 	i1 := newListPostings(a)
@@ -152,14 +152,14 @@ func BenchmarkIntersect(t *testing.B) {
 
 func TestMultiMerge(t *testing.T) {
 	var cases = []struct {
-		a, b, c []uint32
-		res     []uint32
+		a, b, c []uint64
+		res     []uint64
 	}{
 		{
-			a:   []uint32{1, 2, 3, 4, 5, 6, 1000, 1001},
-			b:   []uint32{2, 4, 5, 6, 7, 8, 999, 1001},
-			c:   []uint32{1, 2, 5, 6, 7, 8, 1001, 1200},
-			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200},
+			a:   []uint64{1, 2, 3, 4, 5, 6, 1000, 1001},
+			b:   []uint64{2, 4, 5, 6, 7, 8, 999, 1001},
+			c:   []uint64{1, 2, 5, 6, 7, 8, 1001, 1200},
+			res: []uint64{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200},
 		},
 	}
 
@@ -176,23 +176,23 @@ func TestMultiMerge(t *testing.T) {
 
 func TestMergedPostings(t *testing.T) {
 	var cases = []struct {
-		a, b []uint32
-		res  []uint32
+		a, b []uint64
+		res  []uint64
 	}{
 		{
-			a:   []uint32{1, 2, 3, 4, 5},
-			b:   []uint32{6, 7, 8, 9, 10},
-			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			a:   []uint64{1, 2, 3, 4, 5},
+			b:   []uint64{6, 7, 8, 9, 10},
+			res: []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
-			a:   []uint32{1, 2, 3, 4, 5},
-			b:   []uint32{4, 5, 6, 7, 8},
-			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8},
+			a:   []uint64{1, 2, 3, 4, 5},
+			b:   []uint64{4, 5, 6, 7, 8},
+			res: []uint64{1, 2, 3, 4, 5, 6, 7, 8},
 		},
 		{
-			a:   []uint32{1, 2, 3, 4, 9, 10},
-			b:   []uint32{1, 4, 5, 6, 7, 8, 10, 11},
-			res: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+			a:   []uint64{1, 2, 3, 4, 9, 10},
+			b:   []uint64{1, 4, 5, 6, 7, 8, 10, 11},
+			res: []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
 		},
 	}
 
@@ -209,43 +209,43 @@ func TestMergedPostings(t *testing.T) {
 
 func TestMergedPostingsSeek(t *testing.T) {
 	var cases = []struct {
-		a, b []uint32
+		a, b []uint64
 
-		seek    uint32
+		seek    uint64
 		success bool
-		res     []uint32
+		res     []uint64
 	}{
 		{
-			a: []uint32{2, 3, 4, 5},
-			b: []uint32{6, 7, 8, 9, 10},
+			a: []uint64{2, 3, 4, 5},
+			b: []uint64{6, 7, 8, 9, 10},
 
 			seek:    1,
 			success: true,
-			res:     []uint32{2, 3, 4, 5, 6, 7, 8, 9, 10},
+			res:     []uint64{2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
-			a: []uint32{1, 2, 3, 4, 5},
-			b: []uint32{6, 7, 8, 9, 10},
+			a: []uint64{1, 2, 3, 4, 5},
+			b: []uint64{6, 7, 8, 9, 10},
 
 			seek:    2,
 			success: true,
-			res:     []uint32{2, 3, 4, 5, 6, 7, 8, 9, 10},
+			res:     []uint64{2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
-			a: []uint32{1, 2, 3, 4, 5},
-			b: []uint32{4, 5, 6, 7, 8},
+			a: []uint64{1, 2, 3, 4, 5},
+			b: []uint64{4, 5, 6, 7, 8},
 
 			seek:    9,
 			success: false,
 			res:     nil,
 		},
 		{
-			a: []uint32{1, 2, 3, 4, 9, 10},
-			b: []uint32{1, 4, 5, 6, 7, 8, 10, 11},
+			a: []uint64{1, 2, 3, 4, 9, 10},
+			b: []uint64{1, 4, 5, 6, 7, 8, 10, 11},
 
 			seek:    10,
 			success: true,
-			res:     []uint32{10, 11},
+			res:     []uint64{10, 11},
 		},
 	}
 
@@ -263,7 +263,7 @@ func TestMergedPostingsSeek(t *testing.T) {
 			lst, err := expandPostings(p)
 			require.NoError(t, err)
 
-			lst = append([]uint32{start}, lst...)
+			lst = append([]uint64{start}, lst...)
 			require.Equal(t, c.res, lst)
 		}
 	}
@@ -290,7 +290,7 @@ func TestBigEndian(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 		for i := 0; i < num; i++ {
 			require.True(t, bep.Next())
-			require.Equal(t, ls[i], bep.At())
+			require.Equal(t, uint64(ls[i]), bep.At())
 		}
 
 		require.False(t, bep.Next())
@@ -338,8 +338,8 @@ func TestBigEndian(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 
 		for _, v := range table {
-			require.Equal(t, v.found, bep.Seek(v.seek))
-			require.Equal(t, v.val, bep.At())
+			require.Equal(t, v.found, bep.Seek(uint64(v.seek)))
+			require.Equal(t, uint64(v.val), bep.At())
 			require.Nil(t, bep.Err())
 		}
 	})
@@ -348,16 +348,16 @@ func TestBigEndian(t *testing.T) {
 func TestIntersectWithMerge(t *testing.T) {
 	// One of the reproduceable cases for:
 	// https://github.com/prometheus/prometheus/issues/2616
-	a := newListPostings([]uint32{21, 22, 23, 24, 25, 30})
+	a := newListPostings([]uint64{21, 22, 23, 24, 25, 30})
 
 	b := newMergedPostings(
-		newListPostings([]uint32{10, 20, 30}),
-		newListPostings([]uint32{15, 26, 30}),
+		newListPostings([]uint64{10, 20, 30}),
+		newListPostings([]uint64{15, 26, 30}),
 	)
 
 	p := Intersect(a, b)
 	res, err := expandPostings(p)
 
 	require.NoError(t, err)
-	require.Equal(t, []uint32{30}, res)
+	require.Equal(t, []uint64{30}, res)
 }
