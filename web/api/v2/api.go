@@ -176,7 +176,7 @@ func (s *Admin) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.
 	return &pb.TSDBSnapshotResponse{Name: name}, nil
 }
 
-// DeleteSeries imeplements pb.AdminServer.
+// DeleteSeries implements pb.AdminServer.
 func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	mint, maxt, err := extractTimeRange(r.MinTime, r.MaxTime)
 	if err != nil {

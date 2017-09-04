@@ -337,7 +337,7 @@ func main() {
 
 	// Set web server to ready.
 	webHandler.Ready()
-	log.Info("Server is Ready to receive requests.")
+	log.Info("Server is ready to receive requests.")
 
 	term := make(chan os.Signal)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
