@@ -938,7 +938,7 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 		v = Vector{
 			Sample{
 				Metric: labels.Labels{},
-				Point:  Point{V: float64(ev.Timestamp) / 1000},
+				Point:  Point{V: float64(ev.Timestamp) / 1000, T: ev.Timestamp},
 			},
 		}
 	} else {

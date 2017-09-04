@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -45,6 +46,15 @@ type alertmanagerRetrieverFunc func() []*url.URL
 
 func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
 	return f()
+}
+
+var samplePrometheusCfg = config.Config{
+	GlobalConfig:       config.GlobalConfig{},
+	AlertingConfig:     config.AlertingConfig{},
+	RuleFiles:          []string{},
+	ScrapeConfigs:      []*config.ScrapeConfig{},
+	RemoteWriteConfigs: []*config.RemoteWriteConfig{},
+	RemoteReadConfigs:  []*config.RemoteReadConfig{},
 }
 
 func TestEndpoints(t *testing.T) {
@@ -92,7 +102,8 @@ func TestEndpoints(t *testing.T) {
 		QueryEngine:           suite.QueryEngine(),
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now: func() time.Time { return now },
+		now:    func() time.Time { return now },
+		config: func() config.Config { return samplePrometheusCfg },
 	}
 
 	start := time.Unix(0, 0)
@@ -403,6 +414,19 @@ func TestEndpoints(t *testing.T) {
 			errType:  errorInternal,
 		},
 		{
+			endpoint: api.targets,
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels:           map[string]string{},
+						ScrapeURL:        "http://example.com:8080/metrics",
+						Health:           "unknown",
+					},
+				},
+			},
+		},
+		{
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{
 				ActiveAlertmanagers: []*AlertmanagerTarget{
@@ -410,6 +434,12 @@ func TestEndpoints(t *testing.T) {
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
 					},
 				},
+			},
+		},
+		{
+			endpoint: api.serveConfig,
+			response: &prometheusConfig{
+				YAML: samplePrometheusCfg.String(),
 			},
 		},
 	}

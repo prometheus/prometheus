@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -202,10 +203,13 @@ func TestFederation(t *testing.T) {
 		storage:     suite.Storage(),
 		queryEngine: suite.QueryEngine(),
 		now:         func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+		config: &config.Config{
+			GlobalConfig: config.GlobalConfig{},
+		},
 	}
 
 	for name, scenario := range scenarios {
-		h.externalLabels = scenario.externalLabels
+		h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
 		req, err := http.ReadRequest(bufio.NewReader(strings.NewReader(
 			"GET http://example.org/federate?" + scenario.params + " HTTP/1.0\r\n\r\n",
 		)))
