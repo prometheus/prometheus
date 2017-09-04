@@ -107,18 +107,19 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func convertToPod(o interface{}) (*apiv1.Pod, error) {
-	pod, isPod := o.(*apiv1.Pod)
-	if !isPod {
-		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return nil, fmt.Errorf("Received unexpected object: %v", o)
-		}
-		pod, ok = deletedState.Obj.(*apiv1.Pod)
-		if !ok {
-			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Pod object: %v", deletedState.Obj)
-		}
+	pod, ok := o.(*apiv1.Pod)
+	if ok {
+		return pod, nil
 	}
 
+	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+	if !ok {
+		return nil, fmt.Errorf("Received unexpected object: %v", o)
+	}
+	pod, ok = deletedState.Obj.(*apiv1.Pod)
+	if !ok {
+		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Pod object: %v", deletedState.Obj)
+	}
 	return pod, nil
 }
 
