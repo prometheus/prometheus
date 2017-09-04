@@ -99,18 +99,19 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func convertToNode(o interface{}) (*apiv1.Node, error) {
-	node, isNode := o.(*apiv1.Node)
-	if !isNode {
-		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return nil, fmt.Errorf("Received unexpected object: %v", o)
-		}
-		node, ok = deletedState.Obj.(*apiv1.Node)
-		if !ok {
-			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Node object: %v", deletedState.Obj)
-		}
+	node, ok := o.(*apiv1.Node)
+	if ok {
+		return node, nil
 	}
 
+	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+	if !ok {
+		return nil, fmt.Errorf("Received unexpected object: %v", o)
+	}
+	node, ok = deletedState.Obj.(*apiv1.Node)
+	if !ok {
+		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Node object: %v", deletedState.Obj)
+	}
 	return node, nil
 }
 
@@ -126,7 +127,7 @@ const (
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
-	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+2)
+	ls := make(model.LabelSet, len(n.Labels)+len(n.Annotations)+1)
 
 	ls[nodeNameLabel] = lv(n.Name)
 

@@ -192,7 +192,7 @@ scrape_configs:
   - source_labels: [__address__]
     target_label: __param_target
   - target_label: __address__
-    replacement: blackbox
+    replacement: blackbox-exporter.example.com:9115
   - source_labels: [__param_target]
     target_label: instance
   - action: labelmap
@@ -201,6 +201,40 @@ scrape_configs:
     target_label: kubernetes_namespace
   - source_labels: [__meta_kubernetes_service_name]
     target_label: kubernetes_name
+
+# Example scrape config for probing ingresses via the Blackbox Exporter.
+#
+# The relabeling allows the actual ingress scrape endpoint to be configured
+# via the following annotations:
+#
+# * `prometheus.io/probe`: Only probe services that have a value of `true`
+- job_name: 'kubernetes-ingresses'
+
+  metrics_path: /probe
+  params:
+    module: [http_2xx]
+
+  kubernetes_sd_configs:
+    - role: ingress
+
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_ingress_annotation_prometheus_io_probe]
+      action: keep
+      regex: true
+    - source_labels: [__meta_kubernetes_ingress_scheme,__address__,__meta_kubernetes_ingress_path]
+      regex: (.+);(.+);(.+)
+      replacement: ${1}://${2}${3}
+      target_label: __param_target
+    - target_label: __address__
+      replacement: blackbox-exporter.example.com:9115
+    - source_labels: [__param_target]
+      target_label: instance
+    - action: labelmap
+      regex: __meta_kubernetes_ingress_label_(.+)
+    - source_labels: [__meta_kubernetes_namespace]
+      target_label: kubernetes_namespace
+    - source_labels: [__meta_kubernetes_ingress_name]
+      target_label: kubernetes_name
 
 # Example scrape config for pods
 #
