@@ -410,6 +410,23 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 			},
 		},
+		{
+			input: model.LabelSet{
+				"a":  "Foo",
+				"B1": "BAR",
+				"b2": "baz",
+			},
+			relabel: []*config.RelabelConfig{
+				{
+					Action: config.RelabelLowercase,
+				},
+			},
+			output: model.LabelSet{
+				"a":  "foo",
+				"B1": "bar",
+				"b2": "baz",
+			},
+		},
 	}
 
 	for i, test := range tests {
