@@ -637,8 +637,11 @@ mainLoop:
 		var b []byte
 		if scrapeErr == nil {
 			b = buf.Bytes()
-		} else if errc != nil {
-			errc <- scrapeErr
+		} else {
+			sl.l.With("err", scrapeErr.Error()).Debug("scrape failed")
+			if errc != nil {
+				errc <- scrapeErr
+			}
 		}
 
 		// A failed scrape is the same as an empty scrape,
