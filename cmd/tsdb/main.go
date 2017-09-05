@@ -139,7 +139,7 @@ func (b *writeBenchmark) run(cmd *cobra.Command, args []string) {
 
 	dur := measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		total, err = b.ingestScrapes(metrics, 3000)
+		total, err = b.ingestScrapes(metrics, 2000)
 		if err != nil {
 			exitWithError(err)
 		}
@@ -199,7 +199,7 @@ func (b *writeBenchmark) ingestScrapesShard(metrics []labels.Labels, scrapeCount
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *string
+		ref    *uint64
 	}
 
 	scrape := make([]*sample, 0, len(metrics))

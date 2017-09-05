@@ -43,7 +43,7 @@ func newMockIndex() mockIndex {
 	return mockIndex{
 		series:     make(map[uint64]series),
 		labelIndex: make(map[string][]string),
-		postings:   &memPostings{m: make(map[term][]uint64)},
+		postings:   newMemPostings(),
 		symbols:    make(map[string]struct{}),
 	}
 }
@@ -84,14 +84,14 @@ func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
 }
 
 func (m mockIndex) WritePostings(name, value string, it Postings) error {
-	if _, ok := m.postings.m[term{name, value}]; ok {
+	if _, ok := m.postings.m[labels.Label{name, value}]; ok {
 		return errors.Errorf("postings for %s=%q already added", name, value)
 	}
 	ep, err := expandPostings(it)
 	if err != nil {
 		return err
 	}
-	m.postings.m[term{name, value}] = ep
+	m.postings.m[labels.Label{name, value}] = ep
 
 	return it.Err()
 }
@@ -110,7 +110,7 @@ func (m mockIndex) LabelValues(names ...string) (StringTuples, error) {
 }
 
 func (m mockIndex) Postings(name, value string) (Postings, error) {
-	return m.postings.get(term{name, value}), nil
+	return m.postings.get(name, value), nil
 }
 
 func (m mockIndex) SortedPostings(p Postings) Postings {
@@ -274,7 +274,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	// Population procedure as done by compaction.
 	var (
-		postings = &memPostings{m: make(map[term][]uint64, 512)}
+		postings = newMemPostings()
 		values   = map[string]stringset{}
 	)
 
@@ -292,9 +292,8 @@ func TestPersistence_index_e2e(t *testing.T) {
 				values[l.Name] = valset
 			}
 			valset.set(l.Value)
-
-			postings.add(uint64(i), term{name: l.Name, value: l.Value})
 		}
+		postings.add(uint64(i), s.labels)
 		i++
 	}
 
@@ -313,10 +312,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 	require.NoError(t, err)
 	mi.WritePostings("", "", newListPostings(all))
 
-	for tm := range postings.m {
-		err = iw.WritePostings(tm.name, tm.value, postings.get(tm))
+	for l := range postings.m {
+		err = iw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
 		require.NoError(t, err)
-		mi.WritePostings(tm.name, tm.value, postings.get(tm))
+		mi.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
 	}
 
 	err = iw.Close()
@@ -326,10 +325,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 	require.NoError(t, err)
 
 	for p := range mi.postings.m {
-		gotp, err := ir.Postings(p.name, p.value)
+		gotp, err := ir.Postings(p.Name, p.Value)
 		require.NoError(t, err)
 
-		expp, err := mi.Postings(p.name, p.value)
+		expp, err := mi.Postings(p.Name, p.Value)
 
 		var lset, explset labels.Labels
 		var chks, expchks []ChunkMeta

@@ -110,27 +110,32 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	app1 := db.Appender()
 
-	ref, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
+	ref1, err := app1.Add(labels.FromStrings("a", "b"), 123, 0)
 	require.NoError(t, err)
 
-	// When a series is first created, refs don't work within that transaction.
-	err = app1.AddFast(ref, 1, 1)
-	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
+	// Reference should already work before commit.
+	err = app1.AddFast(ref1, 124, 1)
+	require.NoError(t, err)
 
 	err = app1.Commit()
 	require.NoError(t, err)
 
 	app2 := db.Appender()
-	ref, err = app2.Add(labels.FromStrings("a", "b"), 133, 1)
+
+	// first ref should already work in next transaction.
+	err = app2.AddFast(ref1, 125, 0)
 	require.NoError(t, err)
+
+	ref2, err := app2.Add(labels.FromStrings("a", "b"), 133, 1)
+	require.NoError(t, err)
+
+	require.True(t, ref1 == ref2)
 
 	// Reference must be valid to add another sample.
-	err = app2.AddFast(ref, 143, 2)
+	err = app2.AddFast(ref2, 143, 2)
 	require.NoError(t, err)
 
-	// AddFast for the same timestamp must fail if the generation in the reference
-	// doesn't add up.
-	err = app2.AddFast("abc_invalid_xyz", 1, 1)
+	err = app2.AddFast(9999999, 1, 1)
 	require.EqualError(t, errors.Cause(err), ErrNotFound.Error())
 
 	require.NoError(t, app2.Commit())
@@ -141,6 +146,8 @@ func TestDBAppenderAddRef(t *testing.T) {
 	require.Equal(t, map[string][]sample{
 		labels.FromStrings("a", "b").String(): []sample{
 			{t: 123, v: 0},
+			{t: 124, v: 1},
+			{t: 125, v: 0},
 			{t: 133, v: 1},
 			{t: 143, v: 2},
 		},

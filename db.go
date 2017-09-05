@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -76,11 +75,11 @@ type Appender interface {
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
 	// If the reference is the empty string it must not be used for caching.
-	Add(l labels.Labels, t int64, v float64) (string, error)
+	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
 	// Add adds a sample pair for the referenced series. It is generally faster
 	// than adding a sample by providing its full label set.
-	AddFast(ref string, t int64, v float64) error
+	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
 	Commit() error
@@ -350,7 +349,6 @@ func (db *DB) compact() (changes bool, err error) {
 		if err := db.reload(); err != nil {
 			return changes, errors.Wrap(err, "reload blocks")
 		}
-		runtime.GC()
 	}
 
 	// Check for compactions of multiple blocks.
@@ -383,7 +381,6 @@ func (db *DB) compact() (changes bool, err error) {
 		if err := db.reload(); err != nil {
 			return changes, errors.Wrap(err, "reload blocks")
 		}
-		runtime.GC()
 	}
 
 	return changes, nil

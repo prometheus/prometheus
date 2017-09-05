@@ -17,6 +17,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"time"
 
@@ -364,6 +365,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
+
+		// We might have done quite a few allocs. Enforce a GC so they do not accumulate
+		// with subsequent compactions or head GCs.
+		runtime.GC()
 	}(time.Now())
 
 	dir := filepath.Join(dest, meta.ULID.String())
@@ -477,7 +482,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	// We fully rebuild the postings list index from merged series.
 	var (
-		postings = &memPostings{m: make(map[term][]uint64, 512)}
+		postings = newMemPostings()
 		values   = map[string]stringset{}
 		i        = uint64(0)
 	)
@@ -539,11 +544,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				values[l.Name] = valset
 			}
 			valset.set(l.Value)
-
-			t := term{name: l.Name, value: l.Value}
-
-			postings.add(i, t)
 		}
+		postings.add(i, lset)
+
 		i++
 	}
 	if set.Err() != nil {
@@ -562,8 +565,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	for t := range postings.m {
-		if err := indexw.WritePostings(t.name, t.value, postings.get(t)); err != nil {
+	for l := range postings.m {
+		if err := indexw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
 	}

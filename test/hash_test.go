@@ -60,7 +60,6 @@ func BenchmarkHash(b *testing.B) {
 			}
 		})
 	}
-
 }
 
 // hashAdd adds a string to a fnv64a hash value, returning the updated hash.

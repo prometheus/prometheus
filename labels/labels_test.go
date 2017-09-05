@@ -218,3 +218,25 @@ func BenchmarkLabelSetEquals(b *testing.B) {
 	}
 	_ = res
 }
+
+func BenchmarkLabelSetHash(b *testing.B) {
+	// The vast majority of comparisons will be against a matching label set.
+	m := map[string]string{
+		"job":       "node",
+		"instance":  "123.123.1.211:9090",
+		"path":      "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":    "GET",
+		"namespace": "system",
+		"status":    "500",
+	}
+	ls := FromMap(m)
+	var res uint64
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		res += ls.Hash()
+	}
+	fmt.Println(res)
+}

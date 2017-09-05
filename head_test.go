@@ -117,22 +117,22 @@ func TestHead_Truncate(t *testing.T) {
 
 	require.Equal(t, []*memChunk{
 		{minTime: 2000, maxTime: 2999},
-	}, h.series[s1.ref].chunks)
+	}, h.series.getByID(s1.ref).chunks)
 
 	require.Equal(t, []*memChunk{
 		{minTime: 2000, maxTime: 2999},
 		{minTime: 3000, maxTime: 3999},
-	}, h.series[s2.ref].chunks)
+	}, h.series.getByID(s2.ref).chunks)
 
-	require.Nil(t, h.series[s3.ref])
-	require.Nil(t, h.series[s4.ref])
+	require.Nil(t, h.series.getByID(s3.ref))
+	require.Nil(t, h.series.getByID(s4.ref))
 
-	postingsA1, _ := expandPostings(h.postings.get(term{"a", "1"}))
-	postingsA2, _ := expandPostings(h.postings.get(term{"a", "2"}))
-	postingsB1, _ := expandPostings(h.postings.get(term{"b", "1"}))
-	postingsB2, _ := expandPostings(h.postings.get(term{"b", "2"}))
-	postingsC1, _ := expandPostings(h.postings.get(term{"c", "1"}))
-	postingsAll, _ := expandPostings(h.postings.get(term{"", ""}))
+	postingsA1, _ := expandPostings(h.postings.get("a", "1"))
+	postingsA2, _ := expandPostings(h.postings.get("a", "2"))
+	postingsB1, _ := expandPostings(h.postings.get("b", "1"))
+	postingsB2, _ := expandPostings(h.postings.get("b", "2"))
+	postingsC1, _ := expandPostings(h.postings.get("c", "1"))
+	postingsAll, _ := expandPostings(h.postings.get("", ""))
 
 	require.Equal(t, []uint64{s1.ref}, postingsA1)
 	require.Equal(t, []uint64{s2.ref}, postingsA2)
@@ -517,7 +517,7 @@ func boundedSamples(full []sample, mint, maxt int64) []sample {
 		full = full[1:]
 	}
 	for i, s := range full {
-		// Terminate on the first sample larger than maxt.
+		// labels.Labelinate on the first sample larger than maxt.
 		if s.t > maxt {
 			return full[:i]
 		}

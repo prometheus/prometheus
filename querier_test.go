@@ -228,7 +228,7 @@ func createIdxChkReaders(tc []struct {
 		return labels.Compare(labels.FromMap(tc[i].lset), labels.FromMap(tc[i].lset)) < 0
 	})
 
-	postings := &memPostings{m: make(map[term][]uint64, 512)}
+	postings := newMemPostings()
 	chkReader := mockChunkReader(make(map[uint64]chunks.Chunk))
 	lblIdx := make(map[string]stringset)
 	mi := newMockIndex()
@@ -257,10 +257,9 @@ func createIdxChkReaders(tc []struct {
 		ls := labels.FromMap(s.lset)
 		mi.AddSeries(uint64(i), ls, metas...)
 
-		postings.add(uint64(i), term{})
-		for _, l := range ls {
-			postings.add(uint64(i), term{l.Name, l.Value})
+		postings.add(uint64(i), ls)
 
+		for _, l := range ls {
 			vs, present := lblIdx[l.Name]
 			if !present {
 				vs = stringset{}
@@ -274,8 +273,8 @@ func createIdxChkReaders(tc []struct {
 		mi.WriteLabelIndex([]string{l}, vs.slice())
 	}
 
-	for tm := range postings.m {
-		mi.WritePostings(tm.name, tm.value, postings.get(tm))
+	for l := range postings.m {
+		mi.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
 	}
 
 	return mi, chkReader

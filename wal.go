@@ -111,6 +111,9 @@ type WALReader interface {
 type RefSeries struct {
 	Ref    uint64
 	Labels labels.Labels
+
+	// hash for the label set. This field is not generally populated.
+	hash uint64
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
@@ -118,6 +121,8 @@ type RefSample struct {
 	Ref uint64
 	T   int64
 	V   float64
+
+	series *memSeries
 }
 
 type segmentFile struct {

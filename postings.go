@@ -17,31 +17,47 @@ import (
 	"encoding/binary"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/prometheus/tsdb/labels"
 )
 
 type memPostings struct {
-	m map[term][]uint64
+	mtx sync.RWMutex
+	m   map[labels.Label][]uint64
 }
 
-type term struct {
-	name, value string
+func newMemPostings() *memPostings {
+	return &memPostings{
+		m: make(map[labels.Label][]uint64, 512),
+	}
 }
 
 // Postings returns an iterator over the postings list for s.
-func (p *memPostings) get(t term) Postings {
-	l := p.m[t]
+func (p *memPostings) get(name, value string) Postings {
+	p.mtx.RLock()
+	l := p.m[labels.Label{Name: name, Value: value}]
+	p.mtx.RUnlock()
+
 	if l == nil {
 		return emptyPostings
 	}
 	return newListPostings(l)
 }
 
+var allLabel = labels.Label{}
+
 // add adds a document to the index. The caller has to ensure that no
 // term argument appears twice.
-func (p *memPostings) add(id uint64, terms ...term) {
-	for _, t := range terms {
-		p.m[t] = append(p.m[t], id)
+func (p *memPostings) add(id uint64, lset labels.Labels) {
+	p.mtx.Lock()
+
+	for _, l := range lset {
+		p.m[l] = append(p.m[l], id)
 	}
+	p.m[allLabel] = append(p.m[allLabel], id)
+
+	p.mtx.Unlock()
 }
 
 // Postings provides iterative access over a postings list.
