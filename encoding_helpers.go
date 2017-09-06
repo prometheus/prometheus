@@ -86,7 +86,7 @@ func (d *decbuf) uvarintStr() string {
 		d.e = errInvalidSize
 		return ""
 	}
-	s := yoloString(d.b[:l])
+	s := string(d.b[:l])
 	d.b = d.b[l:]
 	return s
 }

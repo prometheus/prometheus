@@ -187,7 +187,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 }
 
 func (h *Head) readWAL() error {
-	r := h.wal.Reader(h.MinTime())
+	r := h.wal.Reader()
 
 	seriesFunc := func(series []RefSeries) error {
 		for _, s := range series {
