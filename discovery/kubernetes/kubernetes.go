@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/pkg/apis/extensions"
+	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
@@ -244,7 +244,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			ilw := cache.NewListWatchFromClient(reclient, "ingresses", namespace, nil)
 			ingress := NewIngress(
 				d.logger.With("kubernetes_sd", "ingress"),
-				cache.NewSharedInformer(ilw, &extensions.Ingress{}, resyncPeriod),
+				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, resyncPeriod),
 			)
 			go ingress.informer.Run(ctx.Done())
 
