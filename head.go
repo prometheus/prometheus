@@ -164,7 +164,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		l = log.NewNopLogger()
 	}
 	if wal == nil {
-		wal = NopWAL{}
+		wal = NopWAL()
 	}
 	if chunkRange < 1 {
 		return nil, errors.Errorf("invalid chunk range %d", chunkRange)
@@ -173,7 +173,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		wal:        wal,
 		logger:     l,
 		chunkRange: chunkRange,
-		minTime:    math.MaxInt64,
+		minTime:    math.MinInt64,
 		maxTime:    math.MinInt64,
 		series:     newStripeSeries(),
 		values:     map[string]stringset{},
@@ -183,11 +183,12 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 	}
 	h.metrics = newHeadMetrics(h, r)
 
-	return h, h.readWAL()
+	return h, nil
 }
 
-func (h *Head) readWAL() error {
+func (h *Head) ReadWAL() error {
 	r := h.wal.Reader()
+	mint := h.MinTime()
 
 	seriesFunc := func(series []RefSeries) error {
 		for _, s := range series {
@@ -197,6 +198,9 @@ func (h *Head) readWAL() error {
 	}
 	samplesFunc := func(samples []RefSample) error {
 		for _, s := range samples {
+			if s.T < mint {
+				continue
+			}
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
 				return errors.Errorf("unknown series reference %d; abort WAL restore", s.Ref)
@@ -213,6 +217,9 @@ func (h *Head) readWAL() error {
 	deletesFunc := func(stones []Stone) error {
 		for _, s := range stones {
 			for _, itv := range s.intervals {
+				if itv.Maxt < mint {
+					continue
+				}
 				h.tombstones.add(s.ref, itv)
 			}
 		}
@@ -226,12 +233,10 @@ func (h *Head) readWAL() error {
 	return nil
 }
 
-func (h *Head) String() string {
-	return "<head>"
-}
-
 // Truncate removes all data before mint from the head block and truncates its WAL.
 func (h *Head) Truncate(mint int64) error {
+	initialize := h.MinTime() == math.MinInt64
+
 	if mint%h.chunkRange != 0 {
 		return errors.Errorf("truncating at %d not aligned", mint)
 	}
@@ -239,6 +244,12 @@ func (h *Head) Truncate(mint int64) error {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
+
+	// This was an initial call to Truncate after loading blocks on startup.
+	// We haven't read back the WAL yet, so do not attempt to truncate it.
+	if initialize {
+		return nil
+	}
 
 	start := time.Now()
 
@@ -934,7 +945,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 		rmChunks = 0
 	)
 	// Run through all series and truncate old chunks. Mark those with no
-	// chunks left as deleted and store their ID and hash.
+	// chunks left as deleted and store their ID.
 	for i := 0; i < stripeSize; i++ {
 		s.locks[i].Lock()
 

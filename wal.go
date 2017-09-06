@@ -73,15 +73,19 @@ type WAL interface {
 }
 
 // NopWAL is a WAL that does nothing.
-type NopWAL struct{}
+func NopWAL() WAL {
+	return nopWAL{}
+}
 
-func (NopWAL) Read(SeriesCB, SamplesCB, DeletesCB) error { return nil }
-func (w NopWAL) Reader() WALReader                       { return w }
-func (NopWAL) LogSeries([]RefSeries) error               { return nil }
-func (NopWAL) LogSamples([]RefSample) error              { return nil }
-func (NopWAL) LogDeletes([]Stone) error                  { return nil }
-func (NopWAL) Truncate(int64, Postings) error            { return nil }
-func (NopWAL) Close() error                              { return nil }
+type nopWAL struct{}
+
+func (nopWAL) Read(SeriesCB, SamplesCB, DeletesCB) error { return nil }
+func (w nopWAL) Reader() WALReader                       { return w }
+func (nopWAL) LogSeries([]RefSeries) error               { return nil }
+func (nopWAL) LogSamples([]RefSample) error              { return nil }
+func (nopWAL) LogDeletes([]Stone) error                  { return nil }
+func (nopWAL) Truncate(int64, Postings) error            { return nil }
+func (nopWAL) Close() error                              { return nil }
 
 // WALReader reads entries from a WAL.
 type WALReader interface {
@@ -344,6 +348,13 @@ Loop:
 		return errors.Wrap(r.Err(), "read candidate WAL files")
 	}
 
+	off, err := csf.Seek(0, os.SEEK_CUR)
+	if err != nil {
+		return err
+	}
+	if err := csf.Truncate(off); err != nil {
+		return err
+	}
 	if err := csf.Close(); err != nil {
 		return errors.Wrap(err, "close tmp file")
 	}
@@ -351,15 +362,19 @@ Loop:
 	if err := renameFile(csf.Name(), candidates[len(candidates)-1].Name()); err != nil {
 		return err
 	}
-	if err := w.dirFile.Sync(); err != nil {
-		return err
-	}
-
 	for _, f := range candidates[1:] {
 		if err := os.RemoveAll(f.Name()); err != nil {
 			return errors.Wrap(err, "delete WAL segment file")
 		}
 	}
+	if err := w.dirFile.Sync(); err != nil {
+		return err
+	}
+
+	w.mtx.Lock()
+	w.files = append([]*segmentFile{csf}, w.files[len(candidates):]...)
+	w.mtx.Unlock()
+
 	return nil
 }
 
