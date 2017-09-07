@@ -23,7 +23,7 @@ func (s *Storage) Appender() (storage.Appender, error) {
 	return s, nil
 }
 
-func (s *Storage) Add(l labels.Labels, t int64, v float64) (string, error) {
+func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	for _, q := range s.queues {
@@ -33,7 +33,7 @@ func (s *Storage) Add(l labels.Labels, t int64, v float64) (string, error) {
 			Value:     model.SampleValue(v),
 		})
 	}
-	return "", nil
+	return 0, nil
 }
 
 func labelsToMetric(ls labels.Labels) model.Metric {
@@ -44,7 +44,7 @@ func labelsToMetric(ls labels.Labels) model.Metric {
 	return metric
 }
 
-func (s *Storage) AddFast(l labels.Labels, _ string, t int64, v float64) error {
+func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
 	_, err := s.Add(l, t, v)
 	return err
 }

@@ -872,20 +872,20 @@ type errorAppender struct {
 	collectResultAppender
 }
 
-func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app *errorAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	switch lset.Get(model.MetricNameLabel) {
 	case "out_of_order":
-		return "", storage.ErrOutOfOrderSample
+		return 0, storage.ErrOutOfOrderSample
 	case "amend":
-		return "", storage.ErrDuplicateSampleForTimestamp
+		return 0, storage.ErrDuplicateSampleForTimestamp
 	case "out_of_bounds":
-		return "", storage.ErrOutOfBounds
+		return 0, storage.ErrOutOfBounds
 	default:
 		return app.collectResultAppender.Add(lset, t, v)
 	}
 }
 
-func (app *errorAppender) AddFast(lset labels.Labels, ref string, t int64, v float64) error {
+func (app *errorAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
 	return app.collectResultAppender.AddFast(lset, ref, t, v)
 }
 

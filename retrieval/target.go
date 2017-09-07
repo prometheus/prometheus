@@ -198,21 +198,21 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
-			return "", errSampleLimit
+			return 0, errSampleLimit
 		}
 	}
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(lset labels.Labels, ref string, t int64, v float64) error {
+func (app *limitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
@@ -231,19 +231,19 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	if t > app.maxTime {
-		return "", storage.ErrOutOfBounds
+		return 0, storage.ErrOutOfBounds
 	}
 
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AddFast(lset labels.Labels, ref string, t int64, v float64) error {
+func (app *timeLimitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
 	if t > app.maxTime {
 		return storage.ErrOutOfBounds
 	}
@@ -260,7 +260,7 @@ type ruleLabelsAppender struct {
 	labels labels.Labels
 }
 
-func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -282,7 +282,7 @@ type honorLabelsAppender struct {
 // Merges the sample's metric with the given labels if the label is not
 // already present in the metric.
 // This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range app.labels {
@@ -302,10 +302,10 @@ type relabelAppender struct {
 
 var errSeriesDropped = errors.New("series dropped")
 
-func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	lset = relabel.Process(lset, app.relabelings...)
 	if lset == nil {
-		return "", errSeriesDropped
+		return 0, errSeriesDropped
 	}
 	return app.Appender.Add(lset, t, v)
 }
