@@ -122,8 +122,8 @@ func TestSegmentWAL_cut(t *testing.T) {
 
 func TestSegmentWAL_Truncate(t *testing.T) {
 	const (
-		numMetrics = 50
-		batch      = 10
+		numMetrics = 20000
+		batch      = 100
 	)
 	series, err := readPrometheusLabels("testdata/20k.series", numMetrics)
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	w, err := OpenSegmentWAL(dir, nil, 0)
 	require.NoError(t, err)
-	w.segmentSize = 1000
+	w.segmentSize = 10000
 
 	for i := 0; i < numMetrics; i += batch {
 		var rs []RefSeries

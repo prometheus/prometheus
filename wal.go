@@ -308,9 +308,11 @@ func (w *SegmentWAL) Truncate(mint int64, p Postings) error {
 	if err != nil {
 		return errors.Wrap(err, "create compaction segment")
 	}
-	csf := newSegmentFile(f)
-
-	activeSeries := []RefSeries{}
+	var (
+		csf          = newSegmentFile(f)
+		crc32        = newCRC32()
+		activeSeries = []RefSeries{}
+	)
 
 Loop:
 	for r.next() {
@@ -337,7 +339,7 @@ Loop:
 		buf := w.getBuffer()
 		flag = w.encodeSeries(buf, activeSeries)
 
-		_, err = w.writeTo(csf, WALEntrySeries, flag, buf.get())
+		_, err = w.writeTo(csf, crc32, WALEntrySeries, flag, buf.get())
 		w.putBuffer(buf)
 
 		if err != nil {
@@ -355,20 +357,17 @@ Loop:
 	if err := csf.Truncate(off); err != nil {
 		return err
 	}
-	if err := csf.Close(); err != nil {
-		return errors.Wrap(err, "close tmp file")
-	}
+	csf.Sync()
+	csf.Close()
+
 	if err := renameFile(csf.Name(), candidates[0].Name()); err != nil {
 		return err
 	}
-
 	for _, f := range candidates[1:] {
-		if err := f.Close(); err != nil {
-			return errors.Wrap(err, "close obsolete WAL segment file")
-		}
 		if err := os.RemoveAll(f.Name()); err != nil {
 			return errors.Wrap(err, "delete WAL segment file")
 		}
+		f.Close()
 	}
 	if err := w.dirFile.Sync(); err != nil {
 		return err
@@ -381,9 +380,7 @@ Loop:
 		return err
 	}
 	// We don't need it to be open.
-	if err := csf.Close(); err != nil {
-		return err
-	}
+	csf.Close()
 
 	w.mtx.Lock()
 	w.files = append([]*segmentFile{csf}, w.files[len(candidates):]...)
@@ -674,19 +671,19 @@ func (w *SegmentWAL) write(t WALEntryType, flag uint8, buf []byte) error {
 			return err
 		}
 	}
-	n, err := w.writeTo(w.cur, t, flag, buf)
+	n, err := w.writeTo(w.cur, w.crc32, t, flag, buf)
 
 	w.curN += int64(n)
 
 	return err
 }
 
-func (w *SegmentWAL) writeTo(wr io.Writer, t WALEntryType, flag uint8, buf []byte) (int, error) {
+func (w *SegmentWAL) writeTo(wr io.Writer, crc32 hash.Hash, t WALEntryType, flag uint8, buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
-	w.crc32.Reset()
-	wr = io.MultiWriter(w.crc32, wr)
+	crc32.Reset()
+	wr = io.MultiWriter(crc32, wr)
 
 	var b [6]byte
 	b[0] = byte(t)
@@ -702,7 +699,7 @@ func (w *SegmentWAL) writeTo(wr io.Writer, t WALEntryType, flag uint8, buf []byt
 	if err != nil {
 		return n1 + n2, err
 	}
-	n3, err := wr.Write(w.crc32.Sum(b[:0]))
+	n3, err := wr.Write(crc32.Sum(b[:0]))
 
 	return n1 + n2 + n3, err
 }

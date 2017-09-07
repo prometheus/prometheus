@@ -240,10 +240,15 @@ func (h *Head) Truncate(mint int64) error {
 	if mint%h.chunkRange != 0 {
 		return errors.Errorf("truncating at %d not aligned", mint)
 	}
-	if h.minTime >= mint {
+	if h.MinTime() >= mint {
 		return nil
 	}
 	atomic.StoreInt64(&h.minTime, mint)
+
+	// Ensure that max time is at least as high as min time.
+	for h.MaxTime() < mint {
+		atomic.CompareAndSwapInt64(&h.maxTime, h.MaxTime(), mint)
+	}
 
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
@@ -279,15 +284,15 @@ func (h *Head) Truncate(mint int64) error {
 // Returns true if the initialization took an effect.
 func (h *Head) initTime(t int64) (initialized bool) {
 	// In the init state, the head has a high timestamp of math.MinInt64.
-	if h.MaxTime() != math.MinInt64 {
-		return false
-	}
 	mint, _ := rangeForTimestamp(t, h.chunkRange)
 
-	if !atomic.CompareAndSwapInt64(&h.maxTime, math.MinInt64, t) {
+	if !atomic.CompareAndSwapInt64(&h.minTime, math.MinInt64, mint) {
 		return false
 	}
-	atomic.StoreInt64(&h.minTime, mint-h.chunkRange)
+	// Ensure that max time is initialized to at least the min time we just set.
+	// Concurrent appenders may already have set it to a higher value.
+	atomic.CompareAndSwapInt64(&h.maxTime, math.MinInt64, t)
+
 	return true
 }
 
@@ -335,7 +340,7 @@ func (h *Head) Appender() Appender {
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
-	if h.MaxTime() == math.MinInt64 {
+	if h.MinTime() == math.MinInt64 {
 		return &initAppender{head: h}
 	}
 	return h.appender()
