@@ -255,7 +255,7 @@ func (s *memorySeries) maybeCloseHeadChunk(timeout time.Duration) (bool, error) 
 	if s.headChunkClosed {
 		return false, nil
 	}
-	if time.Now().Sub(s.lastTime.Time()) > timeout {
+	if time.Since(s.lastTime.Time()) > timeout {
 		s.headChunkClosed = true
 		// Since we cannot modify the head chunk from now on, we
 		// don't need to bother with cloning anymore.
