@@ -465,7 +465,7 @@ type lsetCacheEntry struct {
 }
 
 type refEntry struct {
-	ref      string
+	ref      uint64
 	lastIter uint64
 }
 
@@ -490,7 +490,7 @@ type scrapeCache struct {
 	iter uint64 // Current scrape iteration.
 
 	refs  map[string]*refEntry       // Parsed string to ref.
-	lsets map[string]*lsetCacheEntry // Ref to labelset and string.
+	lsets map[uint64]*lsetCacheEntry // Ref to labelset and string.
 
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
@@ -502,7 +502,7 @@ type scrapeCache struct {
 func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
 		refs:       map[string]*refEntry{},
-		lsets:      map[string]*lsetCacheEntry{},
+		lsets:      map[uint64]*lsetCacheEntry{},
 		seriesCur:  map[uint64]labels.Labels{},
 		seriesPrev: map[uint64]labels.Labels{},
 	}
@@ -530,17 +530,17 @@ func (c *scrapeCache) iterDone() {
 	c.iter++
 }
 
-func (c *scrapeCache) getRef(met string) (string, bool) {
+func (c *scrapeCache) getRef(met string) (uint64, bool) {
 	e, ok := c.refs[met]
 	if !ok {
-		return "", false
+		return 0, false
 	}
 	e.lastIter = c.iter
 	return e.ref, true
 }
 
-func (c *scrapeCache) addRef(met, ref string, lset labels.Labels, hash uint64) {
-	if ref == "" {
+func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, hash uint64) {
+	if ref == 0 {
 		return
 	}
 	// Clean up the label set cache before overwriting the ref for a previously seen
@@ -826,7 +826,7 @@ loop:
 				hash = lset.Hash()
 			}
 
-			var ref string
+			var ref uint64
 			ref, err = app.Add(lset, t, v)
 			// TODO(fabxc): also add a dropped-cache?
 			switch err {

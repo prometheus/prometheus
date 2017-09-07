@@ -129,23 +129,23 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	ref, err := a.a.Add(toTSDBLabels(lset), t, v)
 
 	switch errors.Cause(err) {
 	case tsdb.ErrNotFound:
-		return "", storage.ErrNotFound
+		return 0, storage.ErrNotFound
 	case tsdb.ErrOutOfOrderSample:
-		return "", storage.ErrOutOfOrderSample
+		return 0, storage.ErrOutOfOrderSample
 	case tsdb.ErrAmendSample:
-		return "", storage.ErrDuplicateSampleForTimestamp
+		return 0, storage.ErrDuplicateSampleForTimestamp
 	case tsdb.ErrOutOfBounds:
-		return "", storage.ErrOutOfBounds
+		return 0, storage.ErrOutOfBounds
 	}
 	return ref, err
 }
 
-func (a appender) AddFast(_ labels.Labels, ref string, t int64, v float64) error {
+func (a appender) AddFast(_ labels.Labels, ref uint64, t int64, v float64) error {
 	err := a.a.AddFast(ref, t, v)
 
 	switch errors.Cause(err) {
