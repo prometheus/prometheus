@@ -358,16 +358,30 @@ Loop:
 	if err := csf.Close(); err != nil {
 		return errors.Wrap(err, "close tmp file")
 	}
-
-	if err := renameFile(csf.Name(), candidates[len(candidates)-1].Name()); err != nil {
+	if err := renameFile(csf.Name(), candidates[0].Name()); err != nil {
 		return err
 	}
+
 	for _, f := range candidates[1:] {
+		if err := f.Close(); err != nil {
+			return errors.Wrap(err, "close obsolete WAL segment file")
+		}
 		if err := os.RemoveAll(f.Name()); err != nil {
 			return errors.Wrap(err, "delete WAL segment file")
 		}
 	}
 	if err := w.dirFile.Sync(); err != nil {
+		return err
+	}
+
+	// The file object of csf still holds the name before rename. Recreate it so
+	// subsequent truncations do not look at a non-existant file name.
+	csf.File, err = w.openSegmentFile(candidates[0].Name())
+	if err != nil {
+		return err
+	}
+	// We don't need it to be open.
+	if err := csf.Close(); err != nil {
 		return err
 	}
 

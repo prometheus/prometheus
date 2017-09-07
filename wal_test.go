@@ -122,8 +122,8 @@ func TestSegmentWAL_cut(t *testing.T) {
 
 func TestSegmentWAL_Truncate(t *testing.T) {
 	const (
-		numMetrics = 250
-		batch      = 50
+		numMetrics = 50
+		batch      = 10
 	)
 	series, err := readPrometheusLabels("testdata/20k.series", numMetrics)
 	require.NoError(t, err)
@@ -162,8 +162,22 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	err = w.Truncate(1000, newListPostings(keep))
 	require.NoError(t, err)
+
+	var expected []RefSeries
+
+	for i := 1; i <= numMetrics; i++ {
+		if i%2 == 1 || uint64(i) >= boundarySeries {
+			expected = append(expected, RefSeries{Ref: uint64(i), Labels: series[i-1]})
+		}
+	}
+
+	// Call Truncate once again to see whether we can read the written file without
+	// creating a new WAL.
+	err = w.Truncate(1000, newListPostings(keep))
+	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
+	// The same again with a new WAL.
 	w, err = OpenSegmentWAL(dir, nil, 0)
 	require.NoError(t, err)
 
@@ -175,15 +189,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 		return nil
 	}, nil, nil)
 
-	var expected []RefSeries
-
-	for i := 1; i <= numMetrics; i++ {
-		if i%2 == 1 || uint64(i) >= boundarySeries {
-			expected = append(expected, RefSeries{Ref: uint64(i), Labels: series[i-1]})
-		}
-	}
-
-	require.Equal(t, len(expected), len(readSeries))
+	require.Equal(t, expected, readSeries)
 }
 
 // Symmetrical test of reading and writing to the WAL via its main interface.
