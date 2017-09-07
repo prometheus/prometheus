@@ -82,28 +82,37 @@ The file offset to the beginning of a series serves as the series' ID in all sub
 Every series entry first holds its number of labels, followed by tuples of symbol table references that contain the label name and value. The label pairs are lexicographically sorted.  
 After the labels, the number of indexed chunks is encoded, followed by a sequence of metadata entries containing the chunks minimum and maximum timestamp and a reference to its position in the chunk file. Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.
 
+mint of the first chunk is stored and the mint and maxt are encoded as deltas to the previous time. Similarly, the first delta is stored and the next ref is stored as a delta to the previous.
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│ len <uvarint>                                           │
-├─────────────────────────────────────────────────────────┤
-│ ┌──────────────────┬──────────────────────────────────┐ │
-│ │                  │ ┌──────────────────────────┐     │ │
-│ │                  │ │ ref(l_i.name) <uvarint>  │     │ │
-│ │     #labels      │ ├──────────────────────────┤ ... │ │
-│ │    <uvarint>     │ │ ref(l_i.value) <uvarint> │     │ │
-│ │                  │ └──────────────────────────┘     │ │
-│ ├──────────────────┼──────────────────────────────────┤ │
-│ │                  │ ┌──────────────────────────┐     │ │
-│ │                  │ │ c_i.mint <varint>        │     │ │
-│ │                  │ ├──────────────────────────┤     │ │
-│ │      #chunks     │ │ c_i.maxt <varint>        │     │ │
-│ │     <uvarint>    │ ├──────────────────────────┤ ... │ │
-│ │                  │ │ ref(c_i.data) <uvarint>  │     │ │
-│ │                  │ └──────────────────────────┘     │ │
-│ └──────────────────┴──────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────┤
-│ CRC32 <4b>                                              │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│ len <uvarint>                                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ ┌──────────────────┬──────────────────────────────────────────────────┐ │
+│ │                  │ ┌──────────────────────────────────────────┐     │ │
+│ │                  │ │ ref(l_i.name) <uvarint>                  │     │ │
+│ │     #labels      │ ├──────────────────────────────────────────┤ ... │ │
+│ │    <uvarint>     │ │ ref(l_i.value) <uvarint>                 │     │ │
+│ │                  │ └──────────────────────────────────────────┘     │ │
+│ ├──────────────────┼──────────────────────────────────────────────────┤ │
+│ │                  │ ┌──────────────────────────────────────────┐     │ │
+│ │                  │ │ c_0.mint <varint>                        │     │ │
+│ │                  │ ├──────────────────────────────────────────┤     │ │
+│ │                  │ │ c_0.maxt - c_0.mint <uvarint>            │     │ │
+│ │                  │ ├──────────────────────────────────────────┤     │ │
+│ │                  │ │ ref(c_0.data) <uvarint>                  │     │ │
+│ │      #chunks     │ └──────────────────────────────────────────┘     │ │
+│ │     <uvarint>    │ ┌──────────────────────────────────────────┐     │ │
+│ │                  │ │ c_i.mint - c_i-1.maxt <uvarint>          │     │ │
+│ │                  │ ├──────────────────────────────────────────┤     │ │
+│ │                  │ │ c_i.maxt - c_i.mint <uvarint>            │     │ │
+│ │                  │ ├──────────────────────────────────────────┤ ... │ │
+│ │                  │ │ ref(c_i.data) - ref(c_i-1.data) <varint> │     │ │
+│ │                  │ └──────────────────────────────────────────┘     │ │
+│ └──────────────────┴──────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────────────┤
+│ CRC32 <4b>                                                              │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 
