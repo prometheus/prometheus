@@ -26,14 +26,23 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
-// DiskBlock handles reads against a Block of time series data.
 type DiskBlock interface {
+	BlockReader
+
 	// Directory where block data is stored.
 	Dir() string
 
 	// Stats returns statistics about the block.
 	Meta() BlockMeta
 
+	Delete(mint, maxt int64, m ...labels.Matcher) error
+
+	Snapshot(dir string) error
+
+	Close() error
+}
+
+type BlockReader interface {
 	// Index returns an IndexReader over the block's data.
 	Index() IndexReader
 
@@ -42,30 +51,6 @@ type DiskBlock interface {
 
 	// Tombstones returns a TombstoneReader over the block's deleted data.
 	Tombstones() TombstoneReader
-
-	// Delete deletes data from the block.
-	Delete(mint, maxt int64, ms ...labels.Matcher) error
-
-	// Close releases all underlying resources of the block.
-	Close() error
-}
-
-// Block is an interface to a DiskBlock that can also be queried.
-type Block interface {
-	DiskBlock
-	Queryable
-	Snapshottable
-}
-
-// headBlock is a regular block that can still be appended to.
-type headBlock interface {
-	Block
-	Appendable
-
-	// ActiveWriters returns the number of currently active appenders.
-	ActiveWriters() int
-	// HighTimestamp returns the highest currently inserted timestamp.
-	HighTimestamp() int64
 }
 
 // Snapshottable defines an entity that can be backedup online.
@@ -225,16 +210,6 @@ func (pb *persistedBlock) String() string {
 	return pb.meta.ULID.String()
 }
 
-func (pb *persistedBlock) Querier(mint, maxt int64) Querier {
-	return &blockQuerier{
-		mint:       mint,
-		maxt:       maxt,
-		index:      pb.Index(),
-		chunks:     pb.Chunks(),
-		tombstones: pb.Tombstones(),
-	}
-}
-
 func (pb *persistedBlock) Dir() string         { return pb.dir }
 func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
 func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
@@ -250,7 +225,7 @@ func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	stones := map[uint32]intervals{}
+	stones := map[uint64]Intervals{}
 
 	var lset labels.Labels
 	var chks []ChunkMeta
@@ -272,7 +247,7 @@ Outer:
 			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
 				// Delete only until the current vlaues and not beyond.
 				tmin, tmax := clampInterval(mint, maxt, chks[0].MinTime, chks[len(chks)-1].MaxTime)
-				stones[p.At()] = intervals{{tmin, tmax}}
+				stones[p.At()] = Intervals{{tmin, tmax}}
 				continue Outer
 			}
 		}

@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
-	"hash/crc32"
 	"io"
 	"os"
 
@@ -59,7 +58,7 @@ func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 type deletedIterator struct {
 	it chunks.Iterator
 
-	intervals intervals
+	intervals Intervals
 }
 
 func (it *deletedIterator) At() (int64, float64) {
@@ -76,7 +75,7 @@ Outer:
 				continue Outer
 			}
 
-			if ts > tr.maxt {
+			if ts > tr.Maxt {
 				it.intervals = it.intervals[1:]
 				continue
 			}
@@ -136,7 +135,7 @@ func newChunkWriter(dir string) (*chunkWriter, error) {
 	cw := &chunkWriter{
 		dirFile:     dirFile,
 		n:           0,
-		crc32:       crc32.New(crc32.MakeTable(crc32.Castagnoli)),
+		crc32:       newCRC32(),
 		segmentSize: defaultChunkSegmentSize,
 	}
 	return cw, nil
@@ -180,7 +179,7 @@ func (w *chunkWriter) cut() error {
 		return err
 	}
 
-	p, _, err := nextSequenceFile(w.dirFile.Name(), "")
+	p, _, err := nextSequenceFile(w.dirFile.Name())
 	if err != nil {
 		return err
 	}
@@ -303,7 +302,7 @@ type chunkReader struct {
 
 // newChunkReader returns a new chunkReader based on mmaped files found in dir.
 func newChunkReader(dir string, pool chunks.Pool) (*chunkReader, error) {
-	files, err := sequenceFiles(dir, "")
+	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err
 	}
