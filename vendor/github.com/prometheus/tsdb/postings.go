@@ -17,31 +17,47 @@ import (
 	"encoding/binary"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/prometheus/tsdb/labels"
 )
 
 type memPostings struct {
-	m map[term][]uint32
+	mtx sync.RWMutex
+	m   map[labels.Label][]uint64
 }
 
-type term struct {
-	name, value string
+func newMemPostings() *memPostings {
+	return &memPostings{
+		m: make(map[labels.Label][]uint64, 512),
+	}
 }
 
 // Postings returns an iterator over the postings list for s.
-func (p *memPostings) get(t term) Postings {
-	l := p.m[t]
+func (p *memPostings) get(name, value string) Postings {
+	p.mtx.RLock()
+	l := p.m[labels.Label{Name: name, Value: value}]
+	p.mtx.RUnlock()
+
 	if l == nil {
 		return emptyPostings
 	}
 	return newListPostings(l)
 }
 
+var allLabel = labels.Label{}
+
 // add adds a document to the index. The caller has to ensure that no
 // term argument appears twice.
-func (p *memPostings) add(id uint32, terms ...term) {
-	for _, t := range terms {
-		p.m[t] = append(p.m[t], id)
+func (p *memPostings) add(id uint64, lset labels.Labels) {
+	p.mtx.Lock()
+
+	for _, l := range lset {
+		p.m[l] = append(p.m[l], id)
 	}
+	p.m[allLabel] = append(p.m[allLabel], id)
+
+	p.mtx.Unlock()
 }
 
 // Postings provides iterative access over a postings list.
@@ -51,10 +67,10 @@ type Postings interface {
 
 	// Seek advances the iterator to value v or greater and returns
 	// true if a value was found.
-	Seek(v uint32) bool
+	Seek(v uint64) bool
 
 	// At returns the value at the current iterator position.
-	At() uint32
+	At() uint64
 
 	// Err returns the last error of the iterator.
 	Err() error
@@ -66,8 +82,8 @@ type errPostings struct {
 }
 
 func (e errPostings) Next() bool       { return false }
-func (e errPostings) Seek(uint32) bool { return false }
-func (e errPostings) At() uint32       { return 0 }
+func (e errPostings) Seek(uint64) bool { return false }
+func (e errPostings) At() uint64       { return 0 }
 func (e errPostings) Err() error       { return e.err }
 
 var emptyPostings = errPostings{}
@@ -88,18 +104,18 @@ func Intersect(its ...Postings) Postings {
 type intersectPostings struct {
 	a, b     Postings
 	aok, bok bool
-	cur      uint32
+	cur      uint64
 }
 
 func newIntersectPostings(a, b Postings) *intersectPostings {
 	return &intersectPostings{a: a, b: b}
 }
 
-func (it *intersectPostings) At() uint32 {
+func (it *intersectPostings) At() uint64 {
 	return it.cur
 }
 
-func (it *intersectPostings) doNext(id uint32) bool {
+func (it *intersectPostings) doNext(id uint64) bool {
 	for {
 		if !it.b.Seek(id) {
 			return false
@@ -125,7 +141,7 @@ func (it *intersectPostings) Next() bool {
 	return it.doNext(it.a.At())
 }
 
-func (it *intersectPostings) Seek(id uint32) bool {
+func (it *intersectPostings) Seek(id uint64) bool {
 	if !it.a.Seek(id) {
 		return false
 	}
@@ -155,14 +171,14 @@ type mergedPostings struct {
 	a, b        Postings
 	initialized bool
 	aok, bok    bool
-	cur         uint32
+	cur         uint64
 }
 
 func newMergedPostings(a, b Postings) *mergedPostings {
 	return &mergedPostings{a: a, b: b}
 }
 
-func (it *mergedPostings) At() uint32 {
+func (it *mergedPostings) At() uint64 {
 	return it.cur
 }
 
@@ -204,7 +220,7 @@ func (it *mergedPostings) Next() bool {
 	return true
 }
 
-func (it *mergedPostings) Seek(id uint32) bool {
+func (it *mergedPostings) Seek(id uint64) bool {
 	if it.cur >= id {
 		return true
 	}
@@ -225,15 +241,15 @@ func (it *mergedPostings) Err() error {
 
 // listPostings implements the Postings interface over a plain list.
 type listPostings struct {
-	list []uint32
-	cur  uint32
+	list []uint64
+	cur  uint64
 }
 
-func newListPostings(list []uint32) *listPostings {
+func newListPostings(list []uint64) *listPostings {
 	return &listPostings{list: list}
 }
 
-func (it *listPostings) At() uint32 {
+func (it *listPostings) At() uint64 {
 	return it.cur
 }
 
@@ -247,7 +263,7 @@ func (it *listPostings) Next() bool {
 	return false
 }
 
-func (it *listPostings) Seek(x uint32) bool {
+func (it *listPostings) Seek(x uint64) bool {
 	// If the current value satisfies, then return.
 	if it.cur >= x {
 		return true
@@ -281,8 +297,8 @@ func newBigEndianPostings(list []byte) *bigEndianPostings {
 	return &bigEndianPostings{list: list}
 }
 
-func (it *bigEndianPostings) At() uint32 {
-	return it.cur
+func (it *bigEndianPostings) At() uint64 {
+	return uint64(it.cur)
 }
 
 func (it *bigEndianPostings) Next() bool {
@@ -294,15 +310,15 @@ func (it *bigEndianPostings) Next() bool {
 	return false
 }
 
-func (it *bigEndianPostings) Seek(x uint32) bool {
-	if it.cur >= x {
+func (it *bigEndianPostings) Seek(x uint64) bool {
+	if uint64(it.cur) >= x {
 		return true
 	}
 
 	num := len(it.list) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint32(it.list[i*4:]) >= x
+		return binary.BigEndian.Uint32(it.list[i*4:]) >= uint32(x)
 	})
 	if i < num {
 		j := i * 4

@@ -54,26 +54,6 @@ type querier struct {
 	blocks []Querier
 }
 
-// Querier returns a new querier over the data partition for the given time range.
-// A goroutine must not handle more than one open Querier.
-func (s *DB) Querier(mint, maxt int64) Querier {
-	s.mtx.RLock()
-
-	s.headmtx.RLock()
-	blocks := s.blocksForInterval(mint, maxt)
-	s.headmtx.RUnlock()
-
-	sq := &querier{
-		blocks: make([]Querier, 0, len(blocks)),
-		db:     s,
-	}
-	for _, b := range blocks {
-		sq.blocks = append(sq.blocks, b.Querier(mint, maxt))
-	}
-
-	return sq
-}
-
 func (q *querier) LabelValues(n string) ([]string, error) {
 	return q.lvals(q.blocks, n)
 }
@@ -126,6 +106,18 @@ func (q *querier) Close() error {
 	q.db.mtx.RUnlock()
 
 	return merr.Err()
+}
+
+// NewBlockQuerier returns a queries against the readers.
+func NewBlockQuerier(ir IndexReader, cr ChunkReader, tr TombstoneReader, mint, maxt int64) Querier {
+	return &blockQuerier{
+		index:      ir,
+		chunks:     cr,
+		tombstones: tr,
+
+		mint: mint,
+		maxt: maxt,
+	}
 }
 
 // blockQuerier provides querying access to a single block database.
@@ -348,6 +340,13 @@ type mergedSeriesSet struct {
 	adone, bdone bool
 }
 
+// NewMergedSeriesSet takes two series sets as a single series set. The input series sets
+// must be sorted and sequential in time, i.e. if they have the same label set,
+// the datapoints of a must be before the datapoints of b.
+func NewMergedSeriesSet(a, b SeriesSet) SeriesSet {
+	return newMergedSeriesSet(a, b)
+}
+
 func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
 	s := &mergedSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
@@ -403,7 +402,7 @@ func (s *mergedSeriesSet) Next() bool {
 
 type chunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta, intervals)
+	At() (labels.Labels, []ChunkMeta, Intervals)
 	Err() error
 }
 
@@ -417,11 +416,11 @@ type baseChunkSeries struct {
 
 	lset      labels.Labels
 	chks      []ChunkMeta
-	intervals intervals
+	intervals Intervals
 	err       error
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, intervals) {
+func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
 
@@ -455,7 +454,7 @@ Outer:
 			// Only those chunks that are not entirely deleted.
 			chks := make([]ChunkMeta, 0, len(s.chks))
 			for _, chk := range s.chks {
-				if !(interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
+				if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
 					chks = append(chks, chk)
 				}
 			}
@@ -482,10 +481,10 @@ type populatedChunkSeries struct {
 	err       error
 	chks      []ChunkMeta
 	lset      labels.Labels
-	intervals intervals
+	intervals Intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, intervals) {
+func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
 func (s *populatedChunkSeries) Err() error { return s.err }
@@ -570,7 +569,7 @@ type chunkSeries struct {
 
 	mint, maxt int64
 
-	intervals intervals
+	intervals Intervals
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -676,11 +675,12 @@ type chunkSeriesIterator struct {
 
 	maxt, mint int64
 
-	intervals intervals
+	intervals Intervals
 }
 
-func newChunkSeriesIterator(cs []ChunkMeta, dranges intervals, mint, maxt int64) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []ChunkMeta, dranges Intervals, mint, maxt int64) *chunkSeriesIterator {
 	it := cs[0].Chunk.Iterator()
+
 	if len(dranges) > 0 {
 		it = &deletedIterator{it: it, intervals: dranges}
 	}
@@ -731,19 +731,22 @@ func (it *chunkSeriesIterator) At() (t int64, v float64) {
 }
 
 func (it *chunkSeriesIterator) Next() bool {
-	for it.cur.Next() {
+	if it.cur.Next() {
 		t, _ := it.cur.At()
-		if t < it.mint {
-			return it.Seek(it.mint)
-		}
 
+		if t < it.mint {
+			if !it.Seek(it.mint) {
+				return false
+			}
+			t, _ = it.At()
+
+			return t <= it.maxt
+		}
 		if t > it.maxt {
 			return false
 		}
-
 		return true
 	}
-
 	if err := it.cur.Err(); err != nil {
 		return false
 	}

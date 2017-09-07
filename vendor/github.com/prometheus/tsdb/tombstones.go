@@ -16,7 +16,6 @@ package tsdb
 import (
 	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"os"
@@ -34,10 +33,15 @@ const (
 	tombstoneFormatV1 = 1
 )
 
+// TombstoneReader is the iterator over tombstones.
+type TombstoneReader interface {
+	Get(ref uint64) Intervals
+}
+
 func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
-	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	hash := newCRC32()
 
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -60,9 +64,9 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	for k, v := range tr {
 		for _, itv := range v {
 			buf.reset()
-			buf.putUvarint32(k)
-			buf.putVarint64(itv.mint)
-			buf.putVarint64(itv.maxt)
+			buf.putUvarint64(k)
+			buf.putVarint64(itv.Mint)
+			buf.putVarint64(itv.Maxt)
 
 			_, err = mw.Write(buf.get())
 			if err != nil {
@@ -82,13 +86,8 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 // Stone holds the information on the posting and time-range
 // that is deleted.
 type Stone struct {
-	ref       uint32
-	intervals intervals
-}
-
-// TombstoneReader is the iterator over tombstones.
-type TombstoneReader interface {
-	Get(ref uint32) intervals
+	ref       uint64
+	intervals Intervals
 }
 
 func readTombstones(dir string) (tombstoneReader, error) {
@@ -114,7 +113,7 @@ func readTombstones(dir string) (tombstoneReader, error) {
 	}
 
 	// Verify checksum
-	hash := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	hash := newCRC32()
 	if _, err := hash.Write(d.get()); err != nil {
 		return nil, errors.Wrap(err, "write to hash")
 	}
@@ -124,48 +123,49 @@ func readTombstones(dir string) (tombstoneReader, error) {
 
 	stonesMap := newEmptyTombstoneReader()
 	for d.len() > 0 {
-		k := d.uvarint32()
+		k := d.uvarint64()
 		mint := d.varint64()
 		maxt := d.varint64()
 		if d.err() != nil {
 			return nil, d.err()
 		}
 
-		stonesMap.add(k, interval{mint, maxt})
+		stonesMap.add(k, Interval{mint, maxt})
 	}
 
 	return newTombstoneReader(stonesMap), nil
 }
 
-type tombstoneReader map[uint32]intervals
+type tombstoneReader map[uint64]Intervals
 
-func newTombstoneReader(ts map[uint32]intervals) tombstoneReader {
+func newTombstoneReader(ts map[uint64]Intervals) tombstoneReader {
 	return tombstoneReader(ts)
 }
 
 func newEmptyTombstoneReader() tombstoneReader {
-	return tombstoneReader(make(map[uint32]intervals))
+	return tombstoneReader(make(map[uint64]Intervals))
 }
 
-func (t tombstoneReader) Get(ref uint32) intervals {
+func (t tombstoneReader) Get(ref uint64) Intervals {
 	return t[ref]
 }
 
-func (t tombstoneReader) add(ref uint32, itv interval) {
+func (t tombstoneReader) add(ref uint64, itv Interval) {
 	t[ref] = t[ref].add(itv)
 }
 
-type interval struct {
-	mint, maxt int64
+// Interval represents a single time-interval.
+type Interval struct {
+	Mint, Maxt int64
 }
 
-func (tr interval) inBounds(t int64) bool {
-	return t >= tr.mint && t <= tr.maxt
+func (tr Interval) inBounds(t int64) bool {
+	return t >= tr.Mint && t <= tr.Maxt
 }
 
-func (tr interval) isSubrange(dranges intervals) bool {
+func (tr Interval) isSubrange(dranges Intervals) bool {
 	for _, r := range dranges {
-		if r.inBounds(tr.mint) && r.inBounds(tr.maxt) {
+		if r.inBounds(tr.Mint) && r.inBounds(tr.Maxt) {
 			return true
 		}
 	}
@@ -173,43 +173,44 @@ func (tr interval) isSubrange(dranges intervals) bool {
 	return false
 }
 
-type intervals []interval
+// Intervals represents	a set of increasing and non-overlapping time-intervals.
+type Intervals []Interval
 
 // This adds the new time-range to the existing ones.
 // The existing ones must be sorted.
-func (itvs intervals) add(n interval) intervals {
+func (itvs Intervals) add(n Interval) Intervals {
 	for i, r := range itvs {
 		// TODO(gouthamve): Make this codepath easier to digest.
-		if r.inBounds(n.mint-1) || r.inBounds(n.mint) {
-			if n.maxt > r.maxt {
-				itvs[i].maxt = n.maxt
+		if r.inBounds(n.Mint-1) || r.inBounds(n.Mint) {
+			if n.Maxt > r.Maxt {
+				itvs[i].Maxt = n.Maxt
 			}
 
 			j := 0
 			for _, r2 := range itvs[i+1:] {
-				if n.maxt < r2.mint {
+				if n.Maxt < r2.Mint {
 					break
 				}
 				j++
 			}
 			if j != 0 {
-				if itvs[i+j].maxt > n.maxt {
-					itvs[i].maxt = itvs[i+j].maxt
+				if itvs[i+j].Maxt > n.Maxt {
+					itvs[i].Maxt = itvs[i+j].Maxt
 				}
 				itvs = append(itvs[:i+1], itvs[i+j+1:]...)
 			}
 			return itvs
 		}
 
-		if r.inBounds(n.maxt+1) || r.inBounds(n.maxt) {
-			if n.mint < r.maxt {
-				itvs[i].mint = n.mint
+		if r.inBounds(n.Maxt+1) || r.inBounds(n.Maxt) {
+			if n.Mint < r.Maxt {
+				itvs[i].Mint = n.Mint
 			}
 			return itvs
 		}
 
-		if n.mint < r.mint {
-			newRange := make(intervals, i, len(itvs[:i])+1)
+		if n.Mint < r.Mint {
+			newRange := make(Intervals, i, len(itvs[:i])+1)
 			copy(newRange, itvs[:i])
 			newRange = append(newRange, n)
 			newRange = append(newRange, itvs[i:]...)
