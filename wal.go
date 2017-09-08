@@ -398,6 +398,10 @@ func (w *SegmentWAL) LogSeries(series []RefSeries) error {
 	buf := w.getBuffer()
 
 	flag := w.encodeSeries(buf, series)
+
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
 	err := w.write(WALEntrySeries, flag, buf.get())
 
 	w.putBuffer(buf)
@@ -425,6 +429,10 @@ func (w *SegmentWAL) LogSamples(samples []RefSample) error {
 	buf := w.getBuffer()
 
 	flag := w.encodeSamples(buf, samples)
+
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
 	err := w.write(WALEntrySamples, flag, buf.get())
 
 	w.putBuffer(buf)
@@ -451,6 +459,10 @@ func (w *SegmentWAL) LogDeletes(stones []Stone) error {
 	buf := w.getBuffer()
 
 	flag := w.encodeDeletes(buf, stones)
+
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
 	err := w.write(WALEntryDeletes, flag, buf.get())
 
 	w.putBuffer(buf)
@@ -661,8 +673,6 @@ const (
 )
 
 func (w *SegmentWAL) write(t WALEntryType, flag uint8, buf []byte) error {
-	w.mtx.Lock()
-	defer w.mtx.Unlock()
 	// Cut to the next segment if the entry exceeds the file size unless it would also
 	// exceed the size of a new segment.
 	// TODO(gouthamve): Add a test for this case where the commit is greater than segmentSize.
