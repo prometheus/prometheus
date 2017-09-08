@@ -145,7 +145,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(ctx context.Context, s scraper, app, reportApp func() storage.Appender, _ log.Logger) loop {
+	newLoop := func(_ *Target, s scraper) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -228,92 +228,48 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 }
 
-func TestScrapePoolReportAppender(t *testing.T) {
-	cfg := &config.ScrapeConfig{
-		MetricRelabelConfigs: []*config.RelabelConfig{
-			{}, {}, {},
-		},
-	}
-	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
+func TestScrapePoolAppender(t *testing.T) {
+	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-
 	sp := newScrapePool(context.Background(), cfg, app, log.Base())
 
-	cfg.HonorLabels = false
-	wrapped := sp.reportAppender(target)
+	wrapped := sp.appender()
 
-	rl, ok := wrapped.(ruleLabelsAppender)
+	tl, ok := wrapped.(*timeLimitAppender)
 	if !ok {
-		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
+		t.Fatalf("Expected timeLimitAppender but got %T", wrapped)
 	}
-	if _, ok := rl.Appender.(nopAppender); !ok {
-		t.Fatalf("Expected base appender but got %T", rl.Appender)
-	}
-
-	cfg.HonorLabels = true
-	wrapped = sp.reportAppender(target)
-
-	hl, ok := wrapped.(ruleLabelsAppender)
-	if !ok {
-		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
-	}
-	if _, ok := rl.Appender.(nopAppender); !ok {
-		t.Fatalf("Expected base appender but got %T", hl.Appender)
-	}
-}
-
-func TestScrapePoolSampleAppender(t *testing.T) {
-	cfg := &config.ScrapeConfig{
-		MetricRelabelConfigs: []*config.RelabelConfig{
-			{}, {}, {},
-		},
+	if _, ok := tl.Appender.(nopAppender); !ok {
+		t.Fatalf("Expected base appender but got %T", tl.Appender)
 	}
 
-	target := newTestTarget("example.com:80", 10*time.Millisecond, nil)
-	app := &nopAppendable{}
-
-	sp := newScrapePool(context.Background(), cfg, app, log.Base())
-	sp.maxAheadTime = 0
-
-	cfg.HonorLabels = false
-	wrapped := sp.sampleAppender(target)
-
-	rl, ok := wrapped.(ruleLabelsAppender)
-	if !ok {
-		t.Fatalf("Expected ruleLabelsAppender but got %T", wrapped)
-	}
-	re, ok := rl.Appender.(relabelAppender)
-	if !ok {
-		t.Fatalf("Expected relabelAppender but got %T", rl.Appender)
-	}
-	if _, ok := re.Appender.(nopAppender); !ok {
-		t.Fatalf("Expected base appender but got %T", re.Appender)
-	}
-
-	cfg.HonorLabels = true
 	cfg.SampleLimit = 100
-	wrapped = sp.sampleAppender(target)
 
-	hl, ok := wrapped.(honorLabelsAppender)
+	wrapped = sp.appender()
+
+	sl, ok := wrapped.(*limitAppender)
 	if !ok {
-		t.Fatalf("Expected honorLabelsAppender but got %T", wrapped)
+		t.Fatalf("Expected limitAppender but got %T", wrapped)
 	}
-	re, ok = hl.Appender.(relabelAppender)
+	tl, ok = sl.Appender.(*timeLimitAppender)
 	if !ok {
-		t.Fatalf("Expected relabelAppender but got %T", hl.Appender)
+		t.Fatalf("Expected limitAppender but got %T", sl.Appender)
 	}
-	lm, ok := re.Appender.(*limitAppender)
-	if !ok {
-		t.Fatalf("Expected limitAppender but got %T", lm.Appender)
-	}
-	if _, ok := lm.Appender.(nopAppender); !ok {
-		t.Fatalf("Expected base appender but got %T", re.Appender)
+	if _, ok := tl.Appender.(nopAppender); !ok {
+		t.Fatalf("Expected base appender but got %T", tl.Appender)
 	}
 }
 
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	scraper := &testScraper{}
-	sl := newScrapeLoop(context.Background(), scraper, nil, nil, nil, nil)
+
+	sl := newScrapeLoop(context.Background(),
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		nil,
+	)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
 	// loops are started asynchronously. Thus it's possible, that a loop is stopped
@@ -358,22 +314,28 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	}
 }
 
-func TestScrapeLoopStop(t *testing.T) {
-	appender := &collectResultAppender{}
-	reportAppender := &collectResultAppender{}
-	var (
-		signal = make(chan struct{})
+func nopMutator(l labels.Labels) labels.Labels { return l }
 
-		scraper    = &testScraper{}
-		app        = func() storage.Appender { return appender }
-		reportApp  = func() storage.Appender { return reportAppender }
-		numScrapes = 0
+func TestScrapeLoopStop(t *testing.T) {
+	var (
+		signal   = make(chan struct{})
+		appender = &collectResultAppender{}
+		scraper  = &testScraper{}
+		app      = func() storage.Appender { return appender }
 	)
 	defer close(signal)
 
-	sl := newScrapeLoop(context.Background(), scraper, app, reportApp, nil, nil)
+	sl := newScrapeLoop(context.Background(),
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 
-	// Succeed once, several failures, then stop.
+	// Terminate loop after 2 scrapes.
+	numScrapes := 0
+
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
 		if numScrapes == 2 {
@@ -394,25 +356,25 @@ func TestScrapeLoopStop(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	if len(appender.result) < 2 {
-		t.Fatalf("Appended samples not as expected. Wanted: at least %d samples Got: %d", 2, len(appender.result))
+	// We expected 1 actual sample for each scrape plus 4 for report samples.
+	// At least 2 scrapes were made, plus the final stale markers.
+	if len(appender.result) < 5*3 || len(appender.result)%5 != 0 {
+		t.Fatalf("Expected at least 3 scrapes with 4 samples each, got %d samples", len(appender.result))
 	}
-	if !value.IsStaleNaN(appender.result[len(appender.result)-1].v) {
-		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[len(appender.result)-1].v))
+	// All samples in a scrape must have the same timestmap.
+	var ts int64
+	for i, s := range appender.result {
+		if i%5 == 0 {
+			ts = s.t
+		} else if s.t != ts {
+			t.Fatalf("Unexpected multiple timestamps within single scrape")
+		}
 	}
-
-	if len(reportAppender.result) < 8 {
-		t.Fatalf("Appended samples not as expected. Wanted: at least %d samples Got: %d", 8, len(reportAppender.result))
-	}
-	if len(reportAppender.result)%4 != 0 {
-		t.Fatalf("Appended samples not as expected. Wanted: samples mod 4 == 0 Got: %d samples", len(reportAppender.result))
-	}
-	if !value.IsStaleNaN(reportAppender.result[len(reportAppender.result)-1].v) {
-		t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(reportAppender.result[len(reportAppender.result)].v))
-	}
-
-	if reportAppender.result[len(reportAppender.result)-1].t != appender.result[len(appender.result)-1].t {
-		t.Fatalf("Expected last append and report sample to have same timestamp. Append: stale NaN Report: %x", appender.result[len(appender.result)-1].t, reportAppender.result[len(reportAppender.result)-1].t)
+	// All samples from the last scrape must be stale markers.
+	for _, s := range appender.result[len(appender.result)-5:] {
+		if !value.IsStaleNaN(s.v) {
+			t.Fatalf("Appended last sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(s.v))
+		}
 	}
 }
 
@@ -421,14 +383,19 @@ func TestScrapeLoopRun(t *testing.T) {
 		signal = make(chan struct{})
 		errc   = make(chan error)
 
-		scraper   = &testScraper{}
-		app       = func() storage.Appender { return &nopAppender{} }
-		reportApp = func() storage.Appender { return &nopAppender{} }
+		scraper = &testScraper{}
+		app     = func() storage.Appender { return &nopAppender{} }
 	)
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp, nil, nil)
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 
 	// The loop must terminate during the initial offset if the context
 	// is canceled.
@@ -466,7 +433,13 @@ func TestScrapeLoopRun(t *testing.T) {
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
-	sl = newScrapeLoop(ctx, scraper, app, reportApp, nil, nil)
+	sl = newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 
 	go func() {
 		sl.run(time.Second, 100*time.Millisecond, errc)
@@ -501,19 +474,23 @@ func TestScrapeLoopRun(t *testing.T) {
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
-		signal = make(chan struct{})
-
-		scraper    = &testScraper{}
-		app        = func() storage.Appender { return appender }
-		reportApp  = func() storage.Appender { return &nopAppender{} }
-		numScrapes = 0
+		signal  = make(chan struct{})
+		scraper = &testScraper{}
+		app     = func() storage.Appender { return appender }
 	)
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp, nil, nil)
-
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 	// Succeed once, several failures, then stop.
+	numScrapes := 0
+
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
 
@@ -537,31 +514,37 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	if len(appender.result) != 2 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 2, len(appender.result))
+	// 1 successfully scraped sample, 1 stale marker after first fail, 4 report samples for
+	// each scrape successful or not.
+	if len(appender.result) != 22 {
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
 		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0], 42)
 	}
-	if !value.IsStaleNaN(appender.result[1].v) {
-		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[1].v))
+	if !value.IsStaleNaN(appender.result[5].v) {
+		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
 	}
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
-		signal = make(chan struct{})
-
+		signal     = make(chan struct{})
 		scraper    = &testScraper{}
 		app        = func() storage.Appender { return appender }
-		reportApp  = func() storage.Appender { return &nopAppender{} }
 		numScrapes = 0
 	)
 	defer close(signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, app, reportApp, nil, nil)
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -590,26 +573,29 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		t.Fatalf("Scrape wasn't stopped.")
 	}
 
-	if len(appender.result) != 2 {
-		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 2, len(appender.result))
+	// 1 successfully scraped sample, 1 stale marker after first fail, 4 report samples for
+	// each scrape successful or not.
+	if len(appender.result) != 14 {
+		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
 		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0], 42)
 	}
-	if !value.IsStaleNaN(appender.result[1].v) {
-		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[1].v))
+	if !value.IsStaleNaN(appender.result[5].v) {
+		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
 	}
 }
 
 func TestScrapeLoopAppend(t *testing.T) {
 	app := &collectResultAppender{}
 
-	sl := newScrapeLoop(context.Background(), nil,
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		nopMutator,
+		nopMutator,
 		func() storage.Appender { return app },
-		func() storage.Appender { return nopAppender{} },
-		nil,
-		nil,
 	)
+
 	now := time.Now()
 	_, _, err := sl.append([]byte("metric_a 1\nmetric_b NaN\n"), now)
 	if err != nil {
@@ -642,11 +628,12 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 func TestScrapeLoopAppendStaleness(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := newScrapeLoop(context.Background(), nil,
+
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		nopMutator,
+		nopMutator,
 		func() storage.Appender { return app },
-		func() storage.Appender { return nopAppender{} },
-		nil,
-		nil,
 	)
 
 	now := time.Now()
@@ -686,11 +673,11 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := newScrapeLoop(context.Background(), nil,
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		nopMutator,
+		nopMutator,
 		func() storage.Appender { return app },
-		func() storage.Appender { return nopAppender{} },
-		nil,
-		nil,
 	)
 
 	now := time.Now()
@@ -713,128 +700,23 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
-
-}
-
-func TestScrapeLoopRunAppliesScrapeLimit(t *testing.T) {
-
-	cases := []struct {
-		appender                                  func() storage.Appender
-		up                                        float64
-		scrapeSamplesScraped                      float64
-		scrapeSamplesScrapedPostMetricRelabelling float64
-	}{
-		{
-			appender:                                  func() storage.Appender { return nopAppender{} },
-			up:                                        1,
-			scrapeSamplesScraped:                      3,
-			scrapeSamplesScrapedPostMetricRelabelling: 3,
-		},
-		{
-			appender: func() storage.Appender {
-				return &limitAppender{Appender: nopAppender{}, limit: 3}
-			},
-			up:                                        1,
-			scrapeSamplesScraped:                      3,
-			scrapeSamplesScrapedPostMetricRelabelling: 3,
-		},
-		{
-			appender: func() storage.Appender {
-				return &limitAppender{Appender: nopAppender{}, limit: 2}
-			},
-			up:                                        0,
-			scrapeSamplesScraped:                      3,
-			scrapeSamplesScrapedPostMetricRelabelling: 3,
-		},
-		{
-			appender: func() storage.Appender {
-				return &relabelAppender{
-					Appender: &limitAppender{Appender: nopAppender{}, limit: 2},
-					relabelings: []*config.RelabelConfig{
-						&config.RelabelConfig{
-							SourceLabels: model.LabelNames{"__name__"},
-							Regex:        config.MustNewRegexp("a"),
-							Action:       config.RelabelDrop,
-						},
-					},
-				}
-			},
-			up:                                        1,
-			scrapeSamplesScraped:                      3,
-			scrapeSamplesScrapedPostMetricRelabelling: 2,
-		},
-	}
-
-	for i, c := range cases {
-		reportAppender := &collectResultAppender{}
-		var (
-			signal     = make(chan struct{})
-			scraper    = &testScraper{}
-			numScrapes = 0
-			reportApp  = func() storage.Appender {
-				// Get result of the 2nd scrape.
-				if numScrapes == 2 {
-					return reportAppender
-				} else {
-					return nopAppender{}
-				}
-			}
-		)
-		defer close(signal)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		sl := newScrapeLoop(ctx, scraper, c.appender, reportApp, nil, nil)
-
-		// Setup a series to be stale, then 3 samples, then stop.
-		scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-			numScrapes += 1
-			if numScrapes == 1 {
-				w.Write([]byte("stale 0\n"))
-				return nil
-			} else if numScrapes == 2 {
-				w.Write([]byte("a 0\nb 0\nc 0 \n"))
-				return nil
-			} else if numScrapes == 3 {
-				cancel()
-			}
-			return fmt.Errorf("Scrape failed.")
-		}
-
-		go func() {
-			sl.run(10*time.Millisecond, time.Hour, nil)
-			signal <- struct{}{}
-		}()
-
-		select {
-		case <-signal:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("Scrape wasn't stopped.")
-		}
-
-		if len(reportAppender.result) != 4 {
-			t.Fatalf("Case %d appended report samples not as expected. Wanted: %d samples Got: %d", i, 4, len(reportAppender.result))
-		}
-		if reportAppender.result[0].v != c.up {
-			t.Fatalf("Case %d appended up sample not as expected. Wanted: %f Got: %+v", i, c.up, reportAppender.result[0])
-		}
-		if reportAppender.result[2].v != c.scrapeSamplesScraped {
-			t.Fatalf("Case %d appended scrape_samples_scraped sample not as expected. Wanted: %f Got: %+v", i, c.scrapeSamplesScraped, reportAppender.result[2])
-		}
-		if reportAppender.result[3].v != c.scrapeSamplesScrapedPostMetricRelabelling {
-			t.Fatalf("Case %d appended scrape_samples_scraped_post_metric_relabeling sample not as expected. Wanted: %f Got: %+v", i, c.scrapeSamplesScrapedPostMetricRelabelling, reportAppender.result[3])
-		}
-	}
 }
 
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 	var (
-		scraper        = &testScraper{}
-		reportAppender = &collectResultAppender{}
-		reportApp      = func() storage.Appender { return reportAppender }
+		scraper  = &testScraper{}
+		appender = &collectResultAppender{}
+		app      = func() storage.Appender { return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, func() storage.Appender { return nopAppender{} }, reportApp, nil, nil)
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		cancel()
@@ -843,31 +725,37 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 
 	sl.run(10*time.Millisecond, time.Hour, nil)
 
-	if reportAppender.result[0].v != 0 {
-		t.Fatalf("bad 'up' value; want 0, got %v", reportAppender.result[0].v)
+	if appender.result[0].v != 0 {
+		t.Fatalf("bad 'up' value; want 0, got %v", appender.result[0].v)
 	}
 }
 
 func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 	var (
-		scraper        = &testScraper{}
-		reportAppender = &collectResultAppender{}
-		reportApp      = func() storage.Appender { return reportAppender }
+		scraper  = &testScraper{}
+		appender = &collectResultAppender{}
+		app      = func() storage.Appender { return appender }
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newScrapeLoop(ctx, scraper, func() storage.Appender { return nopAppender{} }, reportApp, nil, nil)
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		cancel()
-		w.Write([]byte("a{l=\"\xff\"} 0\n"))
+		w.Write([]byte("a{l=\"\xff\"} 1\n"))
 		return nil
 	}
 
 	sl.run(10*time.Millisecond, time.Hour, nil)
 
-	if reportAppender.result[0].v != 0 {
-		t.Fatalf("bad 'up' value; want 0, got %v", reportAppender.result[0].v)
+	if appender.result[0].v != 0 {
+		t.Fatalf("bad 'up' value; want 0, got %v", appender.result[0].v)
 	}
 }
 
@@ -894,11 +782,13 @@ func (app *errorAppender) AddFast(lset labels.Labels, ref uint64, t int64, v flo
 
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {
 	app := &errorAppender{}
-	sl := newScrapeLoop(context.Background(), nil,
+
+	sl := newScrapeLoop(context.Background(),
+		nil,
+		nil, nil,
+		nopMutator,
+		nopMutator,
 		func() storage.Appender { return app },
-		func() storage.Appender { return nopAppender{} },
-		nil,
-		nil,
 	)
 
 	now := time.Unix(1, 0)
@@ -920,16 +810,17 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	app := &collectResultAppender{}
-	sl := newScrapeLoop(context.Background(), nil,
+	sl := newScrapeLoop(context.Background(),
+		nil,
+		nil, nil,
+		nopMutator,
+		nopMutator,
 		func() storage.Appender {
 			return &timeLimitAppender{
 				Appender: app,
 				maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
 			}
 		},
-		func() storage.Appender { return nopAppender{} },
-		nil,
-		nil,
 	)
 
 	now := time.Now().Add(20 * time.Minute)
