@@ -246,19 +246,23 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	subpath := route.Param(ctx, "subpath")
 
-	// Based off paths from init() in golang.org/src/net/http/pprof/pprof.go
-	if subpath == "/pprof/" {
-		pprof.Index(w, req)
-	} else if subpath == "/pprof/cmdline" {
-		pprof.Cmdline(w, req)
-	} else if subpath == "/pprof/profile" {
-		pprof.Profile(w, req)
-	} else if subpath == "/pprof/symbol" {
-		pprof.Symbol(w, req)
-	} else if subpath == "/pprof/trace" {
-		pprof.Trace(w, req)
-	} else {
+	if !strings.HasPrefix(subpath, "/pprof/") {
 		http.NotFound(w, req)
+		return
+	}
+	subpath = strings.TrimPrefix(subpath, "/pprof/")
+
+	switch subpath {
+	case "cmdline":
+		pprof.Cmdline(w, req)
+	case "profile":
+		pprof.Profile(w, req)
+	case "symbol":
+		pprof.Symbol(w, req)
+	case "trace":
+		pprof.Trace(w, req)
+	default:
+		pprof.Index(w, req)
 	}
 }
 
