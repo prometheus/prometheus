@@ -274,6 +274,24 @@ func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (uint6
 	return app.Appender.Add(lb.Labels(), t, v)
 }
 
+func (app ruleLabelsAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
+
+	lb := labels.NewBuilder(lset)
+
+	for _, l := range app.labels {
+		lv := lset.Get(l.Name)
+		if lv != "" {
+			lb.Set(model.ExportedLabelPrefix+l.Name, lv)
+		}
+		lb.Set(l.Name, l.Value)
+	}
+
+	if err := app.Appender.AddFast(lb.Labels(), ref, t, v); err != nil {
+		return err
+	}
+	return nil
+}
+
 type honorLabelsAppender struct {
 	storage.Appender
 	labels labels.Labels
