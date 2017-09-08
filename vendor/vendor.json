@@ -841,6 +841,12 @@
 			"revisionTime": "2017-06-16T14:41:04Z"
 		},
 		{
+			"checksumSHA1": "Yseprf8kAFr/s7wztkQnrFuFN+8=",
+			"path": "github.com/prometheus/common/promlog",
+			"revision": "2f17f4a9d485bf34b4bfaccc273805040e4f86c8",
+			"revisionTime": "2017-09-08T16:18:22Z"
+		},
+		{
 			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",
 			"path": "github.com/prometheus/common/route",
 			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",

@@ -39,9 +39,10 @@ import (
 	"golang.org/x/net/context"
 	"gopkg.in/alecthomas/kingpin.v2"
 
+	"github.com/prometheus/common/promlog"
+	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/promlog"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -102,9 +103,6 @@ func main() {
 	a.Version(version.Print("prometheus"))
 
 	a.HelpFlag.Short('h')
-
-	a.Flag(promlog.LevelFlagName, promlog.LevelFlagHelp).
-		Default("info").SetValue(&cfg.logLevel)
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
@@ -172,6 +170,8 @@ func main() {
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryEngine.MaxConcurrentQueries)
+
+	promlogflag.AddFlags(a, &cfg.logLevel)
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
