@@ -197,7 +197,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	const (
 		numMetrics = 50
 		iterations = 5
-		stepSize   = 1
+		stepSize   = 5
 	)
 	// Generate testing data. It does not make semantical sense but
 	// for the purpose of this test.
@@ -236,7 +236,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			if len(series) > 0 {
 				clsets := make([]RefSeries, len(series))
 				copy(clsets, series)
-				resultSeries = append(resultSeries, series)
+				resultSeries = append(resultSeries, clsets)
 			}
 
 			return nil
@@ -253,7 +253,9 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 		delf := func(stones []Stone) error {
 			if len(stones) > 0 {
-				resultDeletes = append(resultDeletes, stones)
+				cst := make([]Stone, len(stones))
+				copy(cst, stones)
+				resultDeletes = append(resultDeletes, cst)
 			}
 
 			return nil
