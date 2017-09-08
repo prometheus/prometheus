@@ -121,10 +121,11 @@ func (f *fanoutAppender) AddFast(l labels.Labels, ref uint64, t int64, v float64
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.Add(l, t, v); err != nil {
+		if err := appender.AddFast(l, ref, t, v); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
