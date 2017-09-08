@@ -27,8 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
-
 	"github.com/asaskevich/govalidator"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -38,10 +36,12 @@ import (
 	"github.com/prometheus/common/version"
 	"golang.org/x/net/context"
 	"gopkg.in/alecthomas/kingpin.v2"
+	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
+	"github.com/prometheus/common/promlog"
+	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/promlog"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
@@ -102,9 +102,6 @@ func main() {
 	a.Version(version.Print("prometheus"))
 
 	a.HelpFlag.Short('h')
-
-	a.Flag(promlog.LevelFlagName, promlog.LevelFlagHelp).
-		Default("info").SetValue(&cfg.logLevel)
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
@@ -173,6 +170,8 @@ func main() {
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryEngine.MaxConcurrentQueries)
 
+	promlogflag.AddFlags(a, &cfg.logLevel)
+
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
 		a.Usage(os.Args[1:])
@@ -203,7 +202,7 @@ func main() {
 
 	logger := promlog.New(cfg.logLevel)
 
-	// XXX(fabxc): The Kubernetes does background logging which we can only customize by modifying
+	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
 	// a global variable.
 	// Ultimately, here is the best place to set it.
 	k8s_runtime.ErrorHandlers = []func(error){
@@ -284,7 +283,7 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	webHandler := web.New(log.With(logger, "componennt", "web"), &cfg.web)
+	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
 

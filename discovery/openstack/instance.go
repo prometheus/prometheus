@@ -55,6 +55,9 @@ type InstanceDiscovery struct {
 // NewInstanceDiscovery returns a new instance discovery.
 func NewInstanceDiscovery(opts *gophercloud.AuthOptions,
 	interval time.Duration, port int, region string, l log.Logger) *InstanceDiscovery {
+	if l == nil {
+		l = log.NewNopLogger()
+	}
 	return &InstanceDiscovery{authOpts: opts,
 		region: region, interval: interval, port: port, logger: l}
 }
