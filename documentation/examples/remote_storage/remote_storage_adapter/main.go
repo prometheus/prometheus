@@ -34,10 +34,10 @@ import (
 
 	influx "github.com/influxdata/influxdb/client/v2"
 
+	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
-	"github.com/prometheus/prometheus/pkg/promlog"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -197,7 +197,7 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	log.Info("Starting up...")
+	level.Info(logger).Log("Starting up...")
 	return writers, readers
 }
 
@@ -205,21 +205,21 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Errorln("Read error:", err)
+			level.Error(logger).Log("msg", "Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Errorln("Decode error:", err)
+			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req prompb.WriteRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Errorln("Unmarshal error:", err)
+			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -241,21 +241,21 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Errorln("Read error:", err)
+			level.Error(logger).Log("msg", "Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Errorln("Decode error:", err)
+			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Errorln("Unmarshal error:", err)
+			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

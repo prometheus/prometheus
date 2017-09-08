@@ -167,7 +167,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
 			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
 			eps := NewEndpoints(
-				log.With(d.logger, "k8s_sd", "endpoint"),
+				log.With(d.logger, "role", "endpoint"),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
