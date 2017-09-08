@@ -403,11 +403,12 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		return errors.Wrap(ErrNotFound, "unknown series")
 	}
 	s.Lock()
-	if err := s.appendable(t, v); err != nil {
-		return err
-	}
+	err := s.appendable(t, v)
 	s.Unlock()
 
+	if err != nil {
+		return err
+	}
 	if t < a.mint {
 		return ErrOutOfBounds
 	}
