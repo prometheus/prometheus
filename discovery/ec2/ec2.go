@@ -21,6 +21,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -71,6 +72,7 @@ type Discovery struct {
 	aws      *aws.Config
 	interval time.Duration
 	profile  string
+	roleARN  string
 	port     int
 	logger   log.Logger
 }
@@ -87,6 +89,7 @@ func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
 			Credentials: creds,
 		},
 		profile:  conf.Profile,
+		roleARN:  conf.RoleARN,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 		logger:   logger,
@@ -147,7 +150,13 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		return nil, fmt.Errorf("could not create aws session: %s", err)
 	}
 
-	ec2s := ec2.New(sess)
+	var ec2s *ec2.EC2
+	if d.roleARN != "" {
+		creds := stscreds.NewCredentials(sess, d.roleARN)
+		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+	} else {
+		ec2s = ec2.New(sess)
+	}
 	tg = &config.TargetGroup{
 		Source: *d.aws.Region,
 	}
