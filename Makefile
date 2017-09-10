@@ -54,7 +54,7 @@ vet:
 
 build: promu
 	@echo ">> building binaries"
-	@$(PROMU) build --prefix $(PREFIX)
+	@$(PROMU) build --prefix $(PREFIX) $(BINARIES)
 
 tarball: promu
 	@echo ">> building release tarball"
