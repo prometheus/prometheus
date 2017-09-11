@@ -382,7 +382,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// Generate testing data. It does not make semantical sense but
 			// for the purpose of this test.
-			dir, err := ioutil.TempDir("", "test_corrupted_checksum")
+			dir, err := ioutil.TempDir("", "test_corrupted")
 			require.NoError(t, err)
 			defer os.RemoveAll(dir)
 
@@ -399,6 +399,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			require.NoError(t, w.Close())
 
+			w.files[0].Sync()
 			// Corrupt the second entry in the first file.
 			// After re-opening we must be able to read the first entry
 			// and the rest, including the second file, must be truncated for clean further
