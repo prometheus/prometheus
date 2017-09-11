@@ -34,6 +34,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -145,13 +146,15 @@ func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable
 		logger.Errorf("Error creating HTTP client for job %q: %s", cfg.JobName, err)
 	}
 
+	buffers := pool.NewBytesPool(163, 100e6, 3)
+
 	newLoop := func(
 		ctx context.Context,
 		s scraper,
 		app, reportApp func() storage.Appender,
 		l log.Logger,
 	) loop {
-		return newScrapeLoop(ctx, s, app, reportApp, l)
+		return newScrapeLoop(ctx, s, app, reportApp, buffers, l)
 	}
 
 	return &scrapePool{
@@ -470,9 +473,11 @@ type refEntry struct {
 }
 
 type scrapeLoop struct {
-	scraper scraper
-	l       log.Logger
-	cache   *scrapeCache
+	scraper        scraper
+	l              log.Logger
+	cache          *scrapeCache
+	lastScrapeSize int
+	buffers        *pool.BytesPool
 
 	appender       func() storage.Appender
 	reportAppender func() storage.Appender
@@ -573,16 +578,22 @@ func newScrapeLoop(
 	ctx context.Context,
 	sc scraper,
 	app, reportApp func() storage.Appender,
+	buffers *pool.BytesPool,
 	l log.Logger,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.Base()
+	}
+	if buffers == nil {
+		buffers = pool.NewBytesPool(10e3, 100e6, 3)
 	}
 	sl := &scrapeLoop{
 		scraper:        sc,
 		appender:       app,
 		cache:          newScrapeCache(),
 		reportAppender: reportApp,
+		buffers:        buffers,
+		lastScrapeSize: 16000,
 		stopped:        make(chan struct{}),
 		ctx:            ctx,
 		l:              l,
@@ -631,12 +642,20 @@ mainLoop:
 				time.Since(last).Seconds(),
 			)
 		}
+		b := sl.buffers.Get(sl.lastScrapeSize)
+		buf := bytes.NewBuffer(b)
 
 		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
-		var b []byte
+
 		if scrapeErr == nil {
 			b = buf.Bytes()
+			// NOTE: There were issues with misbehaving clients in the past
+			// that occasionally returned empty results. We don't want those
+			// to falsely reset our buffer size.
+			if len(b) > 0 {
+				sl.lastScrapeSize = len(b)
+			}
 		} else {
 			sl.l.With("err", scrapeErr.Error()).Debug("scrape failed")
 			if errc != nil {
@@ -655,6 +674,8 @@ mainLoop:
 				sl.l.With("err", err).Error("append failed")
 			}
 		}
+
+		sl.buffers.Put(b)
 
 		if scrapeErr == nil {
 			scrapeErr = appErr
