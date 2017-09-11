@@ -17,7 +17,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"time"
 
@@ -365,10 +364,6 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
-
-		// We might have done quite a few allocs. Enforce a GC so they do not accumulate
-		// with subsequent compactions or head GCs.
-		runtime.GC()
 	}(time.Now())
 
 	dir := filepath.Join(dest, meta.ULID.String())
@@ -569,14 +564,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err := indexw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
-	}
-	// Write a postings list containing all series.
-	all := make([]uint64, i)
-	for i := range all {
-		all[i] = uint64(i)
-	}
-	if err := indexw.WritePostings("", "", newListPostings(all)); err != nil {
-		return errors.Wrap(err, "write 'all' postings")
 	}
 
 	return nil
