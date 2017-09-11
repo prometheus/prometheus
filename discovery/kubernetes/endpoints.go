@@ -154,18 +154,19 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
-	endpoints, isEndpoints := o.(*apiv1.Endpoints)
-	if !isEndpoints {
-		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return nil, fmt.Errorf("Received unexpected object: %v", o)
-		}
-		endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
-		if !ok {
-			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
-		}
+	endpoints, ok := o.(*apiv1.Endpoints)
+	if ok {
+		return endpoints, nil
 	}
 
+	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+	if !ok {
+		return nil, fmt.Errorf("Received unexpected object: %v", o)
+	}
+	endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
+	if !ok {
+		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
+	}
 	return endpoints, nil
 }
 
