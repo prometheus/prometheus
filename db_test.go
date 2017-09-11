@@ -433,8 +433,6 @@ func TestDB_e2e(t *testing.T) {
 			mint := rand.Int63n(300)
 			maxt := mint + rand.Int63n(timeInterval*int64(numDatapoints))
 
-			t.Logf("run query %s, [%d, %d]", qry.ms, mint, maxt)
-
 			expected := map[string][]sample{}
 
 			// Build the mockSeriesSet.
