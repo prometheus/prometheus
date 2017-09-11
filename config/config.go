@@ -1010,10 +1010,11 @@ type KubernetesRole string
 
 // The valid options for KubernetesRole.
 const (
-	KubernetesRoleNode     = "node"
-	KubernetesRolePod      = "pod"
-	KubernetesRoleService  = "service"
-	KubernetesRoleEndpoint = "endpoints"
+	KubernetesRoleNode     KubernetesRole = "node"
+	KubernetesRolePod      KubernetesRole = "pod"
+	KubernetesRoleService  KubernetesRole = "service"
+	KubernetesRoleEndpoint KubernetesRole = "endpoints"
+	KubernetesRoleIngress  KubernetesRole = "ingress"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1022,7 +1023,7 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	switch *c {
-	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint:
+	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleIngress:
 		return nil
 	default:
 		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
@@ -1141,6 +1142,7 @@ type EC2SDConfig struct {
 	AccessKey       string         `yaml:"access_key,omitempty"`
 	SecretKey       Secret         `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
+	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 

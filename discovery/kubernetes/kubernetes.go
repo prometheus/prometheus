@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
+	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
@@ -159,6 +160,7 @@ const resyncPeriod = 10 * time.Minute
 // Run implements the TargetProvider interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	rclient := d.client.Core().RESTClient()
+	reclient := d.client.Extensions().RESTClient()
 
 	namespaces := d.getNamespaces()
 
@@ -233,6 +235,26 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			go func() {
 				defer wg.Done()
 				svc.Run(ctx, ch)
+			}()
+		}
+		wg.Wait()
+	case "ingress":
+		var wg sync.WaitGroup
+		for _, namespace := range namespaces {
+			ilw := cache.NewListWatchFromClient(reclient, "ingresses", namespace, nil)
+			ingress := NewIngress(
+				d.logger.With("kubernetes_sd", "ingress"),
+				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, resyncPeriod),
+			)
+			go ingress.informer.Run(ctx.Done())
+
+			for !ingress.informer.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ingress.Run(ctx, ch)
 			}()
 		}
 		wg.Wait()
