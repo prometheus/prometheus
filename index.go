@@ -347,10 +347,6 @@ func (w *indexWriter) AddSymbols(sym map[string]struct{}) error {
 
 	for _, s := range symbols {
 		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
-
-		// NOTE: len(s) gives the number of runes, not the number of bytes.
-		// Therefore the read-back length for strings with unicode characters will
-		// be off when not using putUvarintStr.
 		w.buf2.putUvarintStr(s)
 	}
 
@@ -648,7 +644,7 @@ func (r *indexReader) readOffsetTable(off uint64) (map[string]uint32, error) {
 		keys := make([]string, 0, keyCount)
 
 		for i := 0; i < keyCount; i++ {
-			keys = append(keys, d2.uvarintStr())
+			keys = append(keys, d2.uvarintTempStr())
 		}
 		res[strings.Join(keys, sep)] = uint32(d2.uvarint())
 
@@ -685,7 +681,7 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 func (r *indexReader) lookupSymbol(o uint32) (string, error) {
 	d := r.decbufAt(int(o))
 
-	s := d.uvarintStr()
+	s := d.uvarintTempStr()
 	if d.err() != nil {
 		return "", errors.Wrapf(d.err(), "read symbol at %d", o)
 	}
@@ -700,7 +696,7 @@ func (r *indexReader) Symbols() (map[string]struct{}, error) {
 	sym := make(map[string]struct{}, count)
 
 	for ; count > 0; count-- {
-		s := d2.uvarintStr()
+		s := d2.uvarintTempStr()
 		sym[s] = struct{}{}
 	}
 
