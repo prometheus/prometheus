@@ -10,7 +10,7 @@ COPY consoles/                              /usr/share/prometheus/consoles/
 RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
 
 EXPOSE     9090
-VOLUME     [ "/prometheus" ]
+VOLUME     [ "/prometheus", "/etc/prometheus" ]
 WORKDIR    /prometheus
 ENTRYPOINT [ "/bin/prometheus" ]
 CMD        [ "-config.file=/etc/prometheus/prometheus.yml", \
