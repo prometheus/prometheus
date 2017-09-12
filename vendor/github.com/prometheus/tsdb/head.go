@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"math"
-	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -402,10 +401,13 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	if s == nil {
 		return errors.Wrap(ErrNotFound, "unknown series")
 	}
-	if err := s.appendable(t, v); err != nil {
+	s.Lock()
+	err := s.appendable(t, v)
+	s.Unlock()
+
+	if err != nil {
 		return err
 	}
-
 	if t < a.mint {
 		return ErrOutOfBounds
 	}
@@ -435,7 +437,10 @@ func (a *headAppender) Commit() error {
 	total := len(a.samples)
 
 	for _, s := range a.samples {
+		s.series.Lock()
 		ok, chunkCreated := s.series.append(s.T, s.V)
+		s.series.Unlock()
+
 		if !ok {
 			total--
 		}
@@ -509,8 +514,6 @@ Outer:
 
 // gc removes data before the minimum timestmap from the head.
 func (h *Head) gc() {
-	defer runtime.GC()
-
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
 
@@ -672,9 +675,9 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 
 	s := h.head.series.getByID(sid)
 
-	s.mtx.RLock()
+	s.Lock()
 	c := s.chunk(int(cid))
-	s.mtx.RUnlock()
+	s.Unlock()
 
 	// Do not expose chunks that are outside of the specified range.
 	if c == nil || !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
@@ -694,9 +697,10 @@ type safeChunk struct {
 }
 
 func (c *safeChunk) Iterator() chunks.Iterator {
-	c.s.mtx.RLock()
-	defer c.s.mtx.RUnlock()
-	return c.s.iterator(c.cid)
+	c.s.Lock()
+	it := c.s.iterator(c.cid)
+	c.s.Unlock()
+	return it
 }
 
 // func (c *safeChunk) Appender() (chunks.Appender, error) { panic("illegal") }
@@ -803,8 +807,8 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkM
 	}
 	*lbls = append((*lbls)[:0], s.lset...)
 
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+	s.Lock()
+	defer s.Unlock()
 
 	*chks = (*chks)[:0]
 
@@ -956,11 +960,11 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 
 		for hash, all := range s.hashes[i] {
 			for _, series := range all {
-				series.mtx.Lock()
+				series.Lock()
 				rmChunks += series.truncateChunksBefore(mint)
 
 				if len(series.chunks) > 0 {
-					series.mtx.Unlock()
+					series.Unlock()
 					continue
 				}
 
@@ -983,7 +987,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 					s.locks[j].Unlock()
 				}
 
-				series.mtx.Unlock()
+				series.Unlock()
 			}
 		}
 
@@ -1040,8 +1044,10 @@ type sample struct {
 	v float64
 }
 
+// memSeries is the in-memory representation of a series. None of its methods
+// are goroutine safe and its the callers responsibility to lock it.
 type memSeries struct {
-	mtx sync.RWMutex
+	sync.Mutex
 
 	ref          uint64
 	lset         labels.Labels
@@ -1143,8 +1149,6 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	const samplesPerChunk = 120
 
-	s.mtx.Lock()
-
 	c := s.head()
 
 	if c == nil {
@@ -1152,7 +1156,6 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 		chunkCreated = true
 	}
 	if c.maxTime >= t {
-		s.mtx.Unlock()
 		return false, chunkCreated
 	}
 	if c.chunk.NumSamples() > samplesPerChunk/4 && t >= s.nextAt {
@@ -1174,8 +1177,6 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	s.sampleBuf[1] = s.sampleBuf[2]
 	s.sampleBuf[2] = s.sampleBuf[3]
 	s.sampleBuf[3] = sample{t: t, v: v}
-
-	s.mtx.Unlock()
 
 	return true, chunkCreated
 }

@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -349,9 +350,12 @@ func (db *DB) compact() (changes bool, err error) {
 		}
 		changes = true
 
+		runtime.GC()
+
 		if err := db.reload(); err != nil {
 			return changes, errors.Wrap(err, "reload blocks")
 		}
+		runtime.GC()
 	}
 
 	// Check for compactions of multiple blocks.
@@ -380,10 +384,12 @@ func (db *DB) compact() (changes bool, err error) {
 				return changes, errors.Wrap(err, "delete compacted block")
 			}
 		}
+		runtime.GC()
 
 		if err := db.reload(); err != nil {
 			return changes, errors.Wrap(err, "reload blocks")
 		}
+		runtime.GC()
 	}
 
 	return changes, nil

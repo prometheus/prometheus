@@ -292,10 +292,22 @@ func (w *indexWriter) AddSeries(ref uint64, lset labels.Labels, chunks ...ChunkM
 
 	w.buf2.putUvarint(len(chunks))
 
-	for _, c := range chunks {
+	if len(chunks) > 0 {
+		c := chunks[0]
 		w.buf2.putVarint64(c.MinTime)
-		w.buf2.putVarint64(c.MaxTime)
+		w.buf2.putUvarint64(uint64(c.MaxTime - c.MinTime))
 		w.buf2.putUvarint64(c.Ref)
+		t0 := c.MaxTime
+		ref0 := int64(c.Ref)
+
+		for _, c := range chunks[1:] {
+			w.buf2.putUvarint64(uint64(c.MinTime - t0))
+			w.buf2.putUvarint64(uint64(c.MaxTime - c.MinTime))
+			t0 = c.MaxTime
+
+			w.buf2.putVarint64(int64(c.Ref) - ref0)
+			ref0 = int64(c.Ref)
+		}
 	}
 
 	w.buf1.reset()
@@ -335,10 +347,6 @@ func (w *indexWriter) AddSymbols(sym map[string]struct{}) error {
 
 	for _, s := range symbols {
 		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
-
-		// NOTE: len(s) gives the number of runes, not the number of bytes.
-		// Therefore the read-back length for strings with unicode characters will
-		// be off when not using putUvarintStr.
 		w.buf2.putUvarintStr(s)
 	}
 
@@ -636,7 +644,7 @@ func (r *indexReader) readOffsetTable(off uint64) (map[string]uint32, error) {
 		keys := make([]string, 0, keyCount)
 
 		for i := 0; i < keyCount; i++ {
-			keys = append(keys, d2.uvarintStr())
+			keys = append(keys, d2.uvarintTempStr())
 		}
 		res[strings.Join(keys, sep)] = uint32(d2.uvarint())
 
@@ -673,7 +681,7 @@ func (r *indexReader) section(o uint32) (byte, []byte, error) {
 func (r *indexReader) lookupSymbol(o uint32) (string, error) {
 	d := r.decbufAt(int(o))
 
-	s := d.uvarintStr()
+	s := d.uvarintTempStr()
 	if d.err() != nil {
 		return "", errors.Wrapf(d.err(), "read symbol at %d", o)
 	}
@@ -688,7 +696,7 @@ func (r *indexReader) Symbols() (map[string]struct{}, error) {
 	sym := make(map[string]struct{}, count)
 
 	for ; count > 0; count-- {
-		s := d2.uvarintStr()
+		s := d2.uvarintTempStr()
 		sym[s] = struct{}{}
 	}
 
@@ -775,17 +783,34 @@ func (r *indexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkMeta)
 	// Read the chunks meta data.
 	k = int(d2.uvarint())
 
-	for i := 0; i < k; i++ {
-		mint := d2.varint64()
-		maxt := d2.varint64()
-		off := d2.uvarint64()
+	if k == 0 {
+		return nil
+	}
+
+	t0 := d2.varint64()
+	maxt := int64(d2.uvarint64()) + t0
+	ref0 := int64(d2.uvarint64())
+
+	*chks = append(*chks, ChunkMeta{
+		Ref:     uint64(ref0),
+		MinTime: t0,
+		MaxTime: maxt,
+	})
+	t0 = maxt
+
+	for i := 1; i < k; i++ {
+		mint := int64(d2.uvarint64()) + t0
+		maxt := int64(d2.uvarint64()) + mint
+
+		ref0 += d2.varint64()
+		t0 = maxt
 
 		if d2.err() != nil {
 			return errors.Wrapf(d2.err(), "read meta for chunk %d", i)
 		}
 
 		*chks = append(*chks, ChunkMeta{
-			Ref:     off,
+			Ref:     uint64(ref0),
 			MinTime: mint,
 			MaxTime: maxt,
 		})
