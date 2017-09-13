@@ -1420,7 +1420,7 @@ func testEvictAndPurgeSeries(t *testing.T, encoding chunk.Encoding) {
 	// Unarchive metrics.
 	s.getOrCreateSeries(fp, model.Metric{})
 
-	series, ok = s.fpToSeries.get(fp)
+	_, ok = s.fpToSeries.get(fp)
 	if !ok {
 		t.Fatal("could not find series")
 	}

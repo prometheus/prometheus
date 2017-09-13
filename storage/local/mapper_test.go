@@ -63,6 +63,9 @@ func TestFPMapper(t *testing.T) {
 	defer closer.Close()
 
 	mapper, err := newFPMapper(sm, p)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Everything is empty, resolving a FP should do nothing.
 	gotFP := mapper.mapFP(fp1, cm11)

@@ -68,6 +68,9 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 			url:     &config.URL{serverURL},
 			timeout: model.Duration(time.Second),
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		err = c.Store(nil)
 		if !reflect.DeepEqual(err, test.err) {
