@@ -43,29 +43,30 @@ type Client struct {
 	timeout time.Duration
 }
 
-type clientConfig struct {
-	url              *config.URL
-	timeout          model.Duration
-	httpClientConfig config.HTTPClientConfig
+// ClientConfig configures a Client.
+type ClientConfig struct {
+	URL              *config.URL
+	Timeout          model.Duration
+	HTTPClientConfig config.HTTPClientConfig
 }
 
 // NewClient creates a new Client.
-func NewClient(index int, conf *clientConfig) (*Client, error) {
+func NewClient(index int, conf *ClientConfig) (*Client, error) {
 	// If not specified in config, allow HTTP connections for remote API to use keep-alive
-	if conf.httpClientConfig.KeepAlive == nil {
+	if conf.HTTPClientConfig.KeepAlive == nil {
 		val := true
-		conf.httpClientConfig.KeepAlive = &val
+		conf.HTTPClientConfig.KeepAlive = &val
 	}
-	httpClient, err := httputil.NewClientFromConfig(conf.httpClientConfig)
+	httpClient, err := httputil.NewClientFromConfig(conf.HTTPClientConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
 		index:   index,
-		url:     conf.url,
+		url:     conf.URL,
 		client:  httpClient,
-		timeout: time.Duration(conf.timeout),
+		timeout: time.Duration(conf.Timeout),
 	}, nil
 }
 

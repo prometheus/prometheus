@@ -36,10 +36,10 @@ func (w *Writer) ApplyConfig(conf *config.Config) error {
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, &clientConfig{
-			url:              rwConf.URL,
-			timeout:          rwConf.RemoteTimeout,
-			httpClientConfig: rwConf.HTTPClientConfig,
+		c, err := NewClient(i, &ClientConfig{
+			URL:              rwConf.URL,
+			Timeout:          rwConf.RemoteTimeout,
+			HTTPClientConfig: rwConf.HTTPClientConfig,
 		})
 		if err != nil {
 			return err
