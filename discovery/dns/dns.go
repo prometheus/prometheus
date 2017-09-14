@@ -136,28 +136,26 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*confi
 		return model.LabelValue(net.JoinHostPort(a, fmt.Sprintf("%d", p)))
 	}
 
-	if response != nil {
-		for _, record := range response.Answer {
-			target := model.LabelValue("")
-			switch addr := record.(type) {
-			case *dns.SRV:
-				// Remove the final dot from rooted DNS names to make them look more usual.
-				addr.Target = strings.TrimRight(addr.Target, ".")
+	for _, record := range response.Answer {
+		target := model.LabelValue("")
+		switch addr := record.(type) {
+		case *dns.SRV:
+			// Remove the final dot from rooted DNS names to make them look more usual.
+			addr.Target = strings.TrimRight(addr.Target, ".")
 
-				target = hostPort(addr.Target, int(addr.Port))
-			case *dns.A:
-				target = hostPort(addr.A.String(), d.port)
-			case *dns.AAAA:
-				target = hostPort(addr.AAAA.String(), d.port)
-			default:
-				d.logger.Warnf("%q is not a valid SRV record", record)
-				continue
-			}
-			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel: target,
-				dnsNameLabel:       model.LabelValue(name),
-			})
+			target = hostPort(addr.Target, int(addr.Port))
+		case *dns.A:
+			target = hostPort(addr.A.String(), d.port)
+		case *dns.AAAA:
+			target = hostPort(addr.AAAA.String(), d.port)
+		default:
+			d.logger.Warnf("%q is not a valid SRV record", record)
+			continue
 		}
+		tg.Targets = append(tg.Targets, model.LabelSet{
+			model.AddressLabel: target,
+			dnsNameLabel:       model.LabelValue(name),
+		})
 	}
 
 	tg.Source = name
@@ -170,8 +168,8 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*confi
 	return nil
 }
 
-// Try and get an answer for various permutations of the given name,
-// appending the system-configured search path as necessary.
+// lookupWithSearchPath tries to get an answer for various permutations of
+// the given name, appending the system-configured search path as necessary.
 //
 // There are three possible outcomes:
 //
@@ -192,23 +190,21 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*confi
 //    configuration is in, we should keep it that way until we know for
 //    sure (by, presumably, all the names getting answers in the future).
 //
-// Outcome 1 is indicated by a valid response message and no error.  Outcome
-// 2 is a nil response message no error.  Outcome 3 is indicated by an error
-// return.  The error will be generic-looking, because trying to return all
-// the errors returned by the combination of all name permutations and
-// servers is a nightmare.
-//
+// Outcomes 1 and 2 are indicated by a valid response message (possibly an
+// empty one) and no error.  Outcome 3 is indicated by an error return.  The
+// error will be generic-looking, because trying to return all the errors
+// returned by the combination of all name permutations and servers is a
+// nightmare.
 func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
 		return nil, fmt.Errorf("could not load resolv.conf: %s", err)
 	}
 
-	response := &dns.Msg{}
 	allResponsesValid := true
 
 	for _, lname := range conf.NameList(name) {
-		response, err = lookupName(lname, qtype, conf, logger)
+		response, err := lookupFromAnyServer(lname, qtype, conf, logger)
 
 		if err != nil {
 			// We can't go home yet, because a later name
@@ -225,16 +221,16 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 
 	if allResponsesValid {
 		// Outcome 2: everyone says NXDOMAIN, that's good enough for me
-		return nil, nil
+		return &dns.Msg{}, nil
 	}
 	// Outcome 3: boned.
-	return nil, fmt.Errorf("could not resolve %s: one or more search-path-mangled names returned all errors", name)
+	return nil, fmt.Errorf("could not resolve %q: all servers responded with errors to at least one search domain", name)
 }
 
-// Lookup a specific name across all configured servers.  If a viable answer
-// is received from a server, then it is immediately returned, otherwise the
-// other servers in the config are tried, and if none of them return a
-// viable answer, an error is returned.
+// lookupFromAnyServer uses all configured servers to try and resolve a specific
+// name.  If a viable answer is received from a server, then it is
+// immediately returned, otherwise the other servers in the config are
+// tried, and if none of them return a viable answer, an error is returned.
 //
 // A "viable answer" is one which indicates either:
 //
@@ -247,8 +243,7 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 // A non-viable answer is "anything else", which encompasses both various
 // system-level problems (like network timeouts) and also
 // valid-but-unexpected DNS responses (SERVFAIL, REFUSED, etc).
-//
-func lookupName(name string, qtype uint16, conf *dns.ClientConfig, logger log.Logger) (*dns.Msg, error) {
+func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logger log.Logger) (*dns.Msg, error) {
 	client := &dns.Client{}
 
 	for _, server := range conf.Servers {
@@ -272,11 +267,10 @@ func lookupName(name string, qtype uint16, conf *dns.ClientConfig, logger log.Lo
 	return nil, fmt.Errorf("could not resolve %s: no servers returned a viable answer", name)
 }
 
-// Make a request to a specific DNS server for a specific name (and qtype).
-// Retries in the event of response truncation, but otherwise just sends back
-// whatever the server gave, whether that be a valid-looking response, or an
-// error.
-//
+// askServerForName makes a request to a specific DNS server for a specific
+// name (and qtype).  Retries in the event of response truncation, but
+// otherwise just sends back whatever the server gave, whether that be a
+// valid-looking response, or an error.
 func askServerForName(name string, queryType uint16, client *dns.Client, servAddr string, edns bool) (*dns.Msg, error) {
 	msg := &dns.Msg{}
 
