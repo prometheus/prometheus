@@ -37,10 +37,10 @@ type Reader struct {
 func (r *Reader) ApplyConfig(conf *config.Config) error {
 	clients := []*Client{}
 	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &clientConfig{
-			url:              rrConf.URL,
-			timeout:          rrConf.RemoteTimeout,
-			httpClientConfig: rrConf.HTTPClientConfig,
+		c, err := NewClient(i, &ClientConfig{
+			URL:              rrConf.URL,
+			Timeout:          rrConf.RemoteTimeout,
+			HTTPClientConfig: rrConf.HTTPClientConfig,
 		})
 		if err != nil {
 			return err
