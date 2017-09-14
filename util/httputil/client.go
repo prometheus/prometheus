@@ -36,11 +36,15 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	disableKeepAlives := true // hard-coded default unless overridden in config
+	if cfg.KeepAlive != nil {
+		disableKeepAlives = !*cfg.KeepAlive
+	}
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
 		Proxy:             http.ProxyURL(cfg.ProxyURL.URL),
-		DisableKeepAlives: true,
+		DisableKeepAlives: disableKeepAlives,
 		TLSClientConfig:   tlsConfig,
 	}
 

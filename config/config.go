@@ -526,6 +526,8 @@ type HTTPClientConfig struct {
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
 	// TLSConfig to use to connect to the targets.
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
+	// If set, override whether to use HTTP KeepAlive - scraping defaults OFF, remote read/write defaults ON
+	KeepAlive *bool `yaml:"keep_alive,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
