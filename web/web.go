@@ -392,7 +392,10 @@ func (h *Handler) Run(ctx context.Context) error {
 	av2.RegisterGRPC(grpcSrv)
 
 	lAddr := grpcl.Addr().String()
-	host, port, _ := net.SplitHostPort(lAddr)
+	host, port, err := net.SplitHostPort(lAddr)
+	if err != nil {
+		return err
+	}
 	ip := net.ParseIP(host)
 	if ip.Equal(net.IPv4zero) || ip.Equal(net.IPv6zero) {
 		lAddr = net.JoinHostPort("localhost", port)
