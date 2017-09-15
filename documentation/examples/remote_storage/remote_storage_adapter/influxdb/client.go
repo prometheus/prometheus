@@ -48,6 +48,10 @@ func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) 
 		os.Exit(1)
 	}
 
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	return &Client{
 		logger:          logger,
 		client:          c,

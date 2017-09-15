@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
+	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
@@ -155,6 +156,7 @@ const resyncPeriod = 10 * time.Minute
 // Run implements the TargetProvider interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	rclient := d.client.Core().RESTClient()
+	reclient := d.client.Extensions().RESTClient()
 
 	namespaces := d.getNamespaces()
 
@@ -197,7 +199,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		for _, namespace := range namespaces {
 			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
 			pod := NewPod(
-				log.With(d.logger, "k8s_sd", "pod"),
+				log.With(d.logger, "role", "pod"),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 			)
 			go pod.informer.Run(ctx.Done())
@@ -217,7 +219,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		for _, namespace := range namespaces {
 			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
 			svc := NewService(
-				log.With(d.logger, "k8s_sd", "service"),
+				log.With(d.logger, "role", "service"),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 			)
 			go svc.informer.Run(ctx.Done())
@@ -232,10 +234,30 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			}()
 		}
 		wg.Wait()
+	case "ingress":
+		var wg sync.WaitGroup
+		for _, namespace := range namespaces {
+			ilw := cache.NewListWatchFromClient(reclient, "ingresses", namespace, nil)
+			ingress := NewIngress(
+				log.With(d.logger, "role", "ingress"),
+				cache.NewSharedInformer(ilw, &extensionsv1beta1.Ingress{}, resyncPeriod),
+			)
+			go ingress.informer.Run(ctx.Done())
+
+			for !ingress.informer.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ingress.Run(ctx, ch)
+			}()
+		}
+		wg.Wait()
 	case "node":
 		nlw := cache.NewListWatchFromClient(rclient, "nodes", api.NamespaceAll, nil)
 		node := NewNode(
-			log.With(d.logger, "k8s_sd", "node"),
+			log.With(d.logger, "role", "node"),
 			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
 		)
 		go node.informer.Run(ctx.Done())

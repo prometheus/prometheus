@@ -1,13 +1,17 @@
-## v2.0.0-beta.2 / 2017-08-18
+## v2.0.0-beta.4 / 2017-09-14
 
 This release includes numerous changes to the new storage layer. The main changes are:
 
-* [CHANGES] Deterministic block boundaries
-* [ENHANCEMENTS] Avoid memory usage spikes during compactions
+* [CHANGES] Single, compacted write ahead log
+* [CHANGES] Single in-memory block with garbage collection
+* [ENHANCEMENTS] Cache series dropped via `metric_relabel_configs`
+* [ENHANCEMENTS] Pool byte buffers for scraping
 
-It's generally advised to start with a clean storage directory. As a best effort,
-running `sed -i .bkp 's/generation/level/g' */meta.json` from within the directory
-should be sufficient to migrate data written by v2.0.0-beta.0.
+Overall the changes achieve a baseline reduction in memory consumption and reduce
+peak memory usage by 30-40% compared to the 2.0.0-beta.2 release.
+
+This release requires a clean storage directory and is not compatible with files
+created by previous beta releases.
 
 ## 1.7.1 / 2017-06-12
 
