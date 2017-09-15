@@ -32,13 +32,27 @@ func (a nopAppender) AddFast(labels.Labels, uint64, int64, float64) error { retu
 func (a nopAppender) Commit() error                                       { return nil }
 func (a nopAppender) Rollback() error                                     { return nil }
 
+// collectResultAppender records all samples that were added through the appender.
+// It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
+	next   storage.Appender
 	result []sample
 }
 
 func (a *collectResultAppender) AddFast(m labels.Labels, ref uint64, t int64, v float64) error {
-	// Not implemented.
-	return storage.ErrNotFound
+	if a.next == nil {
+		return storage.ErrNotFound
+	}
+	err := a.next.AddFast(m, ref, t, v)
+	if err != nil {
+		return err
+	}
+	a.result = append(a.result, sample{
+		metric: m,
+		t:      t,
+		v:      v,
+	})
+	return err
 }
 
 func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
@@ -47,7 +61,10 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 		t:      t,
 		v:      v,
 	})
-	return 0, nil
+	if a.next == nil {
+		return 0, nil
+	}
+	return a.next.Add(m, t, v)
 }
 
 func (a *collectResultAppender) Commit() error   { return nil }
