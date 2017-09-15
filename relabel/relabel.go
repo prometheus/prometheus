@@ -98,6 +98,10 @@ func relabel(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
 				delete(labels, ln)
 			}
 		}
+	case config.RelabelLowercase:
+		for ln, lv := range labels {
+			labels[ln] = model.LabelValue(strings.ToLower(string(lv)))
+		}
 	default:
 		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
 	}

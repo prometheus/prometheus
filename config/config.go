@@ -1311,6 +1311,8 @@ const (
 	RelabelLabelDrop RelabelAction = "labeldrop"
 	// RelabelLabelKeep drops any label not matching the regex.
 	RelabelLabelKeep RelabelAction = "labelkeep"
+	// RelabelLowercase turns the label values to lowercase.
+	RelabelLowercase RelabelAction = "labellower"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
