@@ -45,8 +45,8 @@ func DecodeReadRequest(r *http.Request) (*ReadRequest, error) {
 	return &req, nil
 }
 
-// EncodReadResponse writes a remote.Response to a http.ResponseWriter.
-func EncodReadResponse(resp *ReadResponse, w http.ResponseWriter) error {
+// EncodeReadResponse writes a remote.Response to a http.ResponseWriter.
+func EncodeReadResponse(resp *ReadResponse, w http.ResponseWriter) error {
 	data, err := proto.Marshal(resp)
 	if err != nil {
 		return err
