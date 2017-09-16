@@ -489,7 +489,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		}))
 	}
 
-	if err := remote.EncodReadResponse(&resp, w); err != nil {
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
