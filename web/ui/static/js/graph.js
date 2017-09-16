@@ -620,7 +620,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
   var yAxis = new Rickshaw.Graph.Axis.Y({
     graph: self.rickshawGraph,
     orientation: "left",
-    tickFormat: Rickshaw.Fixtures.Number.formatKMBT,
+    tickFormat: this.formatKMBT,
     element: self.yAxis[0],
   });
 
@@ -732,6 +732,31 @@ Prometheus.Graph.prototype.remove = function() {
   self.handleRemove();
   self.handleChange();
 };
+
+Prometheus.Graph.prototype.formatKMBT = function(y) {
+  var abs_y = Math.abs(y);
+  if (abs_y >= 1e12) {
+    return y / 1e12 + "T"
+  } else if (abs_y >= 1e9) {
+    return y / 1e9 + "B"
+  } else if (abs_y >= 1e6) {
+    return y / 1e6 + "M"
+  } else if (abs_y >= 1e3) {
+    return y / 1e3 + "K"
+  } else if (abs_y >= 1) {
+    return y
+  } else if (abs_y === 0) {
+    return y
+  } else if (abs_y <= 1e-9) {
+    return (y / 1e-6).toFixed(3) + "n"
+  } else if (abs_y <= 1e-6) {
+    return (y / 1e-6).toFixed(3) + "m"
+  } else if (abs_y <=1e-3) {
+    return (y / 1e-3).toFixed(3) + "µ"
+  } else if (abs_y <= 1) {
+    return y.toFixed(3)
+  }
+}
 
 function escapeHTML(string) {
   var entityMap = {
