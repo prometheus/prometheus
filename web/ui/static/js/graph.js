@@ -748,11 +748,11 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
   } else if (abs_y === 0) {
     return y
   } else if (abs_y <= 1e-9) {
-    return (y / 1e-6).toFixed(3) + "n"
+    return (y / 1e-9).toFixed(3) + "n"
   } else if (abs_y <= 1e-6) {
-    return (y / 1e-6).toFixed(3) + "m"
+    return (y / 1e-6).toFixed(3) + "µ"
   } else if (abs_y <=1e-3) {
-    return (y / 1e-3).toFixed(3) + "µ"
+    return (y / 1e-3).toFixed(3) + "m"
   } else if (abs_y <= 1) {
     return y.toFixed(3)
   }
