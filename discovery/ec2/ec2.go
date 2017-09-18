@@ -23,8 +23,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -83,6 +84,9 @@ func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
 	if conf.AccessKey == "" && conf.SecretKey == "" {
 		creds = nil
 	}
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 	return &Discovery{
 		aws: &aws.Config{
 			Region:      &conf.Region,
@@ -104,7 +108,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		d.logger.Error(err)
+		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 	} else {
 		select {
 		case ch <- []*config.TargetGroup{tg}:
@@ -118,7 +122,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				d.logger.Error(err)
+				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 				continue
 			}
 

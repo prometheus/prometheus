@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +34,7 @@ func newFakeServiceInformer() *fakeInformer {
 
 func makeTestServiceDiscovery() (*Service, *fakeInformer) {
 	i := newFakeServiceInformer()
-	return NewService(log.Base(), i), i
+	return NewService(nil, i), i
 }
 
 func makeMultiPortService() *v1.Service {

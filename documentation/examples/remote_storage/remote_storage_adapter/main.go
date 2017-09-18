@@ -25,14 +25,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	influx "github.com/influxdata/influxdb/client/v2"
 
+	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
@@ -96,8 +98,13 @@ func main() {
 	cfg := parseFlags()
 	http.Handle(cfg.telemetryPath, prometheus.Handler())
 
-	writers, readers := buildClients(cfg)
-	serve(cfg.listenAddr, writers, readers)
+	logLevel := promlog.AllowedLevel{}
+	logLevel.Set("debug")
+
+	logger := promlog.New(logLevel)
+
+	writers, readers := buildClients(logger, cfg)
+	serve(logger, cfg.listenAddr, writers, readers)
 }
 
 func parseFlags() *config {
@@ -150,23 +157,29 @@ type reader interface {
 	Name() string
 }
 
-func buildClients(cfg *config) ([]writer, []reader) {
+func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 	var writers []writer
 	var readers []reader
 	if cfg.graphiteAddress != "" {
 		c := graphite.NewClient(
+			log.With(logger, "storage", "Graphite"),
 			cfg.graphiteAddress, cfg.graphiteTransport,
 			cfg.remoteTimeout, cfg.graphitePrefix)
 		writers = append(writers, c)
 	}
 	if cfg.opentsdbURL != "" {
-		c := opentsdb.NewClient(cfg.opentsdbURL, cfg.remoteTimeout)
+		c := opentsdb.NewClient(
+			log.With(logger, "storage", "OpenTSDB"),
+			cfg.opentsdbURL,
+			cfg.remoteTimeout,
+		)
 		writers = append(writers, c)
 	}
 	if cfg.influxdbURL != "" {
 		url, err := url.Parse(cfg.influxdbURL)
 		if err != nil {
-			log.Fatalf("Failed to parse InfluxDB URL %q: %v", cfg.influxdbURL, err)
+			level.Error(logger).Log("msg", "Failed to parse InfluxDB URL", "url", cfg.influxdbURL, "err", err)
+			os.Exit(1)
 		}
 		conf := influx.HTTPConfig{
 			Addr:     url.String(),
@@ -174,34 +187,39 @@ func buildClients(cfg *config) ([]writer, []reader) {
 			Password: cfg.influxdbPassword,
 			Timeout:  cfg.remoteTimeout,
 		}
-		c := influxdb.NewClient(conf, cfg.influxdbDatabase, cfg.influxdbRetentionPolicy)
+		c := influxdb.NewClient(
+			log.With(logger, "storage", "InfluxDB"),
+			conf,
+			cfg.influxdbDatabase,
+			cfg.influxdbRetentionPolicy,
+		)
 		prometheus.MustRegister(c)
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	log.Info("Starting up...")
+	level.Info(logger).Log("Starting up...")
 	return writers, readers
 }
 
-func serve(addr string, writers []writer, readers []reader) error {
+func serve(logger log.Logger, addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Errorln("Read error:", err)
+			level.Error(logger).Log("msg", "Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Errorln("Decode error:", err)
+			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req prompb.WriteRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Errorln("Unmarshal error:", err)
+			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -213,7 +231,7 @@ func serve(addr string, writers []writer, readers []reader) error {
 		for _, w := range writers {
 			wg.Add(1)
 			go func(rw writer) {
-				sendSamples(rw, samples)
+				sendSamples(logger, rw, samples)
 				wg.Done()
 			}(w)
 		}
@@ -223,21 +241,21 @@ func serve(addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Errorln("Read error:", err)
+			level.Error(logger).Log("msg", "Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Errorln("Decode error:", err)
+			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Errorln("Unmarshal error:", err)
+			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -252,7 +270,7 @@ func serve(addr string, writers []writer, readers []reader) error {
 		var resp *prompb.ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
-			log.With("query", req).With("storage", reader.Name()).With("err", err).Warnf("Error executing query")
+			level.Warn(logger).Log("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -295,12 +313,12 @@ func protoToSamples(req *prompb.WriteRequest) model.Samples {
 	return samples
 }
 
-func sendSamples(w writer, samples model.Samples) {
+func sendSamples(logger log.Logger, w writer, samples model.Samples) {
 	begin := time.Now()
 	err := w.Write(samples)
 	duration := time.Since(begin).Seconds()
 	if err != nil {
-		log.With("num_samples", len(samples)).With("storage", w.Name()).With("err", err).Warnf("Error sending samples to remote storage")
+		level.Warn(logger).Log("msg", "Error sending samples to remote storage", "err", err, "storage", w.Name(), "num_samples", len(samples))
 		failedSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
 	}
 	sentSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))

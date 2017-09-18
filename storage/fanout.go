@@ -17,19 +17,23 @@ import (
 	"container/heap"
 	"strings"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 type fanout struct {
+	logger log.Logger
+
 	primary     Storage
 	secondaries []Storage
 }
 
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
 // through to multiple underlying storages.
-func NewFanout(primary Storage, secondaries ...Storage) Storage {
+func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
+		logger:      logger,
 		primary:     primary,
 		secondaries: secondaries,
 	}
@@ -74,6 +78,7 @@ func (f *fanout) Appender() (Appender, error) {
 		secondaries = append(secondaries, appender)
 	}
 	return &fanoutAppender{
+		logger:      f.logger,
 		primary:     primary,
 		secondaries: secondaries,
 	}, nil
@@ -97,6 +102,8 @@ func (f *fanout) Close() error {
 
 // fanoutAppender implements Appender.
 type fanoutAppender struct {
+	logger log.Logger
+
 	primary     Appender
 	secondaries []Appender
 }
@@ -136,7 +143,7 @@ func (f *fanoutAppender) Commit() (err error) {
 			err = appender.Commit()
 		} else {
 			if rollbackErr := appender.Rollback(); rollbackErr != nil {
-				log.Errorf("Squashed rollback error on commit: %v", rollbackErr)
+				level.Error(f.logger).Log("msg", "Squashed rollback error on commit", "err", rollbackErr)
 			}
 		}
 	}
@@ -151,7 +158,7 @@ func (f *fanoutAppender) Rollback() (err error) {
 		if err == nil {
 			err = rollbackErr
 		} else if rollbackErr != nil {
-			log.Errorf("Squashed rollback error on rollback: %v", rollbackErr)
+			level.Error(f.logger).Log("msg", "Squashed rollback error on rollback", "err", rollbackErr)
 		}
 	}
 	return nil
@@ -370,8 +377,7 @@ func (c *mergeIterator) Seek(t int64) bool {
 
 func (c *mergeIterator) At() (t int64, v float64) {
 	if len(c.h) == 0 {
-		log.Error("mergeIterator.At() called after .Next() returned false.")
-		return 0, 0
+		panic("mergeIterator.At() called after .Next() returned false.")
 	}
 
 	// TODO do I need to dedupe or just merge?

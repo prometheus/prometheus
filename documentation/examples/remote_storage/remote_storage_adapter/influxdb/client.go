@@ -17,10 +17,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 
@@ -29,6 +31,8 @@ import (
 
 // Client allows sending batches of Prometheus samples to InfluxDB.
 type Client struct {
+	logger log.Logger
+
 	client          influx.Client
 	database        string
 	retentionPolicy string
@@ -36,14 +40,20 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(conf influx.HTTPConfig, db string, rp string) *Client {
+func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) *Client {
 	c, err := influx.NewHTTPClient(conf)
 	// Currently influx.NewClient() *should* never return an error.
 	if err != nil {
-		log.Fatal(err)
+		level.Error(logger).Log("err", err)
+		os.Exit(1)
+	}
+
+	if logger == nil {
+		logger = log.NewNopLogger()
 	}
 
 	return &Client{
+		logger:          logger,
 		client:          c,
 		database:        db,
 		retentionPolicy: rp,
@@ -73,7 +83,7 @@ func (c *Client) Write(samples model.Samples) error {
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			log.Debugf("cannot send value %f to InfluxDB, skipping sample %#v", v, s)
+			level.Debug(c.logger).Log("msg", "cannot send  to InfluxDB, skipping sample", "value", v, "sample", s)
 			c.ignoredSamples.Inc()
 			continue
 		}

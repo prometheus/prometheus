@@ -16,7 +16,8 @@ package kubernetes
 import (
 	"fmt"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -64,7 +65,7 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			ingress, err := convertToIngress(o)
 			if err != nil {
-				s.logger.With("err", err).Errorln("converting to Ingress object failed")
+				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
 				return
 			}
 			send(s.buildIngress(ingress))
@@ -74,7 +75,7 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			ingress, err := convertToIngress(o)
 			if err != nil {
-				s.logger.With("err", err).Errorln("converting to Ingress object failed")
+				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
 				return
 			}
 			send(&config.TargetGroup{Source: ingressSource(ingress)})
@@ -84,7 +85,7 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			ingress, err := convertToIngress(o)
 			if err != nil {
-				s.logger.With("err", err).Errorln("converting to Ingress object failed")
+				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
 				return
 			}
 			send(s.buildIngress(ingress))

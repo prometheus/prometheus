@@ -423,6 +423,12 @@
 			"revisionTime": "2017-03-20T09:05:36Z"
 		},
 		{
+			"checksumSHA1": "t7aTpDH0h4BZcGU0KkUr14QQG2w=",
+			"path": "github.com/go-kit/kit/log/level",
+			"revision": "6964666de57c88f7d93da127e900d201b632f561",
+			"revisionTime": "2017-05-17T16:52:12Z"
+		},
+		{
 			"checksumSHA1": "KxX/Drph+byPXBFIXaCZaCOAnrU=",
 			"path": "github.com/go-logfmt/logfmt",
 			"revision": "390ab7935ee28ec6b286364bba9b4dd6410cb3d5",
@@ -839,6 +845,12 @@
 			"path": "github.com/prometheus/common/model",
 			"revision": "0d0c3d572886e0f2323ed376557f9eb99b97d25b",
 			"revisionTime": "2017-06-16T14:41:04Z"
+		},
+		{
+			"checksumSHA1": "Yseprf8kAFr/s7wztkQnrFuFN+8=",
+			"path": "github.com/prometheus/common/promlog",
+			"revision": "2f17f4a9d485bf34b4bfaccc273805040e4f86c8",
+			"revisionTime": "2017-09-08T16:18:22Z"
 		},
 		{
 			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",

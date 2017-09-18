@@ -16,7 +16,6 @@ package kubernetes
 import (
 	"testing"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +33,7 @@ func newFakePodInformer() *fakeInformer {
 
 func makeTestPodDiscovery() (*Pod, *fakeInformer) {
 	i := newFakePodInformer()
-	return NewPod(log.Base(), i), i
+	return NewPod(nil, i), i
 }
 
 func makeMultiPortPod() *v1.Pod {

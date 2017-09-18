@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
@@ -44,7 +43,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(context.Background(), cfg, app, log.Base())
+		sp  = newScrapePool(context.Background(), cfg, app, nil)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -167,7 +166,7 @@ func TestScrapePoolReload(t *testing.T) {
 		targets:    map[uint64]*Target{},
 		loops:      map[uint64]loop{},
 		newLoop:    newLoop,
-		logger:     log.Base(),
+		logger:     nil,
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -231,7 +230,7 @@ func TestScrapePoolReload(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp := newScrapePool(context.Background(), cfg, app, log.Base())
+	sp := newScrapePool(context.Background(), cfg, app, nil)
 
 	wrapped := sp.appender()
 
@@ -500,7 +499,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		} else if numScrapes == 5 {
 			cancel()
 		}
-		return fmt.Errorf("Scrape failed.")
+		return fmt.Errorf("scrape failed")
 	}
 
 	go func() {
@@ -520,7 +519,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
-		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0], 42)
+		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0].v, 42.0)
 	}
 	if !value.IsStaleNaN(appender.result[5].v) {
 		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
@@ -559,7 +558,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		} else if numScrapes == 3 {
 			cancel()
 		}
-		return fmt.Errorf("Scrape failed.")
+		return fmt.Errorf("scrape failed")
 	}
 
 	go func() {
@@ -579,7 +578,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		t.Fatalf("Appended samples not as expected. Wanted: %d samples Got: %d", 22, len(appender.result))
 	}
 	if appender.result[0].v != 42.0 {
-		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0], 42)
+		t.Fatalf("Appended first sample not as expected. Wanted: %f Got: %f", appender.result[0].v, 42.0)
 	}
 	if !value.IsStaleNaN(appender.result[5].v) {
 		t.Fatalf("Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[5].v))
