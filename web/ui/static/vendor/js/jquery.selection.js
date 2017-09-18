@@ -1,7 +1,7 @@
 /*!
  * jQuery.selection - jQuery Plugin
  *
- * Copyright (c) 2010-2012 IWASAKI Koji (@madapaja).
+ * Copyright (c) 2010-2014 IWASAKI Koji (@madapaja).
  * http://blog.madapaja.net/
  * Under The MIT License
  *
@@ -26,13 +26,13 @@
  */
 (function($, win, doc) {
     /**
-     * 要素の文字列選択状態を取得します
+     * get caret status of the selection of the element
      *
-     * @param   {Element}   element         対象要素
+     * @param   {Element}   element         target DOM element
      * @return  {Object}    return
-     * @return  {String}    return.text     選択されている文字列
-     * @return  {Integer}   return.start    選択開始位置
-     * @return  {Integer}   return.end      選択終了位置
+     * @return  {String}    return.text     selected text
+     * @return  {Number}    return.start    start position of the selection
+     * @return  {Number}    return.end      end position of the selection
      */
     var _getCaretInfo = function(element){
         var res = {
@@ -42,13 +42,13 @@
         };
 
         if (!element.value) {
-            /* 値がない、もしくは空文字列 */
+            /* no value or empty string */
             return res;
         }
 
         try {
             if (win.getSelection) {
-                /* IE 以外 */
+                /* except IE */
                 res.start = element.selectionStart;
                 res.end = element.selectionEnd;
                 res.text = element.value.slice(res.start, res.end);
@@ -57,8 +57,7 @@
                 element.focus();
 
                 var range = doc.selection.createRange(),
-                    range2 = doc.body.createTextRange(),
-                    tmpLength;
+                    range2 = doc.body.createTextRange();
 
                 res.text = range.text;
 
@@ -74,24 +73,24 @@
                 res.end = res.start + range.text.length;
             }
         } catch (e) {
-            /* あきらめる */
+            /* give up */
         }
 
         return res;
     };
 
     /**
-     * 要素に対するキャレット操作
+     * caret operation for the element
      * @type {Object}
      */
     var _CaretOperation = {
         /**
-         * 要素のキャレット位置を取得します
+         * get caret position
          *
-         * @param   {Element}   element         対象要素
+         * @param   {Element}   element         target element
          * @return  {Object}    return
-         * @return  {Integer}   return.start    選択開始位置
-         * @return  {Integer}   return.end      選択終了位置
+         * @return  {Number}    return.start    start position for the selection
+         * @return  {Number}    return.end      end position for the selection
          */
         getPos: function(element) {
             var tmp = _getCaretInfo(element);
@@ -99,20 +98,20 @@
         },
 
         /**
-         * 要素のキャレット位置を設定します
+         * set caret position
          *
-         * @param   {Element}   element         対象要素
-         * @param   {Object}    toRange         設定するキャレット位置
-         * @param   {Integer}   toRange.start   選択開始位置
-         * @param   {Integer}   toRange.end     選択終了位置
-         * @param   {String}    caret           キャレットモード "keep" | "start" | "end" のいずれか
+         * @param   {Element}   element         target element
+         * @param   {Object}    toRange         caret position
+         * @param   {Number}    toRange.start   start position for the selection
+         * @param   {Number}    toRange.end     end position for the selection
+         * @param   {String}    caret           caret mode: any of the following: "keep" | "start" | "end"
          */
         setPos: function(element, toRange, caret) {
             caret = this._caretMode(caret);
 
-            if (caret == 'start') {
+            if (caret === 'start') {
                 toRange.end = toRange.start;
-            } else if (caret == 'end') {
+            } else if (caret === 'end') {
                 toRange.start = toRange.end;
             }
 
@@ -135,29 +134,29 @@
                     element.setSelectionRange(toRange.start, toRange.end);
                 }
             } catch (e) {
-                /* あきらめる */
+                /* give up */
             }
         },
 
         /**
-         * 要素内の選択文字列を取得します
+         * get selected text
          *
-         * @param   {Element}   element         対象要素
-         * @return  {String}    return          選択文字列
+         * @param   {Element}   element         target element
+         * @return  {String}    return          selected text
          */
         getText: function(element) {
             return _getCaretInfo(element).text;
         },
 
         /**
-         * キャレットモードを選択します
+         * get caret mode
          *
-         * @param   {String}    caret           キャレットモード
-         * @return  {String}    return          "keep" | "start" | "end" のいずれか
+         * @param   {String}    caret           caret mode
+         * @return  {String}    return          any of the following: "keep" | "start" | "end"
          */
         _caretMode: function(caret) {
             caret = caret || "keep";
-            if (caret == false) {
+            if (caret === false) {
                 caret = 'end';
             }
 
@@ -175,11 +174,11 @@
         },
 
         /**
-         * 選択文字列を置き換えます
+         * replace selected text
          *
-         * @param   {Element}   element         対象要素
-         * @param   {String}    text            置き換える文字列
-         * @param   {String}    caret           キャレットモード "keep" | "start" | "end" のいずれか
+         * @param   {Element}   element         target element
+         * @param   {String}    text            replacement text
+         * @param   {String}    caret           caret mode: any of the following: "keep" | "start" | "end"
          */
         replace: function(element, text, caret) {
             var tmp = _getCaretInfo(element),
@@ -194,11 +193,11 @@
         },
 
         /**
-         * 文字列を選択文字列の前に挿入します
+         * insert before the selected text
          *
-         * @param   {Element}   element         対象要素
-         * @param   {String}    text            挿入文字列
-         * @param   {String}    caret           キャレットモード "keep" | "start" | "end" のいずれか
+         * @param   {Element}   element         target element
+         * @param   {String}    text            insertion text
+         * @param   {String}    caret           caret mode: any of the following: "keep" | "start" | "end"
          */
         insertBefore: function(element, text, caret) {
             var tmp = _getCaretInfo(element),
@@ -213,11 +212,11 @@
         },
 
         /**
-         * 文字列を選択文字列の後に挿入します
+         * insert after the selected text
          *
-         * @param   {Element}   element         対象要素
-         * @param   {String}    text            挿入文字列
-         * @param   {String}    caret           キャレットモード "keep" | "start" | "end" のいずれか
+         * @param   {Element}   element         target element
+         * @param   {String}    text            insertion text
+         * @param   {String}    caret           caret mode: any of the following: "keep" | "start" | "end"
          */
         insertAfter: function(element, text, caret) {
             var tmp = _getCaretInfo(element),
@@ -232,16 +231,16 @@
         }
     };
 
-    /* jQuery.selection を追加 */
+    /* add jQuery.selection */
     $.extend({
         /**
-         * ウィンドウの選択されている文字列を取得
+         * get selected text on the window
          *
-         * @param   {String}    mode            選択モード "text" | "html" のいずれか
+         * @param   {String}    mode            selection mode: any of the following: "text" | "html"
          * @return  {String}    return
          */
         selection: function(mode) {
-            var getText = ((mode || 'text').toLowerCase() == 'text');
+            var getText = ((mode || 'text').toLowerCase() === 'text');
 
             try {
                 if (win.getSelection) {
@@ -272,14 +271,14 @@
                     }
                 }
             } catch (e) {
-                /* あきらめる */
+                /* give up */
             }
 
             return '';
         }
     });
 
-    /* selection を追加 */
+    /* add selection */
     $.fn.extend({
         selection: function(mode, opts) {
             opts = opts || {};
@@ -287,71 +286,66 @@
             switch (mode) {
                 /**
                  * selection('getPos')
-                 * キャレット位置を取得します
+                 * get caret position
                  *
                  * @return  {Object}    return
-                 * @return  {Integer}   return.start    選択開始位置
-                 * @return  {Integer}   return.end      選択終了位置
+                 * @return  {Number}    return.start    start position for the selection
+                 * @return  {Number}    return.end      end position for the selection
                  */
                 case 'getPos':
                     return _CaretOperation.getPos(this[0]);
-                    break;
 
                 /**
                  * selection('setPos', opts)
-                 * キャレット位置を設定します
+                 * set caret position
                  *
-                 * @param   {Integer}   opts.start      選択開始位置
-                 * @param   {Integer}   opts.end        選択終了位置
+                 * @param   {Number}    opts.start      start position for the selection
+                 * @param   {Number}    opts.end        end position for the selection
                  */
                 case 'setPos':
                     return this.each(function() {
                         _CaretOperation.setPos(this, opts);
                     });
-                    break;
 
                 /**
                  * selection('replace', opts)
-                 * 選択文字列を置き換えます
+                 * replace the selected text
                  *
-                 * @param   {String}    opts.text            置き換える文字列
-                 * @param   {String}    opts.caret           キャレットモード "keep" | "start" | "end" のいずれか
+                 * @param   {String}    opts.text            replacement text
+                 * @param   {String}    opts.caret           caret mode: any of the following: "keep" | "start" | "end"
                  */
                 case 'replace':
                     return this.each(function() {
                         _CaretOperation.replace(this, opts.text, opts.caret);
                     });
-                    break;
 
                 /**
                  * selection('insert', opts)
-                 * 選択文字列の前、もしくは後に文字列を挿入えます
+                 * insert before/after the selected text
                  *
-                 * @param   {String}    opts.text            挿入文字列
-                 * @param   {String}    opts.caret           キャレットモード "keep" | "start" | "end" のいずれか
-                 * @param   {String}    opts.mode            挿入モード "before" | "after" のいずれか
+                 * @param   {String}    opts.text            insertion text
+                 * @param   {String}    opts.caret           caret mode: any of the following: "keep" | "start" | "end"
+                 * @param   {String}    opts.mode            insertion mode: any of the following: "before" | "after"
                  */
                 case 'insert':
                     return this.each(function() {
-                        if (opts.mode == 'before') {
+                        if (opts.mode === 'before') {
                             _CaretOperation.insertBefore(this, opts.text, opts.caret);
                         } else {
                             _CaretOperation.insertAfter(this, opts.text, opts.caret);
                         }
                     });
 
-                    break;
-
                 /**
                  * selection('get')
-                 * 選択されている文字列を取得
+                 * get selected text
                  *
                  * @return  {String}    return
                  */
                 case 'get':
+                /* falls through */
                 default:
                     return _CaretOperation.getText(this[0]);
-                    break;
             }
 
             return this;
