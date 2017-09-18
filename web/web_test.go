@@ -72,6 +72,7 @@ func TestGlobalURL(t *testing.T) {
 }
 
 func TestReadyAndHealthy(t *testing.T) {
+	t.Parallel()
 	opts := &Options{
 		ListenAddress:  ":9090",
 		ReadTimeout:    30 * time.Second,
@@ -145,5 +146,86 @@ func TestReadyAndHealthy(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Path /version with server ready test, Expected status 200 got: %s", resp.Status)
 	}
+}
 
+func TestRoutePrefix(t *testing.T) {
+	t.Parallel()
+	opts := &Options{
+		ListenAddress:  ":9091",
+		ReadTimeout:    30 * time.Second,
+		MaxConnections: 512,
+		Context:        nil,
+		Storage:        nil,
+		QueryEngine:    nil,
+		TargetManager:  nil,
+		RuleManager:    nil,
+		Notifier:       nil,
+		RoutePrefix:    "/prometheus",
+		MetricsPath:    "/prometheus/metrics",
+	}
+
+	opts.Flags = map[string]string{}
+
+	webHandler := New(nil, opts)
+	go func() {
+		err := webHandler.Run(context.Background())
+		if err != nil {
+			t.Fatalf("Can't start webhandler error %s", err)
+		}
+	}()
+
+	// Give some time for the web goroutine to run since we need the server
+	// to be up before starting tests.
+	time.Sleep(5 * time.Second)
+
+	resp, err := http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path "+opts.RoutePrefix+"/-/healthy with server unready test, Expected status 200 got: %s", resp.Status)
+	}
+
+	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("Path "+opts.RoutePrefix+"/-/ready with server unready test, Expected status 503 got: %s", resp.Status)
+	}
+
+	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("Path "+opts.RoutePrefix+"/version with server unready test, Expected status 503 got: %s", resp.Status)
+	}
+
+	// Set to ready.
+	webHandler.Ready()
+
+	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path "+opts.RoutePrefix+"/-/healthy with server ready test, Expected status 200 got: %s", resp.Status)
+	}
+
+	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path "+opts.RoutePrefix+"/-/ready with server ready test, Expected status 200 got: %s", resp.Status)
+	}
+
+	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path "+opts.RoutePrefix+"/version with server ready test, Expected status 200 got: %s", resp.Status)
+	}
 }
