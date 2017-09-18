@@ -914,6 +914,7 @@ loop:
 				added++
 				continue
 			default:
+				level.Debug(sl.l).Log("msg", "unexpected error", "series", string(met), "err", err)
 				break loop
 			}
 			if tp == nil {

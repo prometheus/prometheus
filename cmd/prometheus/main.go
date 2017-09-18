@@ -215,35 +215,17 @@ func main() {
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
 
-	var (
-		// sampleAppender = storage.Fanout{}
-		reloadables []Reloadable
-	)
-
 	// Make sure that sighup handler is registered with a redirect to the channel before the potentially
 	// long and synchronous tsdb init.
 	hup := make(chan os.Signal)
 	hupReady := make(chan bool)
 	signal.Notify(hup, syscall.SIGHUP)
 
-	level.Info(logger).Log("msg", "Starting TSDB")
-
-	localStorage, err := tsdb.Open(
-		cfg.localStoragePath,
-		log.With(logger, "component", "tsdb"),
-		prometheus.DefaultRegisterer,
-		&cfg.tsdb,
+	var (
+		localStorage  = &tsdb.ReadyStorage{}
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"))
+		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
-	if err != nil {
-		level.Error(logger).Log("msg", "Opening TSDB failed", "err", err)
-		os.Exit(1)
-	}
-
-	level.Info(logger).Log("msg", "TSDB succesfully started")
-
-	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"))
-	reloadables = append(reloadables, remoteStorage)
-	fanoutStorage := storage.NewFanout(logger, tsdb.Adapter(localStorage), remoteStorage)
 
 	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
@@ -263,7 +245,8 @@ func main() {
 	})
 
 	cfg.web.Context = ctx
-	cfg.web.Storage = localStorage
+	cfg.web.TSDB = localStorage.Get
+	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.TargetManager = targetManager
 	cfg.web.RuleManager = ruleManager
@@ -285,11 +268,12 @@ func main() {
 
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
-	reloadables = append(reloadables, targetManager, ruleManager, webHandler, notifier)
-
-	if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-		level.Error(logger).Log("msg", "Error loading config", "err", err)
-		os.Exit(1)
+	reloadables := []Reloadable{
+		remoteStorage,
+		targetManager,
+		ruleManager,
+		webHandler,
+		notifier,
 	}
 
 	// Wait for reload or termination signals. Start the handler for SIGHUP as
@@ -314,14 +298,29 @@ func main() {
 		}
 	}()
 
-	// Start all components. The order is NOT arbitrary.
-	defer func() {
-		if err := fanoutStorage.Close(); err != nil {
-			level.Error(logger).Log("msg", "Closing storage(s) failed", "err", err)
-		}
-	}()
+	// Start all components while we wait for TSDB to open but only load
+	// initial config and mark ourselves as ready after it completed.
+	dbOpen := make(chan struct{})
 
-	// defer remoteStorage.Stop()
+	go func() {
+		defer close(dbOpen)
+
+		level.Info(logger).Log("msg", "Starting TSDB")
+
+		db, err := tsdb.Open(
+			cfg.localStoragePath,
+			log.With(logger, "component", "tsdb"),
+			prometheus.DefaultRegisterer,
+			&cfg.tsdb,
+		)
+		if err != nil {
+			level.Error(logger).Log("msg", "Opening storage failed", "err", err)
+			os.Exit(1)
+		}
+		level.Info(logger).Log("msg", "TSDB started")
+
+		localStorage.Set(db)
+	}()
 
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
@@ -343,6 +342,19 @@ func main() {
 
 	errc := make(chan error)
 	go func() { errc <- webHandler.Run(ctx) }()
+
+	<-dbOpen
+
+	if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+		level.Error(logger).Log("msg", "Error loading config", "err", err)
+		os.Exit(1)
+	}
+
+	defer func() {
+		if err := fanoutStorage.Close(); err != nil {
+			level.Error(logger).Log("msg", "Error stopping storage", "err", err)
+		}
+	}()
 
 	// Wait for reload or termination signals.
 	close(hupReady) // Unblock SIGHUP handler.
