@@ -16,7 +16,6 @@ package kubernetes
 import (
 	"testing"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +35,7 @@ func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fa
 	svc := newFakeServiceInformer()
 	eps := newFakeEndpointsInformer()
 	pod := newFakePodInformer()
-	return NewEndpoints(log.Base(), svc, eps, pod), svc, eps, pod
+	return NewEndpoints(nil, svc, eps, pod), svc, eps, pod
 }
 
 func makeEndpoints() *v1.Endpoints {

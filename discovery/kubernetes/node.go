@@ -18,7 +18,8 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -37,6 +38,9 @@ type Node struct {
 
 // NewNode returns a new node discovery.
 func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
+	if l == nil {
+		l = log.NewNopLogger()
+	}
 	return &Node{logger: l, informer: inf, store: inf.GetStore()}
 }
 
@@ -67,7 +71,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			node, err := convertToNode(o)
 			if err != nil {
-				n.logger.With("err", err).Errorln("converting to Node object failed")
+				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 				return
 			}
 			send(n.buildNode(node))
@@ -77,7 +81,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			node, err := convertToNode(o)
 			if err != nil {
-				n.logger.With("err", err).Errorln("converting to Node object failed")
+				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 				return
 			}
 			send(&config.TargetGroup{Source: nodeSource(node)})
@@ -87,7 +91,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			node, err := convertToNode(o)
 			if err != nil {
-				n.logger.With("err", err).Errorln("converting to Node object failed")
+				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 				return
 			}
 			send(n.buildNode(node))
@@ -151,7 +155,7 @@ func (n *Node) buildNode(node *apiv1.Node) *config.TargetGroup {
 
 	addr, addrMap, err := nodeAddress(node)
 	if err != nil {
-		n.logger.With("err", err).Debugf("No node address found")
+		level.Warn(n.logger).Log("msg", "No node address found", "err", err)
 		return nil
 	}
 	addr = net.JoinHostPort(addr, strconv.FormatInt(int64(node.Status.DaemonEndpoints.KubeletEndpoint.Port), 10))

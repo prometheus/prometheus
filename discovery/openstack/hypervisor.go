@@ -18,11 +18,12 @@ import (
 	"net"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/pagination"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 
@@ -58,7 +59,7 @@ func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*config.Targe
 	// Get an initial set right away.
 	tg, err := h.refresh()
 	if err != nil {
-		h.logger.Error(err)
+		level.Error(h.logger).Log("msg", "Unable refresh target groups", "err", err.Error())
 	} else {
 		select {
 		case ch <- []*config.TargetGroup{tg}:
@@ -75,7 +76,7 @@ func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*config.Targe
 		case <-ticker.C:
 			tg, err := h.refresh()
 			if err != nil {
-				h.logger.Error(err)
+				level.Error(h.logger).Log("msg", "Unable refresh target groups", "err", err.Error())
 				continue
 			}
 

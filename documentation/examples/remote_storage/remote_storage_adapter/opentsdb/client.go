@@ -23,7 +23,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
@@ -36,13 +37,16 @@ const (
 
 // Client allows sending batches of Prometheus samples to OpenTSDB.
 type Client struct {
+	logger log.Logger
+
 	url     string
 	timeout time.Duration
 }
 
 // NewClient creates a new Client.
-func NewClient(url string, timeout time.Duration) *Client {
+func NewClient(logger log.Logger, url string, timeout time.Duration) *Client {
 	return &Client{
+		logger:  logger,
 		url:     url,
 		timeout: timeout,
 	}
@@ -75,7 +79,7 @@ func (c *Client) Write(samples model.Samples) error {
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			log.Warnf("cannot send value %f to OpenTSDB, skipping sample %#v", v, s)
+			level.Warn(c.logger).Log("msg", "cannot send value to OpenTSDB, skipping sample", "value", v, "sample", s)
 			continue
 		}
 		metric := TagValue(s.Metric[model.MetricNameLabel])

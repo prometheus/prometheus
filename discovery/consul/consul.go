@@ -21,9 +21,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -97,6 +98,10 @@ type Discovery struct {
 
 // NewDiscovery returns a new Discovery for the given config.
 func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -168,7 +173,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		}
 
 		if err != nil {
-			d.logger.Errorf("Error refreshing service list: %s", err)
+			level.Error(d.logger).Log("msg", "Error refreshing service list", "err", err)
 			rpcFailuresCount.Inc()
 			time.Sleep(retryInterval)
 			continue
@@ -184,7 +189,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		if d.clientDatacenter == "" {
 			info, err := d.client.Agent().Self()
 			if err != nil {
-				d.logger.Errorf("Error retrieving datacenter name: %s", err)
+				level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
 				time.Sleep(retryInterval)
 				continue
 			}
@@ -265,7 +270,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 		}
 
 		if err != nil {
-			srv.logger.Errorf("Error refreshing service %s: %s", srv.name, err)
+			level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "err", err)
 			rpcFailuresCount.Inc()
 			time.Sleep(retryInterval)
 			continue

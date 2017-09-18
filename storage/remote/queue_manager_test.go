@@ -99,7 +99,7 @@ func TestSampleDelivery(t *testing.T) {
 
 	cfg := defaultQueueManagerConfig
 	cfg.MaxShards = 1
-	m := NewQueueManager(cfg, nil, nil, c)
+	m := NewQueueManager(nil, cfg, nil, nil, c)
 
 	// These should be received by the client.
 	for _, s := range samples[:len(samples)/2] {
@@ -133,7 +133,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples)
-	m := NewQueueManager(defaultQueueManagerConfig, nil, nil, c)
+	m := NewQueueManager(nil, defaultQueueManagerConfig, nil, nil, c)
 
 	// These should be received by the client.
 	for _, s := range samples {
@@ -211,7 +211,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	cfg := defaultQueueManagerConfig
 	cfg.MaxShards = 1
 	cfg.QueueCapacity = n
-	m := NewQueueManager(cfg, nil, nil, c)
+	m := NewQueueManager(nil, cfg, nil, nil, c)
 
 	m.Start()
 

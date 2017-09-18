@@ -17,9 +17,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"

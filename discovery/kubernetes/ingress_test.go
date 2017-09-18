@@ -16,7 +16,6 @@ package kubernetes
 import (
 	"testing"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +32,7 @@ func newFakeIngressInformer() *fakeInformer {
 
 func makeTestIngressDiscovery() (*Ingress, *fakeInformer) {
 	i := newFakeIngressInformer()
-	return NewIngress(log.Base(), i), i
+	return NewIngress(nil, i), i
 }
 
 func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
