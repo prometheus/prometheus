@@ -41,7 +41,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	b.ResetTimer()
 
 	for _, l := range lbls {
-		h.create(l.Hash(), l)
+		h.getOrCreate(l.Hash(), l)
 	}
 }
 
@@ -89,10 +89,10 @@ func TestHead_Truncate(t *testing.T) {
 
 	h.initTime(0)
 
-	s1 := h.create(1, labels.FromStrings("a", "1", "b", "1"))
-	s2 := h.create(2, labels.FromStrings("a", "2", "b", "1"))
-	s3 := h.create(3, labels.FromStrings("a", "1", "b", "2"))
-	s4 := h.create(4, labels.FromStrings("a", "2", "b", "2", "c", "1"))
+	s1, _ := h.getOrCreate(1, labels.FromStrings("a", "1", "b", "1"))
+	s2, _ := h.getOrCreate(2, labels.FromStrings("a", "2", "b", "1"))
+	s3, _ := h.getOrCreate(3, labels.FromStrings("a", "1", "b", "2"))
+	s4, _ := h.getOrCreate(4, labels.FromStrings("a", "2", "b", "2", "c", "1"))
 
 	s1.chunks = []*memChunk{
 		{minTime: 0, maxTime: 999},

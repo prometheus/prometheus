@@ -185,13 +185,14 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 	return h, nil
 }
 
+// ReadWAL initializes the head by consuming the write ahead log.
 func (h *Head) ReadWAL() error {
 	r := h.wal.Reader()
 	mint := h.MinTime()
 
 	seriesFunc := func(series []RefSeries) error {
 		for _, s := range series {
-			h.create(s.Labels.Hash(), s.Labels)
+			h.getOrCreate(s.Labels.Hash(), s.Labels)
 		}
 		return nil
 	}
@@ -379,17 +380,12 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	if t < a.mint {
 		return 0, ErrOutOfBounds
 	}
-	hash := lset.Hash()
 
-	s := a.head.series.getByHash(hash, lset)
-
-	if s == nil {
-		s = a.head.create(hash, lset)
-
+	s, created := a.head.getOrCreate(lset.Hash(), lset)
+	if created {
 		a.series = append(a.series, RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
-			hash:   hash,
 		})
 	}
 	return s.ref, a.AddFast(s.ref, t, v)
@@ -839,19 +835,26 @@ func (h *headIndexReader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-func (h *Head) create(hash uint64, lset labels.Labels) *memSeries {
-	h.metrics.series.Inc()
-	h.metrics.seriesCreated.Inc()
+func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
+	// Just using `getOrSet` below would be semantically sufficient, but we'd create
+	// a new series on every sample inserted via Add(), which causes allocations
+	// and makes our series IDs rather random and harder to compress in postings.
+	s := h.series.getByHash(hash, lset)
+	if s != nil {
+		return s, false
+	}
 
 	// Optimistically assume that we are the first one to create the series.
 	id := atomic.AddUint64(&h.lastSeriesID, 1)
-	s := newMemSeries(lset, id, h.chunkRange)
+	s = newMemSeries(lset, id, h.chunkRange)
 
 	s, created := h.series.getOrSet(hash, s)
-	// Skip indexing if we didn't actually create the series.
 	if !created {
-		return s
+		return s, false
 	}
+
+	h.metrics.series.Inc()
+	h.metrics.seriesCreated.Inc()
 
 	h.postings.add(id, lset)
 
@@ -870,7 +873,7 @@ func (h *Head) create(hash uint64, lset labels.Labels) *memSeries {
 		h.symbols[l.Value] = struct{}{}
 	}
 
-	return s
+	return s, true
 }
 
 // seriesHashmap is a simple hashmap for memSeries by their label set. It is built
