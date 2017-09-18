@@ -735,24 +735,42 @@ Prometheus.Graph.prototype.remove = function() {
 
 Prometheus.Graph.prototype.formatKMBT = function(y) {
   var abs_y = Math.abs(y);
-  if (abs_y >= 1e12) {
-    return y / 1e12 + "T"
+  if (abs_y >= 1e24) {
+    return y / 1e24 + "Y";
+  } else if (abs_y >= 1e21) {
+    return y / 1e21 + "Z";
+  } else if (abs_y >= 1e18) {
+    return y / 1e18 + "E";
+  } else if (abs_y >= 1e15) {
+    return y / 1e15 + "P";
+  } else if (abs_y >= 1e12) {
+    return y / 1e12 + "T";
   } else if (abs_y >= 1e9) {
-    return y / 1e9 + "B"
+    return y / 1e9 + "G";
   } else if (abs_y >= 1e6) {
-    return y / 1e6 + "M"
+    return y / 1e6 + "M";
   } else if (abs_y >= 1e3) {
-    return y / 1e3 + "K"
+    return y / 1e3 + "k";
   } else if (abs_y >= 1) {
     return y
   } else if (abs_y === 0) {
     return y
+  } else if (abs_y <= 1e-24) {
+    return (y / 1e-24).toFixed(3) + "y";
+  } else if (abs_y <= 1e-21) {
+    return (y / 1e-21).toFixed(3) + "z";
+  } else if (abs_y <= 1e-18) {
+    return (y / 1e-18).toFixed(3) + "a";
+  } else if (abs_y <= 1e-15) {
+    return (y / 1e-15).toFixed(3) + "f";
+  } else if (abs_y <= 1e-12) {
+    return (y / 1e-12).toFixed(3) + "p";
   } else if (abs_y <= 1e-9) {
-    return (y / 1e-9).toFixed(3) + "n"
+    return (y / 1e-9).toFixed(3) + "n";
   } else if (abs_y <= 1e-6) {
-    return (y / 1e-6).toFixed(3) + "µ"
+    return (y / 1e-6).toFixed(3) + "µ";
   } else if (abs_y <=1e-3) {
-    return (y / 1e-3).toFixed(3) + "m"
+    return (y / 1e-3).toFixed(3) + "m";
   } else if (abs_y <= 1) {
     return y.toFixed(3)
   }
