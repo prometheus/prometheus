@@ -77,7 +77,7 @@
                           <input
                               class="pull-left date_input input"
                               id="end{{id}}"
-                              title="End time of graph"
+                              title="End time of graph (UTC)"
                               placeholder="Until"
                               data-format="yyyy-MM-dd"
                               type="text"
