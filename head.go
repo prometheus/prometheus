@@ -1023,6 +1023,7 @@ func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, boo
 	s.locks[i].Lock()
 
 	if prev := s.hashes[i].get(hash, series.lset); prev != nil {
+		s.locks[i].Unlock()
 		return prev, false
 	}
 	s.hashes[i].set(hash, series)
