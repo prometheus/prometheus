@@ -64,11 +64,6 @@ type Appendable interface {
 	Appender() Appender
 }
 
-// Queryable defines an entity which provides a Querier.
-type Queryable interface {
-	Querier(mint, maxt int64) Querier
-}
-
 // BlockMeta provides meta information about a block.
 type BlockMeta struct {
 	// Unique identifier for the block and its contents. Changes on compaction.
