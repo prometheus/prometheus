@@ -120,6 +120,7 @@ Prometheus.Graph.prototype.initialize = function() {
     showTodayButton: true,
     showClear: true,
     showClose: true,
+    timeZone: 'UTC',
   });
   if (self.options.end_input) {
     self.endDate.data('DateTimePicker').date(self.options.end_input);
