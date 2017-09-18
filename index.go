@@ -570,6 +570,9 @@ var (
 	errInvalidFlag = fmt.Errorf("invalid flag")
 )
 
+// NewIndexReader returns a new IndexReader on the given directory.
+func NewIndexReader(dir string) (IndexReader, error) { return newIndexReader(dir) }
+
 // newIndexReader returns a new indexReader on the given directory.
 func newIndexReader(dir string) (*indexReader, error) {
 	f, err := openMmapFile(filepath.Join(dir, "index"))
