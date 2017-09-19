@@ -621,7 +621,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
   var yAxis = new Rickshaw.Graph.Axis.Y({
     graph: self.rickshawGraph,
     orientation: "left",
-    tickFormat: Rickshaw.Fixtures.Number.formatKMBT,
+    tickFormat: this.formatKMBT,
     element: self.yAxis[0],
   });
 
@@ -733,6 +733,49 @@ Prometheus.Graph.prototype.remove = function() {
   self.handleRemove();
   self.handleChange();
 };
+
+Prometheus.Graph.prototype.formatKMBT = function(y) {
+  var abs_y = Math.abs(y);
+  if (abs_y >= 1e24) {
+    return (y / 1e24).toFixed(5) + "Y";
+  } else if (abs_y >= 1e21) {
+    return (y / 1e21).toFixed(5) + "Z";
+  } else if (abs_y >= 1e18) {
+    return (y / 1e18).toFixed(5) + "E";
+  } else if (abs_y >= 1e15) {
+    return (y / 1e15).toFixed(5) + "P";
+  } else if (abs_y >= 1e12) {
+    return (y / 1e12).toFixed(5) + "T";
+  } else if (abs_y >= 1e9) {
+    return (y / 1e9).toFixed(5) + "G";
+  } else if (abs_y >= 1e6) {
+    return (y / 1e6).toFixed(5) + "M";
+  } else if (abs_y >= 1e3) {
+    return (y / 1e3 + "k";
+  } else if (abs_y >= 1) {
+    return y
+  } else if (abs_y === 0) {
+    return y
+  } else if (abs_y <= 1e-24) {
+    return (y / 1e-24).toFixed(3) + "y";
+  } else if (abs_y <= 1e-21) {
+    return (y / 1e-21).toFixed(3) + "z";
+  } else if (abs_y <= 1e-18) {
+    return (y / 1e-18).toFixed(3) + "a";
+  } else if (abs_y <= 1e-15) {
+    return (y / 1e-15).toFixed(3) + "f";
+  } else if (abs_y <= 1e-12) {
+    return (y / 1e-12).toFixed(3) + "p";
+  } else if (abs_y <= 1e-9) {
+    return (y / 1e-9).toFixed(3) + "n";
+  } else if (abs_y <= 1e-6) {
+    return (y / 1e-6).toFixed(3) + "µ";
+  } else if (abs_y <=1e-3) {
+    return (y / 1e-3).toFixed(3) + "m";
+  } else if (abs_y <= 1) {
+    return y.toFixed(3)
+  }
+}
 
 function escapeHTML(string) {
   var entityMap = {
