@@ -736,21 +736,21 @@ Prometheus.Graph.prototype.remove = function() {
 Prometheus.Graph.prototype.formatKMBT = function(y) {
   var abs_y = Math.abs(y);
   if (abs_y >= 1e24) {
-    return y / 1e24 + "Y";
+    return (y / 1e24).toFixed(5) + "Y";
   } else if (abs_y >= 1e21) {
-    return y / 1e21 + "Z";
+    return (y / 1e21).toFixed(5) + "Z";
   } else if (abs_y >= 1e18) {
-    return y / 1e18 + "E";
+    return (y / 1e18).toFixed(5) + "E";
   } else if (abs_y >= 1e15) {
-    return y / 1e15 + "P";
+    return (y / 1e15).toFixed(5) + "P";
   } else if (abs_y >= 1e12) {
-    return y / 1e12 + "T";
+    return (y / 1e12).toFixed(5) + "T";
   } else if (abs_y >= 1e9) {
-    return y / 1e9 + "G";
+    return (y / 1e9).toFixed(5) + "G";
   } else if (abs_y >= 1e6) {
-    return y / 1e6 + "M";
+    return (y / 1e6).toFixed(5) + "M";
   } else if (abs_y >= 1e3) {
-    return y / 1e3 + "k";
+    return (y / 1e3 + "k";
   } else if (abs_y >= 1) {
     return y
   } else if (abs_y === 0) {
