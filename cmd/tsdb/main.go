@@ -26,6 +26,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -88,7 +89,10 @@ func (b *writeBenchmark) run() {
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	st, err := tsdb.Open(dir, nil, nil, &tsdb.Options{
+	l := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	l = log.With(l, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+
+	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
 		WALFlushInterval:  200 * time.Millisecond,
 		RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
 		BlockRanges:       tsdb.ExponentialBlockRanges(2*60*60*1000, 5, 3),

@@ -192,7 +192,11 @@ func (h *Head) ReadWAL() error {
 
 	seriesFunc := func(series []RefSeries) error {
 		for _, s := range series {
-			h.getOrCreate(s.Labels.Hash(), s.Labels)
+			h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
+
+			if h.lastSeriesID < s.Ref {
+				h.lastSeriesID = s.Ref
+			}
 		}
 		return nil
 	}
@@ -203,7 +207,8 @@ func (h *Head) ReadWAL() error {
 			}
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				return errors.Errorf("unknown series reference %d; abort WAL restore", s.Ref)
+				h.logger.Log("msg", "unknown series reference in WAL", "ref", s.Ref)
+				continue
 			}
 			_, chunkCreated := ms.append(s.T, s.V)
 			if chunkCreated {
@@ -211,7 +216,6 @@ func (h *Head) ReadWAL() error {
 				h.metrics.chunks.Inc()
 			}
 		}
-
 		return nil
 	}
 	deletesFunc := func(stones []Stone) error {
@@ -223,7 +227,6 @@ func (h *Head) ReadWAL() error {
 				h.tombstones.add(s.ref, itv)
 			}
 		}
-
 		return nil
 	}
 
@@ -846,7 +849,12 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 
 	// Optimistically assume that we are the first one to create the series.
 	id := atomic.AddUint64(&h.lastSeriesID, 1)
-	s = newMemSeries(lset, id, h.chunkRange)
+
+	return h.getOrCreateWithID(id, hash, lset)
+}
+
+func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool) {
+	s := newMemSeries(lset, id, h.chunkRange)
 
 	s, created := h.series.getOrSet(hash, s)
 	if !created {

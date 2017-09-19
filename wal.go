@@ -824,7 +824,9 @@ func (r *walReader) Read(seriesf SeriesCB, samplesf SamplesCB, deletesf DeletesC
 			if err != nil {
 				return errors.Wrap(err, "decode series entry")
 			}
-			seriesf(series)
+			if err := seriesf(series); err != nil {
+				return err
+			}
 
 			cf := r.current()
 
@@ -839,7 +841,9 @@ func (r *walReader) Read(seriesf SeriesCB, samplesf SamplesCB, deletesf DeletesC
 			if err != nil {
 				return errors.Wrap(err, "decode samples entry")
 			}
-			samplesf(samples)
+			if err := samplesf(samples); err != nil {
+				return err
+			}
 
 			// Update the times for the WAL segment file.
 			cf := r.current()
@@ -855,7 +859,9 @@ func (r *walReader) Read(seriesf SeriesCB, samplesf SamplesCB, deletesf DeletesC
 			if err != nil {
 				return errors.Wrap(err, "decode delete entry")
 			}
-			deletesf(stones)
+			if err := deletesf(stones); err != nil {
+				return err
+			}
 			// Update the times for the WAL segment file.
 
 			cf := r.current()
