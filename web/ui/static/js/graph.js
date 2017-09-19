@@ -737,43 +737,43 @@ Prometheus.Graph.prototype.remove = function() {
 Prometheus.Graph.prototype.formatKMBT = function(y) {
   var abs_y = Math.abs(y);
   if (abs_y >= 1e24) {
-    return (y / 1e24).toFixed(5) + "Y";
+    return (y / 1e24).toString() + "Y";
   } else if (abs_y >= 1e21) {
-    return (y / 1e21).toFixed(5) + "Z";
+    return (y / 1e21).toString() + "Z";
   } else if (abs_y >= 1e18) {
-    return (y / 1e18).toFixed(5) + "E";
+    return (y / 1e18).toString() + "E";
   } else if (abs_y >= 1e15) {
-    return (y / 1e15).toFixed(5) + "P";
+    return (y / 1e15).toString() + "P";
   } else if (abs_y >= 1e12) {
-    return (y / 1e12).toFixed(5) + "T";
+    return (y / 1e12).toString() + "T";
   } else if (abs_y >= 1e9) {
-    return (y / 1e9).toFixed(5) + "G";
+    return (y / 1e9).toString() + "G";
   } else if (abs_y >= 1e6) {
-    return (y / 1e6).toFixed(5) + "M";
+    return (y / 1e6).toString() + "M";
   } else if (abs_y >= 1e3) {
-    return (y / 1e3 + "k";
+    return (y / 1e3).toString() + "k";
   } else if (abs_y >= 1) {
     return y
   } else if (abs_y === 0) {
     return y
   } else if (abs_y <= 1e-24) {
-    return (y / 1e-24).toFixed(3) + "y";
+    return (y / 1e-24).toString() + "y";
   } else if (abs_y <= 1e-21) {
-    return (y / 1e-21).toFixed(3) + "z";
+    return (y / 1e-21).toString() + "z";
   } else if (abs_y <= 1e-18) {
-    return (y / 1e-18).toFixed(3) + "a";
+    return (y / 1e-18).toString() + "a";
   } else if (abs_y <= 1e-15) {
-    return (y / 1e-15).toFixed(3) + "f";
+    return (y / 1e-15).toString() + "f";
   } else if (abs_y <= 1e-12) {
-    return (y / 1e-12).toFixed(3) + "p";
+    return (y / 1e-12).toString() + "p";
   } else if (abs_y <= 1e-9) {
-    return (y / 1e-9).toFixed(3) + "n";
+      return (y / 1e-9).toString() + "n";
   } else if (abs_y <= 1e-6) {
-    return (y / 1e-6).toFixed(3) + "µ";
+    return (y / 1e-6).toString() + "µ";
   } else if (abs_y <=1e-3) {
-    return (y / 1e-3).toFixed(3) + "m";
+    return (y / 1e-3).toString() + "m";
   } else if (abs_y <= 1) {
-    return y.toFixed(3)
+    return y
   }
 }
 
