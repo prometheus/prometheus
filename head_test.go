@@ -21,6 +21,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
@@ -41,7 +42,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	b.ResetTimer()
 
 	for _, l := range lbls {
-		h.create(l.Hash(), l)
+		h.getOrCreate(l.Hash(), l)
 	}
 }
 
@@ -83,16 +84,92 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 	return mets, nil
 }
 
+type memoryWAL struct {
+	nopWAL
+	entries []interface{}
+}
+
+func (w *memoryWAL) Reader() WALReader {
+	return w
+}
+
+func (w *memoryWAL) Read(series SeriesCB, samples SamplesCB, deletes DeletesCB) error {
+	for _, e := range w.entries {
+		switch v := e.(type) {
+		case []RefSeries:
+			series(v)
+		case []RefSample:
+			samples(v)
+		case []Stone:
+			deletes(v)
+		}
+	}
+	return nil
+}
+
+func TestHead_ReadWAL(t *testing.T) {
+	entries := []interface{}{
+		[]RefSeries{
+			{Ref: 10, Labels: labels.FromStrings("a", "1")},
+			{Ref: 11, Labels: labels.FromStrings("a", "2")},
+			{Ref: 100, Labels: labels.FromStrings("a", "3")},
+		},
+		[]RefSample{
+			{Ref: 0, T: 99, V: 1},
+			{Ref: 10, T: 100, V: 2},
+			{Ref: 100, T: 100, V: 3},
+		},
+		[]RefSeries{
+			{Ref: 50, Labels: labels.FromStrings("a", "4")},
+		},
+		[]RefSample{
+			{Ref: 10, T: 101, V: 5},
+			{Ref: 50, T: 101, V: 6},
+		},
+	}
+	wal := &memoryWAL{entries: entries}
+
+	head, err := NewHead(nil, nil, wal, 1000)
+	require.NoError(t, err)
+
+	require.NoError(t, head.ReadWAL())
+	require.Equal(t, uint64(100), head.lastSeriesID)
+
+	s10 := head.series.getByID(10)
+	s11 := head.series.getByID(11)
+	s50 := head.series.getByID(50)
+	s100 := head.series.getByID(100)
+
+	require.Equal(t, labels.FromStrings("a", "1"), s10.lset)
+	require.Equal(t, labels.FromStrings("a", "2"), s11.lset)
+	require.Equal(t, labels.FromStrings("a", "4"), s50.lset)
+	require.Equal(t, labels.FromStrings("a", "3"), s100.lset)
+
+	expandChunk := func(c chunks.Iterator) (x []sample) {
+		for c.Next() {
+			t, v := c.At()
+			x = append(x, sample{t: t, v: v})
+		}
+		require.NoError(t, c.Err())
+		return x
+	}
+
+	require.Equal(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0)))
+	require.Equal(t, 0, len(s11.chunks))
+	require.Equal(t, []sample{{101, 6}}, expandChunk(s50.iterator(0)))
+	require.Equal(t, []sample{{100, 3}}, expandChunk(s100.iterator(0)))
+}
+
 func TestHead_Truncate(t *testing.T) {
 	h, err := NewHead(nil, nil, nil, 1000)
 	require.NoError(t, err)
 
 	h.initTime(0)
 
-	s1 := h.create(1, labels.FromStrings("a", "1", "b", "1"))
-	s2 := h.create(2, labels.FromStrings("a", "2", "b", "1"))
-	s3 := h.create(3, labels.FromStrings("a", "1", "b", "2"))
-	s4 := h.create(4, labels.FromStrings("a", "2", "b", "2", "c", "1"))
+	s1, _ := h.getOrCreate(1, labels.FromStrings("a", "1", "b", "1"))
+	s2, _ := h.getOrCreate(2, labels.FromStrings("a", "2", "b", "1"))
+	s3, _ := h.getOrCreate(3, labels.FromStrings("a", "1", "b", "2"))
+	s4, _ := h.getOrCreate(4, labels.FromStrings("a", "2", "b", "2", "c", "1"))
 
 	s1.chunks = []*memChunk{
 		{minTime: 0, maxTime: 999},
