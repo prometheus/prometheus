@@ -45,13 +45,6 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
-const (
-	scrapeHealthMetricName       = "up"
-	scrapeDurationMetricName     = "scrape_duration_seconds"
-	scrapeSamplesMetricName      = "scrape_samples_scraped"
-	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling"
-)
-
 var (
 	targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -460,15 +453,11 @@ type loop interface {
 	stop()
 }
 
-type lsetCacheEntry struct {
-	metric string
-	lset   labels.Labels
-	hash   uint64
-}
-
-type refEntry struct {
+type cacheEntry struct {
 	ref      uint64
 	lastIter uint64
+	hash     uint64
+	lset     labels.Labels
 }
 
 type scrapeLoop struct {
@@ -494,8 +483,9 @@ type scrapeLoop struct {
 type scrapeCache struct {
 	iter uint64 // Current scrape iteration.
 
-	refs  map[string]*refEntry       // Parsed string to ref.
-	lsets map[uint64]*lsetCacheEntry // Ref to labelset and string.
+	// Parsed string to an entry with information about the actual label set
+	// and its storage reference.
+	entries map[string]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it without setting a new entry with an unsafe
@@ -511,8 +501,7 @@ type scrapeCache struct {
 
 func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
-		refs:       map[string]*refEntry{},
-		lsets:      map[uint64]*lsetCacheEntry{},
+		entries:    map[string]*cacheEntry{},
 		dropped:    map[string]*uint64{},
 		seriesCur:  map[uint64]labels.Labels{},
 		seriesPrev: map[uint64]labels.Labels{},
@@ -523,14 +512,13 @@ func (c *scrapeCache) iterDone() {
 	// refCache and lsetCache may grow over time through series churn
 	// or multiple string representations of the same metric. Clean up entries
 	// that haven't appeared in the last scrape.
-	for s, e := range c.refs {
-		if e.lastIter < c.iter {
-			delete(c.refs, s)
-			delete(c.lsets, e.ref)
+	for s, e := range c.entries {
+		if c.iter-e.lastIter > 2 {
+			delete(c.entries, s)
 		}
 	}
 	for s, iter := range c.dropped {
-		if *iter < c.iter {
+		if c.iter-*iter > 2 {
 			delete(c.dropped, s)
 		}
 	}
@@ -546,29 +534,20 @@ func (c *scrapeCache) iterDone() {
 	c.iter++
 }
 
-func (c *scrapeCache) getRef(met string) (uint64, bool) {
-	e, ok := c.refs[met]
+func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
+	e, ok := c.entries[met]
 	if !ok {
-		return 0, false
+		return nil, false
 	}
 	e.lastIter = c.iter
-	return e.ref, true
+	return e, true
 }
 
 func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, hash uint64) {
 	if ref == 0 {
 		return
 	}
-	// Clean up the label set cache before overwriting the ref for a previously seen
-	// metric representation. It won't be caught by the cleanup in iterDone otherwise.
-	if e, ok := c.refs[met]; ok {
-		delete(c.lsets, e.ref)
-	}
-	c.refs[met] = &refEntry{ref: ref, lastIter: c.iter}
-	// met is the raw string the metric was ingested as. The label set is not ordered
-	// and thus it's not suitable to uniquely identify cache entries.
-	// We store a hash over the label set instead.
-	c.lsets[ref] = &lsetCacheEntry{metric: met, lset: lset, hash: hash}
+	c.entries[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 }
 
 func (c *scrapeCache) addDropped(met string) {
@@ -825,14 +804,12 @@ loop:
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
 		}
-		ref, ok := sl.cache.getRef(yoloString(met))
+		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
-			lset := sl.cache.lsets[ref].lset
-			switch err = app.AddFast(lset, ref, t, v); err {
+			switch err = app.AddFast(ce.lset, ce.ref, t, v); err {
 			case nil:
 				if tp == nil {
-					e := sl.cache.lsets[ref]
-					sl.cache.trackStaleness(e.hash, e.lset)
+					sl.cache.trackStaleness(ce.hash, ce.lset)
 				}
 			case storage.ErrNotFound:
 				ok = false
@@ -862,28 +839,19 @@ loop:
 			}
 		}
 		if !ok {
-			var (
-				lset labels.Labels
-				mets string
-				hash uint64
-			)
-			if e, ok := sl.cache.lsets[ref]; ok {
-				mets = e.metric
-				lset = e.lset
-				hash = e.hash
-			} else {
-				mets = p.Metric(&lset)
-				hash = lset.Hash()
+			var lset labels.Labels
 
-				// Hash label set as it is seen local to the target. Then add target labels
-				// and relabeling and store the final label set.
-				lset = sl.sampleMutator(lset)
+			mets := p.Metric(&lset)
+			hash := lset.Hash()
 
-				// The label set may be set to nil to indicate dropping.
-				if lset == nil {
-					sl.cache.addDropped(mets)
-					continue
-				}
+			// Hash label set as it is seen local to the target. Then add target labels
+			// and relabeling and store the final label set.
+			lset = sl.sampleMutator(lset)
+
+			// The label set may be set to nil to indicate dropping.
+			if lset == nil {
+				sl.cache.addDropped(mets)
+				continue
 			}
 
 			var ref uint64
@@ -970,6 +938,15 @@ func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
 }
 
+// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
+// with scraped metrics in the cache.
+const (
+	scrapeHealthMetricName       = "up" + "\xff"
+	scrapeDurationMetricName     = "scrape_duration_seconds" + "\xff"
+	scrapeSamplesMetricName      = "scrape_samples_scraped" + "\xff"
+	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling" + "\xff"
+)
+
 func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended int, err error) error {
 	sl.scraper.report(start, duration, err)
 
@@ -1026,14 +1003,9 @@ func (sl *scrapeLoop) reportStale(start time.Time) error {
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
-	// Suffix s with the invalid \xff unicode rune to avoid collisions
-	// with scraped metrics.
-	s2 := s + "\xff"
-
-	ref, ok := sl.cache.getRef(s2)
+	ce, ok := sl.cache.get(s)
 	if ok {
-		lset := sl.cache.lsets[ref].lset
-		err := app.AddFast(lset, ref, t, v)
+		err := app.AddFast(ce.lset, ce.ref, t, v)
 		switch err {
 		case nil:
 			return nil
@@ -1048,7 +1020,10 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		}
 	}
 	lset := labels.Labels{
-		labels.Label{Name: labels.MetricName, Value: s},
+		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
+		// with scraped metrics in the cache.
+		// We have to drop it when building the actual metric.
+		labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
 	}
 
 	hash := lset.Hash()
@@ -1057,7 +1032,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	ref, err := app.Add(lset, t, v)
 	switch err {
 	case nil:
-		sl.cache.addRef(s2, ref, lset, hash)
+		sl.cache.addRef(s, ref, lset, hash)
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 		return nil
