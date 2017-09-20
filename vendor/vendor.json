@@ -873,20 +873,20 @@
 		{
 			"checksumSHA1": "B5ndMoK8lqgFJ8xUZ/0V4zCpUw0=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "162a48e4f2c6e486a0ebf61cf9cea73a8023ef0a",
-			"revisionTime": "2017-09-19T08:20:19Z"
+			"revision": "f39388c9af818643192c4acb64ed90e56628b5a7",
+			"revisionTime": "2017-09-19T13:41:53Z"
 		},
 		{
 			"checksumSHA1": "Gua979gmISm4cJP/fR2hL8m5To8=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "162a48e4f2c6e486a0ebf61cf9cea73a8023ef0a",
-			"revisionTime": "2017-09-19T08:20:19Z"
+			"revision": "f39388c9af818643192c4acb64ed90e56628b5a7",
+			"revisionTime": "2017-09-19T13:41:53Z"
 		},
 		{
 			"checksumSHA1": "zhmlvc322RH1L3l9DaA9d/HVVWs=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "162a48e4f2c6e486a0ebf61cf9cea73a8023ef0a",
-			"revisionTime": "2017-09-19T08:20:19Z"
+			"revision": "f39388c9af818643192c4acb64ed90e56628b5a7",
+			"revisionTime": "2017-09-19T13:41:53Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
