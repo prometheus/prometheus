@@ -26,3 +26,13 @@ th.job_header {
   max-width: none;
   text-align: left;
 }
+
+.accordion-toggle:after {
+  font-family: 'Glyphicons Halflings';
+  content: "\e114";
+  float: right;
+  color: grey;
+}
+.accordion.collapsed .accordion-toggle:after {
+  content: "\e080";
+}

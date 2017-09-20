@@ -122,7 +122,7 @@ func webUiTemplates_baseHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/_base.html", size: 2858, mode: os.FileMode(436), modTime: time.Unix(1505741004, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/_base.html", size: 2858, mode: os.FileMode(420), modTime: time.Unix(1505876310, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -142,7 +142,7 @@ func webUiTemplatesAlertsHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/alerts.html", size: 1837, mode: os.FileMode(436), modTime: time.Unix(1496327419, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/alerts.html", size: 1837, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -162,7 +162,7 @@ func webUiTemplatesConfigHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/config.html", size: 175, mode: os.FileMode(436), modTime: time.Unix(1485955747, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/config.html", size: 175, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -182,7 +182,7 @@ func webUiTemplatesFlagsHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/flags.html", size: 433, mode: os.FileMode(436), modTime: time.Unix(1485955747, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/flags.html", size: 433, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -202,7 +202,7 @@ func webUiTemplatesGraphHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/graph.html", size: 2061, mode: os.FileMode(436), modTime: time.Unix(1505729492, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/graph.html", size: 2061, mode: os.FileMode(420), modTime: time.Unix(1505874221, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -222,7 +222,7 @@ func webUiTemplatesRulesHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/rules.html", size: 209, mode: os.FileMode(436), modTime: time.Unix(1485955747, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/rules.html", size: 209, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -242,12 +242,12 @@ func webUiTemplatesStatusHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/status.html", size: 1756, mode: os.FileMode(436), modTime: time.Unix(1498214078, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/status.html", size: 1756, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
 
-var _webUiTemplatesTargetsHtml = []byte("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff\xbc\x55\xcd\x8e\xdb\x36\x10\xbe\xfb\x29\xa6\xac\xd1\x53\x64\x01\x01\x7a\xd9\x52\x3a\xb4\x0d\x90\x02\x8b\x22\xcd\x26\x97\x5e\x02\x4a\x1c\x4b\xdc\x70\x49\x95\x1c\x19\x59\x30\x7c\xf7\x82\x94\xb4\xb1\x65\xbb\x48\xba\x40\x7c\xa0\x35\xff\x7f\xdf\x90\x21\x48\xdc\x2b\x83\xc0\x7a\x14\x92\xc5\xc8\x7f\x28\x0a\x30\xea\x13\x14\x45\x1d\x02\x1a\x19\xe3\x66\xf3\x45\xab\xb5\x86\xd0\x10\x8b\x71\x03\xc0\xa5\x3a\x40\xab\x85\xf7\x55\x16\x08\x65\xd0\x15\x7b\x3d\x2a\xc9\xea\x0d\x00\x00\xef\x5f\x82\x92\x15\x23\xe1\x3a\x24\xcf\xea\x77\xd3\x07\x2f\xfb\x97\x93\x06\x00\x27\xd1\x68\x5c\xfc\x4c\x44\x3e\x8b\xd6\x1a\x89\xc6\xa3\x9c\xe9\xc6\x3a\x89\xee\x89\xf4\xe4\xd4\xf0\x44\xf5\xf6\x80\x8e\x2d\x4e\x01\x42\x70\xc2\x74\x08\xdb\x7b\xdb\xbc\x80\xed\x60\xad\x86\x9b\x0a\x76\x53\x06\x6f\xac\xd5\x1e\x72\x15\xcb\x8f\x53\x6a\x41\x7d\xc4\x49\x3c\x57\x73\xea\xa1\xb5\xda\x0f\xc2\x54\xec\x67\xb6\x24\x7a\x6f\x9b\x0f\xc9\x20\x05\xe5\x22\x57\x79\x6f\x9b\x22\x84\x14\x30\x46\x06\xbd\xc3\x7d\xc5\x7e\x3c\x61\xd6\xcb\x17\x2f\x45\xcd\x4b\xea\xd3\xe1\xce\x63\x9e\x30\x72\x6a\xf5\x2b\x23\x07\xab\x0c\x65\xab\x0b\xf2\x3b\x12\x84\xd7\x84\xb7\xa2\x41\xed\xaf\x4b\x3d\xc1\x5d\xeb\xc4\x70\xd5\xc1\x2b\xe7\xac\x3b\x17\xae\xb3\x4f\x1a\xab\x26\x72\x6a\xac\x7c\x3c\xe6\x3c\x4d\x26\xcd\xe4\x64\x04\x57\x8a\x97\x67\x2c\x31\x77\x37\x84\xdd\xfb\xb7\xb7\xf0\x19\x3a\x6d\x1b\xa1\xdf\xbf\xbd\x9d\x9a\x9c\xb8\xbb\xbb\xb6\xc7\x07\x8c\xf1\xa6\x2c\x67\xce\x6b\xeb\x29\xc6\x99\x78\x23\xa8\x9f\x07\xd1\x9c\x05\x3d\xca\x52\xa7\xde\xbd\x80\xed\x41\xe8\x11\x7d\xc6\x50\x32\xff\x6b\x44\xf7\x08\xab\xf4\x57\xa6\x6a\x31\x4b\x56\xb3\x83\x8b\x16\x00\x3c\xe1\x6b\xc1\x56\x0e\x09\xf9\x2c\x06\xa7\x1e\x84\x7b\xcc\xd0\xc9\x9c\x18\x53\xdd\x93\xb7\x18\x19\x2f\x93\xe5\x79\xfe\x29\x8d\x69\x7d\xbf\x8e\xcf\xcb\x0b\x7d\x3e\x67\xad\x32\x15\x1a\x1d\x41\x3e\x8b\x10\x60\xf7\x1a\x85\xa6\x1e\x3e\x43\x9f\x3f\xde\xd9\xdf\x92\x1e\xc4\x08\x3e\xe1\xf3\x83\x32\x52\xb5\x82\xac\x03\xc2\x4f\x54\x8c\xc3\x80\xae\x15\x1e\xd9\xe5\x02\x66\x7f\x17\x8a\xb8\x5c\xf6\xff\x2b\xa2\x1d\x9d\xb7\xae\xc8\xeb\x85\x8e\x81\x14\x24\x0a\xb2\x5d\xa7\xb1\x62\x64\xad\x26\x35\x30\x20\x45\x89\x9e\xc5\x3d\x3d\xe8\x8a\xdc\x88\x13\x69\x9d\xea\x94\x11\xba\x98\xb5\x78\x53\xff\x8a\x7b\xeb\x10\x1c\xe6\xa9\x29\xd3\xdd\xf0\xb2\xa9\x9f\xb0\xf1\x31\x61\x23\xa3\xe9\x77\xe5\xdb\x74\x79\xa1\x9c\xd6\x34\xc6\x04\xc8\x10\xb6\x78\x98\x70\x93\xda\x49\x0f\x3a\x21\x77\xfb\x31\xc6\xea\xa7\x7f\x46\x4b\xbf\x64\x85\x18\x17\x22\xcf\xf4\x4a\x1b\x27\xe0\x64\xec\xe6\x4b\x73\x8a\x03\xbb\xf9\x3f\x5d\x5c\xec\xbf\x91\x7c\xb2\x04\x39\x2b\x3d\xe7\xfa\x1d\xd1\xac\x3d\x7e\x6b\x3c\x89\x7b\x31\x6a\x62\xb5\xb1\x06\xbf\x7d\x55\x9e\x89\xb2\x10\xd4\x3e\x75\xd9\xd3\x74\xbb\xee\xfe\xf0\x7f\xa3\xb3\x31\xfe\x89\x07\x74\x4b\x45\x21\x78\x65\x5a\x3c\x56\x8c\x11\x44\x67\x9f\xb9\xa8\x5f\xa2\xe7\xdb\xfb\x52\x79\xd7\x56\x59\xa6\xa9\xbb\xf5\xce\xe6\x9b\xf5\xc8\xdf\xb5\x7e\x7e\x6d\xde\xeb\xd7\xe3\xdc\x8e\x97\xab\xd7\xe3\x54\x85\x97\xf9\xed\x4f\x62\x5e\x4a\x75\xa8\x37\x8b\xfc\xdf\x00\x00\x00\xff\xff\x46\x0b\x17\x95\xd8\x08\x00\x00")
+var _webUiTemplatesTargetsHtml = []byte("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff\xbc\x56\xcd\x8e\xdb\x36\x10\xbe\xfb\x29\xa6\x8c\xd1\x53\x64\x01\x01\x7a\xd9\xd2\x3a\xb4\x0d\x90\x02\x8b\x22\xcd\x26\x97\x5e\x02\x4a\x1c\x5b\xdc\x70\x49\x95\x1c\x1b\x59\x30\x7c\xf7\x82\x94\xe4\x95\x65\x39\x48\xba\x40\xf6\xa0\xf5\xfc\xcf\x37\xfc\x38\x52\x08\x12\x77\xca\x20\xb0\x16\x85\x64\x31\xf2\x9f\x8a\x02\x8c\xfa\x0c\x45\x51\x85\x80\x46\xc6\xb8\x5a\x3d\x79\x35\xd6\x10\x1a\x62\x31\xae\x00\xb8\x54\x47\x68\xb4\xf0\x7e\x9b\x0d\x42\x19\x74\xc5\x4e\x1f\x94\x64\xd5\x0a\x00\x80\xb7\xaf\x40\xc9\x2d\x23\xe1\xf6\x48\x9e\x55\xef\xfb\x1f\xbc\x6c\x5f\xf5\x1e\x00\x9c\x44\xad\x71\xcc\xd3\x0b\xf9\x59\x34\xd6\x48\x34\x1e\xe5\x20\xd7\xd6\x49\x74\x27\xd1\x93\x53\xdd\x49\x6a\xed\x11\x1d\x1b\x93\x02\x84\xe0\x84\xd9\x23\xac\xef\x6d\xfd\x12\xd6\x9d\xb5\x1a\x6e\xb6\xb0\xe9\x3b\x78\x6b\xad\xf6\x90\x51\x8c\x7f\x9c\xd2\x08\xaa\x89\x26\xe9\x1c\x48\x41\xa2\x20\xbb\xdf\x6b\x4c\x30\xb5\x16\x9d\x47\x36\xa8\x73\xb2\x2d\x7b\x21\x9a\xc6\x3a\xa9\xac\x29\x42\x48\x15\x63\x64\x23\xa2\x93\x89\x9d\xe7\xce\x15\xa1\xb1\xda\x77\xc2\x6c\xd9\x2f\xa7\x80\x7b\x5b\x7f\x4c\xad\x24\x38\x5c\xe4\xf9\xdd\xdb\x7a\x92\xb8\x75\xb8\xdb\xb2\x17\xe7\xca\x79\xb5\xa1\x65\x56\x8d\x2e\xbc\x14\x15\x2f\xa9\x9d\x21\x2c\xc9\x4d\x35\xc9\x63\x36\x06\x4e\xb5\x95\x8f\xb9\x8f\xaf\xc0\x3c\x4d\xe6\x3c\xd4\xcd\x07\xda\x56\xaf\x8d\xec\xac\x32\xb4\xd0\x0c\xb5\xd5\x1d\x09\xc2\x65\xd3\xad\xa8\x51\xfb\x6b\x36\x4f\x70\xd7\x38\xd1\x5d\x09\x7e\xed\x9c\x75\x73\xd3\x1c\xfd\x89\x34\x89\x2e\x67\xec\x58\xc0\x92\x54\xf2\x42\x25\x86\xe3\x09\x61\xf3\xe1\xdd\x2d\x7c\x81\xbd\xb6\xb5\xd0\x1f\xde\xdd\xc6\x98\x0e\x23\x69\x37\x77\x4d\x8b\x0f\x18\xe3\x4d\x59\x0e\x9a\x37\xd6\x53\x8c\x83\xf0\x56\x50\x3b\x1c\x58\x7d\x51\x74\xd2\xa5\x4e\x03\x79\x09\xeb\xa3\xd0\x07\xf4\x99\xde\x29\xfc\xef\x03\xba\x47\x98\xb5\x3f\x0b\x55\x63\x58\x8a\x1a\x12\x2c\x46\x00\xf0\x44\xd0\xf1\x98\x73\x49\xc8\xcf\xa2\x73\xea\x41\xb8\xc7\x4c\xb1\xac\x89\x31\xe1\xee\xb3\xc5\xc8\x78\x99\x22\x2f\xfb\x4f\x6d\xf4\x9b\xe5\xdb\xf4\xbc\x5c\x98\xf3\xa5\x6a\xd6\xa9\xd0\xe8\x08\xf2\xb3\x08\x01\x36\x6f\x50\x68\x6a\xe1\x0b\xb4\xf9\xc7\x7b\xfb\x7b\xf2\x83\x18\xc1\x27\xca\x7d\x54\x46\xaa\x46\x90\x75\x40\xf8\x99\x8a\x43\xd7\xa1\x6b\xc4\x8c\xd0\x4f\x8d\x0e\xf9\x16\x40\x2c\xc3\xfe\x7f\x20\x9a\x83\xf3\xd6\x15\xf9\xbe\xa0\x63\xe7\xcb\x88\xac\xd5\xa4\x3a\x06\xa4\x28\xc9\x83\xb9\xa5\x07\xbd\x25\x77\xc0\x5e\xb4\x4e\xed\x95\x11\xba\x18\xbc\x78\x5d\xfd\x86\x3b\xeb\x10\x1c\xe6\x53\x53\x66\x7f\xc3\xcb\xba\x3a\x71\xe3\x53\xe2\x46\x66\xd3\x1f\xca\x37\x69\xaf\xa2\xec\xef\x5e\x8c\x89\x90\x21\xac\xf1\xd8\xf3\x26\x8d\x93\x1e\x74\x62\xee\xfa\x53\x8c\xdb\x9f\xff\x3d\x58\xfa\x35\x3b\xc4\x38\x0a\xf9\x4c\xaf\x8c\xb1\x27\x4e\xe6\x6e\xde\xe7\x7d\x1d\xd8\x0c\xff\xd3\xe6\x63\x5f\x67\xf2\xd9\x25\xc8\x5d\xe9\xa1\xd7\x1f\xc8\x66\xed\xf1\x7b\xeb\x49\xdc\x89\x83\x26\x56\x19\x6b\xf0\xfb\xaf\xca\x33\x59\x16\x82\xda\xa5\x29\x7b\xea\x97\xe6\xe6\x4f\xff\x0f\x3a\x1b\xe3\x5f\x78\x44\x37\x22\x0a\xc1\x2b\xd3\xe0\xd4\x31\x46\x10\x7b\xfb\xcc\x8b\xfa\x54\x3d\xaf\xe5\x25\x78\xd7\xae\xb2\x4c\xa7\xee\xe6\x77\x36\x6f\xd6\x49\xbe\x6b\xf3\xfc\xd6\xbe\x2f\x5f\x0c\xf3\x38\x5e\xe6\xd7\xe2\xf4\x83\x63\xea\xc2\xcb\xfc\x59\x92\xcc\xbc\x94\xea\x58\xad\x46\xfb\x7f\x01\x00\x00\xff\xff\xb5\xf3\x8e\x34\x73\x09\x00\x00")
 
 func webUiTemplatesTargetsHtmlBytes() ([]byte, error) {
 	return bindataRead(
@@ -262,7 +262,7 @@ func webUiTemplatesTargetsHtml() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/templates/targets.html", size: 2264, mode: os.FileMode(436), modTime: time.Unix(1505741004, 0)}
+	info := bindataFileInfo{name: "web/ui/templates/targets.html", size: 2419, mode: os.FileMode(420), modTime: time.Unix(1505901013, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -282,7 +282,7 @@ func webUiStaticCssAlertsCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/css/alerts.css", size: 74, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/css/alerts.css", size: 74, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -302,7 +302,7 @@ func webUiStaticCssGraphCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/css/graph.css", size: 2710, mode: os.FileMode(436), modTime: time.Unix(1493992669, 0)}
+	info := bindataFileInfo{name: "web/ui/static/css/graph.css", size: 2710, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -322,12 +322,12 @@ func webUiStaticCssProm_consoleCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/css/prom_console.css", size: 2883, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/css/prom_console.css", size: 2883, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
 
-var _webUiStaticCssPrometheusCss = []byte("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff\x74\x8f\xcd\x6a\xeb\x40\x0c\x85\xf7\x7e\x8a\xb3\x0e\x38\x3f\x97\xdb\xcd\xf4\x19\xfa\x0c\x41\xf6\xc8\xb1\xca\x58\x1a\x3c\x72\xe2\xb4\xf4\xdd\x4b\x62\x87\x86\x42\x37\x5a\x7c\x7c\xe7\x70\xb4\xdb\xe0\xcd\xce\x8c\x68\x17\x45\x6b\xea\xac\x8e\x86\x5b\x9a\x0a\xe3\xc2\xe8\xe9\xcc\x20\x74\x32\x73\x84\xd2\xb9\xa1\x11\xde\x93\x43\x0a\x5e\xf6\x79\x86\x53\x4a\xd8\xec\xaa\xc6\xe2\x15\x9f\x15\x90\x29\x46\xd1\x53\xed\x96\xc3\x5d\x79\x7d\x82\x8d\xb9\xdb\x10\xf0\xef\xce\xbf\xaa\xca\xfb\xed\xbb\x35\xc7\x9e\x29\xf2\x78\xcf\x77\xa6\x5e\x17\xf9\xe0\x87\xf5\xab\xf2\xf0\x47\xe5\xe1\x51\xb9\x2d\x4e\xce\x47\xd1\x28\x2d\xb9\x8d\xcf\xab\x02\xf6\xf8\x9f\xe7\xe5\x2e\x76\x12\xe7\x91\xd2\xd1\x26\xcf\x93\xc3\xe3\xcf\x8a\x8e\x06\x49\xd7\x80\xc1\xd4\x4a\xa6\x96\x97\x44\x3b\x8d\xc5\xc6\x3a\x9b\xa8\xaf\xa3\x17\x14\xb0\xb2\xc5\x73\xb3\xe4\x92\x6b\x51\x5d\xb5\x81\xe6\xfa\x22\xd1\xfb\x00\x35\xe5\xdb\x1b\xce\xb3\xd7\x94\xe4\xa4\x01\x89\x3b\xbf\x45\xbf\x03\x00\x00\xff\xff\x86\xf0\x99\x9a\x95\x01\x00\x00")
+var _webUiStaticCssPrometheusCss = []byte("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff\x7c\x91\xc1\x8a\xdb\x30\x10\x86\xef\x7e\x8a\x21\x97\x85\x05\x67\x93\xb2\x85\xa2\x7d\x80\xf6\xd2\x37\x28\x84\xb1\x34\xb6\xa7\x4c\x66\x84\x34\x49\x9c\x96\x7d\xf7\xe2\x38\x61\x4d\xa1\xbd\xe8\xf0\xf3\xcd\x3f\x9f\xa4\x97\x67\xf8\x6e\x67\x82\x64\x17\x85\x68\xea\xa4\x0e\x1d\x45\x3c\x55\x82\x0b\xc1\x88\x67\x02\x84\x9e\x27\x4a\xa0\x78\xee\xb0\x80\x8f\xe8\xc0\x15\x3e\xef\xf2\x04\x8e\x22\xf0\xfc\xd2\x74\x96\xae\xf0\xbb\x01\xc8\x98\x12\xeb\xd0\xba\xe5\x70\x43\xde\x56\x61\x67\xee\x76\x0c\xf0\xe9\x96\xbf\x37\x8d\x8f\xdb\x9f\xd6\x1d\x46\xc2\x44\xe5\x36\xdf\x9b\x7a\x5b\xf9\x17\x3d\xa8\xbf\x2a\xf7\xff\xa8\xdc\x3f\x2a\xb7\xd5\xd1\xe9\xc0\x9a\x38\xa2\x5b\x59\x5b\x05\xd8\xc1\x6b\x9e\x96\x73\xa1\x85\x9d\x0a\xca\xc1\x4e\x9e\x4f\x0e\x9e\x3e\x2c\x7a\x3c\xb2\x5c\x03\x1c\x4d\xad\x66\x8c\xb4\x4c\xc4\x53\xa9\x56\xda\x6c\xac\x7e\x97\x5e\xa2\x00\xf7\x6c\xe1\xdc\x4c\x9c\x73\xcb\xaa\x77\xec\x88\x53\x7b\xe1\xe4\x63\x00\x35\xa5\xf9\x1a\x4e\x93\xb7\x28\x3c\x68\x00\xa1\xde\x97\x51\x8c\xd1\x4a\x62\xd3\xd6\x6d\x18\x84\x02\xf6\xbe\x7e\x9f\x87\xd9\xd3\x57\xb9\xe6\x91\xa3\x69\x85\x6f\x28\xbd\xb0\x0e\xf5\x69\xee\xbd\xff\x65\x80\xcd\x0f\xda\xef\x5f\x37\x73\xd6\x8b\xa1\x07\x28\x3c\x8c\xbe\x30\x32\x4b\x0f\x85\xae\xf3\xda\x8f\xad\xdb\x68\x22\x98\x2b\x25\xf8\x9f\xca\x7a\xc7\xee\xcb\x6e\xf3\xd6\xbc\xff\x09\x00\x00\xff\xff\x9a\xae\xe2\x7f\x50\x02\x00\x00")
 
 func webUiStaticCssPrometheusCssBytes() ([]byte, error) {
 	return bindataRead(
@@ -342,7 +342,7 @@ func webUiStaticCssPrometheusCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/css/prometheus.css", size: 405, mode: os.FileMode(436), modTime: time.Unix(1505741004, 0)}
+	info := bindataFileInfo{name: "web/ui/static/css/prometheus.css", size: 592, mode: os.FileMode(420), modTime: time.Unix(1505901300, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -362,7 +362,7 @@ func webUiStaticImgAjaxLoaderGif() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/img/ajax-loader.gif", size: 847, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/img/ajax-loader.gif", size: 847, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -382,7 +382,7 @@ func webUiStaticImgFaviconIco() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/img/favicon.ico", size: 15086, mode: os.FileMode(436), modTime: time.Unix(1486992630, 0)}
+	info := bindataFileInfo{name: "web/ui/static/img/favicon.ico", size: 15086, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -402,7 +402,7 @@ func webUiStaticJsAlertsJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/js/alerts.js", size: 445, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/js/alerts.js", size: 445, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -422,7 +422,7 @@ func webUiStaticJsGraphJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/js/graph.js", size: 28754, mode: os.FileMode(436), modTime: time.Unix(1505839735, 0)}
+	info := bindataFileInfo{name: "web/ui/static/js/graph.js", size: 28754, mode: os.FileMode(420), modTime: time.Unix(1505876310, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -442,7 +442,7 @@ func webUiStaticJsGraph_templateHandlebar() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/js/graph_template.handlebar", size: 6343, mode: os.FileMode(436), modTime: time.Unix(1505729492, 0)}
+	info := bindataFileInfo{name: "web/ui/static/js/graph_template.handlebar", size: 6343, mode: os.FileMode(420), modTime: time.Unix(1505874221, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -462,7 +462,7 @@ func webUiStaticJsProm_consoleJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/js/prom_console.js", size: 22279, mode: os.FileMode(436), modTime: time.Unix(1505741004, 0)}
+	info := bindataFileInfo{name: "web/ui/static/js/prom_console.js", size: 22279, mode: os.FileMode(420), modTime: time.Unix(1505876310, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -482,7 +482,7 @@ func webUiStaticVendorBootstrap331CssBootstrapThemeMinCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap-theme.min.css", size: 19835, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap-theme.min.css", size: 19835, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -502,7 +502,7 @@ func webUiStaticVendorBootstrap331CssBootstrapMinCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css", size: 113498, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/css/bootstrap.min.css", size: 113498, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -522,7 +522,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularEot() (*asset, 
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.eot", size: 20335, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.eot", size: 20335, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -542,7 +542,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularSvg() (*asset, 
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.svg", size: 62926, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.svg", size: 62926, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -562,7 +562,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularTtf() (*asset, 
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.ttf", size: 41280, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.ttf", size: 41280, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -582,7 +582,7 @@ func webUiStaticVendorBootstrap331FontsGlyphiconsHalflingsRegularWoff() (*asset,
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.woff", size: 23320, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/fonts/glyphicons-halflings-regular.woff", size: 23320, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -602,7 +602,7 @@ func webUiStaticVendorBootstrap331JsBootstrapMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js", size: 35601, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/js/bootstrap.min.js", size: 35601, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -622,7 +622,7 @@ func webUiStaticVendorBootstrap331JsNpmJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/js/npm.js", size: 484, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap-3.3.1/js/npm.js", size: 484, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -642,7 +642,7 @@ func webUiStaticVendorBootstrap3TypeaheadBootstrap3TypeaheadMinJs() (*asset, err
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js", size: 7856, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js", size: 7856, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -662,7 +662,7 @@ func webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinC
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css", size: 7771, mode: os.FileMode(436), modTime: time.Unix(1486992630, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css", size: 7771, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -682,7 +682,7 @@ func webUiStaticVendorEonasdanBootstrapDatetimepickerBootstrapDatetimepickerMinJ
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.js", size: 48881, mode: os.FileMode(436), modTime: time.Unix(1486992630, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.js", size: 48881, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -702,7 +702,7 @@ func webUiStaticVendorFuzzyFuzzyJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/fuzzy/fuzzy.js", size: 5669, mode: os.FileMode(436), modTime: time.Unix(1493992665, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/fuzzy/fuzzy.js", size: 5669, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -722,7 +722,7 @@ func webUiStaticVendorJsJqueryHotkeysJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/js/jquery.hotkeys.js", size: 4490, mode: os.FileMode(436), modTime: time.Unix(1505729492, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/js/jquery.hotkeys.js", size: 4490, mode: os.FileMode(420), modTime: time.Unix(1505874221, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -742,7 +742,7 @@ func webUiStaticVendorJsJqueryMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/js/jquery.min.js", size: 86671, mode: os.FileMode(436), modTime: time.Unix(1505729492, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/js/jquery.min.js", size: 86671, mode: os.FileMode(420), modTime: time.Unix(1505874221, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -762,7 +762,7 @@ func webUiStaticVendorJsJquerySelectionJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/js/jquery.selection.js", size: 12881, mode: os.FileMode(436), modTime: time.Unix(1505729492, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/js/jquery.selection.js", size: 12881, mode: os.FileMode(420), modTime: time.Unix(1505874221, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -782,7 +782,7 @@ func webUiStaticVendorMomentMomentTimezoneWithDataMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/moment/moment-timezone-with-data.min.js", size: 184190, mode: os.FileMode(436), modTime: time.Unix(1505729492, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/moment/moment-timezone-with-data.min.js", size: 184190, mode: os.FileMode(420), modTime: time.Unix(1505874221, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -802,7 +802,7 @@ func webUiStaticVendorMomentMomentMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/moment/moment.min.js", size: 61281, mode: os.FileMode(436), modTime: time.Unix(1486992630, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/moment/moment.min.js", size: 61281, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -822,7 +822,7 @@ func webUiStaticVendorMustacheMustacheMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/mustache/mustache.min.js", size: 9528, mode: os.FileMode(436), modTime: time.Unix(1486992630, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/mustache/mustache.min.js", size: 9528, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -842,7 +842,7 @@ func webUiStaticVendorRickshawRickshawMinCss() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/rickshaw.min.css", size: 6102, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/rickshaw.min.css", size: 6102, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -862,7 +862,7 @@ func webUiStaticVendorRickshawRickshawMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/rickshaw.min.js", size: 76322, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/rickshaw.min.js", size: 76322, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -882,7 +882,7 @@ func webUiStaticVendorRickshawVendorD3LayoutMinJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/vendor/d3.layout.min.js", size: 17514, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/vendor/d3.layout.min.js", size: 17514, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -902,7 +902,7 @@ func webUiStaticVendorRickshawVendorD3V3Js() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/vendor/d3.v3.js", size: 144718, mode: os.FileMode(436), modTime: time.Unix(1453201983, 0)}
+	info := bindataFileInfo{name: "web/ui/static/vendor/rickshaw/vendor/d3.v3.js", size: 144718, mode: os.FileMode(420), modTime: time.Unix(1505380544, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
