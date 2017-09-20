@@ -25,7 +25,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -333,10 +332,6 @@ func parsePrometheusURL() error {
 		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
-	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
-		return fmt.Errorf("invalid Prometheus URL: %s", cfg.prometheusURL)
-	}
-
 	promURL, err := url.Parse(cfg.prometheusURL)
 	if err != nil {
 		return err
@@ -354,9 +349,6 @@ func parsePrometheusURL() error {
 func validateAlertmanagerURL(u string) error {
 	if u == "" {
 		return nil
-	}
-	if ok := govalidator.IsURL(u); !ok {
-		return fmt.Errorf("invalid Alertmanager URL: %s", u)
 	}
 	url, err := url.Parse(u)
 	if err != nil {
