@@ -6,16 +6,18 @@
       <table class="table table-condensed table-bordered table-striped table-hover">
         {{range $job, $pool := .TargetPools }}
           <thead>
-            <tr><th colspan="5" class="job_header"><a id="job-{{$job}}" href="#job-{{$job}}">{{$job}}</a></th></tr>
-            <tr>
-              <th>Endpoint</th>
-              <th>State</th>
-              <th>Labels</th>
-              <th>Last Scrape</th>
-              <th>Error</th>
+            <tr data-toggle="collapse" data-target="#accordion-{{$job}}" class="accordion">
+              <th colspan="5" class="job_header"><a id="job-{{$job}}" href="#job-{{$job}}" class="accordion-toggle">{{$job}}</a></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="accordion-{{$job}}" class="collapse">
+          <tr>
+            <th>Endpoint</th>
+            <th>State</th>
+            <th>Labels</th>
+            <th>Last Scrape</th>
+            <th>Error</th>
+          </tr>
           {{range $pool}}
             <tr>
               <td>
