@@ -190,6 +190,10 @@ func (h *Head) ReadWAL() error {
 	r := h.wal.Reader()
 	mint := h.MinTime()
 
+	// Track number of samples that referenced a series we don't know about
+	// for error reporting.
+	var unknownRefs int
+
 	seriesFunc := func(series []RefSeries) error {
 		for _, s := range series {
 			h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
@@ -207,7 +211,7 @@ func (h *Head) ReadWAL() error {
 			}
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				h.logger.Log("msg", "unknown series reference in WAL", "ref", s.Ref, "ts", s.T, "mint", mint)
+				unknownRefs++
 				continue
 			}
 			_, chunkCreated := ms.append(s.T, s.V)
@@ -228,6 +232,10 @@ func (h *Head) ReadWAL() error {
 			}
 		}
 		return nil
+	}
+
+	if unknownRefs > 0 {
+		h.logger.Log("msg", "unknown series references in WAL samples", "count", unknownRefs)
 	}
 
 	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
@@ -267,12 +275,10 @@ func (h *Head) Truncate(mint int64) error {
 
 	start = time.Now()
 
-	p, err := h.indexRange(mint, math.MaxInt64).Postings(allPostingsKey.Name, allPostingsKey.Value)
-	if err != nil {
-		return err
+	keep := func(id uint64) bool {
+		return h.series.getByID(id) != nil
 	}
-
-	if err := h.wal.Truncate(mint, p); err == nil {
+	if err := h.wal.Truncate(mint, keep); err == nil {
 		h.logger.Log("msg", "WAL truncation completed", "duration", time.Since(start))
 	} else {
 		h.logger.Log("msg", "WAL truncation failed", "err", err, "duration", time.Since(start))

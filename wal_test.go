@@ -154,12 +154,16 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	boundarySeries := w.files[len(w.files)/2].minSeries
 
 	// We truncate while keeping every 2nd series.
-	keep := []uint64{}
+	keep := map[uint64]struct{}{}
 	for i := 1; i <= numMetrics; i += 2 {
-		keep = append(keep, uint64(i))
+		keep[uint64(i)] = struct{}{}
+	}
+	keepf := func(id uint64) bool {
+		_, ok := keep[id]
+		return ok
 	}
 
-	err = w.Truncate(1000, newListPostings(keep))
+	err = w.Truncate(1000, keepf)
 	require.NoError(t, err)
 
 	var expected []RefSeries
@@ -172,7 +176,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	// Call Truncate once again to see whether we can read the written file without
 	// creating a new WAL.
-	err = w.Truncate(1000, newListPostings(keep))
+	err = w.Truncate(1000, keepf)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
