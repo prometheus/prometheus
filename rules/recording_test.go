@@ -80,7 +80,7 @@ func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	}
 	rule := NewRecordingRule("testrule", expr, model.LabelSet{"html": "<b>BOLD</b>"})
 
-	const want = `<a href="/test/prefix/graph?g0.expr=testrule&g0.tab=0">testrule</a>{html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;} = <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=0">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>`
+	const want = `<a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>{html=&#34;&lt;b&gt;BOLD&lt;/b&gt;&#34;} = <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>`
 
 	got := rule.HTMLSnippet("/test/prefix")
 	if got != want {
