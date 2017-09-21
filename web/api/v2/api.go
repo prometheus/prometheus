@@ -46,8 +46,8 @@ import (
 type API struct {
 	enableAdmin   bool
 	now           func() time.Time
-	db            *tsdb.DB
-	q             func(mint, maxt int64) storage.Querier
+	db            func() *tsdb.DB
+	q             func(mint, maxt int64) (storage.Querier, error)
 	targets       func() []*retrieval.Target
 	alertmanagers func() []*url.URL
 }
@@ -55,9 +55,9 @@ type API struct {
 // New returns a new API object.
 func New(
 	now func() time.Time,
-	db *tsdb.DB,
+	db func() *tsdb.DB,
 	qe *promql.Engine,
-	q func(mint, maxt int64) storage.Querier,
+	q func(mint, maxt int64) (storage.Querier, error),
 	targets func() []*retrieval.Target,
 	alertmanagers func() []*url.URL,
 	enableAdmin bool,
@@ -149,28 +149,31 @@ func (s *adminDisabled) DeleteSeries(_ context.Context, r *pb.SeriesDeleteReques
 
 // Admin provides an administration interface to Prometheus.
 type Admin struct {
-	db      *tsdb.DB
-	snapdir string
+	db func() *tsdb.DB
 }
 
 // NewAdmin returns a Admin server.
-func NewAdmin(db *tsdb.DB) *Admin {
+func NewAdmin(db func() *tsdb.DB) *Admin {
 	return &Admin{
-		db:      db,
-		snapdir: filepath.Join(db.Dir(), "snapshots"),
+		db: db,
 	}
 }
 
 // TSDBSnapshot implements pb.AdminServer.
 func (s *Admin) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+	db := s.db()
+	if db == nil {
+		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+	}
 	var (
-		name = fmt.Sprintf("%s-%x", time.Now().UTC().Format(time.RFC3339), rand.Int())
-		dir  = filepath.Join(s.snapdir, name)
+		snapdir = filepath.Join(db.Dir(), "snapshots")
+		name    = fmt.Sprintf("%s-%x", time.Now().UTC().Format(time.RFC3339), rand.Int())
+		dir     = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, status.Errorf(codes.Internal, "created snapshot directory: %s", err)
 	}
-	if err := s.db.Snapshot(dir); err != nil {
+	if err := db.Snapshot(dir); err != nil {
 		return nil, status.Errorf(codes.Internal, "create snapshot: %s", err)
 	}
 	return &pb.TSDBSnapshotResponse{Name: name}, nil
@@ -210,7 +213,11 @@ func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.
 
 		matchers = append(matchers, lm)
 	}
-	if err := s.db.Delete(timestamp.FromTime(mint), timestamp.FromTime(maxt), matchers...); err != nil {
+	db := s.db()
+	if db == nil {
+		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+	}
+	if err := db.Delete(timestamp.FromTime(mint), timestamp.FromTime(maxt), matchers...); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &pb.SeriesDeleteResponse{}, nil
