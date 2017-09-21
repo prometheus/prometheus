@@ -45,7 +45,7 @@ func (p *memPostings) get(name, value string) Postings {
 	return newListPostings(l)
 }
 
-var allLabel = labels.Label{}
+var allPostingsKey = labels.Label{}
 
 // add adds a document to the index. The caller has to ensure that no
 // term argument appears twice.
@@ -53,11 +53,34 @@ func (p *memPostings) add(id uint64, lset labels.Labels) {
 	p.mtx.Lock()
 
 	for _, l := range lset {
-		p.m[l] = append(p.m[l], id)
+		p.addFor(id, l)
 	}
-	p.m[allLabel] = append(p.m[allLabel], id)
+	p.addFor(id, allPostingsKey)
 
 	p.mtx.Unlock()
+}
+
+func (p *memPostings) addFor(id uint64, l labels.Label) {
+	list := append(p.m[l], id)
+	p.m[l] = list
+
+	// There is no guarantee that no higher ID was inserted before as they may
+	// be generated independently before adding them to postings.
+	// We repair order violations on insert. The invariant is that the first n-1
+	// items in the list are already sorted.
+	for i := len(list) - 1; i >= 1; i-- {
+		if list[i] >= list[i-1] {
+			break
+		}
+		list[i], list[i-1] = list[i-1], list[i]
+	}
+}
+
+func expandPostings(p Postings) (res []uint64, err error) {
+	for p.Next() {
+		res = append(res, p.At())
+	}
+	return res, p.Err()
 }
 
 // Postings provides iterative access over a postings list.

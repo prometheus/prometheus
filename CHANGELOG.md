@@ -1,17 +1,17 @@
-## v2.0.0-beta.4 / 2017-09-14
+## v2.0.0-beta.5 / 2017-09-21
 
 This release includes numerous changes to the new storage layer. The main changes are:
 
-* [CHANGES] Single, compacted write ahead log
-* [CHANGES] Single in-memory block with garbage collection
-* [ENHANCEMENTS] Cache series dropped via `metric_relabel_configs`
-* [ENHANCEMENTS] Pool byte buffers for scraping
+* [BUGFIX] Remove deadlock on startup when restoring WAL
+* [BUGFIX] Fix semantical races resulting in invalid persisted files
+* [BUGFIX] Correctly read back WAL in certain edge cases
+* [BUGFIX] Prevent crashes caused by changing metric representations in target's /metrics
+* [ENHANCEMENT] Overall memory usage reduction
+* [ENHANCEMENT] Serve debugging endpoints while TSDB is loading
+* [ENHANCEMENT] Healthy endpoint correctly reflects liveness during startup
+* [ENHANCEMENT] Switch to consistent usage of go-kit/log
 
-Overall the changes achieve a baseline reduction in memory consumption and reduce
-peak memory usage by 30-40% compared to the 2.0.0-beta.2 release.
-
-This release requires a clean storage directory and is not compatible with files
-created by previous beta releases.
+This release may have issues with files written by previous beta releases.
 
 ## 1.7.1 / 2017-06-12
 
