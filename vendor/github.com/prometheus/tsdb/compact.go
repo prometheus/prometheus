@@ -457,7 +457,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 		indexr := b.Index()
 
-		all, err := indexr.Postings("", "")
+		all, err := indexr.Postings(allPostingsKey.Name, allPostingsKey.Value)
 		if err != nil {
 			return err
 		}
