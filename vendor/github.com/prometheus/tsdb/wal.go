@@ -71,7 +71,7 @@ type WAL interface {
 	LogSeries([]RefSeries) error
 	LogSamples([]RefSample) error
 	LogDeletes([]Stone) error
-	Truncate(int64, Postings) error
+	Truncate(mint int64, keep func(uint64) bool) error
 	Close() error
 }
 
@@ -87,7 +87,7 @@ func (w nopWAL) Reader() WALReader                       { return w }
 func (nopWAL) LogSeries([]RefSeries) error               { return nil }
 func (nopWAL) LogSamples([]RefSample) error              { return nil }
 func (nopWAL) LogDeletes([]Stone) error                  { return nil }
-func (nopWAL) Truncate(int64, Postings) error            { return nil }
+func (nopWAL) Truncate(int64, func(uint64) bool) error   { return nil }
 func (nopWAL) Close() error                              { return nil }
 
 // WALReader reads entries from a WAL.
@@ -272,8 +272,9 @@ func (w *SegmentWAL) putBuffer(b *encbuf) {
 	w.buffers.Put(b)
 }
 
-// Truncate deletes the values prior to mint and the series entries not in p.
-func (w *SegmentWAL) Truncate(mint int64, p Postings) error {
+// Truncate deletes the values prior to mint and the series which the keep function
+// does not indiciate to preserve.
+func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	// The last segment is always active.
 	if len(w.files) < 2 {
 		return nil
@@ -314,7 +315,6 @@ func (w *SegmentWAL) Truncate(mint int64, p Postings) error {
 		activeSeries = []RefSeries{}
 	)
 
-Loop:
 	for r.next() {
 		rt, flag, byt := r.at()
 
@@ -328,10 +328,7 @@ Loop:
 		activeSeries = activeSeries[:0]
 
 		for _, s := range series {
-			if !p.Seek(s.Ref) {
-				break Loop
-			}
-			if p.At() == s.Ref {
+			if keep(s.Ref) {
 				activeSeries = append(activeSeries, s)
 			}
 		}
