@@ -331,7 +331,7 @@ func (g *Group) sendAlerts(rule *AlertingRule, timestamp model.Time) error {
 			StartsAt:     alert.ActiveAt.Add(rule.holdDuration).Time(),
 			Labels:       alert.Labels,
 			Annotations:  alert.Annotations,
-			GeneratorURL: g.opts.ExternalURL.String() + strutil.GraphLinkForExpression(rule.vector.String()),
+			GeneratorURL: g.opts.ExternalURL.String() + strutil.TableLinkForExpression(rule.vector.String()),
 		}
 		if alert.ResolvedAt != 0 {
 			a.EndsAt = alert.ResolvedAt.Time()
