@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"sync"
 	"time"
 	"unsafe"
 
@@ -26,6 +27,63 @@ import (
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
+
+// ErrNotReady is returned if the underlying storage is not ready yet.
+var ErrNotReady = errors.New("TSDB not ready")
+
+// ReadyStorage implements the Storage interface while allowing to set the actual
+// storage at a later point in time.
+type ReadyStorage struct {
+	mtx sync.RWMutex
+	a   *adapter
+}
+
+// Set the storage.
+func (s *ReadyStorage) Set(db *tsdb.DB) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	s.a = &adapter{db: db}
+}
+
+// Get the storage.
+func (s *ReadyStorage) Get() *tsdb.DB {
+	if x := s.get(); x != nil {
+		return x.db
+	}
+	return nil
+}
+
+func (s *ReadyStorage) get() *adapter {
+	s.mtx.RLock()
+	x := s.a
+	s.mtx.RUnlock()
+	return x
+}
+
+// Querier implements the Storage interface.
+func (s *ReadyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	if x := s.get(); x != nil {
+		return x.Querier(mint, maxt)
+	}
+	return nil, ErrNotReady
+}
+
+// Appender implements the Storage interface.
+func (s *ReadyStorage) Appender() (storage.Appender, error) {
+	if x := s.get(); x != nil {
+		return x.Appender()
+	}
+	return nil, ErrNotReady
+}
+
+// Close implements the Storage interface.
+func (s *ReadyStorage) Close() error {
+	if x := s.Get(); x != nil {
+		return x.Close()
+	}
+	return nil
+}
 
 func Adapter(db *tsdb.DB) storage.Storage {
 	return &adapter{db: db}

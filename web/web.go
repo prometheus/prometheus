@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/storage"
-	ptsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/tsdb"
 	"golang.org/x/net/context"
 	"golang.org/x/net/netutil"
@@ -75,7 +74,7 @@ type Handler struct {
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
 	context       context.Context
-	tsdb          *tsdb.DB
+	tsdb          func() *tsdb.DB
 	storage       storage.Storage
 	notifier      *notifier.Notifier
 
@@ -122,7 +121,8 @@ type PrometheusVersion struct {
 // Options for the web Handler.
 type Options struct {
 	Context       context.Context
-	Storage       *tsdb.DB
+	TSDB          func() *tsdb.DB
+	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	TargetManager *retrieval.TargetManager
 	RuleManager   *rules.Manager
@@ -171,8 +171,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		targetManager: o.TargetManager,
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
-		tsdb:          o.Storage,
-		storage:       ptsdb.Adapter(o.Storage),
+		tsdb:          o.TSDB,
+		storage:       o.Storage,
 		notifier:      o.Notifier,
 
 		now: model.Now,
@@ -213,7 +213,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/targets", readyf(instrf("targets", h.targets)))
 	router.Get("/version", readyf(instrf("version", h.version)))
 
-	router.Get("/heap", readyf(instrf("heap", h.dumpHeap)))
+	router.Get("/heap", instrf("heap", h.dumpHeap))
 
 	router.Get("/metrics", prometheus.Handler().ServeHTTP)
 
@@ -223,24 +223,24 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(instrf("consoles", h.consoles)))
 
-	router.Get("/static/*filepath", readyf(instrf("static", h.serveStaticAsset)))
+	router.Get("/static/*filepath", instrf("static", h.serveStaticAsset))
 
 	if o.UserAssetsPath != "" {
-		router.Get("/user/*filepath", readyf(instrf("user", route.FileServe(o.UserAssetsPath))))
+		router.Get("/user/*filepath", instrf("user", route.FileServe(o.UserAssetsPath)))
 	}
 
 	if o.EnableLifecycle {
 		router.Post("/-/quit", h.quit)
 		router.Post("/-/reload", h.reload)
 	} else {
-		router.Post("/-/quit", readyf(func(w http.ResponseWriter, _ *http.Request) {
+		router.Post("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("Lifecycle APIs are not enabled"))
-		}))
-		router.Post("/-/reload", readyf(func(w http.ResponseWriter, _ *http.Request) {
+		})
+		router.Post("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("Lifecycle APIs are not enabled"))
-		}))
+		})
 	}
 	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -251,8 +251,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		w.Write([]byte("Only POST requests allowed"))
 	})
 
-	router.Get("/debug/*subpath", readyf(serveDebug))
-	router.Post("/debug/*subpath", readyf(serveDebug))
+	router.Get("/debug/*subpath", serveDebug)
+	router.Post("/debug/*subpath", serveDebug)
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -380,15 +380,9 @@ func (h *Handler) Run(ctx context.Context) error {
 	)
 	av2 := api_v2.New(
 		time.Now,
-		h.options.Storage,
+		h.options.TSDB,
 		h.options.QueryEngine,
-		func(mint, maxt int64) storage.Querier {
-			q, err := ptsdb.Adapter(h.options.Storage).Querier(mint, maxt)
-			if err != nil {
-				panic(err)
-			}
-			return q
-		},
+		h.options.Storage.Querier,
 		func() []*retrieval.Target {
 			return h.options.TargetManager.Targets()
 		},
