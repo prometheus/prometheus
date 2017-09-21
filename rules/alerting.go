@@ -332,8 +332,8 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		model.MetricNameLabel: alertMetricName,
 		alertNameLabel:        model.LabelValue(r.name),
 	}
-	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(alertMetric.String()), r.name)
-	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.GraphLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String()))
+	s := fmt.Sprintf("ALERT <a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name)
+	s += fmt.Sprintf("\n  IF <a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String()))
 	if r.holdDuration > 0 {
 		s += fmt.Sprintf("\n  FOR %s", model.Duration(r.holdDuration))
 	}
