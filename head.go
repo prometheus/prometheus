@@ -207,7 +207,7 @@ func (h *Head) ReadWAL() error {
 			}
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				h.logger.Log("msg", "unknown series reference in WAL", "ref", s.Ref)
+				h.logger.Log("msg", "unknown series reference in WAL", "ref", s.Ref, "ts", s.T, "mint", mint)
 				continue
 			}
 			_, chunkCreated := ms.append(s.T, s.V)
@@ -267,7 +267,7 @@ func (h *Head) Truncate(mint int64) error {
 
 	start = time.Now()
 
-	p, err := h.indexRange(mint, math.MaxInt64).Postings("", "")
+	p, err := h.indexRange(mint, math.MaxInt64).Postings(allPostingsKey.Name, allPostingsKey.Value)
 	if err != nil {
 		return err
 	}
@@ -1038,8 +1038,6 @@ func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, boo
 		return prev, false
 	}
 	s.hashes[i].set(hash, series)
-
-	s.hashes[i][hash] = append(s.hashes[i][hash], series)
 	s.locks[i].Unlock()
 
 	i = series.ref & stripeMask

@@ -21,6 +21,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMemPostings_addFor(t *testing.T) {
+	p := newMemPostings()
+	p.m[allPostingsKey] = []uint64{1, 2, 3, 4, 6, 7, 8}
+
+	p.addFor(5, allPostingsKey)
+
+	require.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey])
+}
+
 type mockPostings struct {
 	next  func() bool
 	seek  func(uint64) bool
@@ -32,13 +41,6 @@ func (m *mockPostings) Next() bool         { return m.next() }
 func (m *mockPostings) Seek(v uint64) bool { return m.seek(v) }
 func (m *mockPostings) Value() uint64      { return m.value() }
 func (m *mockPostings) Err() error         { return m.err() }
-
-func expandPostings(p Postings) (res []uint64, err error) {
-	for p.Next() {
-		res = append(res, p.At())
-	}
-	return res, p.Err()
-}
 
 func TestIntersect(t *testing.T) {
 	var cases = []struct {
