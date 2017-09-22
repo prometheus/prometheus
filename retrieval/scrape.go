@@ -397,7 +397,7 @@ type targetScraper struct {
 	buf   *bufio.Reader
 }
 
-const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,*/*;q=0.1`
+const acceptHeader = `text/plain;version=0.0.4;q=1,*/*;q=0.1`
 
 var userAgentHeader = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -407,8 +407,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		// Disable accept header to always negotiate for text format.
-		// req.Header.Add("Accept", acceptHeader)
+		req.Header.Add("Accept", acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
 		req.Header.Set("User-Agent", userAgentHeader)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
