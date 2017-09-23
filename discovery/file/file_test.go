@@ -92,7 +92,12 @@ retry:
 			}
 		case tgs := <-ch:
 			if !expect {
-				t.Fatalf("Unexpected target groups %s, we expected a failure here.", tgs)
+				for _, tg := range tgs {
+					if tg.Targets != nil {
+						t.Fatalf("Unexpected target groups %s, we expected a failure here.",
+							tgs)
+					}
+				}
 			}
 
 			if len(tgs) != 2 {
