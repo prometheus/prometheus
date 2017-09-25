@@ -895,11 +895,14 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			accept := r.Header.Get("Accept")
+			if !strings.HasPrefix(accept, "text/plain;") {
+				t.Errorf("Expected Accept header to prefer text/plain, got %q", accept)
+			}
+
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
 			if timeout != expectedTimeout {
-				t.Errorf("Scrape timeout did not match expected timeout")
-				t.Errorf("Expected: %v", expectedTimeout)
-				t.Fatalf("Got: %v", timeout)
+				t.Errorf("Expected scrape timeout header %q, got %q", expectedTimeout, timeout)
 			}
 
 			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
