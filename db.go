@@ -527,6 +527,10 @@ func (db *DB) Blocks() []DiskBlock {
 	return db.blocks
 }
 
+func (db *DB) Head() *Head {
+	return db.head
+}
+
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
