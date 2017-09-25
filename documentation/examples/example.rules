@@ -1,0 +1,35 @@
+ALERT PrometheusPersistencePressureTooHigh
+  IF
+      prometheus_local_storage_persistence_urgency_score > 0.8
+    AND
+      predict_linear(prometheus_local_storage_persistence_urgency_score[30m], 3600 * 24) > 1
+  FOR 30m
+  LABELS {
+    service = "prometheus",
+    severity = "warning",
+  }
+  ANNOTATIONS {
+    summary = "{{$labels.job}} can not keep up persisting",
+    description = "{{$labels.job}} at {{$labels.instance}} is approaching critical persistence pressure. Throttled ingestion expected within the next 24h.",
+    runbook = "http://<internal link elided>",
+    # Example dashboard: https://grafana.com/dashboards/2078
+    dashboard = 'http://grafana/dashboard/db/prometheus-server?var-job={{$labels.job}}&var-instance={{$labels.instance}}',
+  }
+
+ALERT PrometheusPersistencePressureTooHigh
+  IF
+      prometheus_local_storage_persistence_urgency_score > 0.85
+    AND
+      predict_linear(prometheus_local_storage_persistence_urgency_score[30m], 3600 * 2) > 1
+  FOR 30m
+  LABELS {
+    service = "prometheus",
+    severity = "critical",
+  }
+  ANNOTATIONS {
+    summary = "{{$labels.job}} can not keep up persisting",
+    description = "{{$labels.job}} at {{$labels.instance}} is approaching critical persistence pressure. Throttled ingestion expected within the next 2h.",
+    runbook = "http://<internal link elided>",
+    # Example dashboard: https://grafana.com/dashboards/2078
+    dashboard = 'http://grafana/dashboard/db/prometheus-server?var-job={{$labels.job}}&var-instance={{$labels.instance}}',
+  }
