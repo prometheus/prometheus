@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"sync"
 	"time"
 	"unsafe"
@@ -62,9 +63,9 @@ func (s *ReadyStorage) get() *adapter {
 }
 
 // Querier implements the Storage interface.
-func (s *ReadyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	if x := s.get(); x != nil {
-		return x.Querier(mint, maxt)
+		return x.Querier(ctx, mint, maxt)
 	}
 	return nil, ErrNotReady
 }
@@ -138,7 +139,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	return db, nil
 }
 
-func (a adapter) Querier(mint, maxt int64) (storage.Querier, error) {
+func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
 	return querier{q: a.db.Querier(mint, maxt)}, nil
 }
 

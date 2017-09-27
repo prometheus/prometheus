@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -31,7 +32,7 @@ var (
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
 	// Querier returns a new Querier on the storage.
-	Querier(mint, maxt int64) (Querier, error)
+	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 
 	// Appender returns a new appender against the storage.
 	Appender() (Appender, error)

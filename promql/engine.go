@@ -15,6 +15,7 @@ package promql
 
 import (
 	"container/heap"
+	native_context "context"
 	"fmt"
 	"math"
 	"runtime"
@@ -212,7 +213,7 @@ type Engine struct {
 
 // Queryable allows opening a storage querier.
 type Queryable interface {
-	Querier(mint, maxt int64) (storage.Querier, error)
+	Querier(ctx native_context.Context, mint, maxt int64) (storage.Querier, error)
 }
 
 // NewEngine returns a new engine.
@@ -507,7 +508,7 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 
 	mint := s.Start.Add(-maxOffset)
 
-	querier, err := ng.queryable.Querier(timestamp.FromTime(mint), timestamp.FromTime(s.End))
+	querier, err := ng.queryable.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
 	if err != nil {
 		return nil, err
 	}

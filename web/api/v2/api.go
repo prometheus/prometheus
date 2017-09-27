@@ -14,6 +14,7 @@
 package api_v2
 
 import (
+	native_context "context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -47,7 +48,7 @@ type API struct {
 	enableAdmin   bool
 	now           func() time.Time
 	db            func() *tsdb.DB
-	q             func(mint, maxt int64) (storage.Querier, error)
+	q             func(ctx native_context.Context, mint, maxt int64) (storage.Querier, error)
 	targets       func() []*retrieval.Target
 	alertmanagers func() []*url.URL
 }
@@ -57,7 +58,7 @@ func New(
 	now func() time.Time,
 	db func() *tsdb.DB,
 	qe *promql.Engine,
-	q func(mint, maxt int64) (storage.Querier, error),
+	q func(ctx native_context.Context, mint, maxt int64) (storage.Querier, error),
 	targets func() []*retrieval.Target,
 	alertmanagers func() []*url.URL,
 	enableAdmin bool,
