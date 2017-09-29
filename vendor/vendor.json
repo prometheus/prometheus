@@ -463,10 +463,12 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
-			"checksumSHA1": "2sj/DbXoXdnPAfjAEyhS0Jj5QL0=",
+			"checksumSHA1": "KZ3QD2QgUS4RcoKiA3mn5pSlJxQ=",
 			"path": "github.com/go-stack/stack",
-			"revision": "100eb0c0a9c5b306ca2fb4f165df21d80ada4b82",
-			"revisionTime": "2016-05-14T03:44:11Z"
+			"revision": "54be5f394ed2c3e19dac9134a40a95ba5a017f7b",
+			"revisionTime": "2017-07-10T16:04:46Z",
+			"version": "=v1.5.4",
+			"versionExact": "v1.5.4"
 		},
 		{
 			"checksumSHA1": "+RHv6D0Db8Yke6G9cxGjEW61viM=",
