@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
+	"github.com/ryanuber/columnize"
 )
 
 // DefaultOptions used for the DB. They are sane for setups using
@@ -226,6 +227,25 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 // Dir returns the directory of the database.
 func (db *DB) Dir() string {
 	return db.dir
+}
+
+func (db *DB) PrintBlocks() string {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	var output []string
+	output = append(output, "BLOCK ULID | MIN TIME | MAX TIME | NUM SAMPLES | NUM CHUNKS | NUM SERIES")
+	for _, b := range db.blocks {
+		output = append(output, fmt.Sprintf("%v | %v | %v | %v | %v | %v",
+			b.Meta().ULID,
+			b.Meta().MinTime,
+			b.Meta().MaxTime,
+			b.Meta().Stats.NumSamples,
+			b.Meta().Stats.NumChunks,
+			b.Meta().Stats.NumSeries,
+		))
+	}
+	return columnize.SimpleFormat(output)
 }
 
 func (db *DB) run() {
