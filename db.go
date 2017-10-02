@@ -228,27 +228,6 @@ func (db *DB) Dir() string {
 	return db.dir
 }
 
-func (db *DB) PrintBlocks() {
-	db.mtx.RLock()
-	defer db.mtx.RUnlock()
-
-	tw := GetNewTabWriter(os.Stdout)
-	defer tw.Flush()
-
-	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
-	for _, b := range db.blocks {
-		fmt.Fprintf(tw,
-			"%v\t%v\t%v\t%v\t%v\t%v\n",
-			b.Meta().ULID,
-			b.Meta().MinTime,
-			b.Meta().MaxTime,
-			b.Meta().Stats.NumSamples,
-			b.Meta().Stats.NumChunks,
-			b.Meta().Stats.NumSeries,
-		)
-	}
-}
-
 func (db *DB) run() {
 	defer close(db.donec)
 
