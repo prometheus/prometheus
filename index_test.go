@@ -221,7 +221,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, 0, len(c))
-		require.Equal(t, l, series[i])
+		require.Equal(t, series[i], l)
 	}
 	require.NoError(t, p.Err())
 
