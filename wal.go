@@ -29,6 +29,7 @@ import (
 
 	"github.com/coreos/etcd/pkg/fileutil"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/labels"
 )
@@ -228,7 +229,7 @@ func (r *repairingWALReader) Read(series SeriesCB, samples SamplesCB, deletes De
 
 // truncate the WAL after the last valid entry.
 func (w *SegmentWAL) truncate(err error, file int, lastOffset int64) error {
-	w.logger.Log("msg", "WAL corruption detected; truncating",
+	level.Error(w.logger).Log("msg", "WAL corruption detected; truncating",
 		"err", err, "file", w.files[file].Name(), "pos", lastOffset)
 
 	// Close and delete all files after the current one.
@@ -527,16 +528,16 @@ func (w *SegmentWAL) cut() error {
 		go func() {
 			off, err := hf.Seek(0, os.SEEK_CUR)
 			if err != nil {
-				w.logger.Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
+				level.Error(w.logger).Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
 			}
 			if err := hf.Truncate(off); err != nil {
-				w.logger.Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
+				level.Error(w.logger).Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
 			}
 			if err := hf.Sync(); err != nil {
-				w.logger.Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
+				level.Error(w.logger).Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
 			}
 			if err := hf.Close(); err != nil {
-				w.logger.Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
+				level.Error(w.logger).Log("msg", "finish old segment", "segment", hf.Name(), "err", err)
 			}
 		}()
 	}
@@ -552,7 +553,7 @@ func (w *SegmentWAL) cut() error {
 
 	go func() {
 		if err = w.dirFile.Sync(); err != nil {
-			w.logger.Log("msg", "sync WAL directory", "err", err)
+			level.Error(w.logger).Log("msg", "sync WAL directory", "err", err)
 		}
 	}()
 
@@ -629,7 +630,7 @@ func (w *SegmentWAL) run(interval time.Duration) {
 			return
 		case <-tick:
 			if err := w.Sync(); err != nil {
-				w.logger.Log("msg", "sync failed", "err", err)
+				level.Error(w.logger).Log("msg", "sync failed", "err", err)
 			}
 		}
 	}
