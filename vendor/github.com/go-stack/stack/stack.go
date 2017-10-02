@@ -39,7 +39,7 @@ func Caller(skip int) Call {
 	}
 
 	c.pc = pcs[1]
-	if runtime.FuncForPC(pcs[0]) != sigpanic {
+	if runtime.FuncForPC(pcs[0]).Name() != "runtime.sigpanic" {
 		c.pc--
 	}
 	c.fn = runtime.FuncForPC(c.pc)
@@ -205,33 +205,6 @@ func (cs CallStack) Format(s fmt.State, verb rune) {
 	s.Write(closeBracketBytes)
 }
 
-// findSigpanic intentionally executes faulting code to generate a stack trace
-// containing an entry for runtime.sigpanic.
-func findSigpanic() *runtime.Func {
-	var fn *runtime.Func
-	var p *int
-	func() int {
-		defer func() {
-			if p := recover(); p != nil {
-				var pcs [512]uintptr
-				n := runtime.Callers(2, pcs[:])
-				for _, pc := range pcs[:n] {
-					f := runtime.FuncForPC(pc)
-					if f.Name() == "runtime.sigpanic" {
-						fn = f
-						break
-					}
-				}
-			}
-		}()
-		// intentional nil pointer dereference to trigger sigpanic
-		return *p
-	}()
-	return fn
-}
-
-var sigpanic = findSigpanic()
-
 // Trace returns a CallStack for the current goroutine with element 0
 // identifying the calling function.
 func Trace() CallStack {
@@ -241,7 +214,7 @@ func Trace() CallStack {
 
 	for i, pc := range pcs[:n] {
 		pcFix := pc
-		if i > 0 && cs[i-1].fn != sigpanic {
+		if i > 0 && cs[i-1].fn.Name() != "runtime.sigpanic" {
 			pcFix--
 		}
 		cs[i] = Call{
