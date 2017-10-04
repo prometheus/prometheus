@@ -23,10 +23,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
 	"math"
 
-	"github.com/coreos/etcd/pkg/fileutil"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/labels"
 )

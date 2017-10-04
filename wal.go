@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coreos/etcd/pkg/fileutil"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
