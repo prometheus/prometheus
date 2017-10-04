@@ -414,7 +414,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
-	mux.Handle(apiPath, http.StripPrefix(apiPath,
+	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
 			hh.ServeHTTP(w, r)
