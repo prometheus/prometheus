@@ -15,7 +15,7 @@ package promql
 
 import (
 	"container/heap"
-	native_context "context"
+	"context"
 	"fmt"
 	"math"
 	"runtime"
@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -213,7 +212,7 @@ type Engine struct {
 
 // Queryable allows opening a storage querier.
 type Queryable interface {
-	Querier(ctx native_context.Context, mint, maxt int64) (storage.Querier, error)
+	Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error)
 }
 
 // NewEngine returns a new engine.
