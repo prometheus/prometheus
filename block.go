@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
+// DiskBlock represents a data block backed by on-disk data.
 type DiskBlock interface {
 	BlockReader
 
@@ -42,6 +43,7 @@ type DiskBlock interface {
 	Close() error
 }
 
+// BlockReader provides reading access to a data block.
 type BlockReader interface {
 	// Index returns an IndexReader over the block's data.
 	Index() IndexReader
@@ -51,11 +53,6 @@ type BlockReader interface {
 
 	// Tombstones returns a TombstoneReader over the block's deleted data.
 	Tombstones() TombstoneReader
-}
-
-// Snapshottable defines an entity that can be backedup online.
-type Snapshottable interface {
-	Snapshot(dir string) error
 }
 
 // Appendable defines an entity to which data can be appended.
