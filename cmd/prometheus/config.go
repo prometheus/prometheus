@@ -25,7 +25,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
@@ -320,6 +319,11 @@ func parse(args []string) error {
 	return nil
 }
 
+func startsOrEndsWithQuote(s string) bool {
+	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
+		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+}
+
 func parsePrometheusURL() error {
 	if cfg.prometheusURL == "" {
 		hostname, err := os.Hostname()
@@ -331,10 +335,8 @@ func parsePrometheusURL() error {
 			return err
 		}
 		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
-	}
-
-	if ok := govalidator.IsURL(cfg.prometheusURL); !ok {
-		return fmt.Errorf("invalid Prometheus URL: %s", cfg.prometheusURL)
+	} else if startsOrEndsWithQuote(cfg.prometheusURL) {
+		return fmt.Errorf("web.external-url must not begin or end with quotes")
 	}
 
 	promURL, err := url.Parse(cfg.prometheusURL)
@@ -354,9 +356,8 @@ func parsePrometheusURL() error {
 func validateAlertmanagerURL(u string) error {
 	if u == "" {
 		return nil
-	}
-	if ok := govalidator.IsURL(u); !ok {
-		return fmt.Errorf("invalid Alertmanager URL: %s", u)
+	} else if startsOrEndsWithQuote(u) {
+		return fmt.Errorf("alertmanager.url must not begin or end with quotes: %s", u)
 	}
 	url, err := url.Parse(u)
 	if err != nil {
