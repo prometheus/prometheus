@@ -15,6 +15,7 @@ package storage
 
 import (
 	"container/heap"
+	"context"
 	"strings"
 
 	"github.com/go-kit/kit/log"
@@ -39,13 +40,13 @@ func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Stora
 	}
 }
 
-func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
+func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
 	queriers := mergeQuerier{
 		queriers: make([]Querier, 0, 1+len(f.secondaries)),
 	}
 
 	// Add primary querier
-	querier, err := f.primary.Querier(mint, maxt)
+	querier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,7 @@ func (f *fanout) Querier(mint, maxt int64) (Querier, error) {
 
 	// Add secondary queriers
 	for _, storage := range f.secondaries {
-		querier, err := storage.Querier(mint, maxt)
+		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
 			queriers.Close()
 			return nil, err

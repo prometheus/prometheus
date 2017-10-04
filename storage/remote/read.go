@@ -25,7 +25,7 @@ import (
 )
 
 // Querier returns a new Querier on the storage.
-func (r *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
+func (r *Storage) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
