@@ -249,9 +249,6 @@ func (h *Head) ReadWAL() error {
 func (h *Head) Truncate(mint int64) error {
 	initialize := h.MinTime() == math.MinInt64
 
-	if mint%h.chunkRange != 0 {
-		return errors.Errorf("truncating at %d not aligned", mint)
-	}
 	if h.MinTime() >= mint {
 		return nil
 	}

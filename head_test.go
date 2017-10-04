@@ -187,8 +187,8 @@ func TestHead_Truncate(t *testing.T) {
 	}
 	s4.chunks = []*memChunk{}
 
-	// Truncation must be aligned.
-	require.Error(t, h.Truncate(1))
+	// Truncation need not be aligned.
+	require.NoError(t, h.Truncate(1))
 
 	h.Truncate(2000)
 
