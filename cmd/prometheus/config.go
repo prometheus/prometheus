@@ -319,6 +319,11 @@ func parse(args []string) error {
 	return nil
 }
 
+func startsOrEndsWithQuote(s string) bool {
+	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
+		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+}
+
 func parsePrometheusURL() error {
 	if cfg.prometheusURL == "" {
 		hostname, err := os.Hostname()
@@ -330,6 +335,8 @@ func parsePrometheusURL() error {
 			return err
 		}
 		cfg.prometheusURL = fmt.Sprintf("http://%s:%s/", hostname, port)
+	} else if startsOrEndsWithQuote(cfg.prometheusURL) {
+		return fmt.Errorf("web.external-url must not begin or end with quotes")
 	}
 
 	promURL, err := url.Parse(cfg.prometheusURL)
@@ -349,6 +356,8 @@ func parsePrometheusURL() error {
 func validateAlertmanagerURL(u string) error {
 	if u == "" {
 		return nil
+	} else if startsOrEndsWithQuote(u) {
+		return fmt.Errorf("alertmanager.url must not begin or end with quotes: %s", u)
 	}
 	url, err := url.Parse(u)
 	if err != nil {
