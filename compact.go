@@ -20,12 +20,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/prometheus/tsdb/fileutil"
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -420,21 +420,20 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
-	// Block successfully written, make visible and remove old ones.
-	if err := renameFile(tmp, dir); err != nil {
-		return errors.Wrap(err, "rename block dir")
-	}
-	// Properly sync parent dir to ensure changes are visible.
-	df, err := fileutil.OpenDir(dir)
+	df, err := fileutil.OpenDir(tmp)
 	if err != nil {
-		return errors.Wrap(err, "sync block dir")
+		return errors.Wrap(err, "open temporary block dir")
 	}
 	defer df.Close()
 
 	if err := fileutil.Fsync(df); err != nil {
-		return errors.Wrap(err, "sync block dir")
+		return errors.Wrap(err, "sync temporary dir file")
 	}
 
+	// Block successfully written, make visible and remove old ones.
+	if err := renameFile(tmp, dir); err != nil {
+		return errors.Wrap(err, "rename block dir")
+	}
 	return nil
 }
 
@@ -750,13 +749,10 @@ func renameFile(from, to string) error {
 	if err != nil {
 		return err
 	}
-	defer pdir.Close()
 
 	if err = fileutil.Fsync(pdir); err != nil {
+		pdir.Close()
 		return err
 	}
-	if err = pdir.Close(); err != nil {
-		return err
-	}
-	return nil
+	return pdir.Close()
 }
