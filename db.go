@@ -30,7 +30,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/coreos/etcd/pkg/fileutil"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/go-kit/kit/log"
 	"github.com/nightlyone/lockfile"
 	"github.com/oklog/ulid"

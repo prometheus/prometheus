@@ -20,7 +20,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/coreos/etcd/pkg/fileutil"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
