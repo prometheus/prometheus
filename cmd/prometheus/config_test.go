@@ -41,6 +41,10 @@ func TestParse(t *testing.T) {
 			valid: false,
 		},
 		{
+			input: []string{"-web.external-url", "'relative/path/with/quotes'"},
+			valid: false,
+		},
+		{
 			input: []string{"-alertmanager.url", ""},
 			valid: true,
 		},
@@ -55,6 +59,14 @@ func TestParse(t *testing.T) {
 		{
 			input: []string{"-alertmanager.url", "https://double--dash.de"},
 			valid: true,
+		},
+		{
+			input: []string{"-alertmanager.url", "'http://starts/with/quote"},
+			valid: false,
+		},
+		{
+			input: []string{"-alertmanager.url", "ends/with/quote\""},
+			valid: false,
 		},
 	}
 
