@@ -190,7 +190,7 @@ func TestStaleness(t *testing.T) {
 	group.Eval(time.Unix(1, 0))
 	group.Eval(time.Unix(2, 0))
 
-	querier, err := storage.Querier(0, 2000)
+	querier, err := storage.Querier(context.Background(), 0, 2000)
 	defer querier.Close()
 	if err != nil {
 		t.Fatal(err)

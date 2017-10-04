@@ -14,12 +14,11 @@
 package promql
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
-
-	"golang.org/x/net/context"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
