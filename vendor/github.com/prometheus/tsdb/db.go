@@ -30,8 +30,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/coreos/etcd/pkg/fileutil"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/nightlyone/lockfile"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -203,7 +204,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
 
-	wal, err := OpenSegmentWAL(filepath.Join(dir, "wal"), l, 10*time.Second)
+	wal, err := OpenSegmentWAL(filepath.Join(dir, "wal"), l, opts.WALFlushInterval, r)
 	if err != nil {
 		return nil, err
 	}
@@ -251,12 +252,12 @@ func (db *DB) run() {
 
 			_, err1 := db.retentionCutoff()
 			if err1 != nil {
-				db.logger.Log("msg", "retention cutoff failed", "err", err1)
+				level.Error(db.logger).Log("msg", "retention cutoff failed", "err", err1)
 			}
 
 			_, err2 := db.compact()
 			if err2 != nil {
-				db.logger.Log("msg", "compaction failed", "err", err2)
+				level.Error(db.logger).Log("msg", "compaction failed", "err", err2)
 			}
 
 			if err1 != nil || err2 != nil {
@@ -520,6 +521,17 @@ func validateBlockSequence(bs []DiskBlock) error {
 	return nil
 }
 
+func (db *DB) Blocks() []DiskBlock {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	return db.blocks
+}
+
+func (db *DB) Head() *Head {
+	return db.head
+}
+
 // Close the partition.
 func (db *DB) Close() error {
 	close(db.stopc)
@@ -551,7 +563,7 @@ func (db *DB) DisableCompactions() {
 	defer db.cmtx.Unlock()
 
 	db.compactionsEnabled = false
-	db.logger.Log("msg", "compactions disabled")
+	level.Info(db.logger).Log("msg", "compactions disabled")
 }
 
 // EnableCompactions enables compactions.
@@ -560,7 +572,7 @@ func (db *DB) EnableCompactions() {
 	defer db.cmtx.Unlock()
 
 	db.compactionsEnabled = true
-	db.logger.Log("msg", "compactions enabled")
+	level.Info(db.logger).Log("msg", "compactions enabled")
 }
 
 // Snapshot writes the current data to the directory.
@@ -579,7 +591,7 @@ func (db *DB) Snapshot(dir string) error {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		db.logger.Log("msg", "snapshotting block", "block", b)
+		level.Info(db.logger).Log("msg", "snapshotting block", "block", b)
 
 		if err := b.Snapshot(dir); err != nil {
 			return errors.Wrap(err, "error snapshotting headblock")
