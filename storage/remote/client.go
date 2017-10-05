@@ -52,12 +52,7 @@ type ClientConfig struct {
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *ClientConfig) (*Client, error) {
-	// If not specified in config, allow HTTP connections for remote API to use keep-alive
-	if conf.HTTPClientConfig.KeepAlive == nil {
-		val := true
-		conf.HTTPClientConfig.KeepAlive = &val
-	}
-	httpClient, err := httputil.NewClientFromConfig(conf.HTTPClientConfig)
+	httpClient, err := httputil.NewClientFromConfigAndOptions(conf.HTTPClientConfig, false)
 	if err != nil {
 		return nil, err
 	}
