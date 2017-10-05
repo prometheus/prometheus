@@ -998,7 +998,8 @@ func (s *MemorySeriesStorage) logThrottling() {
 	for {
 		select {
 		case <-s.throttled:
-			if !timer.Reset(time.Minute) {
+			if !timer.Stop() {
+				<-timer.C
 				score, _ := s.getPersistenceUrgencyScore()
 				log.
 					With("urgencyScore", score).
@@ -1006,6 +1007,7 @@ func (s *MemorySeriesStorage) logThrottling() {
 					With("memoryChunks", atomic.LoadInt64(&chunk.NumMemChunks)).
 					Error("Storage needs throttling. Scrapes and rule evaluations will be skipped.")
 			}
+			timer.Reset(time.Minute)
 		case <-timer.C:
 			score, _ := s.getPersistenceUrgencyScore()
 			log.
