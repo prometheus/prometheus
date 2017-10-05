@@ -64,12 +64,6 @@ func TestExprString(t *testing.T) {
 			in: `sum(task:errors:rate10s{job="s"}) BY (code)`,
 		},
 		{
-			in: `sum(task:errors:rate10s{job="s"}) BY (code) KEEP_COMMON`,
-		},
-		{
-			in: `sum(task:errors:rate10s{job="s"}) KEEP_COMMON`,
-		},
-		{
 			in: `sum(task:errors:rate10s{job="s"}) WITHOUT (instance)`,
 		},
 		{

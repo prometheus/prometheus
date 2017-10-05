@@ -1069,32 +1069,6 @@ var testExpr = []struct {
 			Grouping: []string{"foo"},
 		},
 	}, {
-		input: "sum by (foo) keep_common (some_metric)",
-		expected: &AggregateExpr{
-			Op:               itemSum,
-			KeepCommonLabels: true,
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-				},
-			},
-			Grouping: []string{"foo"},
-		},
-	}, {
-		input: "sum (some_metric) by (foo,bar) keep_common",
-		expected: &AggregateExpr{
-			Op:               itemSum,
-			KeepCommonLabels: true,
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-				},
-			},
-			Grouping: []string{"foo", "bar"},
-		},
-	}, {
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
 			Op: itemAvg,
@@ -1105,32 +1079,6 @@ var testExpr = []struct {
 				},
 			},
 			Grouping: []string{"foo"},
-		},
-	}, {
-		input: "COUNT by (foo) keep_common (some_metric)",
-		expected: &AggregateExpr{
-			Op: itemCount,
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-				},
-			},
-			Grouping:         []string{"foo"},
-			KeepCommonLabels: true,
-		},
-	}, {
-		input: "MIN (some_metric) by (foo) keep_common",
-		expected: &AggregateExpr{
-			Op: itemMin,
-			Expr: &VectorSelector{
-				Name: "some_metric",
-				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-				},
-			},
-			Grouping:         []string{"foo"},
-			KeepCommonLabels: true,
 		},
 	}, {
 		input: "max by (foo)(some_metric)",
@@ -1264,17 +1212,13 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: "no valid expression found",
 	}, {
-		input:  "MIN keep_common (some_metric) by (foo)",
+		input:  "MIN keep_common (some_metric)",
 		fail:   true,
-		errMsg: "could not parse remaining input \"by (foo)\"...",
+		errMsg: "parse error at char 5: unexpected identifier \"keep_common\" in aggregation, expected \"(\"",
 	}, {
-		input:  "MIN by(test) (some_metric) keep_common",
+		input:  "MIN (some_metric) keep_common",
 		fail:   true,
 		errMsg: "could not parse remaining input \"keep_common\"...",
-	}, {
-		input:  `sum (some_metric) without (test) keep_common`,
-		fail:   true,
-		errMsg: "cannot use 'keep_common' with 'without'",
 	}, {
 		input:  `sum (some_metric) without (test) by (test)`,
 		fail:   true,
