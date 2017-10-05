@@ -270,12 +270,6 @@
 			"revisionTime": "2017-06-08T03:40:07Z"
 		},
 		{
-			"checksumSHA1": "ga3jt9r+dQBMSXG0gnpNcXp2xYA=",
-			"path": "github.com/coreos/etcd/pkg/fileutil",
-			"revision": "b32a8010a7768f3e44eb5ed74e4bebac5106234b",
-			"revisionTime": "2017-01-10T07:37:23Z"
-		},
-		{
 			"checksumSHA1": "Z2AOGSmDKKvI6nuxa+UPjQWpIeM=",
 			"origin": "k8s.io/client-go/1.5/vendor/github.com/coreos/go-oidc/http",
 			"path": "github.com/coreos/go-oidc/http",
@@ -309,18 +303,6 @@
 			"path": "github.com/coreos/go-oidc/oidc",
 			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
 			"revisionTime": "2016-09-30T00:14:02Z"
-		},
-		{
-			"checksumSHA1": "d50/+u/LFlXvEV10HiEoXB9OsGg=",
-			"path": "github.com/coreos/go-systemd/journal",
-			"revision": "7c9533367ef925dc1078d75e5b7141e10da2c4e8",
-			"revisionTime": "2016-12-12T10:46:09Z"
-		},
-		{
-			"checksumSHA1": "wqEybhAfMhCq2uOu4bT737mqu6U=",
-			"path": "github.com/coreos/pkg/capnslog",
-			"revision": "447b7ec906e523386d9c53be15b55a8ae86ea944",
-			"revisionTime": "2016-10-26T22:29:26Z"
 		},
 		{
 			"checksumSHA1": "O0UMBRCOD9ItMayDqLQ2MJEjkVE=",
@@ -521,12 +503,6 @@
 			"path": "github.com/golang/protobuf/ptypes/any",
 			"revision": "84bc9597164f671c0130543778228928d6865c5c",
 			"revisionTime": "2017-06-08T03:40:07Z"
-		},
-		{
-			"checksumSHA1": "Z5Cpi8mr3kfpZ/CdmudThTWQ0Mo=",
-			"path": "github.com/golang/protobuf/ptypes/struct",
-			"revision": "5a0f697c9ed9d68fef0116532c6e05cfeae00e55",
-			"revisionTime": "2017-06-01T23:02:30Z"
 		},
 		{
 			"checksumSHA1": "2a/SsTUBMKtcM6VtpbdPGO+c6c8=",
@@ -831,12 +807,6 @@
 			"revisionTime": "2017-04-18T15:52:10Z"
 		},
 		{
-			"checksumSHA1": "esljoY35OOHttvpjBctA6WGZc70=",
-			"path": "github.com/prometheus/common/log",
-			"revision": "94eb3fe3a55f1b5d12d335b27a4f6e37cd73ed7e",
-			"revisionTime": "2017-06-16T09:39:39Z"
-		},
-		{
 			"checksumSHA1": "3VoqH7TFfzA6Ds0zFzIbKCUvBmw=",
 			"path": "github.com/prometheus/common/model",
 			"revision": "0d0c3d572886e0f2323ed376557f9eb99b97d25b",
@@ -902,12 +872,6 @@
 			"path": "github.com/sasha-s/go-deadlock",
 			"revision": "84bc9597164f671c0130543778228928d6865c5c",
 			"revisionTime": "2017-06-08T03:40:07Z"
-		},
-		{
-			"checksumSHA1": "VHULZdEZKBxJvlZnlhX7Ug19lgY=",
-			"path": "github.com/sirupsen/logrus",
-			"revision": "85b1699d505667d13f8ac4478c1debbf85d6c5de",
-			"revisionTime": "2017-06-08T22:14:41Z"
 		},
 		{
 			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
