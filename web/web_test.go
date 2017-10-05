@@ -15,12 +15,16 @@ package web
 
 import (
 	"context"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/prometheus/storage/tsdb"
+	libtsdb "github.com/prometheus/tsdb"
 )
 
 func TestGlobalURL(t *testing.T) {
@@ -75,6 +79,16 @@ func TestGlobalURL(t *testing.T) {
 
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
+	dbDir, err := ioutil.TempDir("", "tsdb-ready")
+	if err != nil {
+		t.Fatalf("Unexpected error creating a tmpDir: %s", err)
+	}
+	defer os.RemoveAll(dbDir)
+	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Unexpected error opening empty dir: %s", err)
+	}
+
 	opts := &Options{
 		ListenAddress:  ":9090",
 		ReadTimeout:    30 * time.Second,
@@ -87,6 +101,8 @@ func TestReadyAndHealthy(t *testing.T) {
 		Notifier:       nil,
 		RoutePrefix:    "/",
 		MetricsPath:    "/metrics/",
+		EnableAdminAPI: true,
+		TSDB:           func() *libtsdb.DB { return db },
 	}
 
 	opts.Flags = map[string]string{}
@@ -122,6 +138,22 @@ func TestReadyAndHealthy(t *testing.T) {
 		t.Fatalf("Path /version with server unready test, Expected status 503 got: %s", resp.Status)
 	}
 
+	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("Path /api/v2/admin/tsdb/snapshot with server unready test, Expected status 503 got: %s", resp.Status)
+	}
+
+	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("Path /api/v2/admin/tsdb/delete_series with server unready test, Expected status 503 got: %s", resp.Status)
+	}
+
 	// Set to ready.
 	webHandler.Ready()
 
@@ -148,10 +180,36 @@ func TestReadyAndHealthy(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Path /version with server ready test, Expected status 200 got: %s", resp.Status)
 	}
+
+	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path /api/v2/admin/tsdb/snapshot with server unready test, Expected status 503 got: %s", resp.Status)
+	}
+
+	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path /api/v2/admin/tsdb/delete_series with server unready test, Expected status 503 got: %s", resp.Status)
+	}
 }
 
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
+	dbDir, err := ioutil.TempDir("", "tsdb-ready")
+	if err != nil {
+		t.Fatalf("Unexpected error creating a tmpDir: %s", err)
+	}
+	defer os.RemoveAll(dbDir)
+	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Unexpected error opening empty dir: %s", err)
+	}
+
 	opts := &Options{
 		ListenAddress:  ":9091",
 		ReadTimeout:    30 * time.Second,
@@ -164,6 +222,8 @@ func TestRoutePrefix(t *testing.T) {
 		Notifier:       nil,
 		RoutePrefix:    "/prometheus",
 		MetricsPath:    "/prometheus/metrics",
+		EnableAdminAPI: true,
+		TSDB:           func() *libtsdb.DB { return db },
 	}
 
 	opts.Flags = map[string]string{}
@@ -185,7 +245,7 @@ func TestRoutePrefix(t *testing.T) {
 		t.Fatalf("Unexpected HTTP error %s", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Path "+opts.RoutePrefix+"/-/healthy with server unready test, Expected status 200 got: %s", resp.Status)
+		t.Fatalf("Path %s/-/healthy with server unready test, Expected status 200 got: %s", opts.RoutePrefix, resp.Status)
 	}
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
@@ -193,7 +253,7 @@ func TestRoutePrefix(t *testing.T) {
 		t.Fatalf("Unexpected HTTP error %s", err)
 	}
 	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("Path "+opts.RoutePrefix+"/-/ready with server unready test, Expected status 503 got: %s", resp.Status)
+		t.Fatalf("Path %s/-/ready with server unready test, Expected status 503 got: %s", opts.RoutePrefix, resp.Status)
 	}
 
 	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/version")
@@ -201,7 +261,23 @@ func TestRoutePrefix(t *testing.T) {
 		t.Fatalf("Unexpected HTTP error %s", err)
 	}
 	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("Path "+opts.RoutePrefix+"/version with server unready test, Expected status 503 got: %s", resp.Status)
+		t.Fatalf("Path %s/version with server unready test, Expected status 503 got: %s", opts.RoutePrefix, resp.Status)
+	}
+
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("Path %s/api/v2/admin/tsdb/snapshot with server unready test, Expected status 503 got: %s", opts.RoutePrefix, resp.Status)
+	}
+
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("Path %s/api/v2/admin/tsdb/delete_series with server unready test, Expected status 503 got: %s", opts.RoutePrefix, resp.Status)
 	}
 
 	// Set to ready.
@@ -229,5 +305,21 @@ func TestRoutePrefix(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Path "+opts.RoutePrefix+"/version with server ready test, Expected status 200 got: %s", resp.Status)
+	}
+
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path %s/api/v2/admin/tsdb/snapshot with server unready test, Expected status 503 got: %s", opts.RoutePrefix, resp.Status)
+	}
+
+	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("Unexpected HTTP error %s", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Path %s/api/v2/admin/tsdb/delete_series with server unready test, Expected status 503 got: %s", opts.RoutePrefix, resp.Status)
 	}
 }

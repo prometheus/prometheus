@@ -352,6 +352,11 @@ func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// Checks if server is ready, calls f if it is, returns 503 if it is not.
+func (h *Handler) testReadyHandler(f http.Handler) http.HandlerFunc {
+	return h.testReady(f.ServeHTTP)
+}
+
 // Quit returns the receive-only quit channel.
 func (h *Handler) Quit() <-chan struct{} {
 	return h.quitCh
@@ -398,6 +403,8 @@ func (h *Handler) Run(ctx context.Context) error {
 		return err
 	}
 
+	hhFunc := h.testReadyHandler(hh)
+
 	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
@@ -417,7 +424,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
-			hh.ServeHTTP(w, r)
+			hhFunc(w, r)
 		}),
 	))
 
