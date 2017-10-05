@@ -13,11 +13,11 @@ eval instant at 30s metric
 eval instant at 40s metric
   {__name__="metric"} 2
 
-# It goes stale 4 intervals + 10% after the last sample.
-eval instant at 71s metric
+# It goes stale 5 minutes after the last sample.
+eval instant at 330s metric
   {__name__="metric"} 2
 
-eval instant at 72s metric
+eval instant at 331s metric
 
 
 # Range vector ignores stale sample.
