@@ -720,6 +720,12 @@
 			"revisionTime": "2017-02-13T20:16:50Z"
 		},
 		{
+			"checksumSHA1": "ZYfqG6bNE3cRlbsvpJBL0bF6DSc=",
+			"path": "github.com/mwitkow/go-conntrack",
+			"revision": "cc309e4a22231782e8893f3c35ced0967807a33e",
+			"revisionTime": "2016-11-29T09:58:57Z"
+		},
+		{
 			"checksumSHA1": "aCtmlyAgau9n0UHs8Pk+3xfIaVk=",
 			"path": "github.com/nightlyone/lockfile",
 			"revision": "1d49c987357a327b5b03aa84cbddd582c328615d",
