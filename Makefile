@@ -14,6 +14,7 @@
 GO           := GO15VENDOREXPERIMENT=1 go
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 PROMU        := $(FIRST_GOPATH)/bin/promu
+STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
 
 PREFIX                  ?= $(shell pwd)
@@ -25,8 +26,15 @@ ifdef DEBUG
 	bindata_flags = -debug
 endif
 
+STATICCHECK_IGNORE = \
+  github.com/prometheus/prometheus/discovery/kubernetes/node.go:SA1019 \
+  github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
+  github.com/prometheus/prometheus/storage/local/codable/codable.go:SA6002 \
+  github.com/prometheus/prometheus/storage/local/persistence.go:SA6002 \
+  github.com/prometheus/prometheus/storage/remote/queue_manager.go:SA1015 \
+  github.com/prometheus/prometheus/web/web.go:SA1019
 
-all: format build test
+all: format staticcheck build test
 
 style:
 	@echo ">> checking code style"
@@ -53,6 +61,10 @@ vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
 
+staticcheck: $(STATICCHECK)
+	@echo ">> running staticcheck"
+	@$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
+
 build: promu
 	@echo ">> building binaries"
 	@$(PROMU) build --prefix $(PREFIX)
@@ -77,5 +89,7 @@ promu:
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
 	$(GO) get -u github.com/prometheus/promu
 
+$(FIRST_GOPATH)/bin/staticcheck:
+	@GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
-.PHONY: all style check_license format build test vet assets tarball docker promu
+.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck

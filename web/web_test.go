@@ -16,6 +16,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -229,5 +230,39 @@ func TestRoutePrefix(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Path "+opts.RoutePrefix+"/version with server ready test, Expected status 200 got: %s", resp.Status)
+	}
+}
+
+func TestDebugHandler(t *testing.T) {
+	for _, tc := range []struct {
+		prefix, url string
+		code        int
+	}{
+		{"/", "/debug/pprof/cmdline", 200},
+		{"/foo", "/foo/debug/pprof/cmdline", 200},
+
+		{"/", "/debug/pprof/goroutine", 200},
+		{"/foo", "/foo/debug/pprof/goroutine", 200},
+
+		{"/", "/debug/pprof/foo", 404},
+		{"/foo", "/bar/debug/pprof/goroutine", 404},
+	} {
+		opts := &Options{
+			RoutePrefix: tc.prefix,
+			MetricsPath: "/metrics",
+		}
+		handler := New(nil, opts)
+		handler.Ready()
+
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest("GET", tc.url, nil)
+		if err != nil {
+			t.Fatalf("Unexpected error %s", err)
+		}
+
+		handler.router.ServeHTTP(w, req)
+		if w.Code != tc.code {
+			t.Fatalf("Unexpected status code %d: %s", w.Code, w.Body.String())
+		}
 	}
 }
