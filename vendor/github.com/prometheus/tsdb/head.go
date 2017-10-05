@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/chunks"
@@ -235,7 +236,7 @@ func (h *Head) ReadWAL() error {
 	}
 
 	if unknownRefs > 0 {
-		h.logger.Log("msg", "unknown series references in WAL samples", "count", unknownRefs)
+		level.Warn(h.logger).Log("msg", "unknown series references in WAL samples", "count", unknownRefs)
 	}
 
 	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
@@ -248,9 +249,6 @@ func (h *Head) ReadWAL() error {
 func (h *Head) Truncate(mint int64) error {
 	initialize := h.MinTime() == math.MinInt64
 
-	if mint%h.chunkRange != 0 {
-		return errors.Errorf("truncating at %d not aligned", mint)
-	}
 	if h.MinTime() >= mint {
 		return nil
 	}
@@ -270,7 +268,7 @@ func (h *Head) Truncate(mint int64) error {
 	start := time.Now()
 
 	h.gc()
-	h.logger.Log("msg", "head GC completed", "duration", time.Since(start))
+	level.Info(h.logger).Log("msg", "head GC completed", "duration", time.Since(start))
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
 	start = time.Now()
@@ -279,9 +277,9 @@ func (h *Head) Truncate(mint int64) error {
 		return h.series.getByID(id) != nil
 	}
 	if err := h.wal.Truncate(mint, keep); err == nil {
-		h.logger.Log("msg", "WAL truncation completed", "duration", time.Since(start))
+		level.Info(h.logger).Log("msg", "WAL truncation completed", "duration", time.Since(start))
 	} else {
-		h.logger.Log("msg", "WAL truncation failed", "err", err, "duration", time.Since(start))
+		level.Error(h.logger).Log("msg", "WAL truncation failed", "err", err, "duration", time.Since(start))
 	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
