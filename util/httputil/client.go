@@ -32,13 +32,15 @@ func NewClient(rt http.RoundTripper) *http.Client {
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig.
 func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
+	return NewClientFromConfigAndOptions(cfg, true)
+}
+
+// NewClientFromConfigAndOptions returns a new HTTP client configured for the
+// given config.HTTPClientConfig, optionally disabling HTTP keepalive.
+func NewClientFromConfigAndOptions(cfg config.HTTPClientConfig, disableKeepAlives bool) (*http.Client, error) {
 	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
-	}
-	disableKeepAlives := true // hard-coded default unless overridden in config
-	if cfg.KeepAlive != nil {
-		disableKeepAlives = !*cfg.KeepAlive
 	}
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
