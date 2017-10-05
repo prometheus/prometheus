@@ -312,6 +312,48 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	require.NoError(t, q.Close())
 }
 
+func TestDB_Snapshot(t *testing.T) {
+	db, close := openTestDB(t, nil)
+	defer close()
+
+	// append data
+	app := db.Appender()
+	mint := int64(1414141414000)
+	for i := 0; i < 1000; i++ {
+		_, err := app.Add(labels.FromStrings("foo", "bar"), mint+int64(i), 1.0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, app.Rollback())
+
+	// create snapshot
+	snap, err := ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+	require.NoError(t, db.Snapshot(snap))
+	require.NoError(t, db.Close())
+
+	// reopen DB from snapshot
+	db, err = Open(snap, nil, nil, nil)
+	require.NoError(t, err)
+
+	querier := db.Querier(mint, mint+1000)
+	defer querier.Close()
+
+	// sum values
+	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	sum := 0.0
+	for seriesSet.Next() {
+		series := seriesSet.At().Iterator()
+		for series.Next() {
+			_, v := series.At()
+			sum += v
+		}
+		require.NoError(t, series.Err())
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, sum, 1000.0)
+}
+
 func TestDB_e2e(t *testing.T) {
 	const (
 		numDatapoints = 1000
