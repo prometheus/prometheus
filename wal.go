@@ -32,6 +32,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
@@ -64,6 +65,26 @@ type SeriesCB func([]RefSeries) error
 // DeletesCB is the callback after reading deletes. The passed slice
 // is only valid until the call returns.
 type DeletesCB func([]Stone) error
+
+type walMetrics struct {
+	fsyncDuration prometheus.Summary
+}
+
+func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
+	m := &walMetrics{}
+
+	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "tsdb_wal_fsync_duration_seconds",
+		Help: "Duration of WAL fsync.",
+	})
+
+	if r != nil {
+		r.MustRegister(
+			m.fsyncDuration,
+		)
+	}
+	return m
+}
 
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
@@ -150,6 +171,7 @@ func newCRC32() hash.Hash32 {
 // SegmentWAL is a write ahead log for series data.
 type SegmentWAL struct {
 	mtx sync.Mutex
+	metrics *walMetrics
 
 	dirFile *os.File
 	files   []*segmentFile
@@ -169,7 +191,7 @@ type SegmentWAL struct {
 
 // OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
-func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) (*SegmentWAL, error) {
+func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, r prometheus.Registerer) (*SegmentWAL, error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -190,6 +212,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration) 
 		segmentSize:   walSegmentSizeBytes,
 		crc32:         newCRC32(),
 	}
+	w.metrics = newWalMetrics(w, r)
 
 	fns, err := sequenceFiles(w.dirFile.Name())
 	if err != nil {
@@ -592,7 +615,10 @@ func (w *SegmentWAL) Sync() error {
 	}
 	if head != nil {
 		// But only fsync the head segment after releasing the mutex as it will block on disk I/O.
-		return fileutil.Fdatasync(head.File)
+		start := time.Now()
+		err := fileutil.Fdatasync(head.File)
+		w.metrics.fsyncDuration.Observe(time.Since(start).Seconds())
+		return err
 	}
 	return nil
 }
@@ -604,7 +630,11 @@ func (w *SegmentWAL) sync() error {
 	if w.head() == nil {
 		return nil
 	}
-	return fileutil.Fdatasync(w.head().File)
+
+	start := time.Now()
+	err := fileutil.Fdatasync(w.head().File)
+	w.metrics.fsyncDuration.Observe(time.Since(start).Seconds())
+	return err
 }
 
 func (w *SegmentWAL) flush() error {
