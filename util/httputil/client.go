@@ -34,6 +34,12 @@ func newClient(rt http.RoundTripper) *http.Client {
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
 func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client, error) {
+	return NewClientFromConfigAndOptions(cfg, name, true)
+}
+
+// NewClientFromConfigAndOptions returns a new HTTP client configured for the
+// given config.HTTPClientConfig. The name is used as go-conntrack metric label.
+func NewClientFromConfigAndOptions(cfg config.HTTPClientConfig, name string, disableKeepAlives bool) (*http.Client, error) {
 	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -43,7 +49,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client
 	var rt http.RoundTripper = &http.Transport{
 		Proxy:              http.ProxyURL(cfg.ProxyURL.URL),
 		MaxIdleConns:       20000,
-		DisableKeepAlives:  false,
+		DisableKeepAlives:  disableKeepAlives,
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,
 		// 5 minutes is typically above the maximum sane scrape interval. So we can
