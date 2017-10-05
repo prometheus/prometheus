@@ -327,48 +327,6 @@ func funcClampMin(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
-// === drop_common_labels(node ValueTypeVector) Vector ===
-func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	if len(vec) < 1 {
-		return Vector{}
-	}
-	common := map[string]string{}
-
-	for _, l := range vec[0].Metric {
-		// TODO(julius): Should we also drop common metric names?
-		if l.Name == labels.MetricName {
-			continue
-		}
-		common[l.Name] = l.Value
-	}
-
-	for _, el := range vec[1:] {
-		for k, v := range common {
-			for _, l := range el.Metric {
-				if l.Name == k && l.Value != v {
-					// Deletion of map entries while iterating over them is safe.
-					// From http://golang.org/ref/spec#For_statements:
-					// "If map entries that have not yet been reached are deleted during
-					// iteration, the corresponding iteration values will not be produced."
-					delete(common, k)
-				}
-			}
-		}
-	}
-
-	cnames := []string{}
-	for n := range common {
-		cnames = append(cnames, n)
-	}
-
-	for i := range vec {
-		el := &vec[i]
-		el.Metric = labels.NewBuilder(el.Metric).Del(cnames...).Labels()
-	}
-	return vec
-}
-
 // === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
 func funcRound(ev *evaluator, args Expressions) Value {
 	// round returns a number rounded to toNearest.
@@ -401,14 +359,6 @@ func funcScalar(ev *evaluator, args Expressions) Value {
 	}
 	return Scalar{
 		V: v[0].V,
-		T: ev.Timestamp,
-	}
-}
-
-// === count_scalar(Vector ValueTypeVector) float64 ===
-func funcCountScalar(ev *evaluator, args Expressions) Value {
-	return Scalar{
-		V: float64(len(ev.evalVector(args[0]))),
 		T: ev.Timestamp,
 	}
 }
@@ -1052,12 +1002,6 @@ var functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 		Call:       funcCountOverTime,
 	},
-	"count_scalar": {
-		Name:       "count_scalar",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeScalar,
-		Call:       funcCountScalar,
-	},
 	"days_in_month": {
 		Name:       "days_in_month",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -1090,12 +1034,6 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 		Call:       funcDeriv,
-	},
-	"drop_common_labels": {
-		Name:       "drop_common_labels",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcDropCommonLabels,
 	},
 	"exp": {
 		Name:       "exp",
