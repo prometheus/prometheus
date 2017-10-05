@@ -468,10 +468,7 @@ func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "TLS config"); err != nil {
-		return err
-	}
-	return nil
+	return checkOverflow(c.XXX, "TLS config")
 }
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
@@ -513,10 +510,7 @@ func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "service discovery config"); err != nil {
-		return err
-	}
-	return nil
+	return checkOverflow(c.XXX, "service discovery config")
 }
 
 // HTTPClientConfig configures an HTTP client.
@@ -633,10 +627,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "alerting config"); err != nil {
-		return err
-	}
-	return nil
+	return checkOverflow(c.XXX, "alerting config")
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -1088,10 +1079,7 @@ func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{})
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "namespaces"); err != nil {
-		return err
-	}
-	return nil
+	return checkOverflow(c.XXX, "namespaces")
 }
 
 // GCESDConfig is the configuration for GCE based service discovery.
@@ -1472,10 +1460,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	if err := checkOverflow(c.XXX, "remote_write"); err != nil {
-		return err
-	}
-	return nil
+	return checkOverflow(c.XXX, "remote_write")
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -1532,8 +1517,5 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 
-	if err := checkOverflow(c.XXX, "remote_read"); err != nil {
-		return err
-	}
-	return nil
+	return checkOverflow(c.XXX, "remote_read")
 }
