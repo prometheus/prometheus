@@ -27,7 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -363,7 +362,7 @@ func main() {
 	webHandler.Ready()
 	level.Info(logger).Log("msg", "Server is ready to receive requests.")
 
-	term := make(chan os.Signal)
+	term := make(chan os.Signal, 1)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-term:
@@ -413,6 +412,11 @@ func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err er
 	return nil
 }
 
+func startsOrEndsWithQuote(s string) bool {
+	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
+		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+}
+
 // computeExternalURL computes a sanitized external URL from a raw input. It infers unset
 // URL parts from the OS and the given listen address.
 func computeExternalURL(u, listenAddr string) (*url.URL, error) {
@@ -428,8 +432,8 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 		u = fmt.Sprintf("http://%s:%s/", hostname, port)
 	}
 
-	if ok := govalidator.IsURL(u); !ok {
-		return nil, fmt.Errorf("invalid external URL %q", u)
+	if startsOrEndsWithQuote(u) {
+		return nil, fmt.Errorf("URL must not begin or end with quotes")
 	}
 
 	eu, err := url.Parse(u)

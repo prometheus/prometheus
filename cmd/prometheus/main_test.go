@@ -17,29 +17,49 @@ import "testing"
 
 func TestComputeExternalURL(t *testing.T) {
 	tests := []struct {
-		extURL string
-		valid  bool
+		input string
+		valid bool
 	}{
 		{
-			extURL: "",
-			valid:  true,
+			input: "",
+			valid: true,
 		},
 		{
-			extURL: "http://proxy.com/prometheus",
-			valid:  true,
+			input: "http://proxy.com/prometheus",
+			valid: true,
 		},
 		{
-			extURL: "https:/proxy.com/prometheus",
-			valid:  false,
+			input: "'https://url/prometheus'",
+			valid: false,
+		},
+		{
+			input: "'relative/path/with/quotes'",
+			valid: false,
+		},
+		{
+			input: "http://alertmanager.company.com",
+			valid: true,
+		},
+		{
+			input: "https://double--dash.de",
+			valid: true,
+		},
+		{
+			input: "'http://starts/with/quote",
+			valid: false,
+		},
+		{
+			input: "ends/with/quote\"",
+			valid: false,
 		},
 	}
 
 	for i, test := range tests {
-		r, err := computeExternalURL(test.extURL, "0.0.0.0:9090")
+		r, err := computeExternalURL(test.input, "0.0.0.0:9090")
 		if test.valid && err != nil {
 			t.Errorf("%d. expected input to be valid, got %s", i, err)
 		} else if !test.valid && err == nil {
-			t.Logf("%+v", r)
+			t.Logf("%+v", test, r)
 			t.Errorf("%d. expected input to be invalid", i)
 		}
 	}
