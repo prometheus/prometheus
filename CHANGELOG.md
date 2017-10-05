@@ -1,3 +1,16 @@
+## v2.0.0-rc.1 / 2017-10-05
+
+This release includes numerous changes to the new storage layer. The main changes are:
+
+* [CHANGE] Remove count_scalar, keep_common and drop_common_labels functions
+* [BUGFIX] Fix panic due garbage collected mmap'ed strings 
+* [BUGFIX] Fix broken snapshots and admin APIs 
+* [BUGFIX] Send HTTP Accept header when scraping
+* [BUGFIX] Use the WAL flush interval passed instead of the hardcoded value
+
+This release requires a clean storage directory and is not compatible with files
+created by previous beta releases.
+
 ## 1.7.2 / 2017-09-26
 
 * [BUGFIX] Correctly remove all targets from DNS service discovery if the
@@ -10,21 +23,6 @@
 * [BUGFIX] In the graphs created by the expression browser, render very large
   and small numbers in a readable way.
 * [BUGFIX] Fix a rarely occurring iterator issue in varbit encoded chunks.
-
-## v2.0.0-beta.5 / 2017-09-21
-
-This release includes numerous changes to the new storage layer. The main changes are:
-
-* [BUGFIX] Remove deadlock on startup when restoring WAL
-* [BUGFIX] Fix semantical races resulting in invalid persisted files
-* [BUGFIX] Correctly read back WAL in certain edge cases
-* [BUGFIX] Prevent crashes caused by changing metric representations in target's /metrics
-* [ENHANCEMENT] Overall memory usage reduction
-* [ENHANCEMENT] Serve debugging endpoints while TSDB is loading
-* [ENHANCEMENT] Healthy endpoint correctly reflects liveness during startup
-* [ENHANCEMENT] Switch to consistent usage of go-kit/log
-
-This release may have issues with files written by previous beta releases.
 
 ## 1.7.1 / 2017-06-12
 
