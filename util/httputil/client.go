@@ -41,7 +41,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig) (*http.Client, error) {
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
 		Proxy:              http.ProxyURL(cfg.ProxyURL.URL),
-		MaxIdleConns:       10000,
+		MaxIdleConns:       20000,
 		DisableKeepAlives:  false,
 		TLSClientConfig:    tlsConfig,
 		DisableCompression: true,

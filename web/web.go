@@ -284,6 +284,11 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	subpath := route.Param(ctx, "subpath")
 
+	if subpath == "/pprof" {
+		http.Redirect(w, req, req.URL.Path+"/", http.StatusMovedPermanently)
+		return
+	}
+
 	if !strings.HasPrefix(subpath, "/pprof/") {
 		http.NotFound(w, req)
 		return
@@ -300,6 +305,7 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	case "trace":
 		pprof.Trace(w, req)
 	default:
+		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
 	}
 }
