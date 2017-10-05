@@ -99,12 +99,11 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op               itemType // The used aggregation operation.
-	Expr             Expr     // The Vector expression over which is aggregated.
-	Param            Expr     // Parameter used by some aggregators.
-	Grouping         []string // The labels by which to group the Vector.
-	Without          bool     // Whether to drop the given labels rather than keep them.
-	KeepCommonLabels bool     // Whether to keep common labels among result elements.
+	Op       itemType // The used aggregation operation.
+	Expr     Expr     // The Vector expression over which is aggregated.
+	Param    Expr     // Parameter used by some aggregators.
+	Grouping []string // The labels by which to group the Vector.
+	Without  bool     // Whether to drop the given labels rather than keep them.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.

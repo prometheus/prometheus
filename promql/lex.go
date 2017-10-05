@@ -187,7 +187,6 @@ const (
 	itemFor
 	itemLabels
 	itemAnnotations
-	itemKeepCommon
 	itemOffset
 	itemBy
 	itemWithout
@@ -227,7 +226,6 @@ var key = map[string]itemType{
 	"offset":      itemOffset,
 	"by":          itemBy,
 	"without":     itemWithout,
-	"keep_common": itemKeepCommon,
 	"on":          itemOn,
 	"ignoring":    itemIgnoring,
 	"group_left":  itemGroupLeft,

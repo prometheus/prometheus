@@ -148,9 +148,6 @@ func (node *AggregateExpr) String() string {
 		}
 		aggrString = fmt.Sprintf(format, aggrString, strings.Join(node.Grouping, ", "))
 	}
-	if node.KeepCommonLabels {
-		aggrString += " KEEP_COMMON"
-	}
 	return aggrString
 }
 

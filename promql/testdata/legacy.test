@@ -45,10 +45,6 @@ eval instant at 50m SUM(http_requests{instance="0"}) BY(job)
 	{job="api-server"} 400
 	{job="app-server"} 1200
 
-eval instant at 50m SUM(http_requests{instance="0"}) BY(job) KEEP_COMMON
-	{instance="0", job="api-server"} 400
-	{instance="0", job="app-server"} 1200
-
 eval instant at 50m SUM(http_requests) BY (job)
 	{job="api-server"} 1000
 	{job="app-server"} 2600
@@ -353,17 +349,6 @@ eval instant at 50m log10(vector_matching_a - 20)
 
 
 # Matrix tests.
-clear
-load 1h
-	testmetric{testlabel="1"} 1 1
-	testmetric{testlabel="2"} 2 _
-
-eval instant at 0h sum(testmetric) keep_common
-	{} 3
-
-eval instant at 1h sum(testmetric) keep_common
-	{testlabel="1"} 1
-
 clear
 load 1h
 	testmetric{aa="bb"} 1
