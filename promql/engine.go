@@ -779,20 +779,6 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 		if value.IsStaleNaN(v) {
 			continue
 		}
-		// Find timestamp before this point, within the staleness delta.
-		prevT, _, ok := it.PeekBack(peek)
-		if ok && prevT >= refTime-durationMilliseconds(LookbackDelta) {
-			interval := t - prevT
-			if interval*4+interval/10 < refTime-t {
-				// It is more than 4 (+10% for safety) intervals
-				// since the last data point, skip as stale.
-				//
-				// We need 4 to allow for federation, as with a 10s einterval an eval
-				// started at t=10 could be ingested at t=20, scraped for federation at
-				// t=30 and only ingested by federation at t=40.
-				continue
-			}
-		}
 
 		vec = append(vec, Sample{
 			Metric: node.series[i].Labels(),
