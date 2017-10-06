@@ -68,6 +68,7 @@ type DeletesCB func([]Stone) error
 
 type walMetrics struct {
 	fsyncDuration prometheus.Summary
+	corruptions   prometheus.Counter
 }
 
 func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
@@ -77,10 +78,15 @@ func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
 		Name: "tsdb_wal_fsync_duration_seconds",
 		Help: "Duration of WAL fsync.",
 	})
+	m.corruptions = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_wal_corruptions_total",
+		Help: "Total number of WAL corruptions.",
+	})
 
 	if r != nil {
 		r.MustRegister(
 			m.fsyncDuration,
+			m.corruptions,
 		)
 	}
 	return m
@@ -247,6 +253,7 @@ func (r *repairingWALReader) Read(series SeriesCB, samples SamplesCB, deletes De
 	if !ok {
 		return err
 	}
+	r.wal.metrics.corruptions.Inc()
 	return r.wal.truncate(cerr.err, cerr.file, cerr.lastOffset)
 }
 
