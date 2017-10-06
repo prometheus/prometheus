@@ -1,3 +1,33 @@
+## 1.8.0 / 2017-10-06
+
+* [CHANGE] Rule links link to the _Console_ tab rather than the _Graph_ tab to
+  not trigger expensive range queries by default.
+* [FEATURE] Ability to act as a remote read endpoint for other Prometheus
+  servers.
+* [FEATURE] K8s SD: Support discovery of ingresses.
+* [FEATURE] Consul SD: Support for node metadata.
+* [FEATURE] Openstack SD: Support discovery of hypervisors.
+* [FEATURE] Expose current Prometheus config via `/status/config`.
+* [FEATURE] Allow to collapse jobs on `/targets` page.
+* [FEATURE] Add `/-/healthy` and `/-/ready` endpoints.
+* [FEATURE] Add color scheme support to console templates.
+* [ENHANCEMENT] Remote storage connections use HTTP keep-alive.
+* [ENHANCEMENT] Improved logging about remote storage.
+* [ENHANCEMENT] Relaxed URL validation.
+* [ENHANCEMENT] Openstack SD: Handle instances without IP.
+* [ENHANCEMENT] Make remote storage queue manager configurable.
+* [ENHANCEMENT] Validate metrics returned from remote read.
+* [ENHANCEMENT] EC2 SD: Set a default region.
+* [ENHANCEMENT] Changed help link to `https://prometheus.io/docs`.
+* [BUGFIX] Fix floating-point precision issue in `deriv` function.
+* [BUGFIX] Fix pprof endpoints when -web.route-prefix or -web.external-url is
+  used.
+* [BUGFIX] Fix handling of `null` target groups in file-based SD.
+* [BUGFIX] Set the sample timestamp in date-related PromQL functions.
+* [BUGFIX] Apply path prefix to redirect from deprecated graph URL.
+* [BUGFIX] Fixed tests on MS Windows.
+* [BUGFIX] Check for invalid UTF-8 in label values after relabeling.
+
 ## 1.7.2 / 2017-09-26
 
 * [BUGFIX] Correctly remove all targets from DNS service discovery if the
