@@ -107,10 +107,18 @@ type API struct {
 
 	now    func() model.Time
 	config func() config.Config
+	ready  func(http.HandlerFunc) http.HandlerFunc
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever, ar alertmanagerRetriever, configFunc func() config.Config) *API {
+func NewAPI(
+	qe *promql.Engine,
+	st local.Storage,
+	tr targetRetriever,
+	ar alertmanagerRetriever,
+	configFunc func() config.Config,
+	readyFunc func(http.HandlerFunc) http.HandlerFunc,
+) *API {
 	return &API{
 		QueryEngine:           qe,
 		Storage:               st,
@@ -118,6 +126,7 @@ func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever, ar alertman
 		alertmanagerRetriever: ar,
 		now:    model.Now,
 		config: configFunc,
+		ready:  readyFunc,
 	}
 }
 
@@ -134,9 +143,9 @@ func (api *API) Register(r *route.Router) {
 				w.WriteHeader(http.StatusNoContent)
 			}
 		})
-		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{
+		return api.ready(prometheus.InstrumentHandler(name, httputil.CompressionHandler{
 			Handler: hf,
-		})
+		}))
 	}
 
 	r.Options("/*path", instr("options", api.options))
@@ -153,7 +162,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
 
 	r.Get("/status/config", instr("config", api.serveConfig))
-	r.Post("/read", prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead)))
+	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
 }
 
 type queryData struct {

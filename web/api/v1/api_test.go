@@ -104,6 +104,7 @@ func TestEndpoints(t *testing.T) {
 		config: func() config.Config {
 			return samplePrometheusCfg
 		},
+		ready: func(f http.HandlerFunc) http.HandlerFunc { return f },
 	}
 
 	start := model.Time(0)
@@ -723,7 +724,7 @@ func TestParseDuration(t *testing.T) {
 
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
-	api := &API{}
+	api := &API{ready: func(f http.HandlerFunc) http.HandlerFunc { return f }}
 	api.Register(r)
 
 	s := httptest.NewServer(r)
