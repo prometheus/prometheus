@@ -14,7 +14,6 @@
 package log
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,106 +24,46 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-type levelFlag string
-
-// String implements flag.Value.
-func (f levelFlag) String() string {
-	return fmt.Sprintf("%q", origLogger.Level.String())
-}
-
-// Set implements flag.Value.
-func (f levelFlag) Set(level string) error {
-	l, err := logrus.ParseLevel(level)
-	if err != nil {
-		return err
-	}
-	origLogger.Level = l
-	return nil
-}
-
 // setSyslogFormatter is nil if the target architecture does not support syslog.
-var setSyslogFormatter func(string, string) error
+var setSyslogFormatter func(logger, string, string) error
 
 // setEventlogFormatter is nil if the target OS does not support Eventlog (i.e., is not Windows).
-var setEventlogFormatter func(string, bool) error
+var setEventlogFormatter func(logger, string, bool) error
 
 func setJSONFormatter() {
 	origLogger.Formatter = &logrus.JSONFormatter{}
 }
 
-type logFormatFlag url.URL
-
-// String implements flag.Value.
-func (f logFormatFlag) String() string {
-	u := url.URL(f)
-	return fmt.Sprintf("%q", u.String())
+type loggerSettings struct {
+	level  string
+	format string
 }
 
-// Set implements flag.Value.
-func (f logFormatFlag) Set(format string) error {
-	u, err := url.Parse(format)
+func (s *loggerSettings) apply(ctx *kingpin.ParseContext) error {
+	err := baseLogger.SetLevel(s.level)
 	if err != nil {
 		return err
 	}
-	if u.Scheme != "logger" {
-		return fmt.Errorf("invalid scheme %s", u.Scheme)
-	}
-	jsonq := u.Query().Get("json")
-	if jsonq == "true" {
-		setJSONFormatter()
-	}
-
-	switch u.Opaque {
-	case "syslog":
-		if setSyslogFormatter == nil {
-			return fmt.Errorf("system does not support syslog")
-		}
-		appname := u.Query().Get("appname")
-		facility := u.Query().Get("local")
-		return setSyslogFormatter(appname, facility)
-	case "eventlog":
-		if setEventlogFormatter == nil {
-			return fmt.Errorf("system does not support eventlog")
-		}
-		name := u.Query().Get("name")
-		debugAsInfo := false
-		debugAsInfoRaw := u.Query().Get("debugAsInfo")
-		if parsedDebugAsInfo, err := strconv.ParseBool(debugAsInfoRaw); err == nil {
-			debugAsInfo = parsedDebugAsInfo
-		}
-		return setEventlogFormatter(name, debugAsInfo)
-	case "stdout":
-		origLogger.Out = os.Stdout
-	case "stderr":
-		origLogger.Out = os.Stderr
-	default:
-		return fmt.Errorf("unsupported logger %q", u.Opaque)
-	}
-	return nil
+	err = baseLogger.SetFormat(s.format)
+	return err
 }
 
-func init() {
-	AddFlags(flag.CommandLine)
-}
-
-// AddFlags adds the flags used by this package to the given FlagSet. That's
-// useful if working with a custom FlagSet. The init function of this package
-// adds the flags to flag.CommandLine anyway. Thus, it's usually enough to call
-// flag.Parse() to make the logging flags take effect.
-func AddFlags(fs *flag.FlagSet) {
-	fs.Var(
-		levelFlag(origLogger.Level.String()),
-		"log.level",
-		"Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal]",
-	)
-	fs.Var(
-		logFormatFlag(url.URL{Scheme: "logger", Opaque: "stderr"}),
-		"log.format",
-		`Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`,
-	)
+// AddFlags adds the flags used by this package to the Kingpin application.
+// To use the default Kingpin application, call AddFlags(kingpin.CommandLine)
+func AddFlags(a *kingpin.Application) {
+	s := loggerSettings{}
+	kingpin.Flag("log.level", "Only log messages with the given severity or above. Valid levels: [debug, info, warn, error, fatal]").
+		Default(origLogger.Level.String()).
+		StringVar(&s.level)
+	defaultFormat := url.URL{Scheme: "logger", Opaque: "stderr"}
+	kingpin.Flag("log.format", `Set the log target and format. Example: "logger:syslog?appname=bob&local=7" or "logger:stdout?json=true"`).
+		Default(defaultFormat.String()).
+		StringVar(&s.format)
+	a.Action(s.apply)
 }
 
 // Logger is the interface for loggers used in the Prometheus components.
@@ -150,6 +89,9 @@ type Logger interface {
 	Fatalf(string, ...interface{})
 
 	With(key string, value interface{}) Logger
+
+	SetFormat(string) error
+	SetLevel(string) error
 }
 
 type logger struct {
@@ -233,6 +175,58 @@ func (l logger) Fatalln(args ...interface{}) {
 // Fatalf logs a message at level Fatal on the standard logger.
 func (l logger) Fatalf(format string, args ...interface{}) {
 	l.sourced().Fatalf(format, args...)
+}
+
+func (l logger) SetLevel(level string) error {
+	lvl, err := logrus.ParseLevel(level)
+	if err != nil {
+		return err
+	}
+
+	l.entry.Logger.Level = lvl
+	return nil
+}
+
+func (l logger) SetFormat(format string) error {
+	u, err := url.Parse(format)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "logger" {
+		return fmt.Errorf("invalid scheme %s", u.Scheme)
+	}
+	jsonq := u.Query().Get("json")
+	if jsonq == "true" {
+		setJSONFormatter()
+	}
+
+	switch u.Opaque {
+	case "syslog":
+		if setSyslogFormatter == nil {
+			return fmt.Errorf("system does not support syslog")
+		}
+		appname := u.Query().Get("appname")
+		facility := u.Query().Get("local")
+		return setSyslogFormatter(l, appname, facility)
+	case "eventlog":
+		if setEventlogFormatter == nil {
+			return fmt.Errorf("system does not support eventlog")
+		}
+		name := u.Query().Get("name")
+		debugAsInfo := false
+		debugAsInfoRaw := u.Query().Get("debugAsInfo")
+		if parsedDebugAsInfo, err := strconv.ParseBool(debugAsInfoRaw); err == nil {
+			debugAsInfo = parsedDebugAsInfo
+		}
+		return setEventlogFormatter(l, name, debugAsInfo)
+	case "stdout":
+		l.entry.Logger.Out = os.Stdout
+	case "stderr":
+		l.entry.Logger.Out = os.Stderr
+	default:
+		return fmt.Errorf("unsupported logger %q", u.Opaque)
+	}
+	return nil
 }
 
 // sourced adds a source field to the logger that contains
