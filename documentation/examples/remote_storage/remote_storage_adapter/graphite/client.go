@@ -86,7 +86,7 @@ func (c *Client) Write(samples model.Samples) error {
 		t := float64(s.Timestamp.UnixNano()) / 1e9
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			log.Warnf("cannot send value %f to Graphite,"+
+			log.Debugf("cannot send value %f to Graphite,"+
 				"skipping sample %#v", v, s)
 			continue
 		}
