@@ -405,6 +405,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (model.Value, error) {
+	log.Debugf("Execute query '%s'", q.q)
 	currentQueries.Inc()
 	defer currentQueries.Dec()
 	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
