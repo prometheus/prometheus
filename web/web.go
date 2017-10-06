@@ -172,6 +172,7 @@ func New(o *Options) *Handler {
 			defer h.mtx.RUnlock()
 			return *h.config
 		},
+		h.testReady,
 	)
 
 	if o.RoutePrefix != "/" {
