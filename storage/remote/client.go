@@ -51,7 +51,7 @@ type clientConfig struct {
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *clientConfig) (*Client, error) {
-	httpClient, err := httputil.NewClientFromConfig(conf.httpClientConfig, "storage")
+	httpClient, err := httputil.NewClientFromConfig(conf.httpClientConfig, "remote_storage")
 	if err != nil {
 		return nil, err
 	}

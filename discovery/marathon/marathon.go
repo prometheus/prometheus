@@ -120,7 +120,7 @@ func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery,
 			TLSClientConfig: tls,
 			DialContext: conntrack.NewDialContextFunc(
 				conntrack.DialWithTracing(),
-				conntrack.DialWithName("marathon"),
+				conntrack.DialWithName("marathon_sd"),
 			),
 		},
 	}

@@ -92,7 +92,7 @@ func New(logger log.Logger, conf *config.TritonSDConfig) (*Discovery, error) {
 		TLSClientConfig: tls,
 		DialContext: conntrack.NewDialContextFunc(
 			conntrack.DialWithTracing(),
-			conntrack.DialWithName("triton"),
+			conntrack.DialWithName("triton_sd"),
 		),
 	}
 	client := &http.Client{Transport: transport}

@@ -111,7 +111,7 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 		TLSClientConfig: tls,
 		DialContext: conntrack.NewDialContextFunc(
 			conntrack.DialWithTracing(),
-			conntrack.DialWithName("consul"),
+			conntrack.DialWithName("consul_sd"),
 		),
 	}
 	wrapper := &http.Client{Transport: transport}
