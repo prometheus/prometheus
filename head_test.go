@@ -93,7 +93,7 @@ func (w *memoryWAL) Reader() WALReader {
 	return w
 }
 
-func (w *memoryWAL) Read(series SeriesCB, samples SamplesCB, deletes DeletesCB) error {
+func (w *memoryWAL) Read(series func([]RefSeries), samples func([]RefSample), deletes func([]Stone)) error {
 	for _, e := range w.entries {
 		switch v := e.(type) {
 		case []RefSeries:

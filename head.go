@@ -197,7 +197,7 @@ func (h *Head) ReadWAL() error {
 	// for error reporting.
 	var unknownRefs int
 
-	seriesFunc := func(series []RefSeries) error {
+	seriesFunc := func(series []RefSeries) {
 		for _, s := range series {
 			h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
 
@@ -205,9 +205,8 @@ func (h *Head) ReadWAL() error {
 				h.lastSeriesID = s.Ref
 			}
 		}
-		return nil
 	}
-	samplesFunc := func(samples []RefSample) error {
+	samplesFunc := func(samples []RefSample) {
 		for _, s := range samples {
 			if s.T < mint {
 				continue
@@ -223,9 +222,8 @@ func (h *Head) ReadWAL() error {
 				h.metrics.chunks.Inc()
 			}
 		}
-		return nil
 	}
-	deletesFunc := func(stones []Stone) error {
+	deletesFunc := func(stones []Stone) {
 		for _, s := range stones {
 			for _, itv := range s.intervals {
 				if itv.Maxt < mint {
@@ -234,7 +232,6 @@ func (h *Head) ReadWAL() error {
 				h.tombstones.add(s.ref, itv)
 			}
 		}
-		return nil
 	}
 
 	if unknownRefs > 0 {

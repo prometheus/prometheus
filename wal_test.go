@@ -187,9 +187,8 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	var readSeries []RefSeries
 	r := w.Reader()
 
-	r.Read(func(s []RefSeries) error {
+	r.Read(func(s []RefSeries) {
 		readSeries = append(readSeries, s...)
-		return nil
 	}, nil, nil)
 
 	require.Equal(t, expected, readSeries)
@@ -235,33 +234,27 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			resultDeletes [][]Stone
 		)
 
-		serf := func(series []RefSeries) error {
+		serf := func(series []RefSeries) {
 			if len(series) > 0 {
 				clsets := make([]RefSeries, len(series))
 				copy(clsets, series)
 				resultSeries = append(resultSeries, clsets)
 			}
-
-			return nil
 		}
-		smplf := func(smpls []RefSample) error {
+		smplf := func(smpls []RefSample) {
 			if len(smpls) > 0 {
 				csmpls := make([]RefSample, len(smpls))
 				copy(csmpls, smpls)
 				resultSamples = append(resultSamples, csmpls)
 			}
-
-			return nil
 		}
 
-		delf := func(stones []Stone) error {
+		delf := func(stones []Stone) {
 			if len(stones) > 0 {
 				cst := make([]Stone, len(stones))
 				copy(cst, stones)
 				resultDeletes = append(resultDeletes, cst)
 			}
-
-			return nil
 		}
 
 		require.NoError(t, r.Read(serf, smplf, delf))
@@ -420,26 +413,22 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			r := w2.Reader()
 
-			serf := func(l []RefSeries) error {
+			serf := func(l []RefSeries) {
 				require.Equal(t, 0, len(l))
-				return nil
 			}
-			delf := func([]Stone) error { return nil }
 
 			// Weird hack to check order of reads.
 			i := 0
-			samplf := func(s []RefSample) error {
+			samplf := func(s []RefSample) {
 				if i == 0 {
 					require.Equal(t, []RefSample{{T: 1, V: 2}}, s)
 					i++
 				} else {
 					require.Equal(t, []RefSample{{T: 99, V: 100}}, s)
 				}
-
-				return nil
 			}
 
-			require.NoError(t, r.Read(serf, samplf, delf))
+			require.NoError(t, r.Read(serf, samplf, nil))
 
 			require.NoError(t, w2.LogSamples([]RefSample{{T: 99, V: 100}}))
 			require.NoError(t, w2.Close())
@@ -452,7 +441,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			r = w3.Reader()
 
 			i = 0
-			require.NoError(t, r.Read(serf, samplf, delf))
+			require.NoError(t, r.Read(serf, samplf, nil))
 		})
 	}
 }
