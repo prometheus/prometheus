@@ -178,7 +178,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		series:     newStripeSeries(),
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
-		postings:   newMemPostings(),
+		postings:   newUnorderedMemPostings(),
 		tombstones: newEmptyTombstoneReader(),
 	}
 	h.metrics = newHeadMetrics(h, r)
@@ -188,6 +188,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 
 // ReadWAL initializes the head by consuming the write ahead log.
 func (h *Head) ReadWAL() error {
+	defer h.postings.ensureOrder()
+
 	r := h.wal.Reader()
 	mint := h.MinTime()
 
