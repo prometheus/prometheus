@@ -515,7 +515,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
-	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
+	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
 	}

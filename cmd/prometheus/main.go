@@ -17,6 +17,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"net/http"
 	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"net/url"
 	"os"
@@ -37,6 +38,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
@@ -266,6 +268,11 @@ func main() {
 	}
 
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
+
+	// Monitor outgoing connections on default transport with conntrack.
+	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
+		conntrack.DialWithTracing(),
+	)
 
 	reloadables := []Reloadable{
 		remoteStorage,

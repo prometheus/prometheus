@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -106,7 +107,13 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 	if err != nil {
 		return nil, err
 	}
-	transport := &http.Transport{TLSClientConfig: tls}
+	transport := &http.Transport{
+		TLSClientConfig: tls,
+		DialContext: conntrack.NewDialContextFunc(
+			conntrack.DialWithTracing(),
+			conntrack.DialWithName("consul_sd"),
+		),
+	}
 	wrapper := &http.Client{Transport: transport}
 
 	clientConf := &consul.Config{
