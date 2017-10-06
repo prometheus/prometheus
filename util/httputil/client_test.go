@@ -177,7 +177,7 @@ func TestNewClientFromConfig(t *testing.T) {
 		}
 		defer testServer.Close()
 
-		client, err := NewClientFromConfig(validConfig.clientConfig)
+		client, err := NewClientFromConfig(validConfig.clientConfig, "test")
 		if err != nil {
 			t.Errorf("Can't create a client from this config: %+v", validConfig.clientConfig)
 			continue
@@ -233,7 +233,7 @@ func TestNewClientFromInvalidConfig(t *testing.T) {
 	}
 
 	for _, invalidConfig := range newClientInvalidConfig {
-		client, err := NewClientFromConfig(invalidConfig.clientConfig)
+		client, err := NewClientFromConfig(invalidConfig.clientConfig, "test")
 		if client != nil {
 			t.Errorf("A client instance was returned instead of nil using this config: %+v", invalidConfig.clientConfig)
 		}

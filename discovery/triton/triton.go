@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -87,7 +88,13 @@ func New(logger log.Logger, conf *config.TritonSDConfig) (*Discovery, error) {
 		return nil, err
 	}
 
-	transport := &http.Transport{TLSClientConfig: tls}
+	transport := &http.Transport{
+		TLSClientConfig: tls,
+		DialContext: conntrack.NewDialContextFunc(
+			conntrack.DialWithTracing(),
+			conntrack.DialWithName("triton_sd"),
+		),
+	}
 	client := &http.Client{Transport: transport}
 
 	return &Discovery{

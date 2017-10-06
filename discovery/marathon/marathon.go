@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -117,6 +118,10 @@ func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery,
 		Timeout: time.Duration(conf.Timeout),
 		Transport: &http.Transport{
 			TLSClientConfig: tls,
+			DialContext: conntrack.NewDialContextFunc(
+				conntrack.DialWithTracing(),
+				conntrack.DialWithName("marathon_sd"),
+			),
 		},
 	}
 

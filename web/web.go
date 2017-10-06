@@ -51,6 +51,7 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/net/netutil"
 
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -377,14 +378,19 @@ func (h *Handler) Reload() <-chan chan error {
 func (h *Handler) Run(ctx context.Context) error {
 	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
 
-	l, err := net.Listen("tcp", h.options.ListenAddress)
+	listener, err := net.Listen("tcp", h.options.ListenAddress)
 	if err != nil {
 		return err
 	}
-	l = netutil.LimitListener(l, h.options.MaxConnections)
+	listener = netutil.LimitListener(listener, h.options.MaxConnections)
+
+	// Monitor incoming connections with conntrack.
+	listener = conntrack.NewListener(listener,
+		conntrack.TrackWithName("http"),
+		conntrack.TrackWithTracing())
 
 	var (
-		m       = cmux.New(l)
+		m       = cmux.New(listener)
 		grpcl   = m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
 		httpl   = m.Match(cmux.HTTP1Fast())
 		grpcSrv = grpc.NewServer()
