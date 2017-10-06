@@ -999,7 +999,10 @@ func (s *MemorySeriesStorage) logThrottling() {
 		select {
 		case <-s.throttled:
 			if !timer.Stop() {
-				<-timer.C
+				select {
+				case <-timer.C:
+				default:
+				}
 				score, _ := s.getPersistenceUrgencyScore()
 				log.
 					With("urgencyScore", score).
