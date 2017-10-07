@@ -846,7 +846,7 @@ func (r *walReader) Read(
 		deletePool sync.Pool
 	)
 	donec := make(chan struct{})
-	datac := make(chan interface{}, 50)
+	datac := make(chan interface{}, 100)
 
 	go func() {
 		defer close(donec)
