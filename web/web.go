@@ -187,6 +187,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			defer h.mtx.RUnlock()
 			return *h.config
 		},
+		h.testReady,
 	)
 
 	if o.RoutePrefix != "/" {
