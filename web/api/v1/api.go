@@ -106,10 +106,18 @@ type API struct {
 
 	now    func() time.Time
 	config func() config.Config
+	ready  func(http.HandlerFunc) http.HandlerFunc
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, q promql.Queryable, tr targetRetriever, ar alertmanagerRetriever, configFunc func() config.Config) *API {
+func NewAPI(
+	qe *promql.Engine,
+	q promql.Queryable,
+	tr targetRetriever,
+	ar alertmanagerRetriever,
+	configFunc func() config.Config,
+	readyFunc func(http.HandlerFunc) http.HandlerFunc,
+) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
@@ -117,6 +125,7 @@ func NewAPI(qe *promql.Engine, q promql.Queryable, tr targetRetriever, ar alertm
 		alertmanagerRetriever: ar,
 		now:    time.Now,
 		config: configFunc,
+		ready:  readyFunc,
 	}
 }
 
@@ -133,9 +142,9 @@ func (api *API) Register(r *route.Router) {
 				w.WriteHeader(http.StatusNoContent)
 			}
 		})
-		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{
+		return api.ready(prometheus.InstrumentHandler(name, httputil.CompressionHandler{
 			Handler: hf,
-		})
+		}))
 	}
 
 	r.Options("/*path", instr("options", api.options))
