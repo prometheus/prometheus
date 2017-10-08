@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"golang.org/x/net/context"
@@ -32,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 type targetRetrieverFunc func() []*retrieval.Target
@@ -529,6 +534,89 @@ func TestEndpoints(t *testing.T) {
 		}
 		// Ensure that removed metrics are unindexed before the next request.
 		suite.Storage().WaitForIndexing()
+	}
+}
+
+func TestReadEndpoint(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar",baz="qux"} 1
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer suite.Close()
+
+	if err := suite.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &API{
+		Storage:     suite.Storage(),
+		QueryEngine: suite.QueryEngine(),
+		config: func() config.Config {
+			return config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ExternalLabels: model.LabelSet{
+						"baz": "a",
+						"b":   "c",
+					},
+				},
+			}
+		},
+	}
+
+	// Encode the request.
+	matcher, err := metric.NewLabelMatcher(metric.Equal, "__name__", "test_metric1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	query, err := remote.ToQuery(0, 1, metric.LabelMatchers{matcher})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &remote.ReadRequest{Queries: []*remote.Query{query}}
+	data, err := proto.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := snappy.Encode(nil, data)
+	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	api.remoteRead(recorder, request)
+
+	// Decode the response.
+	compressed, err = ioutil.ReadAll(recorder.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncompressed, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var resp remote.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(resp.Results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
+	}
+
+	result := remote.FromQueryResult(resp.Results[0])
+	expected := &model.Matrix{
+		&model.SampleStream{
+			Metric: model.Metric{"__name__": "test_metric1", "b": "c", "baz": "qux", "foo": "bar"},
+			Values: []model.SamplePair{model.SamplePair{Value: 1, Timestamp: 0}},
+		},
+	}
+	if !reflect.DeepEqual(&result, expected) {
+		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
 	}
 }
 
