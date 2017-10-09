@@ -305,6 +305,23 @@ func (h *Head) initTime(t int64) (initialized bool) {
 	return true
 }
 
+type rangeHead struct {
+	head       *Head
+	mint, maxt int64
+}
+
+func (h *rangeHead) Index() (IndexReader, error) {
+	return h.head.indexRange(h.mint, h.maxt), nil
+}
+
+func (h *rangeHead) Chunks() (ChunkReader, error) {
+	return h.head.chunksRange(h.mint, h.maxt), nil
+}
+
+func (h *rangeHead) Tombstones() (TombstoneReader, error) {
+	return h.head.tombstones, nil
+}
+
 // initAppender is a helper to initialize the time bounds of a the head
 // upon the first sample it receives.
 type initAppender struct {
@@ -611,13 +628,14 @@ func (h *Head) gc() {
 	h.symMtx.Unlock()
 }
 
-func (h *Head) Tombstones() TombstoneReader {
-	return h.tombstones
+// Tombstones returns a new reader over the head's tombstones
+func (h *Head) Tombstones() (TombstoneReader, error) {
+	return h.tombstones, nil
 }
 
 // Index returns an IndexReader against the block.
-func (h *Head) Index() IndexReader {
-	return h.indexRange(math.MinInt64, math.MaxInt64)
+func (h *Head) Index() (IndexReader, error) {
+	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
@@ -628,8 +646,8 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 }
 
 // Chunks returns a ChunkReader against the block.
-func (h *Head) Chunks() ChunkReader {
-	return h.chunksRange(math.MinInt64, math.MaxInt64)
+func (h *Head) Chunks() (ChunkReader, error) {
+	return h.chunksRange(math.MinInt64, math.MaxInt64), nil
 }
 
 func (h *Head) chunksRange(mint, maxt int64) *headChunkReader {
@@ -711,23 +729,6 @@ func (c *safeChunk) Iterator() chunks.Iterator {
 // func (c *safeChunk) Appender() (chunks.Appender, error) { panic("illegal") }
 // func (c *safeChunk) Bytes() []byte                      { panic("illegal") }
 // func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
-
-type rangeHead struct {
-	head       *Head
-	mint, maxt int64
-}
-
-func (h *rangeHead) Index() IndexReader {
-	return h.head.indexRange(h.mint, h.maxt)
-}
-
-func (h *rangeHead) Chunks() ChunkReader {
-	return h.head.chunksRange(h.mint, h.maxt)
-}
-
-func (h *rangeHead) Tombstones() TombstoneReader {
-	return newEmptyTombstoneReader()
-}
 
 type headIndexReader struct {
 	head       *Head

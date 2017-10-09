@@ -40,12 +40,15 @@ type mockIndex struct {
 }
 
 func newMockIndex() mockIndex {
-	return mockIndex{
+	ix := mockIndex{
 		series:     make(map[uint64]series),
 		labelIndex: make(map[string][]string),
 		postings:   newMemPostings(),
 		symbols:    make(map[string]struct{}),
 	}
+	ix.postings.ensureOrder()
+
+	return ix
 }
 
 func (m mockIndex) Symbols() (map[string]struct{}, error) {
@@ -277,6 +280,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		postings = newMemPostings()
 		values   = map[string]stringset{}
 	)
+	postings.ensureOrder()
 
 	mi := newMockIndex()
 
