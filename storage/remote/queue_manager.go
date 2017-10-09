@@ -293,10 +293,11 @@ func (t *QueueManager) Stop() {
 func (t *QueueManager) updateShardsLoop() {
 	defer t.wg.Done()
 
-	ticker := time.Tick(shardUpdateDuration)
+	ticker := time.NewTicker(shardUpdateDuration)
+	defer ticker.Stop()
 	for {
 		select {
-		case <-ticker:
+		case <-ticker.C:
 			t.calculateDesiredShards()
 		case <-t.quit:
 			return
