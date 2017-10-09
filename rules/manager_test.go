@@ -191,10 +191,10 @@ func TestStaleness(t *testing.T) {
 	group.Eval(time.Unix(2, 0))
 
 	querier, err := storage.Querier(context.Background(), 0, 2000)
-	defer querier.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer querier.Close()
 	matcher, _ := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	samples, err := readSeriesSet(querier.Select(matcher))
 	if err != nil {
