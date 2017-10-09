@@ -118,13 +118,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "tsdb_head_gc_duration_seconds",
 		Help: "Runtime of garbage collection in the head block.",
 	})
-	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "tsdb_head_max_time",
 		Help: "Maximum timestamp of the head block.",
 	}, func() float64 {
 		return float64(h.MaxTime())
 	})
-	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "tsdb_head_min_time",
 		Help: "Minimum time bound of the head block.",
 	}, func() float64 {
