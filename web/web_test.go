@@ -15,6 +15,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -233,7 +234,7 @@ func TestRoutePrefix(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
-			t.Fatalf("Can't start webhandler error %s", err)
+			panic(fmt.Sprintf("Can't start webhandler error %s", err))
 		}
 	}()
 
