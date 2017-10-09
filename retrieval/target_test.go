@@ -128,7 +128,7 @@ func TestTargetURL(t *testing.T) {
 func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
-	lb.Set(model.AddressLabel, strings.TrimLeft(targetURL, "http://"))
+	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
 	return &Target{labels: lb.Labels()}
