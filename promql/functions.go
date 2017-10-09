@@ -173,7 +173,8 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 
 		sampledInterval := lastSample.T - previousSample.T
 		if sampledInterval == 0 {
-			// Avoid dividing by 0.float64
+			// Avoid dividing by 0.
+			continue
 		}
 
 		if isRate {
