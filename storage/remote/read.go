@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -61,6 +62,10 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	for _, ts := range res {
 		labels := labelPairsToLabels(ts.Labels)
 		removeLabels(labels, added)
+		err = validateLabels(*ts)
+		if err != nil {
+			return errSeriesSet{err: err}
+		}
 		series = append(series, &concreteSeries{
 			labels:  labels,
 			samples: ts.Samples,
@@ -70,6 +75,19 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	return &concreteSeriesSet{
 		series: series,
 	}
+}
+
+// validateLabels validates the label names/values returned from remote read.
+func validateLabels(ts prompb.TimeSeries) error {
+	for _, label := range ts.GetLabels() {
+		if !model.LabelName(label.GetName()).IsValid() {
+			return fmt.Errorf("Invalid label name: %v", label.GetName())
+		}
+		if !model.LabelValue(label.GetValue()).IsValid() {
+			return fmt.Errorf("Invalid label value: %v", label.GetValue())
+		}
+	}
+	return nil
 }
 
 func labelMatchersToProto(matchers []*labels.Matcher) []*prompb.LabelMatcher {
