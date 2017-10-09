@@ -20,6 +20,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 )
 
 func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -90,5 +92,34 @@ func TestAddExternalLabels(t *testing.T) {
 		if !reflect.DeepEqual(added, test.added) {
 			t.Fatalf("%d. unexpected added labels; want %v, got %v", i, test.added, added)
 		}
+	}
+}
+
+func TestConcreteSeriesSet(t *testing.T) {
+	series1 := &concreteSeries{
+		labels:  labels.FromStrings("foo", "bar"),
+		samples: []*prompb.Sample{&prompb.Sample{Value: 1, Timestamp: 2}},
+	}
+	series2 := &concreteSeries{
+		labels:  labels.FromStrings("foo", "baz"),
+		samples: []*prompb.Sample{&prompb.Sample{Value: 3, Timestamp: 4}},
+	}
+	c := &concreteSeriesSet{
+		series: []storage.Series{series1, series2},
+	}
+	if !c.Next() {
+		t.Fatalf("Expected Next() to be true.")
+	}
+	if c.At() != series1 {
+		t.Fatalf("Unexpected series returned.")
+	}
+	if !c.Next() {
+		t.Fatalf("Expected Next() to be true.")
+	}
+	if c.At() != series2 {
+		t.Fatalf("Unexpected series returned.")
+	}
+	if c.Next() {
+		t.Fatalf("Expected Next() to be false.")
 	}
 }
