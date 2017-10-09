@@ -29,7 +29,6 @@ endif
 STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/discovery/kubernetes/node.go:SA1019 \
   github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
-  github.com/prometheus/prometheus/storage/remote/queue_manager.go:SA1015 \
   github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \
   github.com/prometheus/prometheus/pkg/pool/pool.go:SA6002 \
   github.com/prometheus/prometheus/promql/engine.go:SA6002 \
