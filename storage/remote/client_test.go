@@ -61,13 +61,16 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 
 		serverURL, err := url.Parse(server.URL)
 		if err != nil {
-			panic(err)
+			t.Fatal(err)
 		}
 
 		c, err := NewClient(0, &clientConfig{
 			url:     &config.URL{serverURL},
 			timeout: model.Duration(time.Second),
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		err = c.Store(nil)
 		if !reflect.DeepEqual(err, test.err) {

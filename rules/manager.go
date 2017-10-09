@@ -253,7 +253,7 @@ func (g *Group) copyState(from *Group) {
 	}
 
 	for i, rule := range g.rules {
-		indexes, ok := ruleMap[rule.Name()]
+		indexes, _ := ruleMap[rule.Name()]
 		if len(indexes) == 0 {
 			continue
 		}
