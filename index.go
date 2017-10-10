@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"math"
 
-	"github.com/prometheus/tsdb/fileutil"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
 
