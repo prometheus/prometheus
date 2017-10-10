@@ -175,6 +175,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing commandline arguments"))
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
