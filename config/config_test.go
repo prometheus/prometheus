@@ -539,7 +539,8 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	testutil.Assert(t, len(matches) == 6 && !strings.Contains(yamlConfig, "mysecret"),
+	testutil.Assert(t, len(matches) == 6, "wrong number of secret matches found")
+	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
 		"yaml marshal reveals authentication credentials.")
 }
 
