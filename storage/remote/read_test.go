@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
@@ -28,6 +29,117 @@ func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher 
 		panic(err)
 	}
 	return m
+}
+
+func TestValidateLabelsAndMetricName(t *testing.T) {
+	tests := []struct {
+		input       prompb.TimeSeries
+		expectedErr string
+		shouldPass  bool
+	}{
+		{
+			input: prompb.TimeSeries{
+				Labels: []*prompb.Label{
+					&prompb.Label{
+						Name:  "__name__",
+						Value: "name",
+					},
+					&prompb.Label{
+						Name:  "testLabel",
+						Value: "value0",
+					},
+				},
+				Samples: []*prompb.Sample{},
+			},
+			expectedErr: "",
+			shouldPass:  true,
+		},
+		{
+			input: prompb.TimeSeries{
+				Labels: []*prompb.Label{
+					&prompb.Label{
+						Name:  "__name__",
+						Value: "name",
+					},
+					&prompb.Label{
+						Name:  "@labelName",
+						Value: "labelValue",
+					},
+				},
+				Samples: []*prompb.Sample{},
+			},
+			expectedErr: "Invalid label name: @labelName",
+			shouldPass:  false,
+		},
+		{
+			input: prompb.TimeSeries{
+				Labels: []*prompb.Label{
+					&prompb.Label{
+						Name:  "__name__",
+						Value: "name",
+					},
+					&prompb.Label{
+						Name:  "123labelName",
+						Value: "labelValue",
+					},
+				},
+				Samples: []*prompb.Sample{},
+			},
+			expectedErr: "Invalid label name: 123labelName",
+			shouldPass:  false,
+		},
+		{
+			input: prompb.TimeSeries{
+				Labels: []*prompb.Label{
+					&prompb.Label{
+						Name:  "__name__",
+						Value: "name",
+					},
+					&prompb.Label{
+						Name:  "",
+						Value: "labelValue",
+					},
+				},
+				Samples: []*prompb.Sample{},
+			},
+			expectedErr: "Invalid label name: ",
+			shouldPass:  false,
+		},
+		{
+			input: prompb.TimeSeries{
+				Labels: []*prompb.Label{
+					&prompb.Label{
+						Name:  "__name__",
+						Value: "name",
+					},
+					&prompb.Label{
+						Name:  "labelName",
+						Value: string([]byte{0xff}),
+					},
+				},
+				Samples: []*prompb.Sample{},
+			},
+			expectedErr: "Invalid label value: " + string([]byte{0xff}),
+			shouldPass:  false,
+		},
+	}
+
+	for _, test := range tests {
+		err := validateLabels(test.input)
+		if test.shouldPass {
+			if err != nil {
+				t.Fatalf("Test should pass, got unexpected error: %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			if err.Error() != test.expectedErr {
+				t.Fatalf("Unexpected error, got: %v, expected: %v", err, test.expectedErr)
+			}
+		} else {
+			t.Fatalf("Expected error %v, got none", test.expectedErr)
+		}
+	}
 }
 
 func TestAddExternalLabels(t *testing.T) {
