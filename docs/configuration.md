@@ -296,6 +296,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
+* `__meta_consul_metadata_<key>`: each metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
@@ -393,6 +394,9 @@ region: <string>
 [ secret_key: <secret> ]
 # Named AWS profile used to connect to the API.
 [ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -655,6 +659,22 @@ Available meta labels:
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
+#### `ingress`
+
+The `ingress` role discovers a target for each path of each ingress.
+This is generally useful for blackbox monitoring of an ingress.
+The address will be set to the host specified in the ingress spec.
+
+Available meta labels:
+
+* `__meta_kubernetes_namespace`: The namespace of the ingress object.
+* `__meta_kubernetes_ingress_name`: The name of the ingress object.
+* `__meta_kubernetes_ingress_label_<labelname>`: The label of the ingress object.
+* `__meta_kubernetes_ingress_annotation_<annotationname>`: The annotation of the ingress object.
+* `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
+  config is set. Defaults to `http`.
+* `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
+
 See below for the configuration options for Kubernetes discovery:
 
 ```yaml
@@ -719,6 +739,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_marathon_app_label_<labelname>`: any Marathon labels attached to the app
 * `__meta_marathon_port_definition_label_<labelname>`: the port definition labels
 * `__meta_marathon_port_mapping_label_<labelname>`: the port mapping labels
+* `__meta_marathon_port_index`: the port index number (e.g. `1` for `PORT1`)
 
 See below for the configuration options for Marathon discovery:
 
