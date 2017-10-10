@@ -62,7 +62,8 @@ func giveBuf(buf *bytes.Buffer) {
 //
 // Deprecated: Please note the issues described in the doc comment of
 // InstrumentHandler. You might want to consider using promhttp.Handler instead
-// (which is not instrumented).
+// (which is not instrumented, but can be instrumented with the tooling provided
+// in package promhttp).
 func Handler() http.Handler {
 	return InstrumentHandler("prometheus", UninstrumentedHandler())
 }
@@ -158,7 +159,8 @@ func nowSeries(t ...time.Time) nower {
 // value. http_requests_total is a metric vector partitioned by HTTP method
 // (label name "method") and HTTP status code (label name "code").
 //
-// Deprecated: InstrumentHandler has several issues:
+// Deprecated: InstrumentHandler has several issues. Use the tooling provided in
+// package promhttp instead. The issues are the following:
 //
 // - It uses Summaries rather than Histograms. Summaries are not useful if
 // aggregation across multiple instances is required.
@@ -174,10 +176,6 @@ func nowSeries(t ...time.Time) nower {
 //
 // - It has additional issues with HTTP/2, cf.
 // https://github.com/prometheus/client_golang/issues/272.
-//
-// Upcoming versions of this package will provide ways of instrumenting HTTP
-// handlers that are more flexible and have fewer issues. Please prefer direct
-// instrumentation in the meantime.
 func InstrumentHandler(handlerName string, handler http.Handler) http.HandlerFunc {
 	return InstrumentHandlerFunc(handlerName, handler.ServeHTTP)
 }
@@ -187,7 +185,7 @@ func InstrumentHandler(handlerName string, handler http.Handler) http.HandlerFun
 // issues).
 //
 // Deprecated: InstrumentHandlerFunc is deprecated for the same reasons as
-// InstrumentHandler is.
+// InstrumentHandler is. Use the tooling provided in package promhttp instead.
 func InstrumentHandlerFunc(handlerName string, handlerFunc func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return InstrumentHandlerFuncWithOpts(
 		SummaryOpts{
@@ -226,7 +224,7 @@ func InstrumentHandlerFunc(handlerName string, handlerFunc func(http.ResponseWri
 // SummaryOpts.
 //
 // Deprecated: InstrumentHandlerWithOpts is deprecated for the same reasons as
-// InstrumentHandler is.
+// InstrumentHandler is. Use the tooling provided in package promhttp instead.
 func InstrumentHandlerWithOpts(opts SummaryOpts, handler http.Handler) http.HandlerFunc {
 	return InstrumentHandlerFuncWithOpts(opts, handler.ServeHTTP)
 }
@@ -237,7 +235,7 @@ func InstrumentHandlerWithOpts(opts SummaryOpts, handler http.Handler) http.Hand
 // SummaryOpts are used.
 //
 // Deprecated: InstrumentHandlerFuncWithOpts is deprecated for the same reasons
-// as InstrumentHandler is.
+// as InstrumentHandler is. Use the tooling provided in package promhttp instead.
 func InstrumentHandlerFuncWithOpts(opts SummaryOpts, handlerFunc func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	reqCnt := NewCounterVec(
 		CounterOpts{

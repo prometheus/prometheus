@@ -63,12 +63,11 @@ func NewGauge(opts GaugeOpts) Gauge {
 // (e.g. number of operations queued, partitioned by user and operation
 // type). Create instances with NewGaugeVec.
 type GaugeVec struct {
-	*MetricVec
+	*metricVec
 }
 
 // NewGaugeVec creates a new GaugeVec based on the provided GaugeOpts and
-// partitioned by the given label names. At least one label name must be
-// provided.
+// partitioned by the given label names.
 func NewGaugeVec(opts GaugeOpts, labelNames []string) *GaugeVec {
 	desc := NewDesc(
 		BuildFQName(opts.Namespace, opts.Subsystem, opts.Name),
@@ -77,28 +76,57 @@ func NewGaugeVec(opts GaugeOpts, labelNames []string) *GaugeVec {
 		opts.ConstLabels,
 	)
 	return &GaugeVec{
-		MetricVec: newMetricVec(desc, func(lvs ...string) Metric {
+		metricVec: newMetricVec(desc, func(lvs ...string) Metric {
 			return newValue(desc, GaugeValue, 0, lvs...)
 		}),
 	}
 }
 
-// GetMetricWithLabelValues replaces the method of the same name in
-// MetricVec. The difference is that this method returns a Gauge and not a
-// Metric so that no type conversion is required.
+// GetMetricWithLabelValues returns the Gauge for the given slice of label
+// values (same order as the VariableLabels in Desc). If that combination of
+// label values is accessed for the first time, a new Gauge is created.
+//
+// It is possible to call this method without using the returned Gauge to only
+// create the new Gauge but leave it at its starting value 0. See also the
+// SummaryVec example.
+//
+// Keeping the Gauge for later use is possible (and should be considered if
+// performance is critical), but keep in mind that Reset, DeleteLabelValues and
+// Delete can be used to delete the Gauge from the GaugeVec. In that case, the
+// Gauge will still exist, but it will not be exported anymore, even if a
+// Gauge with the same label values is created later. See also the CounterVec
+// example.
+//
+// An error is returned if the number of label values is not the same as the
+// number of VariableLabels in Desc.
+//
+// Note that for more than one label value, this method is prone to mistakes
+// caused by an incorrect order of arguments. Consider GetMetricWith(Labels) as
+// an alternative to avoid that type of mistake. For higher label numbers, the
+// latter has a much more readable (albeit more verbose) syntax, but it comes
+// with a performance overhead (for creating and processing the Labels map).
 func (m *GaugeVec) GetMetricWithLabelValues(lvs ...string) (Gauge, error) {
-	metric, err := m.MetricVec.GetMetricWithLabelValues(lvs...)
+	metric, err := m.metricVec.getMetricWithLabelValues(lvs...)
 	if metric != nil {
 		return metric.(Gauge), err
 	}
 	return nil, err
 }
 
-// GetMetricWith replaces the method of the same name in MetricVec. The
-// difference is that this method returns a Gauge and not a Metric so that no
-// type conversion is required.
+// GetMetricWith returns the Gauge for the given Labels map (the label names
+// must match those of the VariableLabels in Desc). If that label map is
+// accessed for the first time, a new Gauge is created. Implications of
+// creating a Gauge without using it and keeping the Gauge for later use are
+// the same as for GetMetricWithLabelValues.
+//
+// An error is returned if the number and names of the Labels are inconsistent
+// with those of the VariableLabels in Desc.
+//
+// This method is used for the same purpose as
+// GetMetricWithLabelValues(...string). See there for pros and cons of the two
+// methods.
 func (m *GaugeVec) GetMetricWith(labels Labels) (Gauge, error) {
-	metric, err := m.MetricVec.GetMetricWith(labels)
+	metric, err := m.metricVec.getMetricWith(labels)
 	if metric != nil {
 		return metric.(Gauge), err
 	}
@@ -110,14 +138,14 @@ func (m *GaugeVec) GetMetricWith(labels Labels) (Gauge, error) {
 // error, WithLabelValues allows shortcuts like
 //     myVec.WithLabelValues("404", "GET").Add(42)
 func (m *GaugeVec) WithLabelValues(lvs ...string) Gauge {
-	return m.MetricVec.WithLabelValues(lvs...).(Gauge)
+	return m.metricVec.withLabelValues(lvs...).(Gauge)
 }
 
 // With works as GetMetricWith, but panics where GetMetricWithLabels would have
 // returned an error. By not returning an error, With allows shortcuts like
 //     myVec.With(Labels{"code": "404", "method": "GET"}).Add(42)
 func (m *GaugeVec) With(labels Labels) Gauge {
-	return m.MetricVec.With(labels).(Gauge)
+	return m.metricVec.with(labels).(Gauge)
 }
 
 // GaugeFunc is a Gauge whose value is determined at collect time by calling a
