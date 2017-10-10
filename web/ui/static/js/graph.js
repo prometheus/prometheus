@@ -182,11 +182,36 @@ Prometheus.Graph.prototype.initialize = function() {
     return false;
   });
 
+  self.checkTimeDrift();
   self.populateInsertableMetrics();
 
   if (self.expr.val()) {
     self.submitQuery();
   }
+};
+
+Prometheus.Graph.prototype.checkTimeDrift = function() {
+    var self = this;
+    var browserTime = new Date().getTime() / 1000;
+    $.ajax({
+        method: "GET",
+        url: PATH_PREFIX + "/api/v1/query?query=time()",
+        dataType: "json",
+            success: function(json, textStatus) {
+            if (json.status !== "success") {
+                self.showError("Error querying time.");
+                return;
+            }
+            var serverTime = json.data.result[0];
+
+            if (Math.abs(browserTime - serverTime) > 30) {
+              $("#graph_wrapper0").prepend("<div class=\"alert alert-danger\"><strong>Warning!</strong> Time drift >30 seconds detected.\n</div>");
+            }
+        },
+        error: function() {
+            self.showError("Error loading time.");
+        }
+    });
 };
 
 Prometheus.Graph.prototype.populateInsertableMetrics = function() {
