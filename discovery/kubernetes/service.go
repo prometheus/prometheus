@@ -135,6 +135,7 @@ func serviceLabels(svc *apiv1.Service) model.LabelSet {
 
 	ls[serviceNameLabel] = lv(svc.Name)
 	ls[namespaceLabel] = lv(svc.Namespace)
+	ls[serviceClusterIP] = lv(svc.Spec.ClusterIP)
 
 	for k, v := range svc.Labels {
 		ln := strutil.SanitizeLabelName(serviceLabelPrefix + k)
@@ -161,7 +162,6 @@ func (s *Service) buildService(svc *apiv1.Service) *config.TargetGroup {
 			model.AddressLabel:       lv(addr),
 			servicePortNameLabel:     lv(port.Name),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
-			serviceClusterIP:         lv(svc.Spec.ClusterIP),
 		})
 	}
 

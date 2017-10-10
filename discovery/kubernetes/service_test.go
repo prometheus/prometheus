@@ -58,6 +58,7 @@ func makeMultiPortService() *v1.Service {
 					Port:     int32(30901),
 				},
 			},
+			ClusterIP: "10.0.0.0",
 		},
 	}
 }
@@ -76,6 +77,7 @@ func makeSuffixedService(suffix string) *v1.Service {
 					Port:     int32(30900),
 				},
 			},
+			ClusterIP: "10.0.0.0",
 		},
 	}
 }
@@ -109,6 +111,7 @@ func TestServiceDiscoveryInitial(t *testing.T) {
 					"__meta_kubernetes_namespace":                         "default",
 					"__meta_kubernetes_service_label_testlabel":           "testvalue",
 					"__meta_kubernetes_service_annotation_testannotation": "testannotationvalue",
+					"__meta_kubernetes_service_clusterIP":                 "10.0.0.0",
 				},
 				Source: "svc/default/testservice",
 			},
@@ -132,8 +135,9 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_service_name": "testservice",
-					"__meta_kubernetes_namespace":    "default",
+					"__meta_kubernetes_service_name":      "testservice",
+					"__meta_kubernetes_namespace":         "default",
+					"__meta_kubernetes_service_clusterIP": "10.0.0.0",
 				},
 				Source: "svc/default/testservice",
 			},
@@ -158,8 +162,9 @@ func TestServiceDiscoveryDelete(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_service_name": "testservice",
-					"__meta_kubernetes_namespace":    "default",
+					"__meta_kubernetes_service_name":      "testservice",
+					"__meta_kubernetes_namespace":         "default",
+					"__meta_kubernetes_service_clusterIP": "10.0.0.0",
 				},
 				Source: "svc/default/testservice",
 			},
@@ -189,8 +194,9 @@ func TestServiceDiscoveryDeleteUnknownCacheState(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_service_name": "testservice",
-					"__meta_kubernetes_namespace":    "default",
+					"__meta_kubernetes_service_name":      "testservice",
+					"__meta_kubernetes_namespace":         "default",
+					"__meta_kubernetes_service_clusterIP": "10.0.0.0",
 				},
 				Source: "svc/default/testservice",
 			},
@@ -220,8 +226,9 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_service_name": "testservice",
-					"__meta_kubernetes_namespace":    "default",
+					"__meta_kubernetes_service_name":      "testservice",
+					"__meta_kubernetes_namespace":         "default",
+					"__meta_kubernetes_service_clusterIP": "10.0.0.0",
 				},
 				Source: "svc/default/testservice",
 			},
@@ -245,6 +252,7 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					"__meta_kubernetes_namespace":                         "default",
 					"__meta_kubernetes_service_label_testlabel":           "testvalue",
 					"__meta_kubernetes_service_annotation_testannotation": "testannotationvalue",
+					"__meta_kubernetes_service_clusterIP":                 "10.0.0.0",
 				},
 				Source: "svc/default/testservice",
 			},
