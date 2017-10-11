@@ -203,9 +203,14 @@ Prometheus.Graph.prototype.checkTimeDrift = function() {
                 return;
             }
             var serverTime = json.data.result[0];
+            var diff = Math.abs(browserTime - serverTime);
 
-            if (Math.abs(browserTime - serverTime) > 30) {
-              $("#graph_wrapper0").prepend("<div class=\"alert alert-danger\"><strong>Warning!</strong> Time drift >30 seconds detected.\n</div>");
+            if (diff >= 5) {
+              $("#graph_wrapper0").prepend(
+                  "<div class=\"alert alert-warning\"><strong>Warning!</strong> Detected " +
+                  diff.toFixed(2) +
+                  " seconds time difference between your browser and the server. Prometheus relies on accurate time and time drift might cause unexpected query results.</div>"
+              );
             }
         },
         error: function() {
