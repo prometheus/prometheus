@@ -43,6 +43,8 @@ func main() {
 		benchWriteOutPath    = benchWriteCmd.Flag("out", "set the output path").Default("benchout/").String()
 		benchWriteNumMetrics = benchWriteCmd.Flag("metrics", "number of metrics to read").Default("10000").Int()
 		benchSamplesFile     = benchWriteCmd.Arg("file", "input file with samples data, default is (../../testdata/20k.series)").Default("../../testdata/20k.series").String()
+		listCmd              = cli.Command("ls", "list db blocks")
+		listPath             = listCmd.Arg("db path", "database path (default is benchout/storage)").Default("benchout/storage").String()
 	)
 
 	switch kingpin.MustParse(cli.Parse(os.Args[1:])) {
@@ -53,6 +55,12 @@ func main() {
 			samplesFile: *benchSamplesFile,
 		}
 		wb.run()
+	case listCmd.FullCommand():
+		db, err := tsdb.Open(*listPath, nil, nil, nil)
+		if err != nil {
+			exitWithError(err)
+		}
+		printBlocks(db.Blocks())
 	}
 	flag.CommandLine.Set("log.level", "debug")
 }
@@ -322,4 +330,22 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 func exitWithError(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
+}
+
+func printBlocks(blocks []tsdb.DiskBlock) {
+	tw := tsdb.GetNewTabWriter(os.Stdout)
+	defer tw.Flush()
+
+	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
+	for _, b := range blocks {
+		fmt.Fprintf(tw,
+			"%v\t%v\t%v\t%v\t%v\t%v\n",
+			b.Meta().ULID,
+			b.Meta().MinTime,
+			b.Meta().MaxTime,
+			b.Meta().Stats.NumSamples,
+			b.Meta().Stats.NumChunks,
+			b.Meta().Stats.NumSeries,
+		)
+	}
 }
