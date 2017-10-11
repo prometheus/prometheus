@@ -481,6 +481,7 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 func (n *Notifier) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification handler...")
 	n.cancel()
+	level.Info(n.logger).Log("msg", "Notification handler stopped")
 }
 
 // alertmanager holds Alertmanager endpoint information.

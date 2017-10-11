@@ -332,6 +332,8 @@ func main() {
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
 
+	defer level.Info(logger).Log("msg", "See you next time!")
+
 	// The notifier is a dependency of the rule manager. It has to be
 	// started before and torn down afterwards.
 	go notifier.Run()
@@ -380,8 +382,6 @@ func main() {
 	case err := <-errc:
 		level.Error(logger).Log("msg", "Error starting web server, exiting gracefully", "err", err)
 	}
-
-	level.Info(logger).Log("msg", "See you next time!")
 }
 
 // Reloadable things can change their internal state to match a new config
