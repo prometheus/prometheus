@@ -14,7 +14,6 @@
 package rules
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
@@ -65,20 +64,14 @@ func TestRuleEval(t *testing.T) {
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
 		result, err := rule.Eval(ctx, now, engine, nil)
-		if err != nil {
-			t.Fatalf("Error evaluating %s", test.name)
-		}
-		if !reflect.DeepEqual(result, test.result) {
-			t.Fatalf("Error: expected %q, got %q", test.result, result)
-		}
+		testutil.Ok(t, err)
+		testutil.Equals(t, result, test.result)
 	}
 }
 
 func TestRecordingRuleHTMLSnippet(t *testing.T) {
 	expr, err := promql.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
 
 	const want = `record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
@@ -88,7 +81,5 @@ labels:
 `
 
 	got := rule.HTMLSnippet("/test/prefix")
-	if got != want {
-		t.Fatalf("incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
-	}
+	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
 }
