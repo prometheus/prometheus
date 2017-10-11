@@ -756,10 +756,11 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 
 	s.Lock()
 	c := s.chunk(int(cid))
+	mint, maxt := c.minTime, c.maxTime
 	s.Unlock()
 
 	// Do not expose chunks that are outside of the specified range.
-	if c == nil || !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
+	if c == nil || !intervalOverlap(mint, maxt, h.mint, h.maxt) {
 		return nil, ErrNotFound
 	}
 	return &safeChunk{
