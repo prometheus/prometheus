@@ -833,24 +833,17 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 	if err := p.Err(); err != nil {
 		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
-	var err error
 
 	sort.Slice(ep, func(i, j int) bool {
-		if err != nil {
-			return false
-		}
 		a := h.head.series.getByID(ep[i])
 		b := h.head.series.getByID(ep[j])
 
 		if a == nil || b == nil {
-			err = errors.Errorf("series not found")
+			level.Debug(h.head.logger).Log("msg", "looked up series not found")
 			return false
 		}
 		return labels.Compare(a.lset, b.lset) < 0
 	})
-	if err != nil {
-		return errPostings{err: err}
-	}
 	return newListPostings(ep)
 }
 

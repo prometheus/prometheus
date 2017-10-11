@@ -702,9 +702,8 @@ func TestBaseChunkSeries(t *testing.T) {
 					ref: 108,
 				},
 			},
-			postings: []uint64{12, 10, 108},
-
-			expIdxs: []int{0, 1, 3},
+			postings: []uint64{12, 13, 10, 108}, // 13 doesn't exist and should just be skipped over.
+			expIdxs:  []int{0, 1, 3},
 		},
 		{
 			series: []refdSeries{
@@ -718,12 +717,11 @@ func TestBaseChunkSeries(t *testing.T) {
 				{
 					lset:   labels.New([]labels.Label{{"b", "c"}}...),
 					chunks: []ChunkMeta{{Ref: 8282}},
-					ref:    1,
+					ref:    3,
 				},
 			},
 			postings: []uint64{},
-
-			expIdxs: []int{},
+			expIdxs:  []int{},
 		},
 	}
 
