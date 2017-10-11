@@ -112,7 +112,7 @@ func TestAlertingRule(t *testing.T) {
 		if actual[0] == "" {
 			actual = []string{}
 		}
-		testutil.Equals(t, expected, actual)
+		testutil.Assert(t, len(expected) == len(actual), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(expected), len(actual))
 
 		for j, expectedSample := range expected {
 			found := false
