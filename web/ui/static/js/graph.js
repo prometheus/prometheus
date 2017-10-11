@@ -205,7 +205,7 @@ Prometheus.Graph.prototype.checkTimeDrift = function() {
             var serverTime = json.data.result[0];
             var diff = Math.abs(browserTime - serverTime);
 
-            if (diff >= 5) {
+            if (diff >= 30) {
               $("#graph_wrapper0").prepend(
                   "<div class=\"alert alert-warning\"><strong>Warning!</strong> Detected " +
                   diff.toFixed(2) +
