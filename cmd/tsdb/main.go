@@ -332,20 +332,22 @@ func exitWithError(err error) {
 	os.Exit(1)
 }
 
-func printBlocks(blocks []tsdb.DiskBlock) {
+func printBlocks(blocks []*tsdb.Block) {
 	tw := tsdb.GetNewTabWriter(os.Stdout)
 	defer tw.Flush()
 
 	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
 	for _, b := range blocks {
+		meta := b.Meta()
+
 		fmt.Fprintf(tw,
 			"%v\t%v\t%v\t%v\t%v\t%v\n",
-			b.Meta().ULID,
-			b.Meta().MinTime,
-			b.Meta().MaxTime,
-			b.Meta().Stats.NumSamples,
-			b.Meta().Stats.NumChunks,
-			b.Meta().Stats.NumSeries,
+			meta.ULID,
+			meta.MinTime,
+			meta.MaxTime,
+			meta.Stats.NumSamples,
+			meta.Stats.NumChunks,
+			meta.Stats.NumSeries,
 		)
 	}
 }

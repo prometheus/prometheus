@@ -74,6 +74,7 @@ type headMetrics struct {
 	series              prometheus.Gauge
 	seriesCreated       prometheus.Counter
 	seriesRemoved       prometheus.Counter
+	seriesNotFound      prometheus.Counter
 	chunks              prometheus.Gauge
 	chunksCreated       prometheus.Gauge
 	chunksRemoved       prometheus.Gauge
@@ -102,6 +103,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	m.seriesRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
+	})
+	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_head_series_not_found",
+		Help: "Total number of requests for series that were not found.",
 	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "tsdb_head_chunks",
@@ -149,6 +154,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.series,
 			m.seriesCreated,
 			m.seriesRemoved,
+			m.seriesNotFound,
 			m.minTime,
 			m.maxTime,
 			m.gcDuration,
@@ -833,24 +839,17 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 	if err := p.Err(); err != nil {
 		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
-	var err error
 
 	sort.Slice(ep, func(i, j int) bool {
-		if err != nil {
-			return false
-		}
 		a := h.head.series.getByID(ep[i])
 		b := h.head.series.getByID(ep[j])
 
 		if a == nil || b == nil {
-			err = errors.Errorf("series not found")
+			level.Debug(h.head.logger).Log("msg", "looked up series not found")
 			return false
 		}
 		return labels.Compare(a.lset, b.lset) < 0
 	})
-	if err != nil {
-		return errPostings{err: err}
-	}
 	return newListPostings(ep)
 }
 
@@ -859,6 +858,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkM
 	s := h.head.series.getByID(ref)
 
 	if s == nil {
+		h.head.metrics.seriesNotFound.Inc()
 		return ErrNotFound
 	}
 	*lbls = append((*lbls)[:0], s.lset...)

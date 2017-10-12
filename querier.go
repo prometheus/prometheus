@@ -450,6 +450,10 @@ Outer:
 	for s.p.Next() {
 		ref := s.p.At()
 		if err := s.index.Series(ref, &lset, &chunks); err != nil {
+			// Postings may be stale. Skip if no underlying series exists.
+			if errors.Cause(err) == ErrNotFound {
+				continue
+			}
 			s.err = err
 			return false
 		}
