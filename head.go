@@ -74,6 +74,7 @@ type headMetrics struct {
 	series              prometheus.Gauge
 	seriesCreated       prometheus.Counter
 	seriesRemoved       prometheus.Counter
+	seriesNotFound      prometheus.Counter
 	chunks              prometheus.Gauge
 	chunksCreated       prometheus.Gauge
 	chunksRemoved       prometheus.Gauge
@@ -102,6 +103,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	m.seriesRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
+	})
+	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_head_series_not_found",
+		Help: "Total number of requests for series that were not found.",
 	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "tsdb_head_chunks",
@@ -149,6 +154,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.series,
 			m.seriesCreated,
 			m.seriesRemoved,
+			m.seriesNotFound,
 			m.minTime,
 			m.maxTime,
 			m.gcDuration,
@@ -852,6 +858,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkM
 	s := h.head.series.getByID(ref)
 
 	if s == nil {
+		h.head.metrics.seriesNotFound.Inc()
 		return ErrNotFound
 	}
 	*lbls = append((*lbls)[:0], s.lset...)
