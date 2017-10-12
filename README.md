@@ -61,11 +61,9 @@ To build Prometheus from the source code yourself you need to have a working
 Go environment with [version 1.8 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `prometheus`
-and `promtool` binaries into your `GOPATH`. We use Go 1.5's experimental
-vendoring feature, so you will also need to set the `GO15VENDOREXPERIMENT=1`
-environment variable in this case:
+and `promtool` binaries into your `GOPATH`:
 
-    $ GO15VENDOREXPERIMENT=1 go get github.com/prometheus/prometheus/cmd/...
+    $ go get github.com/prometheus/prometheus/cmd/...
     $ prometheus --config.file=your_config.yml
 
 You can also clone the repository yourself and build using `make`:
