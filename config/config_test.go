@@ -18,13 +18,13 @@ import (
 	"io/ioutil"
 	"net/url"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
 
@@ -517,73 +517,40 @@ var expectedConf = &Config{
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	if _, err := LoadFile("testdata/global_timeout.good.yml"); err != nil {
-		t.Errorf("Error parsing %s: %s", "testdata/global_timeout.good.yml", err)
-	}
+	_, err := LoadFile("testdata/global_timeout.good.yml")
+	testutil.Ok(t, err)
 
 	c, err := LoadFile("testdata/conf.good.yml")
-	if err != nil {
-		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
-	}
+	testutil.Ok(t, err)
 
-	bgot, err := yaml.Marshal(c)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	bexp, err := yaml.Marshal(expectedConf)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
 	expectedConf.original = c.original
-
-	if !reflect.DeepEqual(c, expectedConf) {
-		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
-	}
+	testutil.Equals(t, expectedConf, c)
 }
 
 // YAML marshalling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
-	if err != nil {
-		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
-	}
+	testutil.Ok(t, err)
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
 
 	config, err := yaml.Marshal(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	if len(matches) != 6 || strings.Contains(yamlConfig, "mysecret") {
-		t.Fatalf("yaml marshal reveals authentication credentials.")
-	}
+	testutil.Assert(t, len(matches) == 6, "wrong number of secret matches found")
+	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
+		"yaml marshal reveals authentication credentials.")
 }
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
 	c, err := LoadFile(ruleFilesConfigFile)
-	if err != nil {
-		t.Errorf("Error parsing %s: %s", ruleFilesConfigFile, err)
-	}
+	testutil.Ok(t, err)
 
-	bgot, err := yaml.Marshal(c)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	bexp, err := yaml.Marshal(ruleFilesExpectedConf)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
 	ruleFilesExpectedConf.original = c.original
-
-	if !reflect.DeepEqual(c, ruleFilesExpectedConf) {
-		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", ruleFilesConfigFile, bgot, bexp)
-	}
+	testutil.Equals(t, ruleFilesExpectedConf, c)
 }
 
 var expectedErrors = []struct {
@@ -692,51 +659,34 @@ var expectedErrors = []struct {
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
-		if err == nil {
-			t.Errorf("Expected error parsing %s but got none", ee.filename)
-			continue
-		}
-		if !strings.Contains(err.Error(), ee.errMsg) {
-			t.Errorf("Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
-		}
+		testutil.Assert(t, err != nil,
+			"Expected error parsing %s but got none", ee.filename)
+		testutil.Assert(t, strings.Contains(err.Error(), ee.errMsg),
+			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }
 
 func TestBadStaticConfigs(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	var tg TargetGroup
 	err = json.Unmarshal(content, &tg)
-	if err == nil {
-		t.Errorf("Expected unmarshal error but got none.")
-	}
+	testutil.Assert(t, err != nil, "Expected unmarshal error but got none.")
 }
 
 func TestEmptyConfig(t *testing.T) {
 	c, err := Load("")
-	if err != nil {
-		t.Fatalf("Unexpected error parsing empty config file: %s", err)
-	}
+	testutil.Ok(t, err)
 	exp := DefaultConfig
-
-	if !reflect.DeepEqual(*c, exp) {
-		t.Fatalf("want %v, got %v", exp, c)
-	}
+	testutil.Equals(t, exp, *c)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n")
-	if err != nil {
-		t.Fatalf("Unexpected error parsing empty config file: %s", err)
-	}
+	testutil.Ok(t, err)
 	exp := DefaultConfig
 	exp.original = "global:\n"
-
-	if !reflect.DeepEqual(*c, exp) {
-		t.Fatalf("want %v, got %v", exp, c)
-	}
+	testutil.Equals(t, exp, *c)
 }
 
 func TestTargetLabelValidity(t *testing.T) {
@@ -761,9 +711,8 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		if relabelTarget.Match([]byte(test.str)) != test.valid {
-			t.Fatalf("Expected %q to be %v", test.str, test.valid)
-		}
+		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
+			"Expected %q to be %v", test.str, test.valid)
 	}
 }
 
