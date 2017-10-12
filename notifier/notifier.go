@@ -379,6 +379,20 @@ func (n *Notifier) relabelAlerts(alerts []*Alert) []*Alert {
 	return relabeledAlerts
 }
 
+func amsRelabelAlerts(alerts []*Alert, relabelConfigs []*config.RelabelConfig) []Alert {
+	var relabeledAlerts []Alert
+
+	for _, alert := range alerts {
+		labels := relabel.Process(alert.Labels, relabelConfigs...)
+		if labels != nil {
+			newAlert := *alert
+			newAlert.Labels = labels
+			relabeledAlerts = append(relabeledAlerts, newAlert)
+		}
+	}
+	return relabeledAlerts
+}
+
 // setMore signals that the alert queue has items.
 func (n *Notifier) setMore() {
 	// If we cannot send on the channel, it means the signal already exists
@@ -413,12 +427,6 @@ func (n *Notifier) Alertmanagers() []*url.URL {
 func (n *Notifier) sendAll(alerts ...*Alert) bool {
 	begin := time.Now()
 
-	b, err := json.Marshal(alerts)
-	if err != nil {
-		level.Error(n.logger).Log("msg", "Encoding alerts failed", "err", err)
-		return false
-	}
-
 	n.mtx.RLock()
 	amSets := n.alertmanagers
 	n.mtx.RUnlock()
@@ -429,6 +437,15 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 	)
 	for _, ams := range amSets {
 		ams.mtx.RLock()
+
+		amsAlerts := amsRelabelAlerts(alerts, ams.cfg.RelabelConfigs)
+
+		b, err := json.Marshal(amsAlerts)
+
+		if err != nil {
+			level.Error(n.logger).Log("msg", "Encoding alerts failed", "err", err)
+			return false
+		}
 
 		for _, am := range ams.ams {
 			wg.Add(1)
