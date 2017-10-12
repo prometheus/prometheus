@@ -13,7 +13,11 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
+)
 
 func TestComputeExternalURL(t *testing.T) {
 	tests := []struct {
@@ -54,13 +58,12 @@ func TestComputeExternalURL(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
-		r, err := computeExternalURL(test.input, "0.0.0.0:9090")
-		if test.valid && err != nil {
-			t.Errorf("%d. expected input to be valid, got %s", i, err)
-		} else if !test.valid && err == nil {
-			t.Logf("%+v", test, r)
-			t.Errorf("%d. expected input to be invalid", i)
+	for _, test := range tests {
+		_, err := computeExternalURL(test.input, "0.0.0.0:9090")
+		if test.valid {
+			testutil.Ok(t, err)
+		} else {
+			testutil.NotOk(t, err)
 		}
 	}
 }
