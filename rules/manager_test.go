@@ -171,10 +171,6 @@ func TestStaleness(t *testing.T) {
 	querier, err := storage.Querier(context.Background(), 0, 2000)
 	testutil.Ok(t, err)
 	defer querier.Close()
-<<<<<<< HEAD
-=======
-	testutil.Ok(t, err)
->>>>>>> fdd218416016f96fa80f7b5f697b75552e0a8ad5
 	matcher, _ := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	samples, err := readSeriesSet(querier.Select(matcher))
 	testutil.Ok(t, err)
