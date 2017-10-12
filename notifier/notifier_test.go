@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 func TestPostPath(t *testing.T) {
@@ -140,10 +141,20 @@ func TestHandlerSendAll(t *testing.T) {
 		}
 	}
 	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, _ := r.BasicAuth()
+		if user != "prometheus" || pass != "testing_password" {
+			t.Fatalf("Incorrect auth details for an alertmanager")
+		}
+
 		f(w, r)
 		w.WriteHeader(status1)
 	}))
 	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, _ := r.BasicAuth()
+		if user != "" || pass != "" {
+			t.Fatalf("Incorrectly received auth details for an alertmanager")
+		}
+
 		f(w, r)
 		w.WriteHeader(status2)
 	}))
@@ -152,11 +163,27 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server2.Close()
 
 	h := New(&Options{}, nil)
+
+	authClient, _ := httputil.NewClientFromConfig(config.HTTPClientConfig{
+		BasicAuth: &config.BasicAuth{
+			Username: "prometheus",
+			Password: "testing_password",
+		},
+	}, "auth_alertmanager")
 	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
 			},
+		},
+		cfg: &config.AlertmanagerConfig{
+			Timeout: time.Second,
+		},
+		client: authClient,
+	})
+
+	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
 			},
