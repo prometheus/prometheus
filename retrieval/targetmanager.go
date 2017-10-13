@@ -50,6 +50,7 @@ type targetSet struct {
 	sp *scrapePool
 }
 
+// Appendable returns an Appender.
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }
