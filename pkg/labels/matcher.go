@@ -59,8 +59,7 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 		Value: v,
 	}
 	if t == MatchRegexp || t == MatchNotRegexp {
-		m.Value = "^(?:" + v + ")$"
-		re, err := regexp.Compile(m.Value)
+		re, err := regexp.Compile("^(?:" + v + ")$")
 		if err != nil {
 			return nil, err
 		}
