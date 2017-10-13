@@ -233,14 +233,14 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
 
 	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
 		if err != nil {
 			panic(err)
 		}
 		return res
 
 	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
 		if err != nil {
 			panic(err)
 		}
