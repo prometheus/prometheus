@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -33,9 +34,11 @@ var (
 
 func testUpdateServices(client AppListClient, ch chan []*config.TargetGroup) error {
 	md, err := NewDiscovery(&conf, nil)
+
 	if err != nil {
 		return err
 	}
+
 	md.appsClient = client
 	return md.updateServices(context.Background(), ch)
 }
@@ -46,9 +49,9 @@ func TestMarathonSDHandleError(t *testing.T) {
 		ch         = make(chan []*config.TargetGroup, 1)
 		client     = func(client *http.Client, url, token string) (*AppList, error) { return nil, errTesting }
 	)
-	if err := testUpdateServices(client, ch); err != errTesting {
-		t.Fatalf("Expected error: %s", err)
-	}
+
+	testutil.NotOk(t, testUpdateServices(client, ch))
+
 	select {
 	case tg := <-ch:
 		t.Fatalf("Got group: %s", tg)
@@ -61,9 +64,9 @@ func TestMarathonSDEmptyList(t *testing.T) {
 		ch     = make(chan []*config.TargetGroup, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) { return &AppList{}, nil }
 	)
-	if err := testUpdateServices(client, ch); err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
+
+	testutil.Ok(t, testUpdateServices(client, ch))
+
 	select {
 	case tg := <-ch:
 		if len(tg) > 0 {
@@ -110,29 +113,21 @@ func TestMarathonSDSendGroup(t *testing.T) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
 	)
-	if err := testUpdateServices(client, ch); err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
+
+	testutil.Ok(t, testUpdateServices(client, ch))
+
 	select {
 	case tgs := <-ch:
 		tg := tgs[0]
 
-		if tg.Source != "test-service" {
-			t.Fatalf("Wrong target group name: %s", tg.Source)
-		}
-		if len(tg.Targets) != 1 {
-			t.Fatalf("Wrong number of targets: %v", tg.Targets)
-		}
+		testutil.Equals(t, "test-service", tg.Source)
+		testutil.Equals(t, 1, len(tg.Targets))
+
 		tgt := tg.Targets[0]
-		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:31000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue("yes"), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
 	default:
 		t.Fatal("Did not get a target group.")
 	}
@@ -141,32 +136,32 @@ func TestMarathonSDSendGroup(t *testing.T) {
 func TestMarathonSDRemoveApp(t *testing.T) {
 	var ch = make(chan []*config.TargetGroup, 1)
 	md, err := NewDiscovery(&conf, nil)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
+
+	testutil.Ok(t, err)
 
 	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
-	if err := md.updateServices(context.Background(), ch); err != nil {
-		t.Fatalf("Got error on first update: %s", err)
-	}
+
+	testutil.Ok(t, md.updateServices(context.Background(), ch))
+
 	up1 := (<-ch)[0]
 
 	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 0), nil
 	}
-	if err := md.updateServices(context.Background(), ch); err != nil {
-		t.Fatalf("Got error on second update: %s", err)
-	}
+
+	testutil.Ok(t, md.updateServices(context.Background(), ch))
+
 	up2 := (<-ch)[0]
 
-	if up2.Source != up1.Source {
-		t.Fatalf("Source is different: %s", up2)
-		if len(up2.Targets) > 0 {
-			t.Fatalf("Got a non-empty target set: %s", up2.Targets)
-		}
-	}
+	testutil.Equals(t, up1.Source, up2.Source)
+	testutil.Assert(
+		t,
+		len(up2.Targets) > 0,
+		"Got a non-empty target set: %s",
+		up2.Targets,
+	)
 }
 
 func TestMarathonSDRunAndStop(t *testing.T) {
@@ -177,12 +172,13 @@ func TestMarathonSDRunAndStop(t *testing.T) {
 		doneCh          = make(chan error)
 	)
 	md, err := NewDiscovery(&conf, nil)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
+
+	testutil.Ok(t, err)
+
 	md.appsClient = func(client *http.Client, url, token string) (*AppList, error) {
 		return marathonTestAppList(marathonValidLabel, 1), nil
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -242,39 +238,27 @@ func TestMarathonSDSendGroupWithMutiplePort(t *testing.T) {
 			return marathonTestAppListWithMutiplePorts(marathonValidLabel, 1), nil
 		}
 	)
-	if err := testUpdateServices(client, ch); err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
+
+	testutil.Ok(t, testUpdateServices(client, ch))
+
 	select {
 	case tgs := <-ch:
 		tg := tgs[0]
 
-		if tg.Source != "test-service" {
-			t.Fatalf("Wrong target group name: %s", tg.Source)
-		}
-		if len(tg.Targets) != 2 {
-			t.Fatalf("Wrong number of targets: %v", tg.Targets)
-		}
+		testutil.Equals(t, "test-service", tg.Source)
+		testutil.Equals(t, 2, len(tg.Targets))
+
 		tgt := tg.Targets[0]
-		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:31000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue("yes"), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
+
 		tgt = tg.Targets[1]
-		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "yes" {
-			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:32000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue("yes"), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
 	default:
 		t.Fatal("Did not get a target group.")
 	}
@@ -309,19 +293,14 @@ func TestMarathonZeroTaskPorts(t *testing.T) {
 			return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 		}
 	)
-	if err := testUpdateServices(client, ch); err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
+	testutil.Ok(t, testUpdateServices(client, ch))
+
 	select {
 	case tgs := <-ch:
 		tg := tgs[0]
 
-		if tg.Source != "test-service-zero-ports" {
-			t.Fatalf("Wrong target group name: %s", tg.Source)
-		}
-		if len(tg.Targets) != 0 {
-			t.Fatalf("Wrong number of targets: %v", tg.Targets)
-		}
+		testutil.Equals(t, "test-service-zero-ports", tg.Source)
+		testutil.Equals(t, 0, len(tg.Targets))
 	default:
 		t.Fatal("Did not get a target group.")
 	}
@@ -362,39 +341,27 @@ func TestMarathonSDSendGroupWithoutPortMappings(t *testing.T) {
 			return marathonTestAppListWithoutPortMappings(marathonValidLabel, 1), nil
 		}
 	)
-	if err := testUpdateServices(client, ch); err != nil {
-		t.Fatalf("Got error: %s", err)
-	}
+
+	testutil.Ok(t, testUpdateServices(client, ch))
+
 	select {
 	case tgs := <-ch:
 		tg := tgs[0]
 
-		if tg.Source != "test-service" {
-			t.Fatalf("Wrong target group name: %s", tg.Source)
-		}
-		if len(tg.Targets) != 2 {
-			t.Fatalf("Wrong number of targets: %v", tg.Targets)
-		}
+		testutil.Equals(t, "test-service", tg.Source)
+		testutil.Equals(t, 2, len(tg.Targets))
+
 		tgt := tg.Targets[0]
-		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:31000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
+
 		tgt = tg.Targets[1]
-		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "yes" {
-			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:32000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue("yes"), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
 	default:
 		t.Fatal("Did not get a target group.")
 	}
@@ -442,32 +409,20 @@ func TestMarathonSDSendGroupWithoutPortDefinitions(t *testing.T) {
 	case tgs := <-ch:
 		tg := tgs[0]
 
-		if tg.Source != "test-service" {
-			t.Fatalf("Wrong target group name: %s", tg.Source)
-		}
-		if len(tg.Targets) != 2 {
-			t.Fatalf("Wrong number of targets: %v", tg.Targets)
-		}
+		testutil.Equals(t, "test-service", tg.Source)
+		testutil.Equals(t, 2, len(tg.Targets))
+
 		tgt := tg.Targets[0]
-		if tgt[model.AddressLabel] != "mesos-slave1:31000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "yes" {
-			t.Fatalf("Wrong first portMappings label from the first port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong first portDefinitions label from the first port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:31000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue("yes"), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
+
 		tgt = tg.Targets[1]
-		if tgt[model.AddressLabel] != "mesos-slave1:32000" {
-			t.Fatalf("Wrong target address: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portMappingLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
-		}
-		if tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")] != "" {
-			t.Fatalf("Wrong portDefinitions label from the second port: %s", tgt[model.AddressLabel])
-		}
+
+		testutil.Equals(t, model.LabelValue("mesos-slave1:32000"), tgt[model.AddressLabel])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portMappingLabelPrefix+"prometheus")])
+		testutil.Equals(t, model.LabelValue(""), tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")])
 	default:
 		t.Fatal("Did not get a target group.")
 	}

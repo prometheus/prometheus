@@ -30,6 +30,14 @@ import (
 	"testing"
 )
 
+const (
+	// NotNilErrorMessage is a default error  message when asserting for not nil values.
+	NotNilErrorMessage = "Expected value, got nil"
+
+	// NilErrorMessage is a default error message when asserting for nil values.
+	NilErrorMessage = "Expect value to be nil"
+)
+
 // Assert fails the test if the condition is false.
 func Assert(tb testing.TB, condition bool, msg string, v ...interface{}) {
 	if !condition {

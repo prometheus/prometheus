@@ -23,6 +23,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
+
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -897,14 +899,24 @@ func TestTargetSetConsolidatesToTheLatestState(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
+
 	verifyPresence := func(tgroups map[string]*config.TargetGroup, name string, present bool) {
-		if _, ok := tgroups[name]; ok != present {
-			msg := ""
-			if !present {
-				msg = "not "
-			}
-			t.Fatalf("'%s' should %sbe present in TargetSet.tgroups: %s", name, msg, tgroups)
+		_, ok := tgroups[name]
+
+		msg := ""
+
+		if !present {
+			msg = "not "
 		}
+
+		testutil.Assert(
+			t,
+			ok == present,
+			"'%s' should %sbe present in TargetSet.tgroups: %s",
+			name,
+			msg,
+			tgroups,
+		)
 	}
 
 	cfg := &config.ServiceDiscoveryConfig{}
@@ -914,9 +926,8 @@ static_configs:
 - targets: ["foo:9090"]
 - targets: ["bar:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
+	testutil.Ok(t, yaml.Unmarshal([]byte(sOne), cfg))
+
 	called := make(chan struct{})
 
 	ts := NewTargetSet(&mockSyncer{
@@ -937,9 +948,7 @@ static_configs:
 static_configs:
 - targets: ["foo:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
-	}
+	testutil.Ok(t, yaml.Unmarshal([]byte(sTwo), cfg))
 
 	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
 	<-called

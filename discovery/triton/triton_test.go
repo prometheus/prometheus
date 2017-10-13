@@ -21,13 +21,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -58,21 +58,25 @@ var (
 
 func TestTritonSDNew(t *testing.T) {
 	td, err := New(nil, &conf)
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
-	assert.NotNil(t, td.client)
-	assert.NotNil(t, td.interval)
-	assert.NotNil(t, td.sdConfig)
-	assert.Equal(t, conf.Account, td.sdConfig.Account)
-	assert.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
-	assert.Equal(t, conf.Endpoint, td.sdConfig.Endpoint)
-	assert.Equal(t, conf.Port, td.sdConfig.Port)
+
+	testutil.Ok(t, err)
+
+	testutil.Assert(t, td != nil, testutil.NotNilErrorMessage)
+	testutil.Assert(t, td.client != nil, testutil.NotNilErrorMessage)
+	testutil.Assert(t, td.sdConfig != nil, testutil.NotNilErrorMessage)
+
+	testutil.Equals(t, time.Duration(conf.RefreshInterval), td.interval)
+	testutil.Equals(t, conf.Account, td.sdConfig.Account)
+	testutil.Equals(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
+	testutil.Equals(t, conf.Endpoint, td.sdConfig.Endpoint)
+	testutil.Equals(t, conf.Port, td.sdConfig.Port)
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
 	td, err := New(nil, &badconf)
-	assert.NotNil(t, err)
-	assert.Nil(t, td)
+
+	testutil.NotOk(t, err)
+	testutil.Assert(t, td == nil, testutil.NotNilErrorMessage)
 }
 
 func TestTritonSDRun(t *testing.T) {
@@ -82,8 +86,8 @@ func TestTritonSDRun(t *testing.T) {
 		ctx, cancel = context.WithCancel(context.Background())
 	)
 
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, testutil.NotNilErrorMessage)
 
 	go td.Run(ctx, ch)
 
@@ -99,7 +103,7 @@ func TestTritonSDRun(t *testing.T) {
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {
 	tgts := testTritonSDRefresh(t, "{\"containers\":[]}")
-	assert.Nil(t, tgts)
+	testutil.Assert(t, tgts == nil, testutil.NilErrorMessage)
 }
 
 func TestTritonSDRefreshMultipleTargets(t *testing.T) {
@@ -123,22 +127,29 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 	)
 
 	tgts := testTritonSDRefresh(t, dstr)
-	assert.NotNil(t, tgts)
-	assert.Equal(t, 2, len(tgts))
+
+	testutil.Assert(t, tgts != nil, testutil.NotNilErrorMessage)
+	testutil.Equals(t, 2, len(tgts))
 }
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
 	var (
 		td, err = New(nil, &conf)
 	)
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, testutil.NotNilErrorMessage)
 
 	tg, rerr := td.refresh()
-	assert.NotNil(t, rerr)
-	assert.Contains(t, rerr.Error(), "an error occurred when requesting targets from the discovery endpoint.")
-	assert.NotNil(t, tg)
-	assert.Nil(t, tg.Targets)
+
+	testutil.NotOk(t, rerr)
+	testutil.Assert(
+		t,
+		strings.Contains(rerr.Error(), "an error occurred when requesting targets from the discovery endpoint."),
+		"Invalid error message",
+	)
+
+	testutil.Assert(t, tg != nil, testutil.NotNilErrorMessage)
+	testutil.Assert(t, tg.Targets == nil, testutil.NilErrorMessage)
 }
 
 func testTritonSDRefresh(t *testing.T, dstr string) []model.LabelSet {
@@ -152,26 +163,29 @@ func testTritonSDRefresh(t *testing.T, dstr string) []model.LabelSet {
 	defer s.Close()
 
 	u, uperr := url.Parse(s.URL)
-	assert.Nil(t, uperr)
-	assert.NotNil(t, u)
+
+	testutil.Ok(t, uperr)
+	testutil.Assert(t, u != nil, testutil.NotNilErrorMessage)
 
 	host, strport, sherr := net.SplitHostPort(u.Host)
-	assert.Nil(t, sherr)
-	assert.NotNil(t, host)
-	assert.NotNil(t, strport)
+
+	testutil.Ok(t, sherr)
+	testutil.Assert(t, host != "", "Expected non empty string for host")
+	testutil.Assert(t, strport != "", "Expected non empty string for strport")
 
 	port, atoierr := strconv.Atoi(strport)
-	assert.Nil(t, atoierr)
-	assert.NotNil(t, port)
+
+	testutil.Ok(t, atoierr)
+	testutil.Assert(t, port != 0, "Expected non-zero value for port")
 
 	td.sdConfig.Port = port
 
-	assert.Nil(t, err)
-	assert.NotNil(t, td)
+	testutil.Ok(t, err)
+	testutil.Assert(t, td != nil, testutil.NotNilErrorMessage)
 
 	tg, err := td.refresh()
-	assert.Nil(t, err)
-	assert.NotNil(t, tg)
+	testutil.Ok(t, err)
+	testutil.Assert(t, tg != nil, testutil.NotNilErrorMessage)
 
 	return tg.Targets
 }
