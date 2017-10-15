@@ -162,6 +162,8 @@ const (
 	itemGTR
 	itemEQLRegex
 	itemNEQRegex
+	itemEQLList
+	itemNEQList
 	itemPOW
 	operatorsEnd
 
@@ -261,6 +263,8 @@ var itemTypeStr = map[itemType]string{
 	itemGTR:      ">",
 	itemEQLRegex: "=~",
 	itemNEQRegex: "!~",
+	itemEQLList: "=|",
+	itemNEQList: "!|",
 	itemPOW:      "^",
 }
 
@@ -579,8 +583,17 @@ func lexInsideBraces(l *lexer) stateFn {
 		l.stringOpen = r
 		return lexRawString
 	case r == '=':
-		if l.next() == '~' {
+		toBreak := false
+		switch l.next() {
+		case '~':
 			l.emit(itemEQLRegex)
+			toBreak = true
+		case '|':
+			l.emit(itemEQLList)
+			toBreak = true
+		}
+		// TODO: use label break
+		if toBreak {
 			break
 		}
 		l.backup()
@@ -589,6 +602,8 @@ func lexInsideBraces(l *lexer) stateFn {
 		switch nr := l.next(); {
 		case nr == '~':
 			l.emit(itemNEQRegex)
+		case nr == '|':
+			l.emit(itemNEQList)
 		case nr == '=':
 			l.emit(itemNEQ)
 		default:

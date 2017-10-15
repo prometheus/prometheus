@@ -245,6 +245,12 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 			panic(err)
 		}
 		return tsdbLabels.Not(res)
+
+	case labels.MatchList:
+		return tsdbLabels.NewListMatcher(m.Name, m.Value)
+
+	case labels.MatchNotList:
+		return tsdbLabels.Not(tsdbLabels.NewListMatcher(m.Name, m.Value))
 	}
 	panic("storage.convertMatcher: invalid matcher type")
 }

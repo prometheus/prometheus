@@ -16,6 +16,7 @@ package labels
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // MatchType is an enum for label matching types.
@@ -27,6 +28,8 @@ const (
 	MatchNotEqual
 	MatchRegexp
 	MatchNotRegexp
+	MatchList
+	MatchNotList
 )
 
 func (m MatchType) String() string {
@@ -35,6 +38,8 @@ func (m MatchType) String() string {
 		MatchNotEqual:  "!=",
 		MatchRegexp:    "=~",
 		MatchNotRegexp: "!~",
+		MatchList: "=|",
+		MatchNotList: "~|",
 	}
 	if str, ok := typeToStr[m]; ok {
 		return str
@@ -49,6 +54,7 @@ type Matcher struct {
 	Value string
 
 	re *regexp.Regexp
+	valSet map[string]struct{}
 }
 
 // NewMatcher returns a matcher object.
@@ -64,6 +70,12 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 			return nil, err
 		}
 		m.re = re
+	}
+	if t == MatchList || t == MatchNotList {
+		m.valSet = make(map[string]struct{})
+		for _, item := range strings.Split(string(v), ",") {
+			m.valSet[item] = struct{}{}
+		}
 	}
 	return m, nil
 }
@@ -83,6 +95,12 @@ func (m *Matcher) Matches(s string) bool {
 		return m.re.MatchString(s)
 	case MatchNotRegexp:
 		return !m.re.MatchString(s)
+	case MatchList:
+		_, ok := m.valSet[s]
+		return ok
+	case MatchNotList:
+		_, ok := m.valSet[s]
+		return !ok
 	}
 	panic("labels.Matcher.Matches: invalid match type")
 }
