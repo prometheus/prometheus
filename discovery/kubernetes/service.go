@@ -127,7 +127,7 @@ const (
 	serviceAnnotationPrefix  = metaLabelPrefix + "service_annotation_"
 	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
 	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIP         = metaLabelPrefix + "service_clusterIP"
+	serviceClusterIP         = metaLabelPrefix + "service_cluster_ip"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
