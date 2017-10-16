@@ -496,6 +496,23 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			OldestInclusive: from,
 			NewestInclusive: through,
 		}))
+		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
+		for _, ts := range resp.Results[i].Timeseries {
+			globalUsed := map[string]struct{}{}
+			for _, l := range ts.Labels {
+				if _, ok := externalLabels[model.LabelName(l.Name)]; ok {
+					globalUsed[l.Name] = struct{}{}
+				}
+			}
+			for ln, lv := range externalLabels {
+				if _, ok := globalUsed[string(ln)]; !ok {
+					ts.Labels = append(ts.Labels, &remote.LabelPair{
+						Name:  string(ln),
+						Value: string(lv),
+					})
+				}
+			}
+		}
 	}
 
 	if err := remote.EncodeReadResponse(&resp, w); err != nil {
