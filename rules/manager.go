@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -470,12 +471,16 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	// Get all rule files and load the groups they define.
 	var files []string
 	for _, pat := range conf.RuleFiles {
-		fs, err := filepath.Glob(pat)
-		if err != nil {
-			// The only error can be a bad pattern.
-			return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
+		if strings.Contains(pat, "*") {
+			fs, err := filepath.Glob(pat)
+			if err != nil {
+				// The only error can be a bad pattern.
+				return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
+			}
+			files = append(files, fs...)
+		} else {
+			files = append(files, pat)
 		}
-		files = append(files, fs...)
 	}
 
 	// To be replaced with a configurable per-group interval.
