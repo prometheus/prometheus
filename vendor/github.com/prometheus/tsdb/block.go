@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -26,33 +27,16 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
-// DiskBlock represents a data block backed by on-disk data.
-type DiskBlock interface {
-	BlockReader
-
-	// Directory where block data is stored.
-	Dir() string
-
-	// Stats returns statistics about the block.
-	Meta() BlockMeta
-
-	Delete(mint, maxt int64, m ...labels.Matcher) error
-
-	Snapshot(dir string) error
-
-	Close() error
-}
-
 // BlockReader provides reading access to a data block.
 type BlockReader interface {
 	// Index returns an IndexReader over the block's data.
-	Index() IndexReader
+	Index() (IndexReader, error)
 
 	// Chunks returns a ChunkReader over the block's data.
-	Chunks() ChunkReader
+	Chunks() (ChunkReader, error)
 
 	// Tombstones returns a TombstoneReader over the block's deleted data.
-	Tombstones() TombstoneReader
+	Tombstones() (TombstoneReader, error)
 }
 
 // Appendable defines an entity to which data can be appended.
@@ -149,7 +133,12 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	return renameFile(tmp, path)
 }
 
-type persistedBlock struct {
+// Block represents a directory of time series data covering a continous time range.
+type Block struct {
+	mtx            sync.RWMutex
+	closing        bool
+	pendingReaders sync.WaitGroup
+
 	dir  string
 	meta BlockMeta
 
@@ -159,7 +148,9 @@ type persistedBlock struct {
 	tombstones tombstoneReader
 }
 
-func newPersistedBlock(dir string, pool chunks.Pool) (*persistedBlock, error) {
+// OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
+// to instantiate chunk structs.
+func OpenBlock(dir string, pool chunks.Pool) (*Block, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
@@ -179,7 +170,7 @@ func newPersistedBlock(dir string, pool chunks.Pool) (*persistedBlock, error) {
 		return nil, err
 	}
 
-	pb := &persistedBlock{
+	pb := &Block{
 		dir:        dir,
 		meta:       *meta,
 		chunkr:     cr,
@@ -189,28 +180,110 @@ func newPersistedBlock(dir string, pool chunks.Pool) (*persistedBlock, error) {
 	return pb, nil
 }
 
-func (pb *persistedBlock) Close() error {
+// Close closes the on-disk block. It blocks as long as there are readers reading from the block.
+func (pb *Block) Close() error {
+	pb.mtx.Lock()
+	pb.closing = true
+	pb.mtx.Unlock()
+
+	pb.pendingReaders.Wait()
+
 	var merr MultiError
 
 	merr.Add(pb.chunkr.Close())
 	merr.Add(pb.indexr.Close())
+	merr.Add(pb.tombstones.Close())
 
 	return merr.Err()
 }
 
-func (pb *persistedBlock) String() string {
+func (pb *Block) String() string {
 	return pb.meta.ULID.String()
 }
 
-func (pb *persistedBlock) Dir() string         { return pb.dir }
-func (pb *persistedBlock) Index() IndexReader  { return pb.indexr }
-func (pb *persistedBlock) Chunks() ChunkReader { return pb.chunkr }
-func (pb *persistedBlock) Tombstones() TombstoneReader {
-	return pb.tombstones
-}
-func (pb *persistedBlock) Meta() BlockMeta { return pb.meta }
+// Dir returns the directory of the block.
+func (pb *Block) Dir() string { return pb.dir }
 
-func (pb *persistedBlock) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+// Meta returns meta information about the block.
+func (pb *Block) Meta() BlockMeta { return pb.meta }
+
+// ErrClosing is returned when a block is in the process of being closed.
+var ErrClosing = errors.New("block is closing")
+
+func (pb *Block) startRead() error {
+	pb.mtx.RLock()
+	defer pb.mtx.RUnlock()
+
+	if pb.closing {
+		return ErrClosing
+	}
+	pb.pendingReaders.Add(1)
+	return nil
+}
+
+// Index returns a new IndexReader against the block data.
+func (pb *Block) Index() (IndexReader, error) {
+	if err := pb.startRead(); err != nil {
+		return nil, err
+	}
+	return blockIndexReader{IndexReader: pb.indexr, b: pb}, nil
+}
+
+// Chunks returns a new ChunkReader against the block data.
+func (pb *Block) Chunks() (ChunkReader, error) {
+	if err := pb.startRead(); err != nil {
+		return nil, err
+	}
+	return blockChunkReader{ChunkReader: pb.chunkr, b: pb}, nil
+}
+
+// Tombstones returns a new TombstoneReader against the block data.
+func (pb *Block) Tombstones() (TombstoneReader, error) {
+	if err := pb.startRead(); err != nil {
+		return nil, err
+	}
+	return blockTombstoneReader{TombstoneReader: pb.tombstones, b: pb}, nil
+}
+
+type blockIndexReader struct {
+	IndexReader
+	b *Block
+}
+
+func (r blockIndexReader) Close() error {
+	r.b.pendingReaders.Done()
+	return nil
+}
+
+type blockTombstoneReader struct {
+	TombstoneReader
+	b *Block
+}
+
+func (r blockTombstoneReader) Close() error {
+	r.b.pendingReaders.Done()
+	return nil
+}
+
+type blockChunkReader struct {
+	ChunkReader
+	b *Block
+}
+
+func (r blockChunkReader) Close() error {
+	r.b.pendingReaders.Done()
+	return nil
+}
+
+// Delete matching series between mint and maxt in the block.
+func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
+	pb.mtx.Lock()
+	defer pb.mtx.Unlock()
+
+	if pb.closing {
+		return ErrClosing
+	}
+
 	pr := newPostingsReader(pb.indexr)
 	p, absent := pr.Select(ms...)
 
@@ -262,7 +335,8 @@ Outer:
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 
-func (pb *persistedBlock) Snapshot(dir string) error {
+// Snapshot creates snapshot of the block into dir.
+func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
 	if err := os.MkdirAll(blockDir, 0777); err != nil {
 		return errors.Wrap(err, "create snapshot block dir")
@@ -311,7 +385,6 @@ func clampInterval(a, b, mint, maxt int64) (int64, int64) {
 	if b > maxt {
 		b = maxt
 	}
-
 	return a, b
 }
 
