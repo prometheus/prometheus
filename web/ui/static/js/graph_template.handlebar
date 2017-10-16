@@ -39,6 +39,37 @@
                       <div class="clearfix">
                         <!-- Extracted to force grouped inputs. -->
                         <div class="prometheus_input_group range_input pull-left">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="dec_start"
+                              title="Rewind the start time.">
+                            <i class="glyphicon glyphicon-backward"></i>
+                          </button>
+
+                          <input
+                              class="pull-left date_input input"
+                              id="start{{id}}"
+                              title="Start time of graph (UTC)"
+                              placeholder="From"
+                              data-format="yyyy-MM-dd"
+                              type="text"
+                              name="start_input"
+                              size="16"
+                              value="{{start}}">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_start"
+                              title="Advance the start time.">
+                            <i class="glyphicon glyphicon-forward"></i>
+                          </button>
+                        </div>
+
+                        <!-- Extracted to force grouped inputs. -->
+                        <div class="prometheus_input_group pull-left">
                           <button
                             class="btn btn-default pull-left"
                             type="button"
