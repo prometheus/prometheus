@@ -113,28 +113,28 @@
 			"revisionTime": "2016-11-02T21:59:28Z"
 		},
 		{
-			"checksumSHA1": "zu5C95rmCZff6NYZb62lEaT5ibE=",
+			"checksumSHA1": "Y+cPwQL0dZMyqp3wI+KJWmA9KQ8=",
 			"path": "github.com/aws/aws-sdk-go/aws/credentials",
-			"revision": "707203bc55114ed114446bf57949c5c211d8b7c0",
-			"revisionTime": "2016-11-02T21:59:28Z"
+			"revision": "4c984c1f412ef5c5cdbb1a3f1c6ce5e3155ca9ab",
+			"revisionTime": "2017-09-22T21:25:34Z"
 		},
 		{
-			"checksumSHA1": "KQiUK/zr3mqnAXD7x/X55/iNme0=",
+			"checksumSHA1": "u3GOAJLmdvbuNUeUEcZSEAOeL/0=",
 			"path": "github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds",
-			"revision": "707203bc55114ed114446bf57949c5c211d8b7c0",
-			"revisionTime": "2016-11-02T21:59:28Z"
+			"revision": "4c984c1f412ef5c5cdbb1a3f1c6ce5e3155ca9ab",
+			"revisionTime": "2017-09-22T21:25:34Z"
 		},
 		{
 			"checksumSHA1": "NUJUTWlc1sV8b7WjfiYc4JZbXl0=",
 			"path": "github.com/aws/aws-sdk-go/aws/credentials/endpointcreds",
-			"revision": "707203bc55114ed114446bf57949c5c211d8b7c0",
-			"revisionTime": "2016-11-02T21:59:28Z"
+			"revision": "4c984c1f412ef5c5cdbb1a3f1c6ce5e3155ca9ab",
+			"revisionTime": "2017-09-22T21:25:34Z"
 		},
 		{
-			"checksumSHA1": "4Ipx+5xN0gso+cENC2MHMWmQlR4=",
+			"checksumSHA1": "JEYqmF83O5n5bHkupAzA6STm0no=",
 			"path": "github.com/aws/aws-sdk-go/aws/credentials/stscreds",
-			"revision": "707203bc55114ed114446bf57949c5c211d8b7c0",
-			"revisionTime": "2016-11-02T21:59:28Z"
+			"revision": "4c984c1f412ef5c5cdbb1a3f1c6ce5e3155ca9ab",
+			"revisionTime": "2017-09-22T21:25:34Z"
 		},
 		{
 			"checksumSHA1": "DwhFsNluCFEwqzyp3hbJR3q2Wqs=",
@@ -165,6 +165,12 @@
 			"path": "github.com/aws/aws-sdk-go/aws/signer/v4",
 			"revision": "707203bc55114ed114446bf57949c5c211d8b7c0",
 			"revisionTime": "2016-11-02T21:59:28Z"
+		},
+		{
+			"checksumSHA1": "04ypv4x12l4q0TksA1zEVsmgpvw=",
+			"path": "github.com/aws/aws-sdk-go/internal/shareddefaults",
+			"revision": "4c984c1f412ef5c5cdbb1a3f1c6ce5e3155ca9ab",
+			"revisionTime": "2017-09-22T21:25:34Z"
 		},
 		{
 			"checksumSHA1": "Esab5F8KswqkTdB4TtjSvZgs56k=",

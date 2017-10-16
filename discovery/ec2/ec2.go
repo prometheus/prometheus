@@ -73,6 +73,7 @@ type Discovery struct {
 	aws      *aws.Config
 	interval time.Duration
 	profile  string
+	path     string
 	roleARN  string
 	port     int
 	logger   log.Logger
@@ -80,9 +81,11 @@ type Discovery struct {
 
 // NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
-	creds := credentials.NewStaticCredentials(conf.AccessKey, string(conf.SecretKey), "")
-	if conf.AccessKey == "" && conf.SecretKey == "" {
-		creds = nil
+	var creds *credentials.Credentials
+	if conf.AccessKey != "" && string(conf.SecretKey) !="" {
+		creds = credentials.NewStaticCredentials(conf.AccessKey, string(conf.SecretKey), "")
+	} else {
+		creds = credentials.NewSharedCredentials(conf.CredentialPath, conf.Profile)
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -93,6 +96,7 @@ func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
 			Credentials: creds,
 		},
 		profile:  conf.Profile,
+		path:     conf.CredentialPath,
 		roleARN:  conf.RoleARN,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
