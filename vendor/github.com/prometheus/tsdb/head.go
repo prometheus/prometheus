@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"math"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -73,6 +74,7 @@ type headMetrics struct {
 	series              prometheus.Gauge
 	seriesCreated       prometheus.Counter
 	seriesRemoved       prometheus.Counter
+	seriesNotFound      prometheus.Counter
 	chunks              prometheus.Gauge
 	chunksCreated       prometheus.Gauge
 	chunksRemoved       prometheus.Gauge
@@ -102,6 +104,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
 	})
+	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "tsdb_head_series_not_found",
+		Help: "Total number of requests for series that were not found.",
+	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "tsdb_head_chunks",
 		Help: "Total number of chunks in the head block.",
@@ -118,13 +124,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "tsdb_head_gc_duration_seconds",
 		Help: "Runtime of garbage collection in the head block.",
 	})
-	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "tsdb_head_max_time",
 		Help: "Maximum timestamp of the head block.",
 	}, func() float64 {
 		return float64(h.MaxTime())
 	})
-	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "tsdb_head_min_time",
 		Help: "Minimum time bound of the head block.",
 	}, func() float64 {
@@ -148,6 +154,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.series,
 			m.seriesCreated,
 			m.seriesRemoved,
+			m.seriesNotFound,
 			m.minTime,
 			m.maxTime,
 			m.gcDuration,
@@ -178,7 +185,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		series:     newStripeSeries(),
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
-		postings:   newMemPostings(),
+		postings:   newUnorderedMemPostings(),
 		tombstones: newEmptyTombstoneReader(),
 	}
 	h.metrics = newHeadMetrics(h, r)
@@ -186,28 +193,19 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 	return h, nil
 }
 
-// ReadWAL initializes the head by consuming the write ahead log.
-func (h *Head) ReadWAL() error {
-	r := h.wal.Reader()
-	mint := h.MinTime()
+// processWALSamples adds a partition of samples it receives to the head and passes
+// them on to other workers.
+// Samples before the mint timestamp are discarded.
+func (h *Head) processWALSamples(
+	mint int64,
+	partition, total uint64,
+	input <-chan []RefSample, output chan<- []RefSample,
+) (unknownRefs uint64) {
+	defer close(output)
 
-	// Track number of samples that referenced a series we don't know about
-	// for error reporting.
-	var unknownRefs int
-
-	seriesFunc := func(series []RefSeries) error {
-		for _, s := range series {
-			h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
-
-			if h.lastSeriesID < s.Ref {
-				h.lastSeriesID = s.Ref
-			}
-		}
-		return nil
-	}
-	samplesFunc := func(samples []RefSample) error {
+	for samples := range input {
 		for _, s := range samples {
-			if s.T < mint {
+			if s.T < mint || s.Ref%total != partition {
 				continue
 			}
 			ms := h.series.getByID(s.Ref)
@@ -221,9 +219,69 @@ func (h *Head) ReadWAL() error {
 				h.metrics.chunks.Inc()
 			}
 		}
-		return nil
+		output <- samples
 	}
-	deletesFunc := func(stones []Stone) error {
+	return unknownRefs
+}
+
+// ReadWAL initializes the head by consuming the write ahead log.
+func (h *Head) ReadWAL() error {
+	defer h.postings.ensureOrder()
+
+	r := h.wal.Reader()
+	mint := h.MinTime()
+
+	// Track number of samples that referenced a series we don't know about
+	// for error reporting.
+	var unknownRefs uint64
+
+	// Start workers that each process samples for a partition of the series ID space.
+	// They are connected through a ring of channels which ensures that all sample batches
+	// read from the WAL are processed in order.
+	var (
+		wg         sync.WaitGroup
+		n          = runtime.GOMAXPROCS(0)
+		firstInput = make(chan []RefSample, 300)
+		input      = firstInput
+	)
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		output := make(chan []RefSample, 300)
+
+		go func(i int, input <-chan []RefSample, output chan<- []RefSample) {
+			unknown := h.processWALSamples(mint, uint64(i), uint64(n), input, output)
+			atomic.AddUint64(&unknownRefs, unknown)
+			wg.Done()
+		}(i, input, output)
+
+		// The output feeds the next worker goroutine. For the last worker,
+		// it feeds the initial input again to reuse the RefSample slices.
+		input = output
+	}
+
+	// TODO(fabxc): series entries spread between samples can starve the sample workers.
+	// Even with bufferd channels, this can impact startup time with lots of series churn.
+	// We must not pralellize series creation itself but could make the indexing asynchronous.
+	seriesFunc := func(series []RefSeries) {
+		for _, s := range series {
+			h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
+
+			if h.lastSeriesID < s.Ref {
+				h.lastSeriesID = s.Ref
+			}
+		}
+	}
+	samplesFunc := func(samples []RefSample) {
+		var buf []RefSample
+		select {
+		case buf = <-input:
+		default:
+			buf = make([]RefSample, 0, len(samples)*11/10)
+		}
+		firstInput <- append(buf[:0], samples...)
+	}
+	deletesFunc := func(stones []Stone) {
 		for _, s := range stones {
 			for _, itv := range s.intervals {
 				if itv.Maxt < mint {
@@ -232,15 +290,21 @@ func (h *Head) ReadWAL() error {
 				h.tombstones.add(s.ref, itv)
 			}
 		}
-		return nil
 	}
 
+	err := r.Read(seriesFunc, samplesFunc, deletesFunc)
+
+	// Signal termination to first worker and wait for last one to close its output channel.
+	close(firstInput)
+	for range input {
+	}
+	wg.Wait()
+
+	if err != nil {
+		return errors.Wrap(err, "consume WAL")
+	}
 	if unknownRefs > 0 {
 		level.Warn(h.logger).Log("msg", "unknown series references in WAL samples", "count", unknownRefs)
-	}
-
-	if err := r.Read(seriesFunc, samplesFunc, deletesFunc); err != nil {
-		return errors.Wrap(err, "consume WAL")
 	}
 	return nil
 }
@@ -301,6 +365,23 @@ func (h *Head) initTime(t int64) (initialized bool) {
 	atomic.CompareAndSwapInt64(&h.maxTime, math.MinInt64, t)
 
 	return true
+}
+
+type rangeHead struct {
+	head       *Head
+	mint, maxt int64
+}
+
+func (h *rangeHead) Index() (IndexReader, error) {
+	return h.head.indexRange(h.mint, h.maxt), nil
+}
+
+func (h *rangeHead) Chunks() (ChunkReader, error) {
+	return h.head.chunksRange(h.mint, h.maxt), nil
+}
+
+func (h *rangeHead) Tombstones() (TombstoneReader, error) {
+	return h.head.tombstones, nil
 }
 
 // initAppender is a helper to initialize the time bounds of a the head
@@ -609,13 +690,14 @@ func (h *Head) gc() {
 	h.symMtx.Unlock()
 }
 
-func (h *Head) Tombstones() TombstoneReader {
-	return h.tombstones
+// Tombstones returns a new reader over the head's tombstones
+func (h *Head) Tombstones() (TombstoneReader, error) {
+	return h.tombstones, nil
 }
 
 // Index returns an IndexReader against the block.
-func (h *Head) Index() IndexReader {
-	return h.indexRange(math.MinInt64, math.MaxInt64)
+func (h *Head) Index() (IndexReader, error) {
+	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
@@ -626,8 +708,8 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 }
 
 // Chunks returns a ChunkReader against the block.
-func (h *Head) Chunks() ChunkReader {
-	return h.chunksRange(math.MinInt64, math.MaxInt64)
+func (h *Head) Chunks() (ChunkReader, error) {
+	return h.chunksRange(math.MinInt64, math.MaxInt64), nil
 }
 
 func (h *Head) chunksRange(mint, maxt int64) *headChunkReader {
@@ -680,10 +762,11 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 
 	s.Lock()
 	c := s.chunk(int(cid))
+	mint, maxt := c.minTime, c.maxTime
 	s.Unlock()
 
 	// Do not expose chunks that are outside of the specified range.
-	if c == nil || !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
+	if c == nil || !intervalOverlap(mint, maxt, h.mint, h.maxt) {
 		return nil, ErrNotFound
 	}
 	return &safeChunk{
@@ -709,23 +792,6 @@ func (c *safeChunk) Iterator() chunks.Iterator {
 // func (c *safeChunk) Appender() (chunks.Appender, error) { panic("illegal") }
 // func (c *safeChunk) Bytes() []byte                      { panic("illegal") }
 // func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
-
-type rangeHead struct {
-	head       *Head
-	mint, maxt int64
-}
-
-func (h *rangeHead) Index() IndexReader {
-	return h.head.indexRange(h.mint, h.maxt)
-}
-
-func (h *rangeHead) Chunks() ChunkReader {
-	return h.head.chunksRange(h.mint, h.maxt)
-}
-
-func (h *rangeHead) Tombstones() TombstoneReader {
-	return newEmptyTombstoneReader()
-}
 
 type headIndexReader struct {
 	head       *Head
@@ -780,24 +846,17 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 	if err := p.Err(); err != nil {
 		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
-	var err error
 
 	sort.Slice(ep, func(i, j int) bool {
-		if err != nil {
-			return false
-		}
 		a := h.head.series.getByID(ep[i])
 		b := h.head.series.getByID(ep[j])
 
 		if a == nil || b == nil {
-			err = errors.Errorf("series not found")
+			level.Debug(h.head.logger).Log("msg", "looked up series not found")
 			return false
 		}
 		return labels.Compare(a.lset, b.lset) < 0
 	})
-	if err != nil {
-		return errPostings{err: err}
-	}
 	return newListPostings(ep)
 }
 
@@ -806,6 +865,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkM
 	s := h.head.series.getByID(ref)
 
 	if s == nil {
+		h.head.metrics.seriesNotFound.Inc()
 		return ErrNotFound
 	}
 	*lbls = append((*lbls)[:0], s.lset...)
@@ -1169,10 +1229,12 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 		c = s.cut(t)
 		chunkCreated = true
 	}
+	numSamples := c.chunk.NumSamples()
+
 	if c.maxTime >= t {
 		return false, chunkCreated
 	}
-	if c.chunk.NumSamples() > samplesPerChunk/4 && t >= s.nextAt {
+	if numSamples > samplesPerChunk/4 && t >= s.nextAt {
 		c = s.cut(t)
 		chunkCreated = true
 	}
@@ -1180,7 +1242,7 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 
 	c.maxTime = t
 
-	if c.chunk.NumSamples() == samplesPerChunk/4 {
+	if numSamples == samplesPerChunk/4 {
 		_, maxt := rangeForTimestamp(c.minTime, s.chunkRange)
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxt)
 	}

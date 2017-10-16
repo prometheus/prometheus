@@ -140,7 +140,11 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 }
 
 func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
-	return querier{q: a.db.Querier(mint, maxt)}, nil
+	q, err := a.db.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return querier{q: q}, nil
 }
 
 // Appender returns a new appender against the storage.

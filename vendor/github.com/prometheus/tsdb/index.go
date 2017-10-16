@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"math"
 
-	"github.com/prometheus/tsdb/fileutil"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -525,6 +525,8 @@ type IndexReader interface {
 
 	// Postings returns the postings list iterator for the label pair.
 	// The Postings here contain the offsets to the series inside the index.
+	// Found IDs are not strictly required to point to a valid Series, e.g. during
+	// background garbage collections.
 	Postings(name, value string) (Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
@@ -533,6 +535,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
+	// Returns ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]ChunkMeta) error
 
 	// LabelIndices returns the label pairs for which indices exist.
