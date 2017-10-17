@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/kairosdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
 	"github.com/prometheus/prometheus/prompb"
 )
@@ -54,6 +55,7 @@ type config struct {
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
+	kairosdbURL             string
 }
 
 var (
@@ -136,6 +138,9 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.influxdbDatabase, "influxdb.database", "prometheus",
 		"The name of the database to use for storing samples in InfluxDB.",
 	)
+	flag.StringVar(&cfg.kairosdbURL, "kairosdb-url", "",
+		"The URL of the remote KairosDB server to send samples to. None, if empty.",
+	)
 	flag.DurationVar(&cfg.remoteTimeout, "send-timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
 	)
@@ -196,6 +201,14 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		prometheus.MustRegister(c)
 		writers = append(writers, c)
 		readers = append(readers, c)
+	}
+	if cfg.kairosdbURL != "" {
+		c := kairosdb.NewClient(
+			log.With(logger, "storage", "KairosDB"),
+			cfg.kairosdbURL,
+			cfg.remoteTimeout,
+		)
+		writers = append(writers, c)
 	}
 	level.Info(logger).Log("Starting up...")
 	return writers, readers
