@@ -61,6 +61,10 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "bad_annotation.bad.yaml",
 			errMsg:   "invalid annotation name",
 		},
+		{
+			filename: "invalid_record_name.bad.yaml",
+			errMsg:   "invalid recording rule name",
+		},
 	}
 
 	for _, c := range table {
