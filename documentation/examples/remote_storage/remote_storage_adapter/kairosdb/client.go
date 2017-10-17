@@ -83,7 +83,7 @@ func (c *Client) Write(samples model.Samples) error {
 	reqs := make([]StoreSamplesRequest, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
-		
+
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			level.Debug(c.logger).Log("msg", "cannot send value to KairosDB, skipping sample", "value", v, "sample", s)
 			continue
@@ -123,7 +123,6 @@ func (c *Client) Write(samples model.Samples) error {
 		return nil
 	}
 
-
 	// API returns status code 400 on error, encoding error details in the
 	// response content in JSON.
 	buf, err = ioutil.ReadAll(resp.Body)
@@ -136,7 +135,7 @@ func (c *Client) Write(samples model.Samples) error {
 	if err := json.Unmarshal(buf, &r); err != nil {
 		return err
 	}
-	return fmt.Errorf("failed to write %d samples to KairosDB, %d succeeded", len(r["errors"]), totalRequests - len(r["errors"]))
+	return fmt.Errorf("failed to write %d samples to KairosDB, %d succeeded", len(r["errors"]), totalRequests-len(r["errors"]))
 }
 
 // Name identifies the client as an KairosDB client.
