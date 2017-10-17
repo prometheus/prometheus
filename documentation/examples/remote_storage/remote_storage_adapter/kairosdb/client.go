@@ -68,6 +68,11 @@ func tagsFromMetric(m model.Metric) map[string]string {
 		if l == model.MetricNameLabel {
 			continue
 		}
+
+		if string(v) == "" {
+			continue
+		}
+
 		tags[string(l)] = string(v)
 	}
 	return tags
@@ -78,14 +83,15 @@ func (c *Client) Write(samples model.Samples) error {
 	reqs := make([]StoreSamplesRequest, 0, len(samples))
 	for _, s := range samples {
 		v := float64(s.Value)
+		
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			level.Debug(c.logger).Log("msg", "cannot send value to KairosDB, skipping sample", "value", v, "sample", s)
 			continue
 		}
 		metric := s.Metric[model.MetricNameLabel]
 		reqs = append(reqs, StoreSamplesRequest{
-			Name:      metric,
-			Timestamp: s.Timestamp.Unix() / int64(time.Millisecond),
+			Name:      string(metric),
+			Timestamp: s.Timestamp.UnixNano() / int64(time.Millisecond),
 			Value:     v,
 			Tags:      tagsFromMetric(s.Metric),
 		})
@@ -95,6 +101,8 @@ func (c *Client) Write(samples model.Samples) error {
 	if err != nil {
 		return err
 	}
+
+	totalRequests := len(reqs)
 
 	u.Path = postEndpoint
 	buf, err := json.Marshal(reqs)
@@ -115,18 +123,20 @@ func (c *Client) Write(samples model.Samples) error {
 		return nil
 	}
 
+
 	// API returns status code 400 on error, encoding error details in the
 	// response content in JSON.
 	buf, err = ioutil.ReadAll(resp.Body)
+
 	if err != nil {
 		return err
 	}
 
-	var r map[string]int
+	var r map[string][]interface{}
 	if err := json.Unmarshal(buf, &r); err != nil {
 		return err
 	}
-	return fmt.Errorf("failed to write %d samples to KairosDB, %d succeeded", r["failed"], r["success"])
+	return fmt.Errorf("failed to write %d samples to KairosDB, %d succeeded", len(r["errors"]), totalRequests - len(r["errors"]))
 }
 
 // Name identifies the client as an KairosDB client.
