@@ -128,6 +128,12 @@ func (r *Rule) Validate() (errs []error) {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
 		}
 	}
+	for i, b := range r.Record {
+		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || b == ':' || (b >= '0' && b <= '9' && i > 0)) {
+			errs = append(errs, errors.Errorf("record name includes invalid character: '%v'", string(b)))
+			break
+		}
+	}
 
 	for k, v := range r.Labels {
 		if !model.LabelName(k).IsValid() {
