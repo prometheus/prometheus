@@ -1,3 +1,12 @@
+## v2.0.0-rc.1 / 2017-10-17
+
+* [BUGFIX] Fixed Remote-read to not drop the first series.
+* [BUGFIX] Validate recording-rule names.
+* [BUGFIX] Fix several races.
+* [BUGFIX] Only close blocks if there are no iterators accessing it.
+* [FEATURE] Added a warning for time-drift between the browser and the prometheus-server.
+* [ENHANCEMENT] Much faster WAL read-back on restart.
+
 ## 1.8.0 / 2017-10-06
 
 * [CHANGE] Rule links link to the _Console_ tab rather than the _Graph_ tab to
