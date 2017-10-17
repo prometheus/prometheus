@@ -55,7 +55,7 @@ func NewClient(logger log.Logger, url string, timeout time.Duration) *Client {
 // StoreSamplesRequest is used for building a JSON request for storing samples
 // via the KairosDB.
 type StoreSamplesRequest struct {
-	Name      TagValue          `json:"name"`
+	Name      string            `json:"name"`
 	Timestamp int64             `json:"timestamp"`
 	Value     float64           `json:"value"`
 	Tags      map[string]string `json:"tags"`
@@ -82,7 +82,7 @@ func (c *Client) Write(samples model.Samples) error {
 			level.Debug(c.logger).Log("msg", "cannot send value to KairosDB, skipping sample", "value", v, "sample", s)
 			continue
 		}
-		metric := TagValue(s.Metric[model.MetricNameLabel])
+		metric := s.Metric[model.MetricNameLabel]
 		reqs = append(reqs, StoreSamplesRequest{
 			Name:      metric,
 			Timestamp: s.Timestamp.Unix() / int64(time.Millisecond),
