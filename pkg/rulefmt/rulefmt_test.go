@@ -63,7 +63,7 @@ func TestParseFileFailure(t *testing.T) {
 		},
 		{
 			filename: "invalid_record_name.bad.yaml",
-			errMsg:   "record name includes invalid character: '{'",
+			errMsg:   "invalid recording rule name",
 		},
 	}
 
