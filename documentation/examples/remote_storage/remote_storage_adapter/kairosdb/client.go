@@ -1,0 +1,144 @@
+// Copyright 2016 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package kairosdb
+
+import (
+	"fmt"
+	"io/ioutil"
+	"net/http"
+
+	"bytes"
+	"context"
+	"encoding/json"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/common/model"
+	"golang.org/x/net/context/ctxhttp"
+	"math"
+	"net/url"
+	"time"
+)
+
+const (
+	postEndpoint    = "/api/v1/datapoints"
+	contentTypeJSON = "application/json"
+)
+
+// Client allows sending batches of Prometheus samples to KairosDB.
+type Client struct {
+	logger log.Logger
+
+	url     string
+	timeout time.Duration
+}
+
+// NewClient creates a new Client.
+func NewClient(logger log.Logger, url string, timeout time.Duration) *Client {
+	return &Client{
+		logger:  logger,
+		url:     url,
+		timeout: timeout,
+	}
+}
+
+// StoreSamplesRequest is used for building a JSON request for storing samples
+// via the KairosDB.
+type StoreSamplesRequest struct {
+	Name      string            `json:"name"`
+	Timestamp int64             `json:"timestamp"`
+	Value     float64           `json:"value"`
+	Tags      map[string]string `json:"tags"`
+}
+
+// tagsFromMetric translates Prometheus metric into KairosDB tags.
+func tagsFromMetric(m model.Metric) map[string]string {
+	tags := make(map[string]string, len(m)-1)
+	for l, v := range m {
+		if l == model.MetricNameLabel {
+			continue
+		}
+
+		if string(v) == "" {
+			continue
+		}
+
+		tags[string(l)] = string(v)
+	}
+	return tags
+}
+
+// Write sends a batch of samples to KairosDB via its HTTP API.
+func (c *Client) Write(samples model.Samples) error {
+	reqs := make([]StoreSamplesRequest, 0, len(samples))
+	for _, s := range samples {
+		v := float64(s.Value)
+
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			level.Debug(c.logger).Log("msg", "cannot send value to KairosDB, skipping sample", "value", v, "sample", s)
+			continue
+		}
+		metric := s.Metric[model.MetricNameLabel]
+		reqs = append(reqs, StoreSamplesRequest{
+			Name:      string(metric),
+			Timestamp: s.Timestamp.UnixNano() / int64(time.Millisecond),
+			Value:     v,
+			Tags:      tagsFromMetric(s.Metric),
+		})
+	}
+
+	u, err := url.Parse(c.url)
+	if err != nil {
+		return err
+	}
+
+	totalRequests := len(reqs)
+
+	u.Path = postEndpoint
+	buf, err := json.Marshal(reqs)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	resp, err := ctxhttp.Post(ctx, http.DefaultClient, u.String(), contentTypeJSON, bytes.NewBuffer(buf))
+
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
+	// API returns status code 400 on error, encoding error details in the
+	// response content in JSON.
+	buf, err = ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		return err
+	}
+
+	var r map[string][]interface{}
+	if err := json.Unmarshal(buf, &r); err != nil {
+		return err
+	}
+	return fmt.Errorf("failed to write %d samples to KairosDB, %d succeeded", len(r["errors"]), totalRequests-len(r["errors"]))
+}
+
+// Name identifies the client as an KairosDB client.
+func (c Client) Name() string {
+	return "kairosdb"
+}
