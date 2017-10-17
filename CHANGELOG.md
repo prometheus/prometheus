@@ -1,3 +1,12 @@
+## 2.0.0-rc.1 / 2017-10-17
+
+* [FEATURE] Added a warning for time-drift between the browser and the prometheus-server.
+* [ENHANCEMENT] Much faster WAL read-back on restart.
+* [BUGFIX] Fixed Remote-read to not drop the first series.
+* [BUGFIX] Validate recording-rule names.
+* [BUGFIX] Fix several races.
+* [BUGFIX] Only close blocks if there are no iterators accessing it.
+
 ## 1.8.0 / 2017-10-06
 
 * [CHANGE] Rule links link to the _Console_ tab rather than the _Graph_ tab to
@@ -27,20 +36,6 @@
 * [BUGFIX] Apply path prefix to redirect from deprecated graph URL.
 * [BUGFIX] Fixed tests on MS Windows.
 * [BUGFIX] Check for invalid UTF-8 in label values after relabeling.
-
-## v2.0.0-rc.0 / 2017-10-05
-
-This release includes numerous changes to the new storage layer. The main changes are:
-
-* [CHANGE] Remove `count_scalar`, `keep_common` and `drop_common_labels` functions
-* [CHANGE] Breaking change in the index format for better consistency 
-* [BUGFIX] Fix panic due garbage collected mmap'ed strings 
-* [BUGFIX] Fix broken snapshots and admin APIs 
-* [BUGFIX] Send HTTP Accept header when scraping
-* [BUGFIX] Use the WAL flush interval passed instead of the hardcoded value
-
-This release requires a clean storage directory and is not compatible with files
-created by previous beta releases.
 
 ## 1.7.2 / 2017-09-26
 
