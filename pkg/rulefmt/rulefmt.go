@@ -128,7 +128,7 @@ func (r *Rule) Validate() (errs []error) {
 			errs = append(errs, errors.Errorf("invalid field 'for' in recording rule"))
 		}
 		if !model.IsValidMetricName(model.LabelValue(r.Record)) {
-			errs = append(errs, errors.Errorf("invalid recording rule name"))
+			errs = append(errs, errors.Errorf("invalid recording rule name: %s", r.Record))
 		}
 	}
 
