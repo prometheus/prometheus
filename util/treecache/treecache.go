@@ -49,6 +49,7 @@ type ZookeeperLogger struct {
 	logger log.Logger
 }
 
+// NewZookeeperLogger is a constructor for ZookeeperLogger
 func NewZookeeperLogger(logger log.Logger) ZookeeperLogger {
 	return ZookeeperLogger{logger: logger}
 }
