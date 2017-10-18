@@ -51,9 +51,7 @@ type ZookeeperLogger struct {
 
 // Implements zk.Logger
 func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
-	if zl.logger != nil {
-		level.Info(zl.logger).Log("msg", fmt.Sprintf(s, i...))
-	}
+	level.Info(zl.logger).Log("msg", fmt.Sprintf(s, i...))
 }
 
 type ZookeeperTreeCache struct {
