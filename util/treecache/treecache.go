@@ -49,6 +49,11 @@ type ZookeeperLogger struct {
 	logger log.Logger
 }
 
+// NewZookeeperLogger is a constructor for ZookeeperLogger
+func NewZookeeperLogger(logger log.Logger) ZookeeperLogger {
+	return ZookeeperLogger{logger: logger}
+}
+
 // Implements zk.Logger
 func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
 	level.Info(zl.logger).Log("msg", fmt.Sprintf(s, i...))

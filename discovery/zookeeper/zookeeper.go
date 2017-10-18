@@ -68,7 +68,7 @@ func NewDiscovery(
 	}
 
 	conn, _, err := zk.Connect(srvs, timeout)
-	conn.SetLogger(treecache.ZookeeperLogger{})
+	conn.SetLogger(treecache.NewZookeeperLogger(logger))
 	if err != nil {
 		return nil
 	}
