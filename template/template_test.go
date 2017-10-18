@@ -209,9 +209,14 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ externalURL }}",
 			output: "http://testhost:9090/path/prefix",
 		},
+		{
+			// activeAt.
+			text:   "{{ activeAt }}",
+			output: "1508315335052",
+		},
 	}
 
-	time := model.Time(0)
+	time := model.Time(1508315335052)
 
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
@@ -221,9 +226,9 @@ func TestTemplateExpansion(t *testing.T) {
 		t.Fatalf("get appender: %s", err)
 	}
 
-	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 0, 11)
+	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 1508315335052, 11)
 	require.NoError(t, err)
-	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 0, 21)
+	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 1508315335052, 21)
 	require.NoError(t, err)
 
 	if err := app.Commit(); err != nil {

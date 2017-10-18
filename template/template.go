@@ -252,6 +252,9 @@ func NewTemplateExpander(ctx context.Context, text string, name string, data int
 			"externalURL": func() string {
 				return externalURL.String()
 			},
+			"activeAt": func() string {
+				return fmt.Sprintf("%d", int64(timestamp))
+			},
 		},
 	}
 }
