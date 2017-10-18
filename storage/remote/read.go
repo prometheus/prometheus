@@ -30,16 +30,34 @@ func (r *Storage) Querier(_ context.Context, mint, maxt int64) (storage.Querier,
 	defer r.mtx.Unlock()
 
 	queriers := make([]storage.Querier, 0, len(r.clients))
+	localStartTime, err := r.localStartTimeCallback()
+	if err != nil {
+		return nil, err
+	}
 	for _, c := range r.clients {
+		cmaxt := maxt
+		if !c.readRecent {
+			// Avoid queries whose timerange is later than the first timestamp in local DB.
+			if mint > localStartTime {
+				continue
+			}
+			// Query only samples older than the first timestamp in local DB.
+			if maxt > localStartTime {
+				cmaxt = localStartTime
+			}
+		}
 		queriers = append(queriers, &querier{
 			mint:           mint,
-			maxt:           maxt,
+			maxt:           cmaxt,
 			client:         c,
 			externalLabels: r.externalLabels,
 		})
 	}
-	return storage.NewMergeQuerier(queriers), nil
+	return newMergeQueriers(queriers), nil
 }
+
+// Store it in variable to make it mockable in tests since a mergeQuerier is not publicly exposed.
+var newMergeQueriers = storage.NewMergeQuerier
 
 // Querier is an adapter to make a Client usable as a storage.Querier.
 type querier struct {
