@@ -20,6 +20,12 @@ remote_write:
       action:        drop
   - url: http://remote2/push
 
+remote_read:
+  - url: http://remote1/read
+    read_recent: true
+  - url: http://remote3/read
+    read_recent: false
+
 scrape_configs:
 - job_name: prometheus
 

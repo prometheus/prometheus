@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -38,6 +39,27 @@ func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Stora
 		primary:     primary,
 		secondaries: secondaries,
 	}
+}
+
+// StartTime implements the Storage interface.
+func (f *fanout) StartTime() (int64, error) {
+	// StartTime of a fanout should be the earliest StartTime of all its storages,
+	// both primary and secondaries.
+	firstTime, err := f.primary.StartTime()
+	if err != nil {
+		return int64(model.Latest), err
+	}
+
+	for _, storage := range f.secondaries {
+		t, err := storage.StartTime()
+		if err != nil {
+			return int64(model.Latest), err
+		}
+		if t < firstTime {
+			firstTime = t
+		}
+	}
+	return firstTime, nil
 }
 
 func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {

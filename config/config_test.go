@@ -75,6 +75,19 @@ var expectedConf = &Config{
 		},
 	},
 
+	RemoteReadConfigs: []*RemoteReadConfig{
+		{
+			URL:           mustParseURL("http://remote1/read"),
+			RemoteTimeout: model.Duration(1 * time.Minute),
+			ReadRecent:    true,
+		},
+		{
+			URL:           mustParseURL("http://remote3/read"),
+			RemoteTimeout: model.Duration(1 * time.Minute),
+			ReadRecent:    false,
+		},
+	},
+
 	ScrapeConfigs: []*ScrapeConfig{
 		{
 			JobName: "prometheus",
