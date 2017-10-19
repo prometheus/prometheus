@@ -7,12 +7,6 @@ go:
 
 go_import_path: github.com/prometheus/tsdb
 
-install:
-# Hack until the dev-2.0 branch becomes master.
-- go get -d github.com/prometheus/prometheus/...
-- (cd $GOPATH/src/github.com/prometheus/prometheus && git checkout dev-2.0)
-- go get -t ./...
-
 script:
 - go test -timeout 5m ./...
 
