@@ -459,9 +459,8 @@ func TestEndpoints(t *testing.T) {
 			r, err := http.NewRequest(m, "http://example.com", strings.NewReader(q.Encode()))
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			return r, err
-		} else {
-			return http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
 		}
+		return http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
 	}
 
 	for _, test := range tests {
