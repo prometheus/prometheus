@@ -223,6 +223,8 @@ func (ts *TargetSet) setTargetGroup(name string, tg *config.TargetGroup) {
 	ts.tgroups[name+"/"+tg.Source] = tg
 }
 
+// ContainsTargetGroup returns true if target group exists in the target set
+// false otherwise
 func (ts *TargetSet) ContainsTargetGroup(name string) bool {
 	ts.mtx.RLock()
 	_, ok := ts.tgroups[name]
