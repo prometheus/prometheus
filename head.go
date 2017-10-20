@@ -665,7 +665,7 @@ func (h *Head) gc() {
 	// Rebuild symbols and label value indices from what is left in the postings terms.
 	h.postings.mtx.RLock()
 
-	symbols := make(map[string]struct{}, len(h.symbols))
+	symbols := make(map[string]struct{})
 	values := make(map[string]stringset, len(h.values))
 
 	for t := range h.postings.m {
