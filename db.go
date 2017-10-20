@@ -129,7 +129,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m := &dbMetrics{}
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_blocks_loaded",
+		Name: "prometheus_tsdb_blocks_loaded",
 		Help: "Number of currently loaded data blocks",
 	}, func() float64 {
 		db.mtx.RLock()
@@ -137,15 +137,15 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(len(db.blocks))
 	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_reloads_total",
+		Name: "prometheus_tsdb_reloads_total",
 		Help: "Number of times the database reloaded block data from disk.",
 	})
 	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_reloads_failures_total",
+		Name: "prometheus_tsdb_reloads_failures_total",
 		Help: "Number of times the database failed to reload black data from disk.",
 	})
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_triggered_total",
+		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
 
