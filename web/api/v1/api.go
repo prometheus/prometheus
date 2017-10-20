@@ -486,7 +486,26 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		iters, err := querier.QueryRange(r.Context(), from, through, matchers...)
+		// Change equality matchers which match external labels
+		// to a matcher that looks for an empty label,
+		// as that label should not be present in the storage.
+		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
+		filteredMatchers := make([]*metric.LabelMatcher, 0, len(matchers))
+		for _, m := range matchers {
+			value := externalLabels[m.Name]
+			if m.Type == metric.Equal && value == m.Value {
+				matcher, err := metric.NewLabelMatcher(metric.Equal, m.Name, "")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				filteredMatchers = append(filteredMatchers, matcher)
+			} else {
+				filteredMatchers = append(filteredMatchers, m)
+			}
+		}
+
+		iters, err := querier.QueryRange(r.Context(), from, through, filteredMatchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -496,7 +515,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			OldestInclusive: from,
 			NewestInclusive: through,
 		}))
-		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
 		for _, ts := range resp.Results[i].Timeseries {
 			globalUsed := map[string]struct{}{}
 			for _, l := range ts.Labels {

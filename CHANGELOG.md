@@ -1,6 +1,6 @@
 ## 1.8.1 / 2017-10-19
 
-* [BUGFIX] Apply external labels to remote read endpoint
+* [BUGFIX] Correctly handle external labels on remote read endpoint
 
 ## 1.8.0 / 2017-10-06
 
