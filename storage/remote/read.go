@@ -78,7 +78,7 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res))
 	for _, ts := range res {
 		labels := labelPairsToLabels(ts.Labels)
-		removeLabels(labels, added)
+		removeLabels(&labels, added)
 		series = append(series, &concreteSeries{
 			labels:  labels,
 			samples: ts.Samples,
@@ -254,10 +254,10 @@ func (q *querier) addExternalLabels(matchers []*labels.Matcher) ([]*labels.Match
 	return matchers, el
 }
 
-func removeLabels(l labels.Labels, toDelete model.LabelSet) {
-	for i := 0; i < len(l); {
-		if _, ok := toDelete[model.LabelName(l[i].Name)]; ok {
-			l = l[:i+copy(l[i:], l[i+1:])]
+func removeLabels(l *labels.Labels, toDelete model.LabelSet) {
+	for i := 0; i < len(*l); {
+		if _, ok := toDelete[model.LabelName((*l)[i].Name)]; ok {
+			*l = (*l)[:i+copy((*l)[i:], (*l)[i+1:])]
 		} else {
 			i++
 		}
