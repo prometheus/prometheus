@@ -89,59 +89,59 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	m := &headMetrics{}
 
 	m.activeAppenders = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_active_appenders",
+		Name: "prometheus_tsdb_head_active_appenders",
 		Help: "Number of currently active appender transactions",
 	})
 	m.series = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_series",
+		Name: "prometheus_tsdb_head_series",
 		Help: "Total number of series in the head block.",
 	})
 	m.seriesCreated = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_series_created_total",
+		Name: "prometheus_tsdb_head_series_created_total",
 		Help: "Total number of series created in the head",
 	})
 	m.seriesRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_series_removed_total",
+		Name: "prometheus_tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
 	})
 	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_head_series_not_found",
+		Name: "prometheus_tsdb_head_series_not_found",
 		Help: "Total number of requests for series that were not found.",
 	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_chunks",
+		Name: "prometheus_tsdb_head_chunks",
 		Help: "Total number of chunks in the head block.",
 	})
 	m.chunksCreated = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_chunks_created_total",
+		Name: "prometheus_tsdb_head_chunks_created_total",
 		Help: "Total number of chunks created in the head",
 	})
 	m.chunksRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_chunks_removed_total",
+		Name: "prometheus_tsdb_head_chunks_removed_total",
 		Help: "Total number of chunks removed in the head",
 	})
 	m.gcDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "tsdb_head_gc_duration_seconds",
+		Name: "prometheus_tsdb_head_gc_duration_seconds",
 		Help: "Runtime of garbage collection in the head block.",
 	})
 	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_head_max_time",
+		Name: "prometheus_tsdb_head_max_time",
 		Help: "Maximum timestamp of the head block.",
 	}, func() float64 {
 		return float64(h.MaxTime())
 	})
 	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_head_min_time",
+		Name: "prometheus_tsdb_head_min_time",
 		Help: "Minimum time bound of the head block.",
 	}, func() float64 {
 		return float64(h.MinTime())
 	})
 	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "tsdb_wal_truncate_duration_seconds",
+		Name: "prometheus_tsdb_wal_truncate_duration_seconds",
 		Help: "Duration of WAL truncation.",
 	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_head_samples_appended_total",
+		Name: "prometheus_tsdb_head_samples_appended_total",
 		Help: "Total number of appended sampledb.",
 	})
 
