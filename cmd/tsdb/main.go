@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sync"
+	"text/tabwriter"
 	"time"
 	"unsafe"
 
@@ -333,7 +334,7 @@ func exitWithError(err error) {
 }
 
 func printBlocks(blocks []*tsdb.Block) {
-	tw := tsdb.GetNewTabWriter(os.Stdout)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 
 	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
