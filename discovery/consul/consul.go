@@ -114,7 +114,10 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 			conntrack.DialWithName("consul_sd"),
 		),
 	}
-	wrapper := &http.Client{Transport: transport}
+	wrapper := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
 
 	clientConf := &consul.Config{
 		Address:    conf.Server,
