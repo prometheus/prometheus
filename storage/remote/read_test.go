@@ -97,6 +97,29 @@ func TestAddExternalLabels(t *testing.T) {
 	}
 }
 
+func TestRemoveLabels(t *testing.T) {
+	tests := []struct {
+		in       labels.Labels
+		out      labels.Labels
+		toRemove model.LabelSet
+	}{
+		{
+			toRemove: model.LabelSet{"foo": "bar"},
+			in:       labels.FromStrings("foo", "bar", "a", "b"),
+			out:      labels.FromStrings("a", "b"),
+		},
+	}
+
+	for i, test := range tests {
+		in := test.in.Copy()
+		removeLabels(&in, test.toRemove)
+
+		if !reflect.DeepEqual(in, test.out) {
+			t.Fatalf("%d. unexpected labels; want %v, got %v", i, test.out, in)
+		}
+	}
+}
+
 func TestConcreteSeriesSet(t *testing.T) {
 	series1 := &concreteSeries{
 		labels:  labels.FromStrings("foo", "bar"),
