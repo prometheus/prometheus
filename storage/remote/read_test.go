@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"reflect"
 	"sort"
 	"testing"
@@ -196,7 +197,7 @@ func TestRemoteStorageQuerier(t *testing.T) {
 			return &mockMergeQuerier{queriersCount: len(queriers)}
 		}
 
-		querier, _ := s.Querier(nil, test.mint, test.maxt)
+		querier, _ := s.Querier(context.Background(), test.mint, test.maxt)
 		actualQueriersCount := reflect.ValueOf(querier).Interface().(*mockMergeQuerier).queriersCount
 
 		if !reflect.DeepEqual(actualQueriersCount, test.expectedQueriersCount) {
