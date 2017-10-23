@@ -14,13 +14,13 @@
 package marathon
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )

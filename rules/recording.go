@@ -14,14 +14,13 @@
 package rules
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/url"
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
-
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"

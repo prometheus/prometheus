@@ -14,6 +14,7 @@
 package marathon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -23,8 +24,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/net/context"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"

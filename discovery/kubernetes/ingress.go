@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-kit/kit/log"
@@ -21,7 +22,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
-	"golang.org/x/net/context"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/tools/cache"
 )

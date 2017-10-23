@@ -14,6 +14,7 @@
 package discovery
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -32,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
-	"golang.org/x/net/context"
 )
 
 // A TargetProvider provides information about target groups. It maintains a set
