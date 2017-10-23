@@ -38,6 +38,7 @@ func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
 	return 0, nil
 }
 
+// AddFast implements storage.Appender.
 func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
 	_, err := s.Add(l, t, v)
 	return err
