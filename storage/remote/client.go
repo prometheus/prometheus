@@ -45,26 +45,27 @@ type Client struct {
 	readRecent bool
 }
 
-type clientConfig struct {
-	url              *config.URL
-	timeout          model.Duration
-	readRecent       bool
-	httpClientConfig config.HTTPClientConfig
+// ClientConfig configures a Client.
+type ClientConfig struct {
+	URL              *config.URL
+	Timeout          model.Duration
+	ReadRecent       bool
+	HTTPClientConfig config.HTTPClientConfig
 }
 
 // NewClient creates a new Client.
-func NewClient(index int, conf *clientConfig) (*Client, error) {
-	httpClient, err := httputil.NewClientFromConfig(conf.httpClientConfig, "remote_storage")
+func NewClient(index int, conf *ClientConfig) (*Client, error) {
+	httpClient, err := httputil.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage")
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
 		index:      index,
-		url:        conf.url,
+		url:        conf.URL,
 		client:     httpClient,
-		timeout:    time.Duration(conf.timeout),
-		readRecent: conf.readRecent,
+		timeout:    time.Duration(conf.Timeout),
+		readRecent: conf.ReadRecent,
 	}, nil
 }
 
@@ -129,6 +130,8 @@ func (c *Client) Read(ctx context.Context, from, through int64, matchers []*labe
 	}
 
 	req := &prompb.ReadRequest{
+		// TODO: Support batching multiple queries into one read request,
+		// as the protobuf interface allows for it.
 		Queries: []*prompb.Query{
 			query,
 		},
