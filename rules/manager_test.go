@@ -14,7 +14,6 @@
 package rules
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
+	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
