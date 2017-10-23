@@ -184,11 +184,11 @@ func TestRemoteStorageQuerier(t *testing.T) {
 		s := NewStorage(nil, func() (int64, error) { return test.localStartTime, nil })
 		s.clients = []*Client{}
 		for _, readRecent := range test.readRecentClients {
-			c, _ := NewClient(0, &clientConfig{
-				url:              nil,
-				timeout:          model.Duration(30 * time.Second),
-				httpClientConfig: config.HTTPClientConfig{},
-				readRecent:       readRecent,
+			c, _ := NewClient(0, &ClientConfig{
+				URL:              nil,
+				Timeout:          model.Duration(30 * time.Second),
+				HTTPClientConfig: config.HTTPClientConfig{},
+				ReadRecent:       readRecent,
 			})
 			s.clients = append(s.clients, c)
 		}
