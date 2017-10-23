@@ -114,10 +114,13 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 	}
 	chunkr, err := b.Chunks()
 	if err != nil {
+		indexr.Close()
 		return nil, errors.Wrapf(err, "open chunk reader")
 	}
 	tombsr, err := b.Tombstones()
 	if err != nil {
+		indexr.Close()
+		chunkr.Close()
 		return nil, errors.Wrapf(err, "open tombstone reader")
 	}
 	return &blockQuerier{
