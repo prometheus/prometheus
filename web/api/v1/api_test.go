@@ -31,7 +31,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/weaveworks/common/test"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -574,7 +573,6 @@ func TestReadEndpoint(t *testing.T) {
 		},
 	}
 	if !reflect.DeepEqual(result, expected) {
-		t.Fatalf(test.Diff(expected, result))
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
 	}
 }
