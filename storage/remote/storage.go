@@ -68,7 +68,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		}
 		newQueues = append(newQueues, NewQueueManager(
 			s.logger,
-			defaultQueueManagerConfig,
+			config.DefaultQueueConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
 			c,
