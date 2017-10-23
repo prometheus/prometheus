@@ -76,7 +76,7 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 
 	series := make([]storage.Series, 0, len(res))
 	for _, ts := range res {
-		labels := labelPairsToLabels(ts.Labels)
+		labels := labelProtosToLabels(ts.Labels)
 		removeLabels(&labels, added)
 		if err := validateLabelsAndMetricName(labels); err != nil {
 			return errSeriesSet{err: err}
@@ -91,18 +91,6 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	return &concreteSeriesSet{
 		series: series,
 	}
-}
-
-func labelPairsToLabels(labelPairs []*prompb.Label) labels.Labels {
-	result := make(labels.Labels, 0, len(labelPairs))
-	for _, l := range labelPairs {
-		result = append(result, labels.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
-	}
-	sort.Sort(result)
-	return result
 }
 
 type byLabel []storage.Series

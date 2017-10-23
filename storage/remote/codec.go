@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright 2017 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"sort"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -69,7 +70,7 @@ func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
 
 	for _, s := range samples {
 		ts := prompb.TimeSeries{
-			Labels: ToLabelPairs(s.Metric),
+			Labels: MetricToLabelProtos(s.Metric),
 			Samples: []*prompb.Sample{
 				{
 					Value:     float64(s.Value),
@@ -113,7 +114,7 @@ func ToQueryResult(matrix model.Matrix) *prompb.QueryResult {
 	resp := &prompb.QueryResult{}
 	for _, ss := range matrix {
 		ts := prompb.TimeSeries{
-			Labels:  ToLabelPairs(ss.Metric),
+			Labels:  MetricToLabelProtos(ss.Metric),
 			Samples: make([]*prompb.Sample, 0, len(ss.Values)),
 		}
 		for _, s := range ss.Values {
@@ -132,7 +133,7 @@ func FromQueryResult(resp *prompb.QueryResult) model.Matrix {
 	m := make(model.Matrix, 0, len(resp.Timeseries))
 	for _, ts := range resp.Timeseries {
 		var ss model.SampleStream
-		ss.Metric = FromLabelPairs(ts.Labels)
+		ss.Metric = LabelProtosToMetric(ts.Labels)
 		ss.Values = make([]model.SamplePair, 0, len(ts.Samples))
 		for _, s := range ts.Samples {
 			ss.Values = append(ss.Values, model.SamplePair{
@@ -196,8 +197,8 @@ func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-// ToLabelPairs builds a []LabelPair from a model.Metric
-func ToLabelPairs(metric model.Metric) []*prompb.Label {
+// MetricToLabelProtos builds a []*prompb.Label from a model.Metric
+func MetricToLabelProtos(metric model.Metric) []*prompb.Label {
 	labelPairs := make([]*prompb.Label, 0, len(metric))
 	for k, v := range metric {
 		labelPairs = append(labelPairs, &prompb.Label{
@@ -208,10 +209,30 @@ func ToLabelPairs(metric model.Metric) []*prompb.Label {
 	return labelPairs
 }
 
-// FromLabelPairs unpack a []LabelPair to a model.Metric
-func FromLabelPairs(labelPairs []*prompb.Label) model.Metric {
+// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
+func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
 	for _, l := range labelPairs {
+		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	}
+	return metric
+}
+
+func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
+	result := make(labels.Labels, 0, len(labelPairs))
+	for _, l := range labelPairs {
+		result = append(result, labels.Label{
+			Name:  l.Name,
+			Value: l.Value,
+		})
+	}
+	sort.Sort(result)
+	return result
+}
+
+func labelsToMetric(ls labels.Labels) model.Metric {
+	metric := make(model.Metric, len(ls))
+	for _, l := range ls {
 		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	return metric
