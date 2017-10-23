@@ -560,6 +560,7 @@ func TestReadEndpoint(t *testing.T) {
 					ExternalLabels: model.LabelSet{
 						"baz": "a",
 						"b":   "c",
+						"d":   "e",
 					},
 				},
 			}
@@ -567,11 +568,15 @@ func TestReadEndpoint(t *testing.T) {
 	}
 
 	// Encode the request.
-	matcher, err := metric.NewLabelMatcher(metric.Equal, "__name__", "test_metric1")
+	matcher1, err := metric.NewLabelMatcher(metric.Equal, "__name__", "test_metric1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	query, err := remote.ToQuery(0, 1, metric.LabelMatchers{matcher})
+	matcher2, err := metric.NewLabelMatcher(metric.Equal, "d", "e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	query, err := remote.ToQuery(0, 1, metric.LabelMatchers{matcher1, matcher2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +616,7 @@ func TestReadEndpoint(t *testing.T) {
 	result := remote.FromQueryResult(resp.Results[0])
 	expected := &model.Matrix{
 		&model.SampleStream{
-			Metric: model.Metric{"__name__": "test_metric1", "b": "c", "baz": "qux", "foo": "bar"},
+			Metric: model.Metric{"__name__": "test_metric1", "b": "c", "d": "e", "baz": "qux", "foo": "bar"},
 			Values: []model.SamplePair{model.SamplePair{Value: 1, Timestamp: 0}},
 		},
 	}
