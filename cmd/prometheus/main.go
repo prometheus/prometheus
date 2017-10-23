@@ -76,8 +76,7 @@ func main() {
 	}
 
 	cfg := struct {
-		printVersion bool
-		configFile   string
+		configFile string
 
 		localStoragePath string
 		notifier         notifier.Options
