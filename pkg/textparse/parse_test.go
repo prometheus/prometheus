@@ -172,7 +172,7 @@ func TestParseErrors(t *testing.T) {
 		},
 		{
 			input: "a{b=\"\xff\"} 1\n",
-			err:   "Invalid UTF-8 label value.",
+			err:   "invalid UTF-8 label value",
 		},
 		{
 			input: "a true\n",

@@ -32,11 +32,11 @@ import (
 
 const (
 	tritonLabel             = model.MetaLabelPrefix + "triton_"
-	tritonLabelMachineId    = tritonLabel + "machine_id"
+	tritonLabelMachineID    = tritonLabel + "machine_id"
 	tritonLabelMachineAlias = tritonLabel + "machine_alias"
 	tritonLabelMachineBrand = tritonLabel + "machine_brand"
 	tritonLabelMachineImage = tritonLabel + "machine_image"
-	tritonLabelServerId     = tritonLabel + "server_id"
+	tritonLabelServerID     = tritonLabel + "server_id"
 	namespace               = "prometheus"
 )
 
@@ -58,6 +58,7 @@ func init() {
 	prometheus.MustRegister(refreshDuration)
 }
 
+// DiscoveryResponse models a JSON response from the Triton discovery.
 type DiscoveryResponse struct {
 	Containers []struct {
 		ServerUUID  string `json:"server_uuid"`
@@ -169,11 +170,11 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 	for _, container := range dr.Containers {
 		labels := model.LabelSet{
-			tritonLabelMachineId:    model.LabelValue(container.VMUUID),
+			tritonLabelMachineID:    model.LabelValue(container.VMUUID),
 			tritonLabelMachineAlias: model.LabelValue(container.VMAlias),
 			tritonLabelMachineBrand: model.LabelValue(container.VMBrand),
 			tritonLabelMachineImage: model.LabelValue(container.VMImageUUID),
-			tritonLabelServerId:     model.LabelValue(container.ServerUUID),
+			tritonLabelServerID:     model.LabelValue(container.ServerUUID),
 		}
 		addr := fmt.Sprintf("%s.%s:%d", container.VMUUID, d.sdConfig.DNSSuffix, d.sdConfig.Port)
 		labels[model.AddressLabel] = model.LabelValue(addr)

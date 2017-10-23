@@ -19,10 +19,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Appender implements retrieval.Appendable.
 func (s *Storage) Appender() (storage.Appender, error) {
 	return s, nil
 }
 
+// Add implements storage.Appender.
 func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
@@ -44,15 +46,18 @@ func labelsToMetric(ls labels.Labels) model.Metric {
 	return metric
 }
 
+// AddFast implements storage.Appender.
 func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
 	_, err := s.Add(l, t, v)
 	return err
 }
 
+// Commit implements storage.Appender.
 func (*Storage) Commit() error {
 	return nil
 }
 
+// Rollback implements storage.Appender.
 func (*Storage) Rollback() error {
 	return nil
 }
