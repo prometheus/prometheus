@@ -29,7 +29,6 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -74,8 +73,7 @@ type recoverableError struct {
 }
 
 // Store sends a batch of samples to the HTTP endpoint.
-func (c *Client) Store(samples model.Samples) error {
-	req := ToWriteRequest(samples)
+func (c *Client) Store(req *prompb.WriteRequest) error {
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return err
@@ -123,12 +121,7 @@ func (c Client) Name() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, from, through int64, matchers []*labels.Matcher) ([]*prompb.TimeSeries, error) {
-	query, err := ToQuery(from, through, matchers)
-	if err != nil {
-		return nil, err
-	}
-
+func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
@@ -182,5 +175,5 @@ func (c *Client) Read(ctx context.Context, from, through int64, matchers []*labe
 		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	return resp.Results[0].Timeseries, nil
+	return resp.Results[0], nil
 }

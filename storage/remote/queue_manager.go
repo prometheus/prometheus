@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/relabel"
 )
 
@@ -128,7 +129,7 @@ func init() {
 // external timeseries database.
 type StorageClient interface {
 	// Store stores the given samples in the remote storage.
-	Store(model.Samples) error
+	Store(*prompb.WriteRequest) error
 	// Name identifies the remote storage implementation.
 	Name() string
 }
@@ -466,7 +467,8 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	backoff := s.qm.cfg.MinBackoff
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
-		err := s.qm.client.Store(samples)
+		req := ToWriteRequest(samples)
+		err := s.qm.client.Store(req)
 
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
 		if err == nil {
