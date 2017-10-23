@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // DecodeReadRequest reads a remote.Request from a http.Request.
@@ -99,52 +100,166 @@ func ToQuery(from, to int64, matchers []*labels.Matcher) (*prompb.Query, error) 
 }
 
 // FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (model.Time, model.Time, []*labels.Matcher, error) {
+func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, error) {
 	matchers, err := fromLabelMatchers(req.Matchers)
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	from := model.Time(req.StartTimestampMs)
-	to := model.Time(req.EndTimestampMs)
-	return from, to, matchers, nil
+	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
 }
 
 // ToQueryResult builds a QueryResult proto.
-func ToQueryResult(matrix model.Matrix) *prompb.QueryResult {
+func ToQueryResult(ss storage.SeriesSet) (*prompb.QueryResult, error) {
 	resp := &prompb.QueryResult{}
-	for _, ss := range matrix {
-		ts := prompb.TimeSeries{
-			Labels:  MetricToLabelProtos(ss.Metric),
-			Samples: make([]*prompb.Sample, 0, len(ss.Values)),
-		}
-		for _, s := range ss.Values {
-			ts.Samples = append(ts.Samples, &prompb.Sample{
-				Value:     float64(s.Value),
-				Timestamp: int64(s.Timestamp),
+	for ss.Next() {
+		series := ss.At()
+		iter := series.Iterator()
+		samples := []*prompb.Sample{}
+
+		for iter.Next() {
+			ts, val := iter.At()
+			samples = append(samples, &prompb.Sample{
+				Timestamp: ts,
+				Value:     val,
 			})
 		}
-		resp.Timeseries = append(resp.Timeseries, &ts)
+		if err := iter.Err(); err != nil {
+			return nil, err
+		}
+
+		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
+			Labels:  labelsToLabelsProto(series.Labels()),
+			Samples: samples,
+		})
 	}
-	return resp
+	if err := ss.Err(); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // FromQueryResult unpacks a QueryResult proto.
-func FromQueryResult(resp *prompb.QueryResult) model.Matrix {
-	m := make(model.Matrix, 0, len(resp.Timeseries))
-	for _, ts := range resp.Timeseries {
-		var ss model.SampleStream
-		ss.Metric = LabelProtosToMetric(ts.Labels)
-		ss.Values = make([]model.SamplePair, 0, len(ts.Samples))
-		for _, s := range ts.Samples {
-			ss.Values = append(ss.Values, model.SamplePair{
-				Value:     model.SampleValue(s.Value),
-				Timestamp: model.Time(s.Timestamp),
-			})
+func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
+	series := make([]storage.Series, 0, len(res.Timeseries))
+	for _, ts := range res.Timeseries {
+		labels := labelProtosToLabels(ts.Labels)
+		if err := validateLabelsAndMetricName(labels); err != nil {
+			return errSeriesSet{err: err}
 		}
-		m = append(m, &ss)
-	}
 
-	return m
+		series = append(series, &concreteSeries{
+			labels:  labels,
+			samples: ts.Samples,
+		})
+	}
+	sort.Sort(byLabel(series))
+	return &concreteSeriesSet{
+		series: series,
+	}
+}
+
+// errSeriesSet implements storage.SeriesSet, just returning an error.
+type errSeriesSet struct {
+	err error
+}
+
+func (errSeriesSet) Next() bool {
+	return false
+}
+
+func (errSeriesSet) At() storage.Series {
+	return nil
+}
+
+func (e errSeriesSet) Err() error {
+	return e.err
+}
+
+// concreteSeriesSet implements storage.SeriesSet.
+type concreteSeriesSet struct {
+	cur    int
+	series []storage.Series
+}
+
+func (c *concreteSeriesSet) Next() bool {
+	c.cur++
+	return c.cur-1 < len(c.series)
+}
+
+func (c *concreteSeriesSet) At() storage.Series {
+	return c.series[c.cur-1]
+}
+
+func (c *concreteSeriesSet) Err() error {
+	return nil
+}
+
+// concreteSeries implementes storage.Series.
+type concreteSeries struct {
+	labels  labels.Labels
+	samples []*prompb.Sample
+}
+
+func (c *concreteSeries) Labels() labels.Labels {
+	return c.labels
+}
+
+func (c *concreteSeries) Iterator() storage.SeriesIterator {
+	return newConcreteSeriersIterator(c)
+}
+
+// concreteSeriesIterator implements storage.SeriesIterator.
+type concreteSeriesIterator struct {
+	cur    int
+	series *concreteSeries
+}
+
+func newConcreteSeriersIterator(series *concreteSeries) storage.SeriesIterator {
+	return &concreteSeriesIterator{
+		cur:    -1,
+		series: series,
+	}
+}
+
+// Seek implements storage.SeriesIterator.
+func (c *concreteSeriesIterator) Seek(t int64) bool {
+	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
+		return c.series.samples[n].Timestamp >= t
+	})
+	return c.cur < len(c.series.samples)
+}
+
+// At implements storage.SeriesIterator.
+func (c *concreteSeriesIterator) At() (t int64, v float64) {
+	s := c.series.samples[c.cur]
+	return s.Timestamp, s.Value
+}
+
+// Next implements storage.SeriesIterator.
+func (c *concreteSeriesIterator) Next() bool {
+	c.cur++
+	return c.cur < len(c.series.samples)
+}
+
+// Err implements storage.SeriesIterator.
+func (c *concreteSeriesIterator) Err() error {
+	return nil
+}
+
+// validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
+func validateLabelsAndMetricName(ls labels.Labels) error {
+	for _, l := range ls {
+		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+			return fmt.Errorf("Invalid metric name: %v", l.Value)
+		}
+		if !model.LabelName(l.Name).IsValid() {
+			return fmt.Errorf("Invalid label name: %v", l.Name)
+		}
+		if !model.LabelValue(l.Value).IsValid() {
+			return fmt.Errorf("Invalid label value: %v", l.Value)
+		}
+	}
+	return nil
 }
 
 func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error) {
@@ -199,14 +314,14 @@ func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 
 // MetricToLabelProtos builds a []*prompb.Label from a model.Metric
 func MetricToLabelProtos(metric model.Metric) []*prompb.Label {
-	labelPairs := make([]*prompb.Label, 0, len(metric))
+	labels := make([]*prompb.Label, 0, len(metric))
 	for k, v := range metric {
-		labelPairs = append(labelPairs, &prompb.Label{
+		labels = append(labels, &prompb.Label{
 			Name:  string(k),
 			Value: string(v),
 		})
 	}
-	return labelPairs
+	return labels
 }
 
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
@@ -227,6 +342,17 @@ func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 		})
 	}
 	sort.Sort(result)
+	return result
+}
+
+func labelsToLabelsProto(labels labels.Labels) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(labels))
+	for _, l := range labels {
+		result = append(result, &prompb.Label{
+			Name:  l.Name,
+			Value: l.Value,
+		})
+	}
 	return result
 }
 

@@ -27,128 +27,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-func TestValidateLabelsAndMetricName(t *testing.T) {
-	tests := []struct {
-		result      model.Matrix
-		expectedErr string
-		shouldPass  bool
-	}{
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__":  "name",
-						"labelName": "labelValue",
-					},
-				},
-			},
-			expectedErr: "",
-			shouldPass:  true,
-		},
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__":   "name",
-						"_labelName": "labelValue",
-					},
-				},
-			},
-			expectedErr: "",
-			shouldPass:  true,
-		},
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__":   "name",
-						"@labelName": "labelValue",
-					},
-				},
-			},
-			expectedErr: "Invalid label name: @labelName",
-			shouldPass:  false,
-		},
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__":     "name",
-						"123labelName": "labelValue",
-					},
-				},
-			},
-			expectedErr: "Invalid label name: 123labelName",
-			shouldPass:  false,
-		},
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__": "name",
-						"":         "labelValue",
-					},
-				},
-			},
-			expectedErr: "Invalid label name: ",
-			shouldPass:  false,
-		},
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__":  "name",
-						"labelName": model.LabelValue([]byte{0xff}),
-					},
-				},
-			},
-			expectedErr: "Invalid label value: " + string([]byte{0xff}),
-			shouldPass:  false,
-		},
-		{
-			result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{
-						"__name__": "@invalid_name",
-					},
-				},
-			},
-			expectedErr: "Invalid metric name: @invalid_name",
-			shouldPass:  false,
-		},
-	}
-
-	for _, test := range tests {
-		var err error
-		for _, ss := range test.result {
-			ls := make(labels.Labels, 0, len(ss.Metric))
-			for k, v := range ss.Metric {
-				ls = append(ls, labels.Label{
-					Name:  string(k),
-					Value: string(v),
-				})
-			}
-			err = validateLabelsAndMetricName(ls)
-			if err != nil {
-				break
-			}
-		}
-		if test.shouldPass {
-			if err != nil {
-				t.Fatalf("Test should pass, got unexpected error: %v", err)
-			}
-			continue
-		}
-		if err != nil {
-			if err.Error() != test.expectedErr {
-				t.Fatalf("Unexpected error, got: %v, expected: %v", err, test.expectedErr)
-			}
-		} else {
-			t.Fatalf("Expected error, got none")
-		}
-	}
-}
-
 func mustNewLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 	m, err := labels.NewMatcher(mt, name, val)
 	if err != nil {
@@ -222,53 +100,36 @@ func TestAddExternalLabels(t *testing.T) {
 
 func TestRemoveLabels(t *testing.T) {
 	tests := []struct {
-		in       labels.Labels
-		out      labels.Labels
+		in       *prompb.QueryResult
 		toRemove model.LabelSet
+
+		expected *prompb.QueryResult
 	}{
 		{
 			toRemove: model.LabelSet{"foo": "bar"},
-			in:       labels.FromStrings("foo", "bar", "a", "b"),
-			out:      labels.FromStrings("a", "b"),
+			in: &prompb.QueryResult{
+				Timeseries: []*prompb.TimeSeries{
+					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []*prompb.Sample{}},
+				},
+			},
+			expected: &prompb.QueryResult{
+				Timeseries: []*prompb.TimeSeries{
+					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []*prompb.Sample{}},
+				},
+			},
 		},
 	}
 
-	for i, test := range tests {
-		in := test.in.Copy()
-		removeLabels(&in, test.toRemove)
-
-		if !reflect.DeepEqual(in, test.out) {
-			t.Fatalf("%d. unexpected labels; want %v, got %v", i, test.out, in)
+	for i, tc := range tests {
+		filtered := newSeriesSetFilter(FromQueryResult(tc.in), tc.toRemove)
+		have, err := ToQueryResult(filtered)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-}
 
-func TestConcreteSeriesSet(t *testing.T) {
-	series1 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "bar"),
-		samples: []*prompb.Sample{&prompb.Sample{Value: 1, Timestamp: 2}},
-	}
-	series2 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "baz"),
-		samples: []*prompb.Sample{&prompb.Sample{Value: 3, Timestamp: 4}},
-	}
-	c := &concreteSeriesSet{
-		series: []storage.Series{series1, series2},
-	}
-	if !c.Next() {
-		t.Fatalf("Expected Next() to be true.")
-	}
-	if c.At() != series1 {
-		t.Fatalf("Unexpected series returned.")
-	}
-	if !c.Next() {
-		t.Fatalf("Expected Next() to be true.")
-	}
-	if c.At() != series2 {
-		t.Fatalf("Unexpected series returned.")
-	}
-	if c.Next() {
-		t.Fatalf("Expected Next() to be false.")
+		if !reflect.DeepEqual(have, tc.expected) {
+			t.Fatalf("%d. unexpected labels; want %v, got %v", i, tc.expected, have)
+		}
 	}
 }
 

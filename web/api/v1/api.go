@@ -31,9 +31,11 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -161,6 +163,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
 
 	r.Get("/status/config", instr("config", api.serveConfig))
+	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
 }
 
 type queryData struct {
@@ -449,6 +452,80 @@ func (api *API) serveConfig(r *http.Request) (interface{}, *apiError) {
 		YAML: api.config().String(),
 	}
 	return cfg, nil
+}
+
+func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
+	req, err := remote.DecodeReadRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	}
+	for i, query := range req.Queries {
+		from, through, matchers, err := remote.FromQuery(query)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		querier, err := api.Queryable.Querier(r.Context(), from, through)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer querier.Close()
+
+		// Change equality matchers which match external labels
+		// to a matcher that looks for an empty label,
+		// as that label should not be present in the storage.
+		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
+		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
+		for _, m := range matchers {
+			value := externalLabels[model.LabelName(m.Name)]
+			if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
+				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				filteredMatchers = append(filteredMatchers, matcher)
+			} else {
+				filteredMatchers = append(filteredMatchers, m)
+			}
+		}
+
+		resp.Results[i], err = remote.ToQueryResult(querier.Select(filteredMatchers...))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Add external labels back in.
+		for _, ts := range resp.Results[i].Timeseries {
+			globalUsed := map[string]struct{}{}
+			for _, l := range ts.Labels {
+				if _, ok := externalLabels[model.LabelName(l.Name)]; ok {
+					globalUsed[l.Name] = struct{}{}
+				}
+			}
+			for ln, lv := range externalLabels {
+				if _, ok := globalUsed[string(ln)]; !ok {
+					ts.Labels = append(ts.Labels, &prompb.Label{
+						Name:  string(ln),
+						Value: string(lv),
+					})
+				}
+			}
+		}
+	}
+
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
