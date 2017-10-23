@@ -207,6 +207,7 @@ func newConcreteSeriersIterator(series *concreteSeries) storage.SeriesIterator {
 	}
 }
 
+// Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) bool {
 	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
 		return c.series.samples[n].Timestamp >= t
@@ -214,16 +215,19 @@ func (c *concreteSeriesIterator) Seek(t int64) bool {
 	return c.cur < len(c.series.samples)
 }
 
+// At implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	s := c.series.samples[c.cur]
 	return s.Timestamp, s.Value
 }
 
+// Next implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Next() bool {
 	c.cur++
 	return c.cur < len(c.series.samples)
 }
 
+// Err implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
