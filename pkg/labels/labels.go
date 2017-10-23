@@ -64,10 +64,12 @@ func (ls Labels) String() string {
 	return b.String()
 }
 
+// MarshalJSON implements json.Marshaler.
 func (ls Labels) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ls.Map())
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (ls *Labels) UnmarshalJSON(b []byte) error {
 	var m map[string]string
 
@@ -187,7 +189,7 @@ func Compare(a, b Labels) int {
 	return len(a) - len(b)
 }
 
-// LabelsBuilder allows modifiying Labels.
+// Builder allows modifiying Labels.
 type Builder struct {
 	base Labels
 	del  []string
