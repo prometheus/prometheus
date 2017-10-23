@@ -18,7 +18,6 @@ import (
 	"sort"
 
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -69,8 +68,7 @@ type querier struct {
 // Select returns a set of series that matches the given label matchers.
 func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	m, added := q.addExternalLabels(matchers)
-
-	res, err := q.client.Read(context.TODO(), q.mint, q.maxt, labelMatchersToProto(m))
+	res, err := q.client.Read(context.TODO(), q.mint, q.maxt, m)
 	if err != nil {
 		return errSeriesSet{err: err}
 	}
@@ -88,31 +86,6 @@ func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	return &concreteSeriesSet{
 		series: series,
 	}
-}
-
-func labelMatchersToProto(matchers []*labels.Matcher) []*prompb.LabelMatcher {
-	pbMatchers := make([]*prompb.LabelMatcher, 0, len(matchers))
-	for _, m := range matchers {
-		var mType prompb.LabelMatcher_Type
-		switch m.Type {
-		case labels.MatchEqual:
-			mType = prompb.LabelMatcher_EQ
-		case labels.MatchNotEqual:
-			mType = prompb.LabelMatcher_NEQ
-		case labels.MatchRegexp:
-			mType = prompb.LabelMatcher_RE
-		case labels.MatchNotRegexp:
-			mType = prompb.LabelMatcher_NRE
-		default:
-			panic("invalid matcher type")
-		}
-		pbMatchers = append(pbMatchers, &prompb.LabelMatcher{
-			Type:  mType,
-			Name:  string(m.Name),
-			Value: string(m.Value),
-		})
-	}
-	return pbMatchers
 }
 
 func labelPairsToLabels(labelPairs []*prompb.Label) labels.Labels {
