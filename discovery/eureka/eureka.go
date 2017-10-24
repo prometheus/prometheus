@@ -153,9 +153,7 @@ func (d *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) 
 func AppsToTargetGroups(apps *eureka.Applications) map[string]*config.TargetGroup {
 	tgroups := map[string]*config.TargetGroup{}
 	for _, app := range apps.Applications {
-		fmt.Println(app)
 		group := createTargetGroup(&app)
-		fmt.Println(group)
 		tgroups[group.Source] = group
 	}
 	return tgroups
@@ -185,7 +183,6 @@ func targetsForApp(app *eureka.Application) []model.LabelSet {
 		}
 
 		targetAddress := targetForInstance(&t)
-		fmt.Println(targetAddress)
 		target := model.LabelSet{
 			model.AddressLabel: model.LabelValue(targetAddress),
 			model.MetricsPathLabel: model.LabelValue("/prometheus"),
