@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -75,7 +76,6 @@ type Discovery struct {
 	interval time.Duration
 	profile  string
 	roleARN  string
-	ec2Role  bool
 	port     int
 	logger   log.Logger
 }
@@ -96,7 +96,6 @@ func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
 		},
 		profile:  conf.Profile,
 		roleARN:  conf.RoleARN,
-		ec2Role:  conf.EC2Role,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 		logger:   logger,
@@ -140,6 +139,16 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
+func (d *Discovery) ec2MetadataAvailable(sess *session.Session) (isAvailable bool) {
+	svc := ec2metadata.New(sess, &aws.Config{
+		MaxRetries: aws.Int(0),
+	})
+
+	isAvailable = svc.Available()
+
+	return isAvailable
+}
+
 func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
@@ -161,11 +170,13 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	if d.roleARN != "" {
 		creds := stscreds.NewCredentials(sess, d.roleARN)
 		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
-	} else if d.ec2Role {
-		creds := ec2rolecreds.NewCredentials(sess)
-		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
 	} else {
-		ec2s = ec2.New(sess)
+		if d.aws.Credentials == nil && d.ec2MetadataAvailable(sess) {
+			creds := ec2rolecreds.NewCredentials(sess)
+			ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+		} else {
+			ec2s = ec2.New(sess)
+		}
 	}
 	tg = &config.TargetGroup{
 		Source: *d.aws.Region,
