@@ -21,6 +21,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
@@ -74,6 +75,7 @@ type Discovery struct {
 	interval time.Duration
 	profile  string
 	roleARN  string
+	ec2Role  bool
 	port     int
 	logger   log.Logger
 }
@@ -94,6 +96,7 @@ func NewDiscovery(conf *config.EC2SDConfig, logger log.Logger) *Discovery {
 		},
 		profile:  conf.Profile,
 		roleARN:  conf.RoleARN,
+		ec2Role:  conf.EC2Role,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 		logger:   logger,
@@ -157,6 +160,9 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	var ec2s *ec2.EC2
 	if d.roleARN != "" {
 		creds := stscreds.NewCredentials(sess, d.roleARN)
+		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+	} else if d.ec2Role {
+		creds := ec2rolecreds.NewCredentials(sess)
 		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
 	} else {
 		ec2s = ec2.New(sess)
