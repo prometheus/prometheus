@@ -971,6 +971,7 @@ type MarathonSDConfig struct {
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
 	BearerToken     Secret         `yaml:"bearer_token,omitempty"`
 	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
+	BasicAuth       *BasicAuth     `yaml:"basic_auth,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -992,6 +993,9 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	}
 	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
 		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
 
 	return nil

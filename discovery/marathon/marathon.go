@@ -14,7 +14,9 @@
 package marathon
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -105,13 +107,24 @@ func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery,
 		return nil, err
 	}
 
-	token := string(conf.BearerToken)
+	token := ""
+	// According to  https://dcos.io/docs/1.8/administration/id-and-access-mgt/managing-authentication
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this implicitly here
+	if conf.BearerToken != "" {
+		token = "token=" + string(conf.BearerToken)
+	}
 	if conf.BearerTokenFile != "" {
 		bf, err := ioutil.ReadFile(conf.BearerTokenFile)
 		if err != nil {
 			return nil, err
 		}
-		token = strings.TrimSpace(string(bf))
+		token = "token=" + strings.TrimSpace(string(bf))
+	}
+	if conf.BasicAuth != nil {
+		username := conf.BasicAuth.Username
+		password := string(conf.BasicAuth.Password)
+		token = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	}
 
 	client := &http.Client{
@@ -256,11 +269,8 @@ func fetchApps(client *http.Client, url, token string) (*AppList, error) {
 		return nil, err
 	}
 
-	// According to  https://dcos.io/docs/1.8/administration/id-and-access-mgt/managing-authentication
-	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
-	// so we set this implicitly here
 	if token != "" {
-		request.Header.Set("Authorization", "token="+token)
+		request.Header.Set("Authorization", token)
 	}
 
 	resp, err := client.Do(request)
@@ -273,7 +283,11 @@ func fetchApps(client *http.Client, url, token string) (*AppList, error) {
 		return nil, err
 	}
 
-	return parseAppJSON(body)
+	apps, err := parseAppJSON(body)
+	if err != nil {
+		return nil, errors.New(err.Error() + " in " + url)
+	}
+	return apps, err
 }
 
 func parseAppJSON(body []byte) (*AppList, error) {
