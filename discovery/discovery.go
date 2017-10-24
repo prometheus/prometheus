@@ -134,7 +134,7 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig, logger log.Logger) m
 	for i, c := range cfg.EurekaSDConfigs {
 		m, err := eureka.NewDiscovery(c, logger)
 		if err != nil {
-			logger.Errorf("Cannot create Eureka discovery: %s", err)
+			level.Error(logger).Log("msg", "Cannot create Eureka discovery", "err", err)
 			continue
 		}
 		app("marathon", i, m)
