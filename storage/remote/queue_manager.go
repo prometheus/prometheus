@@ -183,6 +183,12 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
 	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
 
+	// Initialise counter labels to zero.
+	sentBatchDuration.WithLabelValues(t.queueName)
+	succeededSamplesTotal.WithLabelValues(t.queueName)
+	failedSamplesTotal.WithLabelValues(t.queueName)
+	droppedSamplesTotal.WithLabelValues(t.queueName)
+
 	return t
 }
 
