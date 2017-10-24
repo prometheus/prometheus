@@ -19,9 +19,10 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -91,7 +92,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-time.After(d.refreshInterval):
 			err := d.updateServices(ctx, ch)
 			if err != nil {
-				d.logger.Errorf("Error while updating services: %s", err)
+				level.Error(d.logger).Log("msg", "Error while updating services", "err", err)
 			}
 		}
 	}
@@ -130,7 +131,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Targ
 			case <-ctx.Done():
 				return ctx.Err()
 			case ch <- []*config.TargetGroup{{Source: source}}:
-				d.logger.Debugf("Removing group for %s", source)
+				level.Debug(d.logger).Log("msg", "Removing group", "source", source)
 			}
 		}
 	}
