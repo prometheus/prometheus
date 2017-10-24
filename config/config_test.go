@@ -666,6 +666,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	}, {
+		filename: "eureka_no_servers.bad.yml",
+		errMsg:   "Eureka SD config must contain at least one Eureka server",
 	},
 }
 

@@ -199,6 +199,12 @@ var (
 		RemoteTimeout: model.Duration(1 * time.Minute),
 		ReadRecent:    true,
 	}
+
+	// DefaultEurekaSDConfig is the default Eureka SD configuration.
+	DefaultEurekaSDConfig = EurekaSDConfig{
+		Timeout:         model.Duration(30 * time.Second),
+		RefreshInterval: model.Duration(30 * time.Second),
+	}
 )
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -500,6 +506,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*TritonSDConfig `yaml:"triton_sd_configs,omitempty"`
+	// EurekaSDConfigs is a list of Marathon service discovery configurations.
+	EurekaSDConfigs []*EurekaSDConfig `yaml:"eureka_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1519,4 +1527,35 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	}
 
 	return checkOverflow(c.XXX, "remote_read")
+}
+
+
+// EurekaSDConfig is the configuration for services running on Marathon.
+type EurekaSDConfig struct {
+	Servers         []string       `yaml:"servers,omitempty"`
+	Timeout         model.Duration `yaml:"timeout,omitempty"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *EurekaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultEurekaSDConfig
+	type plain EurekaSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := checkOverflow(c.XXX, "eureka_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("Eureka SD config must contain at least one Eureka server")
+	}
+
+
+	return nil
 }

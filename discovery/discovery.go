@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
@@ -130,6 +131,14 @@ func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig, logger log.Logger) m
 		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
 	}
 
+	for i, c := range cfg.EurekaSDConfigs {
+		m, err := eureka.NewDiscovery(c, logger)
+		if err != nil {
+			logger.Errorf("Cannot create Eureka discovery: %s", err)
+			continue
+		}
+		app("marathon", i, m)
+	}
 	return providers
 }
 
