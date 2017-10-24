@@ -325,7 +325,7 @@ func main() {
 		}
 		level.Info(logger).Log("msg", "TSDB started")
 
-		startTimeMargin := int64(time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
+		startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 		localStorage.Set(db, startTimeMargin)
 	}()
 
