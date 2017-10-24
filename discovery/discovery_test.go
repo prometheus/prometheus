@@ -11,25 +11,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package discovery_test
 
 import (
 	"testing"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/util/discoveryutil"
 	"golang.org/x/net/context"
 	yaml "gopkg.in/yaml.v2"
 )
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 
-	verifyPresence := func(tgroups map[string]*config.TargetGroup, name string, present bool) {
-		if _, ok := tgroups[name]; ok != present {
+	verifyPresence := func(ts *discovery.TargetSet, name string, present bool) {
+		if ok := ts.ContainsTargetGroup(name); ok != present {
 			msg := ""
 			if !present {
 				msg = "not "
 			}
-			t.Fatalf("'%s' should %sbe present in TargetSet.tgroups: %s", name, msg, tgroups)
+			t.Fatalf("'%s' should %sbe present in TargetSet: %v", name, msg, ts)
 		}
 	}
 
@@ -45,7 +47,7 @@ static_configs:
 	}
 	called := make(chan struct{})
 
-	ts := NewTargetSet(&mockSyncer{
+	ts := discovery.NewTargetSet(&mockSyncer{
 		sync: func([]*config.TargetGroup) { called <- struct{}{} },
 	})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -53,11 +55,11 @@ static_configs:
 
 	go ts.Run(ctx)
 
-	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
+	ts.UpdateProviders(discoveryutil.ProvidersFromConfig(*cfg, nil))
 	<-called
 
-	verifyPresence(ts.tgroups, "static/0/0", true)
-	verifyPresence(ts.tgroups, "static/0/1", true)
+	verifyPresence(ts, "static/0/0", true)
+	verifyPresence(ts, "static/0/1", true)
 
 	sTwo := `
 static_configs:
@@ -67,11 +69,11 @@ static_configs:
 		t.Fatalf("Unable to load YAML config sTwo: %s", err)
 	}
 
-	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
+	ts.UpdateProviders(discoveryutil.ProvidersFromConfig(*cfg, nil))
 	<-called
 
-	verifyPresence(ts.tgroups, "static/0/0", true)
-	verifyPresence(ts.tgroups, "static/0/1", false)
+	verifyPresence(ts, "static/0/0", true)
+	verifyPresence(ts, "static/0/1", false)
 }
 
 type mockSyncer struct {

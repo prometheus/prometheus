@@ -18,20 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/ec2"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/gce"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
-	"github.com/prometheus/prometheus/discovery/openstack"
-	"github.com/prometheus/prometheus/discovery/triton"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"golang.org/x/net/context"
 )
 
@@ -49,88 +36,6 @@ type TargetProvider interface {
 	// Must returns if the context gets canceled. It should not close the update
 	// channel on returning.
 	Run(ctx context.Context, up chan<- []*config.TargetGroup)
-}
-
-// ProvidersFromConfig returns all TargetProviders configured in cfg.
-func ProvidersFromConfig(cfg config.ServiceDiscoveryConfig, logger log.Logger) map[string]TargetProvider {
-	providers := map[string]TargetProvider{}
-
-	app := func(mech string, i int, tp TargetProvider) {
-		providers[fmt.Sprintf("%s/%d", mech, i)] = tp
-	}
-
-	for i, c := range cfg.DNSSDConfigs {
-		app("dns", i, dns.NewDiscovery(c, log.With(logger, "discovery", "dns")))
-	}
-	for i, c := range cfg.FileSDConfigs {
-		app("file", i, file.NewDiscovery(c, log.With(logger, "discovery", "file")))
-	}
-	for i, c := range cfg.ConsulSDConfigs {
-		k, err := consul.NewDiscovery(c, log.With(logger, "discovery", "consul"))
-		if err != nil {
-			level.Error(logger).Log("msg", "Cannot create Consul discovery", "err", err)
-			continue
-		}
-		app("consul", i, k)
-	}
-	for i, c := range cfg.MarathonSDConfigs {
-		m, err := marathon.NewDiscovery(c, log.With(logger, "discovery", "marathon"))
-		if err != nil {
-			level.Error(logger).Log("msg", "Cannot create Marathon discovery", "err", err)
-			continue
-		}
-		app("marathon", i, m)
-	}
-	for i, c := range cfg.KubernetesSDConfigs {
-		k, err := kubernetes.New(log.With(logger, "discovery", "k8s"), c)
-		if err != nil {
-			level.Error(logger).Log("msg", "Cannot create Kubernetes discovery", "err", err)
-			continue
-		}
-		app("kubernetes", i, k)
-	}
-	for i, c := range cfg.ServersetSDConfigs {
-		app("serverset", i, zookeeper.NewServersetDiscovery(c, log.With(logger, "discovery", "zookeeper")))
-	}
-	for i, c := range cfg.NerveSDConfigs {
-		app("nerve", i, zookeeper.NewNerveDiscovery(c, log.With(logger, "discovery", "nerve")))
-	}
-	for i, c := range cfg.EC2SDConfigs {
-		app("ec2", i, ec2.NewDiscovery(c, log.With(logger, "discovery", "ec2")))
-	}
-	for i, c := range cfg.OpenstackSDConfigs {
-		openstackd, err := openstack.NewDiscovery(c, log.With(logger, "discovery", "openstack"))
-		if err != nil {
-			level.Error(logger).Log("msg", "Cannot initialize OpenStack discovery", "err", err)
-			continue
-		}
-		app("openstack", i, openstackd)
-	}
-
-	for i, c := range cfg.GCESDConfigs {
-		gced, err := gce.NewDiscovery(c, log.With(logger, "discovery", "gce"))
-		if err != nil {
-			level.Error(logger).Log("msg", "Cannot initialize GCE discovery", "err", err)
-			continue
-		}
-		app("gce", i, gced)
-	}
-	for i, c := range cfg.AzureSDConfigs {
-		app("azure", i, azure.NewDiscovery(c, log.With(logger, "discovery", "azure")))
-	}
-	for i, c := range cfg.TritonSDConfigs {
-		t, err := triton.New(log.With(logger, "discovery", "trition"), c)
-		if err != nil {
-			level.Error(logger).Log("msg", "Cannot create Triton discovery", "err", err)
-			continue
-		}
-		app("triton", i, t)
-	}
-	if len(cfg.StaticConfigs) > 0 {
-		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
-	}
-
-	return providers
 }
 
 // StaticProvider holds a list of target groups that never change.
@@ -316,4 +221,13 @@ func (ts *TargetSet) setTargetGroup(name string, tg *config.TargetGroup) {
 		return
 	}
 	ts.tgroups[name+"/"+tg.Source] = tg
+}
+
+// ContainsTargetGroup returns true if target group exists in the target set
+// false otherwise
+func (ts *TargetSet) ContainsTargetGroup(name string) bool {
+	ts.mtx.RLock()
+	_, ok := ts.tgroups[name]
+	ts.mtx.RUnlock()
+	return ok
 }

@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/util/discoveryutil"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -264,7 +265,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	// old ones.
 	for _, ams := range amSets {
 		go ams.ts.Run(ctx)
-		ams.ts.UpdateProviders(discovery.ProvidersFromConfig(ams.cfg.ServiceDiscoveryConfig, n.logger))
+		ams.ts.UpdateProviders(discoveryutil.ProvidersFromConfig(ams.cfg.ServiceDiscoveryConfig, n.logger))
 	}
 	if n.cancelDiscovery != nil {
 		n.cancelDiscovery()
