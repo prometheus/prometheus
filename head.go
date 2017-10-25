@@ -1270,6 +1270,12 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 
 func (s *memSeries) iterator(id int) chunks.Iterator {
 	c := s.chunk(id)
+	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
+	// which got then garbage collected before it got accessed.
+	// We must ensure to not garbage collect as long as any readers still hold a reference.
+	if c == nil {
+		return chunks.NewNopIterator()
+	}
 
 	if id-s.firstChunkID < len(s.chunks)-1 {
 		return c.chunk.Iterator()

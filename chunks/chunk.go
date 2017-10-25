@@ -69,6 +69,17 @@ type Iterator interface {
 	Next() bool
 }
 
+// NewNopIterator returns a new chunk iterator that does not hold any data.
+func NewNopIterator() Iterator {
+	return nopIterator{}
+}
+
+type nopIterator struct{}
+
+func (nopIterator) At() (int64, float64) { return 0, 0 }
+func (nopIterator) Next() bool           { return false }
+func (nopIterator) Err() error           { return nil }
+
 type Pool interface {
 	Put(Chunk) error
 	Get(e Encoding, b []byte) (Chunk, error)
