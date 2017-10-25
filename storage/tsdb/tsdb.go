@@ -167,6 +167,7 @@ func (a adapter) StartTime() (int64, error) {
 			return startTime, err
 		}
 	}
+	defer indexr.Close()
 
 	joblabel := "job"
 	tpls, err := indexr.LabelValues(joblabel)

@@ -89,59 +89,59 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	m := &headMetrics{}
 
 	m.activeAppenders = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_active_appenders",
+		Name: "prometheus_tsdb_head_active_appenders",
 		Help: "Number of currently active appender transactions",
 	})
 	m.series = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_series",
+		Name: "prometheus_tsdb_head_series",
 		Help: "Total number of series in the head block.",
 	})
 	m.seriesCreated = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_series_created_total",
+		Name: "prometheus_tsdb_head_series_created_total",
 		Help: "Total number of series created in the head",
 	})
 	m.seriesRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_series_removed_total",
+		Name: "prometheus_tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
 	})
 	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_head_series_not_found",
+		Name: "prometheus_tsdb_head_series_not_found",
 		Help: "Total number of requests for series that were not found.",
 	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_chunks",
+		Name: "prometheus_tsdb_head_chunks",
 		Help: "Total number of chunks in the head block.",
 	})
 	m.chunksCreated = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_chunks_created_total",
+		Name: "prometheus_tsdb_head_chunks_created_total",
 		Help: "Total number of chunks created in the head",
 	})
 	m.chunksRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "tsdb_head_chunks_removed_total",
+		Name: "prometheus_tsdb_head_chunks_removed_total",
 		Help: "Total number of chunks removed in the head",
 	})
 	m.gcDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "tsdb_head_gc_duration_seconds",
+		Name: "prometheus_tsdb_head_gc_duration_seconds",
 		Help: "Runtime of garbage collection in the head block.",
 	})
 	m.maxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_head_max_time",
+		Name: "prometheus_tsdb_head_max_time",
 		Help: "Maximum timestamp of the head block.",
 	}, func() float64 {
 		return float64(h.MaxTime())
 	})
 	m.minTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_head_min_time",
+		Name: "prometheus_tsdb_head_min_time",
 		Help: "Minimum time bound of the head block.",
 	}, func() float64 {
 		return float64(h.MinTime())
 	})
 	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "tsdb_wal_truncate_duration_seconds",
+		Name: "prometheus_tsdb_wal_truncate_duration_seconds",
 		Help: "Duration of WAL truncation.",
 	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_head_samples_appended_total",
+		Name: "prometheus_tsdb_head_samples_appended_total",
 		Help: "Total number of appended sampledb.",
 	})
 
@@ -273,13 +273,23 @@ func (h *Head) ReadWAL() error {
 		}
 	}
 	samplesFunc := func(samples []RefSample) {
-		var buf []RefSample
-		select {
-		case buf = <-input:
-		default:
-			buf = make([]RefSample, 0, len(samples)*11/10)
+		// We split up the samples into chunks of 5000 samples or less.
+		// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+		// cause thousands of very large in flight buffers occupying large amounts
+		// of unused memory.
+		for len(samples) > 0 {
+			n := 5000
+			if len(samples) < n {
+				n = len(samples)
+			}
+			var buf []RefSample
+			select {
+			case buf = <-input:
+			default:
+			}
+			firstInput <- append(buf[:0], samples[:n]...)
+			samples = samples[n:]
 		}
-		firstInput <- append(buf[:0], samples...)
 	}
 	deletesFunc := func(stones []Stone) {
 		for _, s := range stones {
@@ -665,7 +675,7 @@ func (h *Head) gc() {
 	// Rebuild symbols and label value indices from what is left in the postings terms.
 	h.postings.mtx.RLock()
 
-	symbols := make(map[string]struct{}, len(h.symbols))
+	symbols := make(map[string]struct{})
 	values := make(map[string]stringset, len(h.values))
 
 	for t := range h.postings.m {
@@ -1152,6 +1162,10 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	}
 	s.chunks = append(s.chunks, c)
 
+	// Set upper bound on when the next chunk must be started. An earlier timestamp
+	// may be chosen dynamically at a later point.
+	_, s.nextAt = rangeForTimestamp(mint, s.chunkRange)
+
 	app, err := c.chunk.Appender()
 	if err != nil {
 		panic(err)
@@ -1231,21 +1245,23 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	}
 	numSamples := c.chunk.NumSamples()
 
+	// Out of order sample.
 	if c.maxTime >= t {
 		return false, chunkCreated
 	}
-	if numSamples > samplesPerChunk/4 && t >= s.nextAt {
+	// If we reach 25% of a chunk's desired sample count, set a definitive time
+	// at which to start the next chunk.
+	// At latest it must happen at the timestamp set when the chunk was cut.
+	if numSamples == samplesPerChunk/4 {
+		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
+	}
+	if t >= s.nextAt {
 		c = s.cut(t)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
 
 	c.maxTime = t
-
-	if numSamples == samplesPerChunk/4 {
-		_, maxt := rangeForTimestamp(c.minTime, s.chunkRange)
-		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxt)
-	}
 
 	s.lastValue = v
 
@@ -1270,6 +1286,12 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 
 func (s *memSeries) iterator(id int) chunks.Iterator {
 	c := s.chunk(id)
+	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
+	// which got then garbage collected before it got accessed.
+	// We must ensure to not garbage collect as long as any readers still hold a reference.
+	if c == nil {
+		return chunks.NewNopIterator()
+	}
 
 	if id-s.firstChunkID < len(s.chunks)-1 {
 		return c.chunk.Iterator()
