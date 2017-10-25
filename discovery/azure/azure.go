@@ -144,7 +144,7 @@ func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
 
 	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
 	c.nic.Authorizer = spt
-	
+
 	c.cg = containerinstance.NewContainerGroupsClient(cfg.SubscriptionID)
 	c.cg.Authorizer = spt
 
@@ -286,7 +286,7 @@ func fetchCGs(d *Discovery, client azureClient, tg *config.TargetGroup) (err err
 		return fmt.Errorf("could not list container groups: %s", err)
 	}
 	containerGroups = append(containerGroups, *result.Value...)
-	
+
 	// If we still have results, keep going until we have no more.
 	for result.NextLink != nil {
 		result, err = client.cg.ListNextResults(result)
@@ -296,14 +296,14 @@ func fetchCGs(d *Discovery, client azureClient, tg *config.TargetGroup) (err err
 		containerGroups = append(containerGroups, *result.Value...)
 	}
 	level.Info(d.logger).Log("msg", "Found container groups during Azure discovery.", "count", len(containerGroups))
-	
+
 	// We have the slice of machines. Now turn them into targets.
 	// Doing them in go routines because the network interface calls are slow.
 	type target struct {
 		labelSet model.LabelSet
 		err      error
 	}
-	
+
 	ch := make(chan target, len(containerGroups))
 	for i, cg := range containerGroups {
 		go func(i int, cg containerinstance.ContainerGroup) {
@@ -326,14 +326,14 @@ func fetchCGs(d *Discovery, client azureClient, tg *config.TargetGroup) (err err
 					labels[azureLabelContainerGroupTag+model.LabelName(name)] = model.LabelValue(*v)
 				}
 			}
-			
+
 			if cg.ContainerGroupProperties.IPAddress == nil {
 				level.Debug(d.logger).Log("msg", "Skipping container group without a public IP", "group", *cg.Name)
 
 				ch <- target{}
 				return
 			}
-			
+
 			for _, port := range *cg.ContainerGroupProperties.IPAddress.Ports {
 			    if *port.Port == int32(d.port) {
 					labels[azureLabelContainerGroupPublicIP] = model.LabelValue(*cg.ContainerGroupProperties.IPAddress.IP)
@@ -352,7 +352,7 @@ func fetchCGs(d *Discovery, client azureClient, tg *config.TargetGroup) (err err
 			return
 		}(i, cg)
 	}
-	
+
 	for range containerGroups {
 		tgt := <-ch
 		if tgt.err != nil {
@@ -381,17 +381,17 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not create Azure client: %s", err)
 	}
-	
+
 	vmErr := fetchVMs(d, client, tg)
 	if vmErr != nil {
 		return nil, vmErr
 	}
-	
+
 	cgErr := fetchCGs(d, client, tg)
 	if cgErr != nil {
 		return nil, cgErr
 	}
-	
+
 	return tg, err
 }
 
