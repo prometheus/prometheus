@@ -15,68 +15,15 @@ package tsdb
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"testing"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/stretchr/testify/require"
 )
-
-func TestSegmentWAL_Open(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_wal_open")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpdir)
-
-	// Create segment files with an appropriate header.
-	for i := 1; i <= 5; i++ {
-		metab := make([]byte, 8)
-		binary.BigEndian.PutUint32(metab[:4], WALMagic)
-		metab[4] = WALFormatDefault
-
-		f, err := os.Create(fmt.Sprintf("%s/000%d", tmpdir, i))
-		require.NoError(t, err)
-		_, err = f.Write(metab)
-		require.NoError(t, err)
-		require.NoError(t, f.Close())
-	}
-
-	// Initialize 5 correct segment files.
-	w, err := OpenSegmentWAL(tmpdir, nil, 0, nil)
-	require.NoError(t, err)
-
-	require.Equal(t, 5, len(w.files), "unexpected number of segments loaded")
-
-	// Validate that files are locked properly.
-	for _, of := range w.files {
-		f, err := os.Open(of.Name())
-		require.NoError(t, err, "open locked segment %s", f.Name())
-
-		_, err = f.Read([]byte{0})
-		require.NoError(t, err, "read locked segment %s", f.Name())
-
-		_, err = f.Write([]byte{0})
-		require.Error(t, err, "write to tail segment file %s", f.Name())
-
-		require.NoError(t, f.Close())
-	}
-
-	for _, f := range w.files {
-		require.NoError(t, f.Close())
-	}
-
-	// Make initialization fail by corrupting the header of one file.
-	f, err := os.OpenFile(w.files[3].Name(), os.O_WRONLY, 0666)
-	require.NoError(t, err)
-
-	_, err = f.WriteAt([]byte{0}, 4)
-	require.NoError(t, err)
-
-	w, err = OpenSegmentWAL(tmpdir, nil, 0, nil)
-	require.Error(t, err, "open with corrupted segments")
-}
 
 func TestSegmentWAL_cut(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
@@ -310,6 +257,36 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 		require.NoError(t, w.Close())
 	}
+}
+
+func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test_wal_log_restore")
+	Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
+	Ok(t, err)
+
+	_, err = wal.createSegmentFile(dir + "/000000")
+	Ok(t, err)
+	f, err := wal.createSegmentFile(dir + "/000001")
+	Ok(t, err)
+	_, err = wal.createSegmentFile(dir + "/000002")
+	Ok(t, err)
+
+	// Make header of second segment invalid.
+	_, err = f.WriteAt([]byte{1, 2, 3, 4}, 0)
+	Ok(t, err)
+	Ok(t, f.Close())
+
+	Ok(t, wal.Close())
+
+	wal, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
+	Ok(t, err)
+
+	fns, err := fileutil.ReadDir(dir)
+	Ok(t, err)
+	Equals(t, []string{"000000"}, fns)
 }
 
 // Test reading from a WAL that has been corrupted through various means.
