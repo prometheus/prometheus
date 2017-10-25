@@ -2,7 +2,7 @@
 
 The following describes the format of a single chunks file, which is created in the `chunks/` directory of a block. The maximum size per segment file is 512MiB.
 
-Chunks in the files are referenced from the index by the in-file offset in the 4 LSB and the segment sequence number in the bigher 4 MSBs.
+Chunks in the files are referenced from the index by the in-file offset in the 4 LSB and the segment sequence number in the higher 4 MSBs.
 
 ```
 ┌────────────────────────────────────────┬──────────────────────┐

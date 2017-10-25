@@ -573,8 +573,9 @@ type indexReader struct {
 }
 
 var (
-	errInvalidSize = fmt.Errorf("invalid size")
-	errInvalidFlag = fmt.Errorf("invalid flag")
+	errInvalidSize     = fmt.Errorf("invalid size")
+	errInvalidFlag     = fmt.Errorf("invalid flag")
+	errInvalidChecksum = fmt.Errorf("invalid checksum")
 )
 
 // NewIndexReader returns a new IndexReader on the given directory.
@@ -618,6 +619,11 @@ func newIndexReader(dir string) (*indexReader, error) {
 func (r *indexReader) readTOC() error {
 	d := r.decbufAt(len(r.b) - indexTOCLen)
 
+	crc := newCRC32()
+	if _, err := crc.Write(d.get()[:d.len()-4]); err != nil {
+		return errors.Wrap(err, "write to hash")
+	}
+
 	r.toc.symbols = d.be64()
 	r.toc.series = d.be64()
 	r.toc.labelIndices = d.be64()
@@ -625,9 +631,12 @@ func (r *indexReader) readTOC() error {
 	r.toc.postings = d.be64()
 	r.toc.postingsTable = d.be64()
 
-	// TODO(fabxc): validate checksum.
+	// Validate checksum
+	if d.be32() != crc.Sum32() {
+		return errors.Wrap(errInvalidChecksum, "TOC checksum")
+	}
 
-	return nil
+	return d.err()
 }
 
 func (r *indexReader) decbufAt(off int) decbuf {
