@@ -22,7 +22,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -137,6 +139,16 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
+func (d *Discovery) ec2MetadataAvailable(sess *session.Session) (isAvailable bool) {
+	svc := ec2metadata.New(sess, &aws.Config{
+		MaxRetries: aws.Int(0),
+	})
+
+	isAvailable = svc.Available()
+
+	return isAvailable
+}
+
 func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
@@ -159,7 +171,12 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		creds := stscreds.NewCredentials(sess, d.roleARN)
 		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
 	} else {
-		ec2s = ec2.New(sess)
+		if d.aws.Credentials == nil && d.ec2MetadataAvailable(sess) {
+			creds := ec2rolecreds.NewCredentials(sess)
+			ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+		} else {
+			ec2s = ec2.New(sess)
+		}
 	}
 	tg = &config.TargetGroup{
 		Source: *d.aws.Region,
