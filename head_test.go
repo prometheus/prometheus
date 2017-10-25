@@ -660,3 +660,43 @@ func TestComputeChunkEndTime(t *testing.T) {
 		}
 	}
 }
+
+func TestMemSeries_append(t *testing.T) {
+	s := newMemSeries(labels.Labels{}, 1, 500)
+
+	// Add first two samples at the very end of a chunk range and the next two
+	// on and after it.
+	// New chunk must correctly be cut at 1000.
+	ok, chunkCreated := s.append(998, 1)
+	Assert(t, ok, "append failed")
+	Assert(t, chunkCreated, "first sample created chunk")
+
+	ok, chunkCreated = s.append(999, 2)
+	Assert(t, ok, "append failed")
+	Assert(t, !chunkCreated, "second sample should use same chunk")
+
+	ok, chunkCreated = s.append(1000, 3)
+	Assert(t, ok, "append failed")
+	Assert(t, ok, "expected new chunk on boundary")
+
+	ok, chunkCreated = s.append(1001, 4)
+	Assert(t, ok, "append failed")
+	Assert(t, !chunkCreated, "second sample should use same chunk")
+
+	Assert(t, s.chunks[0].minTime == 998 && s.chunks[0].maxTime == 999, "wrong chunk range")
+	Assert(t, s.chunks[1].minTime == 1000 && s.chunks[1].maxTime == 1001, "wrong chunk range")
+
+	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
+	// at approximately 120 samples per chunk.
+	for i := 1; i < 1000; i++ {
+		ok, _ := s.append(1001+int64(i), float64(i))
+		Assert(t, ok, "append failed")
+	}
+
+	Assert(t, len(s.chunks) > 7, "expected intermediate chunks")
+
+	// All chunks but the first and last should now be moderately full.
+	for i, c := range s.chunks[1 : len(s.chunks)-1] {
+		Assert(t, c.chunk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, c.chunk.NumSamples())
+	}
+}

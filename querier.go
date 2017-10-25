@@ -535,7 +535,6 @@ func (s *populatedChunkSeries) Next() bool {
 				return false
 			}
 		}
-
 		if len(chks) == 0 {
 			continue
 		}
