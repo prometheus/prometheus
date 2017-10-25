@@ -273,13 +273,23 @@ func (h *Head) ReadWAL() error {
 		}
 	}
 	samplesFunc := func(samples []RefSample) {
-		var buf []RefSample
-		select {
-		case buf = <-input:
-		default:
-			buf = make([]RefSample, 0, len(samples)*11/10)
+		// We split up the samples into chunks of 5000 samples or less.
+		// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+		// cause thousands of very large in flight buffers occupying large amounts
+		// of unused memory.
+		for len(samples) > 0 {
+			n := 5000
+			if len(samples) < n {
+				n = len(samples)
+			}
+			var buf []RefSample
+			select {
+			case buf = <-input:
+			default:
+			}
+			firstInput <- append(buf[:0], samples[:n]...)
+			samples = samples[n:]
 		}
-		firstInput <- append(buf[:0], samples...)
 	}
 	deletesFunc := func(stones []Stone) {
 		for _, s := range stones {
