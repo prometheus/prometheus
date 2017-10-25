@@ -1162,6 +1162,10 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	}
 	s.chunks = append(s.chunks, c)
 
+	// Set upper bound on when the next chunk must be started. An earlier timestamp
+	// may be chosen dynamically at a later point.
+	_, s.nextAt = rangeForTimestamp(mint, s.chunkRange)
+
 	app, err := c.chunk.Appender()
 	if err != nil {
 		panic(err)
@@ -1241,21 +1245,23 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	}
 	numSamples := c.chunk.NumSamples()
 
+	// Out of order sample.
 	if c.maxTime >= t {
 		return false, chunkCreated
 	}
-	if numSamples > samplesPerChunk/4 && t >= s.nextAt {
+	// If we reach 25% of a chunk's desired sample count, set a definitive time
+	// at which to start the next chunk.
+	// At latest it must happen at the timestamp set when the chunk was cut.
+	if numSamples == samplesPerChunk/4 {
+		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
+	}
+	if t >= s.nextAt {
 		c = s.cut(t)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
 
 	c.maxTime = t
-
-	if numSamples == samplesPerChunk/4 {
-		_, maxt := rangeForTimestamp(c.minTime, s.chunkRange)
-		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxt)
-	}
 
 	s.lastValue = v
 
