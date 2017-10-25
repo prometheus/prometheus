@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -30,7 +31,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"

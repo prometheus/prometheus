@@ -14,6 +14,7 @@
 package ec2
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -27,7 +28,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/prometheus/prometheus/config"

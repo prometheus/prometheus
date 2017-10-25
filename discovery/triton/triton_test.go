@@ -14,6 +14,7 @@
 package triton
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,10 +24,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/net/context"
 )
 
 var (

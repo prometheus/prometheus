@@ -14,6 +14,7 @@
 package openstack
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )

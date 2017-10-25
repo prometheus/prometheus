@@ -14,7 +14,7 @@
 package api_v2
 
 import (
-	native_context "context"
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/net/context"
+	old_ctx "golang.org/x/net/context"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,14 +33,15 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 // API encapsulates all API services.
@@ -48,7 +49,7 @@ type API struct {
 	enableAdmin   bool
 	now           func() time.Time
 	db            func() *tsdb.DB
-	q             func(ctx native_context.Context, mint, maxt int64) (storage.Querier, error)
+	q             func(ctx context.Context, mint, maxt int64) (storage.Querier, error)
 	targets       func() []*retrieval.Target
 	alertmanagers func() []*url.URL
 }
@@ -58,7 +59,7 @@ func New(
 	now func() time.Time,
 	db func() *tsdb.DB,
 	qe *promql.Engine,
-	q func(ctx native_context.Context, mint, maxt int64) (storage.Querier, error),
+	q func(ctx context.Context, mint, maxt int64) (storage.Querier, error),
 	targets func() []*retrieval.Target,
 	alertmanagers func() []*url.URL,
 	enableAdmin bool,
@@ -139,12 +140,12 @@ type adminDisabled struct {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *adminDisabled) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *adminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
 // DeleteSeries imeplements pb.AdminServer.
-func (s *adminDisabled) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+func (s *adminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
@@ -161,7 +162,7 @@ func NewAdmin(db func() *tsdb.DB) *Admin {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *Admin) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *Admin) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	db := s.db()
 	if db == nil {
 		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
@@ -181,7 +182,7 @@ func (s *Admin) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.
 }
 
 // DeleteSeries implements pb.AdminServer.
-func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+func (s *Admin) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	mint, maxt, err := extractTimeRange(r.MinTime, r.MaxTime)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())

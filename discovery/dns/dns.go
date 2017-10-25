@@ -14,6 +14,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -25,7 +26,6 @@ import (
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )

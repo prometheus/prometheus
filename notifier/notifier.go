@@ -15,6 +15,7 @@ package notifier
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -30,7 +31,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
+	old_ctx "golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
@@ -123,7 +124,7 @@ type Options struct {
 	ExternalLabels model.LabelSet
 	RelabelConfigs []*config.RelabelConfig
 	// Used for sending HTTP requests to the Alertmanager.
-	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
+	Do func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
 }

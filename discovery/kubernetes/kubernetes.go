@@ -14,23 +14,23 @@
 package kubernetes
 
 import (
+	"context"
 	"io/ioutil"
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/config"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 const (
