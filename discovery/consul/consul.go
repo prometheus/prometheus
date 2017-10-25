@@ -14,6 +14,7 @@
 package consul
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
-	"golang.org/x/net/context"
 )
 
 const (

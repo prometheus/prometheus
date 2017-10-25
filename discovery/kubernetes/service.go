@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -21,11 +22,11 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/util/strutil"
-	"golang.org/x/net/context"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // Service implements discovery of Kubernetes services.

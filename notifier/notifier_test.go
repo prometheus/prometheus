@@ -14,6 +14,7 @@
 package notifier
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -24,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
+	old_ctx "golang.org/x/net/context"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -198,7 +199,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := New(&Options{
-		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
 			if err != nil {

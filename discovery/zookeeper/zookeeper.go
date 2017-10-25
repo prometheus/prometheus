@@ -14,17 +14,17 @@
 package zookeeper
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
-	"golang.org/x/net/context"
 
-	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"

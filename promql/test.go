@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"

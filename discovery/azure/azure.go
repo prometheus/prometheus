@@ -14,6 +14,7 @@
 package azure
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -27,7 +28,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"

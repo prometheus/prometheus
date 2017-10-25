@@ -14,10 +14,10 @@
 package discovery
 
 import (
+	"context"
 	"testing"
 
 	"github.com/prometheus/prometheus/config"
-	"golang.org/x/net/context"
 	yaml "gopkg.in/yaml.v2"
 )
 

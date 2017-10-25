@@ -14,6 +14,7 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
@@ -25,7 +26,6 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )

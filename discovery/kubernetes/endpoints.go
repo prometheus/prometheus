@@ -14,18 +14,18 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
 
-	"github.com/prometheus/prometheus/config"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 // Endpoints discovers new endpoint targets.
