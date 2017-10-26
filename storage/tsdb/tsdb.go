@@ -155,52 +155,14 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 // StartTime implements the Storage interface.
 func (a adapter) StartTime() (int64, error) {
-	startTime := int64(model.Latest)
+	var startTime int64
 
-	var indexr tsdb.IndexReader
 	if len(a.db.Blocks()) > 0 {
-		var err error
-		indexr, err = a.db.Blocks()[0].Index()
-		if err != nil {
-			return startTime, err
-		}
+		startTime = a.db.Blocks()[0].Meta().MinTime
 	} else {
-		var err error
-		indexr, err = a.db.Head().Index()
-		if err != nil {
-			return startTime, err
-		}
-	}
-	defer indexr.Close()
-
-	joblabel := "job"
-	tpls, err := indexr.LabelValues(joblabel)
-	if err != nil {
-		return startTime, err
+		startTime = int64(time.Now().Unix() * 1000)
 	}
 
-	for i := 0; i < tpls.Len(); i++ {
-		vals, err := tpls.At(i)
-		if err != nil {
-			continue
-		}
-
-		for _, v := range vals {
-			p, err := indexr.Postings(joblabel, v)
-			if err != nil {
-				continue
-			}
-
-			if p.Next() {
-				var lset tsdbLabels.Labels
-				var chks []tsdb.ChunkMeta
-				indexr.Series(p.At(), &lset, &chks)
-				if startTime > chks[0].MinTime {
-					startTime = chks[0].MinTime
-				}
-			}
-		}
-	}
 	// Add a safety margin as it may take a few minutes for everything to spin up.
 	return startTime + a.startTimeMargin, nil
 }
