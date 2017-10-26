@@ -34,10 +34,6 @@ type fanout struct {
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
 // through to multiple underlying storages.
 func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
-	if len(secondaries) == 0 {
-		return primary
-	}
-
 	return &fanout{
 		logger:      logger,
 		primary:     primary,
