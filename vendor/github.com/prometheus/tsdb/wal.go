@@ -222,12 +222,21 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, 
 	if err != nil {
 		return nil, err
 	}
-	for _, fn := range fns {
+
+	for i, fn := range fns {
 		f, err := w.openSegmentFile(fn)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			w.files = append(w.files, newSegmentFile(f))
+			continue
 		}
-		w.files = append(w.files, newSegmentFile(f))
+		level.Warn(logger).Log("msg", "invalid segment file detected, truncating WAL", "err", err, "file", fn)
+
+		for _, fn := range fns[i:] {
+			if err := os.Remove(fn); err != nil {
+				return w, errors.Wrap(err, "removing segment failed")
+			}
+		}
+		break
 	}
 
 	go w.run(flushInterval)
