@@ -197,9 +197,26 @@ type mergeQuerier struct {
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
+// NB will return nil if no queriers are passed to it, and will filter nil
+// queriers from its arguments, in order to reduce overhead when only one
+// querier is passed.
 func NewMergeQuerier(queriers []Querier) Querier {
-	return &mergeQuerier{
-		queriers: queriers,
+	filtered := make([]Querier, 0, len(queriers))
+	for _, querier := range queriers {
+		if querier != nil {
+			filtered = append(filtered, querier)
+		}
+	}
+
+	switch len(filtered) {
+	case 0:
+		return nil
+	case 1:
+		return filtered[0]
+	default:
+		return &mergeQuerier{
+			queriers: filtered,
+		}
 	}
 }
 
