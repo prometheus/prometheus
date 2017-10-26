@@ -1,11 +1,18 @@
-## 2.0.0-rc.1 / 2017-10-17
+## 2.0.0-rc.2 / 2017-10-25
 
-* [FEATURE] Added a warning for time-drift between the browser and the prometheus-server.
-* [ENHANCEMENT] Much faster WAL read-back on restart.
-* [BUGFIX] Fixed Remote-read to not drop the first series.
-* [BUGFIX] Validate recording-rule names.
-* [BUGFIX] Fix several races.
-* [BUGFIX] Only close blocks if there are no iterators accessing it.
+* [ENHANCEMENT] handle WAL segments with corrupted header gracefully
+* [ENHANCEMENT] stabilize memory usage during WAL replay
+* [CHANGE] Prefix all storage metrics with `prometheus_`
+* [BUGFIX] Correctly handle label removal in remote read
+* [BUGFIX] Fix chunk misalignment causing out-of-order samples
+* [BUGFIX] Fix connection leak in Consul SD
+* [BUGFIX] Handle invalid chunk derefernces gracefully
+* [BUGFIX] Prevent potential deadlock during failing querier construction
+
+Data written in previous pre-release versions may have been affected by the out-of-order
+bug. Reading this data may reveal artefacts and incorrect data.
+Starting with a clean storage directory is advised. The WAL directory may safely be kept.
+
 
 ## 1.8.0 / 2017-10-06
 
