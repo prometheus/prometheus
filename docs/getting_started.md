@@ -60,8 +60,8 @@ For a complete specification of configuration options, see the
 
 ## Starting Prometheus
 
-To start Prometheus with your newly created configuration file, change to your
-Prometheus build directory and run:
+To start Prometheus with your newly created configuration file, change to the
+directory containing the Prometheus binary and run:
 
 ```bash
 # Start Prometheus.
@@ -69,9 +69,9 @@ Prometheus build directory and run:
 ./prometheus -config.file=prometheus.yml
 ```
 
-Prometheus should start up and it should show a status page about itself at
-[localhost:9090](http://localhost:9090). Give it a couple of seconds to collect
-data about itself from its own HTTP metrics endpoint.
+Prometheus should start up. You should also be able to browse to a status page
+about itself at [localhost:9090](http://localhost:9090). Give it a couple of
+seconds to collect data about itself from its own HTTP metrics endpoint.
 
 You can also verify that Prometheus is serving metrics about itself by
 navigating to its metrics endpoint:
@@ -81,11 +81,10 @@ The number of OS threads executed by Prometheus is controlled by the
 `GOMAXPROCS` environment variable. As of Go 1.5 the default value is
 the number of cores available.
 
-Blindly setting `GOMAXPROCS` to a high value can be
-counterproductive. See the relevant [Go
-FAQs](http://golang.org/doc/faq#Why_no_multi_CPU).
+Blindly setting `GOMAXPROCS` to a high value can be counterproductive. See the
+relevant [Go FAQs](http://golang.org/doc/faq#Why_no_multi_CPU).
 
-Note that Prometheus by default uses around 3GB in memory. If you have a
+Prometheus by default uses around 3GB in memory. If you have a
 smaller machine, you can tune Prometheus to use less memory.  For details,
 see the [memory usage documentation](storage.md#memory-usage).
 
@@ -96,8 +95,8 @@ use Prometheus's built-in expression browser, navigate to
 http://localhost:9090/graph and choose the "Console" view within the "Graph"
 tab.
 
-As you can gather from http://localhost:9090/metrics, one metric that
-Prometheus exports about itself is called
+As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
+one metric that Prometheus exports about itself is called
 `prometheus_target_interval_length_seconds` (the actual amount of time between
 target scrapes). Go ahead and enter this into the expression console:
 
@@ -105,7 +104,7 @@ target scrapes). Go ahead and enter this into the expression console:
 prometheus_target_interval_length_seconds
 ```
 
-This should return a lot of different time series (along with the latest value
+This should return a number of different time series (along with the latest value
 recorded for each), all with the metric name
 `prometheus_target_interval_length_seconds`, but with different labels. These
 labels designate different latency percentiles and target group intervals.
@@ -186,7 +185,7 @@ section in your `prometheus.yml` and restart your Prometheus instance:
 
 ```yaml
 scrape_configs:
-  - job_name: 'example-random'
+  - job_name:       'example-random'
 
     # Override the global default and scrape targets from this job every 5 seconds.
     scrape_interval: 5s
@@ -231,7 +230,7 @@ job_service:rpc_durations_seconds_count:avg_rate5m = avg(rate(rpc_durations_seco
 ```
 
 To make Prometheus pick up this new rule, add a `rule_files` statement to the
-global configuration section in your `prometheus.yml`. The config should now
+`global` configuration section in your `prometheus.yml`. The config should now
 look like this:
 
 ```yaml
