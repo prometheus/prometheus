@@ -1,6 +1,5 @@
 ---
 title: Configuration
-sort_rank: 20
 ---
 
 # Configuration
@@ -549,6 +548,8 @@ project: <string>
 zone: <string>
 
 # Filter can be used optionally to filter the instance list by other criteria
+# Syntax of this filter string is described here in the filter query parameter section:
+# https://cloud.google.com/compute/docs/reference/latest/instances/list
 [ filter: <string> ]
 
 # Refresh interval to re-read the instance list
@@ -770,8 +771,8 @@ in the configuration file), which can also be changed using relabeling.
 
 ### `<nerve_sd_config>`
 
-Nerve SD configurations allow retrieving scrape targets from [AirBnB's
-Nerve](https://github.com/airbnb/nerve) which are stored in
+Nerve SD configurations allow retrieving scrape targets from [AirBnB's Nerve]
+(https://github.com/airbnb/nerve) which are stored in
 [Zookeeper](https://zookeeper.apache.org/).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -793,10 +794,10 @@ paths:
 
 ### `<serverset_sd_config>`
 
-Serverset SD configurations allow retrieving scrape targets from
-[Serversets](https://github.com/twitter/finagle/tree/master/finagle-serversets)
-which are stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are
-commonly used by [Finagle](https://twitter.github.io/finagle/) and
+Serverset SD configurations allow retrieving scrape targets from [Serversets]
+(https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
+stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
+used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](http://aurora.apache.org/).
 
 The following meta labels are available on targets during relabeling:

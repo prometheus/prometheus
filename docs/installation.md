@@ -15,6 +15,11 @@ available versions.
 For building Prometheus components from source, see the `Makefile` targets in
 the respective repository.
 
+NOTE: **Note:** The documentation on this website refers to the latest stable
+release (excluding pre-releases). The branch
+[next-release](https://github.com/prometheus/docs/compare/next-release) refers
+to unreleased changes that are in master branches of source repos.
+
 ## Using Docker
 
 All Prometheus services are available as Docker images under the
@@ -26,7 +31,7 @@ exposes it on port 9090.
 
 The Prometheus image uses a volume to store the actual metrics. For
 production deployments it is highly recommended to use the
-[Data Volume Container](https://docs.docker.com/engine/userguide/containers/dockervolumes/#creating-and-mounting-a-data-volume-container)
+[Data Volume Container](https://docs.docker.com/engine/admin/volumes/volumes/)
 pattern to ease managing the data on Prometheus upgrades.
 
 To provide your own configuration, there are several options. Here are
@@ -34,16 +39,16 @@ two examples.
 
 ### Volumes & bind-mount
 
-Bind-mount your prometheus.yml from the host by running:
+Bind-mount your `prometheus.yml` from the host by running:
 
-```
+```bash
 docker run -p 9090:9090 -v /tmp/prometheus.yml:/etc/prometheus/prometheus.yml \
        prom/prometheus
 ```
 
 Or use an additional volume for the config:
 
-```
+```bash
 docker run -p 9090:9090 -v /prometheus-data \
        prom/prometheus -config.file=/prometheus-data/prometheus.yml
 ```
@@ -56,21 +61,21 @@ configuration itself is rather static and the same across all
 environments.
 
 For this, create a new directory with a Prometheus configuration and a
-Dockerfile like this:
+`Dockerfile` like this:
 
-```
+```Dockerfile
 FROM prom/prometheus
 ADD prometheus.yml /etc/prometheus/
 ```
 
 Now build and run it:
 
-```
+```bash
 docker build -t my-prometheus .
 docker run -p 9090:9090 my-prometheus
 ```
 
-A more advanced option is to render the config dynamically on start
+A more advanced option is to render the configuration dynamically on start
 with some tooling or even have a daemon update it periodically.
 
 ## Using configuration management systems
@@ -78,19 +83,19 @@ with some tooling or even have a daemon update it periodically.
 If you prefer using configuration management systems you might be interested in
 the following third-party contributions:
 
-Ansible:
+### Ansible
 
 * [griggheo/ansible-prometheus](https://github.com/griggheo/ansible-prometheus)
 * [William-Yeh/ansible-prometheus](https://github.com/William-Yeh/ansible-prometheus)
 
-Chef:
+### Chef
 
 * [rayrod2030/chef-prometheus](https://github.com/rayrod2030/chef-prometheus)
 
-Puppet:
+### Puppet
 
 * [puppet/prometheus](https://forge.puppet.com/puppet/prometheus)
 
-SaltStack:
+### SaltStack
 
 * [bechtoldt/saltstack-prometheus-formula](https://github.com/bechtoldt/saltstack-prometheus-formula)
