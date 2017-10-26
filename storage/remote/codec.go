@@ -321,6 +321,9 @@ func MetricToLabelProtos(metric model.Metric) []*prompb.Label {
 			Value: string(v),
 		})
 	}
+	sort.Slice(labels, func(i int, j int) bool {
+		return labels[i].Name < labels[j].Name
+	})
 	return labels
 }
 
