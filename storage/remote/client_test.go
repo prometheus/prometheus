@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
@@ -64,15 +65,15 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		c, err := NewClient(0, &clientConfig{
-			url:     &config.URL{serverURL},
-			timeout: model.Duration(time.Second),
+		c, err := NewClient(0, &ClientConfig{
+			URL:     &config.URL{URL: serverURL},
+			Timeout: model.Duration(time.Second),
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err = c.Store(nil)
+		err = c.Store(&prompb.WriteRequest{})
 		if !reflect.DeepEqual(err, test.err) {
 			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
 		}

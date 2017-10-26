@@ -98,55 +98,38 @@ func TestAddExternalLabels(t *testing.T) {
 	}
 }
 
-func TestRemoveLabels(t *testing.T) {
+func TestSeriesSetFilter(t *testing.T) {
 	tests := []struct {
-		in       labels.Labels
-		out      labels.Labels
+		in       *prompb.QueryResult
 		toRemove model.LabelSet
+
+		expected *prompb.QueryResult
 	}{
 		{
 			toRemove: model.LabelSet{"foo": "bar"},
-			in:       labels.FromStrings("foo", "bar", "a", "b"),
-			out:      labels.FromStrings("a", "b"),
+			in: &prompb.QueryResult{
+				Timeseries: []*prompb.TimeSeries{
+					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []*prompb.Sample{}},
+				},
+			},
+			expected: &prompb.QueryResult{
+				Timeseries: []*prompb.TimeSeries{
+					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []*prompb.Sample{}},
+				},
+			},
 		},
 	}
 
-	for i, test := range tests {
-		in := test.in.Copy()
-		removeLabels(&in, test.toRemove)
-
-		if !reflect.DeepEqual(in, test.out) {
-			t.Fatalf("%d. unexpected labels; want %v, got %v", i, test.out, in)
+	for i, tc := range tests {
+		filtered := newSeriesSetFilter(FromQueryResult(tc.in), tc.toRemove)
+		have, err := ToQueryResult(filtered)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-}
 
-func TestConcreteSeriesSet(t *testing.T) {
-	series1 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "bar"),
-		samples: []*prompb.Sample{&prompb.Sample{Value: 1, Timestamp: 2}},
-	}
-	series2 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "baz"),
-		samples: []*prompb.Sample{&prompb.Sample{Value: 3, Timestamp: 4}},
-	}
-	c := &concreteSeriesSet{
-		series: []storage.Series{series1, series2},
-	}
-	if !c.Next() {
-		t.Fatalf("Expected Next() to be true.")
-	}
-	if c.At() != series1 {
-		t.Fatalf("Unexpected series returned.")
-	}
-	if !c.Next() {
-		t.Fatalf("Expected Next() to be true.")
-	}
-	if c.At() != series2 {
-		t.Fatalf("Unexpected series returned.")
-	}
-	if c.Next() {
-		t.Fatalf("Expected Next() to be false.")
+		if !reflect.DeepEqual(have, tc.expected) {
+			t.Fatalf("%d. unexpected labels; want %v, got %v", i, tc.expected, have)
+		}
 	}
 }
 
@@ -184,11 +167,11 @@ func TestRemoteStorageQuerier(t *testing.T) {
 		s := NewStorage(nil, func() (int64, error) { return test.localStartTime, nil })
 		s.clients = []*Client{}
 		for _, readRecent := range test.readRecentClients {
-			c, _ := NewClient(0, &clientConfig{
-				url:              nil,
-				timeout:          model.Duration(30 * time.Second),
-				httpClientConfig: config.HTTPClientConfig{},
-				readRecent:       readRecent,
+			c, _ := NewClient(0, &ClientConfig{
+				URL:              nil,
+				Timeout:          model.Duration(30 * time.Second),
+				HTTPClientConfig: config.HTTPClientConfig{},
+				ReadRecent:       readRecent,
 			})
 			s.clients = append(s.clients, c)
 		}
