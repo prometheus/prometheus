@@ -98,7 +98,7 @@ func TestAddExternalLabels(t *testing.T) {
 	}
 }
 
-func TestRemoveLabels(t *testing.T) {
+func TestSeriesSetFilter(t *testing.T) {
 	tests := []struct {
 		in       *prompb.QueryResult
 		toRemove model.LabelSet
