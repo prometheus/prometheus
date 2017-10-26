@@ -1,8 +1,9 @@
 ---
-title: Installing
+title: Installation
+sort_rank: 2
 ---
 
-# Installing
+# Installation
 
 ## Using pre-compiled binaries
 
