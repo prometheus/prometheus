@@ -619,11 +619,6 @@ func newIndexReader(dir string) (*indexReader, error) {
 func (r *indexReader) readTOC() error {
 	d := r.decbufAt(len(r.b) - indexTOCLen)
 
-	crc := newCRC32()
-	if _, err := crc.Write(d.get()[:d.len()-4]); err != nil {
-		return errors.Wrap(err, "write to hash")
-	}
-
 	r.toc.symbols = d.be64()
 	r.toc.series = d.be64()
 	r.toc.labelIndices = d.be64()
@@ -631,9 +626,8 @@ func (r *indexReader) readTOC() error {
 	r.toc.postings = d.be64()
 	r.toc.postingsTable = d.be64()
 
-	// Validate checksum
-	if d.be32() != crc.Sum32() {
-		return errors.Wrap(errInvalidChecksum, "TOC checksum")
+	if valid, err := r.validCrc(d.be32(), len(r.b)-indexTOCLen, indexTOCLen-4); !valid {
+		return errors.Wrap(err, "TOC checksum")
 	}
 
 	return d.err()
@@ -644,6 +638,20 @@ func (r *indexReader) decbufAt(off int) decbuf {
 		return decbuf{e: errInvalidSize}
 	}
 	return decbuf{b: r.b[off:]}
+}
+
+func (r *indexReader) validCrc(crc uint32, off, cnt int) (bool, error) {
+	c2 := newCRC32()
+	if len(r.b) < off+cnt {
+		return false, errInvalidSize
+	}
+	if _, err := c2.Write(r.b[off : off+cnt]); err != nil {
+		return false, errors.Wrap(err, "write to hash")
+	}
+	if c2.Sum32() != crc {
+		return false, errInvalidChecksum
+	}
+	return true, nil
 }
 
 // readSymbols reads the symbol table fully into memory and allocates proper strings for them.
@@ -677,9 +685,10 @@ func (r *indexReader) readOffsetTable(off uint64) (map[string]uint32, error) {
 	const sep = "\xff"
 
 	var (
-		d1  = r.decbufAt(int(off))
-		d2  = d1.decbuf(d1.be32int())
-		cnt = d2.be32()
+		d1       = r.decbufAt(int(off))
+		tableLen = d1.be32int()
+		d2       = d1.decbuf(tableLen)
+		cnt      = d2.be32()
 	)
 
 	res := make(map[string]uint32, 512)
@@ -696,7 +705,10 @@ func (r *indexReader) readOffsetTable(off uint64) (map[string]uint32, error) {
 		cnt--
 	}
 
-	// TODO(fabxc): verify checksum from remainer of d1.
+	if valid, err := r.validCrc(d1.be32(), int(off)+4, tableLen); !valid {
+		return res, errors.Wrap(err, "offset table checksum")
+	}
+
 	return res, d2.err()
 }
 
