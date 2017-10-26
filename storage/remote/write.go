@@ -38,14 +38,6 @@ func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
 	return 0, nil
 }
 
-func labelsToMetric(ls labels.Labels) model.Metric {
-	metric := make(model.Metric, len(ls))
-	for _, l := range ls {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return metric
-}
-
 // AddFast implements storage.Appender.
 func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
 	_, err := s.Add(l, t, v)

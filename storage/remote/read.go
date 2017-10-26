@@ -15,17 +15,14 @@ package remote
 
 import (
 	"context"
-	"sort"
 
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
 
 // Querier returns a new Querier on the storage.
-func (r *Storage) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
+func (r *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
@@ -47,6 +44,7 @@ func (r *Storage) Querier(_ context.Context, mint, maxt int64) (storage.Querier,
 			}
 		}
 		queriers = append(queriers, &querier{
+			ctx:            ctx,
 			mint:           mint,
 			maxt:           cmaxt,
 			client:         c,
@@ -61,6 +59,7 @@ var newMergeQueriers = storage.NewMergeQuerier
 
 // Querier is an adapter to make a Client usable as a storage.Querier.
 type querier struct {
+	ctx            context.Context
 	mint, maxt     int64
 	client         *Client
 	externalLabels model.LabelSet
@@ -70,61 +69,19 @@ type querier struct {
 func (q *querier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
 	m, added := q.addExternalLabels(matchers)
 
-	res, err := q.client.Read(context.TODO(), q.mint, q.maxt, labelMatchersToProto(m))
+	query, err := ToQuery(q.mint, q.maxt, m)
 	if err != nil {
 		return errSeriesSet{err: err}
 	}
 
-	series := make([]storage.Series, 0, len(res))
-	for _, ts := range res {
-		labels := labelPairsToLabels(ts.Labels)
-		removeLabels(&labels, added)
-		series = append(series, &concreteSeries{
-			labels:  labels,
-			samples: ts.Samples,
-		})
+	res, err := q.client.Read(q.ctx, query)
+	if err != nil {
+		return errSeriesSet{err: err}
 	}
-	sort.Sort(byLabel(series))
-	return &concreteSeriesSet{
-		series: series,
-	}
-}
 
-func labelMatchersToProto(matchers []*labels.Matcher) []*prompb.LabelMatcher {
-	pbMatchers := make([]*prompb.LabelMatcher, 0, len(matchers))
-	for _, m := range matchers {
-		var mType prompb.LabelMatcher_Type
-		switch m.Type {
-		case labels.MatchEqual:
-			mType = prompb.LabelMatcher_EQ
-		case labels.MatchNotEqual:
-			mType = prompb.LabelMatcher_NEQ
-		case labels.MatchRegexp:
-			mType = prompb.LabelMatcher_RE
-		case labels.MatchNotRegexp:
-			mType = prompb.LabelMatcher_NRE
-		default:
-			panic("invalid matcher type")
-		}
-		pbMatchers = append(pbMatchers, &prompb.LabelMatcher{
-			Type:  mType,
-			Name:  string(m.Name),
-			Value: string(m.Value),
-		})
-	}
-	return pbMatchers
-}
+	seriesSet := FromQueryResult(res)
 
-func labelPairsToLabels(labelPairs []*prompb.Label) labels.Labels {
-	result := make(labels.Labels, 0, len(labelPairs))
-	for _, l := range labelPairs {
-		result = append(result, labels.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
-	}
-	sort.Sort(result)
-	return result
+	return newSeriesSetFilter(seriesSet, added)
 }
 
 type byLabel []storage.Series
@@ -141,94 +98,6 @@ func (q *querier) LabelValues(name string) ([]string, error) {
 
 // Close releases the resources of the Querier.
 func (q *querier) Close() error {
-	return nil
-}
-
-// errSeriesSet implements storage.SeriesSet, just returning an error.
-type errSeriesSet struct {
-	err error
-}
-
-func (errSeriesSet) Next() bool {
-	return false
-}
-
-func (errSeriesSet) At() storage.Series {
-	return nil
-}
-
-func (e errSeriesSet) Err() error {
-	return e.err
-}
-
-// concreteSeriesSet implements storage.SeriesSet.
-type concreteSeriesSet struct {
-	cur    int
-	series []storage.Series
-}
-
-func (c *concreteSeriesSet) Next() bool {
-	c.cur++
-	return c.cur-1 < len(c.series)
-}
-
-func (c *concreteSeriesSet) At() storage.Series {
-	return c.series[c.cur-1]
-}
-
-func (c *concreteSeriesSet) Err() error {
-	return nil
-}
-
-// concreteSeries implementes storage.Series.
-type concreteSeries struct {
-	labels  labels.Labels
-	samples []*prompb.Sample
-}
-
-func (c *concreteSeries) Labels() labels.Labels {
-	return c.labels
-}
-
-func (c *concreteSeries) Iterator() storage.SeriesIterator {
-	return newConcreteSeriersIterator(c)
-}
-
-// concreteSeriesIterator implements storage.SeriesIterator.
-type concreteSeriesIterator struct {
-	cur    int
-	series *concreteSeries
-}
-
-func newConcreteSeriersIterator(series *concreteSeries) storage.SeriesIterator {
-	return &concreteSeriesIterator{
-		cur:    -1,
-		series: series,
-	}
-}
-
-// Seek implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Seek(t int64) bool {
-	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[n].Timestamp >= t
-	})
-	return c.cur < len(c.series.samples)
-}
-
-// At implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) At() (t int64, v float64) {
-	s := c.series.samples[c.cur]
-	return s.Timestamp, s.Value
-}
-
-// Next implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Next() bool {
-	c.cur++
-	return c.cur < len(c.series.samples)
-}
-
-// Err implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
 
@@ -258,12 +127,38 @@ func (q *querier) addExternalLabels(matchers []*labels.Matcher) ([]*labels.Match
 	return matchers, el
 }
 
-func removeLabels(l *labels.Labels, toDelete model.LabelSet) {
-	for i := 0; i < len(*l); {
-		if _, ok := toDelete[model.LabelName((*l)[i].Name)]; ok {
-			*l = (*l)[:i+copy((*l)[i:], (*l)[i+1:])]
-		} else {
-			i++
-		}
+func newSeriesSetFilter(ss storage.SeriesSet, toFilter model.LabelSet) storage.SeriesSet {
+	return &seriesSetFilter{
+		SeriesSet: ss,
+		toFilter:  toFilter,
 	}
+}
+
+type seriesSetFilter struct {
+	storage.SeriesSet
+	toFilter model.LabelSet
+}
+
+func (ssf seriesSetFilter) At() storage.Series {
+	return seriesFilter{
+		Series:   ssf.SeriesSet.At(),
+		toFilter: ssf.toFilter,
+	}
+}
+
+type seriesFilter struct {
+	storage.Series
+	toFilter model.LabelSet
+}
+
+func (sf seriesFilter) Labels() labels.Labels {
+	labels := sf.Series.Labels()
+	for i := 0; i < len(labels); {
+		if _, ok := sf.toFilter[model.LabelName(labels[i].Name)]; ok {
+			labels = labels[:i+copy(labels[i:], labels[i+1:])]
+			continue
+		}
+		i++
+	}
+	return labels
 }

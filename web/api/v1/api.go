@@ -21,6 +21,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -31,9 +32,11 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -161,6 +164,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
 
 	r.Get("/status/config", instr("config", api.serveConfig))
+	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
 }
 
 type queryData struct {
@@ -449,6 +453,105 @@ func (api *API) serveConfig(r *http.Request) (interface{}, *apiError) {
 		YAML: api.config().String(),
 	}
 	return cfg, nil
+}
+
+func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
+	req, err := remote.DecodeReadRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	}
+	for i, query := range req.Queries {
+		from, through, matchers, err := remote.FromQuery(query)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		querier, err := api.Queryable.Querier(r.Context(), from, through)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer querier.Close()
+
+		// Change equality matchers which match external labels
+		// to a matcher that looks for an empty label,
+		// as that label should not be present in the storage.
+		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
+		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
+		for _, m := range matchers {
+			value := externalLabels[model.LabelName(m.Name)]
+			if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
+				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				filteredMatchers = append(filteredMatchers, matcher)
+			} else {
+				filteredMatchers = append(filteredMatchers, m)
+			}
+		}
+
+		resp.Results[i], err = remote.ToQueryResult(querier.Select(filteredMatchers...))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Add external labels back in, in sorted order.
+		sortedExternalLabels := make([]*prompb.Label, 0, len(externalLabels))
+		for name, value := range externalLabels {
+			sortedExternalLabels = append(sortedExternalLabels, &prompb.Label{
+				Name:  string(name),
+				Value: string(value),
+			})
+		}
+		sort.Slice(sortedExternalLabels, func(i, j int) bool {
+			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+		})
+
+		for _, ts := range resp.Results[i].Timeseries {
+			ts.Labels = mergeLabels(ts.Labels, sortedExternalLabels)
+		}
+	}
+
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// mergeLabels merges two sets of sorted proto labels, preferring those in
+// primary to those in secondary when there is an overlap.
+func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
+	i, j := 0, 0
+	for i < len(primary) && j < len(secondary) {
+		if primary[i].Name < secondary[j].Name {
+			result = append(result, primary[i])
+			i++
+		} else if primary[i].Name > secondary[j].Name {
+			result = append(result, secondary[j])
+			j++
+		} else {
+			result = append(result, primary[i])
+			i++
+			j++
+		}
+	}
+	for ; i < len(primary); i++ {
+		result = append(result, primary[i])
+	}
+	for ; j < len(secondary); j++ {
+		result = append(result, secondary[j])
+	}
+	return result
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
