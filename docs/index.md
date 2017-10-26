@@ -14,3 +14,4 @@ The documentation is available alongside all the project documentation at
 - [Installing](install.md)
 - [Getting started](getting_started.md)
 - [Configuration](configuration.md)
+- [Querying](querying/basics.md)

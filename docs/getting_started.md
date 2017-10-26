@@ -1,6 +1,6 @@
 ---
 title: Getting started
-sort_rank: 10
+sort_rank: 1
 ---
 
 # Getting started
