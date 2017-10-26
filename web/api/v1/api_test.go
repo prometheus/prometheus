@@ -563,10 +563,10 @@ func TestReadEndpoint(t *testing.T) {
 			{
 				Labels: []*prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
-					{Name: "baz", Value: "qux"},
-					{Name: "foo", Value: "bar"},
 					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
+					{Name: "foo", Value: "bar"},
 				},
 				Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
 			},

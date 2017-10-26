@@ -21,6 +21,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -503,22 +504,20 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Add external labels back in.
+		// Add external labels back in, in sorted order.
+		sortedExternalLabels := make([]*prompb.Label, 0, len(externalLabels))
+		for name, value := range externalLabels {
+			sortedExternalLabels = append(sortedExternalLabels, &prompb.Label{
+				Name:  string(name),
+				Value: string(value),
+			})
+		}
+		sort.Slice(sortedExternalLabels, func(i, j int) bool {
+			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+		})
+
 		for _, ts := range resp.Results[i].Timeseries {
-			globalUsed := map[string]struct{}{}
-			for _, l := range ts.Labels {
-				if _, ok := externalLabels[model.LabelName(l.Name)]; ok {
-					globalUsed[l.Name] = struct{}{}
-				}
-			}
-			for ln, lv := range externalLabels {
-				if _, ok := globalUsed[string(ln)]; !ok {
-					ts.Labels = append(ts.Labels, &prompb.Label{
-						Name:  string(ln),
-						Value: string(lv),
-					})
-				}
-			}
+			ts.Labels = mergeLabels(ts.Labels, sortedExternalLabels)
 		}
 	}
 
@@ -526,6 +525,33 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+// mergeLabels merges two sets of sorted proto labels, preferring those in
+// primary to those in secondary when there is an overlap.
+func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
+	i, j := 0, 0
+	for i < len(primary) && j < len(secondary) {
+		if primary[i].Name < secondary[j].Name {
+			result = append(result, primary[i])
+			i++
+		} else if primary[i].Name > secondary[j].Name {
+			result = append(result, secondary[j])
+			j++
+		} else {
+			result = append(result, primary[i])
+			i++
+			j++
+		}
+	}
+	for ; i < len(primary); i++ {
+		result = append(result, primary[i])
+	}
+	for ; j < len(secondary); j++ {
+		result = append(result, secondary[j])
+	}
+	return result
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
