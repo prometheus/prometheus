@@ -60,14 +60,6 @@ elements in `v` to have an upper limit of `max`.
 `clamp_min(v instant-vector, min scalar)` clamps the sample values of all
 elements in `v` to have a lower limit of `min`.
 
-## `count_scalar()`
-
-`count_scalar(v instant-vector)` returns the number of elements in a time series
-vector as a scalar. This is in contrast to the `count()`
-[aggregation operator](operators.md#aggregation-operators), which
-always returns a vector (an empty one if the input vector is empty) and allows
-grouping by labels via a `by` clause.
-
 ## `day_of_month()`
 
 `day_of_month(v=vector(time()) instant-vector)` returns the day of the month
@@ -108,11 +100,6 @@ delta(cpu_temp_celsius{host="zeus"}[2h])
 vector `v`, using [simple linear regression](http://en.wikipedia.org/wiki/Simple_linear_regression).
 
 `deriv` should only be used with gauges.
-
-## `drop_common_labels()`
-
-`drop_common_labels(instant-vector)` drops all labels that have the same name
-and value across all series in the input vector.
 
 ## `exp()`
 
