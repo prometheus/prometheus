@@ -1,6 +1,6 @@
 ---
 title: Recording rules
-sort_rank: 6
+sort_rank: 2
 ---
 
 # Defining recording rules
@@ -9,10 +9,9 @@ sort_rank: 6
 
 Prometheus supports two types of rules which may be configured and then
 evaluated at regular intervals: recording rules and [alerting
-rules](https://prometheus.io/docs/alerting/rules/). To include rules in
-Prometheus, create a file containing the necessary rule statements and have
-Prometheus load the file via the `rule_files` field in the [Prometheus
-configuration](../configuration.md).
+rules](alerting_rules.md). To include rules in Prometheus, create a file
+containing the necessary rule statements and have Prometheus load the file via
+the `rule_files` field in the [Prometheus configuration](configuration.md).
 
 The rule files can be reloaded at runtime by sending `SIGHUP` to the Prometheus
 process. The changes are only applied if all rule files are well-formatted.
