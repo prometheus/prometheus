@@ -570,6 +570,8 @@ type indexReader struct {
 	// prevents memory faults when applications work with read symbols after
 	// the block has been unmapped.
 	symbols map[uint32]string
+
+	crc32 hash.Hash32
 }
 
 var (
@@ -591,6 +593,7 @@ func newIndexReader(dir string) (*indexReader, error) {
 		b:       f.b,
 		c:       f,
 		symbols: map[uint32]string{},
+		crc32:   newCRC32(),
 	}
 
 	// Verify magic number.
@@ -626,7 +629,7 @@ func (r *indexReader) readTOC() error {
 	r.toc.postings = d.be64()
 	r.toc.postingsTable = d.be64()
 
-	if valid, err := r.checkCrc(d.be32(), len(r.b)-indexTOCLen, indexTOCLen-4); !valid {
+	if valid, err := r.checkCRC(d.be32(), len(r.b)-indexTOCLen, indexTOCLen-4); !valid {
 		return errors.Wrap(err, "TOC checksum")
 	}
 
@@ -640,15 +643,15 @@ func (r *indexReader) decbufAt(off int) decbuf {
 	return decbuf{b: r.b[off:]}
 }
 
-func (r *indexReader) checkCrc(crc uint32, off, cnt int) (bool, error) {
-	c2 := newCRC32()
+func (r *indexReader) checkCRC(crc uint32, off, cnt int) (bool, error) {
+	r.crc32.Reset()
 	if len(r.b) < off+cnt {
 		return false, errInvalidSize
 	}
-	if _, err := c2.Write(r.b[off : off+cnt]); err != nil {
+	if _, err := r.crc32.Write(r.b[off : off+cnt]); err != nil {
 		return false, errors.Wrap(err, "write to hash")
 	}
-	if c2.Sum32() != crc {
+	if r.crc32.Sum32() != crc {
 		return false, errInvalidChecksum
 	}
 	return true, nil
@@ -677,7 +680,7 @@ func (r *indexReader) readSymbols(off int) error {
 		nextPos = basePos + uint32(origLen-d2.len())
 		cnt--
 	}
-	if valid, err := r.checkCrc(d1.be32(), int(off)+4, l); !valid {
+	if valid, err := r.checkCRC(d1.be32(), int(off)+4, l); !valid {
 		return errors.Wrap(err, "symbol table checksum")
 	}
 	return d2.err()
@@ -709,7 +712,7 @@ func (r *indexReader) readOffsetTable(off uint64) (map[string]uint32, error) {
 		cnt--
 	}
 
-	if valid, err := r.checkCrc(d1.be32(), int(off)+4, l); !valid {
+	if valid, err := r.checkCRC(d1.be32(), int(off)+4, l); !valid {
 		return res, errors.Wrap(err, "offset table checksum")
 	}
 
@@ -779,7 +782,7 @@ func (r *indexReader) LabelValues(names ...string) (StringTuples, error) {
 		return nil, errors.Wrap(d2.err(), "read label value index")
 	}
 
-	if valid, err := r.checkCrc(d1.be32(), int(off)+4, l); !valid {
+	if valid, err := r.checkCRC(d1.be32(), int(off)+4, l); !valid {
 		return nil, errors.Wrap(err, "read label values checksum")
 	}
 
@@ -874,7 +877,7 @@ func (r *indexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkMeta)
 		})
 	}
 
-	if valid, err := r.checkCrc(d1.be32(), int(ref)+sl, l); !valid {
+	if valid, err := r.checkCRC(d1.be32(), int(ref)+sl, l); !valid {
 		return errors.Wrap(err, "series checksum")
 	}
 
@@ -900,7 +903,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 		return nil, errors.Wrap(d2.err(), "get postings bytes")
 	}
 
-	if valid, err := r.checkCrc(d1.be32(), int(off)+4, l); !valid {
+	if valid, err := r.checkCRC(d1.be32(), int(off)+4, l); !valid {
 		return nil, errors.Wrap(err, "postings checksum")
 	}
 
