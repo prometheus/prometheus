@@ -63,27 +63,26 @@ func (f *fanout) StartTime() (int64, error) {
 }
 
 func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
-	queriers := mergeQuerier{
-		queriers: make([]Querier, 0, 1+len(f.secondaries)),
-	}
+	queriers := make([]Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
 	querier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	queriers.queriers = append(queriers.queriers, querier)
+	queriers = append(queriers, querier)
 
 	// Add secondary queriers
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
-			queriers.Close()
+			NewMergeQuerier(queriers).Close()
 			return nil, err
 		}
-		queriers.queriers = append(queriers.queriers, querier)
+		queriers = append(queriers, querier)
 	}
-	return &queriers, nil
+
+	return NewMergeQuerier(queriers), nil
 }
 
 func (f *fanout) Appender() (Appender, error) {
@@ -193,9 +192,26 @@ type mergeQuerier struct {
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
+// NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
+// and will filter NoopQueriers from its arguments, in order to reduce overhead
+// when only one querier is passed.
 func NewMergeQuerier(queriers []Querier) Querier {
-	return &mergeQuerier{
-		queriers: queriers,
+	filtered := make([]Querier, 0, len(queriers))
+	for _, querier := range queriers {
+		if querier != NoopQuerier() {
+			filtered = append(filtered, querier)
+		}
+	}
+
+	switch len(filtered) {
+	case 0:
+		return NoopQuerier()
+	case 1:
+		return filtered[0]
+	default:
+		return &mergeQuerier{
+			queriers: filtered,
+		}
 	}
 }
 
