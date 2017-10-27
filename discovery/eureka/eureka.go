@@ -68,6 +68,7 @@ type Discovery struct {
 	servers         []string
 	refreshInterval time.Duration
 	lastRefresh     map[string]*config.TargetGroup
+	metricsPath     string
 	logger          log.Logger
 }
 
@@ -79,6 +80,7 @@ func NewDiscovery(conf *config.EurekaSDConfig, logger log.Logger) (*Discovery, e
 		client:          client,
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
+		metricsPath:     conf.MetricsPath,
 		logger:          logger,
 	}, nil
 }
@@ -146,29 +148,29 @@ func (d *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) 
 		return nil, err
 	}
 
-	groups := AppsToTargetGroups(apps)
+	groups := d.appsToTargetGroups(apps)
 	return groups, nil
 }
 
 // AppsToTargetGroups takes an array of Eureka Application and converts them into target groups.
-func AppsToTargetGroups(apps *eureka.Applications) map[string]*config.TargetGroup {
+func (d *Discovery) appsToTargetGroups(apps *eureka.Applications) map[string]*config.TargetGroup {
 	tgroups := map[string]*config.TargetGroup{}
 	for _, app := range apps.Applications {
-		group := createTargetGroup(&app)
+		group := d.createTargetGroup(&app)
 		tgroups[group.Source] = group
 	}
 	return tgroups
 }
 
-func createTargetGroup(app *eureka.Application) *config.TargetGroup {
+func (d *Discovery) createTargetGroup(app *eureka.Application) *config.TargetGroup {
 	var (
-		targets = targetsForApp(app)
+		targets = d.targetsForApp(app)
 		appName = model.LabelValue(app.Name)
 	)
 	tg := &config.TargetGroup{
 		Targets: targets,
 		Labels: model.LabelSet{
-			appLabel: appName,
+			model.JobLabel: appName,
 		},
 		Source: app.Name,
 	}
@@ -176,7 +178,7 @@ func createTargetGroup(app *eureka.Application) *config.TargetGroup {
 	return tg
 }
 
-func targetsForApp(app *eureka.Application) []model.LabelSet {
+func (d *Discovery) targetsForApp(app *eureka.Application) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Instances))
 	for _, t := range app.Instances {
 		if t.Metadata.Map["prometheus"] != "true" {
@@ -185,9 +187,9 @@ func targetsForApp(app *eureka.Application) []model.LabelSet {
 
 		targetAddress := targetForInstance(&t)
 		target := model.LabelSet{
-			model.AddressLabel: model.LabelValue(targetAddress),
-			model.MetricsPathLabel: model.LabelValue("/prometheus"),
-			instanceLabel:      model.LabelValue(t.InstanceId),
+			model.AddressLabel:     model.LabelValue(targetAddress),
+			model.MetricsPathLabel: model.LabelValue(d.metricsPath),
+			model.InstanceLabel:    model.LabelValue(t.InstanceId),
 		}
 		for ln, lv := range t.Metadata.Map {
 			ln = strutil.SanitizeLabelName(ln)
@@ -199,5 +201,5 @@ func targetsForApp(app *eureka.Application) []model.LabelSet {
 }
 
 func targetForInstance(instance *eureka.InstanceInfo) string {
-	return net.JoinHostPort(instance.IpAddr, fmt.Sprintf("%d", instance.Port.Port))
+	return net.JoinHostPort(instance.HostName, fmt.Sprintf("%d", instance.Port.Port))
 }

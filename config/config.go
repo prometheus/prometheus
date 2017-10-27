@@ -204,6 +204,7 @@ var (
 	DefaultEurekaSDConfig = EurekaSDConfig{
 		Timeout:         model.Duration(30 * time.Second),
 		RefreshInterval: model.Duration(30 * time.Second),
+		MetricsPath: "/prometheus",
 	}
 )
 
@@ -1536,6 +1537,7 @@ type EurekaSDConfig struct {
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
+	MetricsPath     string         `yaml:"metrics_path"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
