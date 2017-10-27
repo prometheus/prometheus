@@ -202,14 +202,14 @@ type mergeQuerier struct {
 func NewMergeQuerier(queriers []Querier) Querier {
 	filtered := make([]Querier, 0, len(queriers))
 	for _, querier := range queriers {
-		if querier != NoopQuerier {
+		if querier != NoopQuerier() {
 			filtered = append(filtered, querier)
 		}
 	}
 
 	switch len(filtered) {
 	case 0:
-		return NoopQuerier
+		return NoopQuerier()
 	case 1:
 		return filtered[0]
 	default:

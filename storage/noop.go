@@ -18,10 +18,12 @@ import "github.com/prometheus/prometheus/pkg/labels"
 type noopQuerier struct{}
 
 // NoopQuerier is a Querier that does nothing.
-var NoopQuerier Querier = noopQuerier{}
+func NoopQuerier() Querier {
+	return noopQuerier{}
+}
 
 func (noopQuerier) Select(...*labels.Matcher) SeriesSet {
-	return NoopSeriesSet
+	return NoopSeriesSet()
 }
 
 func (noopQuerier) LabelValues(name string) ([]string, error) {
@@ -35,7 +37,9 @@ func (noopQuerier) Close() error {
 type noopSeriesSet struct{}
 
 // NoopSeriesSet is a SeriesSet that does nothing.
-var NoopSeriesSet = noopSeriesSet{}
+func NoopSeriesSet() SeriesSet {
+	return noopSeriesSet{}
+}
 
 func (noopSeriesSet) Next() bool {
 	return false
