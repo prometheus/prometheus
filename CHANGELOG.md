@@ -13,6 +13,9 @@ Data written in previous pre-release versions may have been affected by the out-
 bug. Reading this data may reveal artefacts and incorrect data.
 Starting with a clean storage directory is advised. The WAL directory may safely be kept.
 
+## 1.8.1 / 2017-10-19
+
+* [BUGFIX] Correctly handle external labels on remote read endpoint
 
 ## 1.8.0 / 2017-10-06
 
