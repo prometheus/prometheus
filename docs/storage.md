@@ -160,7 +160,7 @@ in the next section.
 
 Case (3) depends on the targets you monitor. To mitigate an unplanned explosion
 of the number of series, you can limit the number of samples per individual
-scrape (see `sample_limit` in the [scrape config](configuration.md#scrape_config)).
+scrape (see `sample_limit` in the [scrape config](configuration/configuration.md#scrape_config)).
 If the number of active time series exceeds the number of memory chunks the
 Prometheus server can afford, the server will quickly throttle ingestion as
 described above. The only way out of this is to give Prometheus more RAM or

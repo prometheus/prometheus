@@ -56,7 +56,7 @@ scrape_configs:
 ```
 
 For a complete specification of configuration options, see the
-[configuration documentation](configuration.md).
+[configuration documentation](configuration/configuration.md).
 
 ## Starting Prometheus
 

@@ -204,7 +204,7 @@ Prometheus's expression browser until the result set seems reasonable
 (hundreds, not thousands, of time series at most).  Only when you have filtered
 or aggregated your data sufficiently, switch to graph mode. If the expression
 still takes too long to graph ad-hoc, pre-record it via a [recording
-rule](rules.md#recording-rules).
+rule](../configuration/recording_rules.md#recording-rules).
 
 This is especially relevant for Prometheus's query language, where a bare
 metric name selector like `api_http_requests_total` could expand to thousands

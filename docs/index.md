@@ -13,7 +13,7 @@ The documentation is available alongside all the project documentation at
 
 - [Installing](install.md)
 - [Getting started](getting_started.md)
-- [Configuration](configuration.md)
+- [Configuration](configuration/configuration.md)
 - [Querying](querying/basics.md)
 - [Storage](storage.md)
 - [Federation](federation.md)
