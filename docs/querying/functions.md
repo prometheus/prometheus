@@ -368,6 +368,13 @@ Same as `sort`, but sorts in descending order.
 this does not actually return the current time, but the time at which the
 expression is to be evaluated.
 
+## `timestamp()`
+
+`timestamp(v instant-vector)` returns the timestamp of each of the samples of
+the given vector as the number of seconds since January 1, 1970 UTC.
+
+*This function was added in Prometheus 2.0*
+
 ## `vector()`
 
 `vector(s scalar)` returns the scalar `s` as a vector with no labels.
