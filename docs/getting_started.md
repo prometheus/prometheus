@@ -77,17 +77,6 @@ You can also verify that Prometheus is serving metrics about itself by
 navigating to its metrics endpoint:
 [localhost:9090/metrics](http://localhost:9090/metrics)
 
-The number of OS threads executed by Prometheus is controlled by the
-`GOMAXPROCS` environment variable. As of Go 1.5 the default value is
-the number of cores available.
-
-Blindly setting `GOMAXPROCS` to a high value can be counterproductive. See the
-relevant [Go FAQs](http://golang.org/doc/faq#Why_no_multi_CPU).
-
-Prometheus by default uses around 3GB in memory. If you have a
-smaller machine, you can tune Prometheus to use less memory.  For details,
-see the [memory usage documentation](storage.md#memory-usage).
-
 ## Using the expression browser
 
 Let us try looking at some data that Prometheus has collected about itself. To
