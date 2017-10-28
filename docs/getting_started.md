@@ -65,8 +65,8 @@ directory containing the Prometheus binary and run:
 
 ```bash
 # Start Prometheus.
-# By default, Prometheus stores its database in ./data (flag -storage.local.path).
-./prometheus -config.file=prometheus.yml
+# By default, Prometheus stores its database in ./data (flag --storage.tsdb.path).
+./prometheus --config.file=prometheus.yml
 ```
 
 Prometheus should start up. You should also be able to browse to a status page
@@ -76,17 +76,6 @@ seconds to collect data about itself from its own HTTP metrics endpoint.
 You can also verify that Prometheus is serving metrics about itself by
 navigating to its metrics endpoint:
 [localhost:9090/metrics](http://localhost:9090/metrics)
-
-The number of OS threads executed by Prometheus is controlled by the
-`GOMAXPROCS` environment variable. As of Go 1.5 the default value is
-the number of cores available.
-
-Blindly setting `GOMAXPROCS` to a high value can be counterproductive. See the
-relevant [Go FAQs](http://golang.org/doc/faq#Why_no_multi_CPU).
-
-Prometheus by default uses around 3GB in memory. If you have a
-smaller machine, you can tune Prometheus to use less memory.  For details,
-see the [memory usage documentation](storage.md#memory-usage).
 
 ## Using the expression browser
 
