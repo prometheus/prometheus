@@ -15,5 +15,4 @@ The documentation is available alongside all the project documentation at
 - [Getting started](getting_started.md)
 - [Configuration](configuration/configuration.md)
 - [Querying](querying/basics.md)
-- [Storage](storage.md)
 - [Federation](federation.md)
