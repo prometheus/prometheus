@@ -94,5 +94,6 @@ on top of the simple alert definitions. In Prometheus's ecosystem, the
 [Alertmanager](https://prometheus.io/docs/alerting/alertmanager/) takes on this
 role. Thus, Prometheus may be configured to periodically send information about
 alert states to an Alertmanager instance, which then takes care of dispatching
-the right notifications. The Alertmanager instance may be configured via the
-`-alertmanager.url` command line flag.
+the right notifications.  
+Prometheus can be [configured](configuration.md) to automatically discovered available
+Alertmanager instances through its service discovery integrations.
