@@ -65,8 +65,8 @@ directory containing the Prometheus binary and run:
 
 ```bash
 # Start Prometheus.
-# By default, Prometheus stores its database in ./data (flag -storage.local.path).
-./prometheus -config.file=prometheus.yml
+# By default, Prometheus stores its database in ./data (flag --storage.tsdb.path).
+./prometheus --config.file=prometheus.yml
 ```
 
 Prometheus should start up. You should also be able to browse to a status page
