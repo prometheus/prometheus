@@ -116,7 +116,7 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 	}
 	wrapper := &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second,
+		Timeout:   35 * time.Second,
 	}
 
 	clientConf := &consul.Config{
