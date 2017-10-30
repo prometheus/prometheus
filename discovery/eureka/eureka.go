@@ -14,16 +14,17 @@
 package eureka
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
 
-	"golang.org/x/net/context"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 
@@ -69,6 +70,7 @@ type Discovery struct {
 	refreshInterval time.Duration
 	lastRefresh     map[string]*config.TargetGroup
 	metricsPath     string
+	enabledOnly     bool
 	logger          log.Logger
 }
 
@@ -81,6 +83,7 @@ func NewDiscovery(conf *config.EurekaSDConfig, logger log.Logger) (*Discovery, e
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		metricsPath:     conf.MetricsPath,
+		enabledOnly:     conf.EnabledOnly,
 		logger:          logger,
 	}, nil
 }
@@ -181,7 +184,7 @@ func (d *Discovery) createTargetGroup(app *eureka.Application) *config.TargetGro
 func (d *Discovery) targetsForApp(app *eureka.Application) []model.LabelSet {
 	targets := make([]model.LabelSet, 0, len(app.Instances))
 	for _, t := range app.Instances {
-		if t.Metadata.Map["prometheus"] != "true" {
+		if d.enabledOnly && t.Metadata.Map["prometheusEnabled"] != "true" {
 			continue
 		}
 

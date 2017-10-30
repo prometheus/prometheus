@@ -239,6 +239,10 @@ serverset_sd_configs:
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
 
+# List of Eureka service discovery configurations.
+eureka_sd_configs:
+  [ - <eureka_sd_config> ... ]
+
 # List of labeled statically configured targets for this job.
 static_configs:
   [ - <static_config> ... ]
@@ -1279,6 +1283,38 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<eureka_sd_config>`
+
+CAUTION: Eureka SD is in alpha: breaking changes to configuration are still
+likely in future releases.
+
+Eureka SD configurations allow retrieving scrape targets using the
+[Eureka](https://github.com/Netflix/eureka) REST API. Prometheus
+will periodically check the REST endpoint for currently running instances for every app that has at least one healthy task.
+
+See below for the configuration options for Eureka discovery:
+
+```yaml
+# List of URLs to be used to contact Eureka servers.
+# You need to provide at least one server URL, but should provide URLs for
+# all masters you have running.
+servers:
+  - <string>
+  
+# The HTTP resource path on which to fetch metrics from targets.
+[ metrics_path: <path> | default = /prometheus ]
+
+# Polling interval
+[ refresh_interval: <duration> | default = 30s ]
+```
+
+By default every app listed in Marathon will be scraped by Prometheus. If not all
+of your services provide Prometheus metrics, you can use a Marathon label and
+Prometheus relabeling to control which instances will actually be scraped. Also
+by default all apps will show up as a single job in Prometheus (the one specified
+in the configuration file), which can also be changed using relabeling.
+```
+
 ### `<static_config>`
 
 A `static_config` allows specifying a list of targets and a common label set
@@ -1494,6 +1530,10 @@ serverset_sd_configs:
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
+
+# List of Eureka service discovery configurations.
+eureka_sd_configs:
+  [ - <eureka_sd_config> ... ]
 
 # List of labeled statically configured Alertmanagers.
 static_configs:
