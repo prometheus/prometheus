@@ -204,7 +204,8 @@ var (
 	DefaultEurekaSDConfig = EurekaSDConfig{
 		Timeout:         model.Duration(30 * time.Second),
 		RefreshInterval: model.Duration(30 * time.Second),
-		MetricsPath: "/prometheus",
+		MetricsPath:     "/prometheus",
+		EnabledOnly:     false,
 	}
 )
 
@@ -1530,14 +1531,14 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return checkOverflow(c.XXX, "remote_read")
 }
 
-
 // EurekaSDConfig is the configuration for services running on Marathon.
 type EurekaSDConfig struct {
-	Servers         []string       `yaml:"servers,omitempty"`
+	Servers         []string       `yaml:"servers"`
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-	MetricsPath     string         `yaml:"metrics_path"`
+	MetricsPath     string         `yaml:"metrics_path,omitempty"`
+	EnabledOnly     bool           `yaml:"enabledOnly,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1557,7 +1558,6 @@ func (c *EurekaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Eureka SD config must contain at least one Eureka server")
 	}
-
 
 	return nil
 }
