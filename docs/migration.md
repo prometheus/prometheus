@@ -1,7 +1,7 @@
 # Prometheus 2.0 Migration Guide.
 
-In line with our [compatilibity promise](TODO), the Prometheus 2.0 release contains a
-number of backward incompatible changes.  This document aims to offer guidance on
+In line with our [compatibility promise](TODO), the Prometheus 2.0 release contains
+a number of backward incompatible changes.  This document aims to offer guidance on
 migrating from Prometheus 1.8 to Prometheus 2.0.
 
 ## Flags
@@ -38,16 +38,28 @@ targets.  In Prometheus 2.0, the command line flags for static Alertmanager conf
 have been removed, so the following command line flag:
 
 ```
-./prometheus -alertmanager.url=http://alertmanager.default.svc.cluster.local/some/prefix
+./prometheus -alertmanager.url=http://alertmanager/
 ```
 
-Might looks like the following snipper in the `prometheus.yml` config file:
+Might looks like the following snippet in the `prometheus.yml` config file:
 
 ```yml
 alerting:
   alertmanagers:
-  - path_prefix: /some/prefix
-    kubernetes_sd_configs:
+  - static_configs:
+    - targets:
+      - alertmanager
+```
+
+But note, you can use all the usual Prometheus service discovery integrations
+and relabelling.  In this snippet I'm instructing Prometheus
+to search for Kubernetes pods, in the `default` namespace, with the label
+`name: alertmanager` and with a non-empty port.
+
+```yml
+alerting:
+  alertmanagers:
+  - kubernetes_sd_configs:
       - role: pod
     tls_config:
       ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
@@ -64,34 +76,49 @@ alerting:
       action: drop
 ```
 
-In this snippet I'm instructing Prometheus to search for Kubernetes pods, in the
-`default` namespace, with the label `name: alertmanager` and with a non-empty port.
+## Recording rules an alerts
 
-## Rules format
-
-Another thing that has changed is the format for alerting and recoding rules.  The
-`promtool` has a command to automate the conversion, which [Conor at Robust
-Perception published a blog post](https://www.robustperception.io/converting-rules-to-the-prometheus-2-0-format/)
-on this recently.  An example of an recording rule in the old format:
+The format for configuring alerting and recoding rules has been changed to YAML.
+An example of an recording rule in the old format:
 
 ```
-namespace:container_cpu_usage_seconds_total:sum_rate =
-  sum(rate(container_cpu_usage_seconds_total{image!=""}[5m])) by (namespace)
+job:request_duration_seconds:99percentile =
+  histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m])) by (le, job))
+
+ALERT FrontendRequestLatency
+  IF job:request_duration_seconds:99percentile{job="frontend"} > 0.1
+  FOR 5m
+  ANNOTATIONS {
+    summary = "High frontend request latency",
+  }
 ```
 
 Might looks like this in the new format:
 
 ```yml
 groups:
-- name: node.rules
+- name: example.rules
   rules:
-  - record: "namespace:container_cpu_usage_seconds_total:sum_rate",
-    expr: "sum(rate(container_cpu_usage_seconds_total{image!=\"\"}[5m])) by (namespace)",
+  - record: job:request_duration_seconds:99percentile
+    expr: histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m]))
+      BY (le, job))
+  - alert: FrontendRequestLatency
+    expr: job:request_duration_seconds:99percentile{job="frontend"} > 0.1
+    for: 5m
+    annotations:
+      summary: High frontend request latency
+```
+
+The `promtool` has a command to automate the conversion.  Given a `.rules` file,
+it will output a `.rules.yml` file in the new format. For example:
+
+```
+$ promtool update rules example.rules
 ```
 
 ## Storage
 
-The data format in Prometheus 2.0 has completely changed and is not at all backwards
+The data format in Prometheus 2.0 has completely changed and is not backwards
 compatible with 1.8. To retain access to your historic monitoring data we recommend
 you run a non-scraping Prometheus 1.8 instance in parallel to you Prometheus 2.0.
 

@@ -4,6 +4,11 @@ global:
   evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
   # scrape_timeout is set to the global default (10s).
 
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+      monitor: 'codelab-monitor'
+
 # Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
 rule_files:
   # - "first.rules"
@@ -20,6 +25,3 @@ scrape_configs:
 
     static_configs:
       - targets: ['localhost:9090']
-
-remote_read:
-  - url: "http://localhost:9094/api/v1/read"
