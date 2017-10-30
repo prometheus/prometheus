@@ -3,6 +3,9 @@ package eureka
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 )
 
 const (
@@ -35,12 +38,12 @@ func newError(errorCode int, cause string, index uint64) *EurekaError {
 	}
 }
 
-func handleError(b []byte) error {
+func handleError(logger log.Logger, b []byte) error {
 	eurekaErr := new(EurekaError)
 
 	err := json.Unmarshal(b, eurekaErr)
 	if err != nil {
-		logger.Warning("cannot unmarshal eureka error: %v", err)
+		level.Warn(logger).Log("msg", fmt.Sprintf("cannot unmarshal eureka error: %v", err))
 		return err
 	}
 

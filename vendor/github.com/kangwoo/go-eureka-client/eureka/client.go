@@ -14,6 +14,9 @@ import (
 	"path"
 	"time"
 	"strings"
+
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 )
 
 const (
@@ -51,19 +54,21 @@ type Client struct {
 	// Argument err is the reason of the failure.
 	CheckRetry  func(cluster *Cluster, numReqs int,
 	lastResp http.Response, err error) error
+	logger log.Logger
 }
 
 // NewClient create a basic client that is configured to be used
 // with the given machine list.
-func NewClient(machines []string) *Client {
+func NewClient(machines []string, logger log.Logger) *Client {
 	config := Config{
 		// default timeout is one second
 		DialTimeout: time.Second,
 	}
 
 	client := &Client{
-		Cluster: NewCluster(machines),
+		Cluster: NewCluster(machines, logger),
 		Config:  config,
+		logger: logger,
 	}
 
 	client.initHTTPClient()
@@ -71,7 +76,7 @@ func NewClient(machines []string) *Client {
 }
 
 // NewTLSClient create a basic client with TLS configuration
-func NewTLSClient(machines []string, cert string, key string, caCerts []string) (*Client, error) {
+func NewTLSClient(machines []string, logger log.Logger, cert string, key string, caCerts []string) (*Client, error) {
 	// overwrite the default machine to use https
 	if len(machines) == 0 {
 		machines = []string{"https://127.0.0.1:4001"}
@@ -86,8 +91,9 @@ func NewTLSClient(machines []string, cert string, key string, caCerts []string) 
 	}
 
 	client := &Client{
-		Cluster: NewCluster(machines),
+		Cluster: NewCluster(machines, logger),
 		Config:  config,
+		logger: logger,
 	}
 
 	err := client.initHTTPSClient(cert, key)
@@ -272,8 +278,7 @@ func (c *Client) internalSyncCluster(machines []string) bool {
 			// update leader
 			// the first one in the machine list is the leader
 			c.Cluster.switchLeader(0)
-
-			logger.Debug("sync.machines " + strings.Join(c.Cluster.Machines, ", "))
+			level.Debug(c.logger).Log("msg", "sync.machines " + strings.Join(c.Cluster.Machines, ", "))
 			return true
 		}
 	}
