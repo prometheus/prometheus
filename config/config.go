@@ -508,7 +508,7 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*TritonSDConfig `yaml:"triton_sd_configs,omitempty"`
-	// EurekaSDConfigs is a list of Marathon service discovery configurations.
+	// EurekaSDConfigs is a list of Eureka service discovery configurations.
 	EurekaSDConfigs []*EurekaSDConfig `yaml:"eureka_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -1531,7 +1531,7 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	return checkOverflow(c.XXX, "remote_read")
 }
 
-// EurekaSDConfig is the configuration for services running on Marathon.
+// EurekaSDConfig is the configuration for services running on Eureka.
 type EurekaSDConfig struct {
 	Servers         []string       `yaml:"servers"`
 	Timeout         model.Duration `yaml:"timeout,omitempty"`
