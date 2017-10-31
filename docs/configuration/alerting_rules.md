@@ -11,31 +11,36 @@ to an external service. Whenever the alert expression results in one or more
 vector elements at a given point in time, the alert counts as active for these
 elements' label sets.
 
+### Defining alerting rules
+
 Alerting rules are configured in Prometheus in the same way as [recording
 rules](recording_rules.md).
 
-### Defining alerting rules
+An example rules file with an alert would be:
 
-Alerting rules are defined in the following syntax:
+```yaml
+groups:
+- name: example
+  rules:
+  - alert: HighErrorRate
+    expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
+    for: 10m
+    labels:
+      severity: page
+    annotations:
+      summary: High request latency
+```
 
-    ALERT <alert name>
-      IF <expression>
-      [ FOR <duration> ]
-      [ LABELS <label set> ]
-      [ ANNOTATIONS <label set> ]
-
-The alert name must be a valid metric name.
-
-The optional `FOR` clause causes Prometheus to wait for a certain duration
+The optional `for` clause causes Prometheus to wait for a certain duration
 between first encountering a new expression output vector element (like an
 instance with a high HTTP error rate) and counting an alert as firing for this
 element. Elements that are active, but not firing yet, are in pending state.
 
-The `LABELS` clause allows specifying a set of additional labels to be attached
+The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
 values can be templated.
 
-The `ANNOTATIONS` clause specifies another set of labels that are not
+The `annotations` clause specifies another set of labels that are not
 identifying for an alert instance. They are used to store longer additional
 information such as alert descriptions or runbook links. The annotation values
 can be templated.
@@ -53,24 +58,29 @@ and `$value` holds the evaluated value of an alert instance.
 
 Examples:
 
-    # Alert for any instance that is unreachable for >5 minutes.
-    ALERT InstanceDown
-      IF up == 0
-      FOR 5m
-      LABELS { severity = "page" }
-      ANNOTATIONS {
-        summary = "Instance {{ $labels.instance }} down",
-        description = "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes.",
-      }
+```yaml
+groups:
+- name: example
+  rules:
 
-    # Alert for any instance that have a median request latency >1s.
-    ALERT APIHighRequestLatency
-      IF api_http_request_latencies_second{quantile="0.5"} > 1
-      FOR 1m
-      ANNOTATIONS {
-        summary = "High request latency on {{ $labels.instance }}",
-        description = "{{ $labels.instance }} has a median request latency above 1s (current value: {{ $value }}s)",
-      }
+  # Alert for any instance that is unreachable for >5 minutes.
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: page
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+      description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
+
+  # Alert for any instance that has a median request latency >1s.
+  - alert: APIHighRequestLatency
+    expr: api_http_request_latencies_second{quantile="0.5"} > 1
+    for: 10m
+    annotations:
+      summary: "High request latency on {{ $labels.instance }}"
+      description: "{{ $labels.instance }} has a median request latency above 1s (current value: {{ $value }}s)"
+```
 
 ### Inspecting alerts during runtime
 
