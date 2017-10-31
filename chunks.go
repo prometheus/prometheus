@@ -171,12 +171,7 @@ func (w *chunkWriter) finalizeTail() error {
 		return err
 	}
 
-	if err := tf.Close(); err != nil {
-		return err
-	}
-
-	// close dir file (if not windows platform will fail on rename)
-	return w.dirFile.Close()
+	return tf.Close()
 }
 
 func (w *chunkWriter) cut() error {
@@ -282,7 +277,12 @@ func (w *chunkWriter) seq() int {
 }
 
 func (w *chunkWriter) Close() error {
-	return w.finalizeTail()
+	if err := w.finalizeTail(); err != nil {
+		return err
+	}
+
+	// close dir file (if not windows platform will fail on rename)
+	return w.dirFile.Close()
 }
 
 // ChunkReader provides reading access of serialized time series data.
