@@ -32,18 +32,13 @@ groups:
 ```
 
 The optional `for` clause causes Prometheus to wait for a certain duration
-between first encountering a new expression output vector element (like an
-instance with a high HTTP error rate) and counting an alert as firing for this
-element. Elements that are active, but not firing yet, are in pending state.
+between first encountering a new expression output vector element and counting an alert as firing for this element. In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert. Elements that are active, but not firing yet, are in the pending state.
 
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
 values can be templated.
 
-The `annotations` clause specifies another set of labels that are not
-identifying for an alert instance. They are used to store longer additional
-information such as alert descriptions or runbook links. The annotation values
-can be templated.
+The `annotations` clause specifies a set of informational labels that can be used to store longer additional information such as alert descriptions or runbook links. The annotation values can be templated.
 
 #### Templating
 
