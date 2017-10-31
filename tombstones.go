@@ -49,7 +49,11 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
 
 	buf := encbuf{b: make([]byte, 3*binary.MaxVarintLen64)}
 	buf.reset()
@@ -82,6 +86,10 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 		return err
 	}
 
+	if err = f.Close(); err != nil {
+		return err
+	}
+	f = nil
 	return renameFile(tmp, path)
 }
 

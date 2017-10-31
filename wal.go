@@ -384,7 +384,7 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 		w.putBuffer(buf)
 
 		if err != nil {
-			return err
+			return errors.Wrap(err, "write to compaction segment")
 		}
 	}
 	if r.Err() != nil {
@@ -401,14 +401,15 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	csf.Sync()
 	csf.Close()
 
+	candidates[0].Close() // need close before remove on platform windows
 	if err := renameFile(csf.Name(), candidates[0].Name()); err != nil {
-		return err
+		return errors.Wrap(err, "rename compaction segment")
 	}
 	for _, f := range candidates[1:] {
+		f.Close() // need close before remove on platform windows
 		if err := os.RemoveAll(f.Name()); err != nil {
 			return errors.Wrap(err, "delete WAL segment file")
 		}
-		f.Close()
 	}
 	if err := w.dirFile.Sync(); err != nil {
 		return err
@@ -522,6 +523,15 @@ func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 	}
 	metab := make([]byte, 8)
 
+	// If there is an error, we need close f for platform windows before gc.
+	// Otherwise, file op may fail.
+	hasError := true
+	defer func() {
+		if hasError {
+			f.Close()
+		}
+	}()
+
 	if n, err := f.Read(metab); err != nil {
 		return nil, errors.Wrapf(err, "validate meta %q", f.Name())
 	} else if n != 8 {
@@ -534,6 +544,7 @@ func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 	if metab[4] != WALFormatDefault {
 		return nil, errors.Errorf("unknown WAL segment format %d in %q", metab[4], f.Name())
 	}
+	hasError = false
 	return f, nil
 }
 
@@ -702,7 +713,8 @@ func (w *SegmentWAL) Close() error {
 	if hf := w.head(); hf != nil {
 		return errors.Wrapf(hf.Close(), "closing WAL head %s", hf.Name())
 	}
-	return nil
+
+	return w.dirFile.Close()
 }
 
 const (
