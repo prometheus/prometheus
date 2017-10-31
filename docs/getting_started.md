@@ -212,10 +212,14 @@ Try graphing this expression.
 
 To record the time series resulting from this expression into a new metric
 called `job_service:rpc_durations_seconds_count:avg_rate5m`, create a file
-with the following recording rule and save it as `prometheus.rules`:
+with the following recording rule and save it as `prometheus.rules.yml`:
 
 ```
-job_service:rpc_durations_seconds_count:avg_rate5m = avg(rate(rpc_durations_seconds_count[5m])) by (job, service)
+groups:
+- name: example
+  rules:
+  - record: job_service:rpc_durations_seconds_count:avg_rate5m
+    expr: avg(rate(rpc_durations_seconds_count[5m])) by (job, service)
 ```
 
 To make Prometheus pick up this new rule, add a `rule_files` statement to the
@@ -232,7 +236,7 @@ global:
     monitor: 'codelab-monitor'
 
 rule_files:
-  - 'prometheus.rules'
+  - 'prometheus.rules.yml'
 
 scrape_configs:
   - job_name: 'prometheus'
