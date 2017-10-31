@@ -127,8 +127,7 @@ type Options struct {
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
-		return nil, errors.Errorf("tsdb max block duration (%v) must be larger than min block duration (%v)",
-			opts.MaxBlockDuration, opts.MinBlockDuration)
+		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
 	// Start with smallest block duration and create exponential buckets until the exceed the
 	// configured maximum block duration.
