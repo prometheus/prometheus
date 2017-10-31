@@ -12,6 +12,7 @@ evaluated at regular intervals: recording rules and [alerting
 rules](alerting_rules.md). To include rules in Prometheus, create a file
 containing the necessary rule statements and have Prometheus load the file via
 the `rule_files` field in the [Prometheus configuration](configuration.md).
+Rule files use YAML.
 
 The rule files can be reloaded at runtime by sending `SIGHUP` to the Prometheus
 process. The changes are only applied if all rule files are well-formatted.
@@ -24,7 +25,7 @@ utility tool:
 
 ```bash
 go get github.com/prometheus/prometheus/cmd/promtool
-promtool check-rules /path/to/example.rules
+promtool check rules /path/to/example.rules.yml
 ```
 
 When the file is syntactically valid, the checker prints a textual
@@ -44,22 +45,74 @@ the original expression every time it is needed. This is especially useful for
 dashboards, which need to query the same expression repeatedly every time they
 refresh.
 
-To add a new recording rule, add a line of the following syntax to your rule
-file:
+Recording and alerting rules exist in a rule group. Rules within a group are
+run sequentially at a regular interval.
 
-    <new time series name>[{<label overrides>}] = <expression to record>
+The syntax of a rule file is:
 
-Some examples:
+```yaml
+groups:
+  [ - <rule_group> ]
+```
 
-    # Saving the per-job HTTP in-progress request count as a new set of time series:
-    job:http_inprogress_requests:sum = sum(http_inprogress_requests) by (job)
+A simple example rules file would be:
 
-    # Drop or rewrite labels in the result time series:
-    new_time_series{label_to_change="new_value",label_to_drop=""} = old_time_series
+```yaml
+groups:
+  - name: example
+    - record: job:http_inprogress_requests:sum
+      expr: sum(http_inprogress_requests) by (job)
+```
 
-Recording rules are evaluated at the interval specified by the
-`evaluation_interval` field in the Prometheus configuration. During each
-evaluation cycle, the right-hand-side expression of the rule statement is
-evaluated at the current instant in time and the resulting sample vector is
-stored as a new set of time series with the current timestamp and a new metric
-name (and perhaps an overridden set of labels).
+### `<rule_group>`
+```
+# The name of the group. Must be unique within a file.
+name: <string>
+
+# How often rules in the group are evaluated.
+[ interval: <duration> | default = global.evaluation_interval ]
+
+rules:
+  [ - <rule> ... ]
+```
+
+### `<rule>`
+
+The syntax for recording rules is:
+```
+# The name of the time series to output to. Must be a valid metric name.
+record: <string>
+
+# The PromQL expression to evaluate. Every evaluation cycle this is
+# evaluated at the current time, and the result recorded as a new set of
+# time series with the metric name as given by 'record'.
+expr: <string>
+
+# Labels to add or overwrite before storing the result.
+labels:
+  [ <labelname>: <labelvalue> ]
+```
+
+The syntax for alerting rules is:
+```
+# The name of the alert. Must be a valid metric name.
+alert: <string>
+
+# The PromQL expression to evaluate. Every evaluation cycle this is
+# evaluated at the current time, and all resultant time series become
+# pending/firing alerts.
+expr: <string>
+
+# Alerts are considered firing once they have been returned for this long.
+# Alerts which have not yet fired for long enough are considered pending.
+[ for: <duration> | default = 0s ]
+
+# Labels to add or overwrite for each alert.
+labels:
+  [ <labelname>: <tmpl_string> ]
+
+# Annotations to add to each alert.
+annotations:
+  [ <labelname>: <tmpl_string> ]
+```
+
