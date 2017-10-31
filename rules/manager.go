@@ -494,8 +494,9 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
-		oldg, ok := m.groups[newg.name]
-		delete(m.groups, newg.name)
+		groupName := newg.name + ";" + newg.file
+		oldg, ok := m.groups[groupName]
+		delete(m.groups, groupName)
 
 		go func(newg *Group) {
 			if ok {
