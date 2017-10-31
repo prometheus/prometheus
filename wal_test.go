@@ -273,7 +273,7 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 	Ok(t, err)
 	f2, err := wal.createSegmentFile(dir + "/000002")
 	Ok(t, err)
-	Ok(t, f2.Close()) // close for windows!
+	Ok(t, f2.Close())
 
 	// Make header of second segment invalid.
 	_, err = f.WriteAt([]byte{1, 2, 3, 4}, 0)

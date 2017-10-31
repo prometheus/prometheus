@@ -714,10 +714,7 @@ func (w *SegmentWAL) Close() error {
 		return errors.Wrapf(hf.Close(), "closing WAL head %s", hf.Name())
 	}
 
-	if w.dirFile != nil {
-		w.dirFile.Close()
-	}
-	return nil
+	return w.dirFile.Close()
 }
 
 const (
