@@ -153,6 +153,8 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer df.Close() // close for flatform windows
+
 	f, err := os.OpenFile(filepath.Join(dir, indexFilename), os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return nil, err

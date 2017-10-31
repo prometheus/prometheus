@@ -170,7 +170,13 @@ func (w *chunkWriter) finalizeTail() error {
 	if err := tf.Truncate(off); err != nil {
 		return err
 	}
-	return tf.Close()
+
+	if err := tf.Close(); err != nil {
+		return err
+	}
+
+	// close dir file (if not windows platform will fail on rename)
+	return w.dirFile.Close()
 }
 
 func (w *chunkWriter) cut() error {
