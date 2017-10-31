@@ -1,32 +1,33 @@
 # Prometheus 2.0 Migration Guide.
 
 In line with our [compatibility promise](TODO), the Prometheus 2.0 release contains
-a number of backward incompatible changes.  This document aims to offer guidance on
+a number of backwards incompatible changes.  This document aims to offer guidance on
 migrating from Prometheus 1.8 to Prometheus 2.0.
 
 ## Flags
 
 The format of the Prometheus command line flags have changed.  Instead of a
-single dash, all flags need a double dash. Common flags (`--config.file`,
+single dash, all flags now use a double dash. Common flags (`--config.file`,
 `--web.listen-address` and `--web.external-url`) are still the same but beyond
 that, almost all the storage-related flags have been removed.
 
 Some notable flags which have been removed:
 - `-alertmanager.url` In Prometheus 2.0, the command line flags for configuring
-  a static Alertmanager URL have been removed.  Alertmanager can only be
+  a static Alertmanager URL have been removed.  Alertmanager must now be
   discovered via service discovery, see [Alertmanager service discovery](#amsd).
 
 - `-log.format` In Prometheus 2.0 logs can only be streams to standard out.
 
 - `-query.staleness-delta` Prometheus 2.0 introduces a new mechanism for
-  handling stalesness, see [Stalesness](#stalesness).
+  handling staleness, see [Staleness](#staleness).
 
 - `-storage.local.*` Prometheus 2.0 introduces a new storage engine, as such all
   flags relating to the old engine have been removed.  For information on the
-  new enginer, see [Storage](#storage).
+  new engine, see [Storage](#storage).
 
 - `-storage.remote.*` Prometheus 2.0 has removed the deprecated remote storage
-  flags.  To write to InfluxDB, Graphite, or OpenTSDB use the storage adapter.
+  flags.  To write to InfluxDB, Graphite, or OpenTSDB use the relevant storage
+  adapter.
 
 ## Config File
 
@@ -41,7 +42,8 @@ have been removed, so the following command line flag:
 ./prometheus -alertmanager.url=http://alertmanager/
 ```
 
-Might looks like the following snippet in the `prometheus.yml` config file:
+Would be replaced with something like the following in the `prometheus.yml`
+config file:
 
 ```yml
 alerting:
@@ -51,10 +53,10 @@ alerting:
       - alertmanager
 ```
 
-But note, you can use all the usual Prometheus service discovery integrations
-and relabelling.  In this snippet I'm instructing Prometheus
-to search for Kubernetes pods, in the `default` namespace, with the label
-`name: alertmanager` and with a non-empty port.
+You can also use all the usual Prothetheus service discovery integrations and
+relabeling in your Alertmanager configuration.  In this snippet I'm instructing
+Prometheus to search for Kubernetes pods, in the `default` namespace, with the
+label `name: alertmanager` and with a non-empty port.
 
 ```yml
 alerting:
@@ -76,10 +78,10 @@ alerting:
       action: drop
 ```
 
-## Recording rules an alerts
+## Recording rules and alerts
 
-The format for configuring alerting and recoding rules has been changed to YAML.
-An example of an recording rule in the old format:
+The format for configuring alerting and recording rules has been changed to YAML.
+An example of a recording rule and alert in the old format:
 
 ```
 job:request_duration_seconds:99percentile =
@@ -93,7 +95,7 @@ ALERT FrontendRequestLatency
   }
 ```
 
-Might looks like this in the new format:
+Would looks like this:
 
 ```yml
 groups:
@@ -109,8 +111,8 @@ groups:
       summary: High frontend request latency
 ```
 
-The `promtool` has a command to automate the conversion.  Given a `.rules` file,
-it will output a `.rules.yml` file in the new format. For example:
+To help with the change, the `promtool` tool has a mode to automate the rules conversion.  Given a `.rules` file, it will output a `.rules.yml` file in the
+new format. For example:
 
 ```
 $ promtool update rules example.rules
@@ -120,16 +122,16 @@ $ promtool update rules example.rules
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
 compatible with 1.8. To retain access to your historic monitoring data we recommend
-you run a non-scraping Prometheus 1.8 instance in parallel to you Prometheus 2.0.
+you run a non-scraping Prometheus 1.8 instance in parallel with your Prometheus 2.0.
 
-Your Prometheus 1.8 instance should be started with the follow flags and an empty
-config file (`empty.yml`):
+Your Prometheus 1.8 instance should be started with the following flags and an
+empty config file (`empty.yml`):
 
 ```
 $ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file empty.yml
 ```
 
-Prometheus 2.0 can then be started (on the same machine) with the follow flags:
+Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
 ```
 $ ./prometheus-2.0.0.linux-amd64/prometheus --config.file prometheus.yml
@@ -156,14 +158,14 @@ The follow functions have been removed:
 
 TODO
 
-## Miscelaneous
+## Miscellaneous
 
 ### Prometheus non-root user
 
-The Prometheus docker image is now built to [run Prometheus
+The Prometheus Docker image is now built to [run Prometheus
 as a non-root user](https://github.com/prometheus/prometheus/pull/2859).  If you
 want the Prometheus UI/API to listen on a low port number (say, port 80), you'll
-need to override it in your Kubernetes YAML:
+need to override it.  For Kubernetes, you would use the following YAML:
 
 ```yml
 apiVersion: v1
@@ -176,18 +178,18 @@ spec:
 ...
 ```
 
-Or the following Docker arguments:
+Or, if you're using Docker, then you would:
 
 ```
 TODO
 ```
 
-See https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ for
-more details.
+See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
+for more details.
 
 ## Prometheus Lifecycle
 
 If you use the Prometheus `/-/reload` HTTP endpoint to [automatically reload your
 Prometheus config when it changes](https://www.weave.works/blog/prometheus-configmaps-continuous-deployment/),
-you'll find these endpoints are disabled by default in Prometheus 2.0.  To enable
-them, set the `--web.enable-lifecycle` flag.
+these endpoints are disabled by default for security reasons in Prometheus 2.0.
+To enable them, set the `--web.enable-lifecycle` flag.
