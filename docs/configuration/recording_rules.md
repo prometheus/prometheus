@@ -32,9 +32,8 @@ When the file is syntactically valid, the checker prints a textual
 representation of the parsed rules to standard output and then exits with
 a `0` return status.
 
-If there are any syntax errors, it prints an error message to standard error
-and exits with a `1` return status. On invalid input arguments the exit status
-is `2`.
+If there are any syntax errors or invalid input arguments, it prints an error 
+message to standard error and exits with a `1` return status.
 
 ## Recording rules
 
