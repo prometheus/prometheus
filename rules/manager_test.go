@@ -25,6 +25,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -284,5 +285,49 @@ func TestCopyState(t *testing.T) {
 	}
 	if !reflect.DeepEqual(oldGroup.rules[0], newGroup.rules[3]) {
 		t.Fatalf("Active alerts not as expected. Wanted: %+v Got: %+v", oldGroup.rules[0], oldGroup.rules[3])
+	}
+}
+
+func TestApplyConfig(t *testing.T) {
+	expected := map[string]labels.Labels{
+		"test": labels.Labels{
+			labels.Label{
+				Name:  "name",
+				Value: "value",
+			},
+		},
+	}
+	conf, err := config.LoadFile("../config/testdata/conf.good.yml")
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:  nil,
+		Notifier:    nil,
+		QueryEngine: nil,
+		Context:     context.Background(),
+		Logger:      log.NewNopLogger(),
+	})
+	ruleManager.Run()
+
+	if err := ruleManager.ApplyConfig(conf); err != nil {
+		t.Fatalf(err.Error())
+	}
+	for _, g := range ruleManager.groups {
+		g.seriesInPreviousEval = []map[string]labels.Labels{
+			expected,
+		}
+	}
+
+	if err := ruleManager.ApplyConfig(conf); err != nil {
+		t.Fatalf(err.Error())
+	}
+	for _, g := range ruleManager.groups {
+		for _, actual := range g.seriesInPreviousEval {
+
+			if !reflect.DeepEqual(expected, actual) {
+				t.Fatalf("Rule groups state lost after config reload. Expected: %+v Got: %+v", expected, actual)
+			}
+		}
 	}
 }
