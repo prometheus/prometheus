@@ -190,7 +190,7 @@ type SegmentWAL struct {
 
 	stopc   chan struct{}
 	donec   chan struct{}
-	actorc  chan func() error // sequantilized background operations
+	actorc  chan func() error // sequentialized background operations
 	buffers sync.Pool
 }
 
