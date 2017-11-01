@@ -14,11 +14,15 @@
 *.iml
 .idea
 tags
+.history
+.vscode
 
 /prometheus
 /promtool
 benchmark.txt
 /data
+/cmd/prometheus/data
+/cmd/prometheus/debug
 /.build
 /.release
 /.tarballs
