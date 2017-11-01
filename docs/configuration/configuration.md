@@ -12,17 +12,17 @@ configuration file defines everything related to scraping [jobs and their
 instances](https://prometheus.io/docs/concepts/jobs_instances/), as well as
 which [rule files to load](recording_rules.md#configuring-rules).
 
-To view all available command-line flags, run `prometheus -h`.
+To view all available command-line flags, run `./prometheus -h`.
 
 Prometheus can reload its configuration at runtime. If the new configuration
 is not well-formed, the changes will not be applied.
 A configuration reload is triggered by sending a `SIGHUP` to the Prometheus process or
-sending a HTTP POST request to the `/-/reload` endpoint.
+sending a HTTP POST request to the `/-/reload` endpoint (when `--web.enable-lifecycle` flag is enabled).
 This will also reload any configured rule files.
 
 ## Configuration file
 
-To specify which configuration file to load, use the `-config.file` flag.
+To specify which configuration file to load, use the `--config.file` flag.
 
 The file is written in [YAML format](http://en.wikipedia.org/wiki/YAML),
 defined by the scheme described below.

@@ -13,16 +13,17 @@ data, etc. The Prometheus templating language is based on the
 
 ## Simple alert field templates
 
-    ALERT InstanceDown
-      IF up == 0
-      FOR 5m
-      LABELS {
-        severity="page"
-      }
-      ANNOTATIONS {
-        summary = "Instance {{$labels.instance}} down",
-        description = "{{$labels.instance}} of job {{$labels.job}} has been down for more than 5 minutes.",
-      }
+```
+alert: InstanceDown
+expr: up == 0
+for: 5m
+labels:
+  - severity: page
+  
+annotations:
+  - summary: "Instance {{$labels.instance}} down"
+  - description: "{{$labels.instance}} of job {{$labels.job}} has been down for more than 5 minutes."
+```
 
 Alert field templates will be executed during every rule iteration for each
 alert that fires, so keep any queries and templates lightweight. If you have a
