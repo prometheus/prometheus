@@ -119,11 +119,11 @@ For more about the expression language, see the
 To graph expressions, navigate to http://localhost:9090/graph and use the "Graph"
 tab.
 
-For example, enter the following expression to graph the per-second rate of all
-storage chunk operations happening in the self-scraped Prometheus:
+For example, enter the following expression to graph the per-second rate of chunks 
+being created in the self-scraped Prometheus:
 
 ```
-rate(prometheus_local_storage_chunk_ops_total[1m])
+rate(prometheus_tsdb_head_chunks_created_total[1m])
 ```
 
 Experiment with the graph range parameters and other settings.
