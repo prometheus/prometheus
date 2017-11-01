@@ -494,9 +494,9 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
-		groupName := newg.name + ";" + newg.file
-		oldg, ok := m.groups[groupName]
-		delete(m.groups, groupName)
+		gn := groupName(newg.name, newg.file)
+		oldg, ok := m.groups[gn]
+		delete(m.groups, gn)
 
 		go func(newg *Group) {
 			if ok {
@@ -568,12 +568,16 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			// Group names need not be unique across filenames.
-			groups[rg.Name+";"+fn] = NewGroup(rg.Name, fn, itv, rules, m.opts)
+			groups[groupName(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, m.opts)
 		}
 	}
 
 	return groups, nil
+}
+
+// Group names need not be unique across filenames.
+func groupName(name, file string) string {
+	return name + ";" + file
 }
 
 // RuleGroups returns the list of manager's rule groups.

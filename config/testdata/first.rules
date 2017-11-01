@@ -7,4 +7,4 @@ groups:
     labels:
       severity: critical
     annotations:
-      description: "stuff's happening with {{ $labels.service }}"  
+      description: "stuff's happening with {{ $labels.service }}"
