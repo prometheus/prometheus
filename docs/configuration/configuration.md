@@ -41,6 +41,7 @@ Generic placeholders are defined as follows:
 * `<scheme>`: a string that can take the values `http` or `https`
 * `<string>`: a regular string
 * `<secret>`: a regular string that is a secret, such as a password
+* `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
 
