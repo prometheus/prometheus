@@ -31,20 +31,19 @@ for dir in ${DIRS}; do
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             *.proto
 
+		protoc -I. \
+			-I="${GOGOPROTO_PATH}" \
+			-I="${PROM_PATH}" \
+			-I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
+			--grpc-gateway_out=logtostderr=true:. \
+			--swagger_out=logtostderr=true:../documentation/dev/api/ \
+			rpc.proto
+		mv ../documentation/dev/api/rpc.swagger.json ../documentation/dev/api/swagger.json
+		
 		sed -i.bak -E 's/import _ \"gogoproto\"//g' *.pb.go
 		sed -i.bak -E 's/import _ \"google\/protobuf\"//g' *.pb.go
+		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' *.go
 		rm -f *.bak
 		goimports -w *.pb.go
 	popd
 done
-
-protoc -I. \
-    -I="${GOGOPROTO_PATH}" \
-    -I="${PROM_PATH}" \
-    -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
-    --grpc-gateway_out=logtostderr=true:. \
-    --swagger_out=logtostderr=true:./documentation/dev/api/ \
-    prompb/rpc.proto
-
-mv documentation/dev/api/prompb/rpc.swagger.json documentation/dev/api/swagger.json
-rm -rf documentation/dev/api/prompb
