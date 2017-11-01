@@ -494,7 +494,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
-		gn := groupName(newg.name, newg.file)
+		gn := groupKey(newg.name, newg.file)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
@@ -568,7 +568,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			groups[groupName(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, m.opts)
+			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, m.opts)
 		}
 	}
 
@@ -576,7 +576,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 }
 
 // Group names need not be unique across filenames.
-func groupName(name, file string) string {
+func groupKey(name, file string) string {
 	return name + ";" + file
 }
 
