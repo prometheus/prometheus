@@ -177,7 +177,7 @@ in detail in the [expression language functions](functions.md) page.
 
 ## Gotchas
 
-### Interpolation and staleness
+### Staleness
 
 When queries are run, timestamps at which to sample data are selected
 independently of the actual present time series data. This is mainly to support
@@ -186,14 +186,22 @@ time series do not exactly align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
 series. It does so by simply taking the newest sample before this timestamp.
 
-If no stored sample is found (by default) 5 minutes before a sampling timestamp,
-no value is assigned for this time series at this point in time. This
-effectively means that time series "disappear" from graphs at times where their
-latest collected sample is older than 5 minutes.
+If a target scrape or rule evaluation no longer returns a sample for a time
+series that was previously present, that time series will be marked as stale.
+If a target is removed, its previously returned time series will be marked as
+stale soon afterwards.
 
-NOTE: <b>NOTE:</b> Staleness and interpolation handling might change. See
-https://github.com/prometheus/prometheus/issues/398 and
-https://github.com/prometheus/prometheus/issues/581.
+If a query is evaluated at a sampling timestamp after a time series is marked
+stale, then no value is returned for that time series. If new samples are
+subsequently ingested for that time series, they will be returned as normal.
+
+If no sample is found (by default) 5 minutes before a sampling timestamp,
+no value is returned for that time series at this point in time. This
+effectively means that time series "disappear" from graphs at times where their
+latest collected sample is older than 5 minutes or after they are marked stale.
+
+Staleness will not be marked for time series that have timestamps included in
+their scrapes. Only the 5 minute threshold will be applied in that case.
 
 ### Avoiding slow queries and overloads
 
