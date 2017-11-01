@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context/ctxhttp"
