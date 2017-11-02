@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "prompb/rpc.proto",
+    "title": "rpc.proto",
     "version": "version not set"
   },
   "schemes": [

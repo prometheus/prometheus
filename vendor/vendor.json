@@ -608,25 +608,28 @@
 			"revisionTime": "2017-06-07T03:48:29Z"
 		},
 		{
-			"checksumSHA1": "/SPy/naO5hgJ9w7uWZurcUm2I88=",
-			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/grpc-ecosystem/grpc-gateway/runtime",
+			"checksumSHA1": "InNAv3jGuD6SW4qJDBtGQpj0oRI=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime",
-			"revision": "2ad234c172af14e85f3be9546f6c64c768d4eccd",
-			"revisionTime": "2017-04-04T23:42:07Z"
+			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
+			"revisionTime": "2017-04-17T16:01:37Z",
+			"version": "=v1.2.2",
+			"versionExact": "v1.2.2"
 		},
 		{
 			"checksumSHA1": "et8uiXNw6yM96U/UZgn2vKtyr3Q=",
-			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
-			"revision": "2ad234c172af14e85f3be9546f6c64c768d4eccd",
-			"revisionTime": "2017-04-04T23:42:07Z"
+			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
+			"revisionTime": "2017-04-17T16:01:37Z",
+			"version": "=v1.2.2",
+			"versionExact": "v1.2.2"
 		},
 		{
 			"checksumSHA1": "vqiK5r5dntV7JNZ+ZsGlD0Samos=",
-			"origin": "github.com/cockroachdb/cockroach/vendor/github.com/grpc-ecosystem/grpc-gateway/utilities",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/utilities",
-			"revision": "2ad234c172af14e85f3be9546f6c64c768d4eccd",
-			"revisionTime": "2017-04-04T23:42:07Z"
+			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
+			"revisionTime": "2017-04-17T16:01:37Z",
+			"version": "=v1.2.2",
+			"versionExact": "v1.2.2"
 		},
 		{
 			"checksumSHA1": "/DReHn5j0caPm3thgFD9DmOmibQ=",
