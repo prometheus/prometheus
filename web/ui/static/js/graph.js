@@ -79,6 +79,8 @@ Prometheus.Graph.prototype.initialize = function() {
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stackedBtn = self.queryForm.find(".stacked_btn");
   self.stacked = self.queryForm.find("input[name=stacked]");
+  self.autoYBtn = self.queryForm.find(".autoy_btn");
+  self.autoY = self.queryForm.find("input[name=autoy]");
   self.insertMetric = self.queryForm.find("select[name=insert_metric]");
   self.refreshInterval = self.queryForm.find("select[name=refresh]");
 
@@ -128,23 +130,23 @@ Prometheus.Graph.prototype.initialize = function() {
   self.endDate.on("dp.change", function() { self.submitQuery(); });
   self.refreshInterval.change(function() { self.updateRefresh(); });
 
-  self.isStacked = function() {
-    return self.stacked.val() === '1';
-  };
-
-  var styleStackBtn = function() {
-    var icon = self.stackedBtn.find('.glyphicon');
-    if (self.isStacked()) {
-      self.stackedBtn.addClass("btn-primary");
+  var styleBtn = function(button, checked) {
+    var icon = button.find('.glyphicon');
+    if (checked) {
+      button.addClass("btn-primary");
       icon.addClass("glyphicon-check");
       icon.removeClass("glyphicon-unchecked");
     } else {
-      self.stackedBtn.removeClass("btn-primary");
+      button.removeClass("btn-primary");
       icon.addClass("glyphicon-unchecked");
       icon.removeClass("glyphicon-check");
     }
   };
-  styleStackBtn();
+
+  self.isStacked = function() {
+    return self.stacked.val() === '1';
+  };
+  styleBtn(self.stackedBtn, self.isStacked());
 
   self.stackedBtn.click(function() {
     if (self.isStacked() && self.graphJSON) {
@@ -153,7 +155,28 @@ Prometheus.Graph.prototype.initialize = function() {
       self.data = self.transformData(self.graphJSON);
     }
     self.stacked.val(self.isStacked() ? '0' : '1');
-    styleStackBtn();
+    styleBtn(self.stackedBtn, self.isStacked());
+    // Stacked implies y=0.
+    if (self.isStacked()) {
+      self.autoY.val('0');
+      styleBtn(self.autoYBtn, self.isAutoY());
+    }
+    self.updateGraph();
+  });
+
+  self.isAutoY = function() {
+    return self.autoY.val() === '1';
+  };
+  styleBtn(self.autoYBtn, self.isAutoY());
+
+  self.autoYBtn.click(function() {
+    self.autoY.val(self.isAutoY() ? '0' : '1');
+    styleBtn(self.autoYBtn, self.isAutoY());
+    if (self.isStacked()) {
+      self.stacked.val('0');
+      styleBtn(self.stackedBtn, self.isStacked());
+      self.data = self.transformData(self.graphJSON);
+    }
     self.updateGraph();
   });
 
@@ -291,7 +314,8 @@ Prometheus.Graph.prototype.getOptions = function() {
     "range_input",
     "end_input",
     "step_input",
-    "stacked"
+    "stacked",
+    "autoy"
   ];
 
   self.queryForm.find("input").each(function(index, element) {
@@ -606,7 +630,6 @@ Prometheus.Graph.prototype.updateGraph = function() {
     renderer: (self.isStacked() ? "stack" : "line"),
     interpolation: "linear",
     series: self.data,
-    min: "auto",
   });
 
   // Find and set graph's max/min
@@ -642,7 +665,11 @@ Prometheus.Graph.prototype.updateGraph = function() {
       self.rickshawGraph.min = min - 1;
     } else {
       self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
-      self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+      if (self.isAutoY() === true) {
+        self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+      } else {
+        self.rickshawGraph.min = 0;
+      }
     }
   }
 

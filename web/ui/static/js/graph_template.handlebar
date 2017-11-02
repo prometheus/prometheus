@@ -104,6 +104,13 @@
                           </button>
                           <input type="hidden" name="stacked" value="{{stacked}}">
                         </div>
+
+                        <div class="prometheus_input_group pull-left">
+                          <button type="button" class="btn btn-default autoy_btn">
+                            <i class="glyphicon"></i> auto y-axis
+                          </button>
+                          <input type="hidden" name="autoy" value="{{autoy}}">
+                        </div>
                       </div>
 
                       <div class="graph_area"></div>
