@@ -142,7 +142,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	})
 	m.samplesAppended = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_samples_appended_total",
-		Help: "Total number of appended sampledb.",
+		Help: "Total number of appended samples.",
 	})
 
 	if r != nil {
