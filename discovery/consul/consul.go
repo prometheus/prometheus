@@ -145,7 +145,8 @@ func (d *Discovery) shouldWatch(name string) bool {
 	}
 
 	// use regex match
-	for _, snr := range d.watchedServicesReg {
+	for idx, snr := range d.watchedServicesReg {
+		d.logger.Info("use regex match. name[", name, "], regex[", d.watchedServices[idx], "]")
 		if snr.MatchString(name) {
 			return true
 		}
@@ -315,6 +316,17 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				serviceAddressLabel: model.LabelValue(node.ServiceAddress),
 				servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
 				serviceIDLabel:      model.LabelValue(node.ServiceID),
+			}
+
+			// will tags change table.
+			for _, tag := range node.ServiceTags {
+				// kv must use ‘=’ sep
+				kv := strings.SplitN(tag, "=", 2)
+				if len(kv) != 2 {
+					srv.logger.Warnf("%v tagname err. val[%v]", addr, tag)
+					continue
+				}
+				labels[tagsLabel+model.LabelName(kv[0])] = model.LabelValue(kv[1])
 			}
 
 			// Add all key/value pairs from the node's metadata as their own labels
