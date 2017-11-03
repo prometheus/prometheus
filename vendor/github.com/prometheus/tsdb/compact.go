@@ -426,11 +426,21 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open temporary block dir")
 	}
-	defer df.Close()
+	defer func() {
+		if df != nil {
+			df.Close()
+		}
+	}()
 
 	if err := fileutil.Fsync(df); err != nil {
 		return errors.Wrap(err, "sync temporary dir file")
 	}
+
+	// close temp dir before rename block dir(for windows platform)
+	if err = df.Close(); err != nil {
+		return errors.Wrap(err, "close temporary dir")
+	}
+	df = nil
 
 	// Block successfully written, make visible and remove old ones.
 	if err := renameFile(tmp, dir); err != nil {

@@ -21,8 +21,7 @@ import (
 
 func mmap(f *os.File, sz int) ([]byte, error) {
 	low, high := uint32(sz), uint32(sz>>32)
-
-	h, errno := syscall.CreateFileMapping(syscall.Handle(f.Fd()), nil, syscall.PAGE_READONLY, low, high, nil)
+	h, errno := syscall.CreateFileMapping(syscall.Handle(f.Fd()), nil, syscall.PAGE_READONLY, high, low, nil)
 	if h == 0 {
 		return nil, os.NewSyscallError("CreateFileMapping", errno)
 	}
