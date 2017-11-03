@@ -665,7 +665,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
       self.rickshawGraph.min = min - 1;
     } else {
       self.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
-      if (self.isAutoY() === true) {
+      if (min < 0 || self.isAutoY() === true) {
         self.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
       } else {
         self.rickshawGraph.min = 0;
