@@ -379,6 +379,27 @@ func (db *DB) compact() (changes bool, err error) {
 		}
 		changes = true
 
+		// close blocks in plan so that we can remove files.
+		var blocks []*Block
+		db.mtx.Lock()
+		oldBlocks := db.blocks
+		for _, b := range oldBlocks {
+			keep := true
+			for _, pd := range plan {
+				if pd == b.Dir() {
+					keep = false
+					break
+				}
+			}
+			if keep {
+				blocks = append(blocks, b)
+			} else {
+				b.Close()
+			}
+		}
+		db.blocks = blocks
+		db.mtx.Unlock()
+
 		for _, pd := range plan {
 			if err := os.RemoveAll(pd); err != nil {
 				return changes, errors.Wrap(err, "delete compacted block")
