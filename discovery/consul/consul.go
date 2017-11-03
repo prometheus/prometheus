@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -87,12 +88,13 @@ func init() {
 // Discovery retrieves target information from a Consul server
 // and updates them via watches.
 type Discovery struct {
-	client           *consul.Client
-	clientConf       *consul.Config
-	clientDatacenter string
-	tagSeparator     string
-	watchedServices  []string // Set of services which will be discovered.
-	logger           log.Logger
+	client             *consul.Client
+	clientConf         *consul.Config
+	clientDatacenter   string
+	tagSeparator       string
+	watchedServices    []string         // Set of services which will be discovered.
+	watchedServicesReg []*regexp.Regexp // match services
+	logger             log.Logger
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -127,6 +129,11 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 		clientDatacenter: clientConf.Datacenter,
 		logger:           logger,
 	}
+	cd.watchedServicesReg = make([]*regexp.Regexp, 0, len(cd.watchedServicesReg))
+	for _, name := range cd.watchedServices {
+		cd.watchedServicesReg = append(cd.watchedServicesReg, regexp.MustCompile(name))
+	}
+
 	return cd, nil
 }
 
@@ -136,11 +143,14 @@ func (d *Discovery) shouldWatch(name string) bool {
 	if len(d.watchedServices) == 0 {
 		return true
 	}
-	for _, sn := range d.watchedServices {
-		if sn == name {
+
+	// use regex match
+	for _, snr := range d.watchedServicesReg {
+		if snr.MatchString(name) {
 			return true
 		}
 	}
+
 	return false
 }
 
