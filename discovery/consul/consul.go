@@ -44,6 +44,8 @@ const (
 	metaDataLabel = model.MetaLabelPrefix + "consul_metadata_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
+	// tagLabel is the name of the label containing the tags assigned to the target.
+	tagLabel = model.MetaLabelPrefix + "consul_tag_"
 	// serviceLabel is the name of the label containing the service name.
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
@@ -326,7 +328,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 					srv.logger.Warnf("%v tagname err. val[%v]", addr, tag)
 					continue
 				}
-				labels[tagsLabel+model.LabelName(kv[0])] = model.LabelValue(kv[1])
+				labels[tagLabel+model.LabelName(kv[0])] = model.LabelValue(kv[1])
 			}
 
 			// Add all key/value pairs from the node's metadata as their own labels
