@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/prometheus/prometheus/config"
@@ -86,11 +87,11 @@ func (s *mockSyncer) Sync(tgs []*config.TargetGroup) {
 }
 
 type mockTargetProvider struct {
-	callCount *int
+	callCount *uint32
 }
 
 func (tp mockTargetProvider) Run(ctx context.Context, up chan<- []*config.TargetGroup) {
-	*tp.callCount = *tp.callCount + 1
+	atomic.AddUint32(tp.callCount, 1)
 	up <- []*config.TargetGroup{{Source: "dummySource"}}
 }
 
@@ -112,7 +113,7 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 	defer cancel()
 
 	tp := mockTargetProvider{}
-	callCount := 0
+	var callCount uint32
 	tp.callCount = &callCount
 
 	targetProviders := map[string]TargetProvider{}
