@@ -26,7 +26,7 @@ const LevelFlagName = "log.level"
 const LevelFlagHelp = "Only log messages with the given severity or above. One of: [debug, info, warn, error]"
 
 // AddFlags adds the flags used by this package to the Kingpin application.
-// To use the default Kingpin application, call AddFlags(kingpin.CommandLine, ..).
+// To use the default Kingpin application, call AddFlags(kingpin.CommandLine)
 func AddFlags(a *kingpin.Application, logLevel *promlog.AllowedLevel) {
 	a.Flag(LevelFlagName, LevelFlagHelp).
 		Default("info").SetValue(logLevel)
