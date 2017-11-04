@@ -1,3 +1,7 @@
+## 1.8.2 / 2017-11-04
+
+* [BUGFIX] EC2 service discovery: Do not crash if tags are empty.
+
 ## 1.8.1 / 2017-10-19
 
 * [BUGFIX] Correctly handle external labels on remote read endpoint
