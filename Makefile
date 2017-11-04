@@ -27,6 +27,7 @@ ifdef DEBUG
 endif
 
 STATICCHECK_IGNORE = \
+  github.com/prometheus/prometheus/discovery/kubernetes/kubernetes.go:SA1019 \
   github.com/prometheus/prometheus/discovery/kubernetes/node.go:SA1019 \
   github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
   github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \

@@ -35,6 +35,8 @@ const (
 	MagicIndex = 0xBAAAD700
 
 	indexFormatV1 = 1
+
+	size_unit = 4
 )
 
 const indexFilename = "index"
@@ -203,12 +205,13 @@ func (w *indexWriter) write(bufs ...[]byte) error {
 	return nil
 }
 
-// addPadding adds zero byte padding until the file size is a multiple of n.
-func (w *indexWriter) addPadding(n int) error {
-	p := n - (int(w.pos) % n)
+// addPadding adds zero byte padding until the file size is a multiple size_unit.
+func (w *indexWriter) addPadding() error {
+	p := w.pos % size_unit
 	if p == 0 {
 		return nil
 	}
+	p = size_unit - p
 	return errors.Wrap(w.write(make([]byte, p)), "add padding")
 }
 
@@ -373,7 +376,7 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	sort.Sort(valt)
 
 	// Align beginning to 4 bytes for more efficient index list scans.
-	if err := w.addPadding(4); err != nil {
+	if err := w.addPadding(); err != nil {
 		return err
 	}
 
@@ -446,7 +449,7 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	}
 
 	// Align beginning to 4 bytes for more efficient postings list scans.
-	if err := w.addPadding(4); err != nil {
+	if err := w.addPadding(); err != nil {
 		return err
 	}
 
