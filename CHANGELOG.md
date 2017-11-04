@@ -1,21 +1,23 @@
+## 2.0.0-rc.3 / 2017-11-04
+
+_Changes compared to 2.0.0-rc.2._
+
+* [ENHANCEMENT] Remove remote read from the query path if no remote storage
+  is configured.
+* [ENHANCEMENT] Bump Consul HTTP client timeout to not match the Consul SD
+  watch timeout.
+* [ENHANCEMENT] Bump up a too small max block duration to the min block
+  duration instead of returning an error.
+* [BUGFIX] Avoid needless padding of 4 zero bytes in index files.
+* [BUGFIX] Delete old blocks during reload (necessary on MS Windows).
+* [BUGFIX] Fix regression of alert rules state loss on config reload.
+* [BUGFIX] Serialize background WAL operations to avoid data races.
+
+This also contains bugfixes and remote-storage features from the 1.8 branch.
+
 ## 1.8.2 / 2017-11-04
 
 * [BUGFIX] EC2 service discovery: Do not crash if tags are empty.
-
-## 2.0.0-rc.2 / 2017-10-25
-
-* [ENHANCEMENT] handle WAL segments with corrupted header gracefully
-* [ENHANCEMENT] stabilize memory usage during WAL replay
-* [CHANGE] Prefix all storage metrics with `prometheus_`
-* [BUGFIX] Correctly handle label removal in remote read
-* [BUGFIX] Fix chunk misalignment causing out-of-order samples
-* [BUGFIX] Fix connection leak in Consul SD
-* [BUGFIX] Handle invalid chunk derefernces gracefully
-* [BUGFIX] Prevent potential deadlock during failing querier construction
-
-Data written in previous pre-release versions may have been affected by the out-of-order
-bug. Reading this data may reveal artefacts and incorrect data.
-Starting with a clean storage directory is advised. The WAL directory may safely be kept.
 
 ## 1.8.1 / 2017-10-19
 
