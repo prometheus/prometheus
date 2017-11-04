@@ -728,40 +728,46 @@
 			"revisionTime": "2015-02-12T10:17:44Z"
 		},
 		{
-			"checksumSHA1": "Wtpzndm/+bdwwNU5PCTfb4oUhc8=",
+			"checksumSHA1": "xfnn0THnqNwjwimeTClsxahYrIo=",
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",
-			"revisionTime": "2017-04-18T15:52:10Z"
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
 			"checksumSHA1": "GWlM3d2vPYyNATtTFgftS10/A9w=",
 			"path": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
-			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",
-			"revisionTime": "2017-04-18T15:52:10Z"
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
 			"checksumSHA1": "3VoqH7TFfzA6Ds0zFzIbKCUvBmw=",
 			"path": "github.com/prometheus/common/model",
-			"revision": "0d0c3d572886e0f2323ed376557f9eb99b97d25b",
-			"revisionTime": "2017-06-16T14:41:04Z"
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
 			"checksumSHA1": "Yseprf8kAFr/s7wztkQnrFuFN+8=",
 			"path": "github.com/prometheus/common/promlog",
-			"revision": "2f17f4a9d485bf34b4bfaccc273805040e4f86c8",
-			"revisionTime": "2017-09-08T16:18:22Z"
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
+		},
+		{
+			"checksumSHA1": "1H28FCxsaAIm6kvue+Wfdd8Lq6M=",
+			"path": "github.com/prometheus/common/promlog/flag",
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
 			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",
-			"revisionTime": "2017-04-18T15:52:10Z"
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
 			"path": "github.com/prometheus/common/version",
-			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",
-			"revisionTime": "2017-04-18T15:52:10Z"
+			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
+			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
 			"checksumSHA1": "W218eJZPXJG783fUr/z6IaAZyes=",
@@ -770,28 +776,28 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "MZoz9kpR5PSUM9mJLh3c7nSrk9c=",
+			"checksumSHA1": "Bty/r75M8kM+GA80eMM5p0cLTi0=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "b1df85781931b0ff48d09a364174016d16a4dc3e",
-			"revisionTime": "2017-11-01T17:11:22Z"
+			"revision": "706602daed1487f7849990678b4ece4599745905",
+			"revisionTime": "2017-11-04T07:45:56Z"
 		},
 		{
 			"checksumSHA1": "uy6ySJ6EZqof+yMD2wTkYob8BeU=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "5d28c849c7ff3b43e2829a44a9aac16468e076ce",
-			"revisionTime": "2017-10-25T14:52:11Z"
+			"revision": "706602daed1487f7849990678b4ece4599745905",
+			"revisionTime": "2017-11-04T07:45:56Z"
 		},
 		{
 			"checksumSHA1": "7RhNAVcmDmLFqn9nWiudT0B76f8=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "5d28c849c7ff3b43e2829a44a9aac16468e076ce",
-			"revisionTime": "2017-10-25T14:52:11Z"
+			"revision": "706602daed1487f7849990678b4ece4599745905",
+			"revisionTime": "2017-11-04T07:45:56Z"
 		},
 		{
 			"checksumSHA1": "zhmlvc322RH1L3l9DaA9d/HVVWs=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "5d28c849c7ff3b43e2829a44a9aac16468e076ce",
-			"revisionTime": "2017-10-25T14:52:11Z"
+			"revision": "706602daed1487f7849990678b4ece4599745905",
+			"revisionTime": "2017-11-04T07:45:56Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
