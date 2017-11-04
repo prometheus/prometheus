@@ -221,6 +221,9 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 				}
 
 				for _, t := range inst.Tags {
+					if t == nil || t.Key == nil || t.Value == nil {
+						continue
+					}
 					name := strutil.SanitizeLabelName(*t.Key)
 					labels[ec2LabelTag+model.LabelName(name)] = model.LabelValue(*t.Value)
 				}
