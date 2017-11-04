@@ -1,3 +1,7 @@
+## 1.8.2 / 2017-11-04
+
+* [BUGFIX] EC2 service discovery: Do not crash if tags are empty.
+
 ## 2.0.0-rc.2 / 2017-10-25
 
 * [ENHANCEMENT] handle WAL segments with corrupted header gracefully
