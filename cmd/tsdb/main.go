@@ -130,7 +130,7 @@ func (b *writeBenchmark) run() {
 
 	dur := measureTime("ingestScrapes", func() {
 		b.startProfiling()
-		total, err = b.ingestScrapes(metrics, 2000)
+		total, err = b.ingestScrapes(metrics, 3000)
 		if err != nil {
 			exitWithError(err)
 		}
