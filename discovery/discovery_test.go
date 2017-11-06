@@ -15,6 +15,8 @@ package discovery
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/prometheus/prometheus/config"
@@ -81,5 +83,50 @@ type mockSyncer struct {
 func (s *mockSyncer) Sync(tgs []*config.TargetGroup) {
 	if s.sync != nil {
 		s.sync(tgs)
+	}
+}
+
+type mockTargetProvider struct {
+	callCount *uint32
+}
+
+func (tp mockTargetProvider) Run(ctx context.Context, up chan<- []*config.TargetGroup) {
+	atomic.AddUint32(tp.callCount, 1)
+	up <- []*config.TargetGroup{{Source: "dummySource"}}
+}
+
+func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
+
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	ts1 := NewTargetSet(&mockSyncer{
+		sync: func([]*config.TargetGroup) { wg.Done() },
+	})
+
+	ts2 := NewTargetSet(&mockSyncer{
+		sync: func([]*config.TargetGroup) { wg.Done() },
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tp := mockTargetProvider{}
+	var callCount uint32
+	tp.callCount = &callCount
+
+	targetProviders := map[string]TargetProvider{}
+	targetProviders["testProvider"] = tp
+
+	go ts1.Run(ctx)
+	go ts2.Run(ctx)
+
+	ts1.UpdateProviders(targetProviders)
+	ts2.UpdateProviders(targetProviders)
+	wg.Wait()
+
+	if callCount != 2 {
+		t.Errorf("Was expecting 2 calls received %v", callCount)
 	}
 }
