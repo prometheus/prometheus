@@ -219,10 +219,7 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tp := mockTargetProvider{}
-	var callCount uint32
-	tp.callCount = &callCount
-
+	tp := newMockTargetProvider([]update{{[]string{"initial1", "initial2"}, 10}})
 	targetProviders := map[string]TargetProvider{}
 	targetProviders["testProvider"] = tp
 
@@ -233,8 +230,8 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 	ts2.UpdateProviders(targetProviders)
 	wg.Wait()
 
-	if callCount != 2 {
-		t.Errorf("Was expecting 2 calls received %v", callCount)
+	if *tp.callCount != 2 {
+		t.Errorf("Was expecting 2 calls received %v", tp.callCount)
 	}
 }
 
