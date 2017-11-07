@@ -106,3 +106,27 @@ func (m *PrefixMatcher) Prefix() string { return m.prefix }
 
 // Matches implements Matcher interface.
 func (m *PrefixMatcher) Matches(v string) bool { return strings.HasPrefix(v, m.prefix) }
+
+// ListMatcher implements Matcher for labels which values are within a list of values
+type ListMatcher struct {
+	name string
+	set map[string]struct{}
+}
+
+// NewListMatcher returns new Matcher for labels which values are within a list of values
+func NewListMatcher(name, sets string) Matcher {
+	set := make(map[string]struct{})
+	for _, s := range strings.Split(sets, ",") {
+		set[s] = struct{}{}
+	}
+	return &ListMatcher{name: name, set: set}
+}
+
+// Name implements Matcher interface.
+func (m *ListMatcher) Name() string { return m.name }
+
+// Matches implements Matcher interface.
+func (m *ListMatcher) Matches(v string) bool {
+	_, ok := m.set[v]
+	return ok
+}
