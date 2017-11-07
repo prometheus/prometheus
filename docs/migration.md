@@ -129,7 +129,7 @@ empty config file (`empty.yml`):
 $ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file empty.yml
 ```
 
-NB If you used [external labels]() in your Prometheus config, there need to be
+NOTE: **NOTE** If you used external labels in your Prometheus 2.0 config, there need to be
 preserved in you Prometheus 1.8 config.
 Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
