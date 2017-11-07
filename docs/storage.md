@@ -61,9 +61,9 @@ On average, Prometheus uses only around 1-2 bytes per sample. Thus, to plan the 
 needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes_per_sample
 ```
 
-To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can reduce the scrape rate. However, reducing the number of series is likely more effective.
+To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. However, you can also try removing individual block directories to resolve the problem. This means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as a durable long-term storage.
+If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. However, you can also try removing individual block directories to resolve the problem. This means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
 
 ## Remote storage integrations
 
@@ -73,12 +73,12 @@ As outlined above, Prometheus's local storage is limited in its scalability and 
 
 Prometheus integrates with remote storage systems in two ways:
 
-* Prometheus can write all samples that it ingests to a remote URL in a standardized format.
+* Prometheus can write samples that it ingests to a remote URL in a standardized format.
 * Prometheus can read (back) sample data from a remote URL in a standardized format.
 
 ![Remote read and write architecture](images/remote_integrations.png)
 
-The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are still marked experimental and may change to use gRPC over HTTP/2 in the future, when all network hops between Prometheus and the long-term storage can safely be assumed to support HTTP/2.
+The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are still marked experimental and may change to use gRPC over HTTP/2 in the future, when all hops between Prometheus and the long-term storage can safely be assumed to support HTTP/2.
 
 For details on configuring remote storage integrations in Prometheus, see the [remote write](configuration/configuration.md#remote_write) and [remote read](configuration/configuration.md#remote_read) sections of the Prometheus configuration documentation.
 
@@ -88,10 +88,4 @@ Note that on the read path, Prometheus only fetches raw series data for a set of
 
 ### Existing integrations
 
-The following is a non-exhaustive list of example integrations with Prometheus's remote storage interfaces:
-
-* A [demo remote storage adapter](https://github.com/prometheus/prometheus/tree/master/documentation/examples/remote_storage/remote_storage_adapter) can write into InfluxDB, Graphite, and OpenTSDB, and can also read back from InfluxDB.
-* [Cortex](https://github.com/weaveworks/cortex) from [Weaveworks](https://weave.works/), a horizontally scalable reimplementation of Prometheus based on AWS, supports the remote read and write interfaces natively.
-* [Crate.IO](https://crate.io/) has a [remote read and write adapter](https://crate.io/overview/cratedb-prometheus-adapter/).
-* [DalmatinerDB](https://dalmatiner.io/) has a [remote write adapter](https://github.com/dalmatinerdb/ddb_proxy).
-* [Chronix](http://www.chronix.io/), a long-term storage based on Solr from [QAWare](http://www.qaware.de/), supports Prometheus's remote write interface via a separate [ingester](https://github.com/ChronixDB/chronix.ingester).
+To learn more about existing integrations with remote storage systems, see the [Integrations documentation](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
