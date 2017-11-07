@@ -1,6 +1,6 @@
-# Prometheus 2.0 Migration Guide.
+# Prometheus 2.0 migration guide
 
-In line with our [compatibility promise](TODO), the Prometheus 2.0 release contains
+In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print), the Prometheus 2.0 release contains
 a number of backwards incompatible changes.  This document aims to offer guidance on
 migrating from Prometheus 1.8 to Prometheus 2.0.
 
@@ -16,7 +16,7 @@ Some notable flags which have been removed:
   a static Alertmanager URL have been removed.  Alertmanager must now be
   discovered via service discovery, see [Alertmanager service discovery](#amsd).
 
-- `-log.format` In Prometheus 2.0 logs can only be streams to standard out.
+- `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
 
 - `-query.staleness-delta` Prometheus 2.0 introduces a new mechanism for
   handling staleness, see [Staleness](#staleness).
@@ -25,21 +25,21 @@ Some notable flags which have been removed:
   flags relating to the old engine have been removed.  For information on the
   new engine, see [Storage](#storage).
 
-- `-storage.remote.*` Prometheus 2.0 has removed the deprecated remote storage
-  flags.  To write to InfluxDB, Graphite, or OpenTSDB use the relevant storage
-  adapter.
+- `-storage.remote.*` Prometheus 2.0 has removed the already deprecated remote
+  storage flags, and will fail to start if they are supplied.  To write to
+  InfluxDB, Graphite, or OpenTSDB use the relevant storage adapter.
 
-## Config File
+## Config file
 
-## Alertmanager Service Discovery
+## Alertmanager service discovery
 
 Alertmanager service discovery was introduced in Prometheus 1.4, allowing Prometheus
-to dynamically discover Alertmanager replicas using the same mechanism as monitoring
+to dynamically discover Alertmanager replicas using the same mechanism as scrape
 targets.  In Prometheus 2.0, the command line flags for static Alertmanager config
 have been removed, so the following command line flag:
 
 ```
-./prometheus -alertmanager.url=http://alertmanager/
+./prometheus -alertmanager.url=http://alertmanager:9093/
 ```
 
 Would be replaced with something like the following in the `prometheus.yml`
@@ -50,11 +50,11 @@ alerting:
   alertmanagers:
   - static_configs:
     - targets:
-      - alertmanager
+      - alertmanager:9093
 ```
 
 You can also use all the usual Prothetheus service discovery integrations and
-relabeling in your Alertmanager configuration.  In this snippet I'm instructing
+relabeling in your Alertmanager configuration.  This snippet instructs
 Prometheus to search for Kubernetes pods, in the `default` namespace, with the
 label `name: alertmanager` and with a non-empty port.
 
@@ -95,7 +95,7 @@ ALERT FrontendRequestLatency
   }
 ```
 
-Would looks like this:
+Would look like this:
 
 ```yml
 groups:
@@ -122,7 +122,7 @@ $ promtool update rules example.rules
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
 compatible with 1.8. To retain access to your historic monitoring data we recommend
-you run a non-scraping Prometheus 1.8 instance in parallel with your Prometheus 2.0.
+you run a non-scraping Prometheus 1.8.1 instance in parallel with your Prometheus 2.0.
 
 Your Prometheus 1.8 instance should be started with the following flags and an
 empty config file (`empty.yml`):
@@ -131,6 +131,8 @@ empty config file (`empty.yml`):
 $ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file empty.yml
 ```
 
+NB If you used [external labels]() in your Prometheus config, there need to be
+preserved in you Prometheus 1.8 config.
 Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
 ```
@@ -144,19 +146,13 @@ remote_read:
   - url: "http://localhost:9094/api/v1/read"
 ```
 
-TODO: external labels
-
 ## PromQL
 
-Minimal changes have been made to PromQL.  
+The follow features have been removed from PromQL:
 
-The follow functions have been removed:
-
-- `drop_common_labels`
-
-## Staleness
-
-TODO
+- `drop_common_labels` function
+- `count_scalar` function
+- `keep_common` aggregation modifier
 
 ## Miscellaneous
 
@@ -178,7 +174,7 @@ spec:
 ...
 ```
 
-Or, if you're using Docker, then you would:
+Or, if you're using Docker, then the follow snippet would be used:
 
 ```
 TODO
@@ -187,7 +183,7 @@ TODO
 See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
 for more details.
 
-## Prometheus Lifecycle
+## Prometheus lifecycle
 
 If you use the Prometheus `/-/reload` HTTP endpoint to [automatically reload your
 Prometheus config when it changes](https://www.weave.works/blog/prometheus-configmaps-continuous-deployment/),
