@@ -151,6 +151,9 @@ The follow features have been removed from PromQL:
 - `count_scalar` function
 - `keep_common` aggregation modifier
 
+See [issue #3060](https://github.com/prometheus/prometheus/issues/3060) for more
+details.
+
 ## Miscellaneous
 
 ### Prometheus non-root user
