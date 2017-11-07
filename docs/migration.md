@@ -19,7 +19,7 @@ Some notable flags which have been removed:
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
 
 - `-query.staleness-delta` Prometheus 2.0 introduces a new mechanism for
-  handling staleness, see [Staleness and Isolation in Prometheus 2.0](https://www.youtube.com/watch?v=GcTzd2CLH7I).
+  handling staleness, see [staleness](querying/basics.md#staleness).
 
 - `-storage.local.*` Prometheus 2.0 introduces a new storage engine, as such all
   flags relating to the old engine have been removed.  For information on the
@@ -190,6 +190,6 @@ docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :8
 ## Prometheus lifecycle
 
 If you use the Prometheus `/-/reload` HTTP endpoint to [automatically reload your
-Prometheus config when it changes](https://prometheus.io/docs/prometheus/latest/configuration/configuration/ ),
+Prometheus config when it changes](configuration/configuration.md),
 these endpoints are disabled by default for security reasons in Prometheus 2.0.
 To enable them, set the `--web.enable-lifecycle` flag.
