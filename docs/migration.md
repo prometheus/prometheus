@@ -129,7 +129,7 @@ $ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.
 ```
 
 NOTE: **NOTE** If you used external labels in your Prometheus 2.0 config, they need to be
-preserved in you Prometheus 1.8 config.
+preserved in your Prometheus 1.8 config.
 Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
 ```
