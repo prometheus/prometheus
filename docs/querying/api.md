@@ -257,40 +257,6 @@ $ curl http://localhost:9090/api/v1/label/job/values
 }
 ```
 
-## Deleting series
-
-The following endpoint deletes matched series entirely from a Prometheus server:
-
-```
-DELETE /api/v1/series
-```
-
-URL query parameters:
-
-- `match[]=<series_selector>`: Repeated label matcher argument that selects the
-  series to delete. At least one `match[]` argument must be provided.
-
-The `data` section of the JSON response has the following format:
-
-```
-{
-  "numDeleted": <number of deleted series>
-}
-```
-
-The following example deletes all series that match either of the selectors
-`up` or `process_start_time_seconds{job="prometheus"}`:
-
-```json
-$ curl -XDELETE -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
-{
-   "status" : "success",
-   "data" : {
-      "numDeleted" : 3
-   }
-}
-```
-
 ## Expression query result formats
 
 Expression queries may return the following response values in the `result`
