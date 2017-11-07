@@ -119,7 +119,9 @@ $ promtool update rules example.rules
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
 compatible with 1.8. To retain access to your historic monitoring data we recommend
-you run a non-scraping Prometheus 1.8.1 instance in parallel with your Prometheus 2.0.
+you run a non-scraping Prometheus 1.8.1 instance in parallel with your Prometheus 2.0
+instance, and have the new server read existing data from the old one via the
+remote write protocol.
 
 Your Prometheus 1.8 instance should be started with the following flags and an
 empty config file (`empty.yml`):
