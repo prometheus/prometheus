@@ -40,8 +40,7 @@ have been removed, so the following command line flag:
 ./prometheus -alertmanager.url=http://alertmanager:9093/
 ```
 
-Would be replaced with something like the following in the `prometheus.yml`
-config file:
+Would be replaced with the following in the `prometheus.yml` config file:
 
 ```yml
 alerting:
@@ -129,7 +128,7 @@ empty config file (`empty.yml`):
 $ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file empty.yml
 ```
 
-NOTE: **NOTE** If you used external labels in your Prometheus 2.0 config, there need to be
+NOTE: **NOTE** If you used external labels in your Prometheus 2.0 config, they need to be
 preserved in you Prometheus 1.8 config.
 Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
@@ -172,14 +171,14 @@ spec:
 ...
 ```
 
-Or, if you're using Docker, then the follow snippet would be used:
+See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
+for more details.
+
+If you're using Docker, then the follow snippet would be used:
 
 ```
 docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
 ```
-
-See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
-for more details.
 
 ## Prometheus lifecycle
 
