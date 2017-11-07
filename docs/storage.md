@@ -13,7 +13,7 @@ Prometheus's local time series database stores time series data in a custom form
 
 ### On-disk layout
 
-Ingested samples are grouped into blocks of two hours (by default). Each two-hour block consists of a directory containing one or more chunk files that contain all time series samples for that window of time, as well as a metadata file and index file (which indexes metric names and labels to series in the chunk files). The block for currently incoming samples is kept in memory and not fully persisted yet. It is secured against crashes by a write-ahead-log (WAL) that can be replayed when the Prometheus server restarts after a crash. When series are deleted via the API, deletion records are stored in separate tombstone files (instead of deleting the data immediately from the chunk files).
+Ingested samples are grouped into blocks of two hours. Each two-hour block consists of a directory containing one or more chunk files that contain all time series samples for that window of time, as well as a metadata file and index file (which indexes metric names and labels to series in the chunk files). The block for currently incoming samples is kept in memory and not fully persisted yet. It is secured against crashes by a write-ahead-log (WAL) that can be replayed when the Prometheus server restarts after a crash. When series are deleted via the API, deletion records are stored in separate tombstone files (instead of deleting the data immediately from the chunk files).
 
 The directory structure of a Prometheus server's data directory will look something like this:
 
@@ -51,9 +51,6 @@ Prometheus has several flags that allow configuring the local storage. The most 
 
 * `--storage.tsdb.path`: This determines where Prometheus writes its database. Defaults to `data/`.
 * `--storage.tsdb.retention`: This determines when to remove old data. Defaults to `15d`.
-* `--storage.tsdb.min-block-duration`: This determines the minimum block duration. Defaults to `2h`.
-
-Typically you will only need to tune the first two, depending on where you want the storage to write its data, and for how long you want to keep it.
 
 On average, Prometheus uses only around 1-2 bytes per sample. Thus, to plan the capacity of a Prometheus server, you can use the rough formula:
 
