@@ -1,8 +1,8 @@
 # Prometheus 2.0 migration guide
 
-In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print), the Prometheus 2.0 release contains
-a number of backwards incompatible changes.  This document aims to offer guidance on
-migrating from Prometheus 1.8 to Prometheus 2.0.
+In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
+the Prometheus 2.0 release contains a number of backwards incompatible changes.
+This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0.
 
 ## Flags
 
@@ -81,11 +81,11 @@ The format for configuring alerting and recording rules has been changed to YAML
 An example of a recording rule and alert in the old format:
 
 ```
-job:request_duration_seconds:99percentile =
+job:request_duration_seconds:histogram_quantile99 =
   histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m])) by (le, job))
 
 ALERT FrontendRequestLatency
-  IF job:request_duration_seconds:99percentile{job="frontend"} > 0.1
+  IF job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
   FOR 5m
   ANNOTATIONS {
     summary = "High frontend request latency",
@@ -149,9 +149,11 @@ remote_read:
 
 The follow features have been removed from PromQL:
 
-- `drop_common_labels` function
-- `count_scalar` function
-- `keep_common` aggregation modifier
+- `drop_common_labels` function - the `without` aggregation modifier should be used
+  instead.
+- `keep_common` aggregation modifier - the `by` modifier should be used instead.
+- `count_scalar` function - use cases are better handled by `absent()` or correct
+  propagation of labels in operations.
 
 See [issue #3060](https://github.com/prometheus/prometheus/issues/3060) for more
 details.
@@ -188,6 +190,6 @@ docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :8
 ## Prometheus lifecycle
 
 If you use the Prometheus `/-/reload` HTTP endpoint to [automatically reload your
-Prometheus config when it changes](https://www.weave.works/blog/prometheus-configmaps-continuous-deployment/),
+Prometheus config when it changes](https://prometheus.io/docs/prometheus/latest/configuration/configuration/ ),
 these endpoints are disabled by default for security reasons in Prometheus 2.0.
 To enable them, set the `--web.enable-lifecycle` flag.
