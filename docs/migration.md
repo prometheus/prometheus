@@ -19,7 +19,7 @@ Some notable flags which have been removed:
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
 
 - `-query.staleness-delta` Prometheus 2.0 introduces a new mechanism for
-  handling staleness, see [Staleness](#staleness).
+  handling staleness, see [Staleness and Isolation in Prometheus 2.0](https://www.youtube.com/watch?v=GcTzd2CLH7I).
 
 - `-storage.local.*` Prometheus 2.0 introduces a new storage engine, as such all
   flags relating to the old engine have been removed.  For information on the
@@ -28,8 +28,6 @@ Some notable flags which have been removed:
 - `-storage.remote.*` Prometheus 2.0 has removed the already deprecated remote
   storage flags, and will fail to start if they are supplied.  To write to
   InfluxDB, Graphite, or OpenTSDB use the relevant storage adapter.
-
-## Config file
 
 ## Alertmanager service discovery
 
@@ -177,7 +175,7 @@ spec:
 Or, if you're using Docker, then the follow snippet would be used:
 
 ```
-TODO
+docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
 ```
 
 See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
