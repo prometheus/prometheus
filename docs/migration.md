@@ -18,8 +18,8 @@ Some notable flags which have been removed:
 
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
 
-- `-query.staleness-delta` Prometheus 2.0 introduces a new mechanism for
-  handling staleness, see [staleness](querying/basics.md#staleness).
+- `-query.staleness-delta` has been renamed to `--query.lookback-delta`; Prometheus
+  2.0 introduces a new mechanism for handling staleness, see [staleness](querying/basics.md#staleness).
 
 - `-storage.local.*` Prometheus 2.0 introduces a new storage engine, as such all
   flags relating to the old engine have been removed.  For information on the
