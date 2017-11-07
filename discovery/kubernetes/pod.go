@@ -140,6 +140,7 @@ const (
 	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
+	podUID                        = metaLabelPrefix + "pod_uid"
 )
 
 func podLabels(pod *apiv1.Pod) model.LabelSet {
@@ -149,6 +150,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podReadyLabel:    podReady(pod),
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
+		podUID:           lv(string(pod.ObjectMeta.UID)),
 	}
 
 	for k, v := range pod.Labels {
