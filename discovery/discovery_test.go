@@ -11,69 +11,236 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+ 		// TODO get rid of wg.Add(1)
+
 package discovery
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	yaml "gopkg.in/yaml.v2"
 )
 
 func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T) {
 
-	testCases := [][]update{
-		[]update{}, // No updates.
+	testCases := `
+# No updates.
+- []
 
-		[]update{{[]string{}, 0}}, // Empty initials.
+# Empty initials.
+- - target_groups: []
+    interval: 5
 
-		[]update{{[]string{}, 6000}}, // Empty initials with a delay.
+# Empty initials with a delay.
+- - target_groups: []
+    interval: 6000
 
-		[]update{{[]string{"initial1", "initial2"}, 0}}, // Initials only.
+# Initials only.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    - source: initial2
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 0
 
-		[]update{{[]string{"initial1", "initial2"}, 6000}}, // Initials only but after a delay.
+# Initials only but after a delay.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    - source: initial2
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 6000
 
-		[]update{ // Initials and new groups.
-			{[]string{"initial1", "initial2"}, 0},
-			{[]string{"update1", "update2"}, 0},
-		},
+# Initials and new groups.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    - source: initial2
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 0
 
-		[]update{ // Initials and new groups after a delay.
-			{[]string{"initial1", "initial2"}, 6000},
-			{[]string{"update1", "update2"}, 500},
-		},
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: 10.11.122.13:6001
+    - source: update2
+      targets:
+      - instance: 10.11.122.14:6001
+    interval: 5
 
-		[]update{
-			{[]string{"initial1", "initial2"}, 100},
-			{[]string{"update1", "update2", "update3", "update4", "update5", "update6", "update7", "update8", "update9", "update10", "update11"}, 100},
-		},
+# Initials and new groups after a delay.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    - source: initial2
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 6000
 
-		[]update{
-			{[]string{"initial1"}, 10},
-			{[]string{"update1"}, 45},
-			{[]string{"update2", "update3", "update4"}, 0},
-			{[]string{"update5"}, 10},
-			{[]string{"update6", "update7", "update8", "update9"}, 70},
-		},
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: 10.11.122.13:6001
+    - source: update2
+      targets:
+      - instance: 10.11.122.14:6001
+    interval: 500
 
-		[]update{
-			{[]string{"initial1", "initial2"}, 5},
-			{[]string{}, 100},
-			{[]string{"update1", "update2"}, 100},
-			{[]string{"update3", "update4", "update5"}, 70},
-		},
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    interval: 100
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 100
+
+  - target_groups:
+    - source: update2
+      targets:
+      - instance: 10.11.122.13:6001
+    interval: 100
+
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    - source: initial2
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 100
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: 10.11.122.13:6001
+    - source: update2
+      targets:
+      - instance: 10.11.122.14:6001
+    - source: update3
+      targets:
+      - instance: 10.11.122.15:6001
+    - source: update4
+      targets:
+      - instance: 10.11.122.16:6001
+    - source: update5
+      targets:
+      - instance: 10.11.122.17:6001
+    - source: update6
+      targets:
+      - instance: 10.11.122.18:6001
+    interval: 100
+
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    interval: 10
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: 10.11.122.13:6001
+    interval: 45
+
+  - target_groups:
+    - source: update2
+      targets:
+      - instance: 10.11.122.14:6001
+    - source: update3
+      targets:
+      - instance: 10.11.122.15:6001
+    - source: update4
+      targets:
+      - instance: 10.11.122.16:6001
+    interval: 0
+
+  - target_groups:
+    - source: update5
+      targets:
+      - instance: 10.11.122.17:6001
+    interval: 10
+
+  - target_groups:
+    - source: update6
+      targets:
+      - instance: 10.11.122.18:6001
+    - source: update7
+      targets:
+      - instance: 10.11.122.19:6001
+    - source: update8
+      targets:
+      - instance: 10.11.122.20:6001
+    interval: 70
+
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: 10.11.122.11:6001
+    - source: initial2
+      targets:
+      - instance: 10.11.122.12:6001
+    interval: 5
+
+  - target_groups: []
+    interval: 100
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: 10.11.122.13:6001
+    - source: update2
+      targets:
+      - instance: 10.11.122.14:6001
+    interval: 100
+
+  - target_groups:
+    - source: update3
+      targets:
+      - instance: 10.11.122.15:6001
+    - source: update4
+      targets:
+      - instance: 10.11.122.16:6001
+    - source: update5
+      targets:
+      - instance: 10.11.122.17:6001
+    interval: 70
+`
+
+	parsedTestCases := [][]update{}
+
+	err := yaml.Unmarshal([]byte(testCases), &parsedTestCases)
+	if err != nil {
+		t.Fatalf("error while parsing test cases: %v", err)
 	}
 
-	for i, updates := range testCases {
+	for i, updates := range parsedTestCases {
 
 		expectedGroups := make(map[string]struct{})
 		for _, update := range updates {
-			for _, target := range update.targets {
-				expectedGroups[target] = struct{}{}
+			for _, target := range update.TargetGroups {
+				expectedGroups[target.Source] = struct{}{}
 			}
 		}
 
@@ -126,7 +293,7 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 				t.Errorf("In test case %v: TargetProvider Run should be called once only, was called %v times", i, *tp.callCount)
 			}
 
-			if len(updates) > 0 && updates[0].interval > 5000 {
+			if len(updates) > 0 && updates[0].Interval > 5000 {
 				// If the initial set of targets never arrive or arrive after 5 seconds.
 				// The first sync call should receive empty set of targets.
 				if len(initialGroups) != 0 {
@@ -145,6 +312,219 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					delete(expectedGroups, tg.Source) // Remove used targets from the map.
 				}
 			}
+		}
+	}
+}
+
+func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T) {
+
+	testCases := `
+# Update same initial group multiple times.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6001"
+    interval: 3
+
+  - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6002"
+    interval: 10
+
+  - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6003"
+    interval: 4
+
+# Update second round target.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6001"
+    interval: 3
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: "10.11.122.11:6002"
+    interval: 10
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: "10.11.122.11:6003"
+      - instance: "10.11.122.11:6004"
+      - instance: "10.11.122.11:6005"
+    interval: 10
+
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6001"
+    - source: initial2
+      targets:
+      - instance: "10.11.122.12:6001"
+    interval: 3
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: "10.11.122.13:6001"
+    - source: initial2
+      targets:
+      - instance: "10.11.123.12:6001"
+      - instance: "10.11.123.13:6001"
+    interval: 10
+
+  - target_groups:
+    - source: update2
+      targets:
+      - instance: "10.11.122.14:6001"
+    - source: initial1
+      targets: []
+    interval: 10
+
+  - target_groups:
+    - source: update1
+      targets:
+      - instance: "10.11.122.13:6001"
+      - instance: "10.11.122.15:6001"
+      - instance: "10.11.122.16:6001"
+    interval: 10
+
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6001"
+      - instance: "10.11.122.12:6001"
+      - instance: "10.11.122.13:6001"
+    - source: initial2
+      targets:
+      - instance: "10.11.122.14:6001"
+    interval: 3
+
+  - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.13:6001"
+    interval: 10
+
+# Next test case.
+- - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.11:6001"
+      - instance: "10.11.122.12:6001"
+      - instance: "10.11.122.13:6001"
+    - source: initial2
+      targets:
+      - instance: "10.11.122.14:6001"
+    interval: 1000
+
+  - target_groups:
+    - source: initial1
+      targets:
+      - instance: "10.11.122.12:6001"
+    - source: update1
+      targets:
+      - instance: "10.11.122.15:6001"
+    interval: 3000
+
+  - target_groups:
+    - source: initial1
+      targets: []
+    - source: update1
+      targets:
+      - instance: "10.11.122.15:6001"
+      - instance: "10.11.122.16:6001"
+    interval: 3000
+`
+
+	parsedTestCases := [][]update{}
+	err := yaml.Unmarshal([]byte(testCases), &parsedTestCases)
+	if err != nil {
+		t.Fatalf("error while parsing test cases: %v", err)
+	}
+
+	// Function to determine if this sync call received the latest state of
+	// all the target groups that came out of the target provider.
+	endStateAchieved := func(groupsSentToSyc []*config.TargetGroup, endState map[string]config.TargetGroup) bool {
+
+		if len(groupsSentToSyc) != len(endState) {
+			return false
+		}
+
+		for _, tg := range groupsSentToSyc {
+			if _, ok := endState[tg.Source]; ok == false {
+				// The target group does not exist in the end state.
+				return false
+			}
+
+			if reflect.DeepEqual(endState[tg.Source], *tg) == false {
+				// The target group has not reached its final state yet.
+				return false
+			}
+
+			delete(endState, tg.Source) // Remove used target groups.
+		}
+
+		return true
+	}
+
+	for i, updates := range parsedTestCases {
+
+		expectedGroups := make(map[string]config.TargetGroup)
+		for _, update := range updates {
+			for _, targetGroup := range update.TargetGroups {
+				expectedGroups[targetGroup.Source] = targetGroup
+			}
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		targetSet := NewTargetSet(&mockSyncer{
+			sync: func(tgs []*config.TargetGroup) {
+
+				endState := make(map[string]config.TargetGroup)
+				for k, v := range expectedGroups {
+					endState[k] = v
+				}
+
+				if endStateAchieved(tgs, endState) == false {
+					return
+				}
+
+				wg.Done()
+			},
+		})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		tp := newMockTargetProvider(updates)
+		targetProviders := map[string]TargetProvider{}
+		targetProviders["testProvider"] = tp
+
+		go targetSet.Run(ctx)
+		targetSet.UpdateProviders(targetProviders)
+
+		finalize := make(chan struct{})
+		go func() {
+			defer close(finalize)
+			wg.Wait()
+		}()
+
+		select {
+		case <-time.After(20000 * time.Millisecond):
+			t.Errorf("In test case %v: Test timed out after 20000 millisecond. All targets should be sent within the timeout", i)
+
+		case <-finalize:
+			// System successfully reached to the end state.
 		}
 	}
 }
@@ -219,7 +599,21 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tp := newMockTargetProvider([]update{{[]string{"initial1", "initial2"}, 10}})
+	updatesData := `
+- target_groups:
+  - source: initial1
+    targets:
+    - instance: 10.11.122.11:6001
+    - instance: 10.11.122.11:6002
+  interval: 5
+`
+	updates := []update{}
+	err := yaml.Unmarshal([]byte(updatesData), &updates)
+	if err != nil {
+		t.Fatalf("error while parsing updates: %v", err)
+	}
+
+	tp := newMockTargetProvider(updates)
 	targetProviders := map[string]TargetProvider{}
 	targetProviders["testProvider"] = tp
 
@@ -256,15 +650,51 @@ func (s *mockSyncer) Sync(tgs []*config.TargetGroup) {
 	}
 }
 
+type update struct {
+	TargetGroups []config.TargetGroup `yaml:"target_groups"`
+	Interval     int
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (u *update) UnmarshalYAML(unmarshal func(interface{}) error) error {
+
+	s := struct {
+		TargetGroups []struct {
+			Source  string
+			Targets []map[string]string
+		} `yaml:"target_groups"`
+		Interval int
+	}{}
+
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	u.Interval = s.Interval
+
+	u.TargetGroups = make([]config.TargetGroup, len(s.TargetGroups))
+	for groupIndex, targetGroup := range s.TargetGroups {
+
+		u.TargetGroups[groupIndex] = config.TargetGroup{}
+		u.TargetGroups[groupIndex].Source = targetGroup.Source
+
+		u.TargetGroups[groupIndex].Targets = make([]model.LabelSet, len(targetGroup.Targets))
+		for targetIndex, target := range targetGroup.Targets {
+
+			u.TargetGroups[groupIndex].Targets[targetIndex] = make(model.LabelSet)
+			for labelName, labelValue := range target {
+				u.TargetGroups[groupIndex].Targets[targetIndex][model.LabelName(labelName)] = model.LabelValue(labelValue)
+			}
+		}
+	}
+
+	return nil
+}
+
 type mockTargetProvider struct {
 	callCount *uint32
 	updates   []update
 	up        chan<- []*config.TargetGroup
-}
-
-type update struct {
-	targets  []string
-	interval time.Duration
 }
 
 func newMockTargetProvider(updates []update) mockTargetProvider {
@@ -287,11 +717,12 @@ func (tp mockTargetProvider) Run(ctx context.Context, up chan<- []*config.Target
 func (tp mockTargetProvider) sendUpdates() {
 	for _, update := range tp.updates {
 
-		time.Sleep(update.interval * time.Millisecond)
+		time.Sleep(time.Duration(update.Interval) * time.Millisecond)
 
-		tgs := make([]*config.TargetGroup, len(update.targets))
-		for i, tg := range update.targets {
-			tgs[i] = &config.TargetGroup{Source: tg}
+		tgs := make([]*config.TargetGroup, len(update.TargetGroups))
+		for groupIndex, _ := range update.TargetGroups {
+
+			tgs[groupIndex] = &update.TargetGroups[groupIndex]
 		}
 
 		tp.up <- tgs
