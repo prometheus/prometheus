@@ -27,11 +27,13 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+const testDir = "fixtures"
+
 func TestFileSD(t *testing.T) {
-	defer os.Remove("fixtures/_test_valid.yml")
-	defer os.Remove("fixtures/_test_valid.json")
-	defer os.Remove("fixtures/_test_invalid_nil.json")
-	defer os.Remove("fixtures/_test_invalid_nil.yml")
+	defer os.Remove(testDir + "/_test_valid.yml")
+	defer os.Remove(testDir + "/_test_valid.json")
+	defer os.Remove(testDir + "/_test_invalid_nil.json")
+	defer os.Remove(testDir + "/_test_invalid_nil.yml")
 	testFileSD(t, "valid", ".yml", true)
 	testFileSD(t, "valid", ".json", true)
 	testFileSD(t, "invalid_nil", ".json", false)
@@ -42,7 +44,7 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	// As interval refreshing is more of a fallback, we only want to test
 	// whether file watches work as expected.
 	var conf config.FileSDConfig
-	conf.Files = []string{"fixtures/_*" + ext}
+	conf.Files = []string{testDir + "/_*" + ext}
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 
 	var (
@@ -59,30 +61,45 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 		t.Fatalf("Unexpected target groups in file discovery: %s", tgs)
 	}
 
-	newf, err := os.Create("fixtures/_test_" + prefix + ext)
+	// To avoid empty group struct sent from the discovery caused by invalid fsnotify updates,
+	// drain the channel until we are ready with the test files.
+	filesReady := make(chan struct{})
+	go func() {
+	Loop:
+		for {
+			select {
+			case <-ch:
+			case <-filesReady:
+				break Loop
+			}
+		}
+	}()
+
+	newf, err := os.Create(testDir + "/_test_" + prefix + ext)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer newf.Close()
 
-	f, err := os.Open("fixtures/" + prefix + ext)
+	f, err := os.Open(testDir + "/" + prefix + ext)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
-
+	time.Sleep(500 * time.Millisecond)
 	_, err = io.Copy(newf, f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	newf.Close()
 
-	timeout := time.After(15 * time.Second)
 	// The files contain two target groups.
+	// ready to receive discovery group updates so stop draining the channel
+	close(filesReady)
 retry:
 	for {
 		select {
-		case <-timeout:
+		case <-time.After(15 * time.Second):
 			if expect {
 				t.Fatalf("Expected new target group but got none")
 			} else {
@@ -102,12 +119,12 @@ retry:
 			if _, ok := tg.Labels["foo"]; !ok {
 				t.Fatalf("Label not parsed")
 			}
-			if tg.String() != filepath.FromSlash(fmt.Sprintf("fixtures/_test_%s%s:0", prefix, ext)) {
+			if tg.String() != filepath.FromSlash(fmt.Sprintf(testDir+"/_test_%s%s:0", prefix, ext)) {
 				t.Fatalf("Unexpected target group %s", tg)
 			}
 
 			tg = tgs[1]
-			if tg.String() != filepath.FromSlash(fmt.Sprintf("fixtures/_test_%s%s:1", prefix, ext)) {
+			if tg.String() != filepath.FromSlash(fmt.Sprintf(testDir+"/_test_%s%s:1", prefix, ext)) {
 				t.Fatalf("Unexpected target groups %s", tg)
 			}
 			break retry
@@ -136,7 +153,7 @@ retry:
 		close(drained)
 	}()
 
-	newf, err = os.Create("fixtures/_test.new")
+	newf, err = os.Create(testDir + "/_test.new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +164,7 @@ retry:
 	}
 	newf.Close()
 
-	os.Rename(newf.Name(), "fixtures/_test_"+prefix+ext)
+	os.Rename(newf.Name(), testDir+"/_test_"+prefix+ext)
 
 	cancel()
 	<-drained
