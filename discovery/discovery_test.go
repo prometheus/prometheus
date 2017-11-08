@@ -228,10 +228,21 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 
 	ts1.UpdateProviders(targetProviders)
 	ts2.UpdateProviders(targetProviders)
-	wg.Wait()
 
-	if *tp.callCount != 2 {
-		t.Errorf("Was expecting 2 calls received %v", tp.callCount)
+	finalize := make(chan struct{})
+	go func() {
+		defer close(finalize)
+		wg.Wait()
+	}()
+
+	select {
+	case <-time.After(20000 * time.Millisecond):
+		t.Error("Test timed out after 20000 millisecond. All targets should be sent within the timeout")
+
+	case <-finalize:
+		if *tp.callCount != 2 {
+			t.Errorf("Was expecting 2 calls received %v", tp.callCount)
+		}
 	}
 }
 
