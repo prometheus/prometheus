@@ -78,6 +78,7 @@ rules:
 ### `<rule>`
 
 The syntax for recording rules is:
+
 ```
 # The name of the time series to output to. Must be a valid metric name.
 record: <string>
@@ -93,6 +94,7 @@ labels:
 ```
 
 The syntax for alerting rules is:
+
 ```
 # The name of the alert. Must be a valid metric name.
 alert: <string>
