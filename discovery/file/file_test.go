@@ -94,11 +94,12 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	close(filesReady)
 	newf.Close()
 
+	timeout := time.After(15 * time.Second)
 	// The files contain two target groups.
 retry:
 	for {
 		select {
-		case <-time.After(15 * time.Second):
+		case <-timeout:
 			if expect {
 				t.Fatalf("Expected new target group but got none")
 			} else {
