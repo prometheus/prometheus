@@ -193,7 +193,7 @@ If you're using Docker, then the following snippet would be used:
 docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
 ```
 
-## Prometheus lifecycle
+### Prometheus lifecycle
 
 If you use the Prometheus `/-/reload` HTTP endpoint to [automatically reload your
 Prometheus config when it changes](configuration/configuration.md),
