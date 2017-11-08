@@ -46,8 +46,7 @@ package chunks
 import (
 	"encoding/binary"
 	"math"
-
-	bits "github.com/dgryski/go-bits"
+	"math/bits"
 )
 
 // XORChunk holds XOR encoded sample data.
@@ -197,8 +196,8 @@ func (a *xorAppender) writeVDelta(v float64) {
 	}
 	a.b.writeBit(one)
 
-	leading := uint8(bits.Clz(vDelta))
-	trailing := uint8(bits.Ctz(vDelta))
+	leading := uint8(bits.LeadingZeros64(vDelta))
+	trailing := uint8(bits.TrailingZeros64(vDelta))
 
 	// Clamp number of leading zeros to avoid overflow when encoding.
 	if leading >= 32 {
