@@ -1,3 +1,8 @@
+---
+title: Migration
+sort_rank: 7
+---
+
 # Prometheus 2.0 migration guide
 
 In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
@@ -12,6 +17,7 @@ single dash, all flags now use a double dash. Common flags (`--config.file`,
 that, almost all the storage-related flags have been removed.
 
 Some notable flags which have been removed:
+
 - `-alertmanager.url` In Prometheus 2.0, the command line flags for configuring
   a static Alertmanager URL have been removed. Alertmanager must now be
   discovered via service discovery, see [Alertmanager service discovery](#amsd).
@@ -42,7 +48,7 @@ have been removed, so the following command line flag:
 
 Would be replaced with the following in the `prometheus.yml` config file:
 
-```yml
+```yaml
 alerting:
   alertmanagers:
   - static_configs:
@@ -55,7 +61,7 @@ relabeling in your Alertmanager configuration. This snippet instructs
 Prometheus to search for Kubernetes pods, in the `default` namespace, with the
 label `name: alertmanager` and with a non-empty port.
 
-```yml
+```yaml
 alerting:
   alertmanagers:
   - kubernetes_sd_configs:
@@ -94,7 +100,7 @@ ALERT FrontendRequestLatency
 
 Would look like this:
 
-```yml
+```yaml
 groups:
 - name: example.rules
   rules:
@@ -140,7 +146,7 @@ $ ./prometheus-2.0.0.linux-amd64/prometheus --config.file prometheus.yml
 
 Where `prometheus.yml` contains in addition to your full existing configuration, the stanza:
 
-```
+```yaml
 remote_read:
   - url: "http://localhost:9094/api/v1/read"
 ```
@@ -167,7 +173,7 @@ as a non-root user](https://github.com/prometheus/prometheus/pull/2859). If you
 want the Prometheus UI/API to listen on a low port number (say, port 80), you'll
 need to override it. For Kubernetes, you would use the following YAML:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -178,7 +184,7 @@ spec:
 ...
 ```
 
-See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
+See [Configure a Security Context for a Pod or Container](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/)
 for more details.
 
 If you're using Docker, then the following snippet would be used:
