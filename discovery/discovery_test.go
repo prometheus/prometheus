@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
- 		// TODO get rid of wg.Add(1)
-
 package discovery
 
 import (
@@ -244,8 +242,7 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 			}
 		}
 
-		var wg sync.WaitGroup
-		wg.Add(1)
+		finalize := make(chan bool)
 
 		isFirstSyncCall := true
 		var initialGroups []*config.TargetGroup
@@ -262,7 +259,7 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 
 				if len(tgs) == len(expectedGroups) {
 					// All the groups are sent, we can start asserting.
-					wg.Done()
+					finalize <- true
 				}
 			},
 		})
@@ -276,12 +273,6 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 
 		go targetSet.Run(ctx)
 		targetSet.UpdateProviders(targetProviders)
-
-		finalize := make(chan struct{})
-		go func() {
-			defer close(finalize)
-			wg.Wait()
-		}()
 
 		select {
 		case <-time.After(20000 * time.Millisecond):
@@ -484,8 +475,7 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 			}
 		}
 
-		var wg sync.WaitGroup
-		wg.Add(1)
+		finalize := make(chan bool)
 
 		targetSet := NewTargetSet(&mockSyncer{
 			sync: func(tgs []*config.TargetGroup) {
@@ -499,7 +489,7 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 					return
 				}
 
-				wg.Done()
+				finalize <- true
 			},
 		})
 
@@ -512,12 +502,6 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 
 		go targetSet.Run(ctx)
 		targetSet.UpdateProviders(targetProviders)
-
-		finalize := make(chan struct{})
-		go func() {
-			defer close(finalize)
-			wg.Wait()
-		}()
 
 		select {
 		case <-time.After(20000 * time.Millisecond):
