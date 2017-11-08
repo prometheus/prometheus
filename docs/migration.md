@@ -6,14 +6,14 @@ This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0
 
 ## Flags
 
-The format of the Prometheus command line flags have changed.  Instead of a
+The format of the Prometheus command line flags has changed. Instead of a
 single dash, all flags now use a double dash. Common flags (`--config.file`,
 `--web.listen-address` and `--web.external-url`) are still the same but beyond
 that, almost all the storage-related flags have been removed.
 
 Some notable flags which have been removed:
 - `-alertmanager.url` In Prometheus 2.0, the command line flags for configuring
-  a static Alertmanager URL have been removed.  Alertmanager must now be
+  a static Alertmanager URL have been removed. Alertmanager must now be
   discovered via service discovery, see [Alertmanager service discovery](#amsd).
 
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
@@ -26,14 +26,14 @@ Some notable flags which have been removed:
   new engine, see [Storage](#storage).
 
 - `-storage.remote.*` Prometheus 2.0 has removed the already deprecated remote
-  storage flags, and will fail to start if they are supplied.  To write to
+  storage flags, and will fail to start if they are supplied. To write to
   InfluxDB, Graphite, or OpenTSDB use the relevant storage adapter.
 
 ## Alertmanager service discovery
 
 Alertmanager service discovery was introduced in Prometheus 1.4, allowing Prometheus
 to dynamically discover Alertmanager replicas using the same mechanism as scrape
-targets.  In Prometheus 2.0, the command line flags for static Alertmanager config
+targets. In Prometheus 2.0, the command line flags for static Alertmanager config
 have been removed, so the following command line flag:
 
 ```
@@ -50,8 +50,8 @@ alerting:
       - alertmanager:9093
 ```
 
-You can also use all the usual Prothetheus service discovery integrations and
-relabeling in your Alertmanager configuration.  This snippet instructs
+You can also use all the usual Prometheus service discovery integrations and
+relabeling in your Alertmanager configuration. This snippet instructs
 Prometheus to search for Kubernetes pods, in the `default` namespace, with the
 label `name: alertmanager` and with a non-empty port.
 
@@ -147,7 +147,7 @@ remote_read:
 
 ## PromQL
 
-The follow features have been removed from PromQL:
+The following features have been removed from PromQL:
 
 - `drop_common_labels` function - the `without` aggregation modifier should be used
   instead.
@@ -163,9 +163,9 @@ details.
 ### Prometheus non-root user
 
 The Prometheus Docker image is now built to [run Prometheus
-as a non-root user](https://github.com/prometheus/prometheus/pull/2859).  If you
+as a non-root user](https://github.com/prometheus/prometheus/pull/2859). If you
 want the Prometheus UI/API to listen on a low port number (say, port 80), you'll
-need to override it.  For Kubernetes, you would use the following YAML:
+need to override it. For Kubernetes, you would use the following YAML:
 
 ```yml
 apiVersion: v1
@@ -181,7 +181,7 @@ spec:
 See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
 for more details.
 
-If you're using Docker, then the follow snippet would be used:
+If you're using Docker, then the following snippet would be used:
 
 ```
 docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
