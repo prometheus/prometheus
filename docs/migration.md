@@ -98,11 +98,11 @@ Would look like this:
 groups:
 - name: example.rules
   rules:
-  - record: job:request_duration_seconds:99percentile
+  - record: job:request_duration_seconds:histogram_quantile99
     expr: histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m]))
       BY (le, job))
   - alert: FrontendRequestLatency
-    expr: job:request_duration_seconds:99percentile{job="frontend"} > 0.1
+    expr: job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
     for: 5m
     annotations:
       summary: High frontend request latency
@@ -115,30 +115,30 @@ new format. For example:
 $ promtool update rules example.rules
 ```
 
+Note that you will need to use promtool from 2.0, not 1.8.
+
 ## Storage
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
-compatible with 1.8. To retain access to your historic monitoring data we recommend
-you run a non-scraping Prometheus 1.8.1 instance in parallel with your Prometheus 2.0
-instance, and have the new server read existing data from the old one via the
-remote write protocol.
+compatible with 1.8. To retain access to your historic monitoring data we
+recommend you run a non-scraping Prometheus instance running at least version
+1.8.1 in parallel with your Prometheus 2.0 instance, and have the new server
+read existing data from the old one via the remote write protocol.
 
 Your Prometheus 1.8 instance should be started with the following flags and an
-empty config file (`empty.yml`):
+config file containing only the `external_labels` setting (if any):
 
 ```
-$ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file empty.yml
+$ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file old.yml
 ```
 
-NOTE: **NOTE** If you used external labels in your Prometheus 2.0 config, they need to be
-preserved in your Prometheus 1.8 config.
 Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
 ```
 $ ./prometheus-2.0.0.linux-amd64/prometheus --config.file prometheus.yml
 ```
 
-Where `prometheus.yml` contains the stanza:
+Where `prometheus.yml` contains in addition to your full existing configuration, the stanza:
 
 ```
 remote_read:
