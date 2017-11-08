@@ -49,3 +49,30 @@ message LabelMatcher {
   string name  = 2;
   string value = 3;
 }
+
+message SeriesMatcher {
+  string name = 1;
+  repeated LabelMatcher labels = 2;
+}
+
+message Vector {
+  message Entry {
+    Labels metric = 1 [(gogoproto.nullable) = false];
+    Sample value = 2 [(gogoproto.nullable) = false];
+  }
+  repeated Entry metrics = 1 [(gogoproto.nullable) = false];
+}
+
+message Matrix {
+  message Entry {
+    Labels metric = 1 [(gogoproto.nullable) = false];
+    repeated Sample values = 2 [(gogoproto.nullable) = false];
+  }
+  repeated Entry metrics = 1 [(gogoproto.nullable) = false];
+}
+
+message StringSample {
+    int64 timestamp = 1;
+    string value    = 2;
+
+}

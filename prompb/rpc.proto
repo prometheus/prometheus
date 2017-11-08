@@ -16,6 +16,7 @@ package prometheus;
 
 import "types.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 import "google/api/annotations.proto";
 import "gogoproto/gogo.proto";
 
@@ -60,4 +61,57 @@ message SeriesDeleteRequest {
 }
 
 message SeriesDeleteResponse {
+}
+
+service Querying {
+  // ListSeries lists all series matching one of the given label selectors.
+  rpc ListSeries(ListSeriesRequest) returns (ListSeriesResponse);
+
+  // ListLabelValues lists all known for a single label.
+  rpc ListLabelValues(LabelValuesRequest) returns (LabelValuesResponse);
+
+  // QueryAtTime runs a query at a single point in time.
+  rpc QueryAtTime(QueryAtTimeRequest) returns (QueryResponse);
+
+  // QueryOverRange runs a query at a series of times of in a time range.
+  rpc QueryOverRange(QueryOverRangeRequest) returns (QueryResponse);
+}
+
+message ListSeriesRequest {
+  google.protobuf.Timestamp start_time = 1 [(gogoproto.stdtime) = true];
+  google.protobuf.Timestamp end_time   = 2 [(gogoproto.stdtime) = true];
+  repeated SeriesMatcher matchers      = 3 [(gogoproto.nullable) = false];
+}
+
+message ListSeriesResponse {
+  repeated Labels series = 1;
+}
+
+message LabelValuesRequest {
+  string name = 1;
+}
+message LabelValuesResponse {
+  repeated string values = 1;
+}
+
+message QueryAtTimeRequest {
+  google.protobuf.Timestamp time   = 1 [(gogoproto.stdtime) = true];
+  google.protobuf.Duration timeout = 2 [(gogoproto.stdduration) = true];
+  string query                     = 3;
+}
+message QueryOverRangeRequest {
+  google.protobuf.Timestamp start_time   = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  google.protobuf.Timestamp end_time     = 2 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration step          = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration timeout       = 4 [(gogoproto.stdduration) = true];
+  string query                           = 5;
+}
+
+message QueryResponse {
+  oneof data {
+    Matrix matrix = 1;
+    Vector vector = 2;
+    Sample scalar = 3;
+    StringSample string = 4;
+  };
 }
