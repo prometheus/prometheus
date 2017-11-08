@@ -85,7 +85,6 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	time.Sleep(500 * time.Millisecond)
 	_, err = io.Copy(newf, f)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +137,6 @@ retry:
 	// not try to make sense of it all...
 	drained := make(chan struct{})
 	go func() {
-	Loop:
 		for {
 			select {
 			case tgs := <-ch:
@@ -148,10 +146,10 @@ retry:
 					t.Errorf("Unexpected empty target groups received: %s", tgs)
 				}
 			case <-time.After(500 * time.Millisecond):
-				break Loop
+				close(drained)
+				return
 			}
 		}
-		close(drained)
 	}()
 
 	newf, err = os.Create(testDir + "/_test.new")
