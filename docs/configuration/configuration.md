@@ -311,9 +311,12 @@ The following meta labels are available on targets during [relabeling](#relabel_
 server: <host>
 [ token: <secret> ]
 [ datacenter: <string> ]
-[ scheme: <string> ]
+[ scheme: <string> | default = "http"]
 [ username: <string> ]
 [ password: <secret> ]
+
+tls_config:
+  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
