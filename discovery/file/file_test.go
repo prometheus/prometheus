@@ -65,12 +65,11 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	// drain the channel until we are ready with the test files.
 	filesReady := make(chan struct{})
 	go func() {
-	Loop:
 		for {
 			select {
 			case <-ch:
 			case <-filesReady:
-				break Loop
+				return
 			}
 		}
 	}()
@@ -91,11 +90,13 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// File is written with the config so stop draining the discovery channel.
+	// It needs to be before the file closing so that fsnotify triggers a new loop of the discovery service.
+	close(filesReady)
 	newf.Close()
 
 	// The files contain two target groups.
-	// ready to receive discovery group updates so stop draining the channel
-	close(filesReady)
 retry:
 	for {
 		select {
