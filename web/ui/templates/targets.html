@@ -44,7 +44,7 @@
                         </span>
                       </td>
                       <td>
-                        <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .DiscoveredLabels}}<br>{{$ev := $v | html}}{{$k}}=&quot;{{$ev}}&quot;{{end}}">
+                        <span class="cursor-pointer" data-toggle="tooltip" title="" data-html=true data-original-title="<b>Before relabeling:</b>{{range $k, $v := .DiscoveredLabels.Map}}<br>{{$ev := $v | html}}{{$k}}=&quot;{{$ev}}&quot;{{end}}">
                           {{$labels := stripLabels .Labels.Map "job"}}
                           {{range $label, $value := $labels}}
                             <span class="label label-primary">{{$label}}="{{$value}}"</span>
