@@ -142,7 +142,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_reloads_failures_total",
-		Help: "Number of times the database failed to reload black data from disk.",
+		Help: "Number of times the database failed to reload block data from disk.",
 	})
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_triggered_total",
