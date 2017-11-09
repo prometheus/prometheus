@@ -142,8 +142,8 @@ type Block struct {
 	dir  string
 	meta BlockMeta
 
-	chunkr *chunkReader
-	indexr *indexReader
+	chunkr ChunkReader
+	indexr IndexReader
 
 	tombstones tombstoneReader
 }
@@ -160,7 +160,7 @@ func OpenBlock(dir string, pool chunks.Pool) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	ir, err := newIndexReader(dir)
+	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
 	if err != nil {
 		return nil, err
 	}

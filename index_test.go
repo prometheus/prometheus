@@ -159,7 +159,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err, "create index writer")
 	require.NoError(t, iw.Close(), "close index writer")
 
-	ir, err := newIndexReader(dir)
+	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
 	require.NoError(t, err, "open index reader")
 	require.NoError(t, ir.Close(), "close index reader")
 
@@ -169,7 +169,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	_, err = f.WriteAt([]byte{0, 0}, 0)
 	require.NoError(t, err)
 
-	_, err = newIndexReader(dir)
+	_, err = NewFileIndexReader(dir)
 	require.Error(t, err)
 }
 
@@ -210,7 +210,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	require.NoError(t, iw.Close())
 
-	ir, err := newIndexReader(dir)
+	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
 	require.NoError(t, err, "open index reader")
 
 	p, err := ir.Postings("a", "1")
@@ -325,7 +325,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	err = iw.Close()
 	require.NoError(t, err)
 
-	ir, err := newIndexReader(dir)
+	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
 	require.NoError(t, err)
 
 	for p := range mi.postings.m {
