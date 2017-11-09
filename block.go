@@ -133,7 +133,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	return renameFile(tmp, path)
 }
 
-// Block represents a directory of time series data covering a continous time range.
+// Block represents a directory of time series data covering a continuous time range.
 type Block struct {
 	mtx            sync.RWMutex
 	closing        bool
