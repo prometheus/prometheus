@@ -27,7 +27,6 @@ import (
 )
 
 func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
-
 	testCases := []struct {
 		title             string
 		updates           []update
@@ -165,7 +164,7 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 			},
 		},
 		{
-			title: "Next test case",
+			title: "Large number of updates",
 			updates: []update{
 				{
 					targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
@@ -182,7 +181,7 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 			},
 		},
 		{
-			title: "Next test case",
+			title: "Multiple updates 5 second window",
 			updates: []update{
 				{
 					targetGroups: []config.TargetGroup{{Source: "initial1"}},
@@ -239,7 +238,6 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 	}
 
 	for i, testCase := range testCases {
-
 		finalize := make(chan bool)
 
 		syncCallCount := 0
@@ -257,7 +255,7 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 				syncCallCount++
 				if syncCallCount == len(testCase.expectedSyncCalls) {
 					// All the groups are sent, we can start asserting.
-					finalize <- true
+					close(finalize)
 				}
 			},
 		})
@@ -273,22 +271,22 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 		targetSet.UpdateProviders(targetProviders)
 
 		select {
-		case <-time.After(20000 * time.Millisecond):
-			t.Errorf("In test case %v[%v]: Test timed out after 20000 millisecond. All targets should be sent within the timeout", i, testCase.title)
+		case <-time.After(20 * time.Second):
+			t.Errorf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
 
 		case <-finalize:
 
 			if *tp.callCount != 1 {
-				t.Errorf("In test case %v[%v]: TargetProvider Run should be called once only, was called %v times", i, testCase.title, *tp.callCount)
+				t.Errorf("%d. %q: TargetProvider Run should be called once only, was called %v times", i, testCase.title, *tp.callCount)
 			}
 
 			if len(syncedGroups) != len(testCase.expectedSyncCalls) {
-				t.Errorf("In test case %v[%v]: received sync calls: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, syncedGroups, testCase.expectedSyncCalls)
+				t.Errorf("%d. %q: received sync calls: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, syncedGroups, testCase.expectedSyncCalls)
 			}
 
 			for j := range syncedGroups {
 				if len(syncedGroups[j]) != len(testCase.expectedSyncCalls[j]) {
-					t.Errorf("In test case %v[%v]: received sync calls in call [%v]: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, j, syncedGroups[j], testCase.expectedSyncCalls[j])
+					t.Errorf("%d. %q: received sync calls in call [%v]: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, j, syncedGroups[j], testCase.expectedSyncCalls[j])
 				}
 
 				expectedGroupsMap := make(map[string]struct{})
@@ -297,8 +295,8 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 				}
 
 				for _, syncedGroup := range syncedGroups[j] {
-					if _, ok := expectedGroupsMap[syncedGroup]; ok == false {
-						t.Errorf("In test case %v[%v]: '%s' does not exist in expected target groups: %s", i, testCase.title, syncedGroup, testCase.expectedSyncCalls[j])
+					if _, ok := expectedGroupsMap[syncedGroup]; !ok {
+						t.Errorf("%d. %q: '%s' does not exist in expected target groups: %s", i, testCase.title, syncedGroup, testCase.expectedSyncCalls[j])
 					} else {
 						delete(expectedGroupsMap, syncedGroup) // Remove used targets from the map.
 					}
@@ -309,8 +307,7 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 	}
 }
 
-func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T) {
-
+func TestTargetSetConsolidatesToTheLatestState(t *testing.T) {
 	// Function to determine if the sync call received the latest state of
 	// all the target groups that came out of the target provider.
 	endStateAchieved := func(groupsSentToSyc []*config.TargetGroup, endState map[string]config.TargetGroup) bool {
@@ -535,7 +532,6 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 	}
 
 	for i, testCase := range testCases {
-
 		expectedGroups := make(map[string]config.TargetGroup)
 		for _, update := range testCase.updates {
 			for _, targetGroup := range update.targetGroups {
@@ -557,7 +553,7 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 					return
 				}
 
-				finalize <- true
+				close(finalize)
 			},
 		})
 
@@ -572,8 +568,8 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 		targetSet.UpdateProviders(targetProviders)
 
 		select {
-		case <-time.After(20000 * time.Millisecond):
-			t.Errorf("In test case %v[%v]: Test timed out after 20000 millisecond. All targets should be sent within the timeout", i, testCase.title)
+		case <-time.After(20 * time.Second):
+			t.Errorf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
 
 		case <-finalize:
 			// System successfully reached to the end state.
@@ -582,7 +578,6 @@ func TestSingleTargetSetWithSingleProviderSendsUpdatedTargetGroups(t *testing.T)
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-
 	verifyPresence := func(tgroups map[string]*config.TargetGroup, name string, present bool) {
 		if _, ok := tgroups[name]; ok != present {
 			msg := ""
@@ -635,7 +630,6 @@ static_configs:
 }
 
 func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
-
 	var wg sync.WaitGroup
 
 	wg.Add(2)
@@ -675,12 +669,12 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(20000 * time.Millisecond):
-		t.Error("Test timed out after 20000 millisecond. All targets should be sent within the timeout")
+	case <-time.After(20 * time.Second):
+		t.Error("Test timed out after 20 seconds. All targets should be sent within the timeout")
 
 	case <-finalize:
 		if *tp.callCount != 2 {
-			t.Errorf("Was expecting 2 calls received %v", tp.callCount)
+			t.Errorf("Was expecting 2 calls, received %d", tp.callCount)
 		}
 	}
 }
@@ -729,9 +723,8 @@ func (tp mockTargetProvider) sendUpdates() {
 		time.Sleep(update.interval * time.Millisecond)
 
 		tgs := make([]*config.TargetGroup, len(update.targetGroups))
-		for groupIndex := range update.targetGroups {
-
-			tgs[groupIndex] = &update.targetGroups[groupIndex]
+		for i := range update.targetGroups {
+			tgs[i] = &update.targetGroups[i]
 		}
 
 		tp.up <- tgs
