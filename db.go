@@ -101,7 +101,6 @@ type DB struct {
 	opts      *Options
 	chunkPool chunks.Pool
 	compactor Compactor
-	wal       WAL
 
 	// Mutex for that must be held when modifying the general block layout.
 	mtx    sync.RWMutex
@@ -572,6 +571,7 @@ func (db *DB) Close() error {
 	if db.lockf != nil {
 		merr.Add(db.lockf.Unlock())
 	}
+	merr.Add(db.head.Close())
 	return merr.Err()
 }
 
