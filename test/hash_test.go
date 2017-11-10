@@ -14,6 +14,9 @@
 package test
 
 import (
+	"crypto/rand"
+	"fmt"
+	"hash/crc32"
 	"testing"
 
 	"github.com/cespare/xxhash"
@@ -75,4 +78,47 @@ func fnv64a(b []byte) uint64 {
 		h *= prime64
 	}
 	return h
+}
+
+func BenchmarkCRC32_diff(b *testing.B) {
+
+	data := [][]byte{}
+
+	for i := 0; i < 1000; i++ {
+		b := make([]byte, 512)
+		rand.Read(b)
+		data = append(data, b)
+	}
+
+	ctab := crc32.MakeTable(crc32.Castagnoli)
+	total := uint32(0)
+
+	b.Run("direct", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			total += crc32.Checksum(data[i%1000], ctab)
+		}
+	})
+	b.Run("hash-reuse", func(b *testing.B) {
+		b.ReportAllocs()
+		h := crc32.New(ctab)
+
+		for i := 0; i < b.N; i++ {
+			h.Reset()
+			h.Write(data[i%1000])
+			total += h.Sum32()
+		}
+	})
+	b.Run("hash-new", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for i := 0; i < b.N; i++ {
+			h := crc32.New(ctab)
+			h.Write(data[i%1000])
+			total += h.Sum32()
+		}
+	})
+
+	fmt.Println(total)
 }
