@@ -26,15 +26,19 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T) {
+func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 
 	testCases := []struct {
-		title   string
-		updates []update
+		title             string
+		updates           []update
+		expectedSyncCalls [][]string
 	}{
 		{
 			title:   "No updates",
 			updates: []update{},
+			expectedSyncCalls: [][]string{
+				{},
+			},
 		},
 		{
 			title: "Empty initials",
@@ -43,6 +47,9 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					targetGroups: []config.TargetGroup{},
 					interval:     5,
 				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
 			},
 		},
 		{
@@ -53,6 +60,9 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					interval:     6000,
 				},
 			},
+			expectedSyncCalls: [][]string{
+				{},
+			},
 		},
 		{
 			title: "Initials only",
@@ -62,6 +72,9 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					interval:     0,
 				},
 			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+			},
 		},
 		{
 			title: "Initials only but after a delay",
@@ -70,6 +83,10 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
 					interval:     6000,
 				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+				{"initial1", "initial2"},
 			},
 		},
 		{
@@ -84,6 +101,9 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					interval:     10,
 				},
 			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+			},
 		},
 		{
 			title: "Initials and new groups",
@@ -96,6 +116,10 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					targetGroups: []config.TargetGroup{{Source: "update1"}, {Source: "update2"}},
 					interval:     10,
 				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+				{"initial1", "initial2", "update1", "update2"},
 			},
 		},
 		{
@@ -110,9 +134,13 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					interval:     10,
 				},
 			},
+			expectedSyncCalls: [][]string{
+				{},
+				{"initial1", "initial2", "update1", "update2"},
+			},
 		},
 		{
-			title: "Next test case",
+			title: "Initial and successive updates",
 			updates: []update{
 				{
 					targetGroups: []config.TargetGroup{{Source: "initial1"}},
@@ -126,6 +154,14 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					targetGroups: []config.TargetGroup{{Source: "update2"}},
 					interval:     10,
 				},
+				{
+					targetGroups: []config.TargetGroup{{Source: "update3"}},
+					interval:     10,
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1"},
+				{"initial1", "update1", "update2", "update3"},
 			},
 		},
 		{
@@ -139,6 +175,10 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					targetGroups: []config.TargetGroup{{Source: "update1"}, {Source: "update2"}, {Source: "update3"}, {Source: "update4"}, {Source: "update5"}, {Source: "update6"}},
 					interval:     30,
 				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+				{"initial1", "initial2", "update1", "update2", "update3", "update4", "update5", "update6"},
 			},
 		},
 		{
@@ -165,6 +205,10 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 					interval:     70,
 				},
 			},
+			expectedSyncCalls: [][]string{
+				{"initial1"},
+				{"initial1", "update1", "update2", "update3", "update4", "update5", "update6", "update7", "update8"},
+			},
 		},
 		{
 			title: "Empty update in between",
@@ -175,7 +219,7 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 				},
 				{
 					targetGroups: []config.TargetGroup{{Source: "update1"}, {Source: "update2"}},
-					interval:     30,
+					interval:     300,
 				},
 				{
 					targetGroups: []config.TargetGroup{},
@@ -183,37 +227,35 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 				},
 				{
 					targetGroups: []config.TargetGroup{{Source: "update3"}, {Source: "update4"}, {Source: "update5"}, {Source: "update6"}},
-					interval:     30,
+					interval:     6000,
 				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+				{"initial1", "initial2", "update1", "update2"},
+				{"initial1", "initial2", "update1", "update2", "update3", "update4", "update5", "update6"},
 			},
 		},
 	}
 
 	for i, testCase := range testCases {
 
-		expectedGroups := make(map[string]struct{})
-		for _, update := range testCase.updates {
-			for _, target := range update.targetGroups {
-				expectedGroups[target.Source] = struct{}{}
-			}
-		}
-
 		finalize := make(chan bool)
 
-		isFirstSyncCall := true
-		var initialGroups []*config.TargetGroup
-		var syncedGroups []*config.TargetGroup
+		syncCallCount := 0
+		syncedGroups := make([][]string, 0)
 
 		targetSet := NewTargetSet(&mockSyncer{
 			sync: func(tgs []*config.TargetGroup) {
-				syncedGroups = tgs
 
-				if isFirstSyncCall {
-					isFirstSyncCall = false
-					initialGroups = tgs
+				currentCallGroup := make([]string, len(tgs))
+				for i, tg := range tgs {
+					currentCallGroup[i] = tg.Source
 				}
+				syncedGroups = append(syncedGroups, currentCallGroup)
 
-				if len(tgs) == len(expectedGroups) {
+				syncCallCount++
+				if syncCallCount == len(testCase.expectedSyncCalls) {
 					// All the groups are sent, we can start asserting.
 					finalize <- true
 				}
@@ -240,24 +282,28 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 				t.Errorf("In test case %v[%v]: TargetProvider Run should be called once only, was called %v times", i, testCase.title, *tp.callCount)
 			}
 
-			if len(testCase.updates) > 0 && testCase.updates[0].interval > 5000 {
-				// If the initial set of targets never arrive or arrive after 5 seconds.
-				// The first sync call should receive empty set of targets.
-				if len(initialGroups) != 0 {
-					t.Errorf("In test case %v[%v]: Expecting 0 initial target groups, received %v", i, testCase.title, len(initialGroups))
-				}
+			if len(syncedGroups) != len(testCase.expectedSyncCalls) {
+				t.Errorf("In test case %v[%v]: received sync calls: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, syncedGroups, testCase.expectedSyncCalls)
 			}
 
-			if len(syncedGroups) != len(expectedGroups) {
-				t.Errorf("In test case %v[%v]: Expecting %v target groups in total, received %v", i, testCase.title, len(expectedGroups), len(syncedGroups))
-			}
-
-			for _, tg := range syncedGroups {
-				if _, ok := expectedGroups[tg.Source]; ok == false {
-					t.Errorf("In test case %v[%v]: '%s' does not exist in expected target groups: %s", i, testCase.title, tg.Source, expectedGroups)
-				} else {
-					delete(expectedGroups, tg.Source) // Remove used targets from the map.
+			for j := range syncedGroups {
+				if len(syncedGroups[j]) != len(testCase.expectedSyncCalls[j]) {
+					t.Errorf("In test case %v[%v]: received sync calls in call [%v]: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, j, syncedGroups[j], testCase.expectedSyncCalls[j])
 				}
+
+				expectedGroupsMap := make(map[string]struct{})
+				for _, expectedGroup := range testCase.expectedSyncCalls[j] {
+					expectedGroupsMap[expectedGroup] = struct{}{}
+				}
+
+				for _, syncedGroup := range syncedGroups[j] {
+					if _, ok := expectedGroupsMap[syncedGroup]; ok == false {
+						t.Errorf("In test case %v[%v]: '%s' does not exist in expected target groups: %s", i, testCase.title, syncedGroup, testCase.expectedSyncCalls[j])
+					} else {
+						delete(expectedGroupsMap, syncedGroup) // Remove used targets from the map.
+					}
+				}
+
 			}
 		}
 	}
