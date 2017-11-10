@@ -322,11 +322,11 @@ func newChunkReader(bs []ByteSlice, cs []io.Closer, pool chunks.Pool) (*chunkRea
 }
 
 // NewChunkReader returns a new chunk reader against the given byte slices.
-func NewChunkReader(bs []ByteSlice, pool chunks.Pool) ChunkReader {
+func NewChunkReader(bs []ByteSlice, pool chunks.Pool) (ChunkReader, error) {
 	if pool == nil {
 		pool = chunks.NewPool()
 	}
-	return &chunkReader{bs: bs, pool: pool}
+	return newChunkReader(bs, nil, pool)
 }
 
 // NewDirChunkReader returns a new ChunkReader against sequentially numbered files in the

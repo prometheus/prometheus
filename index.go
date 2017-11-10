@@ -605,11 +605,12 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 	return b[start:end]
 }
 
-// NewIndexReader returns a new IndexReader on the given directory.
+// NewIndexReader returns a new IndexReader on the given byte slice.
 func NewIndexReader(b ByteSlice) (IndexReader, error) {
 	return newIndexReader(b, nil)
 }
 
+// NewFileIndexReader returns a new index reader against the given index file.
 func NewFileIndexReader(path string) (IndexReader, error) {
 	f, err := openMmapFile(path)
 	if err != nil {
@@ -618,7 +619,6 @@ func NewFileIndexReader(path string) (IndexReader, error) {
 	return newIndexReader(realByteSlice(f.b), f)
 }
 
-// newIndexReader returns a new indexReader on the given directory.
 func newIndexReader(b ByteSlice, c io.Closer) (*indexReader, error) {
 	r := &indexReader{
 		b:       b,
@@ -660,7 +660,7 @@ func (r *indexReader) readTOC() error {
 	d := decbuf{b: b[:len(b)-4]}
 
 	if d.crc32() != expCRC {
-		return (errInvalidChecksum)
+		return errInvalidChecksum
 	}
 
 	r.toc.symbols = d.be64()
@@ -697,7 +697,7 @@ func (r *indexReader) decbufAt(off int) decbuf {
 	return dec
 }
 
-// decbufAt returns a new decoding buffer. It expects the first bytes
+// decbufUvarintAt returns a new decoding buffer. It expects the first bytes
 // after offset to hold the uvarint-encoded buffers length, followed by the contents and the expected
 // checksum.
 func (r *indexReader) decbufUvarintAt(off int) decbuf {
