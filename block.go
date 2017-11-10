@@ -156,7 +156,7 @@ func OpenBlock(dir string, pool chunks.Pool) (*Block, error) {
 		return nil, err
 	}
 
-	cr, err := newChunkReader(chunkDir(dir), pool)
+	cr, err := NewDirChunkReader(chunkDir(dir), pool)
 	if err != nil {
 		return nil, err
 	}
