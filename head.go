@@ -739,6 +739,11 @@ func (h *Head) MaxTime() int64 {
 	return atomic.LoadInt64(&h.maxTime)
 }
 
+// Close flushes the WAL and closes the head.
+func (h *Head) Close() error {
+	return h.wal.Close()
+}
+
 type headChunkReader struct {
 	head       *Head
 	mint, maxt int64

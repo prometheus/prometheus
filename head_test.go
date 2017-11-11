@@ -37,6 +37,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	if err != nil {
 		require.NoError(b, err)
 	}
+	defer h.Close()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -131,6 +132,7 @@ func TestHead_ReadWAL(t *testing.T) {
 
 	head, err := NewHead(nil, nil, wal, 1000)
 	require.NoError(t, err)
+	defer head.Close()
 
 	require.NoError(t, head.ReadWAL())
 	require.Equal(t, uint64(100), head.lastSeriesID)
@@ -163,6 +165,7 @@ func TestHead_ReadWAL(t *testing.T) {
 func TestHead_Truncate(t *testing.T) {
 	h, err := NewHead(nil, nil, nil, 1000)
 	require.NoError(t, err)
+	defer h.Close()
 
 	h.initTime(0)
 
@@ -275,6 +278,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 	head, err := NewHead(nil, nil, nil, 1000)
 	require.NoError(t, err)
+	defer head.Close()
 
 	app := head.Appender()
 

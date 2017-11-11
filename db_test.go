@@ -524,3 +524,30 @@ func TestDB_e2e(t *testing.T) {
 
 	return
 }
+
+func TestWALFlushedOnDBClose(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	require.NoError(t, err)
+
+	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
+
+	app := db.Appender()
+	_, err = app.Add(lbls, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	db.Close()
+
+	db, err = Open(tmpdir, nil, nil, nil)
+	require.NoError(t, err)
+
+	q, err := db.Querier(0, 1)
+	require.NoError(t, err)
+
+	values, err := q.LabelValues("labelname")
+	require.NoError(t, err)
+	require.Equal(t, values, []string{"labelvalue"})
+}
