@@ -201,7 +201,7 @@ type concreteSeries struct {
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
-	return c.labels
+	return labels.New(c.labels...)
 }
 
 func (c *concreteSeries) Iterator() storage.SeriesIterator {
