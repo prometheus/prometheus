@@ -16,6 +16,8 @@ package remote
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -123,4 +125,23 @@ func TestConcreteSeriesSet(t *testing.T) {
 	if c.Next() {
 		t.Fatalf("Expected Next() to be false.")
 	}
+}
+
+func TestConcreteSeriesClonesLabels(t *testing.T) {
+	lbls := labels.Labels{
+		labels.Label{Name: "a", Value: "b"},
+		labels.Label{Name: "c", Value: "d"},
+	}
+	cs := concreteSeries{
+		labels: labels.New(lbls...),
+	}
+
+	gotLabels := cs.Labels()
+	require.Equal(t, lbls, gotLabels)
+
+	gotLabels[0].Value = "foo"
+	gotLabels[1].Value = "bar"
+
+	gotLabels = cs.Labels()
+	require.Equal(t, lbls, gotLabels)
 }
