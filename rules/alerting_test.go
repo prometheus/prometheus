@@ -18,13 +18,12 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := promql.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil)
 
 	const want = `alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
@@ -36,7 +35,5 @@ annotations:
 `
 
 	got := rule.HTMLSnippet("/test/prefix")
-	if got != want {
-		t.Fatalf("incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
-	}
+	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
 }
