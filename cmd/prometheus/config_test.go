@@ -57,6 +57,10 @@ func TestParse(t *testing.T) {
 			valid: false,
 		},
 		{
+			input: []string{"-alertmanager.url", "alertmanager.company.com:80"},
+			valid: false,
+		},
+		{
 			input: []string{"-alertmanager.url", "https://double--dash.de"},
 			valid: true,
 		},
@@ -77,9 +81,9 @@ func TestParse(t *testing.T) {
 
 		err := parse(test.input)
 		if test.valid && err != nil {
-			t.Errorf("%d. expected input to be valid, got %s", i, err)
+			t.Errorf("%d. expected input '%s' to be valid, got %s", i, test.input, err)
 		} else if !test.valid && err == nil {
-			t.Errorf("%d. expected input to be invalid", i)
+			t.Errorf("%d. expected input '%s' to be invalid", i, test.input)
 		}
 	}
 }

@@ -365,6 +365,8 @@ func validateAlertmanagerURL(u string) error {
 	}
 	if url.Scheme == "" {
 		return fmt.Errorf("missing scheme in Alertmanager URL: %s", u)
+	} else if url.Scheme != "http" && url.Scheme != "https" {
+		return fmt.Errorf("unknown scheme '%s' in Alertmanager URL: %s", url.Scheme, u)
 	}
 	return nil
 }
