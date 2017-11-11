@@ -262,9 +262,7 @@ func TestApplyConfig(t *testing.T) {
 		},
 	}
 	conf, err := config.LoadFile("../config/testdata/conf.good.yml")
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+	testutil.Ok(t, err)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable:  nil,
 		Notifier:    nil,
@@ -274,24 +272,19 @@ func TestApplyConfig(t *testing.T) {
 	})
 	ruleManager.Run()
 
-	if err := ruleManager.ApplyConfig(conf); err != nil {
-		t.Fatalf(err.Error())
-	}
+	err = ruleManager.ApplyConfig(conf)
+	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
 			expected,
 		}
 	}
 
-	if err := ruleManager.ApplyConfig(conf); err != nil {
-		t.Fatalf(err.Error())
-	}
+	err = ruleManager.ApplyConfig(conf)
+	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatalf("Rule groups state lost after config reload. Expected: %+v Got: %+v", expected, actual)
-			}
+			testutil.Equals(t, expected, actual)
 		}
 	}
 }
