@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -89,12 +90,13 @@ func init() {
 // Discovery retrieves target information from a Consul server
 // and updates them via watches.
 type Discovery struct {
-	client           *consul.Client
-	clientConf       *consul.Config
-	clientDatacenter string
-	tagSeparator     string
-	watchedServices  []string // Set of services which will be discovered.
-	logger           log.Logger
+	client             *consul.Client
+	clientConf         *consul.Config
+	clientDatacenter   string
+	tagSeparator       string
+	watchedServices    []string         // Set of services which will be discovered.
+	watchedServicesReg []*regexp.Regexp // match services
+	logger             log.Logger
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -142,6 +144,11 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 		clientDatacenter: clientConf.Datacenter,
 		logger:           logger,
 	}
+	cd.watchedServicesReg = make([]*regexp.Regexp, 0, len(cd.watchedServicesReg))
+	for _, name := range cd.watchedServices {
+		cd.watchedServicesReg = append(cd.watchedServicesReg, regexp.MustCompile(name))
+	}
+
 	return cd, nil
 }
 
@@ -151,11 +158,15 @@ func (d *Discovery) shouldWatch(name string) bool {
 	if len(d.watchedServices) == 0 {
 		return true
 	}
-	for _, sn := range d.watchedServices {
-		if sn == name {
+
+	// use regex match
+	for idx, snr := range d.watchedServicesReg {
+		d.logger.Info("use regex match. name[", name, "], regex[", d.watchedServices[idx], "]")
+		if snr.MatchString(name) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -320,6 +331,17 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*config.TargetG
 				serviceAddressLabel: model.LabelValue(node.ServiceAddress),
 				servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
 				serviceIDLabel:      model.LabelValue(node.ServiceID),
+			}
+
+			// will tags change table.
+			for _, tag := range node.ServiceTags {
+				// kv must use ‘=’ sep
+				kv := strings.SplitN(tag, "=", 2)
+				if len(kv) != 2 {
+					srv.logger.Warnf("%v tagname err. val[%v]", addr, tag)
+					continue
+				}
+				labels[model.ConsulTagPrefix+model.LabelName(kv[0])] = model.LabelValue(kv[1])
 			}
 
 			// Add all key/value pairs from the node's metadata as their own labels

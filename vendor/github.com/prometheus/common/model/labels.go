@@ -64,6 +64,9 @@ const (
 	// used to scrape a target.
 	ParamLabelPrefix = "__param_"
 
+	// ConsulTagPrefix is a prefix for labels that provide consul tags.
+	ConsulTagPrefix = "consul_tag_"
+
 	// JobLabel is the label name indicating the job from which a timeseries
 	// was scraped.
 	JobLabel = "job"
