@@ -666,6 +666,12 @@
 			"revisionTime": "2016-09-28T00:14:32Z"
 		},
 		{
+			"checksumSHA1": "gkyBg/2hcIWR/8qGEeGVoHwOyfo=",
+			"path": "github.com/oklog/oklog/pkg/group",
+			"revision": "f857583a70c345341d679b3f27aa542c8db70a21",
+			"revisionTime": "2017-09-18T07:00:58Z"
+		},
+		{
 			"checksumSHA1": "B1iGaUz7NrjEmCjVdIgH5pvkTe8=",
 			"path": "github.com/oklog/ulid",
 			"revision": "66bb6560562feca7045b23db1ae85b01260f87c5",

@@ -31,6 +31,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/oklog/oklog/pkg/group"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -216,12 +217,6 @@ func main() {
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
 
-	// Make sure that sighup handler is registered with a redirect to the channel before the potentially
-	// long and synchronous tsdb init.
-	hup := make(chan os.Signal)
-	hupReady := make(chan bool)
-	signal.Notify(hup, syscall.SIGHUP)
-
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime)
@@ -282,105 +277,196 @@ func main() {
 		notifier,
 	}
 
-	// Wait for reload or termination signals. Start the handler for SIGHUP as
-	// early as possible, but ignore it until we are ready to handle reloading
-	// our config.
-	go func() {
-		<-hupReady
-		for {
-			select {
-			case <-hup:
-				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-					level.Error(logger).Log("msg", "Error reloading config", "err", err)
-				}
-			case rc := <-webHandler.Reload():
-				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-					level.Error(logger).Log("msg", "Error reloading config", "err", err)
-					rc <- err
-				} else {
-					rc <- nil
-				}
-			}
-		}
-	}()
+	prometheus.MustRegister(configSuccess)
+	prometheus.MustRegister(configSuccessTime)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
 	dbOpen := make(chan struct{})
+	// Wait until the server is ready to handle reloading
+	reloadReady := make(chan struct{})
 
-	go func() {
-		defer close(dbOpen)
-
-		level.Info(logger).Log("msg", "Starting TSDB")
-
-		db, err := tsdb.Open(
-			cfg.localStoragePath,
-			log.With(logger, "component", "tsdb"),
-			prometheus.DefaultRegisterer,
-			&cfg.tsdb,
+	var g group.Group
+	{
+		term := make(chan os.Signal)
+		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				select {
+				case <-term:
+					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+				case <-webHandler.Quit():
+					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
+				case <-cancel:
+					break
+				}
+				return nil
+			},
+			func(err error) {
+				close(cancel)
+			},
 		)
-		if err != nil {
-			level.Error(logger).Log("msg", "Opening storage failed", "err", err)
-			os.Exit(1)
-		}
-		level.Info(logger).Log("msg", "TSDB started")
-
-		startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
-		localStorage.Set(db, startTimeMargin)
-	}()
-
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
-
-	// The notifier is a dependency of the rule manager. It has to be
-	// started before and torn down afterwards.
-	go notifier.Run()
-	defer notifier.Stop()
-
-	go ruleManager.Run()
-	defer ruleManager.Stop()
-
-	go targetManager.Run()
-	defer targetManager.Stop()
-
-	// Shutting down the query engine before the rule manager will cause pending queries
-	// to be canceled and ensures a quick shutdown of the rule manager.
-	defer cancelCtx()
-
-	errc := make(chan error)
-	go func() { errc <- webHandler.Run(ctx) }()
-
-	<-dbOpen
-
-	if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
-		level.Error(logger).Log("msg", "Error loading config", "err", err)
-		os.Exit(1)
 	}
+	{
+		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
+		// long and synchronous tsdb init.
+		hup := make(chan os.Signal)
+		signal.Notify(hup, syscall.SIGHUP)
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				select {
+				case <-reloadReady:
+					break
+				// In case a shutdown is initiated before the reloadReady is released.
+				case <-cancel:
+					return nil
+				}
 
-	defer func() {
-		if err := fanoutStorage.Close(); err != nil {
-			level.Error(logger).Log("msg", "Error stopping storage", "err", err)
-		}
-	}()
+				for {
+					select {
+					case <-hup:
+						if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+						}
+					case rc := <-webHandler.Reload():
+						if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+							rc <- err
+						} else {
+							rc <- nil
+						}
+					case <-cancel:
+						return nil
+					}
+				}
 
-	// Wait for reload or termination signals.
-	close(hupReady) // Unblock SIGHUP handler.
-
-	// Set web server to ready.
-	webHandler.Ready()
-	level.Info(logger).Log("msg", "Server is ready to receive requests.")
-
-	term := make(chan os.Signal, 1)
-	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
-	select {
-	case <-term:
-		level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
-	case <-webHandler.Quit():
-		level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
-	case err := <-errc:
-		level.Error(logger).Log("msg", "Error starting web server, exiting gracefully", "err", err)
+			},
+			func(err error) {
+				close(cancel)
+			},
+		)
 	}
+	{
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				select {
+				case <-dbOpen:
+					break
+				// In case a shutdown is initiated before the dbOpen is released
+				case <-cancel:
+					return nil
+				}
 
+				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+					return fmt.Errorf("Error loading config %s", err)
+				}
+
+				close(reloadReady)
+				webHandler.Ready()
+				level.Info(logger).Log("msg", "Server is ready to receive requests.")
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				close(cancel)
+			},
+		)
+	}
+	{
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				level.Info(logger).Log("msg", "Starting TSDB ...")
+				db, err := tsdb.Open(
+					cfg.localStoragePath,
+					log.With(logger, "component", "tsdb"),
+					prometheus.DefaultRegisterer,
+					&cfg.tsdb,
+				)
+				if err != nil {
+					return fmt.Errorf("Opening storage failed %s", err)
+				}
+				level.Info(logger).Log("msg", "TSDB started")
+
+				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
+				localStorage.Set(db, startTimeMargin)
+				close(dbOpen)
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				if err := fanoutStorage.Close(); err != nil {
+					level.Error(logger).Log("msg", "Error stopping storage", "err", err)
+				}
+				close(cancel)
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				if err := webHandler.Run(ctx); err != nil {
+					return fmt.Errorf("Error starting web server: %s", err)
+				}
+				return nil
+			},
+			func(err error) {
+				// Keep this interrupt before the ruleManager.Stop().
+				// Shutting down the query engine before the rule manager will cause pending queries
+				// to be canceled and ensures a quick shutdown of the rule manager.
+				cancelCtx()
+			},
+		)
+	}
+	{
+		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				ruleManager.Run()
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				ruleManager.Stop()
+				close(cancel)
+			},
+		)
+	}
+	{
+		// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
+		// so keep this interrupt after the ruleManager.Stop().
+		g.Add(
+			func() error {
+				notifier.Run()
+				return nil
+			},
+			func(err error) {
+				notifier.Stop()
+			},
+		)
+	}
+	{
+		// TODO(krasi) refactor targetManager.Run() to be blocking to avoid using an extra blocking channel.
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				targetManager.Run()
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				targetManager.Stop()
+				close(cancel)
+			},
+		)
+	}
+	if err := g.Run(); err != nil {
+		level.Error(logger).Log("err", err)
+	}
 	level.Info(logger).Log("msg", "See you next time!")
 }
 

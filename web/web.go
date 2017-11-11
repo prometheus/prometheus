@@ -460,7 +460,19 @@ func (h *Handler) Run(ctx context.Context) error {
 		}
 	}()
 
-	return m.Serve()
+	errCh := make(chan error)
+	go func() {
+		errCh <- m.Serve()
+	}()
+
+	select {
+	case e := <-errCh:
+		return e
+	case <-ctx.Done():
+		httpSrv.Shutdown(ctx)
+		grpcSrv.GracefulStop()
+		return nil
+	}
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
