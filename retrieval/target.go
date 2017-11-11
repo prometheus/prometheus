@@ -219,10 +219,8 @@ func (app *limitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v flo
 			return errSampleLimit
 		}
 	}
-	if err := app.Appender.AddFast(lset, ref, t, v); err != nil {
-		return err
-	}
-	return nil
+	err := app.Appender.AddFast(lset, ref, t, v)
+	return err
 }
 
 type timeLimitAppender struct {
@@ -247,10 +245,8 @@ func (app *timeLimitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v
 	if t > app.maxTime {
 		return storage.ErrOutOfBounds
 	}
-	if err := app.Appender.AddFast(lset, ref, t, v); err != nil {
-		return err
-	}
-	return nil
+	err := app.Appender.AddFast(lset, ref, t, v)
+	return err
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.

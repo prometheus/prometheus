@@ -92,7 +92,7 @@ M     [a-zA-Z_:]
                                       l.offsets = append(l.offsets, l.i)
 <lstateLValueIn>(\\.|[^\\"])*\"       l.state = lstateLabels
                                       if !utf8.Valid(l.b[l.offsets[len(l.offsets)-1]:l.i-1]) {
-                                        l.err = fmt.Errorf("Invalid UTF-8 label value.")
+                                        l.err = fmt.Errorf("invalid UTF-8 label value")
                                         return -1
                                       }
                                       l.offsets = append(l.offsets, l.i-1)

@@ -11,7 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO           := GO15VENDOREXPERIMENT=1 go
+GO           ?= GO15VENDOREXPERIMENT=1 go
+GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
@@ -27,6 +28,7 @@ ifdef DEBUG
 endif
 
 STATICCHECK_IGNORE = \
+  github.com/prometheus/prometheus/discovery/kubernetes/kubernetes.go:SA1019 \
   github.com/prometheus/prometheus/discovery/kubernetes/node.go:SA1019 \
   github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
   github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \
@@ -38,7 +40,7 @@ all: format staticcheck build test
 
 style:
 	@echo ">> checking code style"
-	@! gofmt -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
+	@! $(GOFMT) -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 check_license:
 	@echo ">> checking license header"
@@ -87,6 +89,7 @@ promu:
 	@echo ">> fetching promu"
 	@GOOS=$(shell uname -s | tr A-Z a-z) \
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
+	GO="$(GO)" \
 	$(GO) get -u github.com/prometheus/promu
 
 $(FIRST_GOPATH)/bin/staticcheck:

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/relabel"
 )
 
@@ -124,47 +125,11 @@ func init() {
 	prometheus.MustRegister(numShards)
 }
 
-// QueueManagerConfig is the configuration for the queue used to write to remote
-// storage.
-type QueueManagerConfig struct {
-	// Number of samples to buffer per shard before we start dropping them.
-	QueueCapacity int
-	// Max number of shards, i.e. amount of concurrency.
-	MaxShards int
-	// Maximum number of samples per send.
-	MaxSamplesPerSend int
-	// Maximum time sample will wait in buffer.
-	BatchSendDeadline time.Duration
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries int
-	// On recoverable errors, backoff exponentially.
-	MinBackoff time.Duration
-	MaxBackoff time.Duration
-}
-
-// defaultQueueManagerConfig is the default remote queue configuration.
-var defaultQueueManagerConfig = QueueManagerConfig{
-	// With a maximum of 1000 shards, assuming an average of 100ms remote write
-	// time and 100 samples per batch, we will be able to push 1M samples/s.
-	MaxShards:         1000,
-	MaxSamplesPerSend: 100,
-
-	// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
-	// 1000 shards, this will buffer 100M samples total.
-	QueueCapacity:     100 * 1000,
-	BatchSendDeadline: 5 * time.Second,
-
-	// Max number of times to retry a batch on recoverable errors.
-	MaxRetries: 10,
-	MinBackoff: 30 * time.Millisecond,
-	MaxBackoff: 100 * time.Millisecond,
-}
-
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
 type StorageClient interface {
 	// Store stores the given samples in the remote storage.
-	Store(model.Samples) error
+	Store(*prompb.WriteRequest) error
 	// Name identifies the remote storage implementation.
 	Name() string
 }
@@ -174,7 +139,7 @@ type StorageClient interface {
 type QueueManager struct {
 	logger log.Logger
 
-	cfg            QueueManagerConfig
+	cfg            config.QueueConfig
 	externalLabels model.LabelSet
 	relabelConfigs []*config.RelabelConfig
 	client         StorageClient
@@ -193,7 +158,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, cfg QueueManagerConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
+func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -216,7 +181,13 @@ func NewQueueManager(logger log.Logger, cfg QueueManagerConfig, externalLabels m
 	}
 	t.shards = t.newShards(t.numShards)
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
-	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.QueueCapacity))
+	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
+
+	// Initialise counter labels to zero.
+	sentBatchDuration.WithLabelValues(t.queueName)
+	succeededSamplesTotal.WithLabelValues(t.queueName)
+	failedSamplesTotal.WithLabelValues(t.queueName)
+	droppedSamplesTotal.WithLabelValues(t.queueName)
 
 	return t
 }
@@ -408,7 +379,7 @@ type shards struct {
 func (t *QueueManager) newShards(numShards int) *shards {
 	queues := make([]chan *model.Sample, numShards)
 	for i := 0; i < numShards; i++ {
-		queues[i] = make(chan *model.Sample, t.cfg.QueueCapacity)
+		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
 	}
 	s := &shards{
 		qm:     t,
@@ -502,7 +473,8 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	backoff := s.qm.cfg.MinBackoff
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
-		err := s.qm.client.Store(samples)
+		req := ToWriteRequest(samples)
+		err := s.qm.client.Store(req)
 
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
 		if err == nil {

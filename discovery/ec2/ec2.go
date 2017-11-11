@@ -14,6 +14,7 @@
 package ec2
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -21,13 +22,14 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/prometheus/prometheus/config"
@@ -137,6 +139,16 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
+func (d *Discovery) ec2MetadataAvailable(sess *session.Session) (isAvailable bool) {
+	svc := ec2metadata.New(sess, &aws.Config{
+		MaxRetries: aws.Int(0),
+	})
+
+	isAvailable = svc.Available()
+
+	return isAvailable
+}
+
 func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	t0 := time.Now()
 	defer func() {
@@ -159,7 +171,12 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		creds := stscreds.NewCredentials(sess, d.roleARN)
 		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
 	} else {
-		ec2s = ec2.New(sess)
+		if d.aws.Credentials == nil && d.ec2MetadataAvailable(sess) {
+			creds := ec2rolecreds.NewCredentials(sess)
+			ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
+		} else {
+			ec2s = ec2.New(sess)
+		}
 	}
 	tg = &config.TargetGroup{
 		Source: *d.aws.Region,
@@ -204,6 +221,9 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 				}
 
 				for _, t := range inst.Tags {
+					if t == nil || t.Key == nil || t.Value == nil {
+						continue
+					}
 					name := strutil.SanitizeLabelName(*t.Key)
 					labels[ec2LabelTag+model.LabelName(name)] = model.LabelValue(*t.Value)
 				}

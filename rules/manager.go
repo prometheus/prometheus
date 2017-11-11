@@ -14,6 +14,7 @@
 package rules
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -28,7 +29,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -494,8 +494,9 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
-		oldg, ok := m.groups[newg.name]
-		delete(m.groups, newg.name)
+		gn := groupKey(newg.name, newg.file)
+		oldg, ok := m.groups[gn]
+		delete(m.groups, gn)
 
 		go func(newg *Group) {
 			if ok {
@@ -567,12 +568,16 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			// Group names need not be unique across filenames.
-			groups[rg.Name+";"+fn] = NewGroup(rg.Name, fn, itv, rules, m.opts)
+			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, m.opts)
 		}
 	}
 
 	return groups, nil
+}
+
+// Group names need not be unique across filenames.
+func groupKey(name, file string) string {
+	return name + ";" + file
 }
 
 // RuleGroups returns the list of manager's rule groups.

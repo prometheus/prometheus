@@ -83,7 +83,7 @@ body {
   margin: 2px 2px 0 8px;
  }
 
-input[title=*]:hover:after {
+input[title]:hover:after {
   content: attr(title);
 }
 
@@ -101,7 +101,7 @@ input[title=*]:hover:after {
   font-size: 0.8em;
 }
 
-select name="insert_metric" {
+select[name="insert_metric"] {
   margin-bottom: 0px;
 }
 

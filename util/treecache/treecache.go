@@ -45,15 +45,23 @@ func init() {
 	prometheus.MustRegister(numWatchers)
 }
 
+// ZookeeperLogger wraps a log.Logger into a zk.Logger.
 type ZookeeperLogger struct {
 	logger log.Logger
 }
 
-// Implements zk.Logger
+// NewZookeeperLogger is a constructor for ZookeeperLogger.
+func NewZookeeperLogger(logger log.Logger) ZookeeperLogger {
+	return ZookeeperLogger{logger: logger}
+}
+
+// Printf implements zk.Logger.
 func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
 	level.Info(zl.logger).Log("msg", fmt.Sprintf(s, i...))
 }
 
+// A ZookeeperTreeCache keeps data from all children of a Zookeeper path
+// locally cached and updated according to received events.
 type ZookeeperTreeCache struct {
 	conn     *zk.Conn
 	prefix   string
@@ -65,6 +73,7 @@ type ZookeeperTreeCache struct {
 	logger log.Logger
 }
 
+// A ZookeeperTreeCacheEvent models a Zookeeper event for a path.
 type ZookeeperTreeCacheEvent struct {
 	Path string
 	Data *[]byte
@@ -78,6 +87,7 @@ type zookeeperTreeCacheNode struct {
 	children map[string]*zookeeperTreeCacheNode
 }
 
+// NewZookeeperTreeCache creates a new ZookeeperTreeCache for a given path.
 func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTreeCacheEvent, logger log.Logger) *ZookeeperTreeCache {
 	tc := &ZookeeperTreeCache{
 		conn:   conn,
@@ -96,6 +106,7 @@ func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTree
 	return tc
 }
 
+// Stop stops the tree cache.
 func (tc *ZookeeperTreeCache) Stop() {
 	tc.stop <- struct{}{}
 }

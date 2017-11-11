@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -80,30 +81,30 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m := &compactorMetrics{}
 
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_total",
+		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
 	})
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_failed_total",
+		Name: "prometheus_tsdb_compactions_failed_total",
 		Help: "Total number of compactions that failed for the partition.",
 	})
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_duration",
+		Name:    "prometheus_tsdb_compaction_duration",
 		Help:    "Duration of compaction runs.",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	})
 	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_chunk_size",
+		Name:    "prometheus_tsdb_compaction_chunk_size",
 		Help:    "Final size of chunks on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(32, 1.5, 12),
 	})
 	m.chunkSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_chunk_samples",
+		Name:    "prometheus_tsdb_compaction_chunk_samples",
 		Help:    "Final number of samples on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(4, 1.5, 12),
 	})
 	m.chunkRange = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_chunk_range",
+		Name:    "prometheus_tsdb_compaction_chunk_range",
 		Help:    "Final time range of chunks on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(100, 4, 10),
 	})
@@ -299,7 +300,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	var metas []*BlockMeta
 
 	for _, d := range dirs {
-		b, err := newPersistedBlock(d, c.chunkPool)
+		b, err := OpenBlock(d, c.chunkPool)
 		if err != nil {
 			return err
 		}
@@ -425,11 +426,21 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	if err != nil {
 		return errors.Wrap(err, "open temporary block dir")
 	}
-	defer df.Close()
+	defer func() {
+		if df != nil {
+			df.Close()
+		}
+	}()
 
 	if err := fileutil.Fsync(df); err != nil {
 		return errors.Wrap(err, "sync temporary dir file")
 	}
+
+	// close temp dir before rename block dir(for windows platform)
+	if err = df.Close(); err != nil {
+		return errors.Wrap(err, "close temporary dir")
+	}
+	df = nil
 
 	// Block successfully written, make visible and remove old ones.
 	if err := renameFile(tmp, dir); err != nil {
@@ -444,10 +455,30 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	var (
 		set        compactionSet
 		allSymbols = make(map[string]struct{}, 1<<16)
+		closers    = []io.Closer{}
 	)
-	for i, b := range blocks {
+	defer func() { closeAll(closers...) }()
 
-		symbols, err := b.Index().Symbols()
+	for i, b := range blocks {
+		indexr, err := b.Index()
+		if err != nil {
+			return errors.Wrapf(err, "open index reader for block %s", b)
+		}
+		closers = append(closers, indexr)
+
+		chunkr, err := b.Chunks()
+		if err != nil {
+			return errors.Wrapf(err, "open chunk reader for block %s", b)
+		}
+		closers = append(closers, chunkr)
+
+		tombsr, err := b.Tombstones()
+		if err != nil {
+			return errors.Wrapf(err, "open tombstone reader for block %s", b)
+		}
+		closers = append(closers, tombsr)
+
+		symbols, err := indexr.Symbols()
 		if err != nil {
 			return errors.Wrap(err, "read symbols")
 		}
@@ -455,15 +486,13 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			allSymbols[s] = struct{}{}
 		}
 
-		indexr := b.Index()
-
 		all, err := indexr.Postings(allPostingsKey.Name, allPostingsKey.Value)
 		if err != nil {
 			return err
 		}
 		all = indexr.SortedPostings(all)
 
-		s := newCompactionSeriesSet(indexr, b.Chunks(), b.Tombstones(), all)
+		s := newCompactionSeriesSet(indexr, chunkr, tombsr, all)
 
 		if i == 0 {
 			set = s
@@ -565,7 +594,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return errors.Wrap(err, "write postings")
 		}
 	}
-
 	return nil
 }
 

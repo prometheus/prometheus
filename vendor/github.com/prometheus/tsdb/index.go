@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"math"
 
-	"github.com/prometheus/tsdb/fileutil"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -35,6 +35,8 @@ const (
 	MagicIndex = 0xBAAAD700
 
 	indexFormatV1 = 1
+
+	size_unit = 4
 )
 
 const indexFilename = "index"
@@ -153,6 +155,8 @@ func newIndexWriter(dir string) (*indexWriter, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer df.Close() // close for flatform windows
+
 	f, err := os.OpenFile(filepath.Join(dir, indexFilename), os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return nil, err
@@ -201,12 +205,13 @@ func (w *indexWriter) write(bufs ...[]byte) error {
 	return nil
 }
 
-// addPadding adds zero byte padding until the file size is a multiple of n.
-func (w *indexWriter) addPadding(n int) error {
-	p := n - (int(w.pos) % n)
+// addPadding adds zero byte padding until the file size is a multiple size_unit.
+func (w *indexWriter) addPadding() error {
+	p := w.pos % size_unit
 	if p == 0 {
 		return nil
 	}
+	p = size_unit - p
 	return errors.Wrap(w.write(make([]byte, p)), "add padding")
 }
 
@@ -371,7 +376,7 @@ func (w *indexWriter) WriteLabelIndex(names []string, values []string) error {
 	sort.Sort(valt)
 
 	// Align beginning to 4 bytes for more efficient index list scans.
-	if err := w.addPadding(4); err != nil {
+	if err := w.addPadding(); err != nil {
 		return err
 	}
 
@@ -444,7 +449,7 @@ func (w *indexWriter) WritePostings(name, value string, it Postings) error {
 	}
 
 	// Align beginning to 4 bytes for more efficient postings list scans.
-	if err := w.addPadding(4); err != nil {
+	if err := w.addPadding(); err != nil {
 		return err
 	}
 
@@ -525,6 +530,8 @@ type IndexReader interface {
 
 	// Postings returns the postings list iterator for the label pair.
 	// The Postings here contain the offsets to the series inside the index.
+	// Found IDs are not strictly required to point to a valid Series, e.g. during
+	// background garbage collections.
 	Postings(name, value string) (Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
@@ -533,6 +540,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
+	// Returns ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]ChunkMeta) error
 
 	// LabelIndices returns the label pairs for which indices exist.

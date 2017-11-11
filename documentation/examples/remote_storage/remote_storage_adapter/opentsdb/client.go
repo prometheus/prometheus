@@ -15,6 +15,7 @@ package opentsdb
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,7 +27,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
 )
 

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,7 +35,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"golang.org/x/net/context"
 	"gopkg.in/alecthomas/kingpin.v2"
 	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
@@ -76,8 +76,7 @@ func main() {
 	}
 
 	cfg := struct {
-		printVersion bool
-		configFile   string
+		configFile string
 
 		localStoragePath string
 		notifier         notifier.Options
@@ -107,7 +106,7 @@ func main() {
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
 
-	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemtry.").
+	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
 		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
 
 	a.Flag("web.read-timeout",
@@ -213,7 +212,7 @@ func main() {
 		},
 	}
 
-	level.Info(logger).Log("msg", "Starting prometheus", "version", version.Info())
+	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
 
@@ -225,7 +224,7 @@ func main() {
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"))
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -326,7 +325,8 @@ func main() {
 		}
 		level.Info(logger).Log("msg", "TSDB started")
 
-		localStorage.Set(db)
+		startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
+		localStorage.Set(db, startTimeMargin)
 	}()
 
 	prometheus.MustRegister(configSuccess)

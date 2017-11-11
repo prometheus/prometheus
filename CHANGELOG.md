@@ -1,3 +1,37 @@
+## 2.0.0 / 2017-11-08
+
+This release includes a completely rewritten storage, huge performance
+improvements, but also many backwards incompatible changes. For more
+information, read the announcement blog post and migration guide.
+
+https://prometheus.io/blog/2017/11/08/announcing-prometheus-2-0/
+https://prometheus.io/docs/prometheus/2.0/migration/
+
+* [CHANGE] Completely rewritten storage layer, with WAL. This is not backwards compatible with 1.x storage, and many flags have changed/disappeared.
+* [CHANGE] New staleness behavior. Series now marked stale after target scrapes no longer return them, and soon after targets disappear from service discovery.
+* [CHANGE] Rules files use YAML syntax now. Conversion tool added to promtool.
+* [CHANGE] Removed `count_scalar`, `drop_common_labels` functions and `keep_common` modifier from PromQL.
+* [CHANGE] Rewritten exposition format parser with much higher performance. The Protobuf exposition format is no longer supported.
+* [CHANGE] Example console templates updated for new storage and metrics names. Examples other than node exporter and Prometheus removed.
+* [CHANGE] Admin and lifecycle APIs now disabled by default, can be reenabled via flags
+* [CHANGE] Flags switched to using Kingpin, all flags are now --flagname rather than -flagname.
+* [FEATURE/CHANGE] Remote read can be configured to not read data which is available locally. This is enabled by default.
+* [FEATURE] Rules can be grouped now. Rules within a rule group are executed sequentially.
+* [FEATURE] Added experimental GRPC apis
+* [FEATURE] Add timestamp() function to PromQL.
+* [ENHANCEMENT] Remove remote read from the query path if no remote storage is configured.
+* [ENHANCEMENT] Bump Consul HTTP client timeout to not match the Consul SD watch timeout.
+* [ENHANCEMENT] Go-conntrack added to provide HTTP connection metrics.
+* [BUGFIX] Fix connection leak in Consul SD.
+
+## 1.8.2 / 2017-11-04
+
+* [BUGFIX] EC2 service discovery: Do not crash if tags are empty.
+
+## 1.8.1 / 2017-10-19
+
+* [BUGFIX] Correctly handle external labels on remote read endpoint
+
 ## 1.8.0 / 2017-10-06
 
 * [CHANGE] Rule links link to the _Console_ tab rather than the _Graph_ tab to
@@ -27,20 +61,6 @@
 * [BUGFIX] Apply path prefix to redirect from deprecated graph URL.
 * [BUGFIX] Fixed tests on MS Windows.
 * [BUGFIX] Check for invalid UTF-8 in label values after relabeling.
-
-## v2.0.0-rc.0 / 2017-10-05
-
-This release includes numerous changes to the new storage layer. The main changes are:
-
-* [CHANGE] Remove `count_scalar`, `keep_common` and `drop_common_labels` functions
-* [CHANGE] Breaking change in the index format for better consistency 
-* [BUGFIX] Fix panic due garbage collected mmap'ed strings 
-* [BUGFIX] Fix broken snapshots and admin APIs 
-* [BUGFIX] Send HTTP Accept header when scraping
-* [BUGFIX] Use the WAL flush interval passed instead of the hardcoded value
-
-This release requires a clean storage directory and is not compatible with files
-created by previous beta releases.
 
 ## 1.7.2 / 2017-09-26
 

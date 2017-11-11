@@ -14,13 +14,14 @@
 package openstack
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -52,15 +53,24 @@ type Discovery interface {
 
 // NewDiscovery returns a new OpenStackDiscovery which periodically refreshes its targets.
 func NewDiscovery(conf *config.OpenstackSDConfig, l log.Logger) (Discovery, error) {
-	opts := gophercloud.AuthOptions{
-		IdentityEndpoint: conf.IdentityEndpoint,
-		Username:         conf.Username,
-		UserID:           conf.UserID,
-		Password:         string(conf.Password),
-		TenantName:       conf.ProjectName,
-		TenantID:         conf.ProjectID,
-		DomainName:       conf.DomainName,
-		DomainID:         conf.DomainID,
+	var opts gophercloud.AuthOptions
+	if conf.IdentityEndpoint == "" {
+		var err error
+		opts, err = openstack.AuthOptionsFromEnv()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		opts = gophercloud.AuthOptions{
+			IdentityEndpoint: conf.IdentityEndpoint,
+			Username:         conf.Username,
+			UserID:           conf.UserID,
+			Password:         string(conf.Password),
+			TenantName:       conf.ProjectName,
+			TenantID:         conf.ProjectID,
+			DomainName:       conf.DomainName,
+			DomainID:         conf.DomainID,
+		}
 	}
 	switch conf.Role {
 	case config.OpenStackRoleHypervisor:

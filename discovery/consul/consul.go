@@ -14,6 +14,7 @@
 package consul
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -114,7 +114,10 @@ func NewDiscovery(conf *config.ConsulSDConfig, logger log.Logger) (*Discovery, e
 			conntrack.DialWithName("consul_sd"),
 		),
 	}
-	wrapper := &http.Client{Transport: transport}
+	wrapper := &http.Client{
+		Transport: transport,
+		Timeout:   35 * time.Second,
+	}
 
 	clientConf := &consul.Config{
 		Address:    conf.Server,

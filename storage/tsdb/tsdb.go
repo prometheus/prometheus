@@ -40,11 +40,11 @@ type ReadyStorage struct {
 }
 
 // Set the storage.
-func (s *ReadyStorage) Set(db *tsdb.DB) {
+func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.a = &adapter{db: db}
+	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
 }
 
 // Get the storage.
@@ -60,6 +60,14 @@ func (s *ReadyStorage) get() *adapter {
 	x := s.a
 	s.mtx.RUnlock()
 	return x
+}
+
+// StartTime implements the Storage interface.
+func (s *ReadyStorage) StartTime() (int64, error) {
+	if x := s.get(); x != nil {
+		return x.StartTime()
+	}
+	return int64(model.Latest), ErrNotReady
 }
 
 // Querier implements the Storage interface.
@@ -86,13 +94,15 @@ func (s *ReadyStorage) Close() error {
 	return nil
 }
 
-func Adapter(db *tsdb.DB) storage.Storage {
-	return &adapter{db: db}
+// Adapter return an adapter as storage.Storage.
+func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
+	return &adapter{db: db, startTimeMargin: startTimeMargin}
 }
 
 // adapter implements a storage.Storage around TSDB.
 type adapter struct {
-	db *tsdb.DB
+	db              *tsdb.DB
+	startTimeMargin int64
 }
 
 // Options of the DB storage.
@@ -116,6 +126,9 @@ type Options struct {
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
+	if opts.MinBlockDuration > opts.MaxBlockDuration {
+		opts.MaxBlockDuration = opts.MinBlockDuration
+	}
 	// Start with smallest block duration and create exponential buckets until the exceed the
 	// configured maximum block duration.
 	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
@@ -139,8 +152,26 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	return db, nil
 }
 
+// StartTime implements the Storage interface.
+func (a adapter) StartTime() (int64, error) {
+	var startTime int64
+
+	if len(a.db.Blocks()) > 0 {
+		startTime = a.db.Blocks()[0].Meta().MinTime
+	} else {
+		startTime = int64(time.Now().Unix() * 1000)
+	}
+
+	// Add a safety margin as it may take a few minutes for everything to spin up.
+	return startTime + a.startTimeMargin, nil
+}
+
 func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
-	return querier{q: a.db.Querier(mint, maxt)}, nil
+	q, err := a.db.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return querier{q: q}, nil
 }
 
 // Appender returns a new appender against the storage.
@@ -233,14 +264,14 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
 
 	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
 		if err != nil {
 			panic(err)
 		}
 		return res
 
 	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
 		if err != nil {
 			panic(err)
 		}

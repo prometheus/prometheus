@@ -51,9 +51,9 @@ https://jquery.org
 Copyright jQuery Foundation and other contributors
 Licensed under the MIT License
 
-Go support for Protocol Buffers - Google's data interchange format
-http://github.com/golang/protobuf/
-Copyright 2010 The Go Authors
+Protocol Buffers for Go with Gadgets
+http://github.com/gogo/protobuf/
+Copyright (c) 2013, The GoGo Authors.
 See source code for license details.
 
 Go support for leveled logs, analogous to

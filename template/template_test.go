@@ -14,13 +14,13 @@
 package template
 
 import (
+	"context"
 	"math"
 	"net/url"
 	"testing"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"

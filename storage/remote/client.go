@@ -16,18 +16,18 @@ package remote
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"golang.org/x/net/context"
+	"github.com/prometheus/common/model"
 	"golang.org/x/net/context/ctxhttp"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -37,30 +37,34 @@ const maxErrMsgLen = 256
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	index   int // Used to differentiate metrics.
-	url     *config.URL
-	client  *http.Client
-	timeout time.Duration
+	index      int // Used to differentiate metrics.
+	url        *config.URL
+	client     *http.Client
+	timeout    time.Duration
+	readRecent bool
 }
 
-type clientConfig struct {
-	url              *config.URL
-	timeout          model.Duration
-	httpClientConfig config.HTTPClientConfig
+// ClientConfig configures a Client.
+type ClientConfig struct {
+	URL              *config.URL
+	Timeout          model.Duration
+	ReadRecent       bool
+	HTTPClientConfig config.HTTPClientConfig
 }
 
 // NewClient creates a new Client.
-func NewClient(index int, conf *clientConfig) (*Client, error) {
-	httpClient, err := httputil.NewClientFromConfig(conf.httpClientConfig, "remote_storage")
+func NewClient(index int, conf *ClientConfig) (*Client, error) {
+	httpClient, err := httputil.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage")
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		index:   index,
-		url:     conf.url,
-		client:  httpClient,
-		timeout: time.Duration(conf.timeout),
+		index:      index,
+		url:        conf.URL,
+		client:     httpClient,
+		timeout:    time.Duration(conf.Timeout),
+		readRecent: conf.ReadRecent,
 	}, nil
 }
 
@@ -69,30 +73,7 @@ type recoverableError struct {
 }
 
 // Store sends a batch of samples to the HTTP endpoint.
-func (c *Client) Store(samples model.Samples) error {
-	req := &prompb.WriteRequest{
-		Timeseries: make([]*prompb.TimeSeries, 0, len(samples)),
-	}
-	for _, s := range samples {
-		ts := &prompb.TimeSeries{
-			Labels: make([]*prompb.Label, 0, len(s.Metric)),
-		}
-		for k, v := range s.Metric {
-			ts.Labels = append(ts.Labels,
-				&prompb.Label{
-					Name:  string(k),
-					Value: string(v),
-				})
-		}
-		ts.Samples = []*prompb.Sample{
-			{
-				Value:     float64(s.Value),
-				Timestamp: int64(s.Timestamp),
-			},
-		}
-		req.Timeseries = append(req.Timeseries, ts)
-	}
-
+func (c *Client) Store(req *prompb.WriteRequest) error {
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return err
@@ -140,17 +121,14 @@ func (c Client) Name() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, from, through int64, matchers []*prompb.LabelMatcher) ([]*prompb.TimeSeries, error) {
+func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
-		Queries: []*prompb.Query{{
-			StartTimestampMs: from,
-			EndTimestampMs:   through,
-			Matchers:         matchers,
-		}},
+		Queries: []*prompb.Query{
+			query,
+		},
 	}
-
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal read request: %v", err)
@@ -197,5 +175,5 @@ func (c *Client) Read(ctx context.Context, from, through int64, matchers []*prom
 		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	return resp.Results[0].Timeseries, nil
+	return resp.Results[0], nil
 }

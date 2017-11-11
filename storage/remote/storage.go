@@ -9,7 +9,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.package remote
+// limitations under the License.
 
 package remote
 
@@ -21,6 +21,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+// Callback func that return the oldest timestamp stored in a storage.
+type startTimeCallback func() (int64, error)
+
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
@@ -31,15 +34,17 @@ type Storage struct {
 	queues []*QueueManager
 
 	// For reads
-	clients        []*Client
-	externalLabels model.LabelSet
+	clients                []*Client
+	localStartTimeCallback startTimeCallback
+	externalLabels         model.LabelSet
 }
 
-func NewStorage(l log.Logger) *Storage {
+// NewStorage returns a remote.Storage.
+func NewStorage(l log.Logger, stCallback startTimeCallback) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Storage{logger: l}
+	return &Storage{logger: l, localStartTimeCallback: stCallback}
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -53,17 +58,17 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
 	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, &clientConfig{
-			url:              rwConf.URL,
-			timeout:          rwConf.RemoteTimeout,
-			httpClientConfig: rwConf.HTTPClientConfig,
+		c, err := NewClient(i, &ClientConfig{
+			URL:              rwConf.URL,
+			Timeout:          rwConf.RemoteTimeout,
+			HTTPClientConfig: rwConf.HTTPClientConfig,
 		})
 		if err != nil {
 			return err
 		}
 		newQueues = append(newQueues, NewQueueManager(
 			s.logger,
-			defaultQueueManagerConfig,
+			config.DefaultQueueConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
 			c,
@@ -83,10 +88,11 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 
 	clients := []*Client{}
 	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &clientConfig{
-			url:              rrConf.URL,
-			timeout:          rrConf.RemoteTimeout,
-			httpClientConfig: rrConf.HTTPClientConfig,
+		c, err := NewClient(i, &ClientConfig{
+			URL:              rrConf.URL,
+			Timeout:          rrConf.RemoteTimeout,
+			HTTPClientConfig: rrConf.HTTPClientConfig,
+			ReadRecent:       rrConf.ReadRecent,
 		})
 		if err != nil {
 			return err
@@ -98,6 +104,11 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.externalLabels = conf.GlobalConfig.ExternalLabels
 
 	return nil
+}
+
+// StartTime implements the Storage interface.
+func (s *Storage) StartTime() (int64, error) {
+	return int64(model.Latest), nil
 }
 
 // Close the background processing of the storage queues.

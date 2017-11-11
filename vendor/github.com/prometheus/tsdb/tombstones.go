@@ -33,9 +33,11 @@ const (
 	tombstoneFormatV1 = 1
 )
 
-// TombstoneReader is the iterator over tombstones.
+// TombstoneReader gives access to tombstone intervals by series reference.
 type TombstoneReader interface {
 	Get(ref uint64) Intervals
+
+	Close() error
 }
 
 func writeTombstoneFile(dir string, tr tombstoneReader) error {
@@ -47,7 +49,11 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
 
 	buf := encbuf{b: make([]byte, 3*binary.MaxVarintLen64)}
 	buf.reset()
@@ -80,6 +86,10 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 		return err
 	}
 
+	if err = f.Close(); err != nil {
+		return err
+	}
+	f = nil
 	return renameFile(tmp, path)
 }
 
@@ -152,6 +162,10 @@ func (t tombstoneReader) Get(ref uint64) Intervals {
 
 func (t tombstoneReader) add(ref uint64, itv Interval) {
 	t[ref] = t[ref].add(itv)
+}
+
+func (tombstoneReader) Close() error {
+	return nil
 }
 
 // Interval represents a single time-interval.

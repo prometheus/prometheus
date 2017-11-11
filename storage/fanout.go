@@ -9,7 +9,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.package remote
+// limitations under the License.
 
 package storage
 
@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -40,28 +41,48 @@ func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Stora
 	}
 }
 
-func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
-	queriers := mergeQuerier{
-		queriers: make([]Querier, 0, 1+len(f.secondaries)),
+// StartTime implements the Storage interface.
+func (f *fanout) StartTime() (int64, error) {
+	// StartTime of a fanout should be the earliest StartTime of all its storages,
+	// both primary and secondaries.
+	firstTime, err := f.primary.StartTime()
+	if err != nil {
+		return int64(model.Latest), err
 	}
+
+	for _, storage := range f.secondaries {
+		t, err := storage.StartTime()
+		if err != nil {
+			return int64(model.Latest), err
+		}
+		if t < firstTime {
+			firstTime = t
+		}
+	}
+	return firstTime, nil
+}
+
+func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
+	queriers := make([]Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
 	querier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	queriers.queriers = append(queriers.queriers, querier)
+	queriers = append(queriers, querier)
 
 	// Add secondary queriers
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
-			queriers.Close()
+			NewMergeQuerier(queriers).Close()
 			return nil, err
 		}
-		queriers.queriers = append(queriers.queriers, querier)
+		queriers = append(queriers, querier)
 	}
-	return &queriers, nil
+
+	return NewMergeQuerier(queriers), nil
 }
 
 func (f *fanout) Appender() (Appender, error) {
@@ -171,9 +192,26 @@ type mergeQuerier struct {
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
+// NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
+// and will filter NoopQueriers from its arguments, in order to reduce overhead
+// when only one querier is passed.
 func NewMergeQuerier(queriers []Querier) Querier {
-	return &mergeQuerier{
-		queriers: queriers,
+	filtered := make([]Querier, 0, len(queriers))
+	for _, querier := range queriers {
+		if querier != NoopQuerier() {
+			filtered = append(filtered, querier)
+		}
+	}
+
+	switch len(filtered) {
+	case 0:
+		return NoopQuerier()
+	case 1:
+		return filtered[0]
+	default:
+		return &mergeQuerier{
+			queriers: filtered,
+		}
 	}
 }
 

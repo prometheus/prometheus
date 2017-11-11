@@ -14,11 +14,11 @@
 package retrieval
 
 import (
+	"context"
 	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -40,6 +40,7 @@ type TargetManager struct {
 	// Set of unqiue targets by scrape configuration.
 	targetSets map[string]*targetSet
 	logger     log.Logger
+	starting   chan struct{}
 }
 
 type targetSet struct {
@@ -50,6 +51,7 @@ type targetSet struct {
 	sp *scrapePool
 }
 
+// Appendable returns an Appender.
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }
@@ -60,6 +62,7 @@ func NewTargetManager(app Appendable, logger log.Logger) *TargetManager {
 		append:     app,
 		targetSets: map[string]*targetSet{},
 		logger:     logger,
+		starting:   make(chan struct{}),
 	}
 }
 
@@ -73,12 +76,14 @@ func (tm *TargetManager) Run() {
 	tm.reload()
 
 	tm.mtx.Unlock()
+	close(tm.starting)
 
 	tm.wg.Wait()
 }
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
+	<-tm.starting
 	level.Info(tm.logger).Log("msg", "Stopping target manager...")
 
 	tm.mtx.Lock()
