@@ -119,6 +119,47 @@ func PreferLocalStorageFilter(next storage.Queryable, cb startTimeCallback) stor
 	})
 }
 
+// RequiredMatchersFilter returns a storage.Queryable which creates a
+// requiredMatchersQuerier.
+func RequiredMatchersFilter(next storage.Queryable, required []*labels.Matcher) storage.Queryable {
+	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		q, err := next.Querier(ctx, mint, maxt)
+		if err != nil {
+			return nil, err
+		}
+		return &requiredMatchersQuerier{Querier: q, requiredMatchers: required}, nil
+	})
+}
+
+// requiredMatchersQuerier wraps a storage.Querier and requires Select() calls
+// to match the given labelSet.
+type requiredMatchersQuerier struct {
+	storage.Querier
+
+	requiredMatchers []*labels.Matcher
+}
+
+// Select returns a NoopSeriesSet if the given matchers don't match the label
+// set of the requiredMatchersQuerier. Otherwise it'll call the wrapped querier.
+func (q requiredMatchersQuerier) Select(matchers ...*labels.Matcher) storage.SeriesSet {
+	ms := q.requiredMatchers
+	for _, m := range matchers {
+		for i, r := range ms {
+			if m.Type == labels.MatchEqual && m.Name == r.Name && m.Value == r.Value {
+				ms = append(ms[:i], ms[i+1:]...)
+				break
+			}
+		}
+		if len(ms) == 0 {
+			break
+		}
+	}
+	if len(ms) > 0 {
+		return storage.NoopSeriesSet()
+	}
+	return q.Querier.Select(matchers...)
+}
+
 // addExternalLabels adds matchers for each external label. External labels
 // that already have a corresponding user-supplied matcher are skipped, as we
 // assume that the user explicitly wants to select a different value for them.

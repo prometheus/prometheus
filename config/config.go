@@ -1496,6 +1496,10 @@ type RemoteReadConfig struct {
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
 
+	// RequiredMatchers is an optional list of equality matchers which have to
+	// be present in a selector to query the remote read endpoint.
+	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
