@@ -15,87 +15,469 @@ package discovery
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	yaml "gopkg.in/yaml.v2"
 )
 
-func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T) {
-
-	testCases := [][]update{
-		[]update{}, // No updates.
-
-		[]update{{[]string{}, 0}}, // Empty initials.
-
-		[]update{{[]string{}, 6000}}, // Empty initials with a delay.
-
-		[]update{{[]string{"initial1", "initial2"}, 0}}, // Initials only.
-
-		[]update{{[]string{"initial1", "initial2"}, 6000}}, // Initials only but after a delay.
-
-		[]update{ // Initials and new groups.
-			{[]string{"initial1", "initial2"}, 0},
-			{[]string{"update1", "update2"}, 0},
+func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
+	testCases := []struct {
+		title             string
+		updates           map[string][]update
+		expectedSyncCalls [][]string
+	}{
+		{
+			title: "Single TP no updates",
+			updates: map[string][]update{
+				"tp1": {},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+			},
 		},
-
-		[]update{ // Initials and new groups after a delay.
-			{[]string{"initial1", "initial2"}, 6000},
-			{[]string{"update1", "update2"}, 500},
+		{
+			title: "Multips TPs no updates",
+			updates: map[string][]update{
+				"tp1": {},
+				"tp2": {},
+				"tp3": {},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+			},
 		},
-
-		[]update{
-			{[]string{"initial1", "initial2"}, 100},
-			{[]string{"update1", "update2", "update3", "update4", "update5", "update6", "update7", "update8", "update9", "update10", "update11"}, 100},
+		{
+			title: "Single TP empty initials",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     5,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+			},
 		},
-
-		[]update{
-			{[]string{"initial1"}, 10},
-			{[]string{"update1"}, 45},
-			{[]string{"update2", "update3", "update4"}, 0},
-			{[]string{"update5"}, 10},
-			{[]string{"update6", "update7", "update8", "update9"}, 70},
+		{
+			title: "Multiple TPs empty initials",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     5,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     500,
+					},
+				},
+				"tp3": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     100,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+			},
 		},
-
-		[]update{
-			{[]string{"initial1", "initial2"}, 5},
-			{[]string{}, 100},
-			{[]string{"update1", "update2"}, 100},
-			{[]string{"update3", "update4", "update5"}, 70},
+		{
+			title: "Multiple TPs empty initials with a delay",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     6000,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     6500,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+			},
+		},
+		{
+			title: "Single TP initials only",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+						interval:     0,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+			},
+		},
+		{
+			title: "Multiple TPs initials only",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-initial1"}, {Source: "tp1-initial2"}},
+						interval:     0,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-initial1"}},
+						interval:     0,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"tp1-initial1", "tp1-initial2", "tp2-initial1"},
+			},
+		},
+		{
+			title: "Single TP delayed initials only",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+						interval:     6000,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+				{"initial1", "initial2"},
+			},
+		},
+		{
+			title: "Multiple TPs with some delayed initials",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-initial1"}, {Source: "tp1-initial2"}},
+						interval:     100,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-initial1"}, {Source: "tp2-initial2"}, {Source: "tp2-initial3"}},
+						interval:     6000,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"tp1-initial1", "tp1-initial2"},
+				{"tp1-initial1", "tp1-initial2", "tp2-initial1", "tp2-initial2", "tp2-initial3"},
+			},
+		},
+		{
+			title: "Single TP initials followed by empty updates",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+						interval:     0,
+					},
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     10,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+			},
+		},
+		{
+			title: "Single TP initials and new groups",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+						interval:     0,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update1"}, {Source: "update2"}},
+						interval:     10,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+				{"initial1", "initial2", "update1", "update2"},
+			},
+		},
+		{
+			title: "Multiple TPs initials and new groups",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-initial1"}, {Source: "tp1-initial2"}},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update1"}, {Source: "tp1-update2"}},
+						interval:     1500,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-initial1"}, {Source: "tp2-initial2"}},
+						interval:     100,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-update1"}, {Source: "tp2-update2"}},
+						interval:     10,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"tp1-initial1", "tp1-initial2", "tp2-initial1", "tp2-initial2"},
+				{"tp1-initial1", "tp1-initial2", "tp2-initial1", "tp2-initial2", "tp1-update1", "tp1-update2", "tp2-update1", "tp2-update2"},
+			},
+		},
+		{
+			title: "One tp initials arrive after other tp updates but still within 5 seconds",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-initial1"}, {Source: "tp1-initial2"}},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update1"}, {Source: "tp1-update2"}},
+						interval:     1500,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-initial1"}, {Source: "tp2-initial2"}},
+						interval:     2000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-update1"}, {Source: "tp2-update2"}},
+						interval:     1000,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"tp1-initial1", "tp1-initial2", "tp1-update1", "tp1-update2", "tp2-initial1", "tp2-initial2"},
+				{"tp1-initial1", "tp1-initial2", "tp1-update1", "tp1-update2", "tp2-initial1", "tp2-initial2", "tp2-update1", "tp2-update2"},
+			},
+		},
+		{
+			title: "One tp initials arrive after other tp updates and after 5 seconds",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-initial1"}, {Source: "tp1-initial2"}},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update1"}, {Source: "tp1-update2"}},
+						interval:     1500,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update3"}},
+						interval:     5000,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-initial1"}, {Source: "tp2-initial2"}},
+						interval:     6000,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"tp1-initial1", "tp1-initial2", "tp1-update1", "tp1-update2"},
+				{"tp1-initial1", "tp1-initial2", "tp1-update1", "tp1-update2", "tp2-initial1", "tp2-initial2", "tp1-update3"},
+			},
+		},
+		{
+			title: "Single TP initials and new groups after a delay",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+						interval:     6000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update1"}, {Source: "update2"}},
+						interval:     10,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{},
+				{"initial1", "initial2", "update1", "update2"},
+			},
+		},
+		{
+			title: "Single TP initial and successive updates",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}},
+						interval:     100,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update1"}},
+						interval:     100,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update2"}},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update3"}},
+						interval:     10,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1"},
+				{"initial1", "update1", "update2", "update3"},
+			},
+		},
+		{
+			title: "Multiple TPs initials and successive updates",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-initial1"}},
+						interval:     1000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update1"}},
+						interval:     1000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update2"}},
+						interval:     2000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp1-update3"}},
+						interval:     2000,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-initial1"}},
+						interval:     3000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-update1"}},
+						interval:     1000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-update2"}},
+						interval:     3000,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "tp2-update3"}},
+						interval:     2000,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"tp1-initial1", "tp1-update1", "tp2-initial1"},
+				{"tp1-initial1", "tp1-update1", "tp2-initial1", "tp1-update2", "tp1-update3", "tp2-update1", "tp2-update2"},
+				{"tp1-initial1", "tp1-update1", "tp2-initial1", "tp1-update2", "tp1-update3", "tp2-update1", "tp2-update2", "tp2-update3"},
+			},
+		},
+		{
+			title: "Single TP Multiple updates 5 second window",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update1"}},
+						interval:     25,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update2"}, {Source: "update3"}, {Source: "update4"}},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update5"}},
+						interval:     0,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update6"}, {Source: "update7"}, {Source: "update8"}},
+						interval:     70,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1"},
+				{"initial1", "update1", "update2", "update3", "update4", "update5", "update6", "update7", "update8"},
+			},
+		},
+		{
+			title: "Single TP Single provider empty update in between",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+						interval:     30,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update1"}, {Source: "update2"}},
+						interval:     300,
+					},
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     10,
+					},
+					{
+						targetGroups: []config.TargetGroup{{Source: "update3"}, {Source: "update4"}, {Source: "update5"}, {Source: "update6"}},
+						interval:     6000,
+					},
+				},
+			},
+			expectedSyncCalls: [][]string{
+				{"initial1", "initial2"},
+				{"initial1", "initial2", "update1", "update2"},
+				{"initial1", "initial2", "update1", "update2", "update3", "update4", "update5", "update6"},
+			},
 		},
 	}
 
-	for i, updates := range testCases {
+	for i, testCase := range testCases {
+		finalize := make(chan bool)
 
-		expectedGroups := make(map[string]struct{})
-		for _, update := range updates {
-			for _, target := range update.targets {
-				expectedGroups[target] = struct{}{}
-			}
-		}
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-
-		isFirstSyncCall := true
-		var initialGroups []*config.TargetGroup
-		var syncedGroups []*config.TargetGroup
+		syncCallCount := 0
+		syncedGroups := make([][]string, 0)
 
 		targetSet := NewTargetSet(&mockSyncer{
 			sync: func(tgs []*config.TargetGroup) {
-				syncedGroups = tgs
 
-				if isFirstSyncCall {
-					isFirstSyncCall = false
-					initialGroups = tgs
+				currentCallGroup := make([]string, len(tgs))
+				for i, tg := range tgs {
+					currentCallGroup[i] = tg.Source
 				}
+				syncedGroups = append(syncedGroups, currentCallGroup)
 
-				if len(tgs) == len(expectedGroups) {
+				syncCallCount++
+				if syncCallCount == len(testCase.expectedSyncCalls) {
 					// All the groups are sent, we can start asserting.
-					wg.Done()
+					close(finalize)
 				}
 			},
 		})
@@ -103,54 +485,418 @@ func TestSingleTargetSetWithSingleProviderOnlySendsNewTargetGroups(t *testing.T)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		tp := newMockTargetProvider(updates)
 		targetProviders := map[string]TargetProvider{}
-		targetProviders["testProvider"] = tp
+		for tpName, tpUpdates := range testCase.updates {
+			tp := newMockTargetProvider(tpUpdates)
+			targetProviders[tpName] = tp
+		}
 
 		go targetSet.Run(ctx)
 		targetSet.UpdateProviders(targetProviders)
 
-		finalize := make(chan struct{})
-		go func() {
-			defer close(finalize)
-			wg.Wait()
-		}()
-
 		select {
-		case <-time.After(20000 * time.Millisecond):
-			t.Errorf("In test case %v: Test timed out after 20000 millisecond. All targets should be sent within the timeout", i)
+		case <-time.After(20 * time.Second):
+			t.Errorf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
 
 		case <-finalize:
-
-			if *tp.callCount != 1 {
-				t.Errorf("In test case %v: TargetProvider Run should be called once only, was called %v times", i, *tp.callCount)
-			}
-
-			if len(updates) > 0 && updates[0].interval > 5000 {
-				// If the initial set of targets never arrive or arrive after 5 seconds.
-				// The first sync call should receive empty set of targets.
-				if len(initialGroups) != 0 {
-					t.Errorf("In test case %v: Expecting 0 initial target groups, received %v", i, len(initialGroups))
+			for name, tp := range targetProviders {
+				runCallCount := *tp.(mockTargetProvider).callCount
+				if runCallCount != 1 {
+					t.Errorf("%d. %q: TargetProvider Run should be called once for each target provider. For %q was called %d times", i, testCase.title, name, runCallCount)
 				}
 			}
 
-			if len(syncedGroups) != len(expectedGroups) {
-				t.Errorf("In test case %v: Expecting %v target groups in total, received %v", i, len(expectedGroups), len(syncedGroups))
+			if len(syncedGroups) != len(testCase.expectedSyncCalls) {
+				t.Errorf("%d. %q: received sync calls: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, syncedGroups, testCase.expectedSyncCalls)
 			}
 
-			for _, tg := range syncedGroups {
-				if _, ok := expectedGroups[tg.Source]; ok == false {
-					t.Errorf("In test case %v: '%s' does not exist in expected target groups: %s", i, tg.Source, expectedGroups)
-				} else {
-					delete(expectedGroups, tg.Source) // Remove used targets from the map.
+			for j := range syncedGroups {
+				if len(syncedGroups[j]) != len(testCase.expectedSyncCalls[j]) {
+					t.Errorf("%d. %q: received sync calls in call [%v]: \n %v \n do not match expected calls: \n %v \n", i, testCase.title, j, syncedGroups[j], testCase.expectedSyncCalls[j])
+				}
+
+				expectedGroupsMap := make(map[string]struct{})
+				for _, expectedGroup := range testCase.expectedSyncCalls[j] {
+					expectedGroupsMap[expectedGroup] = struct{}{}
+				}
+
+				for _, syncedGroup := range syncedGroups[j] {
+					if _, ok := expectedGroupsMap[syncedGroup]; !ok {
+						t.Errorf("%d. %q: '%s' does not exist in expected target groups: %s", i, testCase.title, syncedGroup, testCase.expectedSyncCalls[j])
+					} else {
+						delete(expectedGroupsMap, syncedGroup) // Remove used targets from the map.
+					}
 				}
 			}
 		}
 	}
 }
 
-func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
+func TestTargetSetConsolidatesToTheLatestState(t *testing.T) {
+	testCases := []struct {
+		title   string
+		updates map[string][]update
+	}{
+		{
+			title: "Single TP update same initial group multiple times",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.11:6003"}},
+							},
+						},
+						interval: 100,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.11:6003"}, {"__instance__": "10.11.122.12:6003"}},
+							},
+						},
+						interval: 250,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.12:6003"}},
+							},
+						},
+						interval: 250,
+					},
+				},
+			},
+		},
+		{
+			title: "Multiple TPs update",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.11:6003"}},
+							},
+						},
+						interval: 3,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-update1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.12:6003"}},
+							},
+						},
+						interval: 10,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source: "tp1-update1",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.12:6003"},
+									{"__instance__": "10.11.122.13:6003"},
+									{"__instance__": "10.11.122.14:6003"},
+								},
+							},
+						},
+						interval: 10,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp2-initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.11:6003"}},
+							},
+						},
+						interval: 3,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp2-initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.12:6003"}},
+							},
+						},
+						interval: 10,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source: "tp2-update1",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.12:6003"},
+									{"__instance__": "10.11.122.13:6003"},
+									{"__instance__": "10.11.122.14:6003"},
+								},
+							},
+						},
+						interval: 10,
+					},
+				},
+			},
+		},
+		{
+			title: "Multiple TPs update II",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.11:6003"}},
+							},
+							{
+								Source:  "tp1-initial2",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.12:6003"}},
+							},
+						},
+						interval: 100,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-update1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.13:6003"}},
+							},
+							{
+								Source: "tp1-initial2",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.12:6003"},
+									{"__instance__": "10.11.122.14:6003"},
+								},
+							},
+						},
+						interval: 100,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-update2",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.15:6003"}},
+							},
+							{
+								Source:  "tp1-initial1",
+								Targets: []model.LabelSet{},
+							},
+						},
+						interval: 100,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source: "tp1-update1",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.16:6003"},
+									{"__instance__": "10.11.122.17:6003"},
+									{"__instance__": "10.11.122.18:6003"},
+								},
+							},
+						},
+						interval: 100,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{},
+						interval:     100,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp2-update1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.13:6003"}},
+							},
+						},
+						interval: 100,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp2-update2",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.15:6003"}},
+							},
+							{
+								Source:  "tp2-update1",
+								Targets: []model.LabelSet{},
+							},
+						},
+						interval: 300,
+					},
+				},
+			},
+		},
+		{
+			title: "Three rounds of sync call",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source: "tp1-initial1",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.11:6003"},
+									{"__instance__": "10.11.122.12:6003"},
+									{"__instance__": "10.11.122.13:6003"},
+								},
+							},
+							{
+								Source:  "tp1-initial2",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.14:6003"}},
+							},
+						},
+						interval: 1000,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.12:6003"}},
+							},
+							{
+								Source:  "tp1-update1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.15:6003"}},
+							},
+						},
+						interval: 3000,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp1-initial1",
+								Targets: []model.LabelSet{},
+							},
+							{
+								Source: "tp1-update1",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.15:6003"},
+									{"__instance__": "10.11.122.16:6003"},
+								},
+							},
+						},
+						interval: 3000,
+					},
+				},
+				"tp2": {
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source: "tp2-initial1",
+								Targets: []model.LabelSet{
+									{"__instance__": "10.11.122.11:6003"},
+								},
+							},
+							{
+								Source:  "tp2-initial2",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.14:6003"}},
+							},
+							{
+								Source:  "tp2-initial3",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.15:6003"}},
+							},
+						},
+						interval: 6000,
+					},
+					{
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp2-initial1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.11:6003"}, {"__instance__": "10.11.122.12:6003"}},
+							},
+							{
+								Source:  "tp2-update1",
+								Targets: []model.LabelSet{{"__instance__": "10.11.122.15:6003"}},
+							},
+						},
+						interval: 3000,
+					},
+				},
+			},
+		},
+	}
 
+	// Function to determine if the sync call received the latest state of
+	// all the target groups that came out of the target provider.
+	endStateAchieved := func(groupsSentToSyc []*config.TargetGroup, endState map[string]config.TargetGroup) bool {
+
+		if len(groupsSentToSyc) != len(endState) {
+			return false
+		}
+
+		for _, tg := range groupsSentToSyc {
+			if _, ok := endState[tg.Source]; ok == false {
+				// The target group does not exist in the end state.
+				return false
+			}
+
+			if reflect.DeepEqual(endState[tg.Source], *tg) == false {
+				// The target group has not reached its final state yet.
+				return false
+			}
+
+			delete(endState, tg.Source) // Remove used target groups.
+		}
+
+		return true
+	}
+
+	for i, testCase := range testCases {
+		expectedGroups := make(map[string]config.TargetGroup)
+		for _, tpUpdates := range testCase.updates {
+			for _, update := range tpUpdates {
+				for _, targetGroup := range update.targetGroups {
+					expectedGroups[targetGroup.Source] = targetGroup
+				}
+			}
+		}
+
+		finalize := make(chan bool)
+
+		targetSet := NewTargetSet(&mockSyncer{
+			sync: func(tgs []*config.TargetGroup) {
+
+				endState := make(map[string]config.TargetGroup)
+				for k, v := range expectedGroups {
+					endState[k] = v
+				}
+
+				if endStateAchieved(tgs, endState) == false {
+					return
+				}
+
+				close(finalize)
+			},
+		})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		targetProviders := map[string]TargetProvider{}
+		for tpName, tpUpdates := range testCase.updates {
+			tp := newMockTargetProvider(tpUpdates)
+			targetProviders[tpName] = tp
+		}
+
+		go targetSet.Run(ctx)
+		targetSet.UpdateProviders(targetProviders)
+
+		select {
+		case <-time.After(20 * time.Second):
+			t.Errorf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
+
+		case <-finalize:
+			// System successfully reached to the end state.
+		}
+	}
+}
+
+func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	verifyPresence := func(tgroups map[string]*config.TargetGroup, name string, present bool) {
 		if _, ok := tgroups[name]; ok != present {
 			msg := ""
@@ -203,7 +949,6 @@ static_configs:
 }
 
 func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
-
 	var wg sync.WaitGroup
 
 	wg.Add(2)
@@ -219,7 +964,14 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tp := newMockTargetProvider([]update{{[]string{"initial1", "initial2"}, 10}})
+	updates := []update{
+		{
+			targetGroups: []config.TargetGroup{{Source: "initial1"}, {Source: "initial2"}},
+			interval:     10,
+		},
+	}
+
+	tp := newMockTargetProvider(updates)
 	targetProviders := map[string]TargetProvider{}
 	targetProviders["testProvider"] = tp
 
@@ -228,10 +980,21 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 
 	ts1.UpdateProviders(targetProviders)
 	ts2.UpdateProviders(targetProviders)
-	wg.Wait()
 
-	if *tp.callCount != 2 {
-		t.Errorf("Was expecting 2 calls received %v", tp.callCount)
+	finalize := make(chan struct{})
+	go func() {
+		defer close(finalize)
+		wg.Wait()
+	}()
+
+	select {
+	case <-time.After(20 * time.Second):
+		t.Error("Test timed out after 20 seconds. All targets should be sent within the timeout")
+
+	case <-finalize:
+		if *tp.callCount != 2 {
+			t.Errorf("Was expecting 2 calls, received %d", tp.callCount)
+		}
 	}
 }
 
@@ -245,15 +1008,15 @@ func (s *mockSyncer) Sync(tgs []*config.TargetGroup) {
 	}
 }
 
+type update struct {
+	targetGroups []config.TargetGroup
+	interval     time.Duration
+}
+
 type mockTargetProvider struct {
 	callCount *uint32
 	updates   []update
 	up        chan<- []*config.TargetGroup
-}
-
-type update struct {
-	targets  []string
-	interval time.Duration
 }
 
 func newMockTargetProvider(updates []update) mockTargetProvider {
@@ -278,9 +1041,9 @@ func (tp mockTargetProvider) sendUpdates() {
 
 		time.Sleep(update.interval * time.Millisecond)
 
-		tgs := make([]*config.TargetGroup, len(update.targets))
-		for i, tg := range update.targets {
-			tgs[i] = &config.TargetGroup{Source: tg}
+		tgs := make([]*config.TargetGroup, len(update.targetGroups))
+		for i := range update.targetGroups {
+			tgs[i] = &update.targetGroups[i]
 		}
 
 		tp.up <- tgs
