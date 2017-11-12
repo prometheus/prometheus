@@ -31,17 +31,22 @@ var (
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
 type Storage interface {
+	Queryable
+
 	// StartTime returns the oldest timestamp stored in the storage.
 	StartTime() (int64, error)
-
-	// Querier returns a new Querier on the storage.
-	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 
 	// Appender returns a new appender against the storage.
 	Appender() (Appender, error)
 
 	// Close closes the storage and all its underlying resources.
 	Close() error
+}
+
+// A Queryable handles queries against a storage.
+type Queryable interface {
+	// Querier returns a new Querier on the storage.
+	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
 // Querier provides reading access to time series data.
@@ -54,6 +59,15 @@ type Querier interface {
 
 	// Close releases the resources of the Querier.
 	Close() error
+}
+
+// QueryableFunc is an adapter to allow the use of ordinary functions as
+// Queryables. It follows the idea of http.HandlerFunc.
+type QueryableFunc func(ctx context.Context, mint, maxt int64) (Querier, error)
+
+// Querier calls f() with the given parameters.
+func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
+	return f(ctx, mint, maxt)
 }
 
 // Appender provides batched appends against a storage.
