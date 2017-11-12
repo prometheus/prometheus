@@ -37,18 +37,16 @@ const maxErrMsgLen = 256
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	index      int // Used to differentiate metrics.
-	url        *config.URL
-	client     *http.Client
-	timeout    time.Duration
-	readRecent bool
+	index   int // Used to differentiate clients in metrics.
+	url     *config.URL
+	client  *http.Client
+	timeout time.Duration
 }
 
 // ClientConfig configures a Client.
 type ClientConfig struct {
 	URL              *config.URL
 	Timeout          model.Duration
-	ReadRecent       bool
 	HTTPClientConfig config.HTTPClientConfig
 }
 
@@ -60,11 +58,10 @@ func NewClient(index int, conf *ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		index:      index,
-		url:        conf.URL,
-		client:     httpClient,
-		timeout:    time.Duration(conf.Timeout),
-		readRecent: conf.ReadRecent,
+		index:   index,
+		url:     conf.URL,
+		client:  httpClient,
+		timeout: time.Duration(conf.Timeout),
 	}, nil
 }
 
