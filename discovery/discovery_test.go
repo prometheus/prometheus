@@ -500,7 +500,7 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 
 		case <-finalize:
 			for name, tp := range targetProviders {
-				runCallCount := *tp.(mockTargetProvider).callCount
+				runCallCount := tp.(mockTargetProvider).callCount()
 				if runCallCount != 1 {
 					t.Errorf("%d. %q: TargetProvider Run should be called once for each target provider. For %q was called %d times", i, testCase.title, name, runCallCount)
 				}
@@ -992,8 +992,8 @@ func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
 		t.Error("Test timed out after 20 seconds. All targets should be sent within the timeout")
 
 	case <-finalize:
-		if *tp.callCount != 2 {
-			t.Errorf("Was expecting 2 calls, received %d", tp.callCount)
+		if tp.callCount() != 2 {
+			t.Errorf("Was expecting 2 calls, received %d", tp.callCount())
 		}
 	}
 }
@@ -1014,24 +1014,24 @@ type update struct {
 }
 
 type mockTargetProvider struct {
-	callCount *uint32
-	updates   []update
-	up        chan<- []*config.TargetGroup
+	_callCount *int32
+	updates    []update
+	up         chan<- []*config.TargetGroup
 }
 
 func newMockTargetProvider(updates []update) mockTargetProvider {
-	var callCount uint32
+	var callCount int32
 
 	tp := mockTargetProvider{
-		callCount: &callCount,
-		updates:   updates,
+		_callCount: &callCount,
+		updates:    updates,
 	}
 
 	return tp
 }
 
 func (tp mockTargetProvider) Run(ctx context.Context, up chan<- []*config.TargetGroup) {
-	atomic.AddUint32(tp.callCount, 1)
+	atomic.AddInt32(tp._callCount, 1)
 	tp.up = up
 	tp.sendUpdates()
 }
@@ -1048,4 +1048,8 @@ func (tp mockTargetProvider) sendUpdates() {
 
 		tp.up <- tgs
 	}
+}
+
+func (tp mockTargetProvider) callCount() int {
+	return int(atomic.LoadInt32(tp._callCount))
 }
