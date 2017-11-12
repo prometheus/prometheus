@@ -17,6 +17,7 @@ tarball:
     files:
         - consoles
         - console_libraries
+        - documentation/examples/example.rules
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE
