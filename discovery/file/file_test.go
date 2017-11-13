@@ -62,12 +62,14 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 
 	// To avoid empty group struct sent from the discovery caused by invalid fsnotify updates,
 	// drain the channel until we are ready with the test files.
-	filesReady := make(chan struct{})
+	fileReady := make(chan struct{})
+	drainReady := make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-ch:
-			case <-filesReady:
+			case <-fileReady:
+				close(drainReady)
 				return
 			}
 		}
@@ -77,7 +79,6 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer newf.Close()
 
 	f, err := os.Open(filepath.Join(testDir, prefix+ext))
 	if err != nil {
@@ -91,7 +92,8 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 
 	// File is written with the config so stop draining the discovery channel.
 	// It needs to be before the file closing so that fsnotify triggers a new loop of the discovery service.
-	close(filesReady)
+	close(fileReady)
+	<-drainReady
 	newf.Close()
 
 	timeout := time.After(15 * time.Second)
