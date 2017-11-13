@@ -66,7 +66,7 @@ type Head struct {
 
 	postings *memPostings // postings lists for terms
 
-	tombstones tombstoneReader
+	tombstones memTombstones
 }
 
 type headMetrics struct {
@@ -186,7 +186,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   newUnorderedMemPostings(),
-		tombstones: newEmptyTombstoneReader(),
+		tombstones: memTombstones{},
 	}
 	h.metrics = newHeadMetrics(h, r)
 

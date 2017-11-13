@@ -465,6 +465,7 @@ func (s *baseChunkSeries) Next() bool {
 	var (
 		lset   labels.Labels
 		chunks []ChunkMeta
+		err    error
 	)
 Outer:
 	for s.p.Next() {
@@ -487,7 +488,11 @@ Outer:
 
 		s.lset = lset
 		s.chks = chunks
-		s.intervals = s.tombstones.Get(s.p.At())
+		s.intervals, err = s.tombstones.Get(s.p.At())
+		if err != nil {
+			s.err = errors.Wrap(err, "get tombstones")
+			return false
+		}
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.

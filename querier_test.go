@@ -454,7 +454,7 @@ Outer:
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
-			tombstones: newEmptyTombstoneReader(),
+			tombstones: EmptyTombstoneReader(),
 
 			mint: c.mint,
 			maxt: c.maxt,
@@ -506,7 +506,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 			chunks [][]sample
 		}
 
-		tombstones tombstoneReader
+		tombstones TombstoneReader
 		queries    []query
 	}{
 		data: []struct {
@@ -554,13 +554,11 @@ func TestBlockQuerierDelete(t *testing.T) {
 				},
 			},
 		},
-		tombstones: newTombstoneReader(
-			map[uint64]Intervals{
-				1: Intervals{{1, 3}},
-				2: Intervals{{1, 3}, {6, 10}},
-				3: Intervals{{6, 10}},
-			},
-		),
+		tombstones: memTombstones{
+			1: Intervals{{1, 3}},
+			2: Intervals{{1, 3}, {6, 10}},
+			3: Intervals{{6, 10}},
+		},
 
 		queries: []query{
 			{
@@ -736,7 +734,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		bcs := &baseChunkSeries{
 			p:          newListPostings(tc.postings),
 			index:      mi,
-			tombstones: newEmptyTombstoneReader(),
+			tombstones: EmptyTombstoneReader(),
 		}
 
 		i := 0

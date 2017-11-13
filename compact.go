@@ -418,7 +418,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
+	if err := writeTombstoneFile(tmp, EmptyTombstoneReader()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
@@ -631,7 +631,11 @@ func (c *compactionSeriesSet) Next() bool {
 	}
 	var err error
 
-	c.intervals = c.tombstones.Get(c.p.At())
+	c.intervals, err = c.tombstones.Get(c.p.At())
+	if err != nil {
+		c.err = errors.Wrap(err, "get tombstones")
+		return false
+	}
 
 	if err = c.index.Series(c.p.At(), &c.l, &c.c); err != nil {
 		c.err = errors.Wrapf(err, "get series %d", c.p.At())
