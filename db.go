@@ -52,7 +52,7 @@ var DefaultOptions = &Options{
 
 // Options of the DB storage.
 type Options struct {
-	// The interval at which the write ahead log is flushed to disc.
+	// The interval at which the write ahead log is flushed to disk.
 	WALFlushInterval time.Duration
 
 	// Duration of persisted data to keep.
