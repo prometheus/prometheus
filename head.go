@@ -574,8 +574,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	pr := newPostingsReader(ir)
-	p, absent, err := pr.Select(ms...)
+	p, absent, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}

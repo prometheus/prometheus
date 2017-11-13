@@ -453,7 +453,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // of the provided blocks. It returns meta information for the new block.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error {
 	var (
-		set        compactionSet
+		set        ChunkSeriesSet
 		allSymbols = make(map[string]struct{}, 1<<16)
 		closers    = []io.Closer{}
 	)
@@ -597,18 +597,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	return nil
 }
 
-type compactionSet interface {
-	Next() bool
-	At() (labels.Labels, []ChunkMeta, Intervals)
-	Err() error
-}
-
 type compactionSeriesSet struct {
 	p          Postings
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
-	series     SeriesSet
 
 	l         labels.Labels
 	c         []ChunkMeta
@@ -679,7 +672,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
 }
 
 type compactionMerger struct {
-	a, b compactionSet
+	a, b ChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -692,7 +685,7 @@ type compactionSeries struct {
 	chunks []*ChunkMeta
 }
 
-func newCompactionMerger(a, b compactionSet) (*compactionMerger, error) {
+func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

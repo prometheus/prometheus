@@ -283,8 +283,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return ErrClosing
 	}
 
-	pr := newPostingsReader(pb.indexr)
-	p, absent, err := pr.Select(ms...)
+	p, absent, err := PostingsForMatchers(pb.indexr, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
