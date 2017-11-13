@@ -23,7 +23,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	yaml "gopkg.in/yaml.v2"
 )
 
 func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
@@ -897,55 +896,81 @@ func TestTargetSetConsolidatesToTheLatestState(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	verifyPresence := func(tgroups map[string]*config.TargetGroup, name string, present bool) {
-		if _, ok := tgroups[name]; ok != present {
-			msg := ""
-			if !present {
-				msg = "not "
+	advance := make(chan bool)
+	var syncedGroups []string
+
+	targetSet := NewTargetSet(&mockSyncer{
+		sync: func(tgs []*config.TargetGroup) {
+
+			syncedGroups = make([]string, len(tgs))
+			for i, tg := range tgs {
+				syncedGroups[i] = tg.Source
 			}
-			t.Fatalf("'%s' should %sbe present in TargetSet.tgroups: %s", name, msg, tgroups)
-		}
-	}
 
-	cfg := &config.ServiceDiscoveryConfig{}
-
-	sOne := `
-static_configs:
-- targets: ["foo:9090"]
-- targets: ["bar:9090"]
-`
-	if err := yaml.Unmarshal([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
-	called := make(chan struct{})
-
-	ts := NewTargetSet(&mockSyncer{
-		sync: func([]*config.TargetGroup) { called <- struct{}{} },
+			advance <- true
+		},
 	})
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go ts.Run(ctx)
+	go targetSet.Run(ctx)
 
-	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
-	<-called
+	updates1 := []update{
+		{
+			targetGroups: []config.TargetGroup{{Source: "set1-initial1"}, {Source: "set1-initial2"}},
+			interval:     30,
+		},
+	}
+	expectedGroups1 := map[string]struct{}{"set1-initial1": struct{}{}, "set1-initial2": struct{}{}}
 
-	verifyPresence(ts.tgroups, "static/0/0", true)
-	verifyPresence(ts.tgroups, "static/0/1", true)
+	targetProviders1 := map[string]TargetProvider{}
+	tp1 := newMockTargetProvider(updates1)
+	targetProviders1["tp1"] = tp1
+	targetSet.UpdateProviders(targetProviders1)
 
-	sTwo := `
-static_configs:
-- targets: ["foo:9090"]
-`
-	if err := yaml.Unmarshal([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
+	select {
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test timed out after 2 seconds. The first set of targets should arrive within the timeout")
+
+	case <-advance:
+		if len(syncedGroups) != len(expectedGroups1) {
+			t.Fatalf("Actual sync groups: '%v' does not macth expected groups: %v", syncedGroups, expectedGroups1)
+		}
+		for _, syncedGroup := range syncedGroups {
+			if _, ok := expectedGroups1[syncedGroup]; !ok {
+				t.Fatalf("'%s' does not exist in expected target groups: %v", syncedGroup, expectedGroups1)
+			}
+		}
 	}
 
-	ts.UpdateProviders(ProvidersFromConfig(*cfg, nil))
-	<-called
+	updates2 := []update{
+		{
+			targetGroups: []config.TargetGroup{{Source: "set2-initial1"}},
+			interval:     30,
+		},
+	}
+	expectedGroups2 := map[string]struct{}{"set2-initial1": struct{}{}}
 
-	verifyPresence(ts.tgroups, "static/0/0", true)
-	verifyPresence(ts.tgroups, "static/0/1", false)
+	targetProviders2 := map[string]TargetProvider{}
+	tp2 := newMockTargetProvider(updates2)
+	targetProviders2["tp2"] = tp2
+	targetSet.UpdateProviders(targetProviders2)
+
+	select {
+	case <-time.After(2 * time.Second):
+		t.Fatal("Test timed out after 2 seconds. The second set of targets should arrive within the timeout")
+
+	case <-advance:
+		if len(syncedGroups) != len(expectedGroups2) {
+			t.Fatalf("Actual sync groups: '%v' does not macth expected groups: %v", syncedGroups, expectedGroups2)
+		}
+		for _, syncedGroup := range syncedGroups {
+			if _, ok := expectedGroups2[syncedGroup]; !ok {
+				t.Fatalf("'%s' does not exist in expected target groups: %v", syncedGroup, expectedGroups2)
+			}
+		}
+	}
 }
 
 func TestTargetSetRunsSameTargetProviderMultipleTimes(t *testing.T) {
