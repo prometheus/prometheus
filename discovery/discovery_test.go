@@ -496,7 +496,7 @@ func TestTargetSetThrottlesTheSyncCalls(t *testing.T) {
 
 		select {
 		case <-time.After(20 * time.Second):
-			t.Errorf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
+			t.Fatalf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
 
 		case <-finalize:
 			for name, tp := range targetProviders {
@@ -888,7 +888,7 @@ func TestTargetSetConsolidatesToTheLatestState(t *testing.T) {
 
 		select {
 		case <-time.After(20 * time.Second):
-			t.Errorf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
+			t.Fatalf("%d. %q: Test timed out after 20 seconds. All targets should be sent within the timeout", i, testCase.title)
 
 		case <-finalize:
 			// System successfully reached to the end state.
