@@ -292,23 +292,23 @@ func (ts *TargetSet) listenUpdates(ctx context.Context, wg *sync.WaitGroup, upda
 			if !ok {
 				return
 			}
+			if len(tgs) == 0 {
+				continue
+			}
+
 			for _, tg := range tgs {
-				ts.update(name, tg)
+				ts.setTargetGroup(name, tg)
+			}
+
+			select {
+			case ts.syncCh <- struct{}{}:
+			default:
 			}
 		}
 	}
 }
 
-// update handles a target group update from a target provider identified by the name.
-func (ts *TargetSet) update(name string, tgroup *config.TargetGroup) {
-	ts.setTargetGroup(name, tgroup)
-
-	select {
-	case ts.syncCh <- struct{}{}:
-	default:
-	}
-}
-
+// setTargetGroup handles a target group update from a target provider identified by the name.
 func (ts *TargetSet) setTargetGroup(name string, tg *config.TargetGroup) {
 	ts.mtx.Lock()
 	defer ts.mtx.Unlock()
