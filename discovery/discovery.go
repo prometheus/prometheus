@@ -248,53 +248,54 @@ func (ts *TargetSet) updateProviders(ctx context.Context, providers map[string]T
 
 		updates := make(chan []*config.TargetGroup)
 		go prov.Run(ctx, updates)
-
-		go func(name string, prov TargetProvider) {
-			select {
-			case <-ctx.Done():
-			case initial, ok := <-updates:
-				// Handle the case that a target provider exits and closes the channel
-				// before the context is done.
-				if !ok {
-					break
-				}
-				// First set of all targets the provider knows.
-				for _, tgroup := range initial {
-					ts.setTargetGroup(name, tgroup)
-				}
-			case <-time.After(5 * time.Second):
-				// Initial set didn't arrive. Act as if it was empty
-				// and wait for updates later on.
-			}
-			wg.Done()
-
-			// Start listening for further updates.
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case tgs, ok := <-updates:
-					// Handle the case that a target provider exits and closes the channel
-					// before the context is done.
-					if !ok {
-						return
-					}
-					for _, tg := range tgs {
-						ts.update(name, tg)
-					}
-				}
-			}
-		}(name, prov)
+		go ts.listenUpdates(ctx, &wg, updates, name, prov)
 	}
 
 	// We wait for a full initial set of target groups before releasing the mutex
 	// to ensure the initial sync is complete and there are no races with subsequent updates.
 	wg.Wait()
 	// Just signal that there are initial sets to sync now. Actual syncing must only
-	// happen in the runScraping loop.
+	// happen in the `ts.Run` loop.
 	select {
 	case ts.syncCh <- struct{}{}:
 	default:
+	}
+}
+
+func (ts *TargetSet) listenUpdates(ctx context.Context, wg *sync.WaitGroup, updates <-chan []*config.TargetGroup, name string, prov TargetProvider) {
+	select {
+	case <-ctx.Done():
+	case initial, ok := <-updates:
+		// Handle the case that a target provider exits and closes the channel
+		// before the context is done.
+		if !ok {
+			break
+		}
+		// First set of all targets the provider knows.
+		for _, tgroup := range initial {
+			ts.setTargetGroup(name, tgroup)
+		}
+	case <-time.After(5 * time.Second):
+		// Initial set didn't arrive. Act as if it was empty
+		// and wait for updates later on.
+	}
+	wg.Done()
+
+	// Start listening for further updates.
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case tgs, ok := <-updates:
+			// Handle the case that a target provider exits and closes the channel
+			// before the context is done.
+			if !ok {
+				return
+			}
+			for _, tg := range tgs {
+				ts.update(name, tg)
+			}
+		}
 	}
 }
 
