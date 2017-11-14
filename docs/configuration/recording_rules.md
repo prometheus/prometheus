@@ -59,6 +59,7 @@ A simple example rules file would be:
 ```yaml
 groups:
   - name: example
+    rules:
     - record: job:http_inprogress_requests:sum
       expr: sum(http_inprogress_requests) by (job)
 ```
