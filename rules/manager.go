@@ -75,11 +75,6 @@ var (
 		Help:       "The duration of rule group evaluations.",
 		Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 	})
-	iterationsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Name:      "evaluator_iterations_skipped_total",
-		Help:      "The total number of rule group evaluations skipped due to throttled metric storage.",
-	})
 	iterationsMissed = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "evaluator_iterations_missed_total",
@@ -100,7 +95,6 @@ func init() {
 
 	prometheus.MustRegister(iterationDuration)
 	prometheus.MustRegister(iterationsScheduled)
-	prometheus.MustRegister(iterationsSkipped)
 	prometheus.MustRegister(iterationsMissed)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
