@@ -52,7 +52,7 @@ type Compactor interface {
 	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
-	Write(dest string, b BlockReader, mint, maxt int64) error
+	Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -321,7 +321,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	return c.write(dest, compactBlockMetas(uid, metas...), blocks...)
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) error {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
@@ -333,7 +333,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) e
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	return c.write(dest, meta, b)
+	return uid, c.write(dest, meta, b)
 }
 
 // instrumentedChunkWriter is used for level 1 compactions to record statistics
