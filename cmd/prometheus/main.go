@@ -153,7 +153,7 @@ func main() {
 	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
-	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory. Defaults to false.").
+	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory. By default creates and consider lockfile.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending alert manager notifications.").
