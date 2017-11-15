@@ -128,10 +128,10 @@ func main() {
 	a.Flag("web.user-assets", "Path to static asset directory, available at /user.").
 		PlaceHolder("<path>").StringVar(&cfg.web.UserAssetsPath)
 
-	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request.").
+	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request. Defaults to false.").
 		Default("false").BoolVar(&cfg.web.EnableLifecycle)
 
-	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions.").
+	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions. Defaults to false.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
