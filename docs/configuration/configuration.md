@@ -311,9 +311,12 @@ The following meta labels are available on targets during [relabeling](#relabel_
 server: <host>
 [ token: <secret> ]
 [ datacenter: <string> ]
-[ scheme: <string> ]
+[ scheme: <string> | default = "http"]
 [ username: <string> ]
 [ password: <secret> ]
+
+tls_config:
+  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
@@ -977,10 +980,6 @@ One use for this is ensuring a HA pair of Prometheus servers with different
 external labels send identical alerts.
 
 ### `<alertmanager_config>`
-
-CAUTION: Dynamic discovery of Alertmanager instances is in alpha state. Breaking configuration
-changes may happen in future releases. Use static configuration via the `-alertmanager.url` flag
-as a stable alternative.
 
 An `alertmanager_config` section specifies Alertmanager instances the Prometheus server sends
 alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
