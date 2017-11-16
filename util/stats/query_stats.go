@@ -61,9 +61,9 @@ type QueryStats struct {
 	ExecTotalTime        float64 `json:"execTotalTime"`
 }
 
-// MakeQueryStats makes a QueryStats struct with all QueryTimings found in the
+// NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func MakeQueryStats(tg *TimerGroup) *QueryStats {
+func NewQueryStats(tg *TimerGroup) *QueryStats {
 	var qs QueryStats
 
 	for s, timer := range tg.timers {
