@@ -50,8 +50,8 @@ func (s QueryTiming) String() string {
 	}
 }
 
-// QueryStats with all query timers mapped to durations.
-type QueryStats struct {
+// QueryTimings with all query timers mapped to durations.
+type queryTimings struct {
 	EvalTotalTime        float64 `json:"evalTotalTime"`
 	ResultSortTime       float64 `json:"resultSortTime"`
 	QueryPreparationTime float64 `json:"queryPreparationTime"`
@@ -61,29 +61,35 @@ type QueryStats struct {
 	ExecTotalTime        float64 `json:"execTotalTime"`
 }
 
+// QueryStats currently only holding query timings
+type QueryStats struct {
+	Timings queryTimings `json:"timings,omitempty"`
+}
+
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
 func NewQueryStats(tg *TimerGroup) *QueryStats {
-	var qs QueryStats
+	var qt queryTimings
 
 	for s, timer := range tg.timers {
 		switch s {
 		case EvalTotalTime:
-			qs.EvalTotalTime = timer.Duration()
+			qt.EvalTotalTime = timer.Duration()
 		case ResultSortTime:
-			qs.ResultSortTime = timer.Duration()
+			qt.ResultSortTime = timer.Duration()
 		case QueryPreparationTime:
-			qs.QueryPreparationTime = timer.Duration()
+			qt.QueryPreparationTime = timer.Duration()
 		case InnerEvalTime:
-			qs.InnerEvalTime = timer.Duration()
+			qt.InnerEvalTime = timer.Duration()
 		case ResultAppendTime:
-			qs.ResultAppendTime = timer.Duration()
+			qt.ResultAppendTime = timer.Duration()
 		case ExecQueueTime:
-			qs.ExecQueueTime = timer.Duration()
+			qt.ExecQueueTime = timer.Duration()
 		case ExecTotalTime:
-			qs.ExecTotalTime = timer.Duration()
+			qt.ExecTotalTime = timer.Duration()
 		}
 	}
 
+	qs := QueryStats{Timings: qt}
 	return &qs
 }
