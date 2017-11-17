@@ -50,7 +50,7 @@ func (s QueryTiming) String() string {
 	}
 }
 
-// QueryTimings with all query timers mapped to durations.
+// queryTimings with all query timers mapped to durations.
 type queryTimings struct {
 	EvalTotalTime        float64 `json:"evalTotalTime"`
 	ResultSortTime       float64 `json:"resultSortTime"`
@@ -61,7 +61,7 @@ type queryTimings struct {
 	ExecTotalTime        float64 `json:"execTotalTime"`
 }
 
-// QueryStats currently only holding query timings
+// QueryStats currently only holding query timings.
 type QueryStats struct {
 	Timings queryTimings `json:"timings,omitempty"`
 }
