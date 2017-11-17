@@ -19,7 +19,7 @@ type QueryTiming int
 
 // Query timings.
 const (
-	TotalEvalTime QueryTiming = iota
+	EvalTotalTime QueryTiming = iota
 	ResultSortTime
 	QueryPreparationTime
 	InnerEvalTime
@@ -31,8 +31,8 @@ const (
 // Return a string representation of a QueryTiming identifier.
 func (s QueryTiming) String() string {
 	switch s {
-	case TotalEvalTime:
-		return "Total eval time"
+	case EvalTotalTime:
+		return "Eval total time"
 	case ResultSortTime:
 		return "Result sorting time"
 	case QueryPreparationTime:
@@ -52,7 +52,7 @@ func (s QueryTiming) String() string {
 
 // QueryStats with all query timers mapped to durations.
 type QueryStats struct {
-	TotalEvalTime        float64 `json:"totalEvalTime"`
+	EvalTotalTime        float64 `json:"evalTotalTime"`
 	ResultSortTime       float64 `json:"resultSortTime"`
 	QueryPreparationTime float64 `json:"queryPreparationTime"`
 	InnerEvalTime        float64 `json:"innerEvalTime"`
@@ -68,8 +68,8 @@ func NewQueryStats(tg *TimerGroup) *QueryStats {
 
 	for s, timer := range tg.timers {
 		switch s {
-		case TotalEvalTime:
-			qs.TotalEvalTime = timer.Duration()
+		case EvalTotalTime:
+			qs.EvalTotalTime = timer.Duration()
 		case ResultSortTime:
 			qs.ResultSortTime = timer.Duration()
 		case QueryPreparationTime:
