@@ -330,7 +330,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 
 	const env = "query execution"
 
-	evalTimer := q.stats.GetTimer(stats.TotalEvalTime).Start()
+	evalTimer := q.stats.GetTimer(stats.EvalTotalTime).Start()
 	defer evalTimer.Stop()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
