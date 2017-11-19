@@ -24,17 +24,17 @@ func TestTimerGroupNewTimer(t *testing.T) {
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
 	if duration := timer.Duration(); duration != 0 {
-		t.Errorf("Expected duration of 0, but it was %f instead.", duration)
+		t.Fatalf("Expected duration of 0, but it was %f instead.", duration)
 	}
 	minimum := 2 * time.Millisecond
 	timer.Start()
 	time.Sleep(minimum)
 	timer.Stop()
 	if duration := timer.Duration(); duration == 0 {
-		t.Errorf("Expected duration greater than 0, but it was %f instead.", duration)
+		t.Fatalf("Expected duration greater than 0, but it was %f instead.", duration)
 	}
 	if elapsed := timer.ElapsedTime(); elapsed < minimum {
-		t.Errorf("Expected elapsed time to be greater than time slept, elapsed was %d, and time slept was %d.", elapsed.Nanoseconds(), minimum)
+		t.Fatalf("Expected elapsed time to be greater than time slept, elapsed was %d, and time slept was %d.", elapsed.Nanoseconds(), minimum)
 	}
 }
 
@@ -48,8 +48,9 @@ func TestQueryStatsWithTimers(t *testing.T) {
 	var qs *QueryStats
 	qs = NewQueryStats(tg)
 	actual, _ := json.Marshal(qs)
+	// Timing value is one of multiple fields, unit is seconds (float).
 	match, _ := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
 	if !match {
-		t.Errorf("Expected timings with one non-zero entry, but got %s.", actual)
+		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
 	}
 }
