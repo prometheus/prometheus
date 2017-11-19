@@ -47,9 +47,15 @@ func TestQueryStatsWithTimers(t *testing.T) {
 
 	var qs *QueryStats
 	qs = NewQueryStats(tg)
-	actual, _ := json.Marshal(qs)
+	actual, err := json.Marshal(qs)
+	if err != nil {
+		t.Fatalf("Unexpected error during serialization: %v", err)
+	}
 	// Timing value is one of multiple fields, unit is seconds (float).
-	match, _ := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
+	match, err := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
+	if err != nil {
+		t.Fatalf("Unexpected error while matching string: %v", err)
+	}
 	if !match {
 		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
 	}
