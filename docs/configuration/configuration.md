@@ -49,8 +49,8 @@ A valid example file can be found [here](/config/testdata/conf.good.yml).
 
 ### `<global>`
 
-The `global` section contains the global Prometheus server
-configuration. The global configuration specifies parameters that are valid in all other configuration
+The `global` section contains overall settings and defaults for
+Prometheus. The global configuration specifies parameters that are valid in all other configuration
 contexts. They also serve as defaults for other configuration sections.
 
 ```yaml
