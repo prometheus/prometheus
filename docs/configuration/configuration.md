@@ -58,7 +58,7 @@ global:
 # How frequently to scrape targets by default.
 [ scrape_interval: <duration> | default = 1m ]
 
-# How long until a scrape request times out.
+# The default time until a scrape request times out.
 [ scrape_timeout: <duration> | default = 10s ]
 
 # The default frequency for rule group evaluation.
