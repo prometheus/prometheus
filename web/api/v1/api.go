@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/stats"
 )
 
 type status string
@@ -170,8 +171,9 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType promql.ValueType `json:"resultType"`
-	Result     promql.Value     `json:"result"`
+	ResultType promql.ValueType  `json:"resultType"`
+	Result     promql.Value      `json:"result"`
+	Stats      *stats.QueryStats `json:"stats,omitempty"`
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError) {
@@ -219,9 +221,17 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		}
 		return nil, &apiError{errorExec, res.Err}
 	}
+
+	// Optional stats field in response if parameter "stats" is not empty.
+	var qs *stats.QueryStats
+	if r.FormValue("stats") != "" {
+		qs = stats.NewQueryStats(qry.Stats())
+	}
+
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
+		Stats:      qs,
 	}, nil
 }
 
@@ -284,9 +294,16 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorExec, res.Err}
 	}
 
+	// Optional stats field in response if parameter "stats" is not empty.
+	var qs *stats.QueryStats
+	if r.FormValue("stats") != "" {
+		qs = stats.NewQueryStats(qry.Stats())
+	}
+
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
+		Stats:      qs,
 	}, nil
 }
 

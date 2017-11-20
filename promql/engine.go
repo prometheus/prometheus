@@ -314,6 +314,8 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
 	q.cancel = cancel
 
+	execTimer := q.stats.GetTimer(stats.ExecTotalTime).Start()
+	defer execTimer.Stop()
 	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
 
 	if err := ng.gate.Start(ctx); err != nil {
@@ -328,7 +330,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 
 	const env = "query execution"
 
-	evalTimer := q.stats.GetTimer(stats.TotalEvalTime).Start()
+	evalTimer := q.stats.GetTimer(stats.EvalTotalTime).Start()
 	defer evalTimer.Stop()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
