@@ -16,11 +16,6 @@ available versions.
 For building Prometheus components from source, see the `Makefile` targets in
 the respective repository.
 
-NOTE: **Note:** The documentation on this website refers to the latest stable
-release (excluding pre-releases). The branch
-[next-release](https://github.com/prometheus/docs/compare/next-release) refers
-to unreleased changes that are in master branches of source repos.
-
 ## Using Docker
 
 All Prometheus services are available as Docker images under the

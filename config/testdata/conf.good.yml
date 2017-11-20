@@ -25,6 +25,8 @@ remote_read:
     read_recent: true
   - url: http://remote3/read
     read_recent: false
+    required_matchers:
+      job: special
 
 scrape_configs:
 - job_name: prometheus

@@ -153,7 +153,9 @@ func (api *API) Register(r *route.Router) {
 	r.Options("/*path", instr("options", api.options))
 
 	r.Get("/query", instr("query", api.query))
+	r.Post("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
+	r.Post("/query_range", instr("query_range", api.queryRange))
 
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 

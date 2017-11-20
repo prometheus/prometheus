@@ -12,17 +12,17 @@ configuration file defines everything related to scraping [jobs and their
 instances](https://prometheus.io/docs/concepts/jobs_instances/), as well as
 which [rule files to load](recording_rules.md#configuring-rules).
 
-To view all available command-line flags, run `prometheus -h`.
+To view all available command-line flags, run `./prometheus -h`.
 
 Prometheus can reload its configuration at runtime. If the new configuration
 is not well-formed, the changes will not be applied.
 A configuration reload is triggered by sending a `SIGHUP` to the Prometheus process or
-sending a HTTP POST request to the `/-/reload` endpoint.
+sending a HTTP POST request to the `/-/reload` endpoint (when the `--web.enable-lifecycle` flag is enabled).
 This will also reload any configured rule files.
 
 ## Configuration file
 
-To specify which configuration file to load, use the `-config.file` flag.
+To specify which configuration file to load, use the `--config.file` flag.
 
 The file is written in [YAML format](http://en.wikipedia.org/wiki/YAML),
 defined by the scheme described below.
@@ -41,6 +41,7 @@ Generic placeholders are defined as follows:
 * `<scheme>`: a string that can take the values `http` or `https`
 * `<string>`: a regular string
 * `<secret>`: a regular string that is a secret, such as a password
+* `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
 
@@ -751,8 +752,7 @@ See below for the configuration options for Marathon discovery:
 
 ```yaml
 # List of URLs to be used to contact Marathon servers.
-# You need to provide at least one server URL, but should provide URLs for
-# all masters you have running.
+# You need to provide at least one server URL.
 servers:
   - <string>
 
@@ -1169,6 +1169,11 @@ likely in future releases.
 ```yaml
 # The URL of the endpoint to query from.
 url: <string>
+
+# An optional list of equality matchers which have to be
+# present in a selector to query the remote read endpoint.
+required_matchers:
+  [ <labelname>: <labelvalue> ... ]
 
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 30s ]

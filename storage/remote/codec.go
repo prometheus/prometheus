@@ -158,6 +158,12 @@ func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	}
 }
 
+type byLabel []storage.Series
+
+func (a byLabel) Len() int           { return len(a) }
+func (a byLabel) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byLabel) Less(i, j int) bool { return labels.Compare(a[i].Labels(), a[j].Labels()) < 0 }
+
 // errSeriesSet implements storage.SeriesSet, just returning an error.
 type errSeriesSet struct {
 	err error
@@ -201,7 +207,7 @@ type concreteSeries struct {
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
-	return c.labels
+	return labels.New(c.labels...)
 }
 
 func (c *concreteSeries) Iterator() storage.SeriesIterator {

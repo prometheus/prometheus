@@ -75,11 +75,6 @@ var (
 		Help:       "The duration of rule group evaluations.",
 		Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 	})
-	iterationsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: namespace,
-		Name:      "evaluator_iterations_skipped_total",
-		Help:      "The total number of rule group evaluations skipped due to throttled metric storage.",
-	})
 	iterationsMissed = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "evaluator_iterations_missed_total",
@@ -88,7 +83,7 @@ var (
 	iterationsScheduled = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "evaluator_iterations_total",
-		Help:      "The total number of scheduled rule group evaluations, whether executed, missed or skipped.",
+		Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 	})
 )
 
@@ -100,7 +95,6 @@ func init() {
 
 	prometheus.MustRegister(iterationDuration)
 	prometheus.MustRegister(iterationsScheduled)
-	prometheus.MustRegister(iterationsSkipped)
 	prometheus.MustRegister(iterationsMissed)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
@@ -494,8 +488,9 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
-		oldg, ok := m.groups[newg.name]
-		delete(m.groups, newg.name)
+		gn := groupKey(newg.name, newg.file)
+		oldg, ok := m.groups[gn]
+		delete(m.groups, gn)
 
 		go func(newg *Group) {
 			if ok {
@@ -567,12 +562,16 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			// Group names need not be unique across filenames.
-			groups[rg.Name+";"+fn] = NewGroup(rg.Name, fn, itv, rules, m.opts)
+			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, m.opts)
 		}
 	}
 
 	return groups, nil
+}
+
+// Group names need not be unique across filenames.
+func groupKey(name, file string) string {
+	return name + ";" + file
 }
 
 // RuleGroups returns the list of manager's rule groups.

@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -450,33 +451,52 @@ func TestEndpoints(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		// Build a context with the correct request params.
-		ctx := context.Background()
-		for p, v := range test.params {
-			ctx = route.WithParam(ctx, p, v)
+	methods := func(f apiFunc) []string {
+		fp := reflect.ValueOf(f).Pointer()
+		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() {
+			return []string{http.MethodGet, http.MethodPost}
 		}
-		t.Logf("run query %q", test.query.Encode())
+		return []string{http.MethodGet}
+	}
 
-		req, err := http.NewRequest("ANY", fmt.Sprintf("http://example.com?%s", test.query.Encode()), nil)
-		if err != nil {
-			t.Fatal(err)
+	request := func(m string, q url.Values) (*http.Request, error) {
+		if m == http.MethodPost {
+			r, err := http.NewRequest(m, "http://example.com", strings.NewReader(q.Encode()))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			return r, err
 		}
-		resp, apiErr := test.endpoint(req.WithContext(ctx))
-		if apiErr != nil {
-			if test.errType == errorNone {
-				t.Fatalf("Unexpected error: %s", apiErr)
+		return http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+	}
+
+	for _, test := range tests {
+		for _, method := range methods(test.endpoint) {
+			// Build a context with the correct request params.
+			ctx := context.Background()
+			for p, v := range test.params {
+				ctx = route.WithParam(ctx, p, v)
 			}
-			if test.errType != apiErr.typ {
-				t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
+			t.Logf("run %s\t%q", method, test.query.Encode())
+
+			req, err := request(method, test.query)
+			if err != nil {
+				t.Fatal(err)
 			}
-			continue
-		}
-		if apiErr == nil && test.errType != errorNone {
-			t.Fatalf("Expected error of type %q but got none", test.errType)
-		}
-		if !reflect.DeepEqual(resp, test.response) {
-			t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+			resp, apiErr := test.endpoint(req.WithContext(ctx))
+			if apiErr != nil {
+				if test.errType == errorNone {
+					t.Fatalf("Unexpected error: %s", apiErr)
+				}
+				if test.errType != apiErr.typ {
+					t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
+				}
+				continue
+			}
+			if apiErr == nil && test.errType != errorNone {
+				t.Fatalf("Expected error of type %q but got none", test.errType)
+			}
+			if !reflect.DeepEqual(resp, test.response) {
+				t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+			}
 		}
 	}
 }
