@@ -47,49 +47,39 @@ The other placeholders are specified separately.
 
 A valid example file can be found [here](/config/testdata/conf.good.yml).
 
-The global configuration specifies parameters that are valid in all other configuration
+### `<global>`
+
+The `global` section contains the global Prometheus server
+configuration. The global configuration specifies parameters that are valid in all other configuration
 contexts. They also serve as defaults for other configuration sections.
 
 ```yaml
-global:
-  # How frequently to scrape targets by default.
-  [ scrape_interval: <duration> | default = 1m ]
+# How frequently to scrape targets by default.
+[ scrape_interval: <duration> | default = 1m ]
 
-  # How long until a scrape request times out.
-  [ scrape_timeout: <duration> | default = 10s ]
+# How long until a scrape request times out.
+[ scrape_timeout: <duration> | default = 10s ]
 
-  # How frequently to evaluate rules.
-  [ evaluation_interval: <duration> | default = 1m ]
+# How frequently to evaluate rules.
+[ evaluation_interval: <duration> | default = 1m ]
 
-  # The labels to add to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager).
-  external_labels:
-    [ <labelname>: <labelvalue> ... ]
+# The labels to add to any time series or alerts when communicating with
+# external systems (federation, remote storage, Alertmanager).
+external_labels:
+[ <labelname>: <labelvalue> ... ]
+```
 
+### `<rule_files>`
+
+The list of files containing reporting and alerting rules.
+
+```yaml
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
   [ - <filepath_glob> ... ]
-
-# A list of scrape configurations.
-scrape_configs:
-  [ - <scrape_config> ... ]
-
-# Alerting specifies settings related to the Alertmanager.
-alerting:
-  alert_relabel_configs:
-    [ - <relabel_config> ... ]
-  alertmanagers:
-    [ - <alertmanager_config> ... ]
-
-# Settings related to the experimental remote write feature.
-remote_write:
-  [ - <remote_write> ... ]
-
-# Settings related to the experimental remote read feature.
-remote_read:
-  [ - <remote_read> ... ]
 ```
+
 
 ### `<scrape_config>`
 
@@ -976,19 +966,18 @@ relabeling is applied after external labels.
 One use for this is ensuring a HA pair of Prometheus servers with different
 external labels send identical alerts.
 
-### `<alertmanager_config>`
+### `<alerting>`
 
 CAUTION: Dynamic discovery of Alertmanager instances is in alpha state. Breaking configuration
-changes may happen in future releases. Use static configuration via the `-alertmanager.url` flag
-as a stable alternative.
+changes may happen in future releases.
 
-An `alertmanager_config` section specifies Alertmanager instances the Prometheus server sends
+An `alerting` section specifies Alertmanager instances the Prometheus server sends
 alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
 
-Alertmanagers may be statically configured via the `static_configs` parameter or
+Alertmanagers may be statically configured under the `alertmanagers` block via the `static_configs` parameter or
 dynamically discovered using one of the supported service-discovery mechanisms.
 
-Additionally, `relabel_configs` allow selecting Alertmanagers from discovered
+Additionally, `alert_relabel_configs` allows selecting Alertmanagers from discovered
 entities and provide advanced modifications to the used API path, which is exposed
 through the `__alerts_path__` label.
 
