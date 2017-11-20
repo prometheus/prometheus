@@ -54,6 +54,7 @@ configuration. The global configuration specifies parameters that are valid in a
 contexts. They also serve as defaults for other configuration sections.
 
 ```yaml
+global:
 # How frequently to scrape targets by default.
 [ scrape_interval: <duration> | default = 1m ]
 
@@ -81,9 +82,9 @@ rule_files:
 ```
 
 
-### `<scrape_config>`
+### `<scrape_configs>`
 
-A `scrape_config` section specifies a set of targets and parameters describing how
+A `scrape_configs` section specifies a set of targets and parameters describing how
 to scrape them. In the general case, one scrape configuration specifies a single
 job. In advanced configurations, this may change.
 
