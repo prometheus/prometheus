@@ -1,7 +1,7 @@
 # Remote storage adapter
 
 This is a write adapter that receives samples via Prometheus's remote write
-protocol and stores them in Graphite, InfluxDB, or OpenTSDB. It is meant as a
+protocol and stores them in Graphite, InfluxDB, KairosDB or OpenTSDB. It is meant as a
 replacement for the built-in specific remote storage implementations that have
 been removed from Prometheus.
 
@@ -20,6 +20,12 @@ Graphite example:
 
 ```
 ./remote_storage_adapter -graphite-address=localhost:8080
+```
+
+KairosDB example:
+
+```
+./remote_storage_adapter -kairosdb-url=http://localhost:8080
 ```
 
 OpenTSDB example:
