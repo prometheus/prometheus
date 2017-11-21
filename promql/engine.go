@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -133,7 +134,7 @@ type Query interface {
 	// Statement returns the parsed statement of the query.
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
-	Stats() *stats.TimerGroup
+	Stats() QueryStats
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 }
@@ -145,12 +146,18 @@ type query struct {
 	// Statement of the parsed query.
 	stmt Statement
 	// Timer stats for the query execution.
-	stats *stats.TimerGroup
+	stats QueryStats
 	// Cancellation function for the query.
 	cancel func()
 
 	// The engine against which the query is executed.
 	ng *Engine
+}
+
+type QueryStats struct {
+	NumSeries  int64
+	NumSamples int64
+	Timers     *stats.TimerGroup
 }
 
 // Statement implements the Query interface.
@@ -159,7 +166,7 @@ func (q *query) Statement() Statement {
 }
 
 // Stats implements the Query interface.
-func (q *query) Stats() *stats.TimerGroup {
+func (q *query) Stats() QueryStats {
 	return q.stats
 }
 
@@ -176,8 +183,249 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
-	res, err := q.ng.exec(ctx, q)
+	res, err := q.exec(ctx)
 	return &Result{Err: err, Value: res}
+}
+
+// exec executes the query.
+//
+// At this point per query only one EvalStmt is evaluated. Alert and record
+// statements are not handled by the Engine.
+func (q *query) exec(ctx context.Context) (Value, error) {
+	currentQueries.Inc()
+	defer currentQueries.Dec()
+
+	ctx, cancel := context.WithTimeout(ctx, q.ng.options.Timeout)
+	q.cancel = cancel
+
+	execTimer := q.stats.Timers.GetTimer(stats.ExecTotalTime).Start()
+	defer execTimer.Stop()
+	queueTimer := q.stats.Timers.GetTimer(stats.ExecQueueTime).Start()
+
+	if err := q.ng.gate.Start(ctx); err != nil {
+		return nil, err
+	}
+	defer q.ng.gate.Done()
+
+	queueTimer.Stop()
+
+	// Cancel when execution is done or an error was raised.
+	defer q.cancel()
+
+	const env = "query execution"
+
+	evalTimer := q.stats.Timers.GetTimer(stats.EvalTotalTime).Start()
+	defer evalTimer.Stop()
+
+	// The base context might already be canceled on the first iteration (e.g. during shutdown).
+	if err := contextDone(ctx, env); err != nil {
+		return nil, err
+	}
+
+	switch s := q.Statement().(type) {
+	case *EvalStmt:
+		return q.execEvalStmt(ctx, s)
+	case testStmt:
+		return nil, s(ctx)
+	}
+
+	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+}
+
+// execEvalStmt evaluates the expression of an evaluation statement for the given time range.
+func (q *query) execEvalStmt(ctx context.Context, s *EvalStmt) (Value, error) {
+	prepareTimer := q.stats.Timers.GetTimer(stats.QueryPreparationTime).Start()
+	querier, err := q.populateIterators(ctx, s)
+	prepareTimer.Stop()
+	queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
+
+	// XXX(fabxc): the querier returned by populateIterators might be instantiated
+	// we must not return without closing irrespective of the error.
+	// TODO: make this semantically saner.
+	if querier != nil {
+		defer querier.Close()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	evalTimer := q.stats.Timers.GetTimer(stats.InnerEvalTime).Start()
+	// Instant evaluation.
+	if s.Start == s.End && s.Interval == 0 {
+		start := timeMilliseconds(s.Start)
+		evaluator := &evaluator{
+			Timestamp: start,
+			ctx:       ctx,
+			logger:    q.ng.logger,
+		}
+		val, err := evaluator.Eval(s.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		evalTimer.Stop()
+		queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+		// Point might have a different timestamp, force it to the evaluation
+		// timestamp as that is when we ran the evaluation.
+		switch v := val.(type) {
+		case Scalar:
+			v.T = start
+		case Vector:
+			for i := range v {
+				v[i].Point.T = start
+			}
+		}
+
+		return val, nil
+	}
+	numSteps := int(s.End.Sub(s.Start) / s.Interval)
+
+	// Range evaluation.
+	Seriess := map[uint64]Series{}
+	for ts := s.Start; !ts.After(s.End); ts = ts.Add(s.Interval) {
+
+		if err := contextDone(ctx, "range evaluation"); err != nil {
+			return nil, err
+		}
+
+		t := timeMilliseconds(ts)
+		evaluator := &evaluator{
+			Timestamp: t,
+			ctx:       ctx,
+			logger:    q.ng.logger,
+		}
+		val, err := evaluator.Eval(s.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		switch v := val.(type) {
+		case Scalar:
+			// As the expression type does not change we can safely default to 0
+			// as the fingerprint for Scalar expressions.
+			ss, ok := Seriess[0]
+			if !ok {
+				ss = Series{Points: make([]Point, 0, numSteps)}
+				Seriess[0] = ss
+			}
+			ss.Points = append(ss.Points, Point{V: v.V, T: t})
+			Seriess[0] = ss
+		case Vector:
+			for _, sample := range v {
+				h := sample.Metric.Hash()
+				ss, ok := Seriess[h]
+				if !ok {
+					ss = Series{
+						Metric: sample.Metric,
+						Points: make([]Point, 0, numSteps),
+					}
+					Seriess[h] = ss
+				}
+				sample.Point.T = t
+				ss.Points = append(ss.Points, sample.Point)
+				Seriess[h] = ss
+			}
+		default:
+			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+		}
+	}
+	evalTimer.Stop()
+	queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+
+	if err := contextDone(ctx, "expression evaluation"); err != nil {
+		return nil, err
+	}
+
+	appendTimer := q.stats.Timers.GetTimer(stats.ResultAppendTime).Start()
+	mat := Matrix{}
+	for _, ss := range Seriess {
+		mat = append(mat, ss)
+	}
+	appendTimer.Stop()
+	queryResultAppend.Observe(appendTimer.ElapsedTime().Seconds())
+
+	if err := contextDone(ctx, "expression evaluation"); err != nil {
+		return nil, err
+	}
+
+	// TODO(fabxc): order ensured by storage?
+	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
+	sortTimer := q.stats.Timers.GetTimer(stats.ResultSortTime).Start()
+	sort.Sort(mat)
+	sortTimer.Stop()
+
+	queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
+	return mat, nil
+}
+
+func (q *query) populateIterators(ctx context.Context, s *EvalStmt) (storage.Querier, error) {
+	var maxOffset time.Duration
+
+	Inspect(s.Expr, func(node Node) bool {
+		switch n := node.(type) {
+		case *VectorSelector:
+			if maxOffset < LookbackDelta {
+				maxOffset = LookbackDelta
+			}
+			if n.Offset+LookbackDelta > maxOffset {
+				maxOffset = n.Offset + LookbackDelta
+			}
+		case *MatrixSelector:
+			if maxOffset < n.Range {
+				maxOffset = n.Range
+			}
+			if n.Offset+n.Range > maxOffset {
+				maxOffset = n.Offset + n.Range
+			}
+		}
+		return true
+	})
+
+	mint := s.Start.Add(-maxOffset)
+
+	querier, err := q.ng.queryable.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
+	if err != nil {
+		return nil, err
+	}
+
+	Inspect(s.Expr, func(node Node) bool {
+		switch n := node.(type) {
+		case *VectorSelector:
+			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
+			if err != nil {
+				// TODO(fabxc): use multi-error.
+				// TODO(gouthamve): Should query have a logger which logs query=string.
+				level.Error(q.ng.logger).Log("msg", "error expanding series set", "err", err)
+				return false
+			}
+			atomic.AddInt64(&q.stats.NumSeries, int64(len(n.series)))
+			for _, s := range n.series {
+				it := storage.NewBuffer(
+					newCountingIterator(&q.stats.NumSamples, s.Iterator()),
+					durationMilliseconds(LookbackDelta),
+				)
+				n.iterators = append(n.iterators, it)
+			}
+
+		case *MatrixSelector:
+			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
+			if err != nil {
+				level.Error(q.ng.logger).Log("msg", "error expanding series set", "err", err)
+				return false
+			}
+			atomic.AddInt64(&q.stats.NumSeries, int64(len(n.series)))
+			for _, s := range n.series {
+				it := storage.NewBuffer(
+					newCountingIterator(&q.stats.NumSamples, s.Iterator()),
+					durationMilliseconds(n.Range),
+				)
+				n.iterators = append(n.iterators, it)
+			}
+		}
+		return true
+	})
+	return querier, err
 }
 
 // contextDone returns an error if the context was canceled or timed out.
@@ -279,9 +527,11 @@ func (ng *Engine) newQuery(expr Expr, start, end time.Time, interval time.Durati
 		Interval: interval,
 	}
 	qry := &query{
-		stmt:  es,
-		ng:    ng,
-		stats: stats.NewTimerGroup(),
+		stmt: es,
+		ng:   ng,
+		stats: QueryStats{
+			Timers: stats.NewTimerGroup(),
+		},
 	}
 	return qry
 }
@@ -295,57 +545,14 @@ func (testStmt) stmt()          {}
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
-		q:     "test statement",
-		stmt:  testStmt(f),
-		ng:    ng,
-		stats: stats.NewTimerGroup(),
+		q:    "test statement",
+		stmt: testStmt(f),
+		ng:   ng,
+		stats: QueryStats{
+			Timers: stats.NewTimerGroup(),
+		},
 	}
 	return qry
-}
-
-// exec executes the query.
-//
-// At this point per query only one EvalStmt is evaluated. Alert and record
-// statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
-	currentQueries.Inc()
-	defer currentQueries.Dec()
-
-	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
-	q.cancel = cancel
-
-	execTimer := q.stats.GetTimer(stats.ExecTotalTime).Start()
-	defer execTimer.Stop()
-	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
-
-	if err := ng.gate.Start(ctx); err != nil {
-		return nil, err
-	}
-	defer ng.gate.Done()
-
-	queueTimer.Stop()
-
-	// Cancel when execution is done or an error was raised.
-	defer q.cancel()
-
-	const env = "query execution"
-
-	evalTimer := q.stats.GetTimer(stats.EvalTotalTime).Start()
-	defer evalTimer.Stop()
-
-	// The base context might already be canceled on the first iteration (e.g. during shutdown).
-	if err := contextDone(ctx, env); err != nil {
-		return nil, err
-	}
-
-	switch s := q.Statement().(type) {
-	case *EvalStmt:
-		return ng.execEvalStmt(ctx, q, s)
-	case testStmt:
-		return nil, s(ctx)
-	}
-
-	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
 func timeMilliseconds(t time.Time) int64 {
@@ -354,194 +561,6 @@ func timeMilliseconds(t time.Time) int64 {
 
 func durationMilliseconds(d time.Duration) int64 {
 	return int64(d / (time.Millisecond / time.Nanosecond))
-}
-
-// execEvalStmt evaluates the expression of an evaluation statement for the given time range.
-func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, error) {
-
-	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
-	querier, err := ng.populateIterators(ctx, s)
-	prepareTimer.Stop()
-	queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
-
-	// XXX(fabxc): the querier returned by populateIterators might be instantiated
-	// we must not return without closing irrespective of the error.
-	// TODO: make this semantically saner.
-	if querier != nil {
-		defer querier.Close()
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
-	// Instant evaluation.
-	if s.Start == s.End && s.Interval == 0 {
-		start := timeMilliseconds(s.Start)
-		evaluator := &evaluator{
-			Timestamp: start,
-			ctx:       ctx,
-			logger:    ng.logger,
-		}
-		val, err := evaluator.Eval(s.Expr)
-		if err != nil {
-			return nil, err
-		}
-
-		evalTimer.Stop()
-		queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
-		// Point might have a different timestamp, force it to the evaluation
-		// timestamp as that is when we ran the evaluation.
-		switch v := val.(type) {
-		case Scalar:
-			v.T = start
-		case Vector:
-			for i := range v {
-				v[i].Point.T = start
-			}
-		}
-
-		return val, nil
-	}
-	numSteps := int(s.End.Sub(s.Start) / s.Interval)
-
-	// Range evaluation.
-	Seriess := map[uint64]Series{}
-	for ts := s.Start; !ts.After(s.End); ts = ts.Add(s.Interval) {
-
-		if err := contextDone(ctx, "range evaluation"); err != nil {
-			return nil, err
-		}
-
-		t := timeMilliseconds(ts)
-		evaluator := &evaluator{
-			Timestamp: t,
-			ctx:       ctx,
-			logger:    ng.logger,
-		}
-		val, err := evaluator.Eval(s.Expr)
-		if err != nil {
-			return nil, err
-		}
-
-		switch v := val.(type) {
-		case Scalar:
-			// As the expression type does not change we can safely default to 0
-			// as the fingerprint for Scalar expressions.
-			ss, ok := Seriess[0]
-			if !ok {
-				ss = Series{Points: make([]Point, 0, numSteps)}
-				Seriess[0] = ss
-			}
-			ss.Points = append(ss.Points, Point{V: v.V, T: t})
-			Seriess[0] = ss
-		case Vector:
-			for _, sample := range v {
-				h := sample.Metric.Hash()
-				ss, ok := Seriess[h]
-				if !ok {
-					ss = Series{
-						Metric: sample.Metric,
-						Points: make([]Point, 0, numSteps),
-					}
-					Seriess[h] = ss
-				}
-				sample.Point.T = t
-				ss.Points = append(ss.Points, sample.Point)
-				Seriess[h] = ss
-			}
-		default:
-			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
-		}
-	}
-	evalTimer.Stop()
-	queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
-
-	if err := contextDone(ctx, "expression evaluation"); err != nil {
-		return nil, err
-	}
-
-	appendTimer := query.stats.GetTimer(stats.ResultAppendTime).Start()
-	mat := Matrix{}
-	for _, ss := range Seriess {
-		mat = append(mat, ss)
-	}
-	appendTimer.Stop()
-	queryResultAppend.Observe(appendTimer.ElapsedTime().Seconds())
-
-	if err := contextDone(ctx, "expression evaluation"); err != nil {
-		return nil, err
-	}
-
-	// TODO(fabxc): order ensured by storage?
-	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
-	sortTimer := query.stats.GetTimer(stats.ResultSortTime).Start()
-	sort.Sort(mat)
-	sortTimer.Stop()
-
-	queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
-	return mat, nil
-}
-
-func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Querier, error) {
-	var maxOffset time.Duration
-
-	Inspect(s.Expr, func(node Node) bool {
-		switch n := node.(type) {
-		case *VectorSelector:
-			if maxOffset < LookbackDelta {
-				maxOffset = LookbackDelta
-			}
-			if n.Offset+LookbackDelta > maxOffset {
-				maxOffset = n.Offset + LookbackDelta
-			}
-		case *MatrixSelector:
-			if maxOffset < n.Range {
-				maxOffset = n.Range
-			}
-			if n.Offset+n.Range > maxOffset {
-				maxOffset = n.Offset + n.Range
-			}
-		}
-		return true
-	})
-
-	mint := s.Start.Add(-maxOffset)
-
-	querier, err := ng.queryable.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
-	if err != nil {
-		return nil, err
-	}
-
-	Inspect(s.Expr, func(node Node) bool {
-		switch n := node.(type) {
-		case *VectorSelector:
-			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
-			if err != nil {
-				// TODO(fabxc): use multi-error.
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
-			}
-			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-				n.iterators = append(n.iterators, it)
-			}
-
-		case *MatrixSelector:
-			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
-			}
-			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
-				n.iterators = append(n.iterators, it)
-			}
-		}
-		return true
-	})
-	return querier, err
 }
 
 func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
@@ -1499,3 +1518,27 @@ func documentedType(t ValueType) string {
 		return string(t)
 	}
 }
+
+// countingIterator implements the storage.SeriesIterator interface while also
+// counting the number of samples looked up.
+// Currently, we are never working with data concurrent so we need not make counter
+// increments concurrent.
+type countingIterator struct {
+	counter *int64
+	it      storage.SeriesIterator
+}
+
+func newCountingIterator(c *int64, it storage.SeriesIterator) *countingIterator {
+	return &countingIterator{c, it}
+}
+
+func (ci countingIterator) Seek(t int64) bool { return ci.it.Seek(t) }
+
+func (ci countingIterator) At() (int64, float64) {
+	*ci.counter++
+	return ci.it.At()
+}
+
+func (ci countingIterator) Next() bool { return ci.it.Next() }
+
+func (ci countingIterator) Err() error { return ci.it.Err() }
