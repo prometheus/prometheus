@@ -225,7 +225,8 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
 	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
+		sts := qry.Stats()
+		qs = stats.NewQueryStats(sts.NumSeries, sts.NumSamples, sts.Timers)
 	}
 
 	return &queryData{
@@ -297,7 +298,8 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	var qs *stats.QueryStats
 	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
+		sts := qry.Stats()
+		qs = stats.NewQueryStats(sts.NumSeries, sts.NumSamples, sts.Timers)
 	}
 
 	return &queryData{
