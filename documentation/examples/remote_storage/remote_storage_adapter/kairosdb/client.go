@@ -57,11 +57,11 @@ func NewClient(logger log.Logger, url string, timeout time.Duration) *Client {
 //https://kairosdb.github.io/docs/build/html/restapi/AddDataPoints.html
 //everything with caps for easier debugging of the jsons
 type StoreSamplesRequest struct {
-	Name      TagValue              `json:"name"`
-	Timestamp int64               `json:"timestamp"`
-	Value     float64             `json:"value"`
-	Type     string             `json:"type"`
-	Tags      map[string]TagValue       	      `json:"tags"`
+	Name      TagValue             `json:"name"`
+	Timestamp int64                `json:"timestamp"`
+	Value     float64               `json:"value"`
+	Type      string               `json:"type"`
+	Tags      map[string]TagValue  `json:"tags"`
 }
 
 // tagsFromMetric translates Prometheus metric into KairosDB tags.
@@ -98,11 +98,11 @@ func (c *Client) Write(samples model.Samples) error {
 		}
 		// All types will be double even if they are int, maybe could be fixed
 		reqs = append(reqs, StoreSamplesRequest{
-			Name:    metric,
+			Name:      metric,
 			Timestamp: int64(s.Timestamp),
 			Value:     v,
 			Tags:      tags_parse,
-			Type: "double",
+			Type:      "double",
 		})
 	}
 	u, err := url.Parse(c.url)
