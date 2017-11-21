@@ -77,6 +77,7 @@ type BlockMetaCompaction struct {
 	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
+	Failed  bool        `json:"failed,omitempty"`
 }
 
 const (
@@ -243,6 +244,11 @@ func (pb *Block) Tombstones() (TombstoneReader, error) {
 		return nil, err
 	}
 	return blockTombstoneReader{TombstoneReader: pb.tombstones, b: pb}, nil
+}
+
+func (pb *Block) setCompactionFailed() error {
+	pb.meta.Compaction.Failed = true
+	return writeMetaFile(pb.dir, &pb.meta)
 }
 
 type blockIndexReader struct {

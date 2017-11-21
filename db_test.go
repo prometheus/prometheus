@@ -27,9 +27,10 @@ import (
 )
 
 func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
-	tmpdir, _ := ioutil.TempDir("", "test")
+	tmpdir, err := ioutil.TempDir("", "test")
+	Ok(t, err)
 
-	db, err := Open(tmpdir, nil, nil, opts)
+	db, err = Open(tmpdir, nil, nil, opts)
 	require.NoError(t, err)
 
 	// Do not close the test database by default as it will deadlock on test failures.
@@ -526,7 +527,8 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
+	tmpdir, err := ioutil.TempDir("", "test")
+	Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
 	db, err := Open(tmpdir, nil, nil, nil)
