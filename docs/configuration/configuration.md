@@ -72,7 +72,7 @@ alerting:
 
 A detailed, valid, example file can be found [here](/config/testdata/conf.good.yml).
 
-### `<global>`
+## `<global>`
 
 The `global` section contains overall settings and defaults for
 Prometheus. The global configuration specifies parameters that are valid in all other configuration
@@ -94,7 +94,7 @@ external_labels:
   [ <labelname>: <labelvalue> ... ]
 ```
 
-### `<rule_files>`
+## `<rule_files>`
 
 The list of files containing reporting and alerting rules.
 
@@ -105,31 +105,17 @@ rule_files:
   [ - <filepath_glob> ... ]
 ```
 
-### `<scrape_configs>`
+## `<scrape_configs>`
 
-A `scrape_configs` section specifies a set of targets and parameters describing how to scrape them. In the general case, one scrape configuration specifies a single job. In advanced configurations, this may change.
-
-An example `scrape_configs` section might look like:
-
-```yaml
-scrape_configs:
-- job_name: 'prometheus'
-  static_configs:
-    - targets: ['localhost:9090']
-
-- job_name: service-ec2
-  ec2_sd_configs:
-    - region: us-east-1
-      access_key: access
-       secret_key: mysecret
-       profile: profile
-```
+The `scrape_configs` section specifies a set of targets and parameters describing how to scrape them. In the general case, one scrape configuration specifies a single job. In advanced configurations, this may change.
 
 Targets may be statically configured via the `static_configs` parameter or
 dynamically discovered using one of the supported service-discovery mechanisms.
 
 Additionally, `relabel_configs` allows advanced modifications to any
 target and its labels before scraping.
+
+### `<scrape_config>`
 
 ```yaml
 # The job name assigned to scraped metrics by default.
@@ -258,6 +244,207 @@ metric_relabel_configs:
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
+
+## `<alerting>`
+
+An `alerting` section specifies Alertmanager instances the Prometheus server sends alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
+
+### `<alert_relabel_configs>`
+
+Alert relabeling is applied to alerts before they are sent to the Alertmanager.
+It has the same configuration format and actions as target relabeling. Alert
+relabeling is applied after external labels.
+
+One use for this is ensuring a HA pair of Prometheus servers with different
+external labels send identical alerts.
+
+### `<alertmanagers>`
+
+Alertmanagers may be statically configured under the `alertmanagers` section via the `static_configs` parameter or dynamically discovered using one of the supported service-discovery mechanisms.
+
+Additionally, `alert_relabel_configs` allows selecting Alertmanagers from discovered
+entities and provide advanced modifications to the used API path, which is exposed
+through the `__alerts_path__` label.
+
+```yaml
+# Per-target Alertmanager timeout when pushing alerts.
+[ timeout: <duration> | default = 10s ]
+
+# Prefix for the HTTP path alerts are pushed to.
+[ path_prefix: <path> | default = / ]
+
+# Configures the protocol scheme used for requests.
+[ scheme: <scheme> | default = http ]
+
+# Sets the `Authorization` header on every request with the
+# configured username and password.
+basic_auth:
+  [ username: <string> ]
+  [ password: <string> ]
+
+# Sets the `Authorization` header on every request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token`.
+[ bearer_token_file: /path/to/bearer/token/file ]
+
+# Configures the scrape request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# List of Azure service discovery configurations.
+azure_sd_configs:
+  [ - <azure_sd_config> ... ]
+
+# List of Consul service discovery configurations.
+consul_sd_configs:
+  [ - <consul_sd_config> ... ]
+
+# List of DNS service discovery configurations.
+dns_sd_configs:
+  [ - <dns_sd_config> ... ]
+
+# List of EC2 service discovery configurations.
+ec2_sd_configs:
+  [ - <ec2_sd_config> ... ]
+
+# List of file service discovery configurations.
+file_sd_configs:
+  [ - <file_sd_config> ... ]
+
+# List of GCE service discovery configurations.
+gce_sd_configs:
+  [ - <gce_sd_config> ... ]
+
+# List of Kubernetes service discovery configurations.
+kubernetes_sd_configs:
+  [ - <kubernetes_sd_config> ... ]
+
+# List of Marathon service discovery configurations.
+marathon_sd_configs:
+  [ - <marathon_sd_config> ... ]
+
+# List of AirBnB's Nerve service discovery configurations.
+nerve_sd_configs:
+  [ - <nerve_sd_config> ... ]
+
+# List of Zookeeper Serverset service discovery configurations.
+serverset_sd_configs:
+  [ - <serverset_sd_config> ... ]
+
+# List of Triton service discovery configurations.
+triton_sd_configs:
+  [ - <triton_sd_config> ... ]
+
+# List of labeled statically configured Alertmanagers.
+static_configs:
+  [ - <static_config> ... ]
+
+# List of Alertmanager relabel configurations.
+relabel_configs:
+  [ - <relabel_config> ... ]
+```
+
+## `<remote_write>`
+
+CAUTION: Remote write is experimental: breaking changes to configuration are
+likely in future releases.
+
+`write_relabel_configs` is relabeling applied to samples before sending them
+to the remote endpoint. Write relabeling is applied after external labels. This
+could be used to limit which samples are sent.
+
+There is a [small demo](/documentation/examples/remote_storage) of how to use
+this functionality.
+
+```yaml
+# The URL of the endpoint to send samples to.
+url: <string>
+
+# Timeout for requests to the remote write endpoint.
+[ remote_timeout: <duration> | default = 30s ]
+
+# List of remote write relabel configurations.
+write_relabel_configs:
+  [ - <relabel_config> ... ]
+
+# Sets the `Authorization` header on every remote write request with the
+# configured username and password.
+basic_auth:
+  [ username: <string> ]
+  [ password: <string> ]
+
+# Sets the `Authorization` header on every remote write request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every remote write request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token`.
+[ bearer_token_file: /path/to/bearer/token/file ]
+
+# Configures the remote write request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+```
+
+There is a list of
+[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
+with this feature.
+
+## `<remote_read>`
+
+CAUTION: Remote read is experimental: breaking changes to configuration are
+likely in future releases.
+
+```yaml
+# The URL of the endpoint to query from.
+url: <string>
+
+# An optional list of equality matchers which have to be
+# present in a selector to query the remote read endpoint.
+required_matchers:
+  [ <labelname>: <labelvalue> ... ]
+
+# Timeout for requests to the remote read endpoint.
+[ remote_timeout: <duration> | default = 30s ]
+
+# Sets the `Authorization` header on every remote read request with the
+# configured username and password.
+basic_auth:
+  [ username: <string> ]
+  [ password: <string> ]
+
+# Sets the `Authorization` header on every remote read request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every remote read request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token`.
+[ bearer_token_file: /path/to/bearer/token/file ]
+
+# Configures the remote read request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+```
+
+There is a list of
+[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
+with this feature.
+
+## Shared configuration blocks
+
+These configuration sections 
 
 ### `<tls_config>`
 
@@ -994,200 +1181,3 @@ has the same configuration format and actions as target relabeling. Metric
 relabeling does not apply to automatically generated timeseries such as `up`.
 
 One use for this is to blacklist time series that are too expensive to ingest.
-
-### `<alert_relabel_configs>`
-
-Alert relabeling is applied to alerts before they are sent to the Alertmanager.
-It has the same configuration format and actions as target relabeling. Alert
-relabeling is applied after external labels.
-
-One use for this is ensuring a HA pair of Prometheus servers with different
-external labels send identical alerts.
-
-### `<alerting>`
-
-An `alerting` section specifies Alertmanager instances the Prometheus server sends
-alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
-
-Alertmanagers may be statically configured under the `alertmanagers` section via the `static_configs` parameter or
-dynamically discovered using one of the supported service-discovery mechanisms.
-
-Additionally, `alert_relabel_configs` allows selecting Alertmanagers from discovered
-entities and provide advanced modifications to the used API path, which is exposed
-through the `__alerts_path__` label.
-
-```yaml
-# Per-target Alertmanager timeout when pushing alerts.
-[ timeout: <duration> | default = 10s ]
-
-# Prefix for the HTTP path alerts are pushed to.
-[ path_prefix: <path> | default = / ]
-
-# Configures the protocol scheme used for requests.
-[ scheme: <scheme> | default = http ]
-
-# Sets the `Authorization` header on every request with the
-# configured username and password.
-basic_auth:
-  [ username: <string> ]
-  [ password: <string> ]
-
-# Sets the `Authorization` header on every request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
-
-# Sets the `Authorization` header on every request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
-
-# Configures the scrape request's TLS settings.
-tls_config:
-  [ <tls_config> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-
-# List of Azure service discovery configurations.
-azure_sd_configs:
-  [ - <azure_sd_config> ... ]
-
-# List of Consul service discovery configurations.
-consul_sd_configs:
-  [ - <consul_sd_config> ... ]
-
-# List of DNS service discovery configurations.
-dns_sd_configs:
-  [ - <dns_sd_config> ... ]
-
-# List of EC2 service discovery configurations.
-ec2_sd_configs:
-  [ - <ec2_sd_config> ... ]
-
-# List of file service discovery configurations.
-file_sd_configs:
-  [ - <file_sd_config> ... ]
-
-# List of GCE service discovery configurations.
-gce_sd_configs:
-  [ - <gce_sd_config> ... ]
-
-# List of Kubernetes service discovery configurations.
-kubernetes_sd_configs:
-  [ - <kubernetes_sd_config> ... ]
-
-# List of Marathon service discovery configurations.
-marathon_sd_configs:
-  [ - <marathon_sd_config> ... ]
-
-# List of AirBnB's Nerve service discovery configurations.
-nerve_sd_configs:
-  [ - <nerve_sd_config> ... ]
-
-# List of Zookeeper Serverset service discovery configurations.
-serverset_sd_configs:
-  [ - <serverset_sd_config> ... ]
-
-# List of Triton service discovery configurations.
-triton_sd_configs:
-  [ - <triton_sd_config> ... ]
-
-# List of labeled statically configured Alertmanagers.
-static_configs:
-  [ - <static_config> ... ]
-
-# List of Alertmanager relabel configurations.
-relabel_configs:
-  [ - <relabel_config> ... ]
-```
-
-### `<remote_write>`
-
-CAUTION: Remote write is experimental: breaking changes to configuration are
-likely in future releases.
-
-`write_relabel_configs` is relabeling applied to samples before sending them
-to the remote endpoint. Write relabeling is applied after external labels. This
-could be used to limit which samples are sent.
-
-There is a [small demo](/documentation/examples/remote_storage) of how to use
-this functionality.
-
-```yaml
-# The URL of the endpoint to send samples to.
-url: <string>
-
-# Timeout for requests to the remote write endpoint.
-[ remote_timeout: <duration> | default = 30s ]
-
-# List of remote write relabel configurations.
-write_relabel_configs:
-  [ - <relabel_config> ... ]
-
-# Sets the `Authorization` header on every remote write request with the
-# configured username and password.
-basic_auth:
-  [ username: <string> ]
-  [ password: <string> ]
-
-# Sets the `Authorization` header on every remote write request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
-
-# Sets the `Authorization` header on every remote write request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
-
-# Configures the remote write request's TLS settings.
-tls_config:
-  [ <tls_config> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-```
-
-There is a list of
-[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
-with this feature.
-
-### `<remote_read>`
-
-CAUTION: Remote read is experimental: breaking changes to configuration are
-likely in future releases.
-
-```yaml
-# The URL of the endpoint to query from.
-url: <string>
-
-# An optional list of equality matchers which have to be
-# present in a selector to query the remote read endpoint.
-required_matchers:
-  [ <labelname>: <labelvalue> ... ]
-
-# Timeout for requests to the remote read endpoint.
-[ remote_timeout: <duration> | default = 30s ]
-
-# Sets the `Authorization` header on every remote read request with the
-# configured username and password.
-basic_auth:
-  [ username: <string> ]
-  [ password: <string> ]
-
-# Sets the `Authorization` header on every remote read request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
-
-# Sets the `Authorization` header on every remote read request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: /path/to/bearer/token/file ]
-
-# Configures the remote read request's TLS settings.
-tls_config:
-  [ <tls_config> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-```
-
-There is a list of
-[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
-with this feature.
