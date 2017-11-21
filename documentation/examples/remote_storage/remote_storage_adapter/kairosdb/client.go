@@ -80,7 +80,7 @@ func (c *Client) Write(samples model.Samples) error {
 
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			level.Debug(c.logger).Log("msg", "cannot send value to OpenTSDB, skipping sample", "value", v, "sample", s)
+			level.Debug(c.logger).Log("msg", "cannot send value to KairosDB, skipping sample", "value", v, "sample", s)
 			continue
 		}
 		metric := TagValue(s.Metric[model.MetricNameLabel])
@@ -139,11 +139,11 @@ func (c *Client) Write(samples model.Samples) error {
         if err := json.Unmarshal(buf, &r); err != nil {
                 return err
         }
-        return fmt.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
+        return fmt.Errorf("failed to write %d samples to KairosDB, %d succeeded", r["failed"], r["success"])
 
 }
 
-// Name identifies the client as an OpenTSDB client.
+// Name identifies the client as an KairosDB client.
 func (c Client) Name() string {
 	return "kairosdb"
 }
