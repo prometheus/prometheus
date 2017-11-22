@@ -47,7 +47,7 @@ Names of query parameters that may be repeated end with `[]`.
 
 `<series_selector>` placeholders refer to Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
-`http_requests_total{method=~"^GET|POST$"}` and need to be URL-encoded.
+`http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
 
 `<duration>` placeholders refer to Prometheus duration strings of the form
 `[0-9]+[smhdwy]`. For example, `5m` refers to a duration of 5 minutes.

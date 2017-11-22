@@ -114,7 +114,7 @@ Label matchers can also be applied to metric names by matching against the inter
 `{__name__="http_requests_total"}`. Matchers other than `=` (`!=`, `=~`, `!~`) may also be used.
 The following expression selects all metrics that have a name starting with `job:`:
 
-    {__name__=~"^job:.*"}
+    {__name__=~"job:.*"}
 
 ### Range Vector Selectors
 
