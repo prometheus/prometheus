@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/url"
+	"sync"
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
@@ -30,9 +31,11 @@ import (
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name   string
-	vector promql.Expr
-	labels labels.Labels
+	name                  string
+	vector                promql.Expr
+	labels                labels.Labels
+	mtx                   sync.Mutex
+	evaluationTimeSeconds float64
 }
 
 // NewRecordingRule returns a new recording rule.
@@ -45,12 +48,12 @@ func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *Reco
 }
 
 // Name returns the rule name.
-func (rule RecordingRule) Name() string {
+func (rule *RecordingRule) Name() string {
 	return rule.name
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, _ *url.URL) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, _ *url.URL) (promql.Vector, error) {
 	query, err := engine.NewInstantQuery(rule.vector.String(), ts)
 	if err != nil {
 		return nil, err
@@ -98,7 +101,7 @@ func (rule RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql
 	return vector, nil
 }
 
-func (rule RecordingRule) String() string {
+func (rule *RecordingRule) String() string {
 	r := rulefmt.Rule{
 		Record: rule.name,
 		Expr:   rule.vector.String(),
@@ -113,8 +116,22 @@ func (rule RecordingRule) String() string {
 	return string(byt)
 }
 
+// setEvaluationTimeSeconds updates evaluationTimeSeconds to the time in seconds it took to evaluate the rule on its last evaluation.
+func (rule *RecordingRule) setEvaluationTimeSeconds(seconds float64) {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	rule.evaluationTimeSeconds = seconds
+}
+
+// GetEvaluationTimeSeconds returns the time in seconds it took to evaluate the recording rule.
+func (rule *RecordingRule) GetEvaluationTimeSeconds() float64 {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	return rule.evaluationTimeSeconds
+}
+
 // HTMLSnippet returns an HTML snippet representing this rule.
-func (rule RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
+func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	ruleExpr := rule.vector.String()
 	labels := make(map[string]string, len(rule.labels))
 	for _, l := range rule.labels {
