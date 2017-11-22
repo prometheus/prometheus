@@ -1,9 +1,30 @@
-{{define "head"}}<!-- nix -->{{end}}
+{{define "head"}}
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/rules.css?v={{ buildVersion }}">
+{{end}}
 
 {{define "content"}}
   <div class="container-fluid">
-    <h2 id="rules">Rules</h2>
-    {{range .RuleGroups}}<pre>File: {{.File}}; Group name: {{.Name}}
-{{range .Rules}}-------<br/>{{.HTMLSnippet pathPrefix}}{{end}}</pre>{{end}}
+    <table class="table table-bordered">
+      {{range .RuleGroups}}
+        <thead>
+          <tr>
+            <td><h2>{{.Name}}</h2></td>
+            <td><h2>{{humanizeDuration .GetEvaluationTimeSeconds}}</h2></td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight:bold">Rule</td>
+            <td style="font-weight:bold">Evaluation Time</td>
+          </tr>
+          {{range .Rules}}
+          <tr>
+            <td class="rule_cell">{{.HTMLSnippet pathPrefix}}</td>
+            <td>{{humanizeDuration .GetEvaluationTimeSeconds}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      {{end}}
+    </table>
   </div>
 {{end}}

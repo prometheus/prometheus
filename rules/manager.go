@@ -115,6 +115,9 @@ type Rule interface {
 	Eval(context.Context, time.Time, *promql.Engine, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
+
+	setEvaluationTimeSeconds(float64)
+	GetEvaluationTimeSeconds() float64
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
@@ -122,12 +125,14 @@ type Rule interface {
 
 // Group is a set of rules that have a logical relation.
 type Group struct {
-	name                 string
-	file                 string
-	interval             time.Duration
-	rules                []Rule
-	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
-	opts                 *ManagerOptions
+	name                  string
+	file                  string
+	interval              time.Duration
+	rules                 []Rule
+	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
+	opts                  *ManagerOptions
+	evaluationTimeSeconds float64
+	mtx                   sync.Mutex
 
 	done       chan struct{}
 	terminated chan struct{}
@@ -176,6 +181,7 @@ func (g *Group) run() {
 		g.Eval(start)
 
 		iterationDuration.Observe(time.Since(start).Seconds())
+		g.setEvaluationTimeSeconds(time.Since(start).Seconds())
 	}
 	lastTriggered := time.Now()
 	iter()
@@ -216,6 +222,19 @@ func (g *Group) hash() uint64 {
 	)
 
 	return l.Hash()
+}
+
+// GetEvaluationTimeSeconds returns the time in seconds it took to evaluate the rule group.
+func (g *Group) GetEvaluationTimeSeconds() float64 {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.evaluationTimeSeconds
+}
+
+func (g *Group) setEvaluationTimeSeconds(seconds float64) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.evaluationTimeSeconds = seconds
 }
 
 // offset returns until the next consistently slotted evaluation interval.
@@ -294,6 +313,7 @@ func (g *Group) Eval(ts time.Time) {
 		func(i int, rule Rule) {
 			defer func(t time.Time) {
 				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
+				rule.setEvaluationTimeSeconds(time.Since(t).Seconds())
 			}(time.Now())
 
 			evalTotal.WithLabelValues(rtyp).Inc()
