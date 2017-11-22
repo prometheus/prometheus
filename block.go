@@ -335,6 +335,20 @@ Outer:
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 
+// CleanTombstones will rewrite the block if there any tombstones to remove them
+// and returns if there was a re-write.
+func (pb *Block) CleanTombstones(dest string, c Compactor) (bool, error) {
+	if len(pb.tombstones) == 0 {
+		return false, nil
+	}
+
+	if err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 // Snapshot creates snapshot of the block into dir.
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())

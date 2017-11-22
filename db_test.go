@@ -551,3 +551,93 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, values, []string{"labelvalue"})
 }
+
+func TestTombstoneClean(t *testing.T) {
+	numSamples := int64(10)
+
+	db, close := openTestDB(t, nil)
+	defer close()
+
+	app := db.Appender()
+
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+	}
+
+	require.NoError(t, app.Commit())
+	cases := []struct {
+		intervals Intervals
+		remaint   []int64
+	}{
+		{
+			intervals: Intervals{{1, 3}, {4, 7}},
+			remaint:   []int64{0, 8, 9},
+		},
+	}
+
+	for _, c := range cases {
+		// Delete the ranges.
+
+		// create snapshot
+		snap, err := ioutil.TempDir("", "snap")
+		require.NoError(t, err)
+		require.NoError(t, db.Snapshot(snap))
+		require.NoError(t, db.Close())
+
+		// reopen DB from snapshot
+		db, err = Open(snap, nil, nil, nil)
+		require.NoError(t, err)
+
+		for _, r := range c.intervals {
+			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+		}
+
+		// All of the setup for THIS line.
+		require.NoError(t, db.CleanTombstones())
+
+		// Compare the result.
+		q, err := db.Querier(0, numSamples)
+		require.NoError(t, err)
+
+		res := q.Select(labels.NewEqualMatcher("a", "b"))
+
+		expSamples := make([]sample, 0, len(c.remaint))
+		for _, ts := range c.remaint {
+			expSamples = append(expSamples, sample{ts, smpls[ts]})
+		}
+
+		expss := newListSeriesSet([]Series{
+			newSeries(map[string]string{"a": "b"}, expSamples),
+		})
+
+		if len(expSamples) == 0 {
+			require.False(t, res.Next())
+			continue
+		}
+
+		for {
+			eok, rok := expss.Next(), res.Next()
+			require.Equal(t, eok, rok, "next")
+
+			if !eok {
+				break
+			}
+			sexp := expss.At()
+			sres := res.At()
+
+			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+
+			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
+			smplRes, errRes := expandSeriesIterator(sres.Iterator())
+
+			require.Equal(t, errExp, errRes, "samples error")
+			require.Equal(t, smplExp, smplRes, "samples")
+		}
+
+		for _, b := range db.blocks {
+			Equals(t, 0, len(b.tombstones))
+		}
+	}
+}
