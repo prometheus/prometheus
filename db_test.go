@@ -366,6 +366,90 @@ func TestDB_Snapshot(t *testing.T) {
 	require.Equal(t, sum, 1000.0)
 }
 
+func TestDB_SnapshotWithDelete(t *testing.T) {
+	numSamples := int64(10)
+
+	db, close := openTestDB(t, nil)
+	defer close()
+
+	app := db.Appender()
+
+	smpls := make([]float64, numSamples)
+	for i := int64(0); i < numSamples; i++ {
+		smpls[i] = rand.Float64()
+		app.Add(labels.Labels{{"a", "b"}}, i, smpls[i])
+	}
+
+	require.NoError(t, app.Commit())
+	cases := []struct {
+		intervals Intervals
+		remaint   []int64
+	}{
+		{
+			intervals: Intervals{{1, 3}, {4, 7}},
+			remaint:   []int64{0, 8, 9},
+		},
+	}
+
+Outer:
+	for _, c := range cases {
+		// TODO(gouthamve): Reset the tombstones somehow.
+		// Delete the ranges.
+		for _, r := range c.intervals {
+			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
+		}
+
+		// create snapshot
+		snap, err := ioutil.TempDir("", "snap")
+		require.NoError(t, err)
+		require.NoError(t, db.Snapshot(snap))
+		require.NoError(t, db.Close())
+
+		// reopen DB from snapshot
+		db, err = Open(snap, nil, nil, nil)
+		require.NoError(t, err)
+
+		// Compare the result.
+		q, err := db.Querier(0, numSamples)
+		require.NoError(t, err)
+
+		res := q.Select(labels.NewEqualMatcher("a", "b"))
+
+		expSamples := make([]sample, 0, len(c.remaint))
+		for _, ts := range c.remaint {
+			expSamples = append(expSamples, sample{ts, smpls[ts]})
+		}
+
+		expss := newListSeriesSet([]Series{
+			newSeries(map[string]string{"a": "b"}, expSamples),
+		})
+
+		if len(expSamples) == 0 {
+			require.False(t, res.Next())
+			continue
+		}
+
+		for {
+			eok, rok := expss.Next(), res.Next()
+			require.Equal(t, eok, rok, "next")
+
+			if !eok {
+				continue Outer
+			}
+			sexp := expss.At()
+			sres := res.At()
+
+			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+
+			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
+			smplRes, errRes := expandSeriesIterator(sres.Iterator())
+
+			require.Equal(t, errExp, errRes, "samples error")
+			require.Equal(t, smplExp, smplRes, "samples")
+		}
+	}
+}
+
 func TestDB_e2e(t *testing.T) {
 	const (
 		numDatapoints = 1000

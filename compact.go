@@ -525,22 +525,24 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 		if len(dranges) > 0 {
 			// Re-encode the chunk to not have deleted values.
-			for _, chk := range chks {
-				if intervalOverlap(dranges[0].Mint, dranges[len(dranges)-1].Maxt, chk.MinTime, chk.MaxTime) {
-					newChunk := chunks.NewXORChunk()
-					app, err := newChunk.Appender()
-					if err != nil {
-						return err
-					}
-
-					it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
-					for it.Next() {
-						ts, v := it.At()
-						app.Append(ts, v)
-					}
-
-					chk.Chunk = newChunk
+			for i, chk := range chks {
+				if !intervalOverlap(dranges[0].Mint, dranges[len(dranges)-1].Maxt, chk.MinTime, chk.MaxTime) {
+					continue
 				}
+
+				newChunk := chunks.NewXORChunk()
+				app, err := newChunk.Appender()
+				if err != nil {
+					return err
+				}
+
+				it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
+				for it.Next() {
+					ts, v := it.At()
+					app.Append(ts, v)
+				}
+
+				chks[i].Chunk = newChunk
 			}
 		}
 		if err := chunkw.WriteChunks(chks...); err != nil {
