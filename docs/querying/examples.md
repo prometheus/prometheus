@@ -29,11 +29,11 @@ Using regular expressions, you could select time series only for jobs whose
 name match a certain pattern, in this case, all jobs that end with `server`.
 Note that this does a substring match, not a full string match:
 
-    http_requests_total{job=~"server$"}
+    http_requests_total{job=~".*server"}
 
 To select all HTTP status codes except 4xx ones, you could run:
 
-    http_requests_total{status!~"^4..$"}
+    http_requests_total{status!~"4.."}
 
 ## Using functions, operators, etc.
 
