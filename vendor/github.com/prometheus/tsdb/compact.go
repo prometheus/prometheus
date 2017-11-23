@@ -52,7 +52,7 @@ type Compactor interface {
 	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
-	Write(dest string, b BlockReader, mint, maxt int64) error
+	Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -321,7 +321,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	return c.write(dest, compactBlockMetas(uid, metas...), blocks...)
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) error {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
@@ -333,7 +333,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) e
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	return c.write(dest, meta, b)
+	return uid, c.write(dest, meta, b)
 }
 
 // instrumentedChunkWriter is used for level 1 compactions to record statistics
@@ -418,7 +418,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
+	if err := writeTombstoneFile(tmp, EmptyTombstoneReader()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
@@ -453,7 +453,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // of the provided blocks. It returns meta information for the new block.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error {
 	var (
-		set        compactionSet
+		set        ChunkSeriesSet
 		allSymbols = make(map[string]struct{}, 1<<16)
 		closers    = []io.Closer{}
 	)
@@ -597,18 +597,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	return nil
 }
 
-type compactionSet interface {
-	Next() bool
-	At() (labels.Labels, []ChunkMeta, Intervals)
-	Err() error
-}
-
 type compactionSeriesSet struct {
 	p          Postings
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
-	series     SeriesSet
 
 	l         labels.Labels
 	c         []ChunkMeta
@@ -631,7 +624,11 @@ func (c *compactionSeriesSet) Next() bool {
 	}
 	var err error
 
-	c.intervals = c.tombstones.Get(c.p.At())
+	c.intervals, err = c.tombstones.Get(c.p.At())
+	if err != nil {
+		c.err = errors.Wrap(err, "get tombstones")
+		return false
+	}
 
 	if err = c.index.Series(c.p.At(), &c.l, &c.c); err != nil {
 		c.err = errors.Wrapf(err, "get series %d", c.p.At())
@@ -675,7 +672,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
 }
 
 type compactionMerger struct {
-	a, b compactionSet
+	a, b ChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -688,7 +685,7 @@ type compactionSeries struct {
 	chunks []*ChunkMeta
 }
 
-func newCompactionMerger(a, b compactionSet) (*compactionMerger, error) {
+func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

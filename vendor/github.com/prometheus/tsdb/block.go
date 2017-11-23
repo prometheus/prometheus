@@ -133,7 +133,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	return renameFile(tmp, path)
 }
 
-// Block represents a directory of time series data covering a continous time range.
+// Block represents a directory of time series data covering a continuous time range.
 type Block struct {
 	mtx            sync.RWMutex
 	closing        bool
@@ -142,10 +142,9 @@ type Block struct {
 	dir  string
 	meta BlockMeta
 
-	chunkr *chunkReader
-	indexr *indexReader
-
-	tombstones tombstoneReader
+	chunkr     ChunkReader
+	indexr     IndexReader
+	tombstones TombstoneReader
 }
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
@@ -156,11 +155,11 @@ func OpenBlock(dir string, pool chunks.Pool) (*Block, error) {
 		return nil, err
 	}
 
-	cr, err := newChunkReader(chunkDir(dir), pool)
+	cr, err := NewDirChunkReader(chunkDir(dir), pool)
 	if err != nil {
 		return nil, err
 	}
-	ir, err := newIndexReader(dir)
+	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
 	if err != nil {
 		return nil, err
 	}
@@ -284,13 +283,15 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return ErrClosing
 	}
 
-	pr := newPostingsReader(pb.indexr)
-	p, absent := pr.Select(ms...)
+	p, absent, err := PostingsForMatchers(pb.indexr, ms...)
+	if err != nil {
+		return errors.Wrap(err, "select series")
+	}
 
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	stones := map[uint64]Intervals{}
+	stones := memTombstones{}
 
 	var lset labels.Labels
 	var chks []ChunkMeta
@@ -322,16 +323,21 @@ Outer:
 		return p.Err()
 	}
 
-	// Merge the current and new tombstones.
-	for k, v := range stones {
-		pb.tombstones.add(k, v[0])
+	err = pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
+		for _, iv := range ivs {
+			stones.add(id, iv)
+			pb.meta.Stats.NumTombstones++
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
+	pb.tombstones = stones
 
 	if err := writeTombstoneFile(pb.dir, pb.tombstones); err != nil {
 		return err
 	}
-
-	pb.meta.Stats.NumTombstones = uint64(len(pb.tombstones))
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 
