@@ -11,19 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !windows,!plan9,!solaris
+// +build !windows,!plan9
 
 package tsdb
 
 import (
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func mmap(f *os.File, length int) ([]byte, error) {
-	return syscall.Mmap(int(f.Fd()), 0, length, syscall.PROT_READ, syscall.MAP_SHARED)
+	return unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ, unix.MAP_SHARED)
 }
 
 func munmap(b []byte) (err error) {
-	return syscall.Munmap(b)
+	return unix.Munmap(b)
 }

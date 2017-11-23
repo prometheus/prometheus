@@ -165,6 +165,11 @@ func (e errPostings) Err() error       { return e.err }
 
 var emptyPostings = errPostings{}
 
+// EmptyPostings returns a postings list that's always empty.
+func EmptyPostings() Postings {
+	return emptyPostings
+}
+
 // Intersect returns a new postings list over the intersection of the
 // input postings.
 func Intersect(its ...Postings) Postings {
