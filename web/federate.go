@@ -75,7 +75,13 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	var set storage.SeriesSet
 
 	for _, mset := range matcherSets {
-		set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
+		s, err := q.Select(mset...)
+		if err != nil {
+			federationErrors.Inc()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		set = storage.DeduplicateSeriesSet(set, s)
 	}
 	if set == nil {
 		return
