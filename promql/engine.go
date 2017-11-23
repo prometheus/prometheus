@@ -517,7 +517,12 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 	Inspect(s.Expr, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
+			set, err := querier.Select(n.LabelMatchers...)
+			if err != nil {
+				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+				return false
+			}
+			n.series, err = expandSeriesSet(set)
 			if err != nil {
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
@@ -529,7 +534,12 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 			}
 
 		case *MatrixSelector:
-			n.series, err = expandSeriesSet(querier.Select(n.LabelMatchers...))
+			set, err := querier.Select(n.LabelMatchers...)
+			if err != nil {
+				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+				return false
+			}
+			n.series, err = expandSeriesSet(set)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false

@@ -172,9 +172,16 @@ func TestStaleness(t *testing.T) {
 	querier, err := storage.Querier(context.Background(), 0, 2000)
 	testutil.Ok(t, err)
 	defer querier.Close()
-	matcher, _ := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
-	samples, err := readSeriesSet(querier.Select(matcher))
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
+
+	set, err := querier.Select(matcher)
+	testutil.Ok(t, err)
+
+	samples, err := readSeriesSet(set)
+	testutil.Ok(t, err)
+
 	metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
 	metricSample, ok := samples[metric]
 
