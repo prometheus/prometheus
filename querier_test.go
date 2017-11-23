@@ -460,7 +460,8 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res := querier.Select(c.ms...)
+		res, err := querier.Select(c.ms...)
+		require.NoError(t, err)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -632,7 +633,8 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res := querier.Select(c.ms...)
+		res, err := querier.Select(c.ms...)
+		require.NoError(t, err)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -1228,7 +1230,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 	sel = func(sets []SeriesSet) SeriesSet {
 		if len(sets) == 0 {
-			return nopSeriesSet{}
+			return EmptySeriesSet()
 		}
 		if len(sets) == 1 {
 			return sets[0]

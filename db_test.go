@@ -36,8 +36,11 @@ func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
 	return db, func() { os.RemoveAll(tmpdir) }
 }
 
-// Convert a SeriesSet into a form useable with reflect.DeepEqual.
-func readSeriesSet(t testing.TB, ss SeriesSet) map[string][]sample {
+// query runs a matcher query against the querier and fully expands its data.
+func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]sample {
+	ss, err := q.Select(matchers...)
+	Ok(t, err)
+
 	result := map[string][]sample{}
 
 	for ss.Next() {
@@ -49,12 +52,12 @@ func readSeriesSet(t testing.TB, ss SeriesSet) map[string][]sample {
 			t, v := it.At()
 			samples = append(samples, sample{t: t, v: v})
 		}
-		require.NoError(t, it.Err())
+		Ok(t, it.Err())
 
 		name := series.Labels().String()
 		result[name] = samples
 	}
-	require.NoError(t, ss.Err())
+	Ok(t, ss.Err())
 
 	return result
 }
@@ -70,7 +73,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	querier, err := db.Querier(0, 1)
 	require.NoError(t, err)
-	seriesSet := readSeriesSet(t, querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
 	require.Equal(t, seriesSet, map[string][]sample{})
 	require.NoError(t, querier.Close())
@@ -82,7 +85,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 
-	seriesSet = readSeriesSet(t, querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
 	require.Equal(t, seriesSet, map[string][]sample{`{foo="bar"}`: []sample{{t: 0, v: 0}}})
 }
@@ -102,7 +105,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 
-	seriesSet := readSeriesSet(t, querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
 	require.Equal(t, seriesSet, map[string][]sample{})
 }
@@ -146,7 +149,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	q, err := db.Querier(0, 200)
 	require.NoError(t, err)
 
-	res := readSeriesSet(t, q.Select(labels.NewEqualMatcher("a", "b")))
+	res := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	require.Equal(t, map[string][]sample{
 		labels.FromStrings("a", "b").String(): []sample{
@@ -198,7 +201,8 @@ Outer:
 		q, err := db.Querier(0, numSamples)
 		require.NoError(t, err)
 
-		res := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		require.NoError(t, err)
 
 		expSamples := make([]sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -294,8 +298,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err := db.Querier(0, 10)
 	require.NoError(t, err)
 
-	ss := q.Select(labels.NewEqualMatcher("a", "b"))
-	ssMap := readSeriesSet(t, ss)
+	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	require.Equal(t, map[string][]sample{
 		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}},
@@ -314,8 +317,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err = db.Querier(0, 10)
 	require.NoError(t, err)
 
-	ss = q.Select(labels.NewEqualMatcher("a", "b"))
-	ssMap = readSeriesSet(t, ss)
+	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	require.Equal(t, map[string][]sample{
 		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}, {10, 3}},
@@ -352,7 +354,9 @@ func TestDB_Snapshot(t *testing.T) {
 	defer querier.Close()
 
 	// sum values
-	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	require.NoError(t, err)
+
 	sum := 0.0
 	for seriesSet.Next() {
 		series := seriesSet.At().Iterator()
@@ -500,7 +504,8 @@ func TestDB_e2e(t *testing.T) {
 			q, err := db.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			ss := q.Select(qry.ms...)
+			ss, err := q.Select(qry.ms...)
+			require.NoError(t, err)
 
 			result := map[string][]sample{}
 

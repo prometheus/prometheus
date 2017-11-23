@@ -575,7 +575,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := h.indexRange(mint, maxt)
 
 	pr := newPostingsReader(ir)
-	p, absent := pr.Select(ms...)
+	p, absent, err := pr.Select(ms...)
+	if err != nil {
+		return errors.Wrap(err, "select series")
+	}
 
 	var stones []Stone
 

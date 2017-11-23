@@ -328,7 +328,8 @@ Outer:
 		// Compare the result.
 		q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
 		require.NoError(t, err)
-		res := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		require.NoError(t, err)
 
 		expSamples := make([]sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
