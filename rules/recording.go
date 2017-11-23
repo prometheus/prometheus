@@ -23,6 +23,7 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
@@ -31,11 +32,11 @@ import (
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name                  string
-	vector                promql.Expr
-	labels                labels.Labels
-	mtx                   sync.Mutex
-	evaluationTimeSeconds float64
+	name           string
+	vector         promql.Expr
+	labels         labels.Labels
+	mtx            sync.Mutex
+	evaluationTime model.Duration
 }
 
 // NewRecordingRule returns a new recording rule.
@@ -116,18 +117,18 @@ func (rule *RecordingRule) String() string {
 	return string(byt)
 }
 
-// setEvaluationTimeSeconds updates evaluationTimeSeconds to the time in seconds it took to evaluate the rule on its last evaluation.
-func (rule *RecordingRule) setEvaluationTimeSeconds(seconds float64) {
+// SetEvaluationTime updates evaluationTimeSeconds to the time in seconds it took to evaluate the rule on its last evaluation.
+func (rule *RecordingRule) SetEvaluationTime(dur model.Duration) {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
-	rule.evaluationTimeSeconds = seconds
+	rule.evaluationTime = dur
 }
 
-// GetEvaluationTimeSeconds returns the time in seconds it took to evaluate the recording rule.
-func (rule *RecordingRule) GetEvaluationTimeSeconds() float64 {
+// GetEvaluationTime returns the time in seconds it took to evaluate the recording rule.
+func (rule *RecordingRule) GetEvaluationTime() model.Duration {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
-	return rule.evaluationTimeSeconds
+	return rule.evaluationTime
 }
 
 // HTMLSnippet returns an HTML snippet representing this rule.
