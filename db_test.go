@@ -556,3 +556,60 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, values, []string{"labelvalue"})
 }
+
+func TestDB_Retention(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	require.NoError(t, err)
+
+	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
+
+	app := db.Appender()
+	_, err = app.Add(lbls, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// create snapshot to make it create a block.
+	// TODO(gouthamve): Add a method to compact headblock.
+	snap, err := ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+	require.NoError(t, db.Snapshot(snap))
+	require.NoError(t, db.Close())
+	defer os.RemoveAll(snap)
+
+	// reopen DB from snapshot
+	db, err = Open(snap, nil, nil, nil)
+	require.NoError(t, err)
+
+	Equals(t, 1, len(db.blocks))
+
+	app = db.Appender()
+	_, err = app.Add(lbls, 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Snapshot again to create another block.
+	snap, err = ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+	require.NoError(t, db.Snapshot(snap))
+	require.NoError(t, db.Close())
+	defer os.RemoveAll(snap)
+
+	// reopen DB from snapshot
+	db, err = Open(snap, nil, nil, &Options{
+		RetentionDuration: 10,
+		BlockRanges:       []int64{50},
+	})
+	require.NoError(t, err)
+
+	Equals(t, 2, len(db.blocks))
+
+	// Now call rentention.
+	changes, err := db.retentionCutoff()
+	Ok(t, err)
+	Assert(t, changes, "there should be changes")
+	Equals(t, 1, len(db.blocks))
+	Equals(t, int64(100), db.blocks[0].meta.MaxTime) // To verify its the right block.
+}
