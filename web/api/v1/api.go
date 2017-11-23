@@ -380,7 +380,11 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	var set storage.SeriesSet
 
 	for _, mset := range matcherSets {
-		set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
+		s, err := q.Select(mset...)
+		if err != nil {
+			return nil, &apiError{errorExec, err}
+		}
+		set = storage.DeduplicateSeriesSet(set, s)
 	}
 
 	metrics := []labels.Labels{}
@@ -517,7 +521,12 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		resp.Results[i], err = remote.ToQueryResult(querier.Select(filteredMatchers...))
+		set, err := querier.Select(filteredMatchers...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp.Results[i], err = remote.ToQueryResult(set)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

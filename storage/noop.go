@@ -22,8 +22,8 @@ func NoopQuerier() Querier {
 	return noopQuerier{}
 }
 
-func (noopQuerier) Select(...*labels.Matcher) SeriesSet {
-	return NoopSeriesSet()
+func (noopQuerier) Select(...*labels.Matcher) (SeriesSet, error) {
+	return NoopSeriesSet(), nil
 }
 
 func (noopQuerier) LabelValues(name string) ([]string, error) {

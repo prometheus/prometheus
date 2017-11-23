@@ -41,9 +41,12 @@ func TestExternalLabelsQuerierSelect(t *testing.T) {
 		Querier:        mockQuerier{},
 		externalLabels: model.LabelSet{"region": "europe"},
 	}
-
 	want := newSeriesSetFilter(mockSeriesSet{}, q.externalLabels)
-	if have := q.Select(matchers...); !reflect.DeepEqual(want, have) {
+	have, err := q.Select(matchers...)
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(want, have) {
 		t.Errorf("expected series set %+v, got %+v", want, have)
 	}
 }
@@ -154,8 +157,8 @@ type mockSeriesSet struct {
 	storage.SeriesSet
 }
 
-func (mockQuerier) Select(...*labels.Matcher) storage.SeriesSet {
-	return mockSeriesSet{}
+func (mockQuerier) Select(...*labels.Matcher) (storage.SeriesSet, error) {
+	return mockSeriesSet{}, nil
 }
 
 func TestPreferLocalStorageFilter(t *testing.T) {
@@ -310,7 +313,11 @@ func TestRequiredLabelsQuerierSelect(t *testing.T) {
 			requiredMatchers: test.requiredMatchers,
 		}
 
-		if want, have := test.seriesSet, q.Select(test.matchers...); want != have {
+		have, err := q.Select(test.matchers...)
+		if err != nil {
+			t.Error(err)
+		}
+		if want := test.seriesSet; want != have {
 			t.Errorf("%d. expected series set %+v, got %+v", i, want, have)
 		}
 		if want, have := test.requiredMatchers, q.requiredMatchers; !reflect.DeepEqual(want, have) {
