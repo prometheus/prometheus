@@ -47,64 +47,13 @@ const (
 	minInt64 = -9223372036854775808
 )
 
-var (
-	currentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "queries",
-		Help:      "The current number of queries being executed or waiting.",
-	})
-	maxConcurrentQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Subsystem: subsystem,
-		Name:      "queries_concurrent_max",
-		Help:      "The max number of concurrent queries.",
-	})
-	queryPrepareTime = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
-		},
-	)
-	queryInnerEval = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
-		},
-	)
-	queryResultAppend = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "result_append"},
-		},
-	)
-	queryResultSort = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "result_sort"},
-		},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(currentQueries)
-	prometheus.MustRegister(maxConcurrentQueries)
-	prometheus.MustRegister(queryPrepareTime)
-	prometheus.MustRegister(queryInnerEval)
-	prometheus.MustRegister(queryResultAppend)
-	prometheus.MustRegister(queryResultSort)
+type engineMetrics struct {
+	currentQueries       prometheus.Gauge
+	maxConcurrentQueries prometheus.Gauge
+	queryPrepareTime     prometheus.Summary
+	queryInnerEval       prometheus.Summary
+	queryResultAppend    prometheus.Summary
+	queryResultSort      prometheus.Summary
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -203,6 +152,7 @@ func contextDone(ctx context.Context, env string) error {
 type Engine struct {
 	// A Querier constructor against an underlying storage.
 	queryable Queryable
+	metrics   *engineMetrics
 	// The gate limiting the maximum number of concurrent and waiting queries.
 	gate    *queryGate
 	options *EngineOptions
@@ -220,12 +170,66 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 	if o == nil {
 		o = DefaultEngineOptions
 	}
-	maxConcurrentQueries.Set(float64(o.MaxConcurrentQueries))
+	metrics := &engineMetrics{
+		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queries",
+			Help:      "The current number of queries being executed or waiting.",
+		}),
+		maxConcurrentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queries_concurrent_max",
+			Help:      "The max number of concurrent queries.",
+		}),
+		queryPrepareTime: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "query_duration_seconds",
+			Help:        "Query timings",
+			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
+		}),
+		queryInnerEval: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "query_duration_seconds",
+			Help:        "Query timings",
+			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
+		}),
+		queryResultAppend: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "query_duration_seconds",
+			Help:        "Query timings",
+			ConstLabels: prometheus.Labels{"slice": "result_append"},
+		}),
+		queryResultSort: prometheus.NewSummary(prometheus.SummaryOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "query_duration_seconds",
+			Help:        "Query timings",
+			ConstLabels: prometheus.Labels{"slice": "result_sort"},
+		}),
+	}
+	metrics.maxConcurrentQueries.Set(float64(o.MaxConcurrentQueries))
+
+	if o.Metrics != nil {
+		o.Metrics.MustRegister(
+			metrics.currentQueries,
+			metrics.maxConcurrentQueries,
+			metrics.queryInnerEval,
+			metrics.queryPrepareTime,
+			metrics.queryResultAppend,
+			metrics.queryResultSort,
+		)
+	}
 	return &Engine{
 		queryable: queryable,
 		gate:      newQueryGate(o.MaxConcurrentQueries),
 		options:   o,
 		logger:    o.Logger,
+		metrics:   metrics,
 	}
 }
 
@@ -234,6 +238,7 @@ type EngineOptions struct {
 	MaxConcurrentQueries int
 	Timeout              time.Duration
 	Logger               log.Logger
+	Metrics              prometheus.Registerer
 }
 
 // DefaultEngineOptions are the default engine options.
@@ -308,8 +313,8 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
-	currentQueries.Inc()
-	defer currentQueries.Dec()
+	ng.metrics.currentQueries.Inc()
+	defer ng.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, ng.options.Timeout)
 	q.cancel = cancel
@@ -362,7 +367,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
 	querier, err := ng.populateIterators(ctx, s)
 	prepareTimer.Stop()
-	queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
+	ng.metrics.queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
 
 	// XXX(fabxc): the querier returned by populateIterators might be instantiated
 	// we must not return without closing irrespective of the error.
@@ -390,7 +395,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 
 		evalTimer.Stop()
-		queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+		ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
 		// Point might have a different timestamp, force it to the evaluation
 		// timestamp as that is when we ran the evaluation.
 		switch v := val.(type) {
@@ -456,7 +461,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 	}
 	evalTimer.Stop()
-	queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+	ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -468,7 +473,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		mat = append(mat, ss)
 	}
 	appendTimer.Stop()
-	queryResultAppend.Observe(appendTimer.ElapsedTime().Seconds())
+	ng.metrics.queryResultAppend.Observe(appendTimer.ElapsedTime().Seconds())
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -480,7 +485,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sort.Sort(mat)
 	sortTimer.Stop()
 
-	queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
+	ng.metrics.queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
 	return mat, nil
 }
 
