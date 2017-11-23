@@ -351,7 +351,7 @@ func (db *DB) compact() (changes bool, err error) {
 			mint: mint,
 			maxt: maxt,
 		}
-		if err = db.compactor.Write(db.dir, head, mint, maxt); err != nil {
+		if _, err = db.compactor.Write(db.dir, head, mint, maxt); err != nil {
 			return changes, errors.Wrap(err, "persist head block")
 		}
 		changes = true
@@ -619,7 +619,8 @@ func (db *DB) Snapshot(dir string) error {
 			return errors.Wrap(err, "error snapshotting headblock")
 		}
 	}
-	return db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
+	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
+	return errors.Wrap(err, "snapshot head block")
 }
 
 // Querier returns a new querier over the data partition for the given time range.

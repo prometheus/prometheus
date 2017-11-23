@@ -29,7 +29,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 	ref := uint64(0)
 
-	stones := make(map[uint64]Intervals)
+	stones := memTombstones{}
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
 		ref += uint64(rand.Int31n(10)) + 1
@@ -43,13 +43,13 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 		stones[ref] = dranges
 	}
 
-	require.NoError(t, writeTombstoneFile(tmpdir, newTombstoneReader(stones)))
+	require.NoError(t, writeTombstoneFile(tmpdir, stones))
 
 	restr, err := readTombstones(tmpdir)
 	require.NoError(t, err)
-	exptr := newTombstoneReader(stones)
+
 	// Compare the two readers.
-	require.Equal(t, exptr, restr)
+	require.Equal(t, stones, restr)
 }
 
 func TestAddingNewIntervals(t *testing.T) {

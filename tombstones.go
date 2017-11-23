@@ -35,12 +35,17 @@ const (
 
 // TombstoneReader gives access to tombstone intervals by series reference.
 type TombstoneReader interface {
-	Get(ref uint64) Intervals
+	// Get returns deletion intervals for the series with the given reference.
+	Get(ref uint64) (Intervals, error)
 
+	// Iter calls the given function for each encountered interval.
+	Iter(func(uint64, Intervals) error) error
+
+	// Close any underlying resources
 	Close() error
 }
 
-func writeTombstoneFile(dir string, tr tombstoneReader) error {
+func writeTombstoneFile(dir string, tr TombstoneReader) error {
 	path := filepath.Join(dir, tombstoneFilename)
 	tmp := path + ".tmp"
 	hash := newCRC32()
@@ -67,19 +72,21 @@ func writeTombstoneFile(dir string, tr tombstoneReader) error {
 
 	mw := io.MultiWriter(f, hash)
 
-	for k, v := range tr {
-		for _, itv := range v {
+	tr.Iter(func(ref uint64, ivs Intervals) error {
+		for _, iv := range ivs {
 			buf.reset()
-			buf.putUvarint64(k)
-			buf.putVarint64(itv.Mint)
-			buf.putVarint64(itv.Maxt)
+
+			buf.putUvarint64(ref)
+			buf.putVarint64(iv.Mint)
+			buf.putVarint64(iv.Maxt)
 
 			_, err = mw.Write(buf.get())
 			if err != nil {
 				return err
 			}
 		}
-	}
+		return nil
+	})
 
 	_, err = f.Write(hash.Sum(nil))
 	if err != nil {
@@ -100,7 +107,7 @@ type Stone struct {
 	intervals Intervals
 }
 
-func readTombstones(dir string) (tombstoneReader, error) {
+func readTombstones(dir string) (memTombstones, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
 	if err != nil {
 		return nil, err
@@ -131,7 +138,8 @@ func readTombstones(dir string) (tombstoneReader, error) {
 		return nil, errors.New("checksum did not match")
 	}
 
-	stonesMap := newEmptyTombstoneReader()
+	stonesMap := memTombstones{}
+
 	for d.len() > 0 {
 		k := d.uvarint64()
 		mint := d.varint64()
@@ -143,28 +151,36 @@ func readTombstones(dir string) (tombstoneReader, error) {
 		stonesMap.add(k, Interval{mint, maxt})
 	}
 
-	return newTombstoneReader(stonesMap), nil
+	return stonesMap, nil
 }
 
-type tombstoneReader map[uint64]Intervals
+type memTombstones map[uint64]Intervals
 
-func newTombstoneReader(ts map[uint64]Intervals) tombstoneReader {
-	return tombstoneReader(ts)
+var emptyTombstoneReader = memTombstones{}
+
+// EmptyTombstoneReader returns a TombstoneReader that is always empty.
+func EmptyTombstoneReader() TombstoneReader {
+	return emptyTombstoneReader
 }
 
-func newEmptyTombstoneReader() tombstoneReader {
-	return tombstoneReader(make(map[uint64]Intervals))
+func (t memTombstones) Get(ref uint64) (Intervals, error) {
+	return t[ref], nil
 }
 
-func (t tombstoneReader) Get(ref uint64) Intervals {
-	return t[ref]
+func (t memTombstones) Iter(f func(uint64, Intervals) error) error {
+	for ref, ivs := range t {
+		if err := f(ref, ivs); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (t tombstoneReader) add(ref uint64, itv Interval) {
+func (t memTombstones) add(ref uint64, itv Interval) {
 	t[ref] = t[ref].add(itv)
 }
 
-func (tombstoneReader) Close() error {
+func (memTombstones) Close() error {
 	return nil
 }
 

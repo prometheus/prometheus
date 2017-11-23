@@ -318,7 +318,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 Outer:
 	for _, c := range cases {
 		// Reset the tombstones.
-		head.tombstones = newEmptyTombstoneReader()
+		head.tombstones = memTombstones{}
 
 		// Delete the ranges.
 		for _, r := range c.intervals {
