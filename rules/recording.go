@@ -53,32 +53,11 @@ func (rule *RecordingRule) Name() string {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, _ *url.URL) (promql.Vector, error) {
-	query, err := engine.NewInstantQuery(rule.vector.String(), ts)
+func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
+	vector, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
 		return nil, err
 	}
-
-	var (
-		result = query.Exec(ctx)
-		vector promql.Vector
-	)
-	if result.Err != nil {
-		return nil, err
-	}
-
-	switch v := result.Value.(type) {
-	case promql.Vector:
-		vector = v
-	case promql.Scalar:
-		vector = promql.Vector{promql.Sample{
-			Point:  promql.Point(v),
-			Metric: labels.Labels{},
-		}}
-	default:
-		return nil, fmt.Errorf("rule result is not a vector or scalar")
-	}
-
 	// Override the metric name and labels.
 	for i := range vector {
 		sample := &vector[i]

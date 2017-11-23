@@ -96,6 +96,9 @@ func main() {
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
+		queryEngine: promql.EngineOptions{
+			Metrics: prometheus.DefaultRegisterer,
+		},
 	}
 
 	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
@@ -234,7 +237,7 @@ func main() {
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		Appendable:  fanoutStorage,
 		Notifier:    notifier,
-		QueryEngine: queryEngine,
+		Query:       rules.EngineQueryFunc(queryEngine),
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
 		Logger:      log.With(logger, "component", "rule manager"),

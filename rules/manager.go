@@ -107,12 +107,42 @@ const (
 	ruleTypeRecording = "recording"
 )
 
+// QueryFunc processes PromQL queries.
+type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
+
+// EngineQueryFunc returns a new query function that executes instant queries against
+// the given engine.
+// It converts scaler into vector results.
+func EngineQueryFunc(engine *promql.Engine) QueryFunc {
+	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		q, err := engine.NewInstantQuery(qs, t)
+		if err != nil {
+			return nil, err
+		}
+		res := q.Exec(ctx)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		switch v := res.Value.(type) {
+		case promql.Vector:
+			return v, nil
+		case promql.Scalar:
+			return promql.Vector{promql.Sample{
+				Point:  promql.Point(v),
+				Metric: labels.Labels{},
+			}}, nil
+		default:
+			return nil, fmt.Errorf("rule result is not a vector or scalar")
+		}
+	}
+}
+
 // A Rule encapsulates a vector expression which is evaluated at a specified
 // interval and acted upon (currently either recorded or used for alerting).
 type Rule interface {
 	Name() string
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, time.Time, *promql.Engine, *url.URL) (promql.Vector, error)
+	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 
@@ -220,7 +250,6 @@ func (g *Group) hash() uint64 {
 		labels.Label{"name", g.name},
 		labels.Label{"file", g.file},
 	)
-
 	return l.Hash()
 }
 
@@ -319,7 +348,7 @@ func (g *Group) Eval(ts time.Time) {
 
 			evalTotal.WithLabelValues(rtyp).Inc()
 
-			vector, err := rule.Eval(g.opts.Context, ts, g.opts.QueryEngine, g.opts.ExternalURL)
+			vector, err := rule.Eval(g.opts.Context, ts, g.opts.Query, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
@@ -439,7 +468,7 @@ type Appendable interface {
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
 	ExternalURL *url.URL
-	QueryEngine *promql.Engine
+	Query       QueryFunc
 	Context     context.Context
 	Notifier    *notifier.Notifier
 	Appendable  Appendable
