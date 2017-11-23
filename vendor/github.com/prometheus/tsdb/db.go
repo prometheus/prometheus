@@ -52,7 +52,7 @@ var DefaultOptions = &Options{
 
 // Options of the DB storage.
 type Options struct {
-	// The interval at which the write ahead log is flushed to disc.
+	// The interval at which the write ahead log is flushed to disk.
 	WALFlushInterval time.Duration
 
 	// Duration of persisted data to keep.
@@ -101,7 +101,6 @@ type DB struct {
 	opts      *Options
 	chunkPool chunks.Pool
 	compactor Compactor
-	wal       WAL
 
 	// Mutex for that must be held when modifying the general block layout.
 	mtx    sync.RWMutex
@@ -142,7 +141,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_reloads_failures_total",
-		Help: "Number of times the database failed to reload black data from disk.",
+		Help: "Number of times the database failed to reload block data from disk.",
 	})
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_triggered_total",
@@ -278,16 +277,23 @@ func (db *DB) retentionCutoff() (bool, error) {
 	}
 
 	db.mtx.RLock()
-	defer db.mtx.RUnlock()
+	blocks := db.blocks[:]
+	db.mtx.RUnlock()
 
-	if len(db.blocks) == 0 {
+	if len(blocks) == 0 {
 		return false, nil
 	}
 
-	last := db.blocks[len(db.blocks)-1]
-	mint := last.Meta().MaxTime - int64(db.opts.RetentionDuration)
+	last := blocks[len(db.blocks)-1]
 
-	return retentionCutoff(db.dir, mint)
+	mint := last.Meta().MaxTime - int64(db.opts.RetentionDuration)
+	dirs, err := retentionCutoffDirs(db.dir, mint)
+	if err != nil {
+		return false, err
+	}
+
+	// This will close the dirs and then delete the dirs.
+	return len(dirs) > 0, db.reload(dirs...)
 }
 
 // Appender opens a new appender against the database.
@@ -345,7 +351,7 @@ func (db *DB) compact() (changes bool, err error) {
 			mint: mint,
 			maxt: maxt,
 		}
-		if err = db.compactor.Write(db.dir, head, mint, maxt); err != nil {
+		if _, err = db.compactor.Write(db.dir, head, mint, maxt); err != nil {
 			return changes, errors.Wrap(err, "persist head block")
 		}
 		changes = true
@@ -389,40 +395,37 @@ func (db *DB) compact() (changes bool, err error) {
 	return changes, nil
 }
 
-// retentionCutoff deletes all directories of blocks in dir that are strictly
+// retentionCutoffDirs returns all directories of blocks in dir that are strictly
 // before mint.
-func retentionCutoff(dir string, mint int64) (bool, error) {
+func retentionCutoffDirs(dir string, mint int64) ([]string, error) {
 	df, err := fileutil.OpenDir(dir)
 	if err != nil {
-		return false, errors.Wrapf(err, "open directory")
+		return nil, errors.Wrapf(err, "open directory")
 	}
 	defer df.Close()
 
 	dirs, err := blockDirs(dir)
 	if err != nil {
-		return false, errors.Wrapf(err, "list block dirs %s", dir)
+		return nil, errors.Wrapf(err, "list block dirs %s", dir)
 	}
 
-	changes := false
+	delDirs := []string{}
 
 	for _, dir := range dirs {
 		meta, err := readMetaFile(dir)
 		if err != nil {
-			return changes, errors.Wrapf(err, "read block meta %s", dir)
+			return nil, errors.Wrapf(err, "read block meta %s", dir)
 		}
 		// The first block we encounter marks that we crossed the boundary
 		// of deletable blocks.
 		if meta.MaxTime >= mint {
 			break
 		}
-		changes = true
 
-		if err := os.RemoveAll(dir); err != nil {
-			return changes, err
-		}
+		delDirs = append(delDirs, dir)
 	}
 
-	return changes, fileutil.Fsync(df)
+	return delDirs, nil
 }
 
 func (db *DB) getBlock(id ulid.ULID) (*Block, bool) {
@@ -572,6 +575,7 @@ func (db *DB) Close() error {
 	if db.lockf != nil {
 		merr.Add(db.lockf.Unlock())
 	}
+	merr.Add(db.head.Close())
 	return merr.Err()
 }
 
@@ -615,7 +619,8 @@ func (db *DB) Snapshot(dir string) error {
 			return errors.Wrap(err, "error snapshotting headblock")
 		}
 	}
-	return db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
+	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
+	return errors.Wrap(err, "snapshot head block")
 }
 
 // Querier returns a new querier over the data partition for the given time range.
