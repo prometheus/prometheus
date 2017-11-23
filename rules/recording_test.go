@@ -62,7 +62,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, now, engine, nil)
+		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine), nil)
 		testutil.Ok(t, err)
 		testutil.Equals(t, result, test.result)
 	}

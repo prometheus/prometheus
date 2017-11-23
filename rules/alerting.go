@@ -171,12 +171,8 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.Engine, externalURL *url.URL) (promql.Vector, error) {
-	query, err := engine.NewInstantQuery(r.vector.String(), ts)
-	if err != nil {
-		return nil, err
-	}
-	res, err := query.Exec(ctx).Vector()
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
+	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +209,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, engine *promql.En
 				"__alert_"+r.Name(),
 				tmplData,
 				model.Time(timestamp.FromTime(ts)),
-				engine,
+				template.QueryFunc(query),
 				externalURL,
 			)
 			result, err := tmpl.Expand()

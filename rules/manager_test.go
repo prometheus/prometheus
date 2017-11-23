@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
+	"sort"
 	"testing"
 	"time"
 
@@ -55,75 +55,108 @@ func TestAlertingRule(t *testing.T) {
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		nil, nil,
 	)
+	result := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "HTTPRequestRateLow",
+				"alertstate", "pending",
+				"group", "canary",
+				"instance", "0",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "HTTPRequestRateLow",
+				"alertstate", "pending",
+				"group", "canary",
+				"instance", "1",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "HTTPRequestRateLow",
+				"alertstate", "firing",
+				"group", "canary",
+				"instance", "0",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "HTTPRequestRateLow",
+				"alertstate", "firing",
+				"group", "canary",
+				"instance", "1",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+	}
 
 	baseTime := time.Unix(0, 0)
 
 	var tests = []struct {
 		time   time.Duration
-		result []string
+		result promql.Vector
 	}{
 		{
-			time: 0,
-			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
-			},
+			time:   0,
+			result: result[:2],
 		}, {
-			time: 5 * time.Minute,
-			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="1", job="app-server", severity="critical"} => 1 @[%v]`,
-			},
+			time:   5 * time.Minute,
+			result: result[2:],
 		}, {
-			time: 10 * time.Minute,
-			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-			},
+			time:   10 * time.Minute,
+			result: result[2:3],
 		},
 		{
 			time:   15 * time.Minute,
-			result: []string{},
+			result: nil,
 		},
 		{
 			time:   20 * time.Minute,
-			result: []string{},
+			result: nil,
 		},
 		{
-			time: 25 * time.Minute,
-			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="pending", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-			},
+			time:   25 * time.Minute,
+			result: result[:1],
 		},
 		{
-			time: 30 * time.Minute,
-			result: []string{
-				`{__name__="ALERTS", alertname="HTTPRequestRateLow", alertstate="firing", group="canary", instance="0", job="app-server", severity="critical"} => 1 @[%v]`,
-			},
+			time:   30 * time.Minute,
+			result: result[2:3],
 		},
 	}
 
 	for i, test := range tests {
+		t.Logf("case %d", i)
+
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, suite.QueryEngine(), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine()), nil)
 		testutil.Ok(t, err)
 
-		actual := strings.Split(res.String(), "\n")
-		expected := annotateWithTime(test.result, evalTime)
-		if actual[0] == "" {
-			actual = []string{}
+		for i := range test.result {
+			test.result[i].T = timestamp.FromTime(evalTime)
 		}
-		testutil.Assert(t, len(expected) == len(actual), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(expected), len(actual))
+		testutil.Assert(t, len(test.result) == len(res), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
-		for j, expectedSample := range expected {
-			found := false
-			for _, actualSample := range actual {
-				if actualSample == expectedSample {
-					found = true
-				}
-			}
-			testutil.Assert(t, found, "%d.%d. Couldn't find expected sample in output: '%v'", i, j, expectedSample)
-		}
+		sort.Slice(res, func(i, j int) bool {
+			return labels.Compare(res[i].Metric, res[j].Metric) < 0
+		})
+		testutil.Equals(t, test.result, res)
 
 		for _, aa := range rule.ActiveAlerts() {
 			testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
@@ -144,10 +177,10 @@ func TestStaleness(t *testing.T) {
 	defer storage.Close()
 	engine := promql.NewEngine(storage, nil)
 	opts := &ManagerOptions{
-		QueryEngine: engine,
-		Appendable:  storage,
-		Context:     context.Background(),
-		Logger:      log.NewNopLogger(),
+		Query:      EngineQueryFunc(engine),
+		Appendable: storage,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	}
 
 	expr, err := promql.ParseExpr("a + 1")
@@ -271,11 +304,11 @@ func TestApplyConfig(t *testing.T) {
 	conf, err := config.LoadFile("../config/testdata/conf.good.yml")
 	testutil.Ok(t, err)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable:  nil,
-		Notifier:    nil,
-		QueryEngine: nil,
-		Context:     context.Background(),
-		Logger:      log.NewNopLogger(),
+		Appendable: nil,
+		Notifier:   nil,
+		Query:      nil,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	ruleManager.Run()
 
