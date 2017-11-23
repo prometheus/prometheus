@@ -30,7 +30,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -505,15 +504,15 @@ func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
 
-// ApplyConfig updates the rule manager's state as the config requires. If
+// Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) ApplyConfig(conf *config.Config) error {
+func (m *Manager) Update(interval time.Duration, paths []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
 	// Get all rule files and load the groups they define.
 	var files []string
-	for _, pat := range conf.RuleFiles {
+	for _, pat := range paths {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
 			// The only error can be a bad pattern.
@@ -523,7 +522,7 @@ func (m *Manager) ApplyConfig(conf *config.Config) error {
 	}
 
 	// To be replaced with a configurable per-group interval.
-	groups, errs := m.loadGroups(time.Duration(conf.GlobalConfig.EvaluationInterval), files...)
+	groups, errs := m.loadGroups(interval, files...)
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
