@@ -24,7 +24,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -292,17 +291,10 @@ func TestCopyState(t *testing.T) {
 	testutil.Equals(t, oldGroup.rules[0], newGroup.rules[3])
 }
 
-func TestApplyConfig(t *testing.T) {
+func TestUpdate(t *testing.T) {
 	expected := map[string]labels.Labels{
-		"test": labels.Labels{
-			labels.Label{
-				Name:  "name",
-				Value: "value",
-			},
-		},
+		"test": labels.FromStrings("name", "value"),
 	}
-	conf, err := config.LoadFile("../config/testdata/conf.good.yml")
-	testutil.Ok(t, err)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: nil,
 		Notifier:   nil,
@@ -312,7 +304,7 @@ func TestApplyConfig(t *testing.T) {
 	})
 	ruleManager.Run()
 
-	err = ruleManager.ApplyConfig(conf)
+	err := ruleManager.Update(0, nil)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
@@ -320,7 +312,7 @@ func TestApplyConfig(t *testing.T) {
 		}
 	}
 
-	err = ruleManager.ApplyConfig(conf)
+	err = ruleManager.Update(0, nil)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
