@@ -9,7 +9,7 @@
         <thead>
           <tr>
             <td><h2>{{.Name}}</h2></td>
-            <td><h2>{{humanizeDuration .GetEvaluationTimeSeconds}}</h2></td>
+            <td><h2>{{humanizeDuration .GetEvaluationTime.Seconds}}</h2></td>
           </tr>
         </thead>
         <tbody>
@@ -20,7 +20,7 @@
           {{range .Rules}}
           <tr>
             <td class="rule_cell">{{.HTMLSnippet pathPrefix}}</td>
-            <td>{{humanizeDuration .GetEvaluationTimeSeconds}}</td>
+            <td>{{humanizeDuration .GetEvaluationTime.Seconds}}</td>
           </tr>
           {{end}}
         </tbody>
