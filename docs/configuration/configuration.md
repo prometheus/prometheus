@@ -643,6 +643,7 @@ Available meta labels:
 * `__meta_kubernetes_pod_ready`: Set to `true` or `false` for the pod's ready state.
 * `__meta_kubernetes_pod_node_name`: The name of the node the pod is scheduled onto.
 * `__meta_kubernetes_pod_host_ip`: The current host IP of the pod object.
+* `__meta_kubernetes_pod_uid`: The UID of the pod object.
 
 #### `endpoints`
 
