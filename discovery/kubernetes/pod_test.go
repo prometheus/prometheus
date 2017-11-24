@@ -276,6 +276,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
+			UID:       "xyz321",
 		},
 		Spec: v1.PodSpec{
 			NodeName: "testnode",
@@ -319,7 +320,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 					"__meta_kubernetes_pod_ip":        "1.2.3.4",
 					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
 					"__meta_kubernetes_pod_ready":     "unknown",
-					"__meta_kubernetes_pod_uid":       "",
+					"__meta_kubernetes_pod_uid":       "xyz321",
 				},
 				Source: "pod/default/testpod",
 			},
