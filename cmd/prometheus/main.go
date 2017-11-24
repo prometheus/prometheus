@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -236,8 +237,8 @@ func main() {
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		Appendable:  fanoutStorage,
-		Notifier:    notifier,
-		Query:       rules.EngineQueryFunc(queryEngine),
+		QueryFunc:   rules.EngineQueryFunc(queryEngine),
+		NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
 		Logger:      log.With(logger, "component", "rule manager"),
@@ -551,4 +552,34 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// sendAlerts implements a the rules.NotifyFunc for a Notifier.
+// It filters any non-firing alerts from the input.
+func sendAlerts(n *notifier.Notifier, externalURL string) rules.NotifyFunc {
+	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
+		var res []*notifier.Alert
+
+		for _, alert := range alerts {
+			// Only send actually firing alerts.
+			if alert.State == rules.StatePending {
+				continue
+			}
+			a := &notifier.Alert{
+				StartsAt:     alert.FiredAt,
+				Labels:       alert.Labels,
+				Annotations:  alert.Annotations,
+				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
+			}
+			if !alert.ResolvedAt.IsZero() {
+				a.EndsAt = alert.ResolvedAt
+			}
+			res = append(res, a)
+		}
+
+		if len(alerts) > 0 {
+			n.Send(res...)
+		}
+		return nil
+	}
 }

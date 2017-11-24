@@ -176,7 +176,7 @@ func TestStaleness(t *testing.T) {
 	defer storage.Close()
 	engine := promql.NewEngine(storage, nil)
 	opts := &ManagerOptions{
-		Query:      EngineQueryFunc(engine),
+		QueryFunc:  EngineQueryFunc(engine),
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
@@ -196,10 +196,12 @@ func TestStaleness(t *testing.T) {
 	err = app.Commit()
 	testutil.Ok(t, err)
 
+	ctx := context.Background()
+
 	// Execute 3 times, 1 second apart.
-	group.Eval(time.Unix(0, 0))
-	group.Eval(time.Unix(1, 0))
-	group.Eval(time.Unix(2, 0))
+	group.Eval(ctx, time.Unix(0, 0))
+	group.Eval(ctx, time.Unix(1, 0))
+	group.Eval(ctx, time.Unix(2, 0))
 
 	querier, err := storage.Querier(context.Background(), 0, 2000)
 	testutil.Ok(t, err)
@@ -296,11 +298,8 @@ func TestUpdate(t *testing.T) {
 		"test": labels.FromStrings("name", "value"),
 	}
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: nil,
-		Notifier:   nil,
-		Query:      nil,
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Context: context.Background(),
+		Logger:  log.NewNopLogger(),
 	})
 	ruleManager.Run()
 
