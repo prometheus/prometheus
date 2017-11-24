@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -506,20 +505,9 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, paths []string) error {
+func (m *Manager) Update(interval time.Duration, files []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-
-	// Get all rule files and load the groups they define.
-	var files []string
-	for _, pat := range paths {
-		fs, err := filepath.Glob(pat)
-		if err != nil {
-			// The only error can be a bad pattern.
-			return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
-		}
-		files = append(files, fs...)
-	}
 
 	// To be replaced with a configurable per-group interval.
 	groups, errs := m.loadGroups(interval, files...)
