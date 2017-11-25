@@ -63,12 +63,14 @@ type queryTimings struct {
 
 // QueryStats currently only holding query timings.
 type QueryStats struct {
-	Timings queryTimings `json:"timings,omitempty"`
+	Timings    queryTimings `json:"timings,omitempty"`
+	NumSeries  int64        `json:"numSeries,omitempty"`
+	NumSamples int64        `json:"numSamples,omitempty"`
 }
 
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(tg *TimerGroup) *QueryStats {
+func NewQueryStats(numSeries, numSamples int64, tg *TimerGroup) *QueryStats {
 	var qt queryTimings
 
 	for s, timer := range tg.timers {
@@ -90,6 +92,10 @@ func NewQueryStats(tg *TimerGroup) *QueryStats {
 		}
 	}
 
-	qs := QueryStats{Timings: qt}
+	qs := QueryStats{
+		Timings:    qt,
+		NumSeries:  numSeries,
+		NumSamples: numSamples,
+	}
 	return &qs
 }
