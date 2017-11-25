@@ -71,7 +71,7 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 type Handler struct {
 	logger log.Logger
 
-	targetManager *retrieval.TargetManager
+	scrapeManager *retrieval.ScrapeManager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
 	context       context.Context
@@ -125,7 +125,7 @@ type Options struct {
 	TSDB          func() *tsdb.DB
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
-	TargetManager *retrieval.TargetManager
+	ScrapeManager *retrieval.ScrapeManager
 	RuleManager   *rules.Manager
 	Notifier      *notifier.Notifier
 	Version       *PrometheusVersion
@@ -169,7 +169,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		flagsMap:    o.Flags,
 
 		context:       o.Context,
-		targetManager: o.TargetManager,
+		scrapeManager: o.ScrapeManager,
 		ruleManager:   o.RuleManager,
 		queryEngine:   o.QueryEngine,
 		tsdb:          o.TSDB,
@@ -181,7 +181,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		ready: 0,
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.targetManager, h.notifier,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -405,7 +405,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		h.options.QueryEngine,
 		h.options.Storage.Querier,
 		func() []*retrieval.Target {
-			return h.options.TargetManager.Targets()
+			return h.options.ScrapeManager.Targets()
 		},
 		func() []*url.URL {
 			return h.options.Notifier.Alertmanagers()
@@ -605,7 +605,7 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	// Bucket targets by job label
 	tps := map[string][]*retrieval.Target{}
-	for _, t := range h.targetManager.Targets() {
+	for _, t := range h.scrapeManager.Targets() {
 		job := t.Labels().Get(model.JobLabel)
 		tps[job] = append(tps[job], t)
 	}

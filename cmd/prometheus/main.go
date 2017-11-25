@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
@@ -230,12 +231,17 @@ func main() {
 
 	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
-		notifier       = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		targetManager  = retrieval.NewTargetManager(fanoutStorage, log.With(logger, "component", "target manager"))
-		queryEngine    = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ctx, cancelCtx = context.WithCancel(context.Background())
+		notifier                      = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		ctxDiscovery, cancelDiscovery = context.WithCancel(context.Background())
+		discoveryManager              = discovery.NewDiscoveryManager(ctxDiscovery, log.With(logger, "component", "discovery manager"))
+		ctxScrape, cancelScrape       = context.WithCancel(context.Background())
+		scrapeManager                 = retrieval.NewScrapeManager(ctxScrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
+		queryEngine                   = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
+		ctxWeb, cancelWeb             = context.WithCancel(context.Background())
+		webHandler                    = web.New(log.With(logger, "component", "web"), &cfg.web)
 	)
 
+	ctx := context.Background()
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		Appendable:  fanoutStorage,
 		QueryFunc:   rules.EngineQueryFunc(queryEngine),
@@ -250,7 +256,7 @@ func main() {
 	cfg.web.TSDB = localStorage.Get
 	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
-	cfg.web.TargetManager = targetManager
+	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifier
 
@@ -267,8 +273,6 @@ func main() {
 	for _, f := range a.Model().Flags {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
-
-	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
@@ -306,6 +310,17 @@ func main() {
 
 	var g group.Group
 	{
+		g.Add(
+			func() error {
+				err := discoveryManager.Run()
+				level.Info(logger).Log("msg", "Discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping discovery manager...")
+				cancelDiscovery()
+			},
+		)
 		term := make(chan os.Signal)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
@@ -426,7 +441,7 @@ func main() {
 	{
 		g.Add(
 			func() error {
-				if err := webHandler.Run(ctx); err != nil {
+				if err := webHandler.Run(ctxWeb); err != nil {
 					return fmt.Errorf("Error starting web server: %s", err)
 				}
 				return nil
@@ -435,7 +450,7 @@ func main() {
 				// Keep this interrupt before the ruleManager.Stop().
 				// Shutting down the query engine before the rule manager will cause pending queries
 				// to be canceled and ensures a quick shutdown of the rule manager.
-				cancelCtx()
+				cancelWeb()
 			},
 		)
 	}
@@ -468,17 +483,15 @@ func main() {
 		)
 	}
 	{
-		// TODO(krasi) refactor targetManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				targetManager.Run()
-				<-cancel
-				return nil
+				err := scrapeManager.Run(discoveryManager.SyncCh())
+				level.Info(logger).Log("msg", "Scrape manager stopped")
+				return err
 			},
 			func(err error) {
-				targetManager.Stop()
-				close(cancel)
+				level.Info(logger).Log("msg", "Stopping scrape manager...")
+				cancelScrape()
 			},
 		)
 	}
