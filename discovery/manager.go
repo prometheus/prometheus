@@ -87,7 +87,6 @@ func (m *DiscoveryManager) Run() error {
 			return m.ctx.Err()
 		}
 	}
-
 }
 
 // SyncCh returns a read only channel used by all DiscoveryProviders targetSet updates

@@ -117,7 +117,6 @@ func init() {
 type scrapePool struct {
 	appendable Appendable
 	logger     log.Logger
-	ctx        context.Context
 
 	mtx    sync.RWMutex
 	config *config.ScrapeConfig
@@ -136,7 +135,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
+func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -152,14 +151,15 @@ func newScrapePool(ctx context.Context, cfg *config.ScrapeConfig, app Appendable
 	sp := &scrapePool{
 		appendable: app,
 		config:     cfg,
-		ctx:        ctx,
 		client:     client,
 		targets:    map[uint64]*Target{},
 		loops:      map[uint64]loop{},
 		logger:     logger,
 	}
 	sp.newLoop = func(t *Target, s scraper) loop {
-		return newScrapeLoop(sp.ctx, s,
+		return newScrapeLoop(
+			context.Background(),
+			s,
 			log.With(logger, "target", t),
 			buffers,
 			func(l labels.Labels) labels.Labels { return sp.mutateSampleLabels(l, t) },
@@ -189,7 +189,6 @@ func (sp *scrapePool) stop() {
 		delete(sp.loops, fp)
 		delete(sp.targets, fp)
 	}
-
 	wg.Wait()
 }
 
@@ -582,8 +581,7 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
-func newScrapeLoop(
-	ctx context.Context,
+func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
 	buffers *pool.BytesPool,
@@ -605,8 +603,8 @@ func newScrapeLoop(
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
 		stopped:             make(chan struct{}),
-		ctx:                 ctx,
 		l:                   l,
+		ctx:                 ctx,
 	}
 	sl.scrapeCtx, sl.cancel = context.WithCancel(ctx)
 

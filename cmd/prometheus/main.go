@@ -231,16 +231,24 @@ func main() {
 
 	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
-		notifier                      = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		ctxDiscovery, cancelDiscovery = context.WithCancel(context.Background())
-		discoveryManager              = discovery.NewDiscoveryManager(ctxDiscovery, log.With(logger, "component", "discovery manager"))
-		ctxScrape, cancelScrape       = context.WithCancel(context.Background())
-		scrapeManager                 = retrieval.NewScrapeManager(ctxScrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
-		queryEngine                   = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ctxWeb, cancelWeb             = context.WithCancel(context.Background())
-		webHandler                    = web.New(log.With(logger, "component", "web"), &cfg.web)
+		ctxDiscovery, cancelDiscovery = context.WithCancel(context.Background())
+		ctxRule                       = context.Background()
+
+		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		discoveryManager = discovery.NewDiscoveryManager(ctxDiscovery, log.With(logger, "component", "discovery manager"))
+		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
+		ruleManager      = rules.NewManager(&rules.ManagerOptions{Appendable: fanoutStorage,
+			Notifier:    notifier,
+			QueryEngine: queryEngine,
+			Context:     ctxRule,
+			ExternalURL: cfg.web.ExternalURL,
+			Logger:      log.With(logger, "component", "rule manager"),
+		})
 	)
 
+<<<<<<< HEAD
 	ctx := context.Background()
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		Appendable:  fanoutStorage,
@@ -253,6 +261,9 @@ func main() {
 	})
 
 	cfg.web.Context = ctx
+=======
+	cfg.web.Context = ctxWeb
+>>>>>>> 95b1dec3... scrape pool doesn't rely on context as Stop() needs to be blocking to prevent Scrape loops trying to write to a closed TSDB storage.
 	cfg.web.TSDB = localStorage.Get
 	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
@@ -273,6 +284,9 @@ func main() {
 	for _, f := range a.Model().Flags {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
+
+	// Depend on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
+	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
@@ -310,17 +324,6 @@ func main() {
 
 	var g group.Group
 	{
-		g.Add(
-			func() error {
-				err := discoveryManager.Run()
-				level.Info(logger).Log("msg", "Discovery manager stopped")
-				return err
-			},
-			func(err error) {
-				level.Info(logger).Log("msg", "Stopping discovery manager...")
-				cancelDiscovery()
-			},
-		)
 		term := make(chan os.Signal)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
@@ -338,6 +341,34 @@ func main() {
 			},
 			func(err error) {
 				close(cancel)
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				err := discoveryManager.Run()
+				level.Info(logger).Log("msg", "Discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping discovery manager...")
+				cancelDiscovery()
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				err := scrapeManager.Run(discoveryManager.SyncCh())
+				level.Info(logger).Log("msg", "Scrape manager stopped")
+				return err
+			},
+			func(err error) {
+				// Scrape manager needs to be stopped before closing the local TSDB
+				// so that it doesn't try to write samples to a closed storage.
+				level.Info(logger).Log("msg", "Stopping scrape manager...")
+				scrapeManager.Stop()
 			},
 		)
 	}
@@ -479,19 +510,6 @@ func main() {
 			},
 			func(err error) {
 				notifier.Stop()
-			},
-		)
-	}
-	{
-		g.Add(
-			func() error {
-				err := scrapeManager.Run(discoveryManager.SyncCh())
-				level.Info(logger).Log("msg", "Scrape manager stopped")
-				return err
-			},
-			func(err error) {
-				level.Info(logger).Log("msg", "Stopping scrape manager...")
-				cancelScrape()
 			},
 		)
 	}
