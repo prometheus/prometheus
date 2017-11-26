@@ -236,7 +236,7 @@ func main() {
 		ctxRule                       = context.Background()
 
 		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		discoveryManager = discovery.NewDiscoveryManager(ctxDiscovery, log.With(logger, "component", "discovery manager"))
+		discoveryManager = discovery.NewManager(ctxDiscovery, log.With(logger, "component", "discovery manager"))
 		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ruleManager      = rules.NewManager(&rules.ManagerOptions{Appendable: fanoutStorage,
