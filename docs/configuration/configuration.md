@@ -9,7 +9,7 @@ Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the
 configuration file defines everything related to scraping [jobs and their
-instances](https://prometheus.io/docs/concepts/jobs_instances/), as well as
+instances](/docs/concepts/jobs_instances/), as well as
 which [rule files to load](recording_rules.md#configuring-rules).
 
 To view all available command-line flags, run `./prometheus -h`.
@@ -501,7 +501,7 @@ Each target has a meta label `__meta_filepath` during the
 filepath from which the target was extracted.
 
 There is a list of
-[integrations](/docs/operating/configuration/#<file_sd_config>) with this
+[integrations](/docs/operating/integrations/#file-service-discovery) with this
 discovery mechanism.
 
 ```yaml
@@ -1123,7 +1123,7 @@ tls_config:
 ```
 
 There is a list of
-[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
+[integrations](/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
 
 ### `<remote_read>`
@@ -1166,5 +1166,5 @@ tls_config:
 ```
 
 There is a list of
-[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
+[integrations](/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
