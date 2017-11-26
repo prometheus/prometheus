@@ -44,7 +44,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{}
-		sp  = newScrapePool(context.Background(), cfg, app, nil)
+		sp  = newScrapePool(cfg, app, nil)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -231,7 +231,7 @@ func TestScrapePoolReload(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp := newScrapePool(context.Background(), cfg, app, nil)
+	sp := newScrapePool(cfg, app, nil)
 
 	wrapped := sp.appender()
 

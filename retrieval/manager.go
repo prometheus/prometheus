@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/go-kit/kit/log"
@@ -30,27 +29,27 @@ type Appendable interface {
 }
 
 // NewScrapeManager is the ScrapeManager constructor
-func NewScrapeManager(ctx context.Context, logger log.Logger, app Appendable) *ScrapeManager {
+func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
 
 	return &ScrapeManager{
-		ctx:           ctx,
 		append:        app,
 		logger:        logger,
 		actionCh:      make(chan func()),
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
 		scrapePools:   make(map[string]*scrapePool),
+		graceShut:     make(chan struct{}),
 	}
 }
 
 // ScrapeManager maintains a set of scrape pools and manages start/stop cicles
 // when receiving new target groups form the discovery manager.
 type ScrapeManager struct {
-	ctx           context.Context
 	logger        log.Logger
 	append        Appendable
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
 	actionCh      chan func()
+	graceShut     chan struct{}
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
@@ -63,10 +62,18 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*config.TargetGroup) error
 			f()
 		case ts := <-tsets:
 			m.reload(ts)
-		case <-m.ctx.Done():
-			return m.ctx.Err()
+		case <-m.graceShut:
+			return nil
 		}
 	}
+}
+
+// Stop cancels all running scrape pools and blocks until all have exited.
+func (m *ScrapeManager) Stop() {
+	for _, sp := range m.scrapePools {
+		sp.stop()
+	}
+	close(m.graceShut)
 }
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
@@ -123,10 +130,10 @@ func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 			return fmt.Errorf("target set '%v' doesn't have valid config", tsetName)
 		}
 
-		// scrape pool doesn't exist so start a new one
+		// Scrape pool doesn't exist so start a new one.
 		existing, ok := m.scrapePools[tsetName]
 		if !ok {
-			sp := newScrapePool(m.ctx, scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
+			sp := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
 			m.scrapePools[tsetName] = sp
 			sp.Sync(tgroup)
 
@@ -134,7 +141,7 @@ func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 			existing.Sync(tgroup)
 		}
 
-		// cleanup - check config and cancel the scrape loops if it don't exist in the scrape config
+		// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
 		jobs := make(map[string]struct{})
 
 		for k := range m.scrapeConfigs {
