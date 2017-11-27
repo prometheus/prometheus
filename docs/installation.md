@@ -81,7 +81,7 @@ the following third-party contributions:
 
 ### Ansible
 
-* [Cloud Alchemy](https://github.com/cloudalchemy/ansible-prometheus)
+* [Cloud Alchemy/ansible-prometheus](https://github.com/cloudalchemy/ansible-prometheus)
 * [griggheo/ansible-prometheus](https://github.com/griggheo/ansible-prometheus)
 * [William-Yeh/ansible-prometheus](https://github.com/William-Yeh/ansible-prometheus)
 
