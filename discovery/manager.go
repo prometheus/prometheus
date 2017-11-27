@@ -103,49 +103,53 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		m.cancelDiscoverers()
 		for _, scfg := range cfg.ScrapeConfigs {
 			for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
-				ctx, cancel := context.WithCancel(m.ctx)
-				updates := make(chan []*config.TargetGroup)
-
-				m.discoverCancel = append(m.discoverCancel, cancel)
-
-				go prov.Run(ctx, updates)
-				go func(provName string) {
-					select {
-					case <-ctx.Done():
-						// First set of all endpoints the provider knows.
-					case tgs, ok := <-updates:
-						// Handle the case that a target provider exits and closes the channel
-						// before the context is done.
-						if !ok {
-							break
-						}
-						m.syncCh <- m.mergeGroups(scfg.JobName, provName, tgs)
-					case <-time.After(5 * time.Second):
-						// Initial set didn't arrive. Act as if it was empty
-						// and wait for updates later on.
-					}
-
-					// Start listening for further updates.
-					for {
-						select {
-						case <-ctx.Done():
-							return
-						case tgs, ok := <-updates:
-							// Handle the case that a target provider exits and closes the channel
-							// before the context is done.
-							if !ok {
-								return
-							}
-							m.syncCh <- m.mergeGroups(scfg.JobName, provName, tgs)
-						}
-					}
-				}(provName)
+				m.startProvider(scfg.JobName, provName, prov)
 			}
 		}
 		close(err)
 	}
 
 	return <-err
+}
+
+func (m *Manager) startProvider(jobName, provName string, worker Discoverer) {
+	ctx, cancel := context.WithCancel(m.ctx)
+	updates := make(chan []*config.TargetGroup)
+
+	m.discoverCancel = append(m.discoverCancel, cancel)
+
+	go worker.Run(ctx, updates)
+	go func(provName string) {
+		select {
+		case <-ctx.Done():
+			// First set of all endpoints the provider knows.
+		case tgs, ok := <-updates:
+			// Handle the case that a target provider exits and closes the channel
+			// before the context is done.
+			if !ok {
+				break
+			}
+			m.syncCh <- m.mergeGroups(jobName, provName, tgs)
+		case <-time.After(5 * time.Second):
+			// Initial set didn't arrive. Act as if it was empty
+			// and wait for updates later on.
+		}
+
+		// Start listening for further updates.
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case tgs, ok := <-updates:
+				// Handle the case that a target provider exits and closes the channel
+				// before the context is done.
+				if !ok {
+					return
+				}
+				m.syncCh <- m.mergeGroups(jobName, provName, tgs)
+			}
+		}
+	}(provName)
 }
 
 func (m *Manager) cancelDiscoverers() {
