@@ -411,7 +411,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	)
 	av2.RegisterGRPC(grpcSrv)
 
-	hh, err := av2.HTTPHandler(grpcl.Addr().String())
+	hh, err := av2.HTTPHandler(h.options.ListenAddress)
 	if err != nil {
 		return err
 	}
