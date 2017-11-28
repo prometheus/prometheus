@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -95,6 +96,9 @@ func main() {
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
+		},
+		queryEngine: promql.EngineOptions{
+			Metrics: prometheus.DefaultRegisterer,
 		},
 	}
 
@@ -233,8 +237,8 @@ func main() {
 
 	ruleManager := rules.NewManager(&rules.ManagerOptions{
 		Appendable:  fanoutStorage,
-		Notifier:    notifier,
-		QueryEngine: queryEngine,
+		QueryFunc:   rules.EngineQueryFunc(queryEngine),
+		NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
 		Logger:      log.With(logger, "component", "rule manager"),
@@ -269,12 +273,24 @@ func main() {
 		conntrack.DialWithTracing(),
 	)
 
-	reloadables := []Reloadable{
-		remoteStorage,
-		targetManager,
-		ruleManager,
-		webHandler,
-		notifier,
+	reloaders := []func(cfg *config.Config) error{
+		remoteStorage.ApplyConfig,
+		targetManager.ApplyConfig,
+		webHandler.ApplyConfig,
+		notifier.ApplyConfig,
+		func(cfg *config.Config) error {
+			// Get all rule files matching the configuration oaths.
+			var files []string
+			for _, pat := range cfg.RuleFiles {
+				fs, err := filepath.Glob(pat)
+				if err != nil {
+					// The only error can be a bad pattern.
+					return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
+				}
+				files = append(files, fs...)
+			}
+			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), cfg.RuleFiles)
+		},
 	}
 
 	prometheus.MustRegister(configSuccess)
@@ -327,11 +343,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -360,7 +376,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, logger, reloadables...); err != nil {
+				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
 					return fmt.Errorf("Error loading config %s", err)
 				}
 
@@ -470,13 +486,7 @@ func main() {
 	level.Info(logger).Log("msg", "See you next time!")
 }
 
-// Reloadable things can change their internal state to match a new config
-// and handle failure gracefully.
-type Reloadable interface {
-	ApplyConfig(*config.Config) error
-}
-
-func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err error) {
+func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config) error) (err error) {
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	defer func() {
@@ -495,7 +505,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...Reloadable) (err er
 
 	failed := false
 	for _, rl := range rls {
-		if err := rl.ApplyConfig(conf); err != nil {
+		if err := rl(conf); err != nil {
 			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
 			failed = true
 		}
@@ -542,4 +552,34 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	eu.Path = ppref
 
 	return eu, nil
+}
+
+// sendAlerts implements a the rules.NotifyFunc for a Notifier.
+// It filters any non-firing alerts from the input.
+func sendAlerts(n *notifier.Notifier, externalURL string) rules.NotifyFunc {
+	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
+		var res []*notifier.Alert
+
+		for _, alert := range alerts {
+			// Only send actually firing alerts.
+			if alert.State == rules.StatePending {
+				continue
+			}
+			a := &notifier.Alert{
+				StartsAt:     alert.FiredAt,
+				Labels:       alert.Labels,
+				Annotations:  alert.Annotations,
+				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
+			}
+			if !alert.ResolvedAt.IsZero() {
+				a.EndsAt = alert.ResolvedAt
+			}
+			res = append(res, a)
+		}
+
+		if len(alerts) > 0 {
+			n.Send(res...)
+		}
+		return nil
+	}
 }

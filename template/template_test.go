@@ -18,21 +18,19 @@ import (
 	"math"
 	"net/url"
 	"testing"
-
-	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
+	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTemplatesScenario struct {
-	text       string
-	output     string
-	input      interface{}
-	shouldFail bool
-	html       bool
+	text        string
+	output      string
+	input       interface{}
+	queryResult promql.Vector
+	shouldFail  bool
+	html        bool
 }
 
 func TestTemplateExpansion(t *testing.T) {
@@ -70,42 +68,72 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "1 2",
 		},
 		{
-			text:   "{{ query \"1.5\" | first | value }}",
-			output: "1.5",
-		},
-		{
-			// Get value from scalar query.
-			text:   "{{ query \"scalar(count(metric))\" | first | value }}",
-			output: "2",
+			text:        "{{ query \"1.5\" | first | value }}",
+			output:      "1.5",
+			queryResult: promql.Vector{{Point: promql.Point{T: 0, V: 1.5}}},
 		},
 		{
 			// Get value from query.
-			text:   "{{ query \"metric{instance='a'}\" | first | value }}",
+			text: "{{ query \"metric{instance='a'}\" | first | value }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "11",
 		},
 		{
 			// Get label from query.
-			text:   "{{ query \"metric{instance='a'}\" | first | label \"instance\" }}",
+			text: "{{ query \"metric{instance='a'}\" | first | label \"instance\" }}",
+
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "a",
 		},
 		{
 			// Missing label is empty when using label function.
-			text:   "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
+			text: "{{ query \"metric{instance='a'}\" | first | label \"foo\" }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "",
 		},
 		{
 			// Missing label is empty when not using label function.
-			text:   "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			text: "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "",
 		},
 		{
-			text:   "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			text: "{{ $x := query \"metric\" | first }}{{ $x.Labels.foo }}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}},
 			output: "",
 			html:   true,
 		},
 		{
 			// Range over query and sort by label.
-			text:   "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
+			text: "{{ range query \"metric\" | sortByLabel \"instance\" }}{{.Labels.instance}}:{{.Value}}: {{end}}",
+			queryResult: promql.Vector{
+				{
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
+					Point:  promql.Point{T: 0, V: 11},
+				}, {
+					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
+					Point:  promql.Point{T: 0, V: 21},
+				}},
 			output: "a:11: b:21: ",
 		},
 		{
@@ -115,13 +143,15 @@ func TestTemplateExpansion(t *testing.T) {
 		},
 		{
 			// Error in function.
-			text:       "{{ query \"missing\" | first }}",
-			shouldFail: true,
+			text:        "{{ query \"missing\" | first }}",
+			queryResult: promql.Vector{},
+			shouldFail:  true,
 		},
 		{
 			// Panic.
-			text:       "{{ (query \"missing\").banana }}",
-			shouldFail: true,
+			text:        "{{ (query \"missing\").banana }}",
+			queryResult: promql.Vector{},
+			shouldFail:  true,
 		},
 		{
 			// Regex replacement.
@@ -211,36 +241,18 @@ func TestTemplateExpansion(t *testing.T) {
 		},
 	}
 
-	time := model.Time(0)
-
-	storage := testutil.NewStorage(t)
-	defer storage.Close()
-
-	app, err := storage.Appender()
-	if err != nil {
-		t.Fatalf("get appender: %s", err)
-	}
-
-	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "a"), 0, 11)
-	require.NoError(t, err)
-	_, err = app.Add(labels.FromStrings(labels.MetricName, "metric", "instance", "b"), 0, 21)
-	require.NoError(t, err)
-
-	if err := app.Commit(); err != nil {
-		t.Fatalf("commit samples: %s", err)
-	}
-
-	engine := promql.NewEngine(storage, nil)
-
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
 	if err != nil {
 		panic(err)
 	}
 
 	for i, s := range scenarios {
+		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+			return s.queryResult, nil
+		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, time, engine, extURL)
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
