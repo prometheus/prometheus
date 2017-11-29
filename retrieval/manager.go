@@ -61,7 +61,9 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*config.TargetGroup) error
 		case f := <-m.actionCh:
 			f()
 		case ts := <-tsets:
-			m.reload(ts)
+			if err := m.reload(ts); err != nil {
+				level.Error(m.logger).Log("msg", "error reloading the scrape manager", "err", err)
+			}
 		case <-m.graceShut:
 			return nil
 		}
