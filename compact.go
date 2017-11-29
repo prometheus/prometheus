@@ -589,7 +589,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	for l := range postings.m {
+	for _, l := range postings.sortedKeys() {
 		if err := indexw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
