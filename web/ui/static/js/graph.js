@@ -451,7 +451,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
         if (xhr.responseJSON.data !== undefined) {
           if (xhr.responseJSON.data.resultType === "scalar") {
             totalTimeSeries = 1;
-          } else {
+          } else if(xhr.responseJSON.data.result !== null) {
             totalTimeSeries = xhr.responseJSON.data.result.length;
           }
         }
@@ -720,7 +720,7 @@ Prometheus.Graph.prototype.handleConsoleResponse = function(data, textStatus) {
 
   switch(data.resultType) {
   case "vector":
-    if (data.result.length === 0) {
+    if (data.result === null || data.result.length === 0) {
       tBody.append("<tr><td colspan='2'><i>no data</i></td></tr>");
       return;
     }
