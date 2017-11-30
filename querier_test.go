@@ -454,13 +454,14 @@ Outer:
 		querier := &blockQuerier{
 			index:      ir,
 			chunks:     cr,
-			tombstones: newEmptyTombstoneReader(),
+			tombstones: EmptyTombstoneReader(),
 
 			mint: c.mint,
 			maxt: c.maxt,
 		}
 
-		res := querier.Select(c.ms...)
+		res, err := querier.Select(c.ms...)
+		require.NoError(t, err)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -505,7 +506,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 			chunks [][]sample
 		}
 
-		tombstones tombstoneReader
+		tombstones TombstoneReader
 		queries    []query
 	}{
 		data: []struct {
@@ -553,13 +554,11 @@ func TestBlockQuerierDelete(t *testing.T) {
 				},
 			},
 		},
-		tombstones: newTombstoneReader(
-			map[uint64]Intervals{
-				1: Intervals{{1, 3}},
-				2: Intervals{{1, 3}, {6, 10}},
-				3: Intervals{{6, 10}},
-			},
-		),
+		tombstones: memTombstones{
+			1: Intervals{{1, 3}},
+			2: Intervals{{1, 3}, {6, 10}},
+			3: Intervals{{6, 10}},
+		},
 
 		queries: []query{
 			{
@@ -632,7 +631,8 @@ Outer:
 			maxt: c.maxt,
 		}
 
-		res := querier.Select(c.ms...)
+		res, err := querier.Select(c.ms...)
+		require.NoError(t, err)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
@@ -734,7 +734,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		bcs := &baseChunkSeries{
 			p:          newListPostings(tc.postings),
 			index:      mi,
-			tombstones: newEmptyTombstoneReader(),
+			tombstones: EmptyTombstoneReader(),
 		}
 
 		i := 0
@@ -1228,7 +1228,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 	sel = func(sets []SeriesSet) SeriesSet {
 		if len(sets) == 0 {
-			return nopSeriesSet{}
+			return EmptySeriesSet()
 		}
 		if len(sets) == 1 {
 			return sets[0]

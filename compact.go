@@ -52,7 +52,7 @@ type Compactor interface {
 	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
-	Write(dest string, b BlockReader, mint, maxt int64) error
+	Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -205,7 +205,15 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 			continue
 		}
 
+	Outer:
 		for _, p := range parts {
+			// Donot select the range if it has a block whose compaction failed.
+			for _, dm := range p {
+				if dm.meta.Compaction.Failed {
+					continue Outer
+				}
+			}
+
 			mint := p[0].meta.MinTime
 			maxt := p[len(p)-1].meta.MaxTime
 			// Pick the range of blocks if it spans the full range (potentially with gaps)
@@ -297,6 +305,7 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // provided directories.
 func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	var blocks []BlockReader
+	var bs []*Block
 	var metas []*BlockMeta
 
 	for _, d := range dirs {
@@ -313,15 +322,30 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 
 		metas = append(metas, meta)
 		blocks = append(blocks, b)
+		bs = append(bs, b)
 	}
 
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
-	return c.write(dest, compactBlockMetas(uid, metas...), blocks...)
+	err = c.write(dest, compactBlockMetas(uid, metas...), blocks...)
+	if err == nil {
+		return nil
+	}
+
+	var merr MultiError
+	merr.Add(err)
+
+	for _, b := range bs {
+		if err := b.setCompactionFailed(); err != nil {
+			merr.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
+		}
+	}
+
+	return merr
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) error {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
@@ -333,7 +357,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) e
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
-	return c.write(dest, meta, b)
+	return uid, c.write(dest, meta, b)
 }
 
 // instrumentedChunkWriter is used for level 1 compactions to record statistics
@@ -360,16 +384,20 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...ChunkMeta) error {
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	level.Info(c.logger).Log("msg", "compact blocks", "count", len(blocks), "mint", meta.MinTime, "maxt", meta.MaxTime)
 
+	dir := filepath.Join(dest, meta.ULID.String())
+	tmp := dir + ".tmp"
+
 	defer func(t time.Time) {
 		if err != nil {
 			c.metrics.failed.Inc()
+			// TODO(gouthamve): Handle error how?
+			if err := os.RemoveAll(tmp); err != nil {
+				level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
+			}
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
-
-	dir := filepath.Join(dest, meta.ULID.String())
-	tmp := dir + ".tmp"
 
 	if err = os.RemoveAll(tmp); err != nil {
 		return err
@@ -418,7 +446,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, newEmptyTombstoneReader()); err != nil {
+	if err := writeTombstoneFile(tmp, EmptyTombstoneReader()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
@@ -453,7 +481,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // of the provided blocks. It returns meta information for the new block.
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error {
 	var (
-		set        compactionSet
+		set        ChunkSeriesSet
 		allSymbols = make(map[string]struct{}, 1<<16)
 		closers    = []io.Closer{}
 	)
@@ -589,7 +617,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	for l := range postings.m {
+	for _, l := range postings.sortedKeys() {
 		if err := indexw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
@@ -597,18 +625,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	return nil
 }
 
-type compactionSet interface {
-	Next() bool
-	At() (labels.Labels, []ChunkMeta, Intervals)
-	Err() error
-}
-
 type compactionSeriesSet struct {
 	p          Postings
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
-	series     SeriesSet
 
 	l         labels.Labels
 	c         []ChunkMeta
@@ -631,7 +652,11 @@ func (c *compactionSeriesSet) Next() bool {
 	}
 	var err error
 
-	c.intervals = c.tombstones.Get(c.p.At())
+	c.intervals, err = c.tombstones.Get(c.p.At())
+	if err != nil {
+		c.err = errors.Wrap(err, "get tombstones")
+		return false
+	}
 
 	if err = c.index.Series(c.p.At(), &c.l, &c.c); err != nil {
 		c.err = errors.Wrapf(err, "get series %d", c.p.At())
@@ -675,7 +700,7 @@ func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
 }
 
 type compactionMerger struct {
-	a, b compactionSet
+	a, b ChunkSeriesSet
 
 	aok, bok  bool
 	l         labels.Labels
@@ -688,7 +713,7 @@ type compactionSeries struct {
 	chunks []*ChunkMeta
 }
 
-func newCompactionMerger(a, b compactionSet) (*compactionMerger, error) {
+func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
 	c := &compactionMerger{
 		a: a,
 		b: b,

@@ -66,7 +66,7 @@ type Head struct {
 
 	postings *memPostings // postings lists for terms
 
-	tombstones tombstoneReader
+	tombstones memTombstones
 }
 
 type headMetrics struct {
@@ -186,7 +186,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   newUnorderedMemPostings(),
-		tombstones: newEmptyTombstoneReader(),
+		tombstones: memTombstones{},
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -574,8 +574,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	pr := newPostingsReader(ir)
-	p, absent := pr.Select(ms...)
+	p, absent, err := PostingsForMatchers(ir, ms...)
+	if err != nil {
+		return errors.Wrap(err, "select series")
+	}
 
 	var stones []Stone
 

@@ -14,8 +14,13 @@
 package tsdb
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -157,17 +162,6 @@ func TestLeveledCompactor_plan(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	metaRange := func(name string, mint, maxt int64, stats *BlockStats) dirMeta {
-		meta := &BlockMeta{MinTime: mint, MaxTime: maxt}
-		if stats != nil {
-			meta.Stats = *stats
-		}
-		return dirMeta{
-			dir:  name,
-			meta: meta,
-		}
-	}
-
 	cases := []struct {
 		metas    []dirMeta
 		expected []string
@@ -274,3 +268,85 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		require.Equal(t, c.expected, res, "test case %d", i)
 	}
 }
+
+func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
+	compactor, err := NewLeveledCompactor(nil, nil, []int64{
+		20,
+		60,
+		240,
+		720,
+		2160,
+	}, nil)
+	Ok(t, err)
+
+	cases := []struct {
+		metas []dirMeta
+	}{
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 40, 60, nil),
+			},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 60, 80, nil),
+			},
+		},
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 40, 60, nil),
+				metaRange("4", 60, 120, nil),
+				metaRange("5", 120, 180, nil),
+			},
+		},
+	}
+
+	for _, c := range cases {
+		c.metas[1].meta.Compaction.Failed = true
+		res, err := compactor.plan(c.metas)
+		Ok(t, err)
+
+		Equals(t, []string(nil), res)
+	}
+}
+
+func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
+	compactor, err := NewLeveledCompactor(nil, log.NewNopLogger(), []int64{
+		20,
+		60,
+		240,
+		720,
+		2160,
+	}, nil)
+	Ok(t, err)
+
+	tmpdir, err := ioutil.TempDir("", "test")
+	Ok(t, err)
+
+	NotOk(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
+	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + ".tmp")
+	Assert(t, os.IsNotExist(err), "directory is not cleaned up")
+}
+
+func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {
+	meta := &BlockMeta{MinTime: mint, MaxTime: maxt}
+	if stats != nil {
+		meta.Stats = *stats
+	}
+	return dirMeta{
+		dir:  name,
+		meta: meta,
+	}
+}
+
+type erringBReader struct{}
+
+func (erringBReader) Index() (IndexReader, error)          { return nil, errors.New("index") }
+func (erringBReader) Chunks() (ChunkReader, error)         { return nil, errors.New("chunks") }
+func (erringBReader) Tombstones() (TombstoneReader, error) { return nil, errors.New("tombstones") }
