@@ -241,6 +241,7 @@ func main() {
 		NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
 		Context:     ctx,
 		ExternalURL: cfg.web.ExternalURL,
+		Registerer:  prometheus.DefaultRegisterer,
 		Logger:      log.With(logger, "component", "rule manager"),
 	})
 
