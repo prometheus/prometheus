@@ -81,6 +81,18 @@ var (
 		Name:      "rule_group_iterations_total",
 		Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 	})
+	lastDuration = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "", "rule_group_last_duration_seconds"),
+		"The duration of the last rule group evaulation.",
+		[]string{"rule_group"},
+		nil,
+	)
+	groupInterval = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "", "rule_group_interval_seconds"),
+		"The interval of a rule group.",
+		[]string{"rule_group"},
+		nil,
+	)
 )
 
 func init() {
@@ -444,17 +456,22 @@ type ManagerOptions struct {
 	Context     context.Context
 	Appendable  Appendable
 	Logger      log.Logger
+	Registerer  prometheus.Registerer
 }
 
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
-	return &Manager{
+	m := &Manager{
 		groups: map[string]*Group{},
 		opts:   o,
 		block:  make(chan struct{}),
 		logger: o.Logger,
 	}
+	if o.Registerer != nil {
+		o.Registerer.MustRegister(m)
+	}
+	return m
 }
 
 // Run starts processing of the rule manager.
@@ -626,4 +643,26 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 		}
 	}
 	return alerts
+}
+
+// Implements prometheus.Collector.
+func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
+	ch <- lastDuration
+	ch <- groupInterval
+}
+
+// Implements prometheus.Collector.
+func (m *Manager) Collect(ch chan<- prometheus.Metric) {
+	for _, g := range m.RuleGroups() {
+		ch <- prometheus.MustNewConstMetric(lastDuration,
+			prometheus.GaugeValue,
+			g.GetEvaluationTime().Seconds(),
+			groupKey(g.file, g.name))
+	}
+	for _, g := range m.RuleGroups() {
+		ch <- prometheus.MustNewConstMetric(groupInterval,
+			prometheus.GaugeValue,
+			g.interval.Seconds(),
+			groupKey(g.file, g.name))
+	}
 }
