@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // MetadataHeaderPrefix is the http prefix that represents custom metadata
@@ -44,14 +44,14 @@ At a minimum, the RemoteAddr is included in the fashion of "X-Forwarded-For",
 except that the forwarded destination is not another HTTP service but rather
 a gRPC service.
 */
-func AnnotateContext(ctx context.Context, req *http.Request) (context.Context, error) {
+func AnnotateContext(ctx context.Context, mux *ServeMux, req *http.Request) (context.Context, error) {
 	var pairs []string
 	timeout := DefaultContextTimeout
 	if tm := req.Header.Get(metadataGrpcTimeout); tm != "" {
 		var err error
 		timeout, err = timeoutDecode(tm)
 		if err != nil {
-			return nil, grpc.Errorf(codes.InvalidArgument, "invalid grpc-timeout: %s", tm)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid grpc-timeout: %s", tm)
 		}
 	}
 
@@ -61,12 +61,8 @@ func AnnotateContext(ctx context.Context, req *http.Request) (context.Context, e
 			if strings.ToLower(key) == "authorization" {
 				pairs = append(pairs, "authorization", val)
 			}
-			if isPermanentHTTPHeader(key) {
-				pairs = append(pairs, strings.ToLower(fmt.Sprintf("%s%s", MetadataPrefix, key)), val)
-				continue
-			}
-			if strings.HasPrefix(key, MetadataHeaderPrefix) {
-				pairs = append(pairs, key[len(MetadataHeaderPrefix):], val)
+			if h, ok := mux.incomingHeaderMatcher(key); ok {
+				pairs = append(pairs, h, val)
 			}
 		}
 	}
@@ -94,7 +90,11 @@ func AnnotateContext(ctx context.Context, req *http.Request) (context.Context, e
 	if len(pairs) == 0 {
 		return ctx, nil
 	}
-	return metadata.NewOutgoingContext(ctx, metadata.Pairs(pairs...)), nil
+	md := metadata.Pairs(pairs...)
+	if mux.metadataAnnotator != nil {
+		md = metadata.Join(md, mux.metadataAnnotator(ctx, req))
+	}
+	return metadata.NewOutgoingContext(ctx, md), nil
 }
 
 // ServerMetadata consists of metadata sent from gRPC server.
