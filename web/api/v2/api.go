@@ -144,6 +144,11 @@ func (s *adminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotReques
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
+// TSDBCleanTombstones implements pb.AdminServer.
+func (s *adminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
+}
+
 // DeleteSeries imeplements pb.AdminServer.
 func (s *adminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
@@ -179,6 +184,20 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.
 		return nil, status.Errorf(codes.Internal, "create snapshot: %s", err)
 	}
 	return &pb.TSDBSnapshotResponse{Name: name}, nil
+}
+
+// TSDBCleanTombstones implements pb.AdminServer.
+func (s *Admin) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+	db := s.db()
+	if db == nil {
+		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
+	}
+
+	if err := db.CleanTombstones(); err != nil {
+		return nil, status.Errorf(codes.Internal, "clean tombstones: %s", err)
+	}
+
+	return &pb.TSDBCleanTombstonesResponse{}, nil
 }
 
 // DeleteSeries implements pb.AdminServer.
