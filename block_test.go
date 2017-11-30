@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/prometheus/tsdb/index"
-	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestSetCompactionFailed(t *testing.T) {

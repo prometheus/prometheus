@@ -1338,7 +1338,7 @@ func TestDeletedIterator(t *testing.T) {
 				}
 			}
 
-			testutil.Assert(t, i < 1000 == true, "")
+			testutil.Assert(t, i < 1000, "")
 
 			ts, v := it.At()
 			testutil.Equals(t, act[i].t, ts)
@@ -1353,7 +1353,7 @@ func TestDeletedIterator(t *testing.T) {
 			}
 		}
 
-		testutil.Assert(t, i < 1000 == false, "")
+		testutil.Assert(t, i >= 1000, "")
 		testutil.Ok(t, it.Err())
 	}
 }
