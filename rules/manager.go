@@ -67,18 +67,18 @@ var (
 	)
 	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Namespace:  namespace,
-		Name:       "evaluator_duration_seconds",
+		Name:       "rule_group_duration_seconds",
 		Help:       "The duration of rule group evaluations.",
 		Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
 	})
 	iterationsMissed = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
-		Name:      "evaluator_iterations_missed_total",
+		Name:      "rule_group_iterations_missed_total",
 		Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
 	})
 	iterationsScheduled = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
-		Name:      "evaluator_iterations_total",
+		Name:      "rule_group_iterations_total",
 		Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
 	})
 )
