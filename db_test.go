@@ -27,17 +27,21 @@ import (
 )
 
 func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
-	tmpdir, _ := ioutil.TempDir("", "test")
+	tmpdir, err := ioutil.TempDir("", "test")
+	Ok(t, err)
 
-	db, err := Open(tmpdir, nil, nil, opts)
+	db, err = Open(tmpdir, nil, nil, opts)
 	require.NoError(t, err)
 
 	// Do not close the test database by default as it will deadlock on test failures.
 	return db, func() { os.RemoveAll(tmpdir) }
 }
 
-// Convert a SeriesSet into a form useable with reflect.DeepEqual.
-func readSeriesSet(t testing.TB, ss SeriesSet) map[string][]sample {
+// query runs a matcher query against the querier and fully expands its data.
+func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]sample {
+	ss, err := q.Select(matchers...)
+	Ok(t, err)
+
 	result := map[string][]sample{}
 
 	for ss.Next() {
@@ -49,12 +53,12 @@ func readSeriesSet(t testing.TB, ss SeriesSet) map[string][]sample {
 			t, v := it.At()
 			samples = append(samples, sample{t: t, v: v})
 		}
-		require.NoError(t, it.Err())
+		Ok(t, it.Err())
 
 		name := series.Labels().String()
 		result[name] = samples
 	}
-	require.NoError(t, ss.Err())
+	Ok(t, ss.Err())
 
 	return result
 }
@@ -70,7 +74,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	querier, err := db.Querier(0, 1)
 	require.NoError(t, err)
-	seriesSet := readSeriesSet(t, querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
 	require.Equal(t, seriesSet, map[string][]sample{})
 	require.NoError(t, querier.Close())
@@ -82,7 +86,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 
-	seriesSet = readSeriesSet(t, querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
 	require.Equal(t, seriesSet, map[string][]sample{`{foo="bar"}`: []sample{{t: 0, v: 0}}})
 }
@@ -102,7 +106,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	require.NoError(t, err)
 	defer querier.Close()
 
-	seriesSet := readSeriesSet(t, querier.Select(labels.NewEqualMatcher("foo", "bar")))
+	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
 	require.Equal(t, seriesSet, map[string][]sample{})
 }
@@ -146,7 +150,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	q, err := db.Querier(0, 200)
 	require.NoError(t, err)
 
-	res := readSeriesSet(t, q.Select(labels.NewEqualMatcher("a", "b")))
+	res := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	require.Equal(t, map[string][]sample{
 		labels.FromStrings("a", "b").String(): []sample{
@@ -198,7 +202,8 @@ Outer:
 		q, err := db.Querier(0, numSamples)
 		require.NoError(t, err)
 
-		res := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		require.NoError(t, err)
 
 		expSamples := make([]sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -294,8 +299,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err := db.Querier(0, 10)
 	require.NoError(t, err)
 
-	ss := q.Select(labels.NewEqualMatcher("a", "b"))
-	ssMap := readSeriesSet(t, ss)
+	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	require.Equal(t, map[string][]sample{
 		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}},
@@ -314,8 +318,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	q, err = db.Querier(0, 10)
 	require.NoError(t, err)
 
-	ss = q.Select(labels.NewEqualMatcher("a", "b"))
-	ssMap = readSeriesSet(t, ss)
+	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	require.Equal(t, map[string][]sample{
 		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}, {10, 3}},
@@ -352,7 +355,9 @@ func TestDB_Snapshot(t *testing.T) {
 	defer querier.Close()
 
 	// sum values
-	seriesSet := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	seriesSet, err := querier.Select(labels.NewEqualMatcher("foo", "bar"))
+	require.NoError(t, err)
+
 	sum := 0.0
 	for seriesSet.Next() {
 		series := seriesSet.At().Iterator()
@@ -413,7 +418,8 @@ Outer:
 		q, err := db.Querier(0, numSamples)
 		require.NoError(t, err)
 
-		res := q.Select(labels.NewEqualMatcher("a", "b"))
+		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
+		require.NoError(t, err)
 
 		expSamples := make([]sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -584,7 +590,8 @@ func TestDB_e2e(t *testing.T) {
 			q, err := db.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			ss := q.Select(qry.ms...)
+			ss, err := q.Select(qry.ms...)
+			require.NoError(t, err)
 
 			result := map[string][]sample{}
 
@@ -610,7 +617,8 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
+	tmpdir, err := ioutil.TempDir("", "test")
+	Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
 	db, err := Open(tmpdir, nil, nil, nil)
@@ -634,4 +642,61 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	values, err := q.LabelValues("labelname")
 	require.NoError(t, err)
 	require.Equal(t, values, []string{"labelvalue"})
+}
+
+func TestDB_Retention(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	require.NoError(t, err)
+
+	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
+
+	app := db.Appender()
+	_, err = app.Add(lbls, 0, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// create snapshot to make it create a block.
+	// TODO(gouthamve): Add a method to compact headblock.
+	snap, err := ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+	require.NoError(t, db.Snapshot(snap))
+	require.NoError(t, db.Close())
+	defer os.RemoveAll(snap)
+
+	// reopen DB from snapshot
+	db, err = Open(snap, nil, nil, nil)
+	require.NoError(t, err)
+
+	Equals(t, 1, len(db.blocks))
+
+	app = db.Appender()
+	_, err = app.Add(lbls, 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Snapshot again to create another block.
+	snap, err = ioutil.TempDir("", "snap")
+	require.NoError(t, err)
+	require.NoError(t, db.Snapshot(snap))
+	require.NoError(t, db.Close())
+	defer os.RemoveAll(snap)
+
+	// reopen DB from snapshot
+	db, err = Open(snap, nil, nil, &Options{
+		RetentionDuration: 10,
+		BlockRanges:       []int64{50},
+	})
+	require.NoError(t, err)
+
+	Equals(t, 2, len(db.blocks))
+
+	// Now call rentention.
+	changes, err := db.retentionCutoff()
+	Ok(t, err)
+	Assert(t, changes, "there should be changes")
+	Equals(t, 1, len(db.blocks))
+	Equals(t, int64(100), db.blocks[0].meta.MaxTime) // To verify its the right block.
 }

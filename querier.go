@@ -27,7 +27,7 @@ import (
 // time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...labels.Matcher) SeriesSet
+	Select(...labels.Matcher) (SeriesSet, error)
 
 	// LabelValues returns all potential values for a label name.
 	LabelValues(string) ([]string, error)
@@ -81,20 +81,29 @@ func (q *querier) LabelValuesFor(string, labels.Label) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (q *querier) Select(ms ...labels.Matcher) SeriesSet {
+func (q *querier) Select(ms ...labels.Matcher) (SeriesSet, error) {
 	return q.sel(q.blocks, ms)
 
 }
 
-func (q *querier) sel(qs []Querier, ms []labels.Matcher) SeriesSet {
+func (q *querier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
 	if len(qs) == 0 {
-		return nopSeriesSet{}
+		return EmptySeriesSet(), nil
 	}
 	if len(qs) == 1 {
 		return qs[0].Select(ms...)
 	}
 	l := len(qs) / 2
-	return newMergedSeriesSet(q.sel(qs[:l], ms), q.sel(qs[l:], ms))
+
+	a, err := q.sel(qs[:l], ms)
+	if err != nil {
+		return nil, err
+	}
+	b, err := q.sel(qs[l:], ms)
+	if err != nil {
+		return nil, err
+	}
+	return newMergedSeriesSet(a, b), nil
 }
 
 func (q *querier) Close() error {
@@ -141,20 +150,14 @@ type blockQuerier struct {
 	mint, maxt int64
 }
 
-func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
-	pr := newPostingsReader(q.index)
-
-	p, absent := pr.Select(ms...)
-
+func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
+	base, err := LookupChunkSeries(q.index, q.tombstones, ms...)
+	if err != nil {
+		return nil, err
+	}
 	return &blockSeriesSet{
 		set: &populatedChunkSeries{
-			set: &baseChunkSeries{
-				p:      p,
-				index:  q.index,
-				absent: absent,
-
-				tombstones: q.tombstones,
-			},
+			set:    base,
 			chunks: q.chunks,
 			mint:   q.mint,
 			maxt:   q.maxt,
@@ -162,7 +165,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 
 		mint: q.mint,
 		maxt: q.maxt,
-	}
+	}, nil
 }
 
 func (q *blockQuerier) LabelValues(name string) ([]string, error) {
@@ -196,16 +199,10 @@ func (q *blockQuerier) Close() error {
 	return merr.Err()
 }
 
-// postingsReader is used to select matching postings from an IndexReader.
-type postingsReader struct {
-	index IndexReader
-}
-
-func newPostingsReader(i IndexReader) *postingsReader {
-	return &postingsReader{index: i}
-}
-
-func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
+// PostingsForMatchers assembles a single postings iterator against the index reader
+// based on the given matchers. It returns a list of label names that must be manually
+// checked to not exist in series the postings list points to.
+func PostingsForMatchers(index IndexReader, ms ...labels.Matcher) (Postings, []string, error) {
 	var (
 		its    []Postings
 		absent []string
@@ -217,12 +214,13 @@ func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
 			absent = append(absent, m.Name())
 			continue
 		}
-		its = append(its, r.selectSingle(m))
+		it, err := postingsForMatcher(index, m)
+		if err != nil {
+			return nil, nil, err
+		}
+		its = append(its, it)
 	}
-
-	p := Intersect(its...)
-
-	return r.index.SortedPostings(p), absent
+	return index.SortedPostings(Intersect(its...)), absent, nil
 }
 
 // tuplesByPrefix uses binary search to find prefix matches within ts.
@@ -256,33 +254,33 @@ func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) 
 	return matches, nil
 }
 
-func (r *postingsReader) selectSingle(m labels.Matcher) Postings {
+func postingsForMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
 	// Fast-path for equal matching.
 	if em, ok := m.(*labels.EqualMatcher); ok {
-		it, err := r.index.Postings(em.Name(), em.Value())
+		it, err := index.Postings(em.Name(), em.Value())
 		if err != nil {
-			return errPostings{err: err}
+			return nil, err
 		}
-		return it
+		return it, nil
 	}
 
-	tpls, err := r.index.LabelValues(m.Name())
+	tpls, err := index.LabelValues(m.Name())
 	if err != nil {
-		return errPostings{err: err}
+		return nil, err
 	}
 
 	var res []string
 	if pm, ok := m.(*labels.PrefixMatcher); ok {
 		res, err = tuplesByPrefix(pm, tpls)
 		if err != nil {
-			return errPostings{err: err}
+			return nil, err
 		}
 
 	} else {
 		for i := 0; i < tpls.Len(); i++ {
 			vals, err := tpls.At(i)
 			if err != nil {
-				return errPostings{err: err}
+				return nil, err
 			}
 			if m.Matches(vals[0]) {
 				res = append(res, vals[0])
@@ -291,20 +289,20 @@ func (r *postingsReader) selectSingle(m labels.Matcher) Postings {
 	}
 
 	if len(res) == 0 {
-		return emptyPostings
+		return EmptyPostings(), nil
 	}
 
 	var rit []Postings
 
 	for _, v := range res {
-		it, err := r.index.Postings(m.Name(), v)
+		it, err := index.Postings(m.Name(), v)
 		if err != nil {
-			return errPostings{err: err}
+			return nil, err
 		}
 		rit = append(rit, it)
 	}
 
-	return Merge(rit...)
+	return Merge(rit...), nil
 }
 
 func mergeStrings(a, b []string) []string {
@@ -342,11 +340,12 @@ type SeriesSet interface {
 	Err() error
 }
 
-type nopSeriesSet struct{}
+var emptySeriesSet = errSeriesSet{}
 
-func (nopSeriesSet) Next() bool { return false }
-func (nopSeriesSet) At() Series { return nil }
-func (nopSeriesSet) Err() error { return nil }
+// EmptySeriesSet returns a series set that's always empty.
+func EmptySeriesSet() SeriesSet {
+	return emptySeriesSet
+}
 
 // mergedSeriesSet takes two series sets as a single series set. The input series sets
 // must be sorted and sequential in time, i.e. if they have the same label set,
@@ -418,7 +417,7 @@ func (s *mergedSeriesSet) Next() bool {
 	return true
 }
 
-type chunkSeriesSet interface {
+type ChunkSeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []ChunkMeta, Intervals)
 	Err() error
@@ -438,6 +437,24 @@ type baseChunkSeries struct {
 	err       error
 }
 
+// LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
+// over them. It drops chunks based on tombstones in the given reader.
+func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher) (ChunkSeriesSet, error) {
+	if tr == nil {
+		tr = EmptyTombstoneReader()
+	}
+	p, absent, err := PostingsForMatchers(ir, ms...)
+	if err != nil {
+		return nil, err
+	}
+	return &baseChunkSeries{
+		p:          p,
+		index:      ir,
+		tombstones: tr,
+		absent:     absent,
+	}, nil
+}
+
 func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
@@ -448,6 +465,7 @@ func (s *baseChunkSeries) Next() bool {
 	var (
 		lset   labels.Labels
 		chunks []ChunkMeta
+		err    error
 	)
 Outer:
 	for s.p.Next() {
@@ -470,7 +488,11 @@ Outer:
 
 		s.lset = lset
 		s.chks = chunks
-		s.intervals = s.tombstones.Get(s.p.At())
+		s.intervals, err = s.tombstones.Get(s.p.At())
+		if err != nil {
+			s.err = errors.Wrap(err, "get tombstones")
+			return false
+		}
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.
@@ -496,7 +518,7 @@ Outer:
 // with known chunk references. It filters out chunks that do not fit the
 // given time range.
 type populatedChunkSeries struct {
-	set        chunkSeriesSet
+	set        ChunkSeriesSet
 	chunks     ChunkReader
 	mint, maxt int64
 
@@ -553,7 +575,7 @@ func (s *populatedChunkSeries) Next() bool {
 
 // blockSeriesSet is a set of series from an inverted index query.
 type blockSeriesSet struct {
-	set chunkSeriesSet
+	set ChunkSeriesSet
 	err error
 	cur Series
 
