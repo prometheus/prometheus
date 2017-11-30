@@ -465,7 +465,7 @@ func webUiStaticJsGraphJs() (*asset, error) {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "web/ui/static/js/graph.js", size: 29862, mode: os.FileMode(420), modTime: time.Unix(1511639377, 0)}
+	info := bindataFileInfo{name: "web/ui/static/js/graph.js", size: 29928, mode: os.FileMode(420), modTime: time.Unix(1512035831, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
