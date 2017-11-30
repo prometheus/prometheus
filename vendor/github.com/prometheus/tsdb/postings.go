@@ -50,6 +50,25 @@ func newUnorderedMemPostings() *memPostings {
 	}
 }
 
+// sortedKeys returns a list of sorted label keys of the postings.
+func (p *memPostings) sortedKeys() []labels.Label {
+	p.mtx.RLock()
+	keys := make([]labels.Label, 0, len(p.m))
+
+	for l := range p.m {
+		keys = append(keys, l)
+	}
+	p.mtx.RUnlock()
+
+	sort.Slice(keys, func(i, j int) bool {
+		if d := strings.Compare(keys[i].Name, keys[j].Name); d != 0 {
+			return d < 0
+		}
+		return keys[i].Value < keys[j].Value
+	})
+	return keys
+}
+
 // Postings returns an iterator over the postings list for s.
 func (p *memPostings) get(name, value string) Postings {
 	p.mtx.RLock()
