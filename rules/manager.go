@@ -284,6 +284,8 @@ func (g *Group) offset() time.Duration {
 // Rules are matched based on their name. If there are duplicates, the
 // first is matched with the first, second with the second etc.
 func (g *Group) copyState(from *Group) {
+	g.evaluationTime = from.evaluationTime
+
 	ruleMap := make(map[string][]int, len(from.rules))
 
 	for fi, fromRule := range from.rules {
