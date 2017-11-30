@@ -41,29 +41,26 @@ import (
 const namespace = "prometheus"
 
 var (
-	evalDuration = prometheus.NewSummaryVec(
+	evalDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
 			Namespace: namespace,
 			Name:      "rule_evaluation_duration_seconds",
 			Help:      "The duration for a rule to execute.",
 		},
-		[]string{"rule_type"},
 	)
-	evalFailures = prometheus.NewCounterVec(
+	evalFailures = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "rule_evaluation_failures_total",
 			Help:      "The total number of rule evaluation failures.",
 		},
-		[]string{"rule_type"},
 	)
-	evalTotal = prometheus.NewCounterVec(
+	evalTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "rule_evaluations_total",
 			Help:      "The total number of rule evaluations.",
 		},
-		[]string{"rule_type"},
 	)
 	iterationDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Namespace:  namespace,
@@ -96,24 +93,12 @@ var (
 )
 
 func init() {
-	evalTotal.WithLabelValues(string(ruleTypeAlert))
-	evalTotal.WithLabelValues(string(ruleTypeRecording))
-	evalFailures.WithLabelValues(string(ruleTypeAlert))
-	evalFailures.WithLabelValues(string(ruleTypeRecording))
-
 	prometheus.MustRegister(iterationDuration)
 	prometheus.MustRegister(iterationsScheduled)
 	prometheus.MustRegister(iterationsMissed)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
 }
-
-type ruleType string
-
-const (
-	ruleTypeAlert     = "alerting"
-	ruleTypeRecording = "recording"
-)
 
 // QueryFunc processes PromQL queries.
 type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
@@ -329,16 +314,6 @@ func (g *Group) copyState(from *Group) {
 	}
 }
 
-func typeForRule(r Rule) ruleType {
-	switch r.(type) {
-	case *AlertingRule:
-		return ruleTypeAlert
-	case *RecordingRule:
-		return ruleTypeRecording
-	}
-	panic(fmt.Errorf("unknown rule type: %T", r))
-}
-
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	for i, rule := range g.rules {
@@ -348,15 +323,13 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		default:
 		}
 
-		rtyp := string(typeForRule(rule))
-
 		func(i int, rule Rule) {
 			defer func(t time.Time) {
-				evalDuration.WithLabelValues(rtyp).Observe(time.Since(t).Seconds())
+				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationTime(time.Since(t))
 			}(time.Now())
 
-			evalTotal.WithLabelValues(rtyp).Inc()
+			evalTotal.Inc()
 
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
@@ -365,7 +338,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
 					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
-				evalFailures.WithLabelValues(rtyp).Inc()
+				evalFailures.Inc()
 				return
 			}
 
@@ -645,13 +618,13 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	return alerts
 }
 
-// Implements prometheus.Collector.
+// Describe implements prometheus.Collector.
 func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
 	ch <- lastDuration
 	ch <- groupInterval
 }
 
-// Implements prometheus.Collector.
+// Collect implements prometheus.Collector.
 func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 	for _, g := range m.RuleGroups() {
 		ch <- prometheus.MustNewConstMetric(lastDuration,
