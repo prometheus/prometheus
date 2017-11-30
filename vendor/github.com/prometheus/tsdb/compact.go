@@ -205,7 +205,15 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 			continue
 		}
 
+	Outer:
 		for _, p := range parts {
+			// Donot select the range if it has a block whose compaction failed.
+			for _, dm := range p {
+				if dm.meta.Compaction.Failed {
+					continue Outer
+				}
+			}
+
 			mint := p[0].meta.MinTime
 			maxt := p[len(p)-1].meta.MaxTime
 			// Pick the range of blocks if it spans the full range (potentially with gaps)
@@ -297,6 +305,7 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // provided directories.
 func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	var blocks []BlockReader
+	var bs []*Block
 	var metas []*BlockMeta
 
 	for _, d := range dirs {
@@ -313,12 +322,27 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 
 		metas = append(metas, meta)
 		blocks = append(blocks, b)
+		bs = append(bs, b)
 	}
 
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
-	return c.write(dest, compactBlockMetas(uid, metas...), blocks...)
+	err = c.write(dest, compactBlockMetas(uid, metas...), blocks...)
+	if err == nil {
+		return nil
+	}
+
+	var merr MultiError
+	merr.Add(err)
+
+	for _, b := range bs {
+		if err := b.setCompactionFailed(); err != nil {
+			merr.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
+		}
+	}
+
+	return merr
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {
@@ -360,16 +384,20 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...ChunkMeta) error {
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	level.Info(c.logger).Log("msg", "compact blocks", "count", len(blocks), "mint", meta.MinTime, "maxt", meta.MaxTime)
 
+	dir := filepath.Join(dest, meta.ULID.String())
+	tmp := dir + ".tmp"
+
 	defer func(t time.Time) {
 		if err != nil {
 			c.metrics.failed.Inc()
+			// TODO(gouthamve): Handle error how?
+			if err := os.RemoveAll(tmp); err != nil {
+				level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
+			}
 		}
 		c.metrics.ran.Inc()
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
-
-	dir := filepath.Join(dest, meta.ULID.String())
-	tmp := dir + ".tmp"
 
 	if err = os.RemoveAll(tmp); err != nil {
 		return err
@@ -525,22 +553,24 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 		if len(dranges) > 0 {
 			// Re-encode the chunk to not have deleted values.
-			for _, chk := range chks {
-				if intervalOverlap(dranges[0].Mint, dranges[len(dranges)-1].Maxt, chk.MinTime, chk.MaxTime) {
-					newChunk := chunks.NewXORChunk()
-					app, err := newChunk.Appender()
-					if err != nil {
-						return err
-					}
-
-					it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
-					for it.Next() {
-						ts, v := it.At()
-						app.Append(ts, v)
-					}
-
-					chk.Chunk = newChunk
+			for i, chk := range chks {
+				if !intervalOverlap(dranges[0].Mint, dranges[len(dranges)-1].Maxt, chk.MinTime, chk.MaxTime) {
+					continue
 				}
+
+				newChunk := chunks.NewXORChunk()
+				app, err := newChunk.Appender()
+				if err != nil {
+					return err
+				}
+
+				it := &deletedIterator{it: chk.Chunk.Iterator(), intervals: dranges}
+				for it.Next() {
+					ts, v := it.At()
+					app.Append(ts, v)
+				}
+
+				chks[i].Chunk = newChunk
 			}
 		}
 		if err := chunkw.WriteChunks(chks...); err != nil {
@@ -589,7 +619,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	for l := range postings.m {
+	for _, l := range postings.sortedKeys() {
 		if err := indexw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
