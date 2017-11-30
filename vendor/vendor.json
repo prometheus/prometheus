@@ -392,8 +392,8 @@
 		{
 			"checksumSHA1": "wn2shNJMwRZpvuvkf1s7h0wvqHI=",
 			"path": "github.com/gogo/protobuf/proto",
-			"revision": "117892bf1866fbaa2318c03e50e40564c8845457",
-			"revisionTime": "2017-10-18T11:19:13Z"
+			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
+			"revisionTime": "2017-11-23T12:57:29Z"
 		},
 		{
 			"checksumSHA1": "HPVQZu059/Rfw2bAWM538bVTcUc=",
@@ -536,26 +536,26 @@
 			"revisionTime": "2017-06-07T03:48:29Z"
 		},
 		{
-			"checksumSHA1": "InNAv3jGuD6SW4qJDBtGQpj0oRI=",
+			"checksumSHA1": "DCgYY4AJZ2rJV2XpZ/Y00CDl+Jo=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime",
-			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
-			"revisionTime": "2017-04-17T16:01:37Z",
+			"revision": "e4b8a938efae14de11fd97311e873e989896348c",
+			"revisionTime": "2017-11-26T19:57:40Z",
 			"version": "=v1.2.2",
 			"versionExact": "v1.2.2"
 		},
 		{
-			"checksumSHA1": "et8uiXNw6yM96U/UZgn2vKtyr3Q=",
+			"checksumSHA1": "V1qChZAWS+xzlEBSyz2r8JlzmM8=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
-			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
-			"revisionTime": "2017-04-17T16:01:37Z",
+			"revision": "e4b8a938efae14de11fd97311e873e989896348c",
+			"revisionTime": "2017-11-26T19:57:40Z",
 			"version": "=v1.2.2",
 			"versionExact": "v1.2.2"
 		},
 		{
 			"checksumSHA1": "vqiK5r5dntV7JNZ+ZsGlD0Samos=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/utilities",
-			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
-			"revisionTime": "2017-04-17T16:01:37Z",
+			"revision": "e4b8a938efae14de11fd97311e873e989896348c",
+			"revisionTime": "2017-11-26T19:57:40Z",
 			"version": "=v1.2.2",
 			"versionExact": "v1.2.2"
 		},
