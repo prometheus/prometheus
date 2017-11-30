@@ -36,6 +36,14 @@ service Admin {
     };
   }
 
+  // CleanTombstones removes the deleted data from disk and cleans up the existing
+  // tombstones.
+  rpc TSDBCleanTombstones(TSDBCleanTombstonesRequest) returns (TSDBCleanTombstonesResponse) {
+    option (google.api.http) = {
+      post: "/v2/admin/tsdb/clean_tombstones"
+    };
+  }
+
   // DeleteSeries deletes data for a selection of series in a time range.
   rpc DeleteSeries(SeriesDeleteRequest) returns (SeriesDeleteResponse) {
     option (google.api.http) = {
@@ -51,6 +59,12 @@ message TSDBSnapshotRequest {
 
 message TSDBSnapshotResponse {
   string name = 1;
+}
+
+message TSDBCleanTombstonesRequest {
+}
+
+message TSDBCleanTombstonesResponse {
 }
 
 message SeriesDeleteRequest {
