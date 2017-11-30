@@ -289,7 +289,7 @@ func main() {
 				}
 				files = append(files, fs...)
 			}
-			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), cfg.RuleFiles)
+			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
 		},
 	}
 
