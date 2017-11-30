@@ -616,7 +616,7 @@ func (db *DB) Snapshot(dir string) error {
 		level.Info(db.logger).Log("msg", "snapshotting block", "block", b)
 
 		if err := b.Snapshot(dir); err != nil {
-			return errors.Wrap(err, "error snapshotting headblock")
+			return errors.Wrapf(err, "error snapshotting block: %s", b.Dir())
 		}
 	}
 	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
