@@ -36,7 +36,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 )
@@ -99,7 +99,7 @@ type DB struct {
 	logger    log.Logger
 	metrics   *dbMetrics
 	opts      *Options
-	chunkPool chunks.Pool
+	chunkPool chunkenc.Pool
 	compactor Compactor
 
 	// Mutex for that must be held when modifying the general block layout.
@@ -185,7 +185,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		donec:              make(chan struct{}),
 		stopc:              make(chan struct{}),
 		compactionsEnabled: true,
-		chunkPool:          chunks.NewPool(),
+		chunkPool:          chunkenc.NewPool(),
 	}
 	db.metrics = newDBMetrics(db, r)
 

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package index
 
 import (
 	"encoding/binary"
@@ -23,35 +23,35 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
-// memPostings holds postings list for series ID per label pair. They may be written
+// MemPostings holds postings list for series ID per label pair. They may be written
 // to out of order.
 // ensureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
-type memPostings struct {
+type MemPostings struct {
 	mtx     sync.RWMutex
 	m       map[labels.Label][]uint64
 	ordered bool
 }
 
-// newMemPoistings returns a memPostings that's ready for reads and writes.
-func newMemPostings() *memPostings {
-	return &memPostings{
+// NewMemPostings returns a memPostings that's ready for reads and writes.
+func NewMemPostings() *MemPostings {
+	return &MemPostings{
 		m:       make(map[labels.Label][]uint64, 512),
 		ordered: true,
 	}
 }
 
-// newUnorderedMemPostings returns a memPostings that is not safe to be read from
+// NewUnorderedMemPostings returns a memPostings that is not safe to be read from
 // until ensureOrder was called once.
-func newUnorderedMemPostings() *memPostings {
-	return &memPostings{
+func NewUnorderedMemPostings() *MemPostings {
+	return &MemPostings{
 		m:       make(map[labels.Label][]uint64, 512),
 		ordered: false,
 	}
 }
 
-// sortedKeys returns a list of sorted label keys of the postings.
-func (p *memPostings) sortedKeys() []labels.Label {
+// SortedKeys returns a list of sorted label keys of the postings.
+func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RLock()
 	keys := make([]labels.Label, 0, len(p.m))
 
@@ -69,23 +69,28 @@ func (p *memPostings) sortedKeys() []labels.Label {
 	return keys
 }
 
-// Postings returns an iterator over the postings list for s.
-func (p *memPostings) get(name, value string) Postings {
+// Get returns a postings list for the given label pair.
+func (p *MemPostings) Get(name, value string) Postings {
 	p.mtx.RLock()
 	l := p.m[labels.Label{Name: name, Value: value}]
 	p.mtx.RUnlock()
 
 	if l == nil {
-		return emptyPostings
+		return EmptyPostings()
 	}
 	return newListPostings(l)
 }
 
+// All returns a postings list over all documents ever added.
+func (p *MemPostings) All() Postings {
+	return p.Get(allPostingsKey.Name, allPostingsKey.Value)
+}
+
 var allPostingsKey = labels.Label{}
 
-// ensurePostings ensures that all postings lists are sorted. After it returns all further
+// EnsureOrder ensures that all postings lists are sorted. After it returns all further
 // calls to add and addFor will insert new IDs in a sorted manner.
-func (p *memPostings) ensureOrder() {
+func (p *MemPostings) EnsureOrder() {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -117,9 +122,61 @@ func (p *memPostings) ensureOrder() {
 	p.ordered = true
 }
 
-// add adds a document to the index. The caller has to ensure that no
-// term argument appears twice.
-func (p *memPostings) add(id uint64, lset labels.Labels) {
+// Delete removes all ids in the given map from the postings lists.
+func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
+	var keys []labels.Label
+
+	p.mtx.RLock()
+	for l := range p.m {
+		keys = append(keys, l)
+	}
+	p.mtx.RUnlock()
+
+	for _, l := range keys {
+		p.mtx.Lock()
+
+		found := false
+		for _, id := range p.m[l] {
+			if _, ok := deleted[id]; ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			p.mtx.Unlock()
+			continue
+		}
+		repl := make([]uint64, 0, len(p.m[l]))
+
+		for _, id := range p.m[l] {
+			if _, ok := deleted[id]; !ok {
+				repl = append(repl, id)
+			}
+		}
+		if len(repl) > 0 {
+			p.m[l] = repl
+		} else {
+			delete(p.m, l)
+		}
+		p.mtx.Unlock()
+	}
+}
+
+// Iter calls f for each postings list. It aborts if f returns an error and returns it.
+func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	for l, p := range p.m {
+		if err := f(l, newListPostings(p)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Add a label set to the postings index.
+func (p *MemPostings) Add(id uint64, lset labels.Labels) {
 	p.mtx.Lock()
 
 	for _, l := range lset {
@@ -130,7 +187,7 @@ func (p *memPostings) add(id uint64, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
-func (p *memPostings) addFor(id uint64, l labels.Label) {
+func (p *MemPostings) addFor(id uint64, l labels.Label) {
 	list := append(p.m[l], id)
 	p.m[l] = list
 
@@ -149,7 +206,8 @@ func (p *memPostings) addFor(id uint64, l labels.Label) {
 	}
 }
 
-func expandPostings(p Postings) (res []uint64, err error) {
+// ExpandPostings returns the postings expanded as a slice.
+func ExpandPostings(p Postings) (res []uint64, err error) {
 	for p.Next() {
 		res = append(res, p.At())
 	}
@@ -187,6 +245,11 @@ var emptyPostings = errPostings{}
 // EmptyPostings returns a postings list that's always empty.
 func EmptyPostings() Postings {
 	return emptyPostings
+}
+
+// ErrPostings returns new postings that immediately error.
+func ErrPostings(err error) Postings {
+	return errPostings{err}
 }
 
 // Intersect returns a new postings list over the intersection of the
@@ -340,6 +403,12 @@ func (it *mergedPostings) Err() error {
 	return it.b.Err()
 }
 
+// Without returns a new postings list that contains all elements from the full list that
+// are not in the drop list
+func Without(full, drop Postings) Postings {
+	return newRemovedPostings(full, drop)
+}
+
 type removedPostings struct {
 	full, remove Postings
 
@@ -418,6 +487,10 @@ func (rp *removedPostings) Err() error {
 type listPostings struct {
 	list []uint64
 	cur  uint64
+}
+
+func NewListPostings(list []uint64) Postings {
+	return newListPostings(list)
 }
 
 func newListPostings(list []uint64) *listPostings {
@@ -507,28 +580,4 @@ func (it *bigEndianPostings) Seek(x uint64) bool {
 
 func (it *bigEndianPostings) Err() error {
 	return nil
-}
-
-type stringset map[string]struct{}
-
-func (ss stringset) set(s string) {
-	ss[s] = struct{}{}
-}
-
-func (ss stringset) has(s string) bool {
-	_, ok := ss[s]
-	return ok
-}
-
-func (ss stringset) String() string {
-	return strings.Join(ss.slice(), ",")
-}
-
-func (ss stringset) slice() []string {
-	slice := make([]string, 0, len(ss))
-	for k := range ss {
-		slice = append(slice, k)
-	}
-	sort.Strings(slice)
-	return slice
 }

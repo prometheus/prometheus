@@ -20,7 +20,10 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
@@ -228,25 +231,25 @@ func createIdxChkReaders(tc []struct {
 		return labels.Compare(labels.FromMap(tc[i].lset), labels.FromMap(tc[i].lset)) < 0
 	})
 
-	postings := newMemPostings()
-	chkReader := mockChunkReader(make(map[uint64]chunks.Chunk))
+	postings := index.NewMemPostings()
+	chkReader := mockChunkReader(make(map[uint64]chunkenc.Chunk))
 	lblIdx := make(map[string]stringset)
 	mi := newMockIndex()
 
 	for i, s := range tc {
 		i = i + 1 // 0 is not a valid posting.
-		metas := make([]ChunkMeta, 0, len(s.chunks))
+		metas := make([]chunks.Meta, 0, len(s.chunks))
 		for _, chk := range s.chunks {
 			// Collisions can be there, but for tests, its fine.
 			ref := rand.Uint64()
 
-			metas = append(metas, ChunkMeta{
+			metas = append(metas, chunks.Meta{
 				MinTime: chk[0].t,
 				MaxTime: chk[len(chk)-1].t,
 				Ref:     ref,
 			})
 
-			chunk := chunks.NewXORChunk()
+			chunk := chunkenc.NewXORChunk()
 			app, _ := chunk.Appender()
 			for _, smpl := range chk {
 				app.Append(smpl.t, smpl.v)
@@ -257,7 +260,7 @@ func createIdxChkReaders(tc []struct {
 		ls := labels.FromMap(s.lset)
 		mi.AddSeries(uint64(i), ls, metas...)
 
-		postings.add(uint64(i), ls)
+		postings.Add(uint64(i), ls)
 
 		for _, l := range ls {
 			vs, present := lblIdx[l.Name]
@@ -273,9 +276,9 @@ func createIdxChkReaders(tc []struct {
 		mi.WriteLabelIndex([]string{l}, vs.slice())
 	}
 
-	for l := range postings.m {
-		mi.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
-	}
+	postings.Iter(func(l labels.Label, p index.Postings) error {
+		return mi.WritePostings(l.Name, l.Value, p)
+	})
 
 	return mi, chkReader
 }
@@ -660,7 +663,7 @@ Outer:
 func TestBaseChunkSeries(t *testing.T) {
 	type refdSeries struct {
 		lset   labels.Labels
-		chunks []ChunkMeta
+		chunks []chunks.Meta
 
 		ref uint64
 	}
@@ -676,7 +679,7 @@ func TestBaseChunkSeries(t *testing.T) {
 			series: []refdSeries{
 				{
 					lset: labels.New([]labels.Label{{"a", "a"}}...),
-					chunks: []ChunkMeta{
+					chunks: []chunks.Meta{
 						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
 						{Ref: 121},
 					},
@@ -684,19 +687,19 @@ func TestBaseChunkSeries(t *testing.T) {
 				},
 				{
 					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
-					chunks: []ChunkMeta{
+					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
 					lset:   labels.New([]labels.Label{{"b", "c"}}...),
-					chunks: []ChunkMeta{{Ref: 8282}},
+					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    1,
 				},
 				{
 					lset: labels.New([]labels.Label{{"b", "b"}}...),
-					chunks: []ChunkMeta{
+					chunks: []chunks.Meta{
 						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
 					},
 					ref: 108,
@@ -709,14 +712,14 @@ func TestBaseChunkSeries(t *testing.T) {
 			series: []refdSeries{
 				{
 					lset: labels.New([]labels.Label{{"a", "a"}, {"b", "b"}}...),
-					chunks: []ChunkMeta{
+					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
 					lset:   labels.New([]labels.Label{{"b", "c"}}...),
-					chunks: []ChunkMeta{{Ref: 8282}},
+					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    3,
 				},
 			},
@@ -732,7 +735,7 @@ func TestBaseChunkSeries(t *testing.T) {
 		}
 
 		bcs := &baseChunkSeries{
-			p:          newListPostings(tc.postings),
+			p:          index.NewListPostings(tc.postings),
 			index:      mi,
 			tombstones: EmptyTombstoneReader(),
 		}
@@ -763,20 +766,20 @@ type itSeries struct {
 func (s itSeries) Iterator() SeriesIterator { return s.si }
 func (s itSeries) Labels() labels.Labels    { return labels.Labels{} }
 
-func chunkFromSamples(s []sample) ChunkMeta {
+func chunkFromSamples(s []sample) chunks.Meta {
 	mint, maxt := int64(0), int64(0)
 
 	if len(s) > 0 {
 		mint, maxt = s[0].t, s[len(s)-1].t
 	}
 
-	c := chunks.NewXORChunk()
+	c := chunkenc.NewXORChunk()
 	ca, _ := c.Appender()
 
 	for _, s := range s {
 		ca.Append(s.t, s.v)
 	}
-	return ChunkMeta{
+	return chunks.Meta{
 		MinTime: mint,
 		MaxTime: maxt,
 		Chunk:   c,
@@ -941,7 +944,7 @@ func TestSeriesIterator(t *testing.T) {
 
 	t.Run("Chunk", func(t *testing.T) {
 		for _, tc := range itcases {
-			chkMetas := []ChunkMeta{
+			chkMetas := []chunks.Meta{
 				chunkFromSamples(tc.a),
 				chunkFromSamples(tc.b),
 				chunkFromSamples(tc.c),
@@ -1012,7 +1015,7 @@ func TestSeriesIterator(t *testing.T) {
 			seekcases2 := append(seekcases, extra...)
 
 			for _, tc := range seekcases2 {
-				chkMetas := []ChunkMeta{
+				chkMetas := []chunks.Meta{
 					chunkFromSamples(tc.a),
 					chunkFromSamples(tc.b),
 					chunkFromSamples(tc.c),
@@ -1099,7 +1102,7 @@ func TestSeriesIterator(t *testing.T) {
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
 func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
-	chkMetas := []ChunkMeta{
+	chkMetas := []chunks.Meta{
 		chunkFromSamples([]sample{}),
 		chunkFromSamples([]sample{{1, 1}, {2, 2}, {3, 3}}),
 		chunkFromSamples([]sample{{4, 4}, {5, 5}}),
@@ -1116,7 +1119,7 @@ func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 // Regression when seeked chunks were still found via binary search and we always
 // skipped to the end when seeking a value in the current chunk.
 func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
-	metas := []ChunkMeta{
+	metas := []chunks.Meta{
 		chunkFromSamples([]sample{}),
 		chunkFromSamples([]sample{{1, 2}, {3, 4}, {5, 6}, {7, 8}}),
 		chunkFromSamples([]sample{}),
@@ -1138,7 +1141,7 @@ func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 // Regression when calling Next() with a time bounded to fit within two samples.
 // Seek gets called and advances beyond the max time, which was just accepted as a valid sample.
 func TestChunkSeriesIterator_NextWithMinTime(t *testing.T) {
-	metas := []ChunkMeta{
+	metas := []chunks.Meta{
 		chunkFromSamples([]sample{{1, 6}, {5, 6}, {7, 8}}),
 	}
 
@@ -1148,7 +1151,7 @@ func TestChunkSeriesIterator_NextWithMinTime(t *testing.T) {
 
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	lbls := []labels.Labels{labels.New(labels.Label{"a", "b"})}
-	chunkMetas := [][]ChunkMeta{
+	chunkMetas := [][]chunks.Meta{
 		{
 			{MinTime: 1, MaxTime: 2, Ref: 1},
 			{MinTime: 3, MaxTime: 4, Ref: 2},
@@ -1157,10 +1160,10 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	}
 
 	cr := mockChunkReader(
-		map[uint64]chunks.Chunk{
-			1: chunks.NewXORChunk(),
-			2: chunks.NewXORChunk(),
-			3: chunks.NewXORChunk(),
+		map[uint64]chunkenc.Chunk{
+			1: chunkenc.NewXORChunk(),
+			2: chunkenc.NewXORChunk(),
+			3: chunkenc.NewXORChunk(),
 		},
 	)
 
@@ -1180,7 +1183,7 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 	testutil.Assert(t, p.Next() == false, "")
 
 	// Test the case where 1 chunk could cause an unpopulated chunk to be returned.
-	chunkMetas = [][]ChunkMeta{
+	chunkMetas = [][]chunks.Meta{
 		{
 			{MinTime: 1, MaxTime: 2, Ref: 1},
 		},
@@ -1200,7 +1203,7 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 
 type mockChunkSeriesSet struct {
 	l  []labels.Labels
-	cm [][]ChunkMeta
+	cm [][]chunks.Meta
 
 	i int
 }
@@ -1213,7 +1216,7 @@ func (m *mockChunkSeriesSet) Next() bool {
 	return m.i < len(m.l)
 }
 
-func (m *mockChunkSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
+func (m *mockChunkSeriesSet) At() (labels.Labels, []chunks.Meta, Intervals) {
 	return m.l[m.i], m.cm[m.i], nil
 }
 
@@ -1278,4 +1281,199 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 			})
 		}
 	}
+}
+
+type mockChunkReader map[uint64]chunkenc.Chunk
+
+func (cr mockChunkReader) Chunk(id uint64) (chunkenc.Chunk, error) {
+	chk, ok := cr[id]
+	if ok {
+		return chk, nil
+	}
+
+	return nil, errors.New("Chunk with ref not found")
+}
+
+func (cr mockChunkReader) Close() error {
+	return nil
+}
+
+func TestDeletedIterator(t *testing.T) {
+	chk := chunks.NewXORChunk()
+	app, err := chk.Appender()
+	testutil.Ok(t, err)
+	// Insert random stuff from (0, 1000).
+	act := make([]sample, 1000)
+	for i := 0; i < 1000; i++ {
+		act[i].t = int64(i)
+		act[i].v = rand.Float64()
+		app.Append(act[i].t, act[i].v)
+	}
+
+	cases := []struct {
+		r Intervals
+	}{
+		{r: Intervals{{1, 20}}},
+		{r: Intervals{{1, 10}, {12, 20}, {21, 23}, {25, 30}}},
+		{r: Intervals{{1, 10}, {12, 20}, {20, 30}}},
+		{r: Intervals{{1, 10}, {12, 23}, {25, 30}}},
+		{r: Intervals{{1, 23}, {12, 20}, {25, 30}}},
+		{r: Intervals{{1, 23}, {12, 20}, {25, 3000}}},
+		{r: Intervals{{0, 2000}}},
+		{r: Intervals{{500, 2000}}},
+		{r: Intervals{{0, 200}}},
+		{r: Intervals{{1000, 20000}}},
+	}
+
+	for _, c := range cases {
+		i := int64(-1)
+		it := &deletedIterator{it: chk.Iterator(), intervals: c.r[:]}
+		ranges := c.r[:]
+		for it.Next() {
+			i++
+			for _, tr := range ranges {
+				if tr.inBounds(i) {
+					i = tr.Maxt + 1
+					ranges = ranges[1:]
+				}
+			}
+
+			testutil.Assert(t, i < 1000 == true, "")
+
+			ts, v := it.At()
+			testutil.Equals(t, act[i].t, ts)
+			testutil.Equals(t, act[i].v, v)
+		}
+		// There has been an extra call to Next().
+		i++
+		for _, tr := range ranges {
+			if tr.inBounds(i) {
+				i = tr.Maxt + 1
+				ranges = ranges[1:]
+			}
+		}
+
+		testutil.Assert(t, i < 1000 == false, "")
+		testutil.Ok(t, it.Err())
+	}
+}
+
+type series struct {
+	l      labels.Labels
+	chunks []chunks.Meta
+}
+
+type mockIndex struct {
+	series     map[uint64]series
+	labelIndex map[string][]string
+	postings   map[labels.Label][]uint64
+	symbols    map[string]struct{}
+}
+
+func newMockIndex() mockIndex {
+	ix := mockIndex{
+		series:     make(map[uint64]series),
+		labelIndex: make(map[string][]string),
+		postings:   make(map[labels.Label][]uint64),
+		symbols:    make(map[string]struct{}),
+	}
+	return ix
+}
+
+func (m mockIndex) Symbols() (map[string]struct{}, error) {
+	return m.symbols, nil
+}
+
+func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
+	if _, ok := m.series[ref]; ok {
+		return errors.Errorf("series with reference %d already added", ref)
+	}
+	for _, lbl := range l {
+		m.symbols[lbl.Name] = struct{}{}
+		m.symbols[lbl.Value] = struct{}{}
+	}
+
+	s := series{l: l}
+	// Actual chunk data is not stored in the index.
+	for _, c := range chunks {
+		c.Chunk = nil
+		s.chunks = append(s.chunks, c)
+	}
+	m.series[ref] = s
+
+	return nil
+}
+
+func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
+	// TODO support composite indexes
+	if len(names) != 1 {
+		return errors.New("composite indexes not supported yet")
+	}
+	sort.Strings(values)
+	m.labelIndex[names[0]] = values
+	return nil
+}
+
+func (m mockIndex) WritePostings(name, value string, it index.Postings) error {
+	l := labels.Label{Name: name, Value: value}
+	if _, ok := m.postings[l]; ok {
+		return errors.Errorf("postings for %s already added", l)
+	}
+	ep, err := index.ExpandPostings(it)
+	if err != nil {
+		return err
+	}
+	m.postings[l] = ep
+	return nil
+}
+
+func (m mockIndex) Close() error {
+	return nil
+}
+
+func (m mockIndex) LabelValues(names ...string) (index.StringTuples, error) {
+	// TODO support composite indexes
+	if len(names) != 1 {
+		return nil, errors.New("composite indexes not supported yet")
+	}
+
+	return index.NewStringTuples(m.labelIndex[names[0]], 1)
+}
+
+func (m mockIndex) Postings(name, value string) (index.Postings, error) {
+	l := labels.Label{Name: name, Value: value}
+	return index.NewListPostings(m.postings[l]), nil
+}
+
+func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
+	ep, err := index.ExpandPostings(p)
+	if err != nil {
+		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+	}
+
+	sort.Slice(ep, func(i, j int) bool {
+		return labels.Compare(m.series[ep[i]].l, m.series[ep[j]].l) < 0
+	})
+	return index.NewListPostings(ep)
+}
+
+func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+	s, ok := m.series[ref]
+	if !ok {
+		return ErrNotFound
+	}
+	*lset = append((*lset)[:0], s.l...)
+	*chks = append((*chks)[:0], s.chunks...)
+
+	return nil
+}
+
+func (m mockIndex) LabelIndices() ([][]string, error) {
+	res := make([][]string, 0, len(m.labelIndex))
+
+	for k := range m.labelIndex {
+		res = append(res, []string{k})
+	}
+
+	return res, nil
 }

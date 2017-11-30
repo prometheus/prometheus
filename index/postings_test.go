@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package index
 
 import (
 	"encoding/binary"
@@ -25,7 +25,7 @@ import (
 )
 
 func TestMemPostings_addFor(t *testing.T) {
-	p := newMemPostings()
+	p := NewMemPostings()
 	p.m[allPostingsKey] = []uint64{1, 2, 3, 4, 6, 7, 8}
 
 	p.addFor(5, allPostingsKey)
@@ -34,7 +34,7 @@ func TestMemPostings_addFor(t *testing.T) {
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
-	p := newUnorderedMemPostings()
+	p := NewUnorderedMemPostings()
 
 	for i := 0; i < 100; i++ {
 		l := make([]uint64, 100)
@@ -46,7 +46,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		p.m[labels.Label{"a", v}] = l
 	}
 
-	p.ensureOrder()
+	p.EnsureOrder()
 
 	for _, l := range p.m {
 		ok := sort.SliceIsSorted(l, func(i, j int) bool {
@@ -100,7 +100,7 @@ func TestIntersect(t *testing.T) {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
-		res, err := expandPostings(Intersect(a, b))
+		res, err := ExpandPostings(Intersect(a, b))
 		testutil.Ok(t, err)
 		testutil.Equals(t, c.res, res)
 	}
@@ -140,7 +140,7 @@ func TestMultiIntersect(t *testing.T) {
 			ps = append(ps, newListPostings(postings))
 		}
 
-		res, err := expandPostings(Intersect(ps...))
+		res, err := ExpandPostings(Intersect(ps...))
 
 		testutil.Ok(t, err)
 		testutil.Equals(t, c.res, res)
@@ -174,7 +174,7 @@ func BenchmarkIntersect(t *testing.B) {
 	t.ResetTimer()
 
 	for i := 0; i < t.N; i++ {
-		if _, err := expandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+		if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -198,7 +198,7 @@ func TestMultiMerge(t *testing.T) {
 		i2 := newListPostings(c.b)
 		i3 := newListPostings(c.c)
 
-		res, err := expandPostings(Merge(i1, i2, i3))
+		res, err := ExpandPostings(Merge(i1, i2, i3))
 		testutil.Ok(t, err)
 		testutil.Equals(t, c.res, res)
 	}
@@ -230,7 +230,7 @@ func TestMergedPostings(t *testing.T) {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
-		res, err := expandPostings(newMergedPostings(a, b))
+		res, err := ExpandPostings(newMergedPostings(a, b))
 		testutil.Ok(t, err)
 		testutil.Equals(t, c.res, res)
 	}
@@ -290,7 +290,7 @@ func TestMergedPostingsSeek(t *testing.T) {
 		// After Seek(), At() should be called.
 		if c.success {
 			start := p.At()
-			lst, err := expandPostings(p)
+			lst, err := ExpandPostings(p)
 			testutil.Ok(t, err)
 
 			lst = append([]uint64{start}, lst...)
@@ -347,7 +347,7 @@ func TestRemovedPostings(t *testing.T) {
 		a := newListPostings(c.a)
 		b := newListPostings(c.b)
 
-		res, err := expandPostings(newRemovedPostings(a, b))
+		res, err := ExpandPostings(newRemovedPostings(a, b))
 		testutil.Ok(t, err)
 		testutil.Equals(t, c.res, res)
 	}
@@ -431,7 +431,7 @@ func TestRemovedPostingsSeek(t *testing.T) {
 		// After Seek(), At() should be called.
 		if c.success {
 			start := p.At()
-			lst, err := expandPostings(p)
+			lst, err := ExpandPostings(p)
 			testutil.Ok(t, err)
 
 			lst = append([]uint64{start}, lst...)
@@ -527,7 +527,7 @@ func TestIntersectWithMerge(t *testing.T) {
 	)
 
 	p := Intersect(a, b)
-	res, err := expandPostings(p)
+	res, err := ExpandPostings(p)
 
 	testutil.Ok(t, err)
 	testutil.Equals(t, []uint64{30}, res)

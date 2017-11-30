@@ -11,18 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package chunks
 
 import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/fileutil"
 )
 
@@ -31,19 +35,19 @@ const (
 	MagicChunks = 0x85BD40DD
 )
 
-// ChunkMeta holds information about a chunk of data.
-type ChunkMeta struct {
+// Meta holds information about a chunk of data.
+type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
 	// Generally, only one of them is set.
 	Ref   uint64
-	Chunk chunks.Chunk
+	Chunk chunkenc.Chunk
 
 	MinTime, MaxTime int64 // time range the data covers
 }
 
 // writeHash writes the chunk encoding and raw data into the provided hash.
-func (cm *ChunkMeta) writeHash(h hash.Hash) error {
+func (cm *Meta) writeHash(h hash.Hash) error {
 	if _, err := h.Write([]byte{byte(cm.Chunk.Encoding())}); err != nil {
 		return err
 	}
@@ -53,62 +57,30 @@ func (cm *ChunkMeta) writeHash(h hash.Hash) error {
 	return nil
 }
 
-// deletedIterator wraps an Iterator and makes sure any deleted metrics are not
-// returned.
-type deletedIterator struct {
-	it chunks.Iterator
+var (
+	errInvalidSize     = fmt.Errorf("invalid size")
+	errInvalidFlag     = fmt.Errorf("invalid flag")
+	errInvalidChecksum = fmt.Errorf("invalid checksum")
+)
 
-	intervals Intervals
+// The table gets initialized with sync.Once but may still cause a race
+// with any other use of the crc32 package anywhere. Thus we initialize it
+// before.
+var castagnoliTable *crc32.Table
+
+func init() {
+	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
-func (it *deletedIterator) At() (int64, float64) {
-	return it.it.At()
+// newCRC32 initializes a CRC32 hash with a preconfigured polynomial, so the
+// polynomial may be easily changed in one location at a later time, if necessary.
+func newCRC32() hash.Hash32 {
+	return crc32.New(castagnoliTable)
 }
 
-func (it *deletedIterator) Next() bool {
-Outer:
-	for it.it.Next() {
-		ts, _ := it.it.At()
-
-		for _, tr := range it.intervals {
-			if tr.inBounds(ts) {
-				continue Outer
-			}
-
-			if ts > tr.Maxt {
-				it.intervals = it.intervals[1:]
-				continue
-			}
-
-			return true
-		}
-
-		return true
-	}
-
-	return false
-}
-
-func (it *deletedIterator) Err() error {
-	return it.it.Err()
-}
-
-// ChunkWriter serializes a time block of chunked series data.
-type ChunkWriter interface {
-	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
-	// must be populated.
-	// After returning successfully, the Ref fields in the ChunkMetas
-	// are set and can be used to retrieve the chunks from the written data.
-	WriteChunks(chunks ...ChunkMeta) error
-
-	// Close writes any required finalization and closes the resources
-	// associated with the underlying writer.
-	Close() error
-}
-
-// chunkWriter implements the ChunkWriter interface for the standard
+// Writer implements the ChunkWriter interface for the standard
 // serialization format.
-type chunkWriter struct {
+type Writer struct {
 	dirFile *os.File
 	files   []*os.File
 	wbuf    *bufio.Writer
@@ -124,7 +96,8 @@ const (
 	chunksFormatV1 = 1
 )
 
-func newChunkWriter(dir string) (*chunkWriter, error) {
+// NewWriter returns a new writer against the given directory.
+func NewWriter(dir string) (*Writer, error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
@@ -132,7 +105,7 @@ func newChunkWriter(dir string) (*chunkWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	cw := &chunkWriter{
+	cw := &Writer{
 		dirFile:     dirFile,
 		n:           0,
 		crc32:       newCRC32(),
@@ -141,7 +114,7 @@ func newChunkWriter(dir string) (*chunkWriter, error) {
 	return cw, nil
 }
 
-func (w *chunkWriter) tail() *os.File {
+func (w *Writer) tail() *os.File {
 	if len(w.files) == 0 {
 		return nil
 	}
@@ -150,7 +123,7 @@ func (w *chunkWriter) tail() *os.File {
 
 // finalizeTail writes all pending data to the current tail file,
 // truncates its size, and closes it.
-func (w *chunkWriter) finalizeTail() error {
+func (w *Writer) finalizeTail() error {
 	tf := w.tail()
 	if tf == nil {
 		return nil
@@ -174,7 +147,7 @@ func (w *chunkWriter) finalizeTail() error {
 	return tf.Close()
 }
 
-func (w *chunkWriter) cut() error {
+func (w *Writer) cut() error {
 	// Sync current tail to disk and close.
 	if err := w.finalizeTail(); err != nil {
 		return err
@@ -216,13 +189,13 @@ func (w *chunkWriter) cut() error {
 	return nil
 }
 
-func (w *chunkWriter) write(b []byte) error {
+func (w *Writer) write(b []byte) error {
 	n, err := w.wbuf.Write(b)
 	w.n += int64(n)
 	return err
 }
 
-func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
+func (w *Writer) WriteChunks(chks ...Meta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
 	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
@@ -272,11 +245,11 @@ func (w *chunkWriter) WriteChunks(chks ...ChunkMeta) error {
 	return nil
 }
 
-func (w *chunkWriter) seq() int {
+func (w *Writer) seq() int {
 	return len(w.files) - 1
 }
 
-func (w *chunkWriter) Close() error {
+func (w *Writer) Close() error {
 	if err := w.finalizeTail(); err != nil {
 		return err
 	}
@@ -285,29 +258,40 @@ func (w *chunkWriter) Close() error {
 	return w.dirFile.Close()
 }
 
-// ChunkReader provides reading access of serialized time series data.
-type ChunkReader interface {
-	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref uint64) (chunks.Chunk, error)
-
-	// Close releases all underlying resources of the reader.
-	Close() error
+// ByteSlice abstracts a byte slice.
+type ByteSlice interface {
+	Len() int
+	Range(start, end int) []byte
 }
 
-// chunkReader implements a SeriesReader for a serialized byte stream
+type realByteSlice []byte
+
+func (b realByteSlice) Len() int {
+	return len(b)
+}
+
+func (b realByteSlice) Range(start, end int) []byte {
+	return b[start:end]
+}
+
+func (b realByteSlice) Sub(start, end int) ByteSlice {
+	return b[start:end]
+}
+
+// Reader implements a SeriesReader for a serialized byte stream
 // of series data.
-type chunkReader struct {
+type Reader struct {
 	// The underlying bytes holding the encoded series data.
 	bs []ByteSlice
 
 	// Closers for resources behind the byte slices.
 	cs []io.Closer
 
-	pool chunks.Pool
+	pool chunkenc.Pool
 }
 
-func newChunkReader(bs []ByteSlice, cs []io.Closer, pool chunks.Pool) (*chunkReader, error) {
-	cr := chunkReader{pool: pool, bs: bs, cs: cs}
+func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
+	cr := Reader{pool: pool, bs: bs, cs: cs}
 
 	for i, b := range cr.bs {
 		if b.Len() < 4 {
@@ -321,44 +305,44 @@ func newChunkReader(bs []ByteSlice, cs []io.Closer, pool chunks.Pool) (*chunkRea
 	return &cr, nil
 }
 
-// NewChunkReader returns a new chunk reader against the given byte slices.
-func NewChunkReader(bs []ByteSlice, pool chunks.Pool) (ChunkReader, error) {
+// NewReader returns a new chunk reader against the given byte slices.
+func NewReader(bs []ByteSlice, pool chunkenc.Pool) (*Reader, error) {
 	if pool == nil {
-		pool = chunks.NewPool()
+		pool = chunkenc.NewPool()
 	}
-	return newChunkReader(bs, nil, pool)
+	return newReader(bs, nil, pool)
 }
 
-// NewDirChunkReader returns a new ChunkReader against sequentially numbered files in the
+// NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
-func NewDirChunkReader(dir string, pool chunks.Pool) (ChunkReader, error) {
+func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err
 	}
 	if pool == nil {
-		pool = chunks.NewPool()
+		pool = chunkenc.NewPool()
 	}
 
 	var bs []ByteSlice
 	var cs []io.Closer
 
 	for _, fn := range files {
-		f, err := openMmapFile(fn)
+		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
 			return nil, errors.Wrapf(err, "mmap files")
 		}
 		cs = append(cs, f)
-		bs = append(bs, realByteSlice(f.b))
+		bs = append(bs, realByteSlice(f.Bytes()))
 	}
-	return newChunkReader(bs, cs, pool)
+	return newReader(bs, cs, pool)
 }
 
-func (s *chunkReader) Close() error {
+func (s *Reader) Close() error {
 	return closeAll(s.cs...)
 }
 
-func (s *chunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
+func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	var (
 		seq = int(ref >> 32)
 		off = int((ref << 32) >> 32)
@@ -381,5 +365,47 @@ func (s *chunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	}
 	r = b.Range(off+n, off+n+int(l))
 
-	return s.pool.Get(chunks.Encoding(r[0]), r[1:1+l])
+	return s.pool.Get(chunkenc.Encoding(r[0]), r[1:1+l])
+}
+
+func nextSequenceFile(dir string) (string, int, error) {
+	names, err := fileutil.ReadDir(dir)
+	if err != nil {
+		return "", 0, err
+	}
+
+	i := uint64(0)
+	for _, n := range names {
+		j, err := strconv.ParseUint(n, 10, 64)
+		if err != nil {
+			continue
+		}
+		i = j
+	}
+	return filepath.Join(dir, fmt.Sprintf("%0.6d", i+1)), int(i + 1), nil
+}
+
+func sequenceFiles(dir string) ([]string, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var res []string
+
+	for _, fi := range files {
+		if _, err := strconv.ParseUint(fi.Name(), 10, 64); err != nil {
+			continue
+		}
+		res = append(res, filepath.Join(dir, fi.Name()))
+	}
+	return res, nil
+}
+
+func closeAll(cs ...io.Closer) (err error) {
+	for _, c := range cs {
+		if e := c.Close(); e != nil {
+			err = e
+		}
+	}
+	return err
 }

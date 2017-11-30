@@ -26,8 +26,10 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/fileutil"
+	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -65,7 +67,7 @@ type LeveledCompactor struct {
 	metrics   *compactorMetrics
 	logger    log.Logger
 	ranges    []int64
-	chunkPool chunks.Pool
+	chunkPool chunkenc.Pool
 }
 
 type compactorMetrics struct {
@@ -123,12 +125,12 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunks.Pool) (*LeveledCompactor, error) {
+func NewLeveledCompactor(r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
 	if pool == nil {
-		pool = chunks.NewPool()
+		pool = chunkenc.NewPool()
 	}
 	return &LeveledCompactor{
 		ranges:    ranges,
@@ -370,7 +372,7 @@ type instrumentedChunkWriter struct {
 	trange  prometheus.Histogram
 }
 
-func (w *instrumentedChunkWriter) WriteChunks(chunks ...ChunkMeta) error {
+func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 	for _, c := range chunks {
 		w.size.Observe(float64(len(c.Chunk.Bytes())))
 		w.samples.Observe(float64(c.Chunk.NumSamples()))
@@ -411,7 +413,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// data of all blocks.
 	var chunkw ChunkWriter
 
-	chunkw, err = newChunkWriter(chunkDir(tmp))
+	chunkw, err = chunks.NewWriter(chunkDir(tmp))
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
@@ -425,7 +427,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}
 
-	indexw, err := newIndexWriter(tmp)
+	indexw, err := index.NewWriter(filepath.Join(tmp, indexFilename))
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
@@ -514,7 +516,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			allSymbols[s] = struct{}{}
 		}
 
-		all, err := indexr.Postings(allPostingsKey.Name, allPostingsKey.Value)
+		all, err := indexr.Postings("", "")
 		if err != nil {
 			return err
 		}
@@ -534,7 +536,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	// We fully rebuild the postings list index from merged series.
 	var (
-		postings = newMemPostings()
+		postings = index.NewMemPostings()
 		values   = map[string]stringset{}
 		i        = uint64(0)
 	)
@@ -558,7 +560,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 					continue
 				}
 
-				newChunk := chunks.NewXORChunk()
+				newChunk := chunkenc.NewXORChunk()
 				app, err := newChunk.Appender()
 				if err != nil {
 					return err
@@ -599,7 +601,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 			valset.set(l.Value)
 		}
-		postings.add(i, lset)
+		postings.Add(i, lset)
 
 		i++
 	}
@@ -619,8 +621,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 	}
 
-	for _, l := range postings.sortedKeys() {
-		if err := indexw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value)); err != nil {
+	for _, l := range postings.SortedKeys() {
+		if err := indexw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
 	}
@@ -628,18 +630,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 }
 
 type compactionSeriesSet struct {
-	p          Postings
+	p          index.Postings
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
 
 	l         labels.Labels
-	c         []ChunkMeta
+	c         []chunks.Meta
 	intervals Intervals
 	err       error
 }
 
-func newCompactionSeriesSet(i IndexReader, c ChunkReader, t TombstoneReader, p Postings) *compactionSeriesSet {
+func newCompactionSeriesSet(i IndexReader, c ChunkReader, t TombstoneReader, p index.Postings) *compactionSeriesSet {
 	return &compactionSeriesSet{
 		index:      i,
 		chunks:     c,
@@ -667,7 +669,7 @@ func (c *compactionSeriesSet) Next() bool {
 
 	// Remove completely deleted chunks.
 	if len(c.intervals) > 0 {
-		chks := make([]ChunkMeta, 0, len(c.c))
+		chks := make([]chunks.Meta, 0, len(c.c))
 		for _, chk := range c.c {
 			if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(c.intervals)) {
 				chks = append(chks, chk)
@@ -697,7 +699,7 @@ func (c *compactionSeriesSet) Err() error {
 	return c.p.Err()
 }
 
-func (c *compactionSeriesSet) At() (labels.Labels, []ChunkMeta, Intervals) {
+func (c *compactionSeriesSet) At() (labels.Labels, []chunks.Meta, Intervals) {
 	return c.l, c.c, c.intervals
 }
 
@@ -706,13 +708,13 @@ type compactionMerger struct {
 
 	aok, bok  bool
 	l         labels.Labels
-	c         []ChunkMeta
+	c         []chunks.Meta
 	intervals Intervals
 }
 
 type compactionSeries struct {
 	labels labels.Labels
-	chunks []*ChunkMeta
+	chunks []*chunks.Meta
 }
 
 func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
@@ -747,7 +749,7 @@ func (c *compactionMerger) Next() bool {
 	// While advancing child iterators the memory used for labels and chunks
 	// may be reused. When picking a series we have to store the result.
 	var lset labels.Labels
-	var chks []ChunkMeta
+	var chks []chunks.Meta
 
 	d := c.compare()
 	// Both sets contain the current series. Chain them into a single one.
@@ -788,7 +790,7 @@ func (c *compactionMerger) Err() error {
 	return c.b.Err()
 }
 
-func (c *compactionMerger) At() (labels.Labels, []ChunkMeta, Intervals) {
+func (c *compactionMerger) At() (labels.Labels, []chunks.Meta, Intervals) {
 	return c.l, c.c, c.intervals
 }
 
