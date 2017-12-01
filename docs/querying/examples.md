@@ -31,6 +31,9 @@ Note that this does a substring match, not a full string match:
 
     http_requests_total{job=~".*server"}
 
+All regular expressions in Prometheus use [RE2
+syntax](https://github.com/google/re2/wiki/Syntax).
+
 To select all HTTP status codes except 4xx ones, you could run:
 
     http_requests_total{status!~"4.."}
