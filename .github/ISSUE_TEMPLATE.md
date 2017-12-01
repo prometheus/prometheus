@@ -1,3 +1,16 @@
+<!--
+
+    Please do *NOT* ask usage questions in Github issues.
+
+    If your issue is not a feature request or bug report use:
+    https://groups.google.com/forum/#!forum/prometheus-users. If
+    you are unsure whether you hit a bug, search and ask in the
+    mailing list first.
+
+    You can find more information at: https://prometheus.io/community/
+
+-->
+
 **What did you do?**
 
 **What did you expect to see?**
@@ -10,13 +23,13 @@
 
 	insert output of `uname -srm` here
 
-* Prometheus version: 
+* Prometheus version:
 
-	insert output of `prometheus -version` here
+	insert output of `prometheus --version` here
 
 * Alertmanager version:
 
-	insert output of `alertmanager -version` here (if relevant to the issue)
+	insert output of `alertmanager --version` here (if relevant to the issue)
 
 * Prometheus configuration file:
 ```

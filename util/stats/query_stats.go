@@ -19,57 +19,77 @@ type QueryTiming int
 
 // Query timings.
 const (
-	TotalEvalTime QueryTiming = iota
+	EvalTotalTime QueryTiming = iota
 	ResultSortTime
-	JSONEncodeTime
-	PreloadTime
-	TotalQueryPreparationTime
-	InnerViewBuildingTime
+	QueryPreparationTime
 	InnerEvalTime
 	ResultAppendTime
-	QueryAnalysisTime
-	GetValueAtTimeTime
-	GetRangeValuesTime
 	ExecQueueTime
-	ViewDiskPreparationTime
-	ViewDataExtractionTime
-	ViewDiskExtractionTime
+	ExecTotalTime
 )
 
 // Return a string representation of a QueryTiming identifier.
 func (s QueryTiming) String() string {
 	switch s {
-	case TotalEvalTime:
-		return "Total eval time"
+	case EvalTotalTime:
+		return "Eval total time"
 	case ResultSortTime:
 		return "Result sorting time"
-	case JSONEncodeTime:
-		return "JSON encoding time"
-	case PreloadTime:
-		return "Query preloading time"
-	case TotalQueryPreparationTime:
-		return "Total query preparation time"
-	case InnerViewBuildingTime:
-		return "Inner view building time"
+	case QueryPreparationTime:
+		return "Query preparation time"
 	case InnerEvalTime:
 		return "Inner eval time"
 	case ResultAppendTime:
 		return "Result append time"
-	case QueryAnalysisTime:
-		return "Query analysis time"
-	case GetValueAtTimeTime:
-		return "GetValueAtTime() time"
-	case GetRangeValuesTime:
-		return "GetRangeValues() time"
 	case ExecQueueTime:
 		return "Exec queue wait time"
-	case ViewDiskPreparationTime:
-		return "View building disk preparation time"
-	case ViewDataExtractionTime:
-		return "Total view data extraction time"
-	case ViewDiskExtractionTime:
-		return "View disk data extraction time"
+	case ExecTotalTime:
+		return "Exec total time"
 	default:
 		return "Unknown query timing"
 	}
+}
+
+// queryTimings with all query timers mapped to durations.
+type queryTimings struct {
+	EvalTotalTime        float64 `json:"evalTotalTime"`
+	ResultSortTime       float64 `json:"resultSortTime"`
+	QueryPreparationTime float64 `json:"queryPreparationTime"`
+	InnerEvalTime        float64 `json:"innerEvalTime"`
+	ResultAppendTime     float64 `json:"resultAppendTime"`
+	ExecQueueTime        float64 `json:"execQueueTime"`
+	ExecTotalTime        float64 `json:"execTotalTime"`
+}
+
+// QueryStats currently only holding query timings.
+type QueryStats struct {
+	Timings queryTimings `json:"timings,omitempty"`
+}
+
+// NewQueryStats makes a QueryStats struct with all QueryTimings found in the
+// given TimerGroup.
+func NewQueryStats(tg *TimerGroup) *QueryStats {
+	var qt queryTimings
+
+	for s, timer := range tg.timers {
+		switch s {
+		case EvalTotalTime:
+			qt.EvalTotalTime = timer.Duration()
+		case ResultSortTime:
+			qt.ResultSortTime = timer.Duration()
+		case QueryPreparationTime:
+			qt.QueryPreparationTime = timer.Duration()
+		case InnerEvalTime:
+			qt.InnerEvalTime = timer.Duration()
+		case ResultAppendTime:
+			qt.ResultAppendTime = timer.Duration()
+		case ExecQueueTime:
+			qt.ExecQueueTime = timer.Duration()
+		case ExecTotalTime:
+			qt.ExecTotalTime = timer.Duration()
+		}
+	}
+
+	qs := QueryStats{Timings: qt}
+	return &qs
 }

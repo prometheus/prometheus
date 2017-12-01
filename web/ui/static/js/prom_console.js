@@ -109,7 +109,7 @@ PromConsole.TimeControl = function() {
 
   this.durationElement.value = PromConsole.TimeControl.prototype.getHumanDuration(
     PromConsole.TimeControl._initialValues.duration);
-  if (PromConsole.TimeControl._initialValues.endTimeNow === undefined) {
+  if (!PromConsole.TimeControl._initialValues.endTimeNow) {
     this.endElement.value = PromConsole.TimeControl.prototype.getHumanDate(
       new Date(PromConsole.TimeControl._initialValues.endTime * 1000));
   }
@@ -138,10 +138,17 @@ PromConsole.TimeControl.prototype._setHash = function() {
 
 PromConsole.TimeControl._initialValues = function() {
   var hash = window.location.hash;
+  var values;
   if (hash.indexOf('#pctc') === 0) {
-    return JSON.parse(decodeURIComponent(hash.substring(5)));
+    values = JSON.parse(decodeURIComponent(hash.substring(5)));
+  } else {
+    values = {duration: 3600, endTime: 0};
   }
-  return {duration: 3600, endTime: new Date().getTime() / 1000, endTimeNow: true};
+  if (values.endTime == 0) {
+    values.endTime = new Date().getTime() / 1000;
+    values.endTimeNow = true;
+  }
+  return values;
 }();
 
 PromConsole.TimeControl.prototype.parseDuration = function(durationText) {
@@ -304,6 +311,9 @@ PromConsole.graphDefaults = {
   yAxisFormatter: PromConsole.NumberFormatter.humanize,
   // Number formatter for y values hover detail.
   yHoverFormatter: PromConsole.NumberFormatter.humanizeExact,
+  // Color scheme to be used by the plots. Can be either a list of hex color
+  // codes or one of the color scheme names supported by Rickshaw.
+  colorScheme: null,
 };
 
 PromConsole.Graph = function(params) {
@@ -325,6 +335,9 @@ PromConsole.Graph = function(params) {
 
   this.params = params;
   this.rendered_data = null;
+  // Keep a reference so that further updates (e.g. annotations) can be made
+  // by the user in their templates.
+  this.rickshawGraph = null;
   PromConsole._graph_registry.push(this);
 
   /*
@@ -410,7 +423,7 @@ PromConsole.Graph.prototype._escapeHTML = function(string) {
 
 PromConsole.Graph.prototype._render = function(data) {
   var self = this;
-  var palette = new Rickshaw.Color.Palette();
+  var palette = new Rickshaw.Color.Palette({scheme: this.params.colorScheme});
   var series = [];
 
   // This will be used on resize.
@@ -437,13 +450,30 @@ PromConsole.Graph.prototype._render = function(data) {
 
   // Get the data into the right format.
   var seriesLen = 0;
+
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].value.length; i++) {
-      series[seriesLen++] = {
-            data: data[e].value[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
+    for (var i = 0; i < data[e].data.result.length; i++) {
+      series[seriesLen] = {
+            data: data[e].data.result[i].values.map(function(s) { return {x: s[0], y: self._parseValue(s[1])}; }),
             color: palette.color(),
-            name: self._escapeHTML(nameFuncs[e](data[e].value[i].metric)),
+            name: self._escapeHTML(nameFuncs[e](data[e].data.result[i].metric)),
       };
+			// Insert nulls for all missing steps.
+			var newSeries = [];
+			var pos = 0;
+			var start = self.params.endTime - self.params.duration;
+      var step = self.params.duration / this.graphTd.offsetWidth;
+			for (var t = start; t <= self.params.endTime; t += step) {
+				// Allow for floating point inaccuracy.
+				if (series[seriesLen].data.length > pos && series[seriesLen].data[pos].x < t + step / 100) {
+					newSeries.push(series[seriesLen].data[pos]);
+					pos++;
+				} else {
+					newSeries.push({x: t, y: null});
+				}
+			}
+			series[seriesLen].data = newSeries;
+      seriesLen++;
     }
   }
   this._clearGraph();
@@ -480,6 +510,9 @@ PromConsole.Graph.prototype._render = function(data) {
         }
       },
       yFormatter: function(y) {
+        if (y === null) {
+          return "";
+        }
         return this.params.yHoverFormatter(y) + this.params.yUnits;
       }.bind(this)
   });
@@ -497,6 +530,8 @@ PromConsole.Graph.prototype._render = function(data) {
   xAxis.render();
   yAxis.render();
   graph.render();
+
+  this.rickshawGraph = graph;
 };
 
 PromConsole.Graph.prototype._clearGraph = function() {
@@ -506,9 +541,18 @@ PromConsole.Graph.prototype._clearGraph = function() {
   while (this.legendDiv.lastChild) {
     this.legendDiv.removeChild(this.legendDiv.lastChild);
   }
+  this.rickshawGraph = null;
 };
 
 PromConsole.Graph.prototype._xhrs = [];
+
+PromConsole.Graph.prototype.buildQueryUrl = function(expr) {
+  var p = this.params;
+  return PATH_PREFIX + "/api/v1/query_range?query=" +
+    encodeURIComponent(expr) +
+    "&step=" + p.duration / this.graphTd.offsetWidth +
+    "&start=" + (p.endTime - p.duration) + "&end=" + p.endTime;
+};
 
 PromConsole.Graph.prototype.dispatch = function() {
   for (var j = 0; j < this._xhrs.length; j++) {
@@ -519,9 +563,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   var pending_requests = this.params.expr.length;
   for (var i = 0; i < this.params.expr.length; ++i) {
     var endTime = this.params.endTime;
-    var url = PATH_PREFIX + "/api/query_range?expr=" + encodeURIComponent(this.params.expr[i]) +
-      "&step=" + this.params.duration / this.graphTd.offsetWidth + 
-      "&range=" + this.params.duration + "&end=" + endTime;
+    var url = this.buildQueryUrl(this.params.expr[i]);
     var xhr = new XMLHttpRequest();
     xhr.open('get', url, true);
     xhr.responseType = 'json';
@@ -596,12 +638,12 @@ PromConsole._chooseNameFunction = function(data) {
   // If only one label varies, use that value.
   var labelValues = {};
   for (var e = 0; e < data.length; e++) {
-    for (var i = 0; i < data[e].value.length; i++) {
-      for (var label in data[e].value[i].metric) {
+    for (var i = 0; i < data[e].data.result.length; i++) {
+      for (var label in data[e].data.result[i].metric) {
         if (!(label in labelValues)) {
           labelValues[label] = {};
         }
-        labelValues[label][data[e].value[i].metric[label]] = 1;
+        labelValues[label][data[e].data.result[i].metric[label]] = 1;
       }
     }
   }

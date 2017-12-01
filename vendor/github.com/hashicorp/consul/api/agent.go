@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"fmt"
 )
 
@@ -18,11 +19,12 @@ type AgentCheck struct {
 
 // AgentService represents a service known to the agent
 type AgentService struct {
-	ID      string
-	Service string
-	Tags    []string
-	Port    int
-	Address string
+	ID                string
+	Service           string
+	Tags              []string
+	Port              int
+	Address           string
+	EnableTagOverride bool
 }
 
 // AgentMember represents a cluster member known to the agent
@@ -42,13 +44,14 @@ type AgentMember struct {
 
 // AgentServiceRegistration is used to register a new service
 type AgentServiceRegistration struct {
-	ID      string   `json:",omitempty"`
-	Name    string   `json:",omitempty"`
-	Tags    []string `json:",omitempty"`
-	Port    int      `json:",omitempty"`
-	Address string   `json:",omitempty"`
-	Check   *AgentServiceCheck
-	Checks  AgentServiceChecks
+	ID                string   `json:",omitempty"`
+	Name              string   `json:",omitempty"`
+	Tags              []string `json:",omitempty"`
+	Port              int      `json:",omitempty"`
+	Address           string   `json:",omitempty"`
+	EnableTagOverride bool     `json:",omitempty"`
+	Check             *AgentServiceCheck
+	Checks            AgentServiceChecks
 }
 
 // AgentCheckRegistration is used to register a new check
@@ -60,16 +63,27 @@ type AgentCheckRegistration struct {
 	AgentServiceCheck
 }
 
-// AgentServiceCheck is used to create an associated
-// check for a service
+// AgentServiceCheck is used to define a node or service level check
 type AgentServiceCheck struct {
-	Script   string `json:",omitempty"`
-	Interval string `json:",omitempty"`
-	Timeout  string `json:",omitempty"`
-	TTL      string `json:",omitempty"`
-	HTTP     string `json:",omitempty"`
-	TCP      string `json:",omitempty"`
-	Status   string `json:",omitempty"`
+	Script            string `json:",omitempty"`
+	DockerContainerID string `json:",omitempty"`
+	Shell             string `json:",omitempty"` // Only supported for Docker.
+	Interval          string `json:",omitempty"`
+	Timeout           string `json:",omitempty"`
+	TTL               string `json:",omitempty"`
+	HTTP              string `json:",omitempty"`
+	TCP               string `json:",omitempty"`
+	Status            string `json:",omitempty"`
+	Notes             string `json:",omitempty"`
+	TLSSkipVerify     bool   `json:",omitempty"`
+
+	// In Consul 0.7 and later, checks that are associated with a service
+	// may also contain this optional DeregisterCriticalServiceAfter field,
+	// which is a timeout in the same Go time format as Interval and TTL. If
+	// a check is in the critical state for more than this configured value,
+	// then its associated service (and all of its associated checks) will
+	// automatically be deregistered.
+	DeregisterCriticalServiceAfter string `json:",omitempty"`
 }
 type AgentServiceChecks []*AgentServiceCheck
 
@@ -101,6 +115,17 @@ func (a *Agent) Self() (map[string]map[string]interface{}, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// Reload triggers a configuration reload for the agent we are connected to.
+func (a *Agent) Reload() error {
+	r := a.c.newRequest("PUT", "/v1/agent/reload")
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 // NodeName is used to get the node name of the agent
@@ -194,23 +219,43 @@ func (a *Agent) ServiceDeregister(serviceID string) error {
 	return nil
 }
 
-// PassTTL is used to set a TTL check to the passing state
+// PassTTL is used to set a TTL check to the passing state.
+//
+// DEPRECATION NOTICE: This interface is deprecated in favor of UpdateTTL().
+// The client interface will be removed in 0.8 or changed to use
+// UpdateTTL()'s endpoint and the server endpoints will be removed in 0.9.
 func (a *Agent) PassTTL(checkID, note string) error {
-	return a.UpdateTTL(checkID, note, "pass")
+	return a.updateTTL(checkID, note, "pass")
 }
 
-// WarnTTL is used to set a TTL check to the warning state
+// WarnTTL is used to set a TTL check to the warning state.
+//
+// DEPRECATION NOTICE: This interface is deprecated in favor of UpdateTTL().
+// The client interface will be removed in 0.8 or changed to use
+// UpdateTTL()'s endpoint and the server endpoints will be removed in 0.9.
 func (a *Agent) WarnTTL(checkID, note string) error {
-	return a.UpdateTTL(checkID, note, "warn")
+	return a.updateTTL(checkID, note, "warn")
 }
 
-// FailTTL is used to set a TTL check to the failing state
+// FailTTL is used to set a TTL check to the failing state.
+//
+// DEPRECATION NOTICE: This interface is deprecated in favor of UpdateTTL().
+// The client interface will be removed in 0.8 or changed to use
+// UpdateTTL()'s endpoint and the server endpoints will be removed in 0.9.
 func (a *Agent) FailTTL(checkID, note string) error {
-	return a.UpdateTTL(checkID, note, "fail")
+	return a.updateTTL(checkID, note, "fail")
 }
 
-// UpdateTTL is used to update the TTL of a check
-func (a *Agent) UpdateTTL(checkID, note, status string) error {
+// updateTTL is used to update the TTL of a check. This is the internal
+// method that uses the old API that's present in Consul versions prior to
+// 0.6.4. Since Consul didn't have an analogous "update" API before it seemed
+// ok to break this (former) UpdateTTL in favor of the new UpdateTTL below,
+// but keep the old Pass/Warn/Fail methods using the old API under the hood.
+//
+// DEPRECATION NOTICE: This interface is deprecated in favor of UpdateTTL().
+// The client interface will be removed in 0.8 and the server endpoints will
+// be removed in 0.9.
+func (a *Agent) updateTTL(checkID, note, status string) error {
 	switch status {
 	case "pass":
 	case "warn":
@@ -221,6 +266,51 @@ func (a *Agent) UpdateTTL(checkID, note, status string) error {
 	endpoint := fmt.Sprintf("/v1/agent/check/%s/%s", status, checkID)
 	r := a.c.newRequest("PUT", endpoint)
 	r.params.Set("note", note)
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// checkUpdate is the payload for a PUT for a check update.
+type checkUpdate struct {
+	// Status is one of the api.Health* states: HealthPassing
+	// ("passing"), HealthWarning ("warning"), or HealthCritical
+	// ("critical").
+	Status string
+
+	// Output is the information to post to the UI for operators as the
+	// output of the process that decided to hit the TTL check. This is
+	// different from the note field that's associated with the check
+	// itself.
+	Output string
+}
+
+// UpdateTTL is used to update the TTL of a check. This uses the newer API
+// that was introduced in Consul 0.6.4 and later. We translate the old status
+// strings for compatibility (though a newer version of Consul will still be
+// required to use this API).
+func (a *Agent) UpdateTTL(checkID, output, status string) error {
+	switch status {
+	case "pass", HealthPassing:
+		status = HealthPassing
+	case "warn", HealthWarning:
+		status = HealthWarning
+	case "fail", HealthCritical:
+		status = HealthCritical
+	default:
+		return fmt.Errorf("Invalid status: %s", status)
+	}
+
+	endpoint := fmt.Sprintf("/v1/agent/check/update/%s", checkID)
+	r := a.c.newRequest("PUT", endpoint)
+	r.obj = &checkUpdate{
+		Status: status,
+		Output: output,
+	}
+
 	_, resp, err := requireOK(a.c.doRequest(r))
 	if err != nil {
 		return err
@@ -261,6 +351,17 @@ func (a *Agent) Join(addr string, wan bool) error {
 	if wan {
 		r.params.Set("wan", "1")
 	}
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// Leave is used to have the agent gracefully leave the cluster and shutdown
+func (a *Agent) Leave() error {
+	r := a.c.newRequest("PUT", "/v1/agent/leave")
 	_, resp, err := requireOK(a.c.doRequest(r))
 	if err != nil {
 		return err
@@ -332,4 +433,39 @@ func (a *Agent) DisableNodeMaintenance() error {
 	}
 	resp.Body.Close()
 	return nil
+}
+
+// Monitor returns a channel which will receive streaming logs from the agent
+// Providing a non-nil stopCh can be used to close the connection and stop the
+// log stream
+func (a *Agent) Monitor(loglevel string, stopCh chan struct{}, q *QueryOptions) (chan string, error) {
+	r := a.c.newRequest("GET", "/v1/agent/monitor")
+	r.setQueryOptions(q)
+	if loglevel != "" {
+		r.params.Add("loglevel", loglevel)
+	}
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, err
+	}
+
+	logCh := make(chan string, 64)
+	go func() {
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		for {
+			select {
+			case <-stopCh:
+				close(logCh)
+				return
+			default:
+			}
+			if scanner.Scan() {
+				logCh <- scanner.Text()
+			}
+		}
+	}()
+
+	return logCh, nil
 }

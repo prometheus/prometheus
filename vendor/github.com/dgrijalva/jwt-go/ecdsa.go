@@ -69,7 +69,7 @@ func (m *SigningMethodECDSA) Verify(signingString, signature string, key interfa
 	case *ecdsa.PublicKey:
 		ecdsaKey = k
 	default:
-		return ErrInvalidKey
+		return ErrInvalidKeyType
 	}
 
 	if len(sig) != 2*m.KeySize {
@@ -103,7 +103,7 @@ func (m *SigningMethodECDSA) Sign(signingString string, key interface{}) (string
 	case *ecdsa.PrivateKey:
 		ecdsaKey = k
 	default:
-		return "", ErrInvalidKey
+		return "", ErrInvalidKeyType
 	}
 
 	// Create the hasher

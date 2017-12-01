@@ -6,7 +6,7 @@
               </div>
               <div class="col-lg-2">
                 <div class="eval_stats pull-right"></div>
-                <img src="{{ pathPrefix }}/static/img/ajax-loader.gif" class="spinner" alt="ajax_spinner">
+                <img src="{{ pathPrefix }}/static/img/ajax-loader.gif?v={{ buildVersion }}" class="spinner" alt="ajax_spinner">
               </div>
             </div>
             <div class="row">
@@ -77,7 +77,7 @@
                           <input
                               class="pull-left date_input input"
                               id="end{{id}}"
-                              title="End time of graph"
+                              title="End time of graph (UTC)"
                               placeholder="Until"
                               data-format="yyyy-MM-dd"
                               type="text"
@@ -122,6 +122,11 @@
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-lg-12 text-right">
+                    <a name="remove" href="#">Remove Graph</a>
               </div>
             </div>
           </form>

@@ -14,16 +14,20 @@
 package promql
 
 import (
+	"context"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 func TestQueryConcurrency(t *testing.T) {
 	engine := NewEngine(nil, nil)
-	defer engine.Stop()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
@@ -36,7 +40,7 @@ func TestQueryConcurrency(t *testing.T) {
 
 	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
 		q := engine.newTestQuery(f)
-		go q.Exec()
+		go q.Exec(ctx)
 		select {
 		case <-processing:
 			// Expected.
@@ -46,11 +50,11 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	q := engine.newTestQuery(f)
-	go q.Exec()
+	go q.Exec(ctx)
 
 	select {
 	case <-processing:
-		t.Fatalf("Query above concurrency threhosld being executed")
+		t.Fatalf("Query above concurrency threshold being executed")
 	case <-time.After(20 * time.Millisecond):
 		// Expected.
 	}
@@ -76,14 +80,15 @@ func TestQueryTimeout(t *testing.T) {
 		Timeout:              5 * time.Millisecond,
 		MaxConcurrentQueries: 20,
 	})
-	defer engine.Stop()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	query := engine.newTestQuery(func(ctx context.Context) error {
 		time.Sleep(50 * time.Millisecond)
 		return contextDone(ctx, "test statement execution")
 	})
 
-	res := query.Exec()
+	res := query.Exec(ctx)
 	if res.Err == nil {
 		t.Fatalf("expected timeout error but got none")
 	}
@@ -94,7 +99,8 @@ func TestQueryTimeout(t *testing.T) {
 
 func TestQueryCancel(t *testing.T) {
 	engine := NewEngine(nil, nil)
-	defer engine.Stop()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 
 	// Cancel a running query before it completes.
 	block := make(chan struct{})
@@ -109,7 +115,7 @@ func TestQueryCancel(t *testing.T) {
 	var res *Result
 
 	go func() {
-		res = query1.Exec()
+		res = query1.Exec(ctx)
 		processing <- struct{}{}
 	}()
 
@@ -131,14 +137,15 @@ func TestQueryCancel(t *testing.T) {
 	})
 
 	query2.Cancel()
-	res = query2.Exec()
+	res = query2.Exec(ctx)
 	if res.Err != nil {
-		t.Fatalf("unexpeceted error on executing query2: %s", res.Err)
+		t.Fatalf("unexpected error on executing query2: %s", res.Err)
 	}
 }
 
 func TestEngineShutdown(t *testing.T) {
 	engine := NewEngine(nil, nil)
+	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
@@ -158,12 +165,12 @@ func TestEngineShutdown(t *testing.T) {
 
 	var res *Result
 	go func() {
-		res = query1.Exec()
+		res = query1.Exec(ctx)
 		processing <- struct{}{}
 	}()
 
 	<-processing
-	engine.Stop()
+	cancelCtx()
 	block <- struct{}{}
 	<-processing
 
@@ -181,17 +188,115 @@ func TestEngineShutdown(t *testing.T) {
 
 	// The second query is started after the engine shut down. It must
 	// be canceled immediately.
-	res2 := query2.Exec()
+	res2 := query2.Exec(ctx)
 	if res2.Err == nil {
-		t.Fatalf("expected error on querying shutdown engine but got none")
+		t.Fatalf("expected error on querying with canceled context but got none")
 	}
 	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
-		t.Fatalf("expected cancelation error, got %q", res2.Err)
+		t.Fatalf("expected cancellation error, got %q", res2.Err)
 	}
 }
 
+func TestEngineEvalStmtTimestamps(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric 1 2
+`)
+	if err != nil {
+		t.Fatalf("unexpected error creating test: %q", err)
+	}
+	err = test.Run()
+	if err != nil {
+		t.Fatalf("unexpected error initializing test: %q", err)
+	}
+
+	cases := []struct {
+		Query    string
+		Result   Value
+		Start    time.Time
+		End      time.Time
+		Interval time.Duration
+	}{
+		// Instant queries.
+		{
+			Query:  "1",
+			Result: Scalar{V: 1, T: 1000},
+			Start:  time.Unix(1, 0),
+		},
+		{
+			Query: "metric",
+			Result: Vector{
+				Sample{Point: Point{V: 1, T: 1000},
+					Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start: time.Unix(1, 0),
+		},
+		{
+			Query: "metric[20s]",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start: time.Unix(10, 0),
+		},
+		// Range queries.
+		{
+			Query: "1",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+				Metric: labels.FromStrings()},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+		{
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
+	}
+
+	for _, c := range cases {
+		var err error
+		var qry Query
+		if c.Interval == 0 {
+			qry, err = test.QueryEngine().NewInstantQuery(c.Query, c.Start)
+		} else {
+			qry, err = test.QueryEngine().NewRangeQuery(c.Query, c.Start, c.End, c.Interval)
+		}
+		if err != nil {
+			t.Fatalf("unexpected error creating query: %q", err)
+		}
+		res := qry.Exec(test.Context())
+		if res.Err != nil {
+			t.Fatalf("unexpected error running query: %q", res.Err)
+		}
+		if !reflect.DeepEqual(res.Value, c.Result) {
+			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
+		}
+	}
+
+}
+
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	var ev *evaluator
+	ev := &evaluator{logger: log.NewNopLogger()}
+
 	var err error
 	defer ev.recover(&err)
 
@@ -205,7 +310,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
-	var ev *evaluator
+	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
 
 	e := fmt.Errorf("custom error")

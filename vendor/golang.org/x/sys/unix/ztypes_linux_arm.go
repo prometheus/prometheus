@@ -1,6 +1,6 @@
 // +build arm,linux
 // Created by cgo -godefs - DO NOT EDIT
-// cgo -godefs types_linux.go
+// cgo -godefs types_linux.go | go run mkpost.go
 
 package unix
 
@@ -154,6 +154,15 @@ type Flock_t struct {
 	Pid       int32
 	Pad_cgo_1 [4]byte
 }
+
+const (
+	FADV_NORMAL     = 0x0
+	FADV_RANDOM     = 0x1
+	FADV_SEQUENTIAL = 0x2
+	FADV_WILLNEED   = 0x3
+	FADV_DONTNEED   = 0x4
+	FADV_NOREUSE    = 0x5
+)
 
 type RawSockaddrInet4 struct {
 	Family uint16
@@ -574,6 +583,26 @@ const (
 	AT_SYMLINK_FOLLOW   = 0x400
 	AT_SYMLINK_NOFOLLOW = 0x100
 )
+
+type PollFd struct {
+	Fd      int32
+	Events  int16
+	Revents int16
+}
+
+const (
+	POLLIN    = 0x1
+	POLLPRI   = 0x2
+	POLLOUT   = 0x4
+	POLLRDHUP = 0x2000
+	POLLERR   = 0x8
+	POLLHUP   = 0x10
+	POLLNVAL  = 0x20
+)
+
+type Sigset_t struct {
+	X__val [16]uint64
+}
 
 type Termios struct {
 	Iflag  uint32

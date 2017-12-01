@@ -14,6 +14,8 @@
 package v1
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,15 +24,44 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"golang.org/x/net/context"
 
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/storage/remote"
 )
+
+type targetRetrieverFunc func() []*retrieval.Target
+
+func (f targetRetrieverFunc) Targets() []*retrieval.Target {
+	return f()
+}
+
+type alertmanagerRetrieverFunc func() []*url.URL
+
+func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
+	return f()
+}
+
+var samplePrometheusCfg = config.Config{
+	GlobalConfig:       config.GlobalConfig{},
+	AlertingConfig:     config.AlertingConfig{},
+	RuleFiles:          []string{},
+	ScrapeConfigs:      []*config.ScrapeConfig{},
+	RemoteWriteConfigs: []*config.RemoteWriteConfig{},
+	RemoteReadConfigs:  []*config.RemoteReadConfig{},
+}
 
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
@@ -48,14 +79,42 @@ func TestEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	now := model.Now()
+	now := time.Now()
+
+	tr := targetRetrieverFunc(func() []*retrieval.Target {
+		return []*retrieval.Target{
+			retrieval.NewTarget(
+				labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+				}),
+				nil,
+				url.Values{},
+			),
+		}
+	})
+
+	ar := alertmanagerRetrieverFunc(func() []*url.URL {
+		return []*url.URL{{
+			Scheme: "http",
+			Host:   "alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		}}
+	})
+
 	api := &API{
-		Storage:     suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
-		now:         func() model.Time { return now },
+		Queryable:             suite.Storage(),
+		QueryEngine:           suite.QueryEngine(),
+		targetRetriever:       tr,
+		alertmanagerRetriever: ar,
+		now:    func() time.Time { return now },
+		config: func() config.Config { return samplePrometheusCfg },
+		ready:  func(f http.HandlerFunc) http.HandlerFunc { return f },
 	}
 
-	start := model.Time(0)
+	start := time.Unix(0, 0)
+
 	var tests = []struct {
 		endpoint apiFunc
 		params   map[string]string
@@ -67,13 +126,13 @@ func TestEndpoints(t *testing.T) {
 			endpoint: api.query,
 			query: url.Values{
 				"query": []string{"2"},
-				"time":  []string{"123.3"},
+				"time":  []string{"123.4"},
 			},
 			response: &queryData{
-				ResultType: model.ValScalar,
-				Result: &model.Scalar{
-					Value:     2,
-					Timestamp: start.Add(123*time.Second + 300*time.Millisecond),
+				ResultType: promql.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 2,
+					T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
 				},
 			},
 		},
@@ -84,10 +143,10 @@ func TestEndpoints(t *testing.T) {
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
 			response: &queryData{
-				ResultType: model.ValScalar,
-				Result: &model.Scalar{
-					Value:     0.333,
-					Timestamp: start.Add(123 * time.Second),
+				ResultType: promql.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 0.333,
+					T: timestamp.FromTime(start.Add(123 * time.Second)),
 				},
 			},
 		},
@@ -98,10 +157,10 @@ func TestEndpoints(t *testing.T) {
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
 			response: &queryData{
-				ResultType: model.ValScalar,
-				Result: &model.Scalar{
-					Value:     0.333,
-					Timestamp: start.Add(123 * time.Second),
+				ResultType: promql.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 0.333,
+					T: timestamp.FromTime(start.Add(123 * time.Second)),
 				},
 			},
 		},
@@ -111,10 +170,10 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"0.333"},
 			},
 			response: &queryData{
-				ResultType: model.ValScalar,
-				Result: &model.Scalar{
-					Value:     0.333,
-					Timestamp: now,
+				ResultType: promql.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 0.333,
+					T: timestamp.FromTime(now),
 				},
 			},
 		},
@@ -127,15 +186,15 @@ func TestEndpoints(t *testing.T) {
 				"step":  []string{"1"},
 			},
 			response: &queryData{
-				ResultType: model.ValMatrix,
-				Result: model.Matrix{
-					&model.SampleStream{
-						Values: []model.SamplePair{
-							{Value: 0, Timestamp: start},
-							{Value: 1, Timestamp: start.Add(1 * time.Second)},
-							{Value: 2, Timestamp: start.Add(2 * time.Second)},
+				ResultType: promql.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Points: []promql.Point{
+							{V: 0, T: timestamp.FromTime(start)},
+							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: model.Metric{},
+						Metric: nil,
 					},
 				},
 			},
@@ -187,12 +246,45 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
+		// Invalid step.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"1"},
+				"end":   []string{"2"},
+				"step":  []string{"0"},
+			},
+			errType: errorBadData,
+		},
+		// Start after end.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"2"},
+				"end":   []string{"1"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
+		// Start overflows int64 internally.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"148966367200.372"},
+				"end":   []string{"1489667272.372"},
+				"step":  []string{"1"},
+			},
+			errType: errorBadData,
+		},
 		{
 			endpoint: api.labelValues,
 			params: map[string]string{
 				"name": "__name__",
 			},
-			response: model.LabelValues{
+			response: []string{
 				"test_metric1",
 				"test_metric2",
 			},
@@ -202,7 +294,7 @@ func TestEndpoints(t *testing.T) {
 			params: map[string]string{
 				"name": "foo",
 			},
-			response: model.LabelValues{
+			response: []string{
 				"bar",
 				"boo",
 			},
@@ -220,11 +312,8 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric2",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
 		{
@@ -232,23 +321,17 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric1",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
 			},
 		},
 		{
 			endpoint: api.series,
 			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~"o$"}`, `test_metric1{foo=~".+o"}`},
+				"match[]": []string{`test_metric1{foo=~".+o$"}`, `test_metric1{foo=~".+o"}`},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric1",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
 			},
 		},
 		{
@@ -256,11 +339,8 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`, `none`},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric1",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
 			},
 		},
 		// Start and end before series starts.
@@ -271,7 +351,7 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"-2"},
 				"end":     []string{"-1"},
 			},
-			response: []model.Metric{},
+			response: []labels.Labels{},
 		},
 		// Start and end after series ends.
 		{
@@ -281,7 +361,7 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"100000"},
 				"end":     []string{"100001"},
 			},
-			response: []model.Metric{},
+			response: []labels.Labels{},
 		},
 		// Start before series starts, end after series ends.
 		{
@@ -291,11 +371,8 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"-1"},
 				"end":     []string{"100000"},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric2",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
 		// Start and end within series.
@@ -306,11 +383,8 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"1"},
 				"end":     []string{"100"},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric2",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
 		// Start within series, end after.
@@ -321,11 +395,8 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"1"},
 				"end":     []string{"100000"},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric2",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
 		// Start before series, end within series.
@@ -336,11 +407,8 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"-1"},
 				"end":     []string{"1"},
 			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric2",
-					"foo":      "boo",
-				},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
 		},
 		// Missing match[] query params in series requests.
@@ -350,73 +418,182 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			endpoint: api.dropSeries,
-			errType:  errorBadData,
-		},
-		// The following tests delete time series from the test storage. They
-		// must remain at the end and are fixed in their order.
-		{
-			endpoint: api.dropSeries,
-			query: url.Values{
-				"match[]": []string{`test_metric1{foo=~".+o"}`},
-			},
-			response: struct {
-				NumDeleted int `json:"numDeleted"`
-			}{1},
+			errType:  errorInternal,
 		},
 		{
-			endpoint: api.series,
-			query: url.Values{
-				"match[]": []string{`test_metric1`},
-			},
-			response: []model.Metric{
-				{
-					"__name__": "test_metric1",
-					"foo":      "bar",
+			endpoint: api.targets,
+			response: &TargetDiscovery{
+				ActiveTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{},
+						Labels:           map[string]string{},
+						ScrapeURL:        "http://example.com:8080/metrics",
+						Health:           "unknown",
+					},
 				},
 			},
-		}, {
-			endpoint: api.dropSeries,
-			query: url.Values{
-				"match[]": []string{`{__name__=~".+"}`},
+		},
+		{
+			endpoint: api.alertmanagers,
+			response: &AlertmanagerDiscovery{
+				ActiveAlertmanagers: []*AlertmanagerTarget{
+					{
+						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
 			},
-			response: struct {
-				NumDeleted int `json:"numDeleted"`
-			}{2},
+		},
+		{
+			endpoint: api.serveConfig,
+			response: &prometheusConfig{
+				YAML: samplePrometheusCfg.String(),
+			},
 		},
 	}
 
-	for _, test := range tests {
-		// Build a context with the correct request params.
-		ctx := context.Background()
-		for p, v := range test.params {
-			ctx = route.WithParam(ctx, p, v)
+	methods := func(f apiFunc) []string {
+		fp := reflect.ValueOf(f).Pointer()
+		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() {
+			return []string{http.MethodGet, http.MethodPost}
 		}
-		api.context = func(r *http.Request) context.Context {
-			return ctx
-		}
+		return []string{http.MethodGet}
+	}
 
-		req, err := http.NewRequest("ANY", fmt.Sprintf("http://example.com?%s", test.query.Encode()), nil)
-		if err != nil {
-			t.Fatal(err)
+	request := func(m string, q url.Values) (*http.Request, error) {
+		if m == http.MethodPost {
+			r, err := http.NewRequest(m, "http://example.com", strings.NewReader(q.Encode()))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			return r, err
 		}
-		resp, apiErr := test.endpoint(req)
-		if apiErr != nil {
-			if test.errType == errorNone {
-				t.Fatalf("Unexpected error: %s", apiErr)
+		return http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+	}
+
+	for _, test := range tests {
+		for _, method := range methods(test.endpoint) {
+			// Build a context with the correct request params.
+			ctx := context.Background()
+			for p, v := range test.params {
+				ctx = route.WithParam(ctx, p, v)
 			}
-			if test.errType != apiErr.typ {
-				t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
+			t.Logf("run %s\t%q", method, test.query.Encode())
+
+			req, err := request(method, test.query)
+			if err != nil {
+				t.Fatal(err)
 			}
-			continue
+			resp, apiErr := test.endpoint(req.WithContext(ctx))
+			if apiErr != nil {
+				if test.errType == errorNone {
+					t.Fatalf("Unexpected error: %s", apiErr)
+				}
+				if test.errType != apiErr.typ {
+					t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
+				}
+				continue
+			}
+			if apiErr == nil && test.errType != errorNone {
+				t.Fatalf("Expected error of type %q but got none", test.errType)
+			}
+			if !reflect.DeepEqual(resp, test.response) {
+				t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+			}
 		}
-		if apiErr == nil && test.errType != errorNone {
-			t.Fatalf("Expected error of type %q but got none", test.errType)
-		}
-		if !reflect.DeepEqual(resp, test.response) {
-			t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
-		}
-		// Ensure that removed metrics are unindexed before the next request.
-		suite.Storage().WaitForIndexing()
+	}
+}
+
+func TestReadEndpoint(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar",baz="qux"} 1
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer suite.Close()
+
+	if err := suite.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &API{
+		Queryable:   suite.Storage(),
+		QueryEngine: suite.QueryEngine(),
+		config: func() config.Config {
+			return config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ExternalLabels: model.LabelSet{
+						"baz": "a",
+						"b":   "c",
+						"d":   "e",
+					},
+				},
+			}
+		},
+	}
+
+	// Encode the request.
+	matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+	data, err := proto.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := snappy.Encode(nil, data)
+	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	api.remoteRead(recorder, request)
+
+	// Decode the response.
+	compressed, err = ioutil.ReadAll(recorder.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncompressed, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var resp prompb.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(resp.Results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
+	}
+
+	result := resp.Results[0]
+	expected := &prompb.QueryResult{
+		Timeseries: []*prompb.TimeSeries{
+			{
+				Labels: []*prompb.Label{
+					{Name: "__name__", Value: "test_metric1"},
+					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "qux"},
+					{Name: "d", Value: "e"},
+					{Name: "foo", Value: "bar"},
+				},
+				Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
+			},
+		},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
 	}
 }
 
@@ -523,9 +700,6 @@ func TestParseTime(t *testing.T) {
 			input:  "123.123",
 			result: time.Unix(123, 123000000),
 		}, {
-			input:  "123.123",
-			result: time.Unix(123, 123000000),
-		}, {
 			input:  "2015-06-03T13:21:58.555Z",
 			result: ts,
 		}, {
@@ -544,9 +718,8 @@ func TestParseTime(t *testing.T) {
 			t.Errorf("Expected error for %q but got none", test.input)
 			continue
 		}
-		res := model.TimeFromUnixNano(test.result.UnixNano())
-		if !test.fail && ts != res {
-			t.Errorf("Expected time %v for input %q but got %v", res, test.input, ts)
+		if !test.fail && !ts.Equal(test.result) {
+			t.Errorf("Expected time %v for input %q but got %v", test.result, test.input, ts)
 		}
 	}
 }
@@ -565,6 +738,14 @@ func TestParseDuration(t *testing.T) {
 			fail:  true,
 		}, {
 			input: "2015-06-03T13:21:58.555Z",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "-148966367200.372",
+			fail:  true,
+		}, {
+			// Internal int64 overflow.
+			input: "148966367200.372",
 			fail:  true,
 		}, {
 			input:  "123",
@@ -599,7 +780,7 @@ func TestParseDuration(t *testing.T) {
 
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
-	api := &API{}
+	api := &API{ready: func(f http.HandlerFunc) http.HandlerFunc { return f }}
 	api.Register(r)
 
 	s := httptest.NewServer(r)

@@ -14,39 +14,61 @@
 package retrieval
 
 import (
-	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
+
+type nopAppendable struct{}
+
+func (a nopAppendable) Appender() (storage.Appender, error) {
+	return nopAppender{}, nil
+}
 
 type nopAppender struct{}
 
-func (a nopAppender) Append(*model.Sample) error {
-	return nil
-}
+func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error)   { return 0, nil }
+func (a nopAppender) AddFast(labels.Labels, uint64, int64, float64) error { return nil }
+func (a nopAppender) Commit() error                                       { return nil }
+func (a nopAppender) Rollback() error                                     { return nil }
 
-func (a nopAppender) NeedsThrottling() bool {
-	return false
-}
-
+// collectResultAppender records all samples that were added through the appender.
+// It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
-	result    model.Samples
-	throttled bool
+	next   storage.Appender
+	result []sample
 }
 
-func (a *collectResultAppender) Append(s *model.Sample) error {
-	for ln, lv := range s.Metric {
-		if len(lv) == 0 {
-			delete(s.Metric, ln)
-		}
+func (a *collectResultAppender) AddFast(m labels.Labels, ref uint64, t int64, v float64) error {
+	if a.next == nil {
+		return storage.ErrNotFound
 	}
-	a.result = append(a.result, s)
-	return nil
+	err := a.next.AddFast(m, ref, t, v)
+	if err != nil {
+		return err
+	}
+	a.result = append(a.result, sample{
+		metric: m,
+		t:      t,
+		v:      v,
+	})
+	return err
 }
 
-func (a *collectResultAppender) NeedsThrottling() bool {
-	return a.throttled
+func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
+	a.result = append(a.result, sample{
+		metric: m,
+		t:      t,
+		v:      v,
+	})
+	if a.next == nil {
+		return 0, nil
+	}
+	return a.next.Add(m, t, v)
 }
+
+func (a *collectResultAppender) Commit() error   { return nil }
+func (a *collectResultAppender) Rollback() error { return nil }
 
 // fakeTargetProvider implements a TargetProvider and allows manual injection
 // of TargetGroups through the update channel.

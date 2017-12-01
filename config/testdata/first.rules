@@ -1,0 +1,10 @@
+groups:
+- name: my-group-name
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      description: "stuff's happening with {{ $labels.service }}"

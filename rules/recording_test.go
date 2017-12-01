@@ -14,57 +14,71 @@
 package rules
 
 import (
-	"reflect"
+	"context"
 	"testing"
+	"time"
 
-	"github.com/prometheus/common/model"
-
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRuleEval(t *testing.T) {
-	storage, closer := local.NewTestStorage(t, 2)
-	defer closer.Close()
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+
 	engine := promql.NewEngine(storage, nil)
-	now := model.Now()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	now := time.Now()
 
 	suite := []struct {
 		name   string
 		expr   promql.Expr
-		labels model.LabelSet
-		result model.Vector
+		labels labels.Labels
+		result promql.Vector
 	}{
 		{
 			name:   "nolabels",
 			expr:   &promql.NumberLiteral{Val: 1},
-			labels: model.LabelSet{},
-			result: model.Vector{&model.Sample{
-				Value:     1,
-				Timestamp: now,
-				Metric:    model.Metric{"__name__": "nolabels"},
+			labels: labels.Labels{},
+			result: promql.Vector{promql.Sample{
+				Metric: labels.FromStrings("__name__", "nolabels"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
 		{
 			name:   "labels",
 			expr:   &promql.NumberLiteral{Val: 1},
-			labels: model.LabelSet{"foo": "bar"},
-			result: model.Vector{&model.Sample{
-				Value:     1,
-				Timestamp: now,
-				Metric:    model.Metric{"__name__": "labels", "foo": "bar"},
+			labels: labels.FromStrings("foo", "bar"),
+			result: promql.Vector{promql.Sample{
+				Metric: labels.FromStrings("__name__", "labels", "foo", "bar"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
 	}
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.eval(now, engine)
-		if err != nil {
-			t.Fatalf("Error evaluating %s", test.name)
-		}
-		if !reflect.DeepEqual(result, test.result) {
-			t.Fatalf("Error: expected %q, got %q", test.result, result)
-		}
+		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine), nil)
+		testutil.Ok(t, err)
+		testutil.Equals(t, result, test.result)
 	}
+}
+
+func TestRecordingRuleHTMLSnippet(t *testing.T) {
+	expr, err := promql.ParseExpr(`foo{html="<b>BOLD<b>"}`)
+	testutil.Ok(t, err)
+	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
+
+	const want = `record: <a href="/test/prefix/graph?g0.expr=testrule&g0.tab=1">testrule</a>
+expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
+labels:
+  html: '&lt;b&gt;BOLD&lt;/b&gt;'
+`
+
+	got := rule.HTMLSnippet("/test/prefix")
+	testutil.Assert(t, want == got, "incorrect HTML snippet; want:\n\n%s\n\ngot:\n\n%s", want, got)
 }

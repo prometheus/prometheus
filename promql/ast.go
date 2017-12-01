@@ -17,10 +17,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/metric"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Node is a generic interface for all nodes in an AST.
@@ -58,8 +56,8 @@ type AlertStmt struct {
 	Name        string
 	Expr        Expr
 	Duration    time.Duration
-	Labels      model.LabelSet
-	Annotations model.LabelSet
+	Labels      labels.Labels
+	Annotations labels.Labels
 }
 
 // EvalStmt holds an expression and information on the range it should
@@ -69,7 +67,7 @@ type EvalStmt struct {
 
 	// The time boundaries for the evaluation. If Start equals End an instant
 	// is evaluated.
-	Start, End model.Time
+	Start, End time.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
 }
@@ -78,7 +76,7 @@ type EvalStmt struct {
 type RecordStmt struct {
 	Name   string
 	Expr   Expr
-	Labels model.LabelSet
+	Labels labels.Labels
 }
 
 func (*AlertStmt) stmt()  {}
@@ -91,7 +89,7 @@ type Expr interface {
 
 	// Type returns the type the expression evaluates to. It does not perform
 	// in-depth checks as this is done at parsing-time.
-	Type() model.ValueType
+	Type() ValueType
 	// expr ensures that no other types accidentally implement the interface.
 	expr()
 }
@@ -99,13 +97,13 @@ type Expr interface {
 // Expressions is a list of expression nodes that implements Node.
 type Expressions []Expr
 
-// AggregateExpr represents an aggregation operation on a vector.
+// AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op               itemType         // The used aggregation operation.
-	Expr             Expr             // The vector expression over which is aggregated.
-	Grouping         model.LabelNames // The labels by which to group the vector.
-	Without          bool             // Whether to drop the given labels rather than keep them.
-	KeepCommonLabels bool             // Whether to keep common labels among result elements.
+	Op       itemType // The used aggregation operation.
+	Expr     Expr     // The Vector expression over which is aggregated.
+	Param    Expr     // Parameter used by some aggregators.
+	Grouping []string // The labels by which to group the Vector.
+	Without  bool     // Whether to drop the given labels rather than keep them.
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -113,7 +111,7 @@ type BinaryExpr struct {
 	Op       itemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 
-	// The matching behavior for the operation if both operands are vectors.
+	// The matching behavior for the operation if both operands are Vectors.
 	// If they are not this field is nil.
 	VectorMatching *VectorMatching
 
@@ -127,21 +125,21 @@ type Call struct {
 	Args Expressions // Arguments used in the call.
 }
 
-// MatrixSelector represents a matrix selection.
+// MatrixSelector represents a Matrix selection.
 type MatrixSelector struct {
 	Name          string
 	Range         time.Duration
 	Offset        time.Duration
-	LabelMatchers metric.LabelMatchers
+	LabelMatchers []*labels.Matcher
 
-	// The series iterators are populated at query analysis time.
-	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]metric.Metric
+	// The series iterators are populated at query preparation time.
+	series    []storage.Series
+	iterators []*storage.BufferedSeriesIterator
 }
 
 // NumberLiteral represents a number.
 type NumberLiteral struct {
-	Val model.SampleValue
+	Val float64
 }
 
 // ParenExpr wraps an expression so it cannot be disassembled as a consequence
@@ -156,36 +154,36 @@ type StringLiteral struct {
 }
 
 // UnaryExpr represents a unary operation on another expression.
-// Currently unary operations are only supported for scalars.
+// Currently unary operations are only supported for Scalars.
 type UnaryExpr struct {
 	Op   itemType
 	Expr Expr
 }
 
-// VectorSelector represents a vector selection.
+// VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
-	LabelMatchers metric.LabelMatchers
+	LabelMatchers []*labels.Matcher
 
-	// The series iterators are populated at query analysis time.
-	iterators map[model.Fingerprint]local.SeriesIterator
-	metrics   map[model.Fingerprint]metric.Metric
+	// The series iterators are populated at query preparation time.
+	series    []storage.Series
+	iterators []*storage.BufferedSeriesIterator
 }
 
-func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
-func (e *Call) Type() model.ValueType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() model.ValueType { return model.ValMatrix }
-func (e *NumberLiteral) Type() model.ValueType  { return model.ValScalar }
-func (e *ParenExpr) Type() model.ValueType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() model.ValueType  { return model.ValString }
-func (e *UnaryExpr) Type() model.ValueType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() model.ValueType { return model.ValVector }
-func (e *BinaryExpr) Type() model.ValueType {
-	if e.LHS.Type() == model.ValScalar && e.RHS.Type() == model.ValScalar {
-		return model.ValScalar
+func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
+func (e *Call) Type() ValueType           { return e.Func.ReturnType }
+func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
+func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
+func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
+func (e *BinaryExpr) Type() ValueType {
+	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
+		return ValueTypeScalar
 	}
-	return model.ValVector
+	return ValueTypeVector
 }
 
 func (*AggregateExpr) expr()  {}
@@ -199,7 +197,7 @@ func (*UnaryExpr) expr()      {}
 func (*VectorSelector) expr() {}
 
 // VectorMatchCardinality describes the cardinality relationship
-// of two vectors in a binary operation.
+// of two Vectors in a binary operation.
 type VectorMatchCardinality int
 
 const (
@@ -223,20 +221,20 @@ func (vmc VectorMatchCardinality) String() string {
 	panic("promql.VectorMatchCardinality.String: unknown match cardinality")
 }
 
-// VectorMatching describes how elements from two vectors in a binary
+// VectorMatching describes how elements from two Vectors in a binary
 // operation are supposed to be matched.
 type VectorMatching struct {
-	// The cardinality of the two vectors.
+	// The cardinality of the two Vectors.
 	Card VectorMatchCardinality
 	// MatchingLabels contains the labels which define equality of a pair of
-	// elements from the vectors.
-	MatchingLabels model.LabelNames
-	// Ignoring excludes the given label names from matching,
-	// rather than only using them.
-	Ignoring bool
+	// elements from the Vectors.
+	MatchingLabels []string
+	// On includes the given label names from matching,
+	// rather than excluding them.
+	On bool
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
-	Include model.LabelNames
+	Include []string
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is

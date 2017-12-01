@@ -9,6 +9,10 @@
           <th>Uptime</th>
           <td>{{.Birth.UTC}}</td>
         </tr>
+        <tr>
+          <th>Working Directory</th>
+          <td>{{.CWD}}</td>
+        </tr>
       </tbody>
     </table>
 
@@ -41,5 +45,21 @@
         </tr>
       </tbody>
     </table>
+
+    <h2 id="alertmanagers">Alertmanagers</h2>
+    <table class="table table-condensed table-bordered table-striped table-hover">
+      <tbody>
+        <tr>
+           <th>Endpoint</th>
+        </tr>
+        {{range .Alertmanagers}}
+        <tr>
+          {{/* Alertmanager URLs always have Scheme, Host and Path set */}}
+          <td>{{.Scheme}}://<a href="{{.Scheme}}://{{.Host}}">{{.Host}}</a>{{.Path}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
   </div>
 {{end}}

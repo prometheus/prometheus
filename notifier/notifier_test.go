@@ -14,68 +14,73 @@
 package notifier
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
 
+	old_ctx "golang.org/x/net/context"
+
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
 )
 
-func TestPostURL(t *testing.T) {
+func TestPostPath(t *testing.T) {
 	var cases = []struct {
 		in, out string
 	}{
 		{
-			in:  "http://localhost:9093",
-			out: "http://localhost:9093/api/v1/alerts",
+			in:  "",
+			out: "/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/",
-			out: "http://localhost:9093/api/v1/alerts",
+			in:  "/",
+			out: "/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/prefix",
-			out: "http://localhost:9093/prefix/api/v1/alerts",
+			in:  "/prefix",
+			out: "/prefix/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/prefix//",
-			out: "http://localhost:9093/prefix/api/v1/alerts",
+			in:  "/prefix//",
+			out: "/prefix/api/v1/alerts",
 		},
 		{
-			in:  "http://localhost:9093/prefix//",
-			out: "http://localhost:9093/prefix/api/v1/alerts",
+			in:  "prefix//",
+			out: "/prefix/api/v1/alerts",
 		},
 	}
 	for _, c := range cases {
-		if res := postURL(c.in); res != c.out {
-			t.Errorf("Expected post URL %q for %q but got %q", c.out, c.in, res)
+		if res := postPath(c.in); res != c.out {
+			t.Errorf("Expected post path %q for %q but got %q", c.out, c.in, res)
 		}
 	}
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{})
+	h := New(&Options{}, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
-		h.queue = append(h.queue, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		h.queue = append(h.queue, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
-	expected := append(model.Alerts{}, h.queue...)
+	expected := append([]*Alert{}, h.queue...)
 
 	b := h.nextBatch()
 
 	if len(b) != maxBatchSize {
 		t.Fatalf("Expected first batch of length %d, but got %d", maxBatchSize, len(b))
 	}
-	if reflect.DeepEqual(expected[0:maxBatchSize], b) {
+	if !alertsEqual(expected[0:maxBatchSize], b) {
 		t.Fatalf("First batch did not match")
 	}
 
@@ -84,7 +89,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	if len(b) != maxBatchSize {
 		t.Fatalf("Expected second batch of length %d, but got %d", maxBatchSize, len(b))
 	}
-	if reflect.DeepEqual(expected[maxBatchSize:2*maxBatchSize], b) {
+	if !alertsEqual(expected[maxBatchSize:2*maxBatchSize], b) {
 		t.Fatalf("Second batch did not match")
 	}
 
@@ -93,7 +98,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	if len(b) != 1 {
 		t.Fatalf("Expected third batch of length %d, but got %d", 1, len(b))
 	}
-	if reflect.DeepEqual(expected[2*maxBatchSize:], b) {
+	if !alertsEqual(expected[2*maxBatchSize:], b) {
 		t.Fatalf("Third batch did not match")
 	}
 
@@ -102,12 +107,14 @@ func TestHandlerNextBatch(t *testing.T) {
 	}
 }
 
-func alertsEqual(a, b model.Alerts) bool {
+func alertsEqual(a, b []*Alert) bool {
 	if len(a) != len(b) {
+		fmt.Println("len mismatch")
 		return false
 	}
 	for i, alert := range a {
-		if !alert.Labels.Equal(b[i].Labels) {
+		if !labels.Equal(alert.Labels, b[i].Labels) {
+			fmt.Println("mismatch", alert.Labels, b[i].Labels)
 			return false
 		}
 	}
@@ -116,17 +123,14 @@ func alertsEqual(a, b model.Alerts) bool {
 
 func TestHandlerSendAll(t *testing.T) {
 	var (
-		expected         model.Alerts
+		expected         []*Alert
 		status1, status2 int
 	)
 
 	f := func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != alertPushEndpoint {
-			t.Fatalf("Bad endpoint %q used, expected %q", r.URL.Path, alertPushEndpoint)
-		}
 		defer r.Body.Close()
 
-		var alerts model.Alerts
+		var alerts []*Alert
 		if err := json.NewDecoder(r.Body).Decode(&alerts); err != nil {
 			t.Fatalf("Unexpected error on input decoding: %s", err)
 		}
@@ -148,48 +152,157 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{
-		AlertmanagerURLs: []string{server1.URL, server2.URL},
-		Timeout:          time.Minute,
-		ExternalLabels:   model.LabelSet{"a": "b"},
+	h := New(&Options{}, nil)
+	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server1.URL },
+			},
+			alertmanagerMock{
+				urlf: func() string { return server2.URL },
+			},
+		},
+		cfg: &config.AlertmanagerConfig{
+			Timeout: time.Second,
+		},
 	})
 
 	for i := range make([]struct{}, maxBatchSize) {
-		h.queue = append(h.queue, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		h.queue = append(h.queue, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
-		expected = append(expected, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-				"a":         "b",
-			},
+		expected = append(expected, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
 	status1 = http.StatusOK
 	status2 = http.StatusOK
-	if ne := h.sendAll(h.queue...); ne != 0 {
-		t.Fatalf("Unexpected number of failed sends: %d", ne)
+	if !h.sendAll(h.queue...) {
+		t.Fatalf("all sends failed unexpectedly")
 	}
 
 	status1 = http.StatusNotFound
-	if ne := h.sendAll(h.queue...); ne != 1 {
-		t.Fatalf("Unexpected number of failed sends: %d", ne)
+	if !h.sendAll(h.queue...) {
+		t.Fatalf("all sends failed unexpectedly")
 	}
 
 	status2 = http.StatusInternalServerError
-	if ne := h.sendAll(h.queue...); ne != 2 {
-		t.Fatalf("Unexpected number of failed sends: %d", ne)
+	if h.sendAll(h.queue...) {
+		t.Fatalf("all sends succeeded unexpectedly")
 	}
 }
 
-func TestHandlerFull(t *testing.T) {
+func TestCustomDo(t *testing.T) {
+	const testURL = "http://testurl.com/"
+	const testBody = "testbody"
+
+	var received bool
+	h := New(&Options{
+		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+			received = true
+			body, err := ioutil.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("Unable to read request body: %v", err)
+			}
+			if string(body) != testBody {
+				t.Fatalf("Unexpected body; want %v, got %v", testBody, string(body))
+			}
+			if req.URL.String() != testURL {
+				t.Fatalf("Unexpected URL; want %v, got %v", testURL, req.URL.String())
+			}
+			return &http.Response{
+				Body: ioutil.NopCloser(nil),
+			}, nil
+		},
+	}, nil)
+
+	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
+
+	if !received {
+		t.Fatal("Expected to receive an alert, but didn't")
+	}
+}
+
+func TestExternalLabels(t *testing.T) {
+	h := New(&Options{
+		QueueCapacity:  3 * maxBatchSize,
+		ExternalLabels: model.LabelSet{"a": "b"},
+		RelabelConfigs: []*config.RelabelConfig{
+			{
+				SourceLabels: model.LabelNames{"alertname"},
+				TargetLabel:  "a",
+				Action:       "replace",
+				Regex:        config.MustNewRegexp("externalrelabelthis"),
+				Replacement:  "c",
+			},
+		},
+	}, nil)
+
+	// This alert should get the external label attached.
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "test"),
+	})
+
+	// This alert should get the external label attached, but then set to "c"
+	// through relabelling.
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "externalrelabelthis"),
+	})
+
+	expected := []*Alert{
+		{Labels: labels.FromStrings("alertname", "test", "a", "b")},
+		{Labels: labels.FromStrings("alertname", "externalrelabelthis", "a", "c")},
+	}
+
+	if !alertsEqual(expected, h.queue) {
+		t.Errorf("Expected alerts %v, got %v", expected, h.queue)
+	}
+}
+
+func TestHandlerRelabel(t *testing.T) {
+	h := New(&Options{
+		QueueCapacity: 3 * maxBatchSize,
+		RelabelConfigs: []*config.RelabelConfig{
+			{
+				SourceLabels: model.LabelNames{"alertname"},
+				Action:       "drop",
+				Regex:        config.MustNewRegexp("drop"),
+			},
+			{
+				SourceLabels: model.LabelNames{"alertname"},
+				TargetLabel:  "alertname",
+				Action:       "replace",
+				Regex:        config.MustNewRegexp("rename"),
+				Replacement:  "renamed",
+			},
+		},
+	}, nil)
+
+	// This alert should be dropped due to the configuration
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "drop"),
+	})
+
+	// This alert should be replaced due to the configuration
+	h.Send(&Alert{
+		Labels: labels.FromStrings("alertname", "rename"),
+	})
+
+	expected := []*Alert{
+		{Labels: labels.FromStrings("alertname", "renamed")},
+	}
+
+	if !alertsEqual(expected, h.queue) {
+		t.Errorf("Expected alerts %v, got %v", expected, h.queue)
+	}
+}
+
+func TestHandlerQueueing(t *testing.T) {
 	var (
 		unblock  = make(chan struct{})
 		called   = make(chan struct{})
-		expected model.Alerts
+		expected []*Alert
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +311,7 @@ func TestHandlerFull(t *testing.T) {
 
 		defer r.Body.Close()
 
-		var alerts model.Alerts
+		var alerts []*Alert
 		if err := json.NewDecoder(r.Body).Decode(&alerts); err != nil {
 			t.Fatalf("Unexpected error on input decoding: %s", err)
 		}
@@ -209,17 +322,26 @@ func TestHandlerFull(t *testing.T) {
 	}))
 
 	h := New(&Options{
-		AlertmanagerURLs: []string{server.URL},
-		Timeout:          time.Second,
-		QueueCapacity:    3 * maxBatchSize,
+		QueueCapacity: 3 * maxBatchSize,
+	},
+		nil,
+	)
+	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server.URL },
+			},
+		},
+		cfg: &config.AlertmanagerConfig{
+			Timeout: time.Second,
+		},
 	})
 
-	var alerts model.Alerts
+	var alerts []*Alert
+
 	for i := range make([]struct{}, 20*maxBatchSize) {
-		alerts = append(alerts, &model.Alert{
-			Labels: model.LabelSet{
-				"alertname": model.LabelValue(fmt.Sprintf("%d", i)),
-			},
+		alerts = append(alerts, &Alert{
+			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
 		})
 	}
 
@@ -264,5 +386,44 @@ func TestHandlerFull(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("Alerts were not pushed")
 		}
+	}
+}
+
+type alertmanagerMock struct {
+	urlf func() string
+}
+
+func (a alertmanagerMock) url() *url.URL {
+	u, err := url.Parse(a.urlf())
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+func TestLabelSetNotReused(t *testing.T) {
+	tg := makeInputTargetGroup()
+	_, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(tg, makeInputTargetGroup()) {
+		t.Fatal("Target modified during alertmanager extraction")
+	}
+}
+
+func makeInputTargetGroup() *config.TargetGroup {
+	return &config.TargetGroup{
+		Targets: []model.LabelSet{
+			{
+				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),
+				model.LabelName("notcommon1"): model.LabelValue("label"),
+			},
+		},
+		Labels: model.LabelSet{
+			model.LabelName("common"): model.LabelValue("label"),
+		},
+		Source: "testsource",
 	}
 }

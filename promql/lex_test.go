@@ -209,6 +209,9 @@ var tests = []struct {
 		input:    `/`,
 		expected: []item{{itemDIV, 0, `/`}},
 	}, {
+		input:    `^`,
+		expected: []item{{itemPOW, 0, `^`}},
+	}, {
 		input:    `%`,
 		expected: []item{{itemMOD, 0, `%`}},
 	}, {
@@ -248,9 +251,6 @@ var tests = []struct {
 	{
 		input:    "alert",
 		expected: []item{{itemAlert, 0, "alert"}},
-	}, {
-		input:    "keep_common",
-		expected: []item{{itemKeepCommon, 0, "keep_common"}},
 	}, {
 		input:    "if",
 		expected: []item{{itemIf, 0, "if"}},
@@ -393,6 +393,13 @@ var tests = []struct {
 	}, {
 		input: `]`, fail: true,
 	},
+	// Test encoding issues.
+	{
+		input: "\"\xff\"", fail: true,
+	},
+	{
+		input: "`\xff`", fail: true,
+	},
 	// Test series description.
 	{
 		input: `{} _ 1 x .3`,
@@ -435,8 +442,12 @@ var tests = []struct {
 // for the parser to avoid duplicated effort.
 func TestLexer(t *testing.T) {
 	for i, test := range tests {
-		l := lex(test.input)
-		l.seriesDesc = test.seriesDesc
+		l := &lexer{
+			input:      test.input,
+			items:      make(chan item),
+			seriesDesc: test.seriesDesc,
+		}
+		go l.run()
 
 		out := []item{}
 		for it := range l.items {

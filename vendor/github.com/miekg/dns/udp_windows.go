@@ -8,6 +8,8 @@ type SessionUDP struct {
 	raddr *net.UDPAddr
 }
 
+func (s *SessionUDP) RemoteAddr() net.Addr { return s.raddr }
+
 // ReadFromSessionUDP acts just like net.UDPConn.ReadFrom(), but returns a session object instead of a
 // net.UDPAddr.
 func ReadFromSessionUDP(conn *net.UDPConn, b []byte) (int, *SessionUDP, error) {
@@ -25,10 +27,3 @@ func WriteToSessionUDP(conn *net.UDPConn, b []byte, session *SessionUDP) (int, e
 	return n, err
 }
 
-func (s *SessionUDP) RemoteAddr() net.Addr { return s.raddr }
-
-// setUDPSocketOptions sets the UDP socket options.
-// This function is implemented on a per platform basis. See udp_*.go for more details
-func setUDPSocketOptions(conn *net.UDPConn) error {
-	return nil
-}

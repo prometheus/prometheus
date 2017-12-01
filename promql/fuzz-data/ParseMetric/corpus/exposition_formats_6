@@ -1,0 +1,1 @@
+go_gc_duration_seconds{ quantile="1.0", a="b" } 8.3835e-05
