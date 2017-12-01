@@ -231,12 +231,11 @@ func main() {
 
 	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
-		ctxWeb, cancelWeb             = context.WithCancel(context.Background())
-		ctxDiscovery, cancelDiscovery = context.WithCancel(context.Background())
-		ctxRule                       = context.Background()
+		ctxWeb, cancelWeb = context.WithCancel(context.Background())
+		ctxRule           = context.Background()
 
 		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		discoveryManager = discovery.NewManager(ctxDiscovery, log.With(logger, "component", "discovery manager"))
+		discoveryManager = discovery.NewManager(log.With(logger, "component", "discovery manager"))
 		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ruleManager := rules.NewManager(&rules.ManagerOptions{
@@ -333,9 +332,10 @@ func main() {
 		)
 	}
 	{
+		ctxDiscovery, cancelDiscovery := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManager.Run()
+				err := discoveryManager.Run(ctxDiscovery)
 				level.Info(logger).Log("msg", "Discovery manager stopped")
 				return err
 			},

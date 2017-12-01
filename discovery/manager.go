@@ -58,11 +58,10 @@ type Discoverer interface {
 // }
 
 // NewManager is the Discovery Manager constructor
-func NewManager(ctx context.Context, logger log.Logger) *Manager {
+func NewManager(logger log.Logger) *Manager {
 	return &Manager{
-		ctx:            ctx,
 		logger:         logger,
-		actionCh:       make(chan func()),
+		actionCh:       make(chan func(context.Context)),
 		syncCh:         make(chan map[string][]*config.TargetGroup),
 		targets:        make(map[string]map[string][]*config.TargetGroup),
 		discoverCancel: []context.CancelFunc{},
@@ -70,24 +69,25 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 }
 
 // Manager maintains a set of discovery providers and sends each update to a channel used by other packages.
+// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
+// Targets pool is kept in a map with a format map[targetSetName]map[providerName].
 type Manager struct {
-	ctx            context.Context
 	logger         log.Logger
-	syncCh         chan map[string][]*config.TargetGroup // map[targetSetName]
-	actionCh       chan func()
+	syncCh         chan map[string][]*config.TargetGroup
+	actionCh       chan func(context.Context)
 	discoverCancel []context.CancelFunc
-	targets        map[string]map[string][]*config.TargetGroup // map[targetSetName]map[providerName]
+	targets        map[string]map[string][]*config.TargetGroup
 }
 
 // Run starts the background processing
-func (m *Manager) Run() error {
+func (m *Manager) Run(ctx context.Context) error {
 	for {
 		select {
 		case f := <-m.actionCh:
-			f()
-		case <-m.ctx.Done():
+			f(ctx)
+		case <-ctx.Done():
 			m.cancelDiscoverers()
-			return m.ctx.Err()
+			return ctx.Err()
 		}
 	}
 }
@@ -100,11 +100,11 @@ func (m *Manager) SyncCh() <-chan map[string][]*config.TargetGroup {
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	err := make(chan error)
-	m.actionCh <- func() {
+	m.actionCh <- func(ctx context.Context) {
 		m.cancelDiscoverers()
 		for _, scfg := range cfg.ScrapeConfigs {
 			for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
-				m.startProvider(scfg.JobName, provName, prov)
+				m.startProvider(ctx, scfg.JobName, provName, prov)
 			}
 		}
 		close(err)
@@ -113,28 +113,31 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	return <-err
 }
 
-func (m *Manager) startProvider(jobName, provName string, worker Discoverer) {
-	ctx, cancel := context.WithCancel(m.ctx)
+func (m *Manager) startProvider(ctx context.Context, jobName, provName string, worker Discoverer) {
+	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*config.TargetGroup)
 
 	m.discoverCancel = append(m.discoverCancel, cancel)
 
 	go worker.Run(ctx, updates)
-	go func(provName string) {
-		for {
-			select {
-			case <-ctx.Done():
+	go m.runProvider(ctx, provName, jobName, updates)
+}
+
+func (m *Manager) runProvider(ctx context.Context, provName, jobName string, updates chan []*config.TargetGroup) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case tgs, ok := <-updates:
+			// Handle the case that a target provider exits and closes the channel
+			// before the context is done.
+			if !ok {
 				return
-			case tgs, ok := <-updates:
-				// Handle the case that a target provider exits and closes the channel
-				// before the context is done.
-				if !ok {
-					return
-				}
-				m.syncCh <- m.mergeGroups(jobName, provName, tgs)
 			}
+			m.addGroup(jobName, provName, tgs)
+			m.syncCh <- m.allGroups(jobName)
 		}
-	}(provName)
+	}
 }
 
 func (m *Manager) cancelDiscoverers() {
@@ -142,25 +145,33 @@ func (m *Manager) cancelDiscoverers() {
 		c()
 	}
 	m.targets = make(map[string]map[string][]*config.TargetGroup)
-	m.discoverCancel = []context.CancelFunc{}
+	m.discoverCancel = nil
 }
 
-// mergeGroups adds a new target group for a given discovery provider and returns all target groups for a given target set
-func (m *Manager) mergeGroups(tsName, provName string, tg []*config.TargetGroup) map[string][]*config.TargetGroup {
-	tset := make(chan map[string][]*config.TargetGroup)
+func (m *Manager) addGroup(tsName, provName string, tg []*config.TargetGroup) {
+	done := make(chan struct{})
 
-	m.actionCh <- func() {
+	m.actionCh <- func(ctx context.Context) {
 		if m.targets[tsName] == nil {
 			m.targets[tsName] = make(map[string][]*config.TargetGroup)
 		}
-		m.targets[tsName][provName] = []*config.TargetGroup{}
 
 		if tg != nil {
 			m.targets[tsName][provName] = tg
 		}
+		close(done)
+
+	}
+	<-done
+}
+
+func (m *Manager) allGroups(tsName string) map[string][]*config.TargetGroup {
+	tset := make(chan map[string][]*config.TargetGroup)
+
+	m.actionCh <- func(ctx context.Context) {
 		tgAll := []*config.TargetGroup{}
 
-		// Sort the providers alphabetically.
+		// Sorting the providers is needed so that we can have predictable tests.
 		// Maps cannot be sorted so need to extract the keys to a slice and sort the string slice.
 		var providerNames []string
 		for providerName := range m.targets[tsName] {
@@ -179,6 +190,7 @@ func (m *Manager) mergeGroups(tsName, provName string, tg []*config.TargetGroup)
 		tset <- t
 	}
 	return <-tset
+
 }
 
 func (m *Manager) providersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]Discoverer {

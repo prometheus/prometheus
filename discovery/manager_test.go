@@ -113,13 +113,16 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				},
 			},
 			expectedTargets: [][]*config.TargetGroup{
-				{{
-					Source:  "initial1",
-					Targets: []model.LabelSet{{"__instance__": "1"}},
-				}, {
-					Source:  "initial2",
-					Targets: []model.LabelSet{{"__instance__": "2"}},
-				}},
+				{
+					{
+						Source:  "initial1",
+						Targets: []model.LabelSet{{"__instance__": "1"}},
+					},
+					{
+						Source:  "initial2",
+						Targets: []model.LabelSet{{"__instance__": "2"}},
+					},
+				},
 			},
 		},
 		{
@@ -131,7 +134,8 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 							{
 								Source:  "tp1-initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
-							}, {
+							},
+							{
 								Source:  "tp1-initial2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
@@ -140,10 +144,12 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				},
 				"tp2": {
 					{
-						targetGroups: []config.TargetGroup{{
-							Source:  "tp2-initial1",
-							Targets: []model.LabelSet{{"__instance__": "3"}},
-						}},
+						targetGroups: []config.TargetGroup{
+							{
+								Source:  "tp2-initial1",
+								Targets: []model.LabelSet{{"__instance__": "3"}},
+							},
+						},
 						interval: 10,
 					},
 				},
@@ -153,7 +159,8 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						Source:  "tp1-initial1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
-					}, {
+					},
+					{
 						Source:  "tp1-initial2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
@@ -161,7 +168,8 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						Source:  "tp1-initial1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
-					}, {
+					},
+					{
 						Source:  "tp1-initial2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
@@ -576,13 +584,13 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 	for testIndex, testCase := range testCases {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		discoveryManager := NewManager(ctx, nil)
-		go discoveryManager.Run()
+		discoveryManager := NewManager(nil)
+		go discoveryManager.Run(ctx)
 
 		var totalUpdatesCount int
 		for tpName, update := range testCase.updates {
 			provider := newMockDiscoveryProvider(update)
-			discoveryManager.startProvider(strconv.Itoa(testIndex), tpName, provider)
+			discoveryManager.startProvider(ctx, strconv.Itoa(testIndex), tpName, provider)
 
 			if len(update) > 0 {
 				totalUpdatesCount = totalUpdatesCount + len(update)
@@ -603,8 +611,8 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 							receivedFormated = receivedFormated + receivedTargets.Source + ":" + fmt.Sprint(receivedTargets.Targets)
 						}
 						var expectedFormated string
-						for _, receivedTargets := range testCase.expectedTargets[x] {
-							expectedFormated = expectedFormated + receivedTargets.Source + ":" + fmt.Sprint(receivedTargets.Targets)
+						for _, expectedTargets := range testCase.expectedTargets[x] {
+							expectedFormated = expectedFormated + expectedTargets.Source + ":" + fmt.Sprint(expectedTargets.Targets)
 						}
 
 						t.Errorf("%v. %v: \ntargets mismatch \nreceived: %v \nexpected: %v",
@@ -664,8 +672,8 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
-	go discoveryManager.Run()
+	discoveryManager := NewManager(nil)
+	go discoveryManager.Run(ctx)
 
 	discoveryManager.ApplyConfig(cfg)
 
