@@ -523,7 +523,7 @@ type Reader struct {
 
 	// Cached hashmaps of section offsets.
 	labels   map[string]uint32
-	postings map[string]uint32
+	postings map[labels.Label]uint32
 	// Cache of read symbols. Strings that are returned when reading from the
 	// block are always backed by true strings held in here rather than
 	// strings that are backed by byte slices from the mmap'd index file. This
@@ -576,10 +576,12 @@ func NewFileReader(path string) (*Reader, error) {
 
 func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	r := &Reader{
-		b:       b,
-		c:       c,
-		symbols: map[uint32]string{},
-		crc32:   newCRC32(),
+		b:        b,
+		c:        c,
+		symbols:  map[uint32]string{},
+		labels:   map[string]uint32{},
+		postings: map[labels.Label]uint32{},
+		crc32:    newCRC32(),
 	}
 	// Verify magic number.
 	if b.Len() < 4 {
@@ -597,12 +599,27 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	var err error
 
-	r.labels, err = r.readOffsetTable(r.toc.labelIndicesTable)
+	err = r.readOffsetTable(r.toc.labelIndicesTable, func(key []string, off uint32) error {
+		if len(key) != 1 {
+			return errors.Errorf("unexpected key length %d", len(key))
+		}
+		r.labels[key[0]] = off
+		return nil
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "read label index table")
 	}
-	r.postings, err = r.readOffsetTable(r.toc.postingsTable)
-	return r, errors.Wrap(err, "read postings table")
+	err = r.readOffsetTable(r.toc.postingsTable, func(key []string, off uint32) error {
+		if len(key) != 2 {
+			return errors.Errorf("unexpected key length %d", len(key))
+		}
+		r.postings[labels.Label{Name: key[0], Value: key[1]}] = off
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "read postings table")
+	}
+	return r, nil
 }
 
 func (r *Reader) readTOC() error {
@@ -707,15 +724,12 @@ func (r *Reader) readSymbols(off int) error {
 	return d.err()
 }
 
-// readOffsetTable reads an offset table at the given position and returns a map
-// with the key strings concatenated by the 0xff unicode non-character.
-func (r *Reader) readOffsetTable(off uint64) (map[string]uint32, error) {
-	const sep = "\xff"
-
+// readOffsetTable reads an offset table at the given position calls f for each
+// found entry.f
+// If f returns an error it stops decoding and returns the received error,
+func (r *Reader) readOffsetTable(off uint64, f func([]string, uint32) error) error {
 	d := r.decbufAt(int(off))
 	cnt := d.be32()
-
-	res := make(map[string]uint32, cnt)
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		keyCount := int(d.uvarint())
@@ -724,11 +738,16 @@ func (r *Reader) readOffsetTable(off uint64) (map[string]uint32, error) {
 		for i := 0; i < keyCount; i++ {
 			keys = append(keys, d.uvarintStr())
 		}
-		res[strings.Join(keys, sep)] = uint32(d.uvarint())
-
+		o := uint32(d.uvarint())
+		if d.err() != nil {
+			break
+		}
+		if err := f(keys, o); err != nil {
+			return err
+		}
 		cnt--
 	}
-	return res, d.err()
+	return d.err()
 }
 
 func (r *Reader) Close() error {
@@ -863,10 +882,10 @@ func (r *Reader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) er
 }
 
 func (r *Reader) Postings(name, value string) (Postings, error) {
-	const sep = "\xff"
-	key := strings.Join([]string{name, value}, sep)
-
-	off, ok := r.postings[key]
+	off, ok := r.postings[labels.Label{
+		Name:  name,
+		Value: value,
+	}]
 	if !ok {
 		return emptyPostings, nil
 	}
