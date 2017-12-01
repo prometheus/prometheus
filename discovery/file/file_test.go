@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 const testDir = "fixtures"
@@ -76,19 +77,14 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	}()
 
 	newf, err := os.Create(filepath.Join(testDir, "_test_"+prefix+ext))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 
 	f, err := os.Open(filepath.Join(testDir, prefix+ext))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	defer f.Close()
 	_, err = io.Copy(newf, f)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 
 	// File is written with the config so stop draining the discovery channel.
 	// It needs to be before the file closing so that fsnotify triggers a new loop of the discovery service.
@@ -109,26 +105,29 @@ retry:
 				break retry
 			}
 		case tgs := <-ch:
-			if !expect {
-				t.Fatalf("Unexpected target groups %s, we expected a failure here.", tgs)
-			}
+			testutil.Assert(
+				t,
+				expect,
+				"Unexpected target groups %s, we expected a failure here.",
+				tgs,
+			)
 
 			if len(tgs) != 2 {
 				continue retry // Potentially a partial write, just retry.
 			}
 			tg := tgs[0]
 
-			if _, ok := tg.Labels["foo"]; !ok {
-				t.Fatalf("Label not parsed")
-			}
-			if tg.String() != filepath.Join(testDir, "_test_"+prefix+ext+":0") {
-				t.Fatalf("Unexpected target group %s", tg)
-			}
+			_, ok := tg.Labels["foo"]
+			testutil.Assert(t, ok, "Labels not parsed")
+			testutil.Equals(
+				t, filepath.Join(testDir, "_test_"+prefix+ext+":0"), tg.String(),
+			)
 
 			tg = tgs[1]
-			if tg.String() != filepath.Join(testDir, "_test_"+prefix+ext+":1") {
-				t.Fatalf("Unexpected target groups %s", tg)
-			}
+			testutil.Equals(
+				t, filepath.Join(testDir, "_test_"+prefix+ext+":1"), tg.String(),
+			)
+
 			break retry
 		}
 	}
@@ -155,14 +154,14 @@ retry:
 	}()
 
 	newf, err = os.Create(filepath.Join(testDir, "_test.new"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
+
 	defer os.Remove(newf.Name())
 
-	if _, err := newf.Write([]byte("]gibberish\n][")); err != nil {
-		t.Fatal(err)
-	}
+	_, err = newf.Write([]byte("]gibberish\n]["))
+
+	testutil.Ok(t, err)
+
 	newf.Close()
 
 	os.Rename(newf.Name(), filepath.Join(testDir, "_test_"+prefix+ext))

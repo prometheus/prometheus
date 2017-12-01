@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestConfiguredService(t *testing.T) {
@@ -24,25 +25,30 @@ func TestConfiguredService(t *testing.T) {
 		Services: []string{"configuredServiceName"}}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
-	if err != nil {
-		t.Errorf("Unexpected error when initialising discovery %v", err)
-	}
-	if !consulDiscovery.shouldWatch("configuredServiceName") {
-		t.Errorf("Expected service %s to be watched", "configuredServiceName")
-	}
-	if consulDiscovery.shouldWatch("nonConfiguredServiceName") {
-		t.Errorf("Expected service %s to not be watched", "nonConfiguredServiceName")
-	}
+	testutil.Ok(t, err)
+
+	testutil.Assert(
+		t,
+		consulDiscovery.shouldWatch("configuredServiceName"),
+		"Expected service configuredServiceName to be watched",
+	)
+
+	testutil.Assert(
+		t,
+		!consulDiscovery.shouldWatch("nonConfiguredServiceName"),
+		"Expected service nonConfiguredServiceName to not be watched",
+	)
 }
 
 func TestNonConfiguredService(t *testing.T) {
 	conf := &config.ConsulSDConfig{}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
-	if err != nil {
-		t.Errorf("Unexpected error when initialising discovery %v", err)
-	}
-	if !consulDiscovery.shouldWatch("nonConfiguredServiceName") {
-		t.Errorf("Expected service %s to be watched", "nonConfiguredServiceName")
-	}
+	testutil.Ok(t, err)
+
+	testutil.Assert(
+		t,
+		consulDiscovery.shouldWatch("nonConfiguredServiceName"),
+		"Expected service nonConfiguredServiceName to not be watched",
+	)
 }

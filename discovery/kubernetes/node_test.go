@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/prometheus/prometheus/config"
 )
 
 type fakeInformer struct {
@@ -138,15 +138,14 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 func requireTargetGroups(t *testing.T, expected, res []*config.TargetGroup) {
 	b1, err := json.Marshal(expected)
-	if err != nil {
-		panic(err)
-	}
-	b2, err := json.Marshal(res)
-	if err != nil {
-		panic(err)
-	}
 
-	require.JSONEq(t, string(b1), string(b2))
+	testutil.Ok(t, err)
+
+	b2, err := json.Marshal(res)
+
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, string(b1), string(b2))
 }
 
 func nodeStoreKeyFunc(obj interface{}) (string, error) {

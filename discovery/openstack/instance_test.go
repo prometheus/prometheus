@@ -16,41 +16,14 @@ package openstack
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
-type OpenstackSDInstanceTestSuite struct {
-	suite.Suite
-	Mock *SDMock
-}
-
-func (s *OpenstackSDInstanceTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
-}
-
-func (s *OpenstackSDInstanceTestSuite) SetupTest() {
-	s.Mock = NewSDMock(s.T())
-	s.Mock.Setup()
-
-	s.Mock.HandleServerListSuccessfully()
-	s.Mock.HandleFloatingIPListSuccessfully()
-
-	s.Mock.HandleVersionsSuccessfully()
-	s.Mock.HandleAuthSuccessfully()
-}
-
-func TestOpenstackSDInstanceSuite(t *testing.T) {
-	suite.Run(t, new(OpenstackSDInstanceTestSuite))
-}
-
-func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error) {
+func openstackInstanceAuthSuccess(mock *SDMock) (Discovery, error) {
 	conf := config.OpenstackSDConfig{
-		IdentityEndpoint: s.Mock.Endpoint(),
+		IdentityEndpoint: mock.Endpoint(),
 		Password:         "test",
 		Username:         "test",
 		DomainName:       "12345",
@@ -60,27 +33,38 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error)
 	return NewDiscovery(&conf, nil)
 }
 
-func (s *OpenstackSDInstanceTestSuite) TestOpenstackSDInstanceRefresh() {
-	instance, _ := s.openstackAuthSuccess()
+func TestOpenstackSDInstanceSuite(t *testing.T) {
+	mock := NewSDMock(t)
+
+	mock.Setup()
+	mock.HandleServerListSuccessfully()
+	mock.HandleFloatingIPListSuccessfully()
+	mock.HandleVersionsSuccessfully()
+	mock.HandleAuthSuccessfully()
+
+	instance, _ := openstackInstanceAuthSuccess(mock)
+
 	tg, err := instance.refresh()
 
-	assert.Nil(s.T(), err)
-	require.NotNil(s.T(), tg)
-	require.NotNil(s.T(), tg.Targets)
-	require.Len(s.T(), tg.Targets, 3)
+	testutil.Ok(t, err)
+	testutil.Assert(t, tg != nil, testutil.NotNilErrorMessage)
+	testutil.Assert(t, tg.Targets != nil, testutil.NotNilErrorMessage)
 
-	assert.Equal(s.T(), tg.Targets[0]["__address__"], model.LabelValue("10.0.0.32:0"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_instance_flavor"], model.LabelValue("1"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_instance_id"], model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_instance_name"], model.LabelValue("herp"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_instance_status"], model.LabelValue("ACTIVE"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_private_ip"], model.LabelValue("10.0.0.32"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_public_ip"], model.LabelValue("10.10.10.2"))
+	testutil.Equals(t, 3, len(tg.Targets))
+	testutil.Equals(t, model.LabelValue("10.0.0.32:0"), tg.Targets[0]["__address__"])
+	testutil.Equals(t, model.LabelValue("1"), tg.Targets[0]["__meta_openstack_instance_flavor"])
+	testutil.Equals(t, model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"), tg.Targets[0]["__meta_openstack_instance_id"])
+	testutil.Equals(t, model.LabelValue("herp"), tg.Targets[0]["__meta_openstack_instance_name"])
+	testutil.Equals(t, model.LabelValue("ACTIVE"), tg.Targets[0]["__meta_openstack_instance_status"])
+	testutil.Equals(t, model.LabelValue("10.0.0.32"), tg.Targets[0]["__meta_openstack_private_ip"])
+	testutil.Equals(t, model.LabelValue("10.10.10.2"), tg.Targets[0]["__meta_openstack_public_ip"])
 
-	assert.Equal(s.T(), tg.Targets[1]["__address__"], model.LabelValue("10.0.0.31:0"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_flavor"], model.LabelValue("1"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_id"], model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_name"], model.LabelValue("derp"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_instance_status"], model.LabelValue("ACTIVE"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_private_ip"], model.LabelValue("10.0.0.31"))
+	testutil.Equals(t, model.LabelValue("10.0.0.31:0"), tg.Targets[1]["__address__"])
+	testutil.Equals(t, model.LabelValue("1"), tg.Targets[1]["__meta_openstack_instance_flavor"])
+	testutil.Equals(t, model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"), tg.Targets[1]["__meta_openstack_instance_id"])
+	testutil.Equals(t, model.LabelValue("derp"), tg.Targets[1]["__meta_openstack_instance_name"])
+	testutil.Equals(t, model.LabelValue("ACTIVE"), tg.Targets[1]["__meta_openstack_instance_status"])
+	testutil.Equals(t, model.LabelValue("10.0.0.31"), tg.Targets[1]["__meta_openstack_private_ip"])
+
+	mock.ShutdownServer()
 }
