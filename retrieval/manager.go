@@ -41,7 +41,7 @@ func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
 	}
 }
 
-// ScrapeManager maintains a set of scrape pools and manages start/stop cicles
+// ScrapeManager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
 type ScrapeManager struct {
 	logger        log.Logger
