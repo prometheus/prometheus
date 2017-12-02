@@ -76,10 +76,10 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	}()
 
 	newf, err := os.Create(filepath.Join(testDir, "_test_"+prefix+ext))
-	defer newf.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer newf.Close()
 
 	f, err := os.Open(filepath.Join(testDir, prefix+ext))
 	if err != nil {
