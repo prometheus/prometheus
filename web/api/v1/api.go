@@ -15,7 +15,6 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -28,6 +27,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -754,6 +754,7 @@ func respond(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
 		Data:   data,
@@ -782,6 +783,7 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	}
 	w.WriteHeader(code)
 
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
 		Status:    statusError,
 		ErrorType: apiErr.typ,
