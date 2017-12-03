@@ -79,6 +79,7 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer newf.Close()
 
 	f, err := os.Open(filepath.Join(testDir, prefix+ext))
 	if err != nil {
@@ -90,14 +91,13 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 		t.Fatal(err)
 	}
 
-	// File is written with the config so stop draining the discovery channel.
-	// It needs to be before the file closing so that fsnotify triggers a new loop of the discovery service.
+	// Test file is ready so stop draining the discovery channel.
+	// It contains two target groups.
 	close(fileReady)
 	<-drainReady
-	newf.Close()
+	newf.WriteString(" ") // One last meaningless write to trigger fsnotify and a new loop of the discovery service.
 
 	timeout := time.After(15 * time.Second)
-	// The files contain two target groups.
 retry:
 	for {
 		select {
@@ -105,7 +105,7 @@ retry:
 			if expect {
 				t.Fatalf("Expected new target group but got none")
 			} else {
-				// invalid type fsd should always broken down.
+				// Invalid type fsd should always break down.
 				break retry
 			}
 		case tgs := <-ch:
