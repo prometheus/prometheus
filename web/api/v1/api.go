@@ -19,8 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"time"
@@ -28,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/tsdb"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -39,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type status string
@@ -51,12 +56,13 @@ const (
 type errorType string
 
 const (
-	errorNone     errorType = ""
-	errorTimeout            = "timeout"
-	errorCanceled           = "canceled"
-	errorExec               = "execution"
-	errorBadData            = "bad_data"
-	errorInternal           = "internal"
+	errorNone        errorType = ""
+	errorTimeout               = "timeout"
+	errorCanceled              = "canceled"
+	errorExec                  = "execution"
+	errorBadData               = "bad_data"
+	errorInternal              = "internal"
+	errorUnavailable           = "unavailable"
 )
 
 var corsHeaders = map[string]string{
@@ -111,6 +117,9 @@ type API struct {
 	now    func() time.Time
 	config func() config.Config
 	ready  func(http.HandlerFunc) http.HandlerFunc
+
+	db          func() *tsdb.DB
+	enableAdmin bool
 }
 
 // NewAPI returns an initialized API type.
@@ -121,15 +130,19 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
+	db func() *tsdb.DB,
+	enableAdmin bool,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:    time.Now,
-		config: configFunc,
-		ready:  readyFunc,
+		now:         time.Now,
+		config:      configFunc,
+		ready:       readyFunc,
+		db:          db,
+		enableAdmin: enableAdmin,
 	}
 }
 
@@ -168,6 +181,11 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/status/config", instr("config", api.serveConfig))
 	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
+
+	// Admin APIs
+	r.Del("/admin/tsdb/delete_series", instr("delete_series", api.deleteSeries))
+	r.Post("/admin/tsdb/clean_tombstones", instr("clean_tombstones", api.cleanTombstones))
+	r.Post("/admin/tsdb/snapshot", instr("snapshot", api.snapshot))
 }
 
 type queryData struct {
@@ -553,6 +571,128 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func (api *API) deleteSeries(r *http.Request) (interface{}, *apiError) {
+	if !api.enableAdmin {
+		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
+	}
+	db := api.db()
+	if db == nil {
+		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
+	}
+
+	r.ParseForm()
+	if len(r.Form["match[]"]) == 0 {
+		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
+	}
+
+	var start time.Time
+	if t := r.FormValue("start"); t != "" {
+		var err error
+		start, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		start = minTime
+	}
+
+	var end time.Time
+	if t := r.FormValue("end"); t != "" {
+		var err error
+		end, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		end = maxTime
+	}
+
+	for _, s := range r.Form["match[]"] {
+		matchers, err := promql.ParseMetricSelector(s)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+
+		var selector tsdbLabels.Selector
+		for _, m := range matchers {
+			selector = append(selector, convertMatcher(m))
+		}
+
+		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), selector...); err != nil {
+			return nil, &apiError{errorInternal, err}
+		}
+	}
+
+	return nil, nil
+}
+
+func (api *API) snapshot(r *http.Request) (interface{}, *apiError) {
+	if !api.enableAdmin {
+		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
+	}
+	db := api.db()
+	if db == nil {
+		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
+	}
+
+	var (
+		snapdir = filepath.Join(db.Dir(), "snapshots")
+		name    = fmt.Sprintf("%s-%x", time.Now().UTC().Format(time.RFC3339), rand.Int())
+		dir     = filepath.Join(snapdir, name)
+	)
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %s", err)}
+	}
+	if err := db.Snapshot(dir); err != nil {
+		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot: %s", err)}
+	}
+
+	return struct {
+		Name string `json:"name"`
+	}{name}, nil
+}
+
+func (api *API) cleanTombstones(r *http.Request) (interface{}, *apiError) {
+	if !api.enableAdmin {
+		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
+	}
+	db := api.db()
+	if db == nil {
+		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
+	}
+
+	if err := db.CleanTombstones(); err != nil {
+		return nil, &apiError{errorInternal, err}
+	}
+
+	return nil, nil
+}
+
+func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
+	switch m.Type {
+	case labels.MatchEqual:
+		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
+
+	case labels.MatchNotEqual:
+		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
+
+	case labels.MatchRegexp:
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
+		if err != nil {
+			panic(err)
+		}
+		return res
+
+	case labels.MatchNotRegexp:
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
+		if err != nil {
+			panic(err)
+		}
+		return tsdbLabels.Not(res)
+	}
+	panic("storage.convertMatcher: invalid matcher type")
 }
 
 // mergeLabels merges two sets of sorted proto labels, preferring those in

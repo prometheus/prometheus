@@ -384,19 +384,19 @@ $ curl http://localhost:9090/api/v1/alertmanagers
 
 
 ## TSDB Admin APIs
-In 2.0, there are new APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set. All the APIs below are experimental and might change in the future.
+These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
 
-We also expose a gRPC API whose definition can be found [here](https://github.com/prometheus/prometheus/blob/master/prompb/rpc.proto).
+We also expose a gRPC API whose definition can be found [here](https://github.com/prometheus/prometheus/blob/master/prompb/rpc.proto). This is experimental and might change in the future.
 
 ### Snapshot
 Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response.
 
 ```
-POST /api/v2/admin/tsdb/snapshot
+POST /api/v1/admin/tsdb/snapshot
 ```
 
 ```json
-$ curl -XPOST http://localhost:9090/api/v2/admin/tsdb/snapshot
+$ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
 {
   "name": "2017-11-30T15:31:59Z-2366f0a55106d6e1"
 }
@@ -409,45 +409,20 @@ The snapshot now exists at `<data-dir>/snapshots/2017-11-30T15:31:59Z-2366f0a551
 DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the Clean Tombstones endpoint.
 
 ```
-POST /api/v2/admin/tsdb/delete_series
+DELETE /api/v1/admin/tsdb/delete_series
 ```
 
-Parameters (body):
+URL query parameters:
 
-```json
-{
-    "min_time": "date-time(iso-8601)" // optional, defaults to minmum-time.
-    "max_time": "date-time(iso-8601)" // optional, defaults to maximum-time
-     "matchers": [LabelMatcher]
-}
-```
-
-```json
-LabelMatchers: Matcher specifies a rule, which can match or set of labels or not.
-
-{
-  "type": "string", // One of: EQ, NEQ, RE, NRE defaults to EQ. 
-  "name": "label-name",
-  "value": "label-value"
-}
-```
+- `match[]=<series_selector>`: Repeated label matcher argument that selects the series to delete. At least one `match[]` argument must be provided.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp.
 
 Example:
 
 ```json
-$ curl -X POST \                                                              
-  http://localhost:9090/api/v2/admin/tsdb/delete_series \
-  -H 'content-type: application/json' \
-  -d '{
-        "max_time": "'2017-11-30T20:18:30+05:30",
-        "matchers": [{
-                "type": "EQ",
-                "name": "__name__",
-                "value": "up"
-        }]
-    }'
-    
-{}    
+$ curl -X DELETE \                                                              
+  -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 
 
@@ -456,12 +431,11 @@ $ curl -X POST \
 CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space.
 
 ```
-POST /api/v2/admin/tsdb/clean_tombstones
+POST /api/v1/admin/tsdb/clean_tombstones
 ```
 
 This takes no parameters or body.
 
 ```json
-$ curl -XPOST http://localhost:9090/api/v2/admin/tsdb/clean_tombstones
-{}
+$ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 ```

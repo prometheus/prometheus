@@ -79,7 +79,7 @@ func (api *API) RegisterGRPC(srv *grpc.Server) {
 	if api.enableAdmin {
 		pb.RegisterAdminServer(srv, NewAdmin(api.db))
 	} else {
-		pb.RegisterAdminServer(srv, &adminDisabled{})
+		pb.RegisterAdminServer(srv, &AdminDisabled{})
 	}
 }
 
@@ -134,23 +134,23 @@ func labelsToProto(lset labels.Labels) pb.Labels {
 	return r
 }
 
-// adminDisabled implements the administration interface that informs
+// AdminDisabled implements the administration interface that informs
 // that the API endpoints are disbaled.
-type adminDisabled struct {
+type AdminDisabled struct {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *adminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *AdminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
 // TSDBCleanTombstones implements pb.AdminServer.
-func (s *adminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+func (s *AdminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 
 // DeleteSeries imeplements pb.AdminServer.
-func (s *adminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+func (s *AdminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	return nil, status.Error(codes.Unavailable, "Admin APIs are disabled")
 }
 

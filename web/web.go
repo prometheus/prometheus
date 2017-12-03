@@ -188,6 +188,8 @@ func New(logger log.Logger, o *Options) *Handler {
 			return *h.config
 		},
 		h.testReady,
+		h.options.TSDB,
+		h.options.EnableAdminAPI,
 	)
 
 	if o.RoutePrefix != "/" {
