@@ -75,6 +75,7 @@ func TestScrapePoolStop(t *testing.T) {
 	sp := &scrapePool{
 		targets: map[uint64]*Target{},
 		loops:   map[uint64]loop{},
+		cancel:  func() {},
 	}
 	var mtx sync.Mutex
 	stopped := map[uint64]bool{}

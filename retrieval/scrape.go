@@ -126,6 +126,7 @@ type scrapePool struct {
 	targets        map[uint64]*Target
 	droppedTargets []*Target
 	loops          map[uint64]loop
+	cancel         context.CancelFunc
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(*Target, scraper) loop
@@ -148,7 +149,9 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 
 	buffers := pool.NewBytesPool(163, 100e6, 3)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
+		cancel:     cancel,
 		appendable: app,
 		config:     cfg,
 		client:     client,
@@ -158,7 +161,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 	}
 	sp.newLoop = func(t *Target, s scraper) loop {
 		return newScrapeLoop(
-			context.Background(),
+			ctx,
 			s,
 			log.With(logger, "target", t),
 			buffers,
@@ -173,6 +176,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
+	sp.cancel()
 	var wg sync.WaitGroup
 
 	sp.mtx.Lock()
