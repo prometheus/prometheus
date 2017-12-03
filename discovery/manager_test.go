@@ -590,7 +590,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 		var totalUpdatesCount int
 		for tpName, update := range testCase.updates {
 			provider := newMockDiscoveryProvider(update)
-			discoveryManager.startProvider(ctx, strconv.Itoa(testIndex), tpName, provider)
+			discoveryManager.startProvider(ctx, poolKey{set: strconv.Itoa(testIndex), provider: tpName}, provider)
 
 			if len(update) > 0 {
 				totalUpdatesCount = totalUpdatesCount + len(update)
@@ -627,19 +627,15 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	verifyPresence := func(tSets map[string]map[string][]*config.TargetGroup, tSetName string, provName, label string, present bool) {
-		if _, ok := tSets[tSetName]; !ok {
-			t.Fatalf("'%s' should be present in TargetSets: %v", tSetName, tSets)
-			return
-		}
-		if _, ok := tSets[tSetName][provName]; !ok {
-			t.Fatalf("'%s' should be present in Discovery providers: %v", provName, tSets[tSetName])
+	verifyPresence := func(tSets map[poolKey][]*config.TargetGroup, poolKey poolKey, label string, present bool) {
+		if _, ok := tSets[poolKey]; !ok {
+			t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
 			return
 		}
 
 		match := false
 		var mergedTargets string
-		for _, targetGroup := range tSets[tSetName][provName] {
+		for _, targetGroup := range tSets[poolKey] {
 
 			for _, l := range targetGroup.Targets {
 				mergedTargets = mergedTargets + " " + l.String()
@@ -678,8 +674,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(cfg)
 
 	_ = <-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, "prometheus", "static/0", "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, "prometheus", "static/0", "{__address__=\"bar:9090\"}", true)
+	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
 
 	sTwo := `
 scrape_configs:
@@ -693,8 +689,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(cfg)
 
 	_ = <-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, "prometheus", "static/0", "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, "prometheus", "static/0", "{__address__=\"bar:9090\"}", false)
+	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
 }
 
 type update struct {
