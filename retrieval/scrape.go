@@ -124,8 +124,9 @@ type scrapePool struct {
 	client *http.Client
 	// Targets and loops must always be synchronized to have the same
 	// set of hashes.
-	targets map[uint64]*Target
-	loops   map[uint64]loop
+	targets        map[uint64]*Target
+	droppedTargets []*Target
+	loops          map[uint64]loop
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(*Target, scraper) loop
@@ -251,7 +252,13 @@ func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
 			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
 			continue
 		}
-		all = append(all, targets...)
+		for _, t := range targets {
+			if t.Labels().Len() > 0 {
+				all = append(all, t)
+			} else if t.DiscoveredLabels().Len() > 0 {
+				sp.droppedTargets = append(sp.droppedTargets, t)
+			}
+		}
 	}
 	sp.sync(all)
 

@@ -214,6 +214,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/rules", readyf(instrf("rules", h.rules)))
 	router.Get("/targets", readyf(instrf("targets", h.targets)))
 	router.Get("/version", readyf(instrf("version", h.version)))
+	router.Get("/service-discovery", readyf(instrf("servicediscovery", h.serviceDiscovery)))
 
 	router.Get("/heap", instrf("heap", h.dumpHeap))
 
@@ -580,6 +581,23 @@ func (h *Handler) serveConfig(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "rules.html", h.ruleManager)
+}
+
+func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
+	var index []string
+	targets := h.targetManager.TargetMap()
+	for job := range targets {
+		index = append(index, job)
+	}
+	sort.Strings(index)
+	scrapeConfigData := struct {
+		Index   []string
+		Targets map[string][]*retrieval.Target
+	}{
+		Index:   index,
+		Targets: targets,
+	}
+	h.executeTemplate(w, "service-discovery.html", scrapeConfigData)
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
