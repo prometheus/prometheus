@@ -82,7 +82,7 @@ For public discussions, anyone interested is encouraged to participate. Formal p
 
 ### Consensus
 
-The default decision making mechanism for the Prometheus Project is [lazy consensus](https://rave.apache.org/docs/governance/lazyConsensus.html). This means that any decision on technical issues is considered supported by the [team][team] as long as nobody objects.
+The default decision making mechanism for the Prometheus Project is [lazy consensus][lazy]. This means that any decision on technical issues is considered supported by the [team][team] as long as nobody objects.
 
 Silence on any consensus decision is implicit agreement and equivalent to explicit agreement. Explicit agreement may be stated at will. Decisions may, but do not need to be called out and put up for decision on the [developers mailing list][devs] at any time and by anyone.
 
@@ -156,3 +156,4 @@ Team members may resign by notifying the [team mailing list][team]. If you think
 [maintainers.md]: https://github.com/search?l=&q=org%3Aprometheus+filename%3AMAINTAINERS.md&ref=advsearch&type=Code&utf8=%E2%9C%93
 [charter]: https://www.cncf.io/about/charter/
 [coc]: https://github.com/cncf/foundation/blob/master/code-of-conduct.md
+[lazy]: https://rave.apache.org/docs/governance/lazyConsensus.html
