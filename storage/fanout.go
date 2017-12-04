@@ -16,6 +16,7 @@ package storage
 import (
 	"container/heap"
 	"context"
+	"reflect"
 	"strings"
 
 	"github.com/go-kit/kit/log"
@@ -350,11 +351,24 @@ func (c *mergeSeriesSet) At() Series {
 
 func (c *mergeSeriesSet) Err() error {
 	for _, set := range c.sets {
+		var err error
 		if err := set.Err(); err != nil {
-			return err
+			switch eType := reflect.TypeOf(set).String(); eType {
+			case "tsdb.errSeriesSet":
+				return err
+			case "remote.errSeriesSet":
+				err = RemoteStorageError("tsdb error")
+			}
 		}
+		return err
 	}
 	return nil
+}
+
+type RemoteStorageError string
+
+func (e RemoteStorageError) Error() string {
+	return string(e)
 }
 
 type seriesSetHeap []SeriesSet
