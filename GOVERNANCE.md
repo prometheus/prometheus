@@ -8,11 +8,11 @@ This document describes the rules and governance of the project. It is meant to 
 
 * **Maintainers**: Committers who are leads on an individual project (MAINTAINERS.md)
 
-* **Projects**: Any repository in the Prometheus GitHub organization
+* **Projects**: Any repository in the Prometheus [GitHub organization](https://github.com/prometheus)
 
 ## Values
 
-The Prometheus developers and community are expected to follow the values defined in the CNCF [charter](https://www.cncf.io/about/charter/), including the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/master/code-of-conduct.md). Furthermore, the Prometheus community strives for kindness, giving feedback effectively and building a welcoming environment.The Prometheus developer community also strives to operate by rough consensus for the majority of decisions and only resort to conflict resolution through a motion if consensus can’t be reached.
+The Prometheus developers and community are expected to follow the values defined in the [CNCF charter](https://www.cncf.io/about/charter/), including the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/master/code-of-conduct.md). Furthermore, the Prometheus community strives for kindness, giving feedback effectively and building a welcoming environment. The Prometheus developer community strives to operate by rough consensus for the majority of decisions and only resort to conflict resolution through a motion if consensus cannot be reached.
 
 ## Core Developers
 
