@@ -16,7 +16,7 @@ The Prometheus developers and community are expected to follow the values define
 
 ## Projects
 
-Each project must have a MAINTAINERS.md file with at least one maintainer. Where a project has a release process, access and documentation should be such that more than one person can perform a release. Releases should be announced on the prometheus-users mailing list. Any new repositories should be first proposed on prometheus-team@ and following the voting procedures listed below. When a repository is no longer relevant, it should be moved to the prometheus-junkyard Github organization.
+Each project must have a MAINTAINERS.md file with at least one maintainer. Where a project has a release process, access and documentation should be such that more than one person can perform a release. Releases should be announced on the prometheus-users mailing list. Any new repositories should be first proposed on the [developers mailing list][devs] and following the voting procedures listed below. When a repository is no longer relevant, it should be moved to the prometheus-junkyard Github organization.
 
 ## Decisionmaking
 
