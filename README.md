@@ -20,7 +20,7 @@ Prometheus' main distinguishing features as compared to other monitoring systems
 - no dependency on distributed storage; **single server nodes are autonomous**
 - timeseries collection happens via a **pull model** over HTTP
 - **pushing timeseries** is supported via an intermediary gateway
-- targets are discovered via **service discovery** or **static configuration**
+- targets are discovered via **[service discovery](tree/master/discovery)** or **static configuration**
 - multiple modes of **graphing and dashboarding support**
 - support for hierarchical and horizontal **federation**
 
