@@ -62,7 +62,7 @@ Changes to this document are discussed publicly on the [developer mailing mailin
 
 ### Other matters
 
-Any matter that needs a decision, including but not limited to financial matters, may be called to a vote by any member if they deem it necessary. For private or personal matters discussion and voting takes place on the [team mailing list][team], otherwise on the [developer mailing list][devs].
+Any matter that needs a decision, including but not limited to financial matters, may be called to a vote by any member if they deem it necessary. For financial, private or personnel matters discussion and voting takes place on the [team mailing list][team], otherwise on the [developer mailing list][devs].
 
 ## Voting
 
