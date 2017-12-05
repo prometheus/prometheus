@@ -114,10 +114,6 @@ A vote on a single proposal is considered successful if at least two thirds of t
 
 If there are multiple alternatives, members may vote for one or more alternative, or vote "no" to object to all alternatives. A vote on multiple alternatives is considered decided in favour of one alternative if it has received the most votes in favour, and a vote from least two thirds of those eligible to vote. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
 
-## Releases
-
-The release process hopes to encourage early, consistent consensus-building during project development. The mechanisms used are regular community communication on the mailing list about progress, scheduled meetings for issue resolution and release triage, and regularly paced and communicated releases. Each project within Prometheus can define their own release process if there is consensus amongst the maintainers.
-
 ## FAQ
 
 This section is informational. In case of disagreement, the rules above overrule any FAQ.
