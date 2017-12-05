@@ -100,7 +100,7 @@ Votes may take the form of a single proposal, with the option to vote yes or no;
 
 A vote on a single proposal is considered successful if more vote in favour than against.
 
-A vote on multiple alternatives is considered decided in favour of one alternative if any alternative receives more than half of the total votes cast. Members may vote against all alternatives by voting "no". Should no alternative reach a majority, another vote on a reduced number of options may be called separately.
+If there are multiple alternatives, members may vote for one or more alternative, or vote "no" to object to all alternatives. A vote on multiple alternatives is considered decided in favour of one alternative if it has received the most votes in favour, and a vote from least half of those voting. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
 
 ### Supermajority vote
 
@@ -112,7 +112,7 @@ Votes may take the form of a single proposal, with the option to vote yes or no;
 
 A vote on a single proposal is considered successful if at least two thirds of those eligible to vote vote in favour.
 
-A vote on multiple alternatives is considered decided in favour of one alternative if any alternative receives more than two thirds of those eligible to vote vote for it. Members may vote against all alternatives by voting "no". Should no alternative reach a majority, another vote on a reduced number of options may be called separately.
+If there are multiple alternatives, members may vote for one or more alternative, or vote "no" to object to all alternatives. A vote on multiple alternatives is considered decided in favour of one alternative if it has received the most votes in favour, and a vote from least two thirds of those eligible to vote. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
 
 ## Releases
 
