@@ -24,7 +24,7 @@ Each project must have a MAINTAINERS.md file with at least one maintainer. Where
 
 Team member status may be given to those who have made ongoing contributions for at least 3 months to the Prometheus Project. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account. 
 
-New members may be proposed by any existing member by email to [prometheus-team][team] and voted on by [consensus](#consensus). If no consensus is reached, the new member is not accepted.
+New members may be proposed by any existing member by email to [prometheus-team][team] and voted on by [lazy consensus](#consensus). If no consensus is reached, the new member is not accepted.
 
 Team members are added to the [GitHub organization][gh] and have commit rights to all projects. They should however respect the maintainers of each project.
 
@@ -40,7 +40,7 @@ A public list of team members is kept on the [community page][community] or link
 
 ### Maintainers
 
-Maintainers are team members who are lead one or more project(s) and serve as a point of conflict resolution amongst the contributors to this project.
+Maintainers are team members who lead one or more project(s) and serve as a point of conflict resolution amongst the contributors to this project.
 
 A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Maintainers who wish to resign are encouraged to propose another team member to take over the project.
 
@@ -54,7 +54,7 @@ Any maintainership change is performed by changing the project's MAINTAINERS.md 
 
 Technical decisions that only affect a single project are made informally by the maintainer of this project, and [lazy consensus](#consensus) is assumed.
 
-Technical decisions that span multiple parts of the Prometheus Project are discussed and made on the [Prometheus developer mailing list][devs]. Decisions are usually made by [consensus](#consensus). If no consensus can be reached, the matter may be resolved by [majority vote](#majority-vote).
+Technical decisions that span multiple parts of the Prometheus Project are discussed and made on the [Prometheus developer mailing list][devs]. Decisions are usually made by [lazy consensus](#consensus). If no consensus can be reached, the matter may be resolved by [majority vote](#majority-vote).
 
 ### Governance changes
 
@@ -74,7 +74,7 @@ For all votes, voting must be open for at least one week. A vote may be called a
 
 In all cases, all and only [team members](#team-members) are eligible to vote, with the sole exception of the forced removal of a team member, in which said member is not eligible to vote.
 
-Discussion and votes on personal matters (including but not limited to team membership and maintainership) are held in private on the [team mailing list][team]. All other discussion and votes are held in public on the [developer mailing list][team].
+Discussion and votes on personal matters (including but not limited to team membership and maintainership) are held in private on the [team mailing list][team]. All other discussion and votes are held in public on the [developer mailing list][devs].
 
 For public discussions, anyone interested is encouraged to participate. Formal power to object or vote is limited to [team members](#team-members).
 
@@ -124,7 +124,7 @@ Send an email to [the developer mailing list](devs) with your motion. If there i
 
 ### How do I become a team member?
 
-To become an official team member, you should make ongoing contributions to one or more project(s) for at least three months. At that point, a team member (typically the maintainer of the project) may propose you for membership. The discussion about this will be held in private, and you will be informed privately when a decision has been made.
+To become an official team member, you should make ongoing contributions to one or more project(s) for at least three months. At that point, a team member (typically a maintainer of the project) may propose you for membership. The discussion about this will be held in private, and you will be informed privately when a decision has been made.
 
 Should the decision be in favour, your new membership will also be announced on the [developers mailing list][devs].
 
