@@ -58,7 +58,7 @@ Technical decisions that span multiple parts of the Prometheus Project are discu
 
 ### Governance changes
 
-Changes to this document are discussed publicly on the [developer mailing mailing list][devs]. Any change requires a [supermajority](#supermajority-vote) in favour.
+Material changes to this document are discussed publicly on the [developer mailing mailing list][devs]. Any change requires a [supermajority](#supermajority-vote) in favour. Editorial changes may be made by [lazy consensus](#consensus) unless challenged.
 
 ### Other matters
 
