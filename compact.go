@@ -58,7 +58,7 @@ type Compactor interface {
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
-	Compact(dest string, dirs ...string) error
+	Compact(dest string, dirs ...string) (ulid.ULID, error)
 }
 
 // LeveledCompactor implements the Compactor interface.
@@ -305,7 +305,7 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
-func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
+func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, err error) {
 	var blocks []BlockReader
 	var bs []*Block
 	var metas []*BlockMeta
@@ -313,13 +313,13 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	for _, d := range dirs {
 		b, err := OpenBlock(d, c.chunkPool)
 		if err != nil {
-			return err
+			return uid, err
 		}
 		defer b.Close()
 
 		meta, err := readMetaFile(d)
 		if err != nil {
-			return err
+			return uid, err
 		}
 
 		metas = append(metas, meta)
@@ -328,11 +328,11 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 	}
 
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	uid := ulid.MustNew(ulid.Now(), entropy)
+	uid = ulid.MustNew(ulid.Now(), entropy)
 
 	err = c.write(dest, compactBlockMetas(uid, metas...), blocks...)
 	if err == nil {
-		return nil
+		return uid, nil
 	}
 
 	var merr MultiError
@@ -344,7 +344,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (err error) {
 		}
 	}
 
-	return merr
+	return uid, merr
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {

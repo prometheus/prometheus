@@ -386,7 +386,7 @@ func (db *DB) compact() (changes bool, err error) {
 		default:
 		}
 
-		if err := db.compactor.Compact(db.dir, plan...); err != nil {
+		if _, err := db.compactor.Compact(db.dir, plan...); err != nil {
 			return changes, errors.Wrapf(err, "compact %s", plan)
 		}
 		changes = true
