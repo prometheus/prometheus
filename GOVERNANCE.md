@@ -22,7 +22,7 @@ Each project must have a MAINTAINERS.md file with at least one maintainer. Where
 
 ### Team members 
 
-Team member status is given to those who have made ongoing contributions for at least 3 months to the Prometheus Project. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account. 
+Team member status may be given to those who have made ongoing contributions for at least 3 months to the Prometheus Project. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account. 
 
 New members may be proposed by any existing member by email to [prometheus-team][team] and voted on by [consensus](#consensus). If no consensus is reached, the new member is not accepted.
 
