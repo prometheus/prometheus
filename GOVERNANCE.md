@@ -34,7 +34,7 @@ Team members can be removed by [supermajority vote](#supermajority-vote) on [the
 
 Upon death of a member, their team membership ends automatically.
 
-Unless voted upon otherwise, membership changes take effect immediately. Unless voted upon otherwise, any membership change is announced to [the public developer mailing list][devs] as soon as it is in effect.
+Unless voted upon otherwise, membership changes take effect immediately.
 
 ### Maintainers
 
@@ -46,7 +46,7 @@ An extraordinary change of maintainership of any project may be proposed on the 
 
 A project may have more multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 
-Any maintainership change is performed by changing the project's MAINTAINERS.md on the main branch of the repository, and should be announced on the [developers mailing list][devs].
+Any maintainership change is performed by changing the project's MAINTAINERS.md on the main branch of the repository.
 
 ### Technical decisions
 
