@@ -183,7 +183,7 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
 
 	// Admin APIs
-	r.Del("/admin/tsdb/delete_series", instr("delete_series", api.deleteSeries))
+	r.Post("/admin/tsdb/delete_series", instr("delete_series", api.deleteSeries))
 	r.Post("/admin/tsdb/clean_tombstones", instr("clean_tombstones", api.cleanTombstones))
 	r.Post("/admin/tsdb/snapshot", instr("snapshot", api.snapshot))
 }

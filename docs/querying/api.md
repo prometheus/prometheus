@@ -398,25 +398,33 @@ POST /api/v1/admin/tsdb/snapshot
 ```json
 $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
 {
-  "name": "2017-11-30T15:31:59Z-2366f0a55106d6e1"
+  "status": "success",
+  "data": {
+    "name": "2017-11-30T15:31:59Z-2366f0a55106d6e1"
+  }
 }
 ```
 
 The snapshot now exists at `<data-dir>/snapshots/2017-11-30T15:31:59Z-2366f0a55106d6e1`
 
+*New in v2.1*
 
 ### Delete Series
 DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the Clean Tombstones endpoint.
 
+If successful, a `204` is returned.
+
 ```
-DELETE /api/v1/admin/tsdb/delete_series
+POST /api/v1/admin/tsdb/delete_series
 ```
 
 URL query parameters:
 
 - `match[]=<series_selector>`: Repeated label matcher argument that selects the series to delete. At least one `match[]` argument must be provided.
-- `start=<rfc3339 | unix_timestamp>`: Start timestamp.
-- `end=<rfc3339 | unix_timestamp>`: End timestamp.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional and defaults to minimum possible time.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional and defaults to maximum possible time.
+
+Not mentioning both start and end times would clear all the data for the matched series in the database.
 
 Example:
 
@@ -424,11 +432,12 @@ Example:
 $ curl -X DELETE \                                                              
   -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
-
-
+*New in v2.1*
 
 ### Clean Tombstones
 CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space.
+
+If successful, a `204` is returned.
 
 ```
 POST /api/v1/admin/tsdb/clean_tombstones
@@ -439,3 +448,5 @@ This takes no parameters or body.
 ```json
 $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/clean_tombstones
 ```
+
+*New in v2.1*
