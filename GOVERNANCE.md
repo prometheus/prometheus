@@ -16,9 +16,9 @@ The Prometheus developers and community are expected to follow the values define
 
 ## Projects
 
-Each project must have a MAINTAINERS.md file with at least one maintainer. Where a project has a release process, access and documentation should be such that more than one person can perform a release. Releases should be announced on the prometheus-users mailing list. Any new repositories should be first proposed on the [developers mailing list][devs] and following the voting procedures listed below. When a repository is no longer relevant, it should be moved to the prometheus-junkyard Github organization.
+Each project must have a MAINTAINERS.md file with at least one maintainer. Where a project has a release process, access and documentation should be such that more than one person can perform a release. Releases should be announced on the prometheus-users mailing list. Any new projects should be first proposed on the [developers mailing list][devs] following the voting procedures listed below. When a project is no longer relevant, it should be moved to the prometheus-junkyard Github organization.
 
-## Decisionmaking
+## Decision Making
 
 ### Team members 
 
@@ -48,17 +48,13 @@ An extraordinary change of maintainership of any project may be proposed on the 
 
 A project may have more multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 
-Any maintainership change is performed by changing the project's MAINTAINERS.md on the main branch of the repository.
+Any maintainership change is performed by changing the project's MAINTAINERS.md on the main branch of the project.
 
 ### Technical decisions
 
 Technical decisions that only affect a single project are made informally by the maintainer of this project, and [lazy consensus](#consensus) is assumed.
 
 Technical decisions that span multiple parts of the Prometheus Project are discussed and made on the [Prometheus developer mailing list][devs]. Decisions are usually made by [consensus](#consensus). If no consensus can be reached, the matter may be resolved by [majority vote](#majority-vote).
-
-### New projects
-
-New projects under the Prometheus Project must be proposed to the [developer mailing list][devs] and are subject to [lazy consensus](#consensus).
 
 ### Governance changes
 
@@ -72,7 +68,7 @@ Any matter that needs a decision, including but not limited to financial matters
 
 The Prometheus Project usually runs by informal consensus, however sometimes a formal decision must be made.
 
-Depending on the subject matter, as laid out in [Decisionmaking](#decisionmaking), different methods of voting are used.
+Depending on the subject matter, as laid out in [Decision Making](#decision-making), different methods of voting are used.
 
 For all votes, voting must be open for at least one week. A vote may be called and closed early if enough votes have come in one way that further votes cannot change the final decision.
 
@@ -142,7 +138,7 @@ As a team member, propose the new project on the [developer mailing list][devs].
 
 ### How do I archive or remove a project?
 
-Send an email to the [developer mailing list][devs] proposing the retirement of a repository. If nobody objects, move it to the prometheus-junkyard Github organization.
+Send an email to the [developer mailing list][devs] proposing the retirement of a project. If nobody objects, move it to the prometheus-junkyard Github organization.
 
 ### How do I remove an inactive maintainer?
 
