@@ -154,5 +154,5 @@ Team members may resign by notifying the [team mailing list][team]. If you think
 [maintainers.md]: https://github.com/search?l=&q=org%3Aprometheus+filename%3AMAINTAINERS.md&ref=advsearch&type=Code&utf8=%E2%9C%93
 [charter]: https://www.cncf.io/about/charter/
 [coc]: https://github.com/cncf/foundation/blob/master/code-of-conduct.md
-[lazy]: https://rave.apache.org/docs/governance/lazyConsensus.html
+[lazy]: https://couchdb.apache.org/bylaws.html#lazy
 [community]: https://prometheus.io/community/
