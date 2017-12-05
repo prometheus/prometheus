@@ -20,10 +20,8 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
-	"unsafe"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
@@ -381,42 +379,4 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	testutil.Ok(t, ir.Close())
-}
-
-func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-
-	p := textparse.New(b)
-	i := 0
-	var mets []labels.Labels
-	hashes := map[uint64]struct{}{}
-
-	for p.Next() && i < n {
-		m := make(labels.Labels, 0, 10)
-		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
-
-		h := m.Hash()
-		if _, ok := hashes[h]; ok {
-			continue
-		}
-		mets = append(mets, m)
-		hashes[h] = struct{}{}
-		i++
-	}
-	if err := p.Err(); err != nil {
-		return nil, err
-	}
-	if i != n {
-		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
-	}
-	return mets, nil
 }
