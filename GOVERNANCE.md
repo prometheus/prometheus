@@ -44,7 +44,7 @@ Maintainers are team members who are lead one or more project(s) and serve as a 
 
 A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Maintainers who wish to resign are encouraged to propose another team member to take over the project.
 
-An extraordinary change of maintainership of any project may be proposed on the [team mailing list][team] and is voted on by [consensus](#consensus). If no consensus can be reached, the matter is resolved by [majority vote](#majority-vote).
+An extraordinary change of maintainership of any project may be proposed on the [team mailing list][team] and is voted on by [majority vote](#majority-vote).
 
 A project may have more multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 
