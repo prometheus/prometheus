@@ -222,7 +222,8 @@ type DockerContainer struct {
 
 // Container describes the runtime an app in running in.
 type Container struct {
-	Docker DockerContainer `json:"docker"`
+	Docker       DockerContainer `json:"docker"`
+	PortMappings []PortMappings  `json:"portMappings"`
 }
 
 // PortDefinitions describes which load balancer port you should access to access the service.
@@ -344,8 +345,19 @@ func targetsForApp(app *App) []model.LabelSet {
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}
+			// Prior to Marathon 1.5 the port mappings could be found at the path
+			// "container.docker.portMappings".  When support for Marathon 1.4
+			// is dropped then this section of code can be removed.
 			if i < len(app.Container.Docker.PortMappings) {
 				for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
+					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
+					target[model.LabelName(ln)] = model.LabelValue(lv)
+				}
+			}
+			// In Marathon 1.5.x the container.docker.portMappings object was moved
+			// to container.portMappings.
+			if i < len(app.Container.PortMappings) {
+				for ln, lv := range app.Container.PortMappings[i].Labels {
 					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
