@@ -36,6 +36,8 @@ Upon death of a member, their team membership ends automatically.
 
 Unless voted upon otherwise, membership changes take effect immediately.
 
+A public list of team members is kept on the [community page][community] or linked from it.
+
 ### Maintainers
 
 Maintainers are team members who are lead one or more project(s) and serve as a point of conflict resolution amongst the contributors to this project.
@@ -157,3 +159,4 @@ Team members may resign by notifying the [team mailing list][team]. If you think
 [charter]: https://www.cncf.io/about/charter/
 [coc]: https://github.com/cncf/foundation/blob/master/code-of-conduct.md
 [lazy]: https://rave.apache.org/docs/governance/lazyConsensus.html
+[community]: https://prometheus.io/community/
