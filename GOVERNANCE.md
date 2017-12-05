@@ -18,7 +18,7 @@ The Prometheus developers and community are expected to follow the values define
 
 Each project must have a MAINTAINERS.md file with at least one maintainer. Where a project has a release process, access and documentation should be such that more than one person can perform a release. Releases should be announced on the prometheus-users mailing list. Any new projects should be first proposed on the [developers mailing list][devs] following the voting procedures listed below. When a project is no longer relevant, it should be moved to the prometheus-junkyard Github organization.
 
-## Decision Making
+## Decision making
 
 ### Team members 
 
@@ -68,7 +68,7 @@ Any matter that needs a decision, including but not limited to financial matters
 
 The Prometheus Project usually runs by informal consensus, however sometimes a formal decision must be made.
 
-Depending on the subject matter, as laid out in [Decision Making](#decision-making), different methods of voting are used.
+Depending on the subject matter, as laid out [above](#decision-making), different methods of voting are used.
 
 For all votes, voting must be open for at least one week. A vote may be called and closed early if enough votes have come in one way that further votes cannot change the final decision.
 
