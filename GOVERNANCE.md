@@ -46,7 +46,7 @@ A maintainer or committer may resign by notifying the [team mailing list][team].
 
 An extraordinary change of maintainership of any project may be proposed on the [team mailing list][team] and is voted on by [majority vote](#majority-vote).
 
-A project may have more multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
+A project may have multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 
 Any maintainership change is performed by changing the project's MAINTAINERS.md on the main branch of the project.
 
@@ -74,7 +74,7 @@ For all votes, voting must be open for at least one week. A vote may be called a
 
 In all cases, all and only [team members](#team-members) are eligible to vote, with the sole exception of the forced removal of a team member, in which said member is not eligible to vote.
 
-Discussion and votes on personal matters (including but not limited to team membership and maintainership) are held in private on the [team mailing list][team]. All other discussion and votes are held in public on the [developer mailing list][devs].
+Discussion and votes on personnel matters (including but not limited to team membership and maintainership) are held in private on the [team mailing list][team]. All other discussion and votes are held in public on the [developer mailing list][devs].
 
 For public discussions, anyone interested is encouraged to participate. Formal power to object or vote is limited to [team members](#team-members).
 
