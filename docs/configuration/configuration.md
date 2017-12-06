@@ -501,7 +501,7 @@ Each target has a meta label `__meta_filepath` during the
 filepath from which the target was extracted.
 
 There is a list of
-[integrations](/docs/operating/integrations/#file-service-discovery) with this
+[integrations](https://prometheus.io/docs/operating/integrations/#file-service-discovery) with this
 discovery mechanism.
 
 ```yaml
