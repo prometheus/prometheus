@@ -501,7 +501,7 @@ Each target has a meta label `__meta_filepath` during the
 filepath from which the target was extracted.
 
 There is a list of
-[integrations](/docs/operating/integrations/#file-service-discovery) with this
+[integrations](https://prometheus.io/docs/operating/integrations/#file-service-discovery) with this
 discovery mechanism.
 
 ```yaml
@@ -1123,7 +1123,7 @@ tls_config:
 ```
 
 There is a list of
-[integrations](/docs/operating/integrations/#remote-endpoints-and-storage)
+[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
 
 ### `<remote_read>`
@@ -1166,5 +1166,5 @@ tls_config:
 ```
 
 There is a list of
-[integrations](/docs/operating/integrations/#remote-endpoints-and-storage)
+[integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
