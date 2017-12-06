@@ -70,7 +70,7 @@ The Prometheus Project usually runs by informal consensus, however sometimes a f
 
 Depending on the subject matter, as laid out [above](#decision-making), different methods of voting are used.
 
-For all votes, voting must be open for at least one week. A vote may be called and closed early if enough votes have come in one way that further votes cannot change the final decision.
+For all votes, voting must be open for at least one week. The end date should be clearly stated in the call to vote. A vote may be called and closed early if enough votes have come in one way that further votes cannot change the final decision.
 
 In all cases, all and only [team members](#team-members) are eligible to vote, with the sole exception of the forced removal of a team member, in which said member is not eligible to vote.
 
@@ -94,8 +94,6 @@ In case no consensus can be found, but a decision one way or the other must be m
 
 Majority votes must be called explicitly in a separate thread on the appropriate mailing list. The subject must be prefixed with `[VOTE]`. In the body, the call to vote must state the proposal being voted on. It should reference any discussion leading up to this point.
 
-Voting must be open for at least 1 week (7 days from the beginning of the vote). The end date should be clearly stated in the call to vote.
-
 Votes may take the form of a single proposal, with the option to vote yes or no; or the form of multiple alternatives.
 
 A vote on a single proposal is considered successful if more vote in favour than against.
@@ -105,8 +103,6 @@ If there are multiple alternatives, members may vote for one or more alternative
 ### Supermajority vote
 
 Supermajority votes must be called explicitly in a separate thread on the appropriate mailing list. The subject must be prefixed with `[VOTE]`. In the body, the call to vote must state the proposal being voted on. It should reference any discussion leading up to this point.
-
-Voting must be open for at least 1 week (7 days from the beginning of the vote). The end date should be clearly stated in the call to vote.
 
 Votes may take the form of a single proposal, with the option to vote yes or no; or the form of multiple alternatives.
 
