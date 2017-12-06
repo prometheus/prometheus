@@ -19,7 +19,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
-	"github.com/stretchr/testify/require"
 )
 
 type mockChunkReader map[uint64]chunks.Chunk
@@ -40,7 +39,7 @@ func (cr mockChunkReader) Close() error {
 func TestDeletedIterator(t *testing.T) {
 	chk := chunks.NewXORChunk()
 	app, err := chk.Appender()
-	require.NoError(t, err)
+	Ok(t, err)
 	// Insert random stuff from (0, 1000).
 	act := make([]sample, 1000)
 	for i := 0; i < 1000; i++ {
@@ -77,11 +76,11 @@ func TestDeletedIterator(t *testing.T) {
 				}
 			}
 
-			require.True(t, i < 1000)
+			Assert(t, i < 1000 == true, "")
 
 			ts, v := it.At()
-			require.Equal(t, act[i].t, ts)
-			require.Equal(t, act[i].v, v)
+			Equals(t, act[i].t, ts)
+			Equals(t, act[i].v, v)
 		}
 		// There has been an extra call to Next().
 		i++
@@ -92,7 +91,7 @@ func TestDeletedIterator(t *testing.T) {
 			}
 		}
 
-		require.False(t, i < 1000)
-		require.NoError(t, it.Err())
+		Assert(t, i < 1000 == false, "")
+		Ok(t, it.Err())
 	}
 }
