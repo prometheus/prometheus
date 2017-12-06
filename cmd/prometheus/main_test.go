@@ -28,8 +28,13 @@ import (
 
 var promPath string
 var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
+var promData = filepath.Join(os.TempDir(), "data")
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		os.Exit(m.Run())
+	}
 	var err error
 	promPath, err = os.Getwd()
 	if err != nil {
@@ -38,19 +43,17 @@ func TestMain(m *testing.M) {
 	}
 	promPath = filepath.Join(promPath, "prometheus")
 
-	flag.Parse()
-	if !testing.Short() {
-		build := exec.Command("go", "build", "-o", promPath)
-		output, err := build.CombinedOutput()
-		if err != nil {
-			fmt.Printf("compilation error :%s \n", output)
-			os.Exit(1)
-		}
-
-		exitCode := m.Run()
-		os.Remove(promPath)
-		os.Exit(exitCode)
+	build := exec.Command("go", "build", "-o", promPath)
+	output, err := build.CombinedOutput()
+	if err != nil {
+		fmt.Printf("compilation error :%s \n", output)
+		os.Exit(1)
 	}
+
+	exitCode := m.Run()
+	os.Remove(promPath)
+	os.RemoveAll(promData)
+	os.Exit(exitCode)
 }
 
 // As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a gracefull shutdown.
@@ -59,7 +62,7 @@ func TestStartupInterrupt(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	prom := exec.Command(promPath, "--config.file="+promConfig)
+	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData)
 	err := prom.Start()
 	if err != nil {
 		t.Errorf("execution error: %v", err)
