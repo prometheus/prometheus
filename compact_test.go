@@ -21,7 +21,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSplitByRange(t *testing.T) {
@@ -123,7 +122,7 @@ func TestSplitByRange(t *testing.T) {
 			}
 		}
 
-		require.Equal(t, exp, splitByRange(blocks, c.trange))
+		Equals(t, exp, splitByRange(blocks, c.trange))
 	}
 }
 
@@ -147,7 +146,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	}
 
 	c, err := NewLeveledCompactor(nil, nil, []int64{50}, nil)
-	require.NoError(t, err)
+	Ok(t, err)
 
 	c.plan(metas)
 }
@@ -160,7 +159,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		720,
 		2160,
 	}, nil)
-	require.NoError(t, err)
+	Ok(t, err)
 
 	cases := []struct {
 		metas    []dirMeta
@@ -261,11 +260,11 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		},
 	}
 
-	for i, c := range cases {
+	for _, c := range cases {
 		res, err := compactor.plan(c.metas)
-		require.NoError(t, err)
+		Ok(t, err)
 
-		require.Equal(t, c.expected, res, "test case %d", i)
+		Equals(t, c.expected, res)
 	}
 }
 
