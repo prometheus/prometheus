@@ -19,8 +19,6 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestWriteAndReadbackTombStones(t *testing.T) {
@@ -43,13 +41,13 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 		stones[ref] = dranges
 	}
 
-	require.NoError(t, writeTombstoneFile(tmpdir, stones))
+	Ok(t, writeTombstoneFile(tmpdir, stones))
 
 	restr, err := readTombstones(tmpdir)
-	require.NoError(t, err)
+	Ok(t, err)
 
 	// Compare the two readers.
-	require.Equal(t, stones, restr)
+	Equals(t, stones, restr)
 }
 
 func TestAddingNewIntervals(t *testing.T) {
@@ -117,7 +115,7 @@ func TestAddingNewIntervals(t *testing.T) {
 
 	for _, c := range cases {
 
-		require.Equal(t, c.exp, c.exist.add(c.new))
+		Equals(t, c.exp, c.exist.add(c.new))
 	}
 	return
 }
