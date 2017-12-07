@@ -28,11 +28,17 @@ option (gogoproto.goproto_getters_all) = false;
 
 
 service Admin {
-  // Snapshot creates a snapshot of all current data into 'snapshots/<datetime>-<rand>' under
-  // the TSDB's data directory.
+  // Snapshot creates a snapshot of all current data into 'snapshots/<datetime>-<rand>' under the TSDB's data directory.
   rpc TSDBSnapshot(TSDBSnapshotRequest) returns (TSDBSnapshotResponse) {
     option (google.api.http) = {
       post: "/v2/admin/tsdb/snapshot"
+    };
+  }
+
+  // CleanTombstones removes the deleted data from disk and cleans up the existing tombstones.
+  rpc TSDBCleanTombstones(TSDBCleanTombstonesRequest) returns (TSDBCleanTombstonesResponse) {
+    option (google.api.http) = {
+      post: "/v2/admin/tsdb/clean_tombstones"
     };
   }
 
@@ -51,6 +57,12 @@ message TSDBSnapshotRequest {
 
 message TSDBSnapshotResponse {
   string name = 1;
+}
+
+message TSDBCleanTombstonesRequest {
+}
+
+message TSDBCleanTombstonesResponse {
 }
 
 message SeriesDeleteRequest {

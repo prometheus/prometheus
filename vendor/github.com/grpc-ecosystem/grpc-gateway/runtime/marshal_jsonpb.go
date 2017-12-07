@@ -182,3 +182,8 @@ type protoEnum interface {
 }
 
 var typeProtoMessage = reflect.TypeOf((*proto.Message)(nil)).Elem()
+
+// Delimiter for newline encoded JSON streams.
+func (j *JSONPb) Delimiter() []byte {
+	return []byte("\n")
+}
