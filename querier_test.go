@@ -22,7 +22,6 @@ import (
 
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
-	"github.com/stretchr/testify/require"
 )
 
 type mockSeriesIterator struct {
@@ -190,7 +189,7 @@ Outer:
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
-			require.Equal(t, eok, rok, "next")
+			Equals(t, eok, rok)
 
 			if !eok {
 				continue Outer
@@ -198,13 +197,13 @@ Outer:
 			sexp := c.exp.At()
 			sres := res.At()
 
-			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+			Equals(t, sexp.Labels(), sres.Labels())
 
 			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
 			smplRes, errRes := expandSeriesIterator(sres.Iterator())
 
-			require.Equal(t, errExp, errRes, "samples error")
-			require.Equal(t, smplExp, smplRes, "samples")
+			Equals(t, errExp, errRes)
+			Equals(t, smplExp, smplRes)
 		}
 	}
 }
@@ -449,7 +448,7 @@ func TestBlockQuerier(t *testing.T) {
 	}
 
 Outer:
-	for i, c := range cases.queries {
+	for _, c := range cases.queries {
 		ir, cr := createIdxChkReaders(cases.data)
 		querier := &blockQuerier{
 			index:      ir,
@@ -461,11 +460,11 @@ Outer:
 		}
 
 		res, err := querier.Select(c.ms...)
-		require.NoError(t, err)
+		Ok(t, err)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
-			require.Equal(t, eok, rok, "%d: next", i)
+			Equals(t, eok, rok)
 
 			if !eok {
 				continue Outer
@@ -473,13 +472,13 @@ Outer:
 			sexp := c.exp.At()
 			sres := res.At()
 
-			require.Equal(t, sexp.Labels(), sres.Labels(), "%d: labels", i)
+			Equals(t, sexp.Labels(), sres.Labels())
 
 			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
 			smplRes, errRes := expandSeriesIterator(sres.Iterator())
 
-			require.Equal(t, errExp, errRes, "%d: samples error", i)
-			require.Equal(t, smplExp, smplRes, "%d: samples", i)
+			Equals(t, errExp, errRes)
+			Equals(t, smplExp, smplRes)
 		}
 	}
 
@@ -632,11 +631,11 @@ Outer:
 		}
 
 		res, err := querier.Select(c.ms...)
-		require.NoError(t, err)
+		Ok(t, err)
 
 		for {
 			eok, rok := c.exp.Next(), res.Next()
-			require.Equal(t, eok, rok, "next")
+			Equals(t, eok, rok)
 
 			if !eok {
 				continue Outer
@@ -644,13 +643,13 @@ Outer:
 			sexp := c.exp.At()
 			sres := res.At()
 
-			require.Equal(t, sexp.Labels(), sres.Labels(), "labels")
+			Equals(t, sexp.Labels(), sres.Labels())
 
 			smplExp, errExp := expandSeriesIterator(sexp.Iterator())
 			smplRes, errRes := expandSeriesIterator(sres.Iterator())
 
-			require.Equal(t, errExp, errRes, "samples error")
-			require.Equal(t, smplExp, smplRes, "samples")
+			Equals(t, errExp, errRes)
+			Equals(t, smplExp, smplRes)
 		}
 	}
 
@@ -743,13 +742,13 @@ func TestBaseChunkSeries(t *testing.T) {
 
 			idx := tc.expIdxs[i]
 
-			require.Equal(t, tc.series[idx].lset, lset)
-			require.Equal(t, tc.series[idx].chunks, chks)
+			Equals(t, tc.series[idx].lset, lset)
+			Equals(t, tc.series[idx].chunks, chks)
 
 			i++
 		}
-		require.Equal(t, len(tc.expIdxs), i)
-		require.NoError(t, bcs.Err())
+		Equals(t, len(tc.expIdxs), i)
+		Ok(t, bcs.Err())
 	}
 
 	return
@@ -959,8 +958,8 @@ func TestSeriesIterator(t *testing.T) {
 			smplExp, errExp := expandSeriesIterator(exp)
 			smplRes, errRes := expandSeriesIterator(res)
 
-			require.Equal(t, errExp, errRes, "samples error")
-			require.Equal(t, smplExp, smplRes, "samples")
+			Equals(t, errExp, errRes)
+			Equals(t, smplExp, smplRes)
 		}
 
 		t.Run("Seek", func(t *testing.T) {
@@ -1027,21 +1026,21 @@ func TestSeriesIterator(t *testing.T) {
 				}
 				exp := newListSeriesIterator(smplValid)
 
-				require.Equal(t, tc.success, res.Seek(tc.seek))
+				Equals(t, tc.success, res.Seek(tc.seek))
 
 				if tc.success {
 					// Init the list and then proceed to check.
 					remaining := exp.Next()
-					require.True(t, remaining)
+					Assert(t, remaining == true, "")
 
 					for remaining {
 						sExp, eExp := exp.At()
 						sRes, eRes := res.At()
-						require.Equal(t, eExp, eRes, "samples error")
-						require.Equal(t, sExp, sRes, "samples")
+						Equals(t, eExp, eRes)
+						Equals(t, sExp, sRes)
 
 						remaining = exp.Next()
-						require.Equal(t, remaining, res.Next())
+						Equals(t, remaining, res.Next())
 					}
 				}
 			}
@@ -1060,8 +1059,8 @@ func TestSeriesIterator(t *testing.T) {
 			smplExp, errExp := expandSeriesIterator(exp)
 			smplRes, errRes := expandSeriesIterator(res)
 
-			require.Equal(t, errExp, errRes, "samples error")
-			require.Equal(t, smplExp, smplRes, "samples")
+			Equals(t, errExp, errRes)
+			Equals(t, smplExp, smplRes)
 		}
 
 		t.Run("Seek", func(t *testing.T) {
@@ -1073,21 +1072,21 @@ func TestSeriesIterator(t *testing.T) {
 				res := newChainedSeriesIterator(a, b, c)
 				exp := newListSeriesIterator(tc.exp)
 
-				require.Equal(t, tc.success, res.Seek(tc.seek))
+				Equals(t, tc.success, res.Seek(tc.seek))
 
 				if tc.success {
 					// Init the list and then proceed to check.
 					remaining := exp.Next()
-					require.True(t, remaining)
+					Assert(t, remaining == true, "")
 
 					for remaining {
 						sExp, eExp := exp.At()
 						sRes, eRes := res.At()
-						require.Equal(t, eExp, eRes, "samples error")
-						require.Equal(t, sExp, sRes, "samples")
+						Equals(t, eExp, eRes)
+						Equals(t, sExp, sRes)
 
 						remaining = exp.Next()
-						require.Equal(t, remaining, res.Next())
+						Equals(t, remaining, res.Next())
 					}
 				}
 			}
@@ -1106,11 +1105,11 @@ func TestChunkSeriesIterator_DoubleSeek(t *testing.T) {
 	}
 
 	res := newChunkSeriesIterator(chkMetas, nil, 2, 8)
-	require.True(t, res.Seek(1))
-	require.True(t, res.Seek(2))
+	Assert(t, res.Seek(1) == true, "")
+	Assert(t, res.Seek(2) == true, "")
 	ts, v := res.At()
-	require.Equal(t, int64(2), ts)
-	require.Equal(t, float64(2), v)
+	Equals(t, int64(2), ts)
+	Equals(t, float64(2), v)
 }
 
 // Regression when seeked chunks were still found via binary search and we always
@@ -1124,15 +1123,15 @@ func TestChunkSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 
 	it := newChunkSeriesIterator(metas, nil, 1, 7)
 
-	require.True(t, it.Next())
+	Assert(t, it.Next() == true, "")
 	ts, v := it.At()
-	require.Equal(t, int64(1), ts)
-	require.Equal(t, float64(2), v)
+	Equals(t, int64(1), ts)
+	Equals(t, float64(2), v)
 
-	require.True(t, it.Seek(4))
+	Assert(t, it.Seek(4) == true, "")
 	ts, v = it.At()
-	require.Equal(t, int64(5), ts)
-	require.Equal(t, float64(6), v)
+	Equals(t, int64(5), ts)
+	Equals(t, float64(6), v)
 }
 
 // Regression when calling Next() with a time bounded to fit within two samples.
@@ -1143,7 +1142,7 @@ func TestChunkSeriesIterator_NextWithMinTime(t *testing.T) {
 	}
 
 	it := newChunkSeriesIterator(metas, nil, 2, 4)
-	require.False(t, it.Next())
+	Assert(t, it.Next() == false, "")
 }
 
 func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
@@ -1173,11 +1172,11 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 		maxt: 0,
 	}
 
-	require.False(t, p.Next())
+	Assert(t, p.Next() == false, "")
 
 	p.mint = 6
 	p.maxt = 9
-	require.False(t, p.Next())
+	Assert(t, p.Next() == false, "")
 
 	// Test the case where 1 chunk could cause an unpopulated chunk to be returned.
 	chunkMetas = [][]ChunkMeta{
@@ -1194,7 +1193,7 @@ func TestPopulatedCSReturnsValidChunkSlice(t *testing.T) {
 		mint: 10,
 		maxt: 15,
 	}
-	require.False(t, p.Next())
+	Assert(t, p.Next() == false, "")
 	return
 }
 
@@ -1246,7 +1245,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 		for _, j := range []int{1, 2, 4, 8, 16, 32} {
 			b.Run(fmt.Sprintf("series=%d,blocks=%d", k, j), func(b *testing.B) {
 				lbls, err := readPrometheusLabels("testdata/1m.series", k)
-				require.NoError(b, err)
+				Ok(b, err)
 
 				sort.Sort(labels.Slice(lbls))
 
@@ -1272,8 +1271,8 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 					for ms.Next() {
 						i++
 					}
-					require.NoError(b, ms.Err())
-					require.Equal(b, len(lbls), i)
+					Ok(b, ms.Err())
+					Equals(b, len(lbls), i)
 				}
 			})
 		}
