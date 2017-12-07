@@ -9,7 +9,7 @@ Prometheus is configured via command-line flags and a configuration file. While
 the command-line flags configure immutable system parameters (such as storage
 locations, amount of data to keep on disk and in memory, etc.), the
 configuration file defines everything related to scraping [jobs and their
-instances](/docs/concepts/jobs_instances/), as well as
+instances](https://prometheus.io/docs/concepts/jobs_instances/), as well as
 which [rule files to load](recording_rules.md#configuring-rules).
 
 To view all available command-line flags, run `./prometheus -h`.
