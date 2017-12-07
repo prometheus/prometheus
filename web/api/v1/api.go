@@ -320,7 +320,6 @@ func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
 	}
 	defer q.Close()
 
-	// TODO(fabxc): add back request context.
 	vals, err := q.LabelValues(name)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
