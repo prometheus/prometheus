@@ -17,38 +17,40 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestSetCompactionFailed(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test-tsdb")
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	b := createEmptyBlock(t, tmpdir)
 
-	Equals(t, false, b.meta.Compaction.Failed)
-	Ok(t, b.setCompactionFailed())
-	Equals(t, true, b.meta.Compaction.Failed)
-	Ok(t, b.Close())
+	testutil.Equals(t, false, b.meta.Compaction.Failed)
+	testutil.Ok(t, b.setCompactionFailed())
+	testutil.Equals(t, true, b.meta.Compaction.Failed)
+	testutil.Ok(t, b.Close())
 
 	b, err = OpenBlock(tmpdir, nil)
-	Ok(t, err)
-	Equals(t, true, b.meta.Compaction.Failed)
+	testutil.Ok(t, err)
+	testutil.Equals(t, true, b.meta.Compaction.Failed)
 }
 
 func createEmptyBlock(t *testing.T, dir string) *Block {
-	Ok(t, os.MkdirAll(dir, 0777))
+	testutil.Ok(t, os.MkdirAll(dir, 0777))
 
-	Ok(t, writeMetaFile(dir, &BlockMeta{}))
+	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{}))
 
 	ir, err := newIndexWriter(dir)
-	Ok(t, err)
-	Ok(t, ir.Close())
+	testutil.Ok(t, err)
+	testutil.Ok(t, ir.Close())
 
-	Ok(t, os.MkdirAll(chunkDir(dir), 0777))
+	testutil.Ok(t, os.MkdirAll(chunkDir(dir), 0777))
 
-	Ok(t, writeTombstoneFile(dir, EmptyTombstoneReader()))
+	testutil.Ok(t, writeTombstoneFile(dir, EmptyTombstoneReader()))
 
 	b, err := OpenBlock(dir, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 	return b
 }

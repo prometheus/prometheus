@@ -22,46 +22,47 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb/fileutil"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestSegmentWAL_cut(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
-	Ok(t, err)
+	testutil.Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
 	// This calls cut() implicitly the first time without a previous tail.
 	w, err := OpenSegmentWAL(tmpdir, nil, 0, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
-	Ok(t, w.write(WALEntrySeries, 1, []byte("Hello World!!")))
+	testutil.Ok(t, w.write(WALEntrySeries, 1, []byte("Hello World!!")))
 
-	Ok(t, w.cut())
+	testutil.Ok(t, w.cut())
 
 	// Cutting creates a new file.
-	Equals(t, 2, len(w.files))
+	testutil.Equals(t, 2, len(w.files))
 
-	Ok(t, w.write(WALEntrySeries, 1, []byte("Hello World!!")))
+	testutil.Ok(t, w.write(WALEntrySeries, 1, []byte("Hello World!!")))
 
-	Ok(t, w.Close())
+	testutil.Ok(t, w.Close())
 
 	for _, of := range w.files {
 		f, err := os.Open(of.Name())
-		Ok(t, err)
+		testutil.Ok(t, err)
 
 		// Verify header data.
 		metab := make([]byte, 8)
 		_, err = f.Read(metab)
-		Ok(t, err)
-		Equals(t, WALMagic, binary.BigEndian.Uint32(metab[:4]))
-		Equals(t, WALFormatDefault, metab[4])
+		testutil.Ok(t, err)
+		testutil.Equals(t, WALMagic, binary.BigEndian.Uint32(metab[:4]))
+		testutil.Equals(t, WALFormatDefault, metab[4])
 
 		// We cannot actually check for correct pre-allocation as it is
 		// optional per filesystem and handled transparently.
 		et, flag, b, err := newWALReader(nil, nil).entry(f)
-		Ok(t, err)
-		Equals(t, WALEntrySeries, et)
-		Equals(t, flag, byte(walSeriesSimple))
-		Equals(t, []byte("Hello World!!"), b)
+		testutil.Ok(t, err)
+		testutil.Equals(t, WALEntrySeries, et)
+		testutil.Equals(t, flag, byte(walSeriesSimple))
+		testutil.Equals(t, []byte("Hello World!!"), b)
 	}
 }
 
@@ -71,14 +72,14 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 		batch      = 100
 	)
 	series, err := readPrometheusLabels("testdata/20k.series", numMetrics)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	dir, err := ioutil.TempDir("", "test_wal_log_truncate")
-	Ok(t, err)
+	testutil.Ok(t, err)
 	// defer os.RemoveAll(dir)
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 	w.segmentSize = 10000
 
 	for i := 0; i < numMetrics; i += batch {
@@ -88,7 +89,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 			rs = append(rs, RefSeries{Labels: s, Ref: uint64(i+j) + 1})
 		}
 		err := w.LogSeries(rs)
-		Ok(t, err)
+		testutil.Ok(t, err)
 	}
 
 	// We mark the 2nd half of the files with a min timestamp that should discard
@@ -110,7 +111,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	}
 
 	err = w.Truncate(1000, keepf)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	var expected []RefSeries
 
@@ -123,12 +124,12 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	// Call Truncate once again to see whether we can read the written file without
 	// creating a new WAL.
 	err = w.Truncate(1000, keepf)
-	Ok(t, err)
-	Ok(t, w.Close())
+	testutil.Ok(t, err)
+	testutil.Ok(t, w.Close())
 
 	// The same again with a new WAL.
 	w, err = OpenSegmentWAL(dir, nil, 0, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	var readSeries []RefSeries
 	r := w.Reader()
@@ -137,7 +138,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 		readSeries = append(readSeries, s...)
 	}, nil, nil)
 
-	Equals(t, expected, readSeries)
+	testutil.Equals(t, expected, readSeries)
 }
 
 // Symmetrical test of reading and writing to the WAL via its main interface.
@@ -150,10 +151,10 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	// Generate testing data. It does not make semantical sense but
 	// for the purpose of this test.
 	series, err := readPrometheusLabels("testdata/20k.series", numMetrics)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	dir, err := ioutil.TempDir("", "test_wal_log_restore")
-	Ok(t, err)
+	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
 	var (
@@ -167,7 +168,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	// write more data to it, close it.
 	for k := 0; k < numMetrics; k += numMetrics / iterations {
 		w, err := OpenSegmentWAL(dir, nil, 0, nil)
-		Ok(t, err)
+		testutil.Ok(t, err)
 
 		// Set smaller segment size so we can actually write several files.
 		w.segmentSize = 1000 * 1000
@@ -203,11 +204,11 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			}
 		}
 
-		Ok(t, r.Read(serf, smplf, delf))
+		testutil.Ok(t, r.Read(serf, smplf, delf))
 
-		Equals(t, recordedSamples, resultSamples)
-		Equals(t, recordedSeries, resultSeries)
-		Equals(t, recordedDeletes, resultDeletes)
+		testutil.Equals(t, recordedSamples, resultSamples)
+		testutil.Equals(t, recordedSeries, resultSeries)
+		testutil.Equals(t, recordedDeletes, resultDeletes)
 
 		series := series[k : k+(numMetrics/iterations)]
 
@@ -238,9 +239,9 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 				})
 			}
 
-			Ok(t, w.LogSeries(series))
-			Ok(t, w.LogSamples(samples))
-			Ok(t, w.LogDeletes(stones))
+			testutil.Ok(t, w.LogSeries(series))
+			testutil.Ok(t, w.LogSamples(samples))
+			testutil.Ok(t, w.LogDeletes(stones))
 
 			if len(lbls) > 0 {
 				recordedSeries = append(recordedSeries, series)
@@ -254,39 +255,39 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 			}
 		}
 
-		Ok(t, w.Close())
+		testutil.Ok(t, w.Close())
 	}
 }
 
 func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_wal_log_restore")
-	Ok(t, err)
+	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
 	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	_, err = wal.createSegmentFile(dir + "/000000")
-	Ok(t, err)
+	testutil.Ok(t, err)
 	f, err := wal.createSegmentFile(dir + "/000001")
-	Ok(t, err)
+	testutil.Ok(t, err)
 	f2, err := wal.createSegmentFile(dir + "/000002")
-	Ok(t, err)
-	Ok(t, f2.Close())
+	testutil.Ok(t, err)
+	testutil.Ok(t, f2.Close())
 
 	// Make header of second segment invalid.
 	_, err = f.WriteAt([]byte{1, 2, 3, 4}, 0)
-	Ok(t, err)
-	Ok(t, f.Close())
+	testutil.Ok(t, err)
+	testutil.Ok(t, f.Close())
 
-	Ok(t, wal.Close())
+	testutil.Ok(t, wal.Close())
 
 	wal, err = OpenSegmentWAL(dir, log.NewLogfmtLogger(os.Stderr), 0, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	fns, err := fileutil.ReadDir(dir)
-	Ok(t, err)
-	Equals(t, []string{"000000"}, fns)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []string{"000000"}, fns)
 }
 
 // Test reading from a WAL that has been corrupted through various means.
@@ -299,56 +300,56 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			name: "truncate_checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
-				Ok(t, err)
+				testutil.Ok(t, err)
 				defer f.Close()
 
 				off, err := f.Seek(0, os.SEEK_END)
-				Ok(t, err)
+				testutil.Ok(t, err)
 
-				Ok(t, f.Truncate(off-1))
+				testutil.Ok(t, f.Truncate(off-1))
 			},
 		},
 		{
 			name: "truncate_body",
 			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
-				Ok(t, err)
+				testutil.Ok(t, err)
 				defer f.Close()
 
 				off, err := f.Seek(0, os.SEEK_END)
-				Ok(t, err)
+				testutil.Ok(t, err)
 
-				Ok(t, f.Truncate(off-8))
+				testutil.Ok(t, f.Truncate(off-8))
 			},
 		},
 		{
 			name: "body_content",
 			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
-				Ok(t, err)
+				testutil.Ok(t, err)
 				defer f.Close()
 
 				off, err := f.Seek(0, os.SEEK_END)
-				Ok(t, err)
+				testutil.Ok(t, err)
 
 				// Write junk before checksum starts.
 				_, err = f.WriteAt([]byte{1, 2, 3, 4}, off-8)
-				Ok(t, err)
+				testutil.Ok(t, err)
 			},
 		},
 		{
 			name: "checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
 				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
-				Ok(t, err)
+				testutil.Ok(t, err)
 				defer f.Close()
 
 				off, err := f.Seek(0, os.SEEK_END)
-				Ok(t, err)
+				testutil.Ok(t, err)
 
 				// Write junk into checksum
 				_, err = f.WriteAt([]byte{1, 2, 3, 4}, off-4)
-				Ok(t, err)
+				testutil.Ok(t, err)
 			},
 		},
 	}
@@ -357,21 +358,21 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			// Generate testing data. It does not make semantical sense but
 			// for the purpose of this test.
 			dir, err := ioutil.TempDir("", "test_corrupted")
-			Ok(t, err)
+			testutil.Ok(t, err)
 			defer os.RemoveAll(dir)
 
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
-			Ok(t, err)
+			testutil.Ok(t, err)
 
-			Ok(t, w.LogSamples([]RefSample{{T: 1, V: 2}}))
-			Ok(t, w.LogSamples([]RefSample{{T: 2, V: 3}}))
+			testutil.Ok(t, w.LogSamples([]RefSample{{T: 1, V: 2}}))
+			testutil.Ok(t, w.LogSamples([]RefSample{{T: 2, V: 3}}))
 
-			Ok(t, w.cut())
+			testutil.Ok(t, w.cut())
 
-			Ok(t, w.LogSamples([]RefSample{{T: 3, V: 4}}))
-			Ok(t, w.LogSamples([]RefSample{{T: 5, V: 6}}))
+			testutil.Ok(t, w.LogSamples([]RefSample{{T: 3, V: 4}}))
+			testutil.Ok(t, w.LogSamples([]RefSample{{T: 5, V: 6}}))
 
-			Ok(t, w.Close())
+			testutil.Ok(t, w.Close())
 
 			// cut() truncates and fsyncs the first segment async. If it happens after
 			// the corruption we apply below, the corruption will be overwritten again.
@@ -386,39 +387,39 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			logger := log.NewLogfmtLogger(os.Stderr)
 
 			w2, err := OpenSegmentWAL(dir, logger, 0, nil)
-			Ok(t, err)
+			testutil.Ok(t, err)
 
 			r := w2.Reader()
 
 			serf := func(l []RefSeries) {
-				Equals(t, 0, len(l))
+				testutil.Equals(t, 0, len(l))
 			}
 
 			// Weird hack to check order of reads.
 			i := 0
 			samplf := func(s []RefSample) {
 				if i == 0 {
-					Equals(t, []RefSample{{T: 1, V: 2}}, s)
+					testutil.Equals(t, []RefSample{{T: 1, V: 2}}, s)
 					i++
 				} else {
-					Equals(t, []RefSample{{T: 99, V: 100}}, s)
+					testutil.Equals(t, []RefSample{{T: 99, V: 100}}, s)
 				}
 			}
 
-			Ok(t, r.Read(serf, samplf, nil))
+			testutil.Ok(t, r.Read(serf, samplf, nil))
 
-			Ok(t, w2.LogSamples([]RefSample{{T: 99, V: 100}}))
-			Ok(t, w2.Close())
+			testutil.Ok(t, w2.LogSamples([]RefSample{{T: 99, V: 100}}))
+			testutil.Ok(t, w2.Close())
 
 			// We should see the first valid entry and the new one, everything after
 			// is truncated.
 			w3, err := OpenSegmentWAL(dir, logger, 0, nil)
-			Ok(t, err)
+			testutil.Ok(t, err)
 
 			r = w3.Reader()
 
 			i = 0
-			Ok(t, r.Read(serf, samplf, nil))
+			testutil.Ok(t, r.Read(serf, samplf, nil))
 		})
 	}
 }

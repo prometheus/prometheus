@@ -19,6 +19,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 type mockChunkReader map[uint64]chunks.Chunk
@@ -39,7 +40,7 @@ func (cr mockChunkReader) Close() error {
 func TestDeletedIterator(t *testing.T) {
 	chk := chunks.NewXORChunk()
 	app, err := chk.Appender()
-	Ok(t, err)
+	testutil.Ok(t, err)
 	// Insert random stuff from (0, 1000).
 	act := make([]sample, 1000)
 	for i := 0; i < 1000; i++ {
@@ -76,11 +77,11 @@ func TestDeletedIterator(t *testing.T) {
 				}
 			}
 
-			Assert(t, i < 1000 == true, "")
+			testutil.Assert(t, i < 1000 == true, "")
 
 			ts, v := it.At()
-			Equals(t, act[i].t, ts)
-			Equals(t, act[i].v, v)
+			testutil.Equals(t, act[i].t, ts)
+			testutil.Equals(t, act[i].v, v)
 		}
 		// There has been an extra call to Next().
 		i++
@@ -91,7 +92,7 @@ func TestDeletedIterator(t *testing.T) {
 			}
 		}
 
-		Assert(t, i < 1000 == false, "")
-		Ok(t, it.Err())
+		testutil.Assert(t, i < 1000 == false, "")
+		testutil.Ok(t, it.Err())
 	}
 }
