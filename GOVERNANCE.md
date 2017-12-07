@@ -54,7 +54,7 @@ Any maintainership change is performed by changing the project's MAINTAINERS.md 
 
 Technical decisions that only affect a single project are made informally by the maintainer of this project, and [lazy consensus](#consensus) is assumed.
 
-Technical decisions that span multiple parts of the Prometheus Project are discussed and made on the [Prometheus developer mailing list][devs]. Decisions are usually made by [lazy consensus](#consensus). If no consensus can be reached, the matter may be resolved by [majority vote](#majority-vote).
+Technical decisions that span multiple parts of the Prometheus Project can be discussed and made on the [Prometheus developer mailing list][devs]. Decisions are usually made by [lazy consensus](#consensus). If no consensus can be reached, the matter may be resolved by [majority vote](#majority-vote).
 
 ### Governance changes
 
