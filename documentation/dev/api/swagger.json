@@ -15,6 +15,23 @@
     "application/json"
   ],
   "paths": {
+    "/v2/admin/tsdb/clean_tombstones": {
+      "post": {
+        "summary": "CleanTombstones removes the deleted data from disk and cleans up the existing tombstones.",
+        "operationId": "TSDBCleanTombstones",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/prometheusTSDBCleanTombstonesResponse"
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/v2/admin/tsdb/delete_series": {
       "post": {
         "summary": "DeleteSeries deletes data for a selection of series in a time range.",
@@ -44,7 +61,7 @@
     },
     "/v2/admin/tsdb/snapshot": {
       "post": {
-        "summary": "Snapshot creates a snapshot of all current data into 'snapshots/\u003cdatetime\u003e-\u003crand\u003e' under\nthe TSDB's data directory.",
+        "summary": "Snapshot creates a snapshot of all current data into 'snapshots/\u003cdatetime\u003e-\u003crand\u003e' under the TSDB's data directory.",
         "operationId": "TSDBSnapshot",
         "responses": {
           "200": {
@@ -108,7 +125,7 @@
     "prometheusSeriesDeleteResponse": {
       "type": "object"
     },
-    "prometheusTSDBSnapshotRequest": {
+    "prometheusTSDBCleanTombstonesResponse": {
       "type": "object"
     },
     "prometheusTSDBSnapshotResponse": {

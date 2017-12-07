@@ -77,6 +77,7 @@ type BlockMetaCompaction struct {
 	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
+	Failed  bool        `json:"failed,omitempty"`
 }
 
 const (
@@ -244,6 +245,11 @@ func (pb *Block) Tombstones() (TombstoneReader, error) {
 	return blockTombstoneReader{TombstoneReader: pb.tombstones, b: pb}, nil
 }
 
+func (pb *Block) setCompactionFailed() error {
+	pb.meta.Compaction.Failed = true
+	return writeMetaFile(pb.dir, &pb.meta)
+}
+
 type blockIndexReader struct {
 	IndexReader
 	b *Block
@@ -339,6 +345,30 @@ Outer:
 		return err
 	}
 	return writeMetaFile(pb.dir, &pb.meta)
+}
+
+// CleanTombstones will rewrite the block if there any tombstones to remove them
+// and returns if there was a re-write.
+func (pb *Block) CleanTombstones(dest string, c Compactor) (bool, error) {
+	numStones := 0
+
+	pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
+		for _ = range ivs {
+			numStones++
+		}
+
+		return nil
+	})
+
+	if numStones == 0 {
+		return false, nil
+	}
+
+	if _, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // Snapshot creates snapshot of the block into dir.
