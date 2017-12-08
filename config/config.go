@@ -199,6 +199,11 @@ var (
 		RemoteTimeout: model.Duration(1 * time.Minute),
 		ReadRecent:    true,
 	}
+
+	// DefaultAzureServiceFabricSDConfig is the default Azure Service Fabric SD configuration.
+	DefaultAzureServiceFabricSDConfig = AzureServiceFabricSDConfig{
+		RefreshInterval: model.Duration(time.Minute),
+	}
 )
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -500,6 +505,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*TritonSDConfig `yaml:"triton_sd_configs,omitempty"`
+	// List of Azure Service Fabric service discovery configurations.
+	AzureServiceFabricSDConfigs []*AzureServiceFabricSDConfig `yaml:"azure_sf_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1523,4 +1530,26 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	}
 
 	return checkOverflow(c.XXX, "remote_read")
+}
+
+// AzureServiceFabricSDConfig is the configuration for Azure Service Fabric service discovery.
+type AzureServiceFabricSDConfig struct {
+	ClusterHost          string              `yaml:"cluster_host"`
+	Endpoints            map[string]struct{} `yaml:"endpoints"`
+	RefreshInterval      model.Duration      `yaml:"refresh_interval,omitempty"`
+	ClientCertAndKeyFile string              `yaml:"client_cert_and_key_file"` // populate only for secure clusters. Comma separated
+	TLSSkipVerify        bool                `yaml:"tls_skip_verify"`
+
+	XXX map[string]interface{} `yaml:",inline"` // Catches all undefined fields and must be empty after parsing.
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *AzureServiceFabricSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultAzureServiceFabricSDConfig
+	type plain AzureServiceFabricSDConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	return checkOverflow(c.XXX, "azure_sf_sd_config")
 }
