@@ -1,0 +1,58 @@
+global:
+  scrape_interval:     15s # By default, scrape targets every 15 seconds.
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+    monitor: 'mesos_cluster'
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  - job_name: 'mesos_nodes'
+    # If you have mesos dns configured on the machine running 
+    # prometheus you can use dns to find all nodes to pull from
+    dns_sd_configs:
+    - names:
+      - slave.mesos
+      type: 'A'
+      # Port to pull from
+      # Default port for node exporter
+      port: 9100
+  
+  # Find the master nodes
+  # If using mesos dns this will return an A record for all masters
+  # If you are just looking for the leader use leader.mesos
+  - job_name: 'mesos_masters'
+    dns_sd_configs:
+    - names:
+      - master.mesos
+      type: 'A'
+      port: 9100
+
+  # Pull in apps from marathon
+  - job_name: 'sample_app'
+    marathon_sd_configs:
+    - servers:
+      # Mesos dns will resolve the marathon master
+      # 8080 is the default port for marathon
+      - 'http://marathon.mesos:8080'
+
+    relabel_configs:
+    # Only scrape apps that have a label of 'MONITOR' set to 'prometheus'
+    # in the marathon app definition
+    - source_labels: [__meta_marathon_app_label_MONITOR]
+      action: keep
+      regex: prometheus
+    # Only pull an app with a name of sample_app
+    - source_labels: [__meta_marathon_app]
+      action: keep
+      regex: sample_app
+    # Set target path via a label assigned to app in marathon
+    - source_labels: [__meta_marathon_app_label_PROMETHEUS_METRICS]
+      action: replace
+      target_label: __metrics_path__
+      regex: (.+)
+    # Add a label that detects docker image
+    - target_label: __meta_marathon_image
+      replacement: docker_image
