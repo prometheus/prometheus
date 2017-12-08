@@ -415,23 +415,48 @@ region: <string>
 CAUTION: OpenStack SD is in beta: breaking changes to configuration are still
 likely in future releases.
 
-OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
-instances.
+OpenStack SD configurations allow retrieving scrape targets from the OpenStack
+Nova API.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `hypervisor`
+
+The `hypervisor` role discovers one target per Nova hypervisor node. The target
+address defaults to the `host_ip` attribute of the hypervisor.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_openstack_instance_id`: the OpenStack instance ID
-* `__meta_openstack_instance_name`: the OpenStack instance name
-* `__meta_openstack_instance_status`: the status of the OpenStack instance
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance
-* `__meta_openstack_private_ip`: the private IP of the OpenStack instance
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance
+* `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_name`: the OpenStack instance name.
+* `__meta_openstack_instance_status`: the status of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
+* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+
+#### `instance`
+
+The `instance` role discovers one target per Nova instance. The target
+address defaults to the first private IP address of the instance.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_name`: the OpenStack instance name.
+* `__meta_openstack_instance_status`: the status of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
+* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
 
 See below for the configuration options for OpenStack discovery:
 
 ```yaml
 # The information to access the OpenStack API.
+
+# The OpenStack role of entities that should be discovered.
+role: <role>
 
 # The OpenStack Region.
 region: <string>
