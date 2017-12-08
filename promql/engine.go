@@ -546,8 +546,11 @@ func (ng *Engine) populateIterators(ctx context.Context, s *EvalStmt) (storage.Q
 			}
 			n.series, err = expandSeriesSet(set)
 			if err != nil {
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				if _, remoteStorageError := err.(storage.RemoteStorageError); !remoteStorageError {
+					level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
+					return false
+				}
+
 			}
 			for _, s := range n.series {
 				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
