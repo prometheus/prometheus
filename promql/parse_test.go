@@ -1623,6 +1623,29 @@ var testStatement = []struct {
 	  	`,
 		fail: true,
 	}, {
+		input: `
+		   ALERT InstanceDown
+		   IF 0 != bool 1
+		   FOR 5m
+		   LABELS { severity = "page" }
+		   ANNOTATIONS {
+		     summary = "sum",
+		     description = "desc"
+		   }
+		`,
+		fail: true,
+	}, {
+		input: `
+		   ALERT AlwaysTrigger
+	           IF increase(something-with-hyphens[5m]) > 0
+		   LABELS { label = "label" }
+		   ANNOTATIONS {
+		    summary = "sum",
+		    description = "desc"
+		   }
+		`,
+		fail: true,
+	}, {
 		input:    "",
 		expected: Statements{},
 	}, {
