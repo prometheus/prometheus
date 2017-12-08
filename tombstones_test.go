@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestWriteAndReadbackTombStones(t *testing.T) {
@@ -43,13 +43,13 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 		stones[ref] = dranges
 	}
 
-	require.NoError(t, writeTombstoneFile(tmpdir, stones))
+	testutil.Ok(t, writeTombstoneFile(tmpdir, stones))
 
 	restr, err := readTombstones(tmpdir)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	// Compare the two readers.
-	require.Equal(t, stones, restr)
+	testutil.Equals(t, stones, restr)
 }
 
 func TestAddingNewIntervals(t *testing.T) {
@@ -117,7 +117,7 @@ func TestAddingNewIntervals(t *testing.T) {
 
 	for _, c := range cases {
 
-		require.Equal(t, c.exp, c.exist.add(c.new))
+		testutil.Equals(t, c.exp, c.exist.add(c.new))
 	}
 	return
 }

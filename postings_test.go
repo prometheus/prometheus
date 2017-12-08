@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/tsdb/labels"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestMemPostings_addFor(t *testing.T) {
@@ -30,7 +30,7 @@ func TestMemPostings_addFor(t *testing.T) {
 
 	p.addFor(5, allPostingsKey)
 
-	require.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey])
+	testutil.Equals(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey])
 }
 
 func TestMemPostings_ensureOrder(t *testing.T) {
@@ -101,8 +101,8 @@ func TestIntersect(t *testing.T) {
 		b := newListPostings(c.b)
 
 		res, err := expandPostings(Intersect(a, b))
-		require.NoError(t, err)
-		require.Equal(t, c.res, res)
+		testutil.Ok(t, err)
+		testutil.Equals(t, c.res, res)
 	}
 }
 
@@ -142,8 +142,8 @@ func TestMultiIntersect(t *testing.T) {
 
 		res, err := expandPostings(Intersect(ps...))
 
-		require.NoError(t, err)
-		require.Equal(t, c.res, res)
+		testutil.Ok(t, err)
+		testutil.Equals(t, c.res, res)
 	}
 }
 
@@ -199,8 +199,8 @@ func TestMultiMerge(t *testing.T) {
 		i3 := newListPostings(c.c)
 
 		res, err := expandPostings(Merge(i1, i2, i3))
-		require.NoError(t, err)
-		require.Equal(t, c.res, res)
+		testutil.Ok(t, err)
+		testutil.Equals(t, c.res, res)
 	}
 }
 
@@ -231,8 +231,8 @@ func TestMergedPostings(t *testing.T) {
 		b := newListPostings(c.b)
 
 		res, err := expandPostings(newMergedPostings(a, b))
-		require.NoError(t, err)
-		require.Equal(t, c.res, res)
+		testutil.Ok(t, err)
+		testutil.Equals(t, c.res, res)
 	}
 
 }
@@ -285,16 +285,16 @@ func TestMergedPostingsSeek(t *testing.T) {
 
 		p := newMergedPostings(a, b)
 
-		require.Equal(t, c.success, p.Seek(c.seek))
+		testutil.Equals(t, c.success, p.Seek(c.seek))
 
 		// After Seek(), At() should be called.
 		if c.success {
 			start := p.At()
 			lst, err := expandPostings(p)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 
 			lst = append([]uint64{start}, lst...)
-			require.Equal(t, c.res, lst)
+			testutil.Equals(t, c.res, lst)
 		}
 	}
 
@@ -319,12 +319,12 @@ func TestBigEndian(t *testing.T) {
 	t.Run("Iteration", func(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 		for i := 0; i < num; i++ {
-			require.True(t, bep.Next())
-			require.Equal(t, uint64(ls[i]), bep.At())
+			testutil.Assert(t, bep.Next() == true, "")
+			testutil.Equals(t, uint64(ls[i]), bep.At())
 		}
 
-		require.False(t, bep.Next())
-		require.Nil(t, bep.Err())
+		testutil.Assert(t, bep.Next() == false, "")
+		testutil.Assert(t, bep.Err() == nil, "")
 	})
 
 	t.Run("Seek", func(t *testing.T) {
@@ -368,9 +368,9 @@ func TestBigEndian(t *testing.T) {
 		bep := newBigEndianPostings(beLst)
 
 		for _, v := range table {
-			require.Equal(t, v.found, bep.Seek(uint64(v.seek)))
-			require.Equal(t, uint64(v.val), bep.At())
-			require.Nil(t, bep.Err())
+			testutil.Equals(t, v.found, bep.Seek(uint64(v.seek)))
+			testutil.Equals(t, uint64(v.val), bep.At())
+			testutil.Assert(t, bep.Err() == nil, "")
 		}
 	})
 }
@@ -388,6 +388,6 @@ func TestIntersectWithMerge(t *testing.T) {
 	p := Intersect(a, b)
 	res, err := expandPostings(p)
 
-	require.NoError(t, err)
-	require.Equal(t, []uint64{30}, res)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []uint64{30}, res)
 }

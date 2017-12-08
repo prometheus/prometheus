@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 type pair struct {
@@ -142,7 +142,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 			res = append(res, v)
 		}
 		if it.Err() != io.EOF {
-			require.NoError(b, it.Err())
+			testutil.Ok(b, it.Err())
 		}
 		res = res[:0]
 	}

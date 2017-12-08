@@ -25,7 +25,7 @@ import (
 	"github.com/pkg/errors"
 	promlabels "github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestCompareAndEquals(t *testing.T) {
@@ -87,14 +87,14 @@ func TestCompareAndEquals(t *testing.T) {
 		// Use constructor to ensure sortedness.
 		a, b := New(c.a...), New(c.b...)
 
-		require.Equal(t, c.res, Compare(a, b))
-		require.Equal(t, c.res == 0, a.Equals(b))
+		testutil.Equals(t, c.res, Compare(a, b))
+		testutil.Equals(t, c.res == 0, a.Equals(b))
 	}
 }
 
 func BenchmarkSliceSort(b *testing.B) {
 	lbls, err := readPrometheusLabels("../testdata/1m.series", 900000)
-	require.NoError(b, err)
+	testutil.Ok(b, err)
 
 	for len(lbls) < 20e6 {
 		lbls = append(lbls, lbls...)

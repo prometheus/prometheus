@@ -21,7 +21,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 func TestSplitByRange(t *testing.T) {
@@ -123,7 +123,7 @@ func TestSplitByRange(t *testing.T) {
 			}
 		}
 
-		require.Equal(t, exp, splitByRange(blocks, c.trange))
+		testutil.Equals(t, exp, splitByRange(blocks, c.trange))
 	}
 }
 
@@ -147,7 +147,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	}
 
 	c, err := NewLeveledCompactor(nil, nil, []int64{50}, nil)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	c.plan(metas)
 }
@@ -160,7 +160,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		720,
 		2160,
 	}, nil)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	cases := []struct {
 		metas    []dirMeta
@@ -261,11 +261,11 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		},
 	}
 
-	for i, c := range cases {
+	for _, c := range cases {
 		res, err := compactor.plan(c.metas)
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
-		require.Equal(t, c.expected, res, "test case %d", i)
+		testutil.Equals(t, c.expected, res)
 	}
 }
 
@@ -277,7 +277,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 		720,
 		2160,
 	}, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	cases := []struct {
 		metas []dirMeta
@@ -310,9 +310,9 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 	for _, c := range cases {
 		c.metas[1].meta.Compaction.Failed = true
 		res, err := compactor.plan(c.metas)
-		Ok(t, err)
+		testutil.Ok(t, err)
 
-		Equals(t, []string(nil), res)
+		testutil.Equals(t, []string(nil), res)
 	}
 }
 
@@ -324,14 +324,14 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 		720,
 		2160,
 	}, nil)
-	Ok(t, err)
+	testutil.Ok(t, err)
 
 	tmpdir, err := ioutil.TempDir("", "test")
-	Ok(t, err)
+	testutil.Ok(t, err)
 
-	NotOk(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
+	testutil.NotOk(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + ".tmp")
-	Assert(t, os.IsNotExist(err), "directory is not cleaned up")
+	testutil.Assert(t, os.IsNotExist(err), "directory is not cleaned up")
 }
 
 func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {

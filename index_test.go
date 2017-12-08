@@ -24,7 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/tsdb/testutil"
 )
 
 type series struct {
@@ -151,35 +151,35 @@ func (m mockIndex) LabelIndices() ([][]string, error) {
 
 func TestIndexRW_Create_Open(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_create")
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
 	// An empty index must still result in a readable file.
 	iw, err := newIndexWriter(dir)
-	require.NoError(t, err, "create index writer")
-	require.NoError(t, iw.Close(), "close index writer")
+	testutil.Ok(t, err)
+	testutil.Ok(t, iw.Close())
 
 	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
-	require.NoError(t, err, "open index reader")
-	require.NoError(t, ir.Close(), "close index reader")
+	testutil.Ok(t, err)
+	testutil.Ok(t, ir.Close())
 
 	// Modify magic header must cause open to fail.
 	f, err := os.OpenFile(filepath.Join(dir, "index"), os.O_WRONLY, 0666)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 	_, err = f.WriteAt([]byte{0, 0}, 0)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	_, err = NewFileIndexReader(dir)
-	require.Error(t, err)
+	testutil.NotOk(t, err)
 }
 
 func TestIndexRW_Postings(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_index_postings")
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
 	iw, err := newIndexWriter(dir)
-	require.NoError(t, err, "create index writer")
+	testutil.Ok(t, err)
 
 	series := []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
@@ -196,25 +196,25 @@ func TestIndexRW_Postings(t *testing.T) {
 		"3": struct{}{},
 		"4": struct{}{},
 	})
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	// Postings lists are only written if a series with the respective
 	// reference was added before.
-	require.NoError(t, iw.AddSeries(1, series[0]))
-	require.NoError(t, iw.AddSeries(2, series[1]))
-	require.NoError(t, iw.AddSeries(3, series[2]))
-	require.NoError(t, iw.AddSeries(4, series[3]))
+	testutil.Ok(t, iw.AddSeries(1, series[0]))
+	testutil.Ok(t, iw.AddSeries(2, series[1]))
+	testutil.Ok(t, iw.AddSeries(3, series[2]))
+	testutil.Ok(t, iw.AddSeries(4, series[3]))
 
 	err = iw.WritePostings("a", "1", newListPostings([]uint64{1, 2, 3, 4}))
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
-	require.NoError(t, iw.Close())
+	testutil.Ok(t, iw.Close())
 
 	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
-	require.NoError(t, err, "open index reader")
+	testutil.Ok(t, err)
 
 	p, err := ir.Postings("a", "1")
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	var l labels.Labels
 	var c []ChunkMeta
@@ -222,22 +222,22 @@ func TestIndexRW_Postings(t *testing.T) {
 	for i := 0; p.Next(); i++ {
 		err := ir.Series(p.At(), &l, &c)
 
-		require.NoError(t, err)
-		require.Equal(t, 0, len(c))
-		require.Equal(t, series[i], l)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0, len(c))
+		testutil.Equals(t, series[i], l)
 	}
-	require.NoError(t, p.Err())
+	testutil.Ok(t, p.Err())
 
-	require.NoError(t, ir.Close())
+	testutil.Ok(t, ir.Close())
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
 	lbls, err := readPrometheusLabels("testdata/20k.series", 20000)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	// Sort labels as the index writer expects series in sorted order.
 	sort.Sort(labels.Slice(lbls))
@@ -271,9 +271,9 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	iw, err := newIndexWriter(dir)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
-	require.NoError(t, iw.AddSymbols(symbols))
+	testutil.Ok(t, iw.AddSymbols(symbols))
 
 	// Population procedure as done by compaction.
 	var (
@@ -286,7 +286,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	for i, s := range input {
 		err = iw.AddSeries(uint64(i), s.labels, s.chunks...)
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 		mi.AddSeries(uint64(i), s.labels, s.chunks...)
 
 		for _, l := range s.labels {
@@ -304,8 +304,8 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for k, v := range values {
 		vals := v.slice()
 
-		require.NoError(t, iw.WriteLabelIndex([]string{k}, vals))
-		require.NoError(t, mi.WriteLabelIndex([]string{k}, vals))
+		testutil.Ok(t, iw.WriteLabelIndex([]string{k}, vals))
+		testutil.Ok(t, mi.WriteLabelIndex([]string{k}, vals))
 	}
 
 	all := make([]uint64, len(lbls))
@@ -313,24 +313,24 @@ func TestPersistence_index_e2e(t *testing.T) {
 		all[i] = uint64(i)
 	}
 	err = iw.WritePostings("", "", newListPostings(all))
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 	mi.WritePostings("", "", newListPostings(all))
 
 	for l := range postings.m {
 		err = iw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 		mi.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
 	}
 
 	err = iw.Close()
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 
 	for p := range mi.postings.m {
 		gotp, err := ir.Postings(p.Name, p.Value)
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
 		expp, err := mi.Postings(p.Name, p.Value)
 
@@ -338,39 +338,39 @@ func TestPersistence_index_e2e(t *testing.T) {
 		var chks, expchks []ChunkMeta
 
 		for gotp.Next() {
-			require.True(t, expp.Next())
+			testutil.Assert(t, expp.Next() == true, "")
 
 			ref := gotp.At()
 
 			err := ir.Series(ref, &lset, &chks)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 
 			err = mi.Series(expp.At(), &explset, &expchks)
-			require.Equal(t, explset, lset)
-			require.Equal(t, expchks, chks)
+			testutil.Equals(t, explset, lset)
+			testutil.Equals(t, expchks, chks)
 		}
-		require.False(t, expp.Next())
-		require.NoError(t, gotp.Err())
+		testutil.Assert(t, expp.Next() == false, "")
+		testutil.Ok(t, gotp.Err())
 	}
 
 	for k, v := range mi.labelIndex {
 		tplsExp, err := newStringTuples(v, 1)
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
 		tplsRes, err := ir.LabelValues(k)
-		require.NoError(t, err)
+		testutil.Ok(t, err)
 
-		require.Equal(t, tplsExp.Len(), tplsRes.Len())
+		testutil.Equals(t, tplsExp.Len(), tplsRes.Len())
 		for i := 0; i < tplsExp.Len(); i++ {
 			strsExp, err := tplsExp.At(i)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 
 			strsRes, err := tplsRes.At(i)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 
-			require.Equal(t, strsExp, strsRes)
+			testutil.Equals(t, strsExp, strsRes)
 		}
 	}
 
-	require.NoError(t, ir.Close())
+	testutil.Ok(t, ir.Close())
 }
