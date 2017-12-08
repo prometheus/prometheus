@@ -204,8 +204,8 @@ func TestHead_Truncate(t *testing.T) {
 		{minTime: 3000, maxTime: 3999},
 	}, h.series.getByID(s2.ref).chunks)
 
-	testutil.Nil(t, h.series.getByID(s3.ref), "")
-	testutil.Nil(t, h.series.getByID(s4.ref), "")
+	testutil.Assert(t, h.series.getByID(s3.ref) == nil, "")
+	testutil.Assert(t, h.series.getByID(s4.ref) == nil, "")
 
 	postingsA1, _ := expandPostings(h.postings.get("a", "1"))
 	postingsA2, _ := expandPostings(h.postings.get("a", "2"))
@@ -218,8 +218,8 @@ func TestHead_Truncate(t *testing.T) {
 	testutil.Equals(t, []uint64{s2.ref}, postingsA2)
 	testutil.Equals(t, []uint64{s1.ref, s2.ref}, postingsB1)
 	testutil.Equals(t, []uint64{s1.ref, s2.ref}, postingsAll)
-	testutil.Nil(t, postingsB2, "")
-	testutil.Nil(t, postingsC1, "")
+	testutil.Assert(t, postingsB2 == nil, "")
+	testutil.Assert(t, postingsC1 == nil, "")
 
 	testutil.Equals(t, map[string]struct{}{
 		"":  struct{}{}, // from 'all' postings list
@@ -252,13 +252,13 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	lastID := s.chunkID(countBefore - 1)
 	lastChunk := s.chunk(lastID)
 
-	testutil.NotNil(t, s.chunk(0), "")
-	testutil.NotNil(t, lastChunk, "")
+	testutil.Assert(t, s.chunk(0) != nil, "")
+	testutil.Assert(t, lastChunk != nil, "")
 
 	s.truncateChunksBefore(2000)
 
 	testutil.Equals(t, int64(2000), s.chunks[0].minTime)
-	testutil.Nil(t, s.chunk(0), "first chunks not gone")
+	testutil.Assert(t, s.chunk(0) == nil, "first chunks not gone")
 	testutil.Equals(t, countBefore/2, len(s.chunks))
 	testutil.Equals(t, lastChunk, s.chunk(lastID))
 

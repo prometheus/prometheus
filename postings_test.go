@@ -324,7 +324,7 @@ func TestBigEndian(t *testing.T) {
 		}
 
 		testutil.Assert(t, bep.Next() == false, "")
-		testutil.Nil(t, bep.Err(), "")
+		testutil.Assert(t, bep.Err() == nil, "")
 	})
 
 	t.Run("Seek", func(t *testing.T) {
@@ -370,7 +370,7 @@ func TestBigEndian(t *testing.T) {
 		for _, v := range table {
 			testutil.Equals(t, v.found, bep.Seek(uint64(v.seek)))
 			testutil.Equals(t, uint64(v.val), bep.At())
-			testutil.Nil(t, bep.Err(), "")
+			testutil.Assert(t, bep.Err() == nil, "")
 		}
 	})
 }
