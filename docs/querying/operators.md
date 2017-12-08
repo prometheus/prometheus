@@ -218,6 +218,10 @@ number of seen HTTP requests per application and group over all instances via:
 
     sum(http_requests_total) without (instance)
 
+Which is equivalent to:
+ 
+     sum(http_requests_total) by (application, group)
+
 If we are just interested in the total of HTTP requests we have seen in **all**
 applications, we could simply write:
 
