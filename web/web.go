@@ -413,7 +413,21 @@ func (h *Handler) Run(ctx context.Context) error {
 	)
 	av2.RegisterGRPC(grpcSrv)
 
-	hh, err := av2.HTTPHandler(grpcl.Addr().String())
+	lAddr := grpcl.Addr().String()
+	host, port, err := net.SplitHostPort(lAddr)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip.Equal(net.IPv4zero) || ip.Equal(net.IPv6zero) {
+		// The gRPC server is listening on an empty/wildcard address (0.0.0.0 or ::).
+		// We should be able to connect to an empty IP just fine, but as there were
+		// some issues with this in the past (#3004, #3149), we explicitly tell
+		// the REST API gateway to connect to localhost.
+		lAddr = net.JoinHostPort("localhost", port)
+	}
+
+	hh, err := av2.HTTPHandler(lAddr)
 	if err != nil {
 		return err
 	}
