@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 	"github.com/Azure/azure-sdk-for-go/arm/network"
+	"github.com/Azure/azure-sdk-for-go/arm/containerinstance"
 	"github.com/Azure/go-autorest/autorest/azure"
 
 	"github.com/go-kit/kit/log"
@@ -34,13 +35,19 @@ import (
 )
 
 const (
-	azureLabel                     = model.MetaLabelPrefix + "azure_"
-	azureLabelMachineID            = azureLabel + "machine_id"
-	azureLabelMachineResourceGroup = azureLabel + "machine_resource_group"
-	azureLabelMachineName          = azureLabel + "machine_name"
-	azureLabelMachineLocation      = azureLabel + "machine_location"
-	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
-	azureLabelMachineTag           = azureLabel + "machine_tag_"
+	azureLabel                            = model.MetaLabelPrefix + "azure_"
+	azureLabelMachineID                   = azureLabel + "machine_id"
+	azureLabelMachineResourceGroup        = azureLabel + "machine_resource_group"
+	azureLabelMachineName                 = azureLabel + "machine_name"
+	azureLabelMachineLocation             = azureLabel + "machine_location"
+	azureLabelMachinePrivateIP            = azureLabel + "machine_private_ip"
+	azureLabelMachineTag                  = azureLabel + "machine_tag_"
+	azureLabelContainerGroupID            = azureLabel + "container_group_id"
+	azureLabelContainerGroupResourceGroup = azureLabel + "container_group_resource_group"
+	azureLabelContainerGroupName          = azureLabel + "container_group_name"
+	azureLabelContainerGroupLocation      = azureLabel + "container_group_location"
+	azureLabelContainerGroupPublicIP      = azureLabel + "container_group_public_ip"
+	azureLabelContainerGroupTag           = azureLabel + "container_group_tag_"
 )
 
 var (
@@ -117,6 +124,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 type azureClient struct {
 	nic network.InterfacesClient
 	vm  compute.VirtualMachinesClient
+	cg  containerinstance.ContainerGroupsClient  
 }
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
@@ -136,6 +144,9 @@ func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
 
 	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
 	c.nic.Authorizer = spt
+
+	c.cg = containerinstance.NewContainerGroupsClient(cfg.SubscriptionID)
+	c.cg.Authorizer = spt
 
 	return c, nil
 }
@@ -162,26 +173,11 @@ func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error)
 	}, nil
 }
 
-func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
-	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
-
-	t0 := time.Now()
-	defer func() {
-		azureSDRefreshDuration.Observe(time.Since(t0).Seconds())
-		if err != nil {
-			azureSDRefreshFailuresCount.Inc()
-		}
-	}()
-	tg = &config.TargetGroup{}
-	client, err := createAzureClient(*d.cfg)
-	if err != nil {
-		return tg, fmt.Errorf("could not create Azure client: %s", err)
-	}
-
+func fetchVMs(d *Discovery, client azureClient, tg *config.TargetGroup)  (err error) {
 	var machines []compute.VirtualMachine
 	result, err := client.vm.ListAll()
 	if err != nil {
-		return tg, fmt.Errorf("could not list virtual machines: %s", err)
+		return fmt.Errorf("could not list virtual machines: %s", err)
 	}
 	machines = append(machines, *result.Value...)
 
@@ -189,7 +185,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	for result.NextLink != nil {
 		result, err = client.vm.ListAllNextResults(result)
 		if err != nil {
-			return tg, fmt.Errorf("could not list virtual machines: %s", err)
+			return fmt.Errorf("could not list virtual machines: %s", err)
 		}
 		machines = append(machines, *result.Value...)
 	}
@@ -273,12 +269,129 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 	for range machines {
 		tgt := <-ch
 		if tgt.err != nil {
-			return nil, fmt.Errorf("unable to complete Azure service discovery: %s", err)
+			return fmt.Errorf("unable to complete Azure service discovery: %s", err)
 		}
 		if tgt.labelSet != nil {
 			tg.Targets = append(tg.Targets, tgt.labelSet)
 		}
 	}
 
-	return tg, nil
+	return nil
 }
+
+func fetchCGs(d *Discovery, client azureClient, tg *config.TargetGroup) (err error) {
+	var containerGroups []containerinstance.ContainerGroup
+	result, err := client.cg.List()
+	if err != nil {
+		return fmt.Errorf("could not list container groups: %s", err)
+	}
+	containerGroups = append(containerGroups, *result.Value...)
+
+	// If we still have results, keep going until we have no more.
+	for result.NextLink != nil {
+		result, err = client.cg.ListNextResults(result)
+		if err != nil {
+			return fmt.Errorf("could not list virtual machines: %s", err)
+		}
+		containerGroups = append(containerGroups, *result.Value...)
+	}
+	level.Info(d.logger).Log("msg", "Found container groups during Azure discovery.", "count", len(containerGroups))
+
+	// We have the slice of machines. Now turn them into targets.
+	// Doing them in go routines because the network interface calls are slow.
+	type target struct {
+		labelSet model.LabelSet
+		err      error
+	}
+
+	ch := make(chan target, len(containerGroups))
+	for i, cg := range containerGroups {
+		go func(i int, cg containerinstance.ContainerGroup) {
+			r, err := newAzureResourceFromID(*cg.ID, d.logger)
+			if err != nil {
+				ch <- target{labelSet: nil, err: err}
+				return
+			}
+
+			labels := model.LabelSet{
+				azureLabelContainerGroupID:            model.LabelValue(*cg.ID),
+				azureLabelContainerGroupName:          model.LabelValue(*cg.Name),
+				azureLabelContainerGroupLocation:      model.LabelValue(*cg.Location),
+				azureLabelContainerGroupResourceGroup: model.LabelValue(r.ResourceGroup),
+			}
+
+			if cg.Tags != nil {
+				for k, v := range *cg.Tags {
+					name := strutil.SanitizeLabelName(k)
+					labels[azureLabelContainerGroupTag+model.LabelName(name)] = model.LabelValue(*v)
+				}
+			}
+
+			if cg.ContainerGroupProperties.IPAddress == nil {
+				level.Debug(d.logger).Log("msg", "Skipping container group without a public IP", "group", *cg.Name)
+
+				ch <- target{}
+				return
+			}
+
+			for _, port := range *cg.ContainerGroupProperties.IPAddress.Ports {
+			    if *port.Port == int32(d.port) {
+					labels[azureLabelContainerGroupPublicIP] = model.LabelValue(*cg.ContainerGroupProperties.IPAddress.IP)
+					address := net.JoinHostPort(*cg.ContainerGroupProperties.IPAddress.IP, fmt.Sprintf("%d", d.port))
+					labels[model.AddressLabel] = model.LabelValue(address)
+					ch <- target{labelSet: labels, err: nil}
+					
+					level.Debug(d.logger).Log("msg", "Found container group with a public IP", "group", *cg.Name)
+					return    	
+			    }
+			}
+
+			level.Debug(d.logger).Log("msg", "Skipping container group not exposing target port", "group", *cg.Name)
+
+			ch <- target{}
+			return
+		}(i, cg)
+	}
+
+	for range containerGroups {
+		tgt := <-ch
+		if tgt.err != nil {
+			return fmt.Errorf("unable to complete Azure service discovery: %s", err)
+		}
+		if tgt.labelSet != nil {
+			tg.Targets = append(tg.Targets, tgt.labelSet)
+		}
+	}
+
+	return nil
+}
+
+func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
+	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
+
+	t0 := time.Now()
+	defer func() {
+		azureSDRefreshDuration.Observe(time.Since(t0).Seconds())
+		if err != nil {
+			azureSDRefreshFailuresCount.Inc()
+		}
+	}()
+	tg = &config.TargetGroup{}
+	client, err := createAzureClient(*d.cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create Azure client: %s", err)
+	}
+
+	vmErr := fetchVMs(d, client, tg)
+	if vmErr != nil {
+		return nil, vmErr
+	}
+
+	cgErr := fetchCGs(d, client, tg)
+	if cgErr != nil {
+		return nil, cgErr
+	}
+
+	return tg, err
+}
+

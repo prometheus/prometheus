@@ -9,6 +9,12 @@
 			"revisionTime": "2016-10-28T18:31:11Z"
 		},
 		{
+			"checksumSHA1": "HRNfrRfPNcmLkdlFGqRjJSR2EHo=",
+			"path": "github.com/Azure/azure-sdk-for-go/arm/containerinstance",
+			"revision": "f7bb4db3ea4c73dc58bd284c38ea644a79324be0",
+			"revisionTime": "2017-10-23T18:42:54Z"
+		},
+		{
 			"checksumSHA1": "QKi6LiSyD5GnRK8ExpMgZl4XiMI=",
 			"path": "github.com/Azure/azure-sdk-for-go/arm/network",
 			"revision": "bd73d950fa4440dae889bd9917bff7cef539f86e",
