@@ -389,7 +389,7 @@ These are APIs that expose database functionalities for the advanced user. These
 We also expose a gRPC API whose definition can be found [here](https://github.com/prometheus/prometheus/blob/master/prompb/rpc.proto). This is experimental and might change in the future.
 
 ### Snapshot
-Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response.
+Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response. We replace the `:` in the `datetime` with `_` to be script friendly.
 
 ```
 POST /api/v1/admin/tsdb/snapshot
@@ -400,12 +400,12 @@ $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
 {
   "status": "success",
   "data": {
-    "name": "2017-11-30T15:31:59Z-2366f0a55106d6e1"
+    "name": "2017-11-30T15_31_59Z-2366f0a55106d6e1"
   }
 }
 ```
 
-The snapshot now exists at `<data-dir>/snapshots/2017-11-30T15:31:59Z-2366f0a55106d6e1`
+The snapshot now exists at `<data-dir>/snapshots/2017-11-30T15_31_59Z-2366f0a55106d6e1`
 
 *New in v2.1*
 
