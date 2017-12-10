@@ -673,8 +673,7 @@ var expectedErrors = []struct {
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
-		testutil.Assert(t, err != nil,
-			"Expected error parsing %s but got none", ee.filename)
+		testutil.NotOk(t, err, "%s", ee.filename)
 		testutil.Assert(t, strings.Contains(err.Error(), ee.errMsg),
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
@@ -685,7 +684,7 @@ func TestBadStaticConfigs(t *testing.T) {
 	testutil.Ok(t, err)
 	var tg TargetGroup
 	err = json.Unmarshal(content, &tg)
-	testutil.Assert(t, err != nil, "Expected unmarshal error but got none.")
+	testutil.NotOk(t, err, "")
 }
 
 func TestEmptyConfig(t *testing.T) {

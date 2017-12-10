@@ -384,6 +384,12 @@
 			"versionExact": "v1.5.4"
 		},
 		{
+			"checksumSHA1": "FhLvgtYfuKY0ow9wtLJRoeg7d6w=",
+			"path": "github.com/gogo/protobuf/gogoproto",
+			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
+			"revisionTime": "2017-11-23T12:57:29Z"
+		},
+		{
 			"checksumSHA1": "8UEp6v0Dczw/SlasE0DivB0mAHA=",
 			"path": "github.com/gogo/protobuf/jsonpb",
 			"revision": "117892bf1866fbaa2318c03e50e40564c8845457",
@@ -392,8 +398,14 @@
 		{
 			"checksumSHA1": "wn2shNJMwRZpvuvkf1s7h0wvqHI=",
 			"path": "github.com/gogo/protobuf/proto",
-			"revision": "117892bf1866fbaa2318c03e50e40564c8845457",
-			"revisionTime": "2017-10-18T11:19:13Z"
+			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
+			"revisionTime": "2017-11-23T12:57:29Z"
+		},
+		{
+			"checksumSHA1": "F+PKpdY6PyIrxQ8b20TzsM+1JuI=",
+			"path": "github.com/gogo/protobuf/protoc-gen-gogo/descriptor",
+			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
+			"revisionTime": "2017-11-23T12:57:29Z"
 		},
 		{
 			"checksumSHA1": "HPVQZu059/Rfw2bAWM538bVTcUc=",
@@ -536,26 +548,26 @@
 			"revisionTime": "2017-06-07T03:48:29Z"
 		},
 		{
-			"checksumSHA1": "InNAv3jGuD6SW4qJDBtGQpj0oRI=",
+			"checksumSHA1": "DCgYY4AJZ2rJV2XpZ/Y00CDl+Jo=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime",
-			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
-			"revisionTime": "2017-04-17T16:01:37Z",
+			"revision": "e4b8a938efae14de11fd97311e873e989896348c",
+			"revisionTime": "2017-11-26T19:57:40Z",
 			"version": "=v1.2.2",
 			"versionExact": "v1.2.2"
 		},
 		{
-			"checksumSHA1": "et8uiXNw6yM96U/UZgn2vKtyr3Q=",
+			"checksumSHA1": "V1qChZAWS+xzlEBSyz2r8JlzmM8=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
-			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
-			"revisionTime": "2017-04-17T16:01:37Z",
+			"revision": "e4b8a938efae14de11fd97311e873e989896348c",
+			"revisionTime": "2017-11-26T19:57:40Z",
 			"version": "=v1.2.2",
 			"versionExact": "v1.2.2"
 		},
 		{
 			"checksumSHA1": "vqiK5r5dntV7JNZ+ZsGlD0Samos=",
 			"path": "github.com/grpc-ecosystem/grpc-gateway/utilities",
-			"revision": "589b126116b5fc961939b3e156c29e4d9d58222f",
-			"revisionTime": "2017-04-17T16:01:37Z",
+			"revision": "e4b8a938efae14de11fd97311e873e989896348c",
+			"revisionTime": "2017-11-26T19:57:40Z",
 			"version": "=v1.2.2",
 			"versionExact": "v1.2.2"
 		},
@@ -782,28 +794,28 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "c3VEi8SL0XmI6BmokMOWrSWmNu8=",
+			"checksumSHA1": "XgGOJ06okm8qd+x/gdRj48RgXsg=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "ad3c4849a99729a9c10a55b3ba4c0ad146d2446a",
-			"revisionTime": "2017-11-23T17:41:24Z"
+			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
+			"revisionTime": "2017-11-30T09:58:01Z"
 		},
 		{
 			"checksumSHA1": "C5V8KPHm/gZF0qrNwmIEDdG6rhA=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "ad3c4849a99729a9c10a55b3ba4c0ad146d2446a",
-			"revisionTime": "2017-11-23T17:41:24Z"
+			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
+			"revisionTime": "2017-11-30T09:58:01Z"
 		},
 		{
 			"checksumSHA1": "7RhNAVcmDmLFqn9nWiudT0B76f8=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "ad3c4849a99729a9c10a55b3ba4c0ad146d2446a",
-			"revisionTime": "2017-11-23T17:41:24Z"
+			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
+			"revisionTime": "2017-11-30T09:58:01Z"
 		},
 		{
 			"checksumSHA1": "zhmlvc322RH1L3l9DaA9d/HVVWs=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "ad3c4849a99729a9c10a55b3ba4c0ad146d2446a",
-			"revisionTime": "2017-11-23T17:41:24Z"
+			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
+			"revisionTime": "2017-11-30T09:58:01Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",

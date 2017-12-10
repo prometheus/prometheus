@@ -35,3 +35,8 @@ func (j *JSONBuiltin) NewDecoder(r io.Reader) Decoder {
 func (j *JSONBuiltin) NewEncoder(w io.Writer) Encoder {
 	return json.NewEncoder(w)
 }
+
+// Delimiter for newline encoded JSON streams.
+func (j *JSONBuiltin) Delimiter() []byte {
+	return []byte("\n")
+}

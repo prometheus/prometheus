@@ -122,6 +122,7 @@ type dbMetrics struct {
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
+	tombCleanTimer       prometheus.Histogram
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -147,6 +148,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
+	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
+		Help: "The time taken to recompact blocks to remove tombstones.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -154,6 +159,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.reloads,
 			m.reloadsFailed,
 			m.compactionsTriggered,
+			m.tombCleanTimer,
 		)
 	}
 	return m
@@ -616,7 +622,7 @@ func (db *DB) Snapshot(dir string) error {
 		level.Info(db.logger).Log("msg", "snapshotting block", "block", b)
 
 		if err := b.Snapshot(dir); err != nil {
-			return errors.Wrap(err, "error snapshotting headblock")
+			return errors.Wrapf(err, "error snapshotting block: %s", b.Dir())
 		}
 	}
 	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
@@ -689,6 +695,37 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return err
 	}
 	return nil
+}
+
+// CleanTombstones re-writes any blocks with tombstones.
+func (db *DB) CleanTombstones() error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	start := time.Now()
+	defer db.metrics.tombCleanTimer.Observe(float64(time.Since(start).Seconds()))
+
+	db.mtx.RLock()
+	blocks := db.blocks[:]
+	db.mtx.RUnlock()
+
+	deleted := []string{}
+	for _, b := range blocks {
+		ok, err := b.CleanTombstones(db.Dir(), db.compactor)
+		if err != nil {
+			return errors.Wrapf(err, "clean tombstones: %s", b.Dir())
+		}
+
+		if ok {
+			deleted = append(deleted, b.Dir())
+		}
+	}
+
+	if len(deleted) == 0 {
+		return nil
+	}
+
+	return errors.Wrap(db.reload(deleted...), "reload blocks")
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {

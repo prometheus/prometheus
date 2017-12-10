@@ -59,7 +59,7 @@ func LoadFile(filename string) (*Config, error) {
 	}
 	cfg, err := Load(string(content))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing YAML file %s: %v", filename, err)
 	}
 	resolveFilepaths(filepath.Dir(filename), cfg)
 	return cfg, nil

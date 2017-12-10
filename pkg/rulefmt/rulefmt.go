@@ -26,13 +26,14 @@ import (
 
 // Error represents semantical errors on parsing rule groups.
 type Error struct {
-	Group string
-	Rule  int
-	Err   error
+	Group    string
+	Rule     int
+	RuleName string
+	Err      error
 }
 
 func (err *Error) Error() string {
-	return errors.Wrapf(err.Err, "group %q, rule %d", err.Group, err.Rule).Error()
+	return errors.Wrapf(err.Err, "group %q, rule %d, %q", err.Group, err.Rule, err.RuleName).Error()
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
@@ -67,10 +68,17 @@ func (g *RuleGroups) Validate() (errs []error) {
 
 		for i, r := range g.Rules {
 			for _, err := range r.Validate() {
+				var ruleName string
+				if r.Alert != "" {
+					ruleName = r.Alert
+				} else {
+					ruleName = r.Record
+				}
 				errs = append(errs, &Error{
-					Group: g.Name,
-					Rule:  i,
-					Err:   err,
+					Group:    g.Name,
+					Rule:     i,
+					RuleName: ruleName,
+					Err:      err,
 				})
 			}
 		}

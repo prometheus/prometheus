@@ -63,7 +63,7 @@ func TestComputeExternalURL(t *testing.T) {
 		if test.valid {
 			testutil.Ok(t, err)
 		} else {
-			testutil.NotOk(t, err)
+			testutil.NotOk(t, err, "input=%q", test.input)
 		}
 	}
 }

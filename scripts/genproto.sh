@@ -10,8 +10,8 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.2.0" ]]; then
-	echo "could not find protoc 3.2.0, is it installed + in PATH?"
+if ! [[ $(protoc --version) =~ "3.4" ]]; then
+	echo "could not find protoc 3.4.x, is it installed + in PATH?"
 	exit 255
 fi
 
