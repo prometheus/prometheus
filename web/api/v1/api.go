@@ -638,8 +638,10 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError) {
 
 	var (
 		snapdir = filepath.Join(db.Dir(), "snapshots")
-		name    = fmt.Sprintf("%s-%x", time.Now().UTC().Format(time.RFC3339), rand.Int())
-		dir     = filepath.Join(snapdir, name)
+		name    = fmt.Sprintf("%s-%x",
+			time.Now().UTC().Format("20060102T150405Z0700"),
+			rand.Int())
+		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %s", err)}
