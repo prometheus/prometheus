@@ -394,18 +394,17 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	}
 	defer q.Close()
 
-	var set storage.SeriesSet
-
+	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
 		s, err := q.Select(mset...)
 		if err != nil {
 			return nil, &apiError{errorExec, err}
 		}
-		set = storage.DeduplicateSeriesSet(set, s)
+		sets = append(sets, s)
 	}
 
+	set := storage.NewMergeSeriesSet(sets)
 	metrics := []labels.Labels{}
-
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}

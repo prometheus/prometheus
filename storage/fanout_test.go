@@ -97,7 +97,7 @@ func TestMergeSeriesSet(t *testing.T) {
 			),
 		},
 	} {
-		merged := newMergeSeriesSet(tc.input)
+		merged := NewMergeSeriesSet(tc.input)
 		for merged.Next() {
 			require.True(t, tc.expected.Next())
 			actualSeries := merged.At()
