@@ -66,6 +66,7 @@ func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]sam
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 
@@ -94,6 +95,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 func TestDataNotAvailableAfterRollback(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 	_, err := app.Add(labels.FromStrings("foo", "bar"), 0, 0)
@@ -114,6 +116,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 func TestDBAppenderAddRef(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app1 := db.Appender()
 
@@ -170,6 +173,7 @@ func TestDeleteSimple(t *testing.T) {
 
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 
@@ -243,6 +247,7 @@ Outer:
 func TestAmendDatapointCausesError(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 	_, err := app.Add(labels.Labels{}, 0, 0)
@@ -258,6 +263,7 @@ func TestAmendDatapointCausesError(t *testing.T) {
 func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 	_, err := app.Add(labels.Labels{}, 0, math.NaN())
@@ -272,6 +278,7 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 	_, err := app.Add(labels.Labels{}, 0, math.Float64frombits(0x7ff0000000000001))
@@ -286,6 +293,7 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	// Append AmendedValue.
 	app := db.Appender()
@@ -349,6 +357,7 @@ func TestDB_Snapshot(t *testing.T) {
 	// reopen DB from snapshot
 	db, err = Open(snap, nil, nil, nil)
 	testutil.Ok(t, err)
+	defer db.Close()
 
 	querier, err := db.Querier(mint, mint+1000)
 	testutil.Ok(t, err)
@@ -413,10 +422,12 @@ Outer:
 		// reopen DB from snapshot
 		db, err = Open(snap, nil, nil, nil)
 		testutil.Ok(t, err)
+		defer db.Close()
 
 		// Compare the result.
 		q, err := db.Querier(0, numSamples)
 		testutil.Ok(t, err)
+		defer q.Close()
 
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
@@ -515,6 +526,7 @@ func TestDB_e2e(t *testing.T) {
 
 	db, close := openTestDB(t, nil)
 	defer close()
+	defer db.Close()
 
 	app := db.Appender()
 
@@ -631,10 +643,11 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	db.Close()
+	testutil.Ok(t, db.Close())
 
 	db, err = Open(tmpdir, nil, nil, nil)
 	testutil.Ok(t, err)
+	defer db.Close()
 
 	q, err := db.Querier(0, 1)
 	testutil.Ok(t, err)
@@ -681,6 +694,7 @@ func TestTombstoneClean(t *testing.T) {
 		// reopen DB from snapshot
 		db, err = Open(snap, nil, nil, nil)
 		testutil.Ok(t, err)
+		defer db.Close()
 
 		for _, r := range c.intervals {
 			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
@@ -692,6 +706,7 @@ func TestTombstoneClean(t *testing.T) {
 		// Compare the result.
 		q, err := db.Querier(0, numSamples)
 		testutil.Ok(t, err)
+		defer q.Close()
 
 		res, err := q.Select(labels.NewEqualMatcher("a", "b"))
 		testutil.Ok(t, err)
@@ -781,6 +796,7 @@ func TestDB_Retention(t *testing.T) {
 		BlockRanges:       []int64{50},
 	})
 	testutil.Ok(t, err)
+	defer db.Close()
 
 	testutil.Equals(t, 2, len(db.blocks))
 
