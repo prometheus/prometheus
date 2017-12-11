@@ -220,6 +220,7 @@ func main() {
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
+	level.Info(logger).Log("fd_limits", FdLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
