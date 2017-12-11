@@ -2,7 +2,9 @@
 
 This directory contains the service discovery (SD) component of Prometheus.
 
-
+There is currently a moratorium on new service discovery mechanisms being added
+to Prometheus due to a lack of developer capacity. In the meantime `file_sd` 
+remains available.
 
 ## Design of a Prometheus SD
 
