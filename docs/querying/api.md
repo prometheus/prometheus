@@ -400,12 +400,12 @@ $ curl -XPOST http://localhost:9090/api/v1/admin/tsdb/snapshot
 {
   "status": "success",
   "data": {
-    "name": "2017-11-30T15:31:59Z-2366f0a55106d6e1"
+    "name": "20171210T211224Z-2be650b6d019eb54"
   }
 }
 ```
 
-The snapshot now exists at `<data-dir>/snapshots/2017-11-30T15:31:59Z-2366f0a55106d6e1`
+The snapshot now exists at `<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb54`
 
 *New in v2.1*
 
