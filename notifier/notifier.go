@@ -437,7 +437,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 			ctx, cancel := context.WithTimeout(n.ctx, ams.cfg.Timeout)
 			defer cancel()
 
-			go func(am alertmanager) {
+			go func(ams *alertmanagerSet, am alertmanager) {
 				u := am.url().String()
 
 				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
@@ -450,7 +450,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 				n.metrics.sent.WithLabelValues(u).Add(float64(len(alerts)))
 
 				wg.Done()
-			}(am)
+			}(ams, am)
 		}
 		ams.mtx.RUnlock()
 	}
