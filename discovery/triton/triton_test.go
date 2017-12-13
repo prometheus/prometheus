@@ -14,6 +14,7 @@
 package triton
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,11 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/log"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/net/context"
 )
 
 var (
@@ -54,17 +54,14 @@ var (
 			CertFile:           "shouldnotexist.cert",
 		},
 	}
-	logger = log.Base()
 )
 
 func TestTritonSDNew(t *testing.T) {
-	td, err := New(logger, &conf)
+	td, err := New(nil, &conf)
 	assert.Nil(t, err)
 	assert.NotNil(t, td)
 	assert.NotNil(t, td.client)
 	assert.NotNil(t, td.interval)
-	assert.NotNil(t, td.logger)
-	assert.Equal(t, logger, td.logger, "td.logger equals logger")
 	assert.NotNil(t, td.sdConfig)
 	assert.Equal(t, conf.Account, td.sdConfig.Account)
 	assert.Equal(t, conf.DNSSuffix, td.sdConfig.DNSSuffix)
@@ -73,14 +70,14 @@ func TestTritonSDNew(t *testing.T) {
 }
 
 func TestTritonSDNewBadConfig(t *testing.T) {
-	td, err := New(logger, &badconf)
+	td, err := New(nil, &badconf)
 	assert.NotNil(t, err)
 	assert.Nil(t, td)
 }
 
 func TestTritonSDRun(t *testing.T) {
 	var (
-		td, err     = New(logger, &conf)
+		td, err     = New(nil, &conf)
 		ch          = make(chan []*config.TargetGroup)
 		ctx, cancel = context.WithCancel(context.Background())
 	)
@@ -132,7 +129,7 @@ func TestTritonSDRefreshMultipleTargets(t *testing.T) {
 
 func TestTritonSDRefreshNoServer(t *testing.T) {
 	var (
-		td, err = New(logger, &conf)
+		td, err = New(nil, &conf)
 	)
 	assert.Nil(t, err)
 	assert.NotNil(t, td)
@@ -146,7 +143,7 @@ func TestTritonSDRefreshNoServer(t *testing.T) {
 
 func testTritonSDRefresh(t *testing.T, dstr string) []model.LabelSet {
 	var (
-		td, err = New(logger, &conf)
+		td, err = New(nil, &conf)
 		s       = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, dstr)
 		}))

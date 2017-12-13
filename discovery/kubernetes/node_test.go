@@ -14,20 +14,20 @@
 package kubernetes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 type fakeInformer struct {
@@ -159,7 +159,7 @@ func newFakeNodeInformer() *fakeInformer {
 
 func makeTestNodeDiscovery() (*Node, *fakeInformer) {
 	i := newFakeNodeInformer()
-	return NewNode(log.Base(), i), i
+	return NewNode(nil, i), i
 }
 
 func makeNode(name, address string, labels map[string]string, annotations map[string]string) *v1.Node {

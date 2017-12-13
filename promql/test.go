@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -423,32 +423,6 @@ type clearCmd struct{}
 
 func (cmd clearCmd) String() string {
 	return "clear"
-}
-
-// RunAsBenchmark runs the test in benchmark mode.
-// This will not count any loads or non eval functions.
-func (t *Test) RunAsBenchmark(b *Benchmark) error {
-	for _, cmd := range t.cmds {
-
-		switch cmd.(type) {
-		// Only time the "eval" command.
-		case *evalCmd:
-			err := t.exec(cmd)
-			if err != nil {
-				return err
-			}
-		default:
-			if b.iterCount == 0 {
-				b.b.StopTimer()
-				err := t.exec(cmd)
-				if err != nil {
-					return err
-				}
-				b.b.StartTimer()
-			}
-		}
-	}
-	return nil
 }
 
 // Run executes the command sequence of the test. Until the maximum error number

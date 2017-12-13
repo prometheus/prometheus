@@ -14,44 +14,55 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"golang.org/x/net/context"
+	"github.com/prometheus/tsdb"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/stats"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type status string
 
 const (
 	statusSuccess status = "success"
-	statusError          = "error"
+	statusError   status = "error"
 )
 
 type errorType string
 
 const (
-	errorNone     errorType = ""
-	errorTimeout            = "timeout"
-	errorCanceled           = "canceled"
-	errorExec               = "execution"
-	errorBadData            = "bad_data"
-	errorInternal           = "internal"
+	errorNone        errorType = ""
+	errorTimeout     errorType = "timeout"
+	errorCanceled    errorType = "canceled"
+	errorExec        errorType = "execution"
+	errorBadData     errorType = "bad_data"
+	errorInternal    errorType = "internal"
+	errorUnavailable errorType = "unavailable"
 )
 
 var corsHeaders = map[string]string{
@@ -97,23 +108,41 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Storage     storage.Storage
+	Queryable   promql.Queryable
 	QueryEngine *promql.Engine
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 
-	now func() time.Time
+	now    func() time.Time
+	config func() config.Config
+	ready  func(http.HandlerFunc) http.HandlerFunc
+
+	db          func() *tsdb.DB
+	enableAdmin bool
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st storage.Storage, tr targetRetriever, ar alertmanagerRetriever) *API {
+func NewAPI(
+	qe *promql.Engine,
+	q promql.Queryable,
+	tr targetRetriever,
+	ar alertmanagerRetriever,
+	configFunc func() config.Config,
+	readyFunc func(http.HandlerFunc) http.HandlerFunc,
+	db func() *tsdb.DB,
+	enableAdmin bool,
+) *API {
 	return &API{
 		QueryEngine:           qe,
-		Storage:               st,
+		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now: time.Now,
+		now:         time.Now,
+		config:      configFunc,
+		ready:       readyFunc,
+		db:          db,
+		enableAdmin: enableAdmin,
 	}
 }
 
@@ -130,15 +159,17 @@ func (api *API) Register(r *route.Router) {
 				w.WriteHeader(http.StatusNoContent)
 			}
 		})
-		return prometheus.InstrumentHandler(name, httputil.CompressionHandler{
+		return api.ready(prometheus.InstrumentHandler(name, httputil.CompressionHandler{
 			Handler: hf,
-		})
+		}))
 	}
 
 	r.Options("/*path", instr("options", api.options))
 
 	r.Get("/query", instr("query", api.query))
+	r.Post("/query", instr("query", api.query))
 	r.Get("/query_range", instr("query_range", api.queryRange))
+	r.Post("/query_range", instr("query_range", api.queryRange))
 
 	r.Get("/label/:name/values", instr("label_values", api.labelValues))
 
@@ -147,11 +178,20 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/targets", instr("targets", api.targets))
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
+
+	r.Get("/status/config", instr("config", api.serveConfig))
+	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
+
+	// Admin APIs
+	r.Post("/admin/tsdb/delete_series", instr("delete_series", api.deleteSeries))
+	r.Post("/admin/tsdb/clean_tombstones", instr("clean_tombstones", api.cleanTombstones))
+	r.Post("/admin/tsdb/snapshot", instr("snapshot", api.snapshot))
 }
 
 type queryData struct {
-	ResultType promql.ValueType `json:"resultType"`
-	Result     promql.Value     `json:"result"`
+	ResultType promql.ValueType  `json:"resultType"`
+	Result     promql.Value      `json:"result"`
+	Stats      *stats.QueryStats `json:"stats,omitempty"`
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError) {
@@ -199,9 +239,17 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		}
 		return nil, &apiError{errorExec, res.Err}
 	}
+
+	// Optional stats field in response if parameter "stats" is not empty.
+	var qs *stats.QueryStats
+	if r.FormValue("stats") != "" {
+		qs = stats.NewQueryStats(qry.Stats())
+	}
+
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
+		Stats:      qs,
 	}, nil
 }
 
@@ -264,25 +312,32 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		return nil, &apiError{errorExec, res.Err}
 	}
 
+	// Optional stats field in response if parameter "stats" is not empty.
+	var qs *stats.QueryStats
+	if r.FormValue("stats") != "" {
+		qs = stats.NewQueryStats(qry.Stats())
+	}
+
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
+		Stats:      qs,
 	}, nil
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
-	name := route.Param(r.Context(), "name")
+	ctx := r.Context()
+	name := route.Param(ctx, "name")
 
 	if !model.LabelNameRE.MatchString(name) {
 		return nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}
 	}
-	q, err := api.Storage.Querier(math.MinInt64, math.MaxInt64)
+	q, err := api.Queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
 	defer q.Close()
 
-	// TODO(fabxc): add back request context.
 	vals, err := q.LabelValues(name)
 	if err != nil {
 		return nil, &apiError{errorExec, err}
@@ -333,20 +388,23 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Storage.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return nil, &apiError{errorExec, err}
 	}
 	defer q.Close()
 
-	var set storage.SeriesSet
-
+	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
+		s, err := q.Select(mset...)
+		if err != nil {
+			return nil, &apiError{errorExec, err}
+		}
+		sets = append(sets, s)
 	}
 
+	set := storage.NewMergeSeriesSet(sets)
 	metrics := []labels.Labels{}
-
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}
@@ -358,33 +416,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError) {
-	r.ParseForm()
-	if len(r.Form["match[]"]) == 0 {
-		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
-	}
-
-	// TODO(fabxc): temporarily disabled
-	return nil, &apiError{errorExec, fmt.Errorf("temporarily disabled")}
-
-	// numDeleted := 0
-	// for _, s := range r.Form["match[]"] {
-	// 	matchers, err := promql.ParseMetricSelector(s)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorBadData, err}
-	// 	}
-	// 	n, err := api.Storage.DropMetricsForLabelMatchers(context.TODO(), matchers...)
-	// 	if err != nil {
-	// 		return nil, &apiError{errorExec, err}
-	// 	}
-	// 	numDeleted += n
-	// }
-
-	// res := struct {
-	// 	NumDeleted int `json:"numDeleted"`
-	// }{
-	// 	NumDeleted: numDeleted,
-	// }
-	// return res, nil
+	return nil, &apiError{errorInternal, fmt.Errorf("not implemented")}
 }
 
 // Target has the information for one target.
@@ -449,6 +481,245 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return ams, nil
+}
+
+type prometheusConfig struct {
+	YAML string `json:"yaml"`
+}
+
+func (api *API) serveConfig(r *http.Request) (interface{}, *apiError) {
+	cfg := &prometheusConfig{
+		YAML: api.config().String(),
+	}
+	return cfg, nil
+}
+
+func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
+	req, err := remote.DecodeReadRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	}
+	for i, query := range req.Queries {
+		from, through, matchers, err := remote.FromQuery(query)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		querier, err := api.Queryable.Querier(r.Context(), from, through)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer querier.Close()
+
+		// Change equality matchers which match external labels
+		// to a matcher that looks for an empty label,
+		// as that label should not be present in the storage.
+		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
+		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
+		for _, m := range matchers {
+			value := externalLabels[model.LabelName(m.Name)]
+			if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
+				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				filteredMatchers = append(filteredMatchers, matcher)
+			} else {
+				filteredMatchers = append(filteredMatchers, m)
+			}
+		}
+
+		set, err := querier.Select(filteredMatchers...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp.Results[i], err = remote.ToQueryResult(set)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Add external labels back in, in sorted order.
+		sortedExternalLabels := make([]*prompb.Label, 0, len(externalLabels))
+		for name, value := range externalLabels {
+			sortedExternalLabels = append(sortedExternalLabels, &prompb.Label{
+				Name:  string(name),
+				Value: string(value),
+			})
+		}
+		sort.Slice(sortedExternalLabels, func(i, j int) bool {
+			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+		})
+
+		for _, ts := range resp.Results[i].Timeseries {
+			ts.Labels = mergeLabels(ts.Labels, sortedExternalLabels)
+		}
+	}
+
+	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (api *API) deleteSeries(r *http.Request) (interface{}, *apiError) {
+	if !api.enableAdmin {
+		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
+	}
+	db := api.db()
+	if db == nil {
+		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
+	}
+
+	r.ParseForm()
+	if len(r.Form["match[]"]) == 0 {
+		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}
+	}
+
+	var start time.Time
+	if t := r.FormValue("start"); t != "" {
+		var err error
+		start, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		start = minTime
+	}
+
+	var end time.Time
+	if t := r.FormValue("end"); t != "" {
+		var err error
+		end, err = parseTime(t)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+	} else {
+		end = maxTime
+	}
+
+	for _, s := range r.Form["match[]"] {
+		matchers, err := promql.ParseMetricSelector(s)
+		if err != nil {
+			return nil, &apiError{errorBadData, err}
+		}
+
+		var selector tsdbLabels.Selector
+		for _, m := range matchers {
+			selector = append(selector, convertMatcher(m))
+		}
+
+		if err := db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), selector...); err != nil {
+			return nil, &apiError{errorInternal, err}
+		}
+	}
+
+	return nil, nil
+}
+
+func (api *API) snapshot(r *http.Request) (interface{}, *apiError) {
+	if !api.enableAdmin {
+		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
+	}
+	db := api.db()
+	if db == nil {
+		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
+	}
+
+	var (
+		snapdir = filepath.Join(db.Dir(), "snapshots")
+		name    = fmt.Sprintf("%s-%x",
+			time.Now().UTC().Format("20060102T150405Z0700"),
+			rand.Int())
+		dir = filepath.Join(snapdir, name)
+	)
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %s", err)}
+	}
+	if err := db.Snapshot(dir); err != nil {
+		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot: %s", err)}
+	}
+
+	return struct {
+		Name string `json:"name"`
+	}{name}, nil
+}
+
+func (api *API) cleanTombstones(r *http.Request) (interface{}, *apiError) {
+	if !api.enableAdmin {
+		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
+	}
+	db := api.db()
+	if db == nil {
+		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
+	}
+
+	if err := db.CleanTombstones(); err != nil {
+		return nil, &apiError{errorInternal, err}
+	}
+
+	return nil, nil
+}
+
+func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
+	switch m.Type {
+	case labels.MatchEqual:
+		return tsdbLabels.NewEqualMatcher(m.Name, m.Value)
+
+	case labels.MatchNotEqual:
+		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
+
+	case labels.MatchRegexp:
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
+		if err != nil {
+			panic(err)
+		}
+		return res
+
+	case labels.MatchNotRegexp:
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
+		if err != nil {
+			panic(err)
+		}
+		return tsdbLabels.Not(res)
+	}
+	panic("storage.convertMatcher: invalid matcher type")
+}
+
+// mergeLabels merges two sets of sorted proto labels, preferring those in
+// primary to those in secondary when there is an overlap.
+func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
+	i, j := 0, 0
+	for i < len(primary) && j < len(secondary) {
+		if primary[i].Name < secondary[j].Name {
+			result = append(result, primary[i])
+			i++
+		} else if primary[i].Name > secondary[j].Name {
+			result = append(result, secondary[j])
+			j++
+		} else {
+			result = append(result, primary[i])
+			i++
+			j++
+		}
+	}
+	for ; i < len(primary); i++ {
+		result = append(result, primary[i])
+	}
+	for ; j < len(secondary); j++ {
+		result = append(result, secondary[j])
+	}
+	return result
 }
 
 func respond(w http.ResponseWriter, data interface{}) {

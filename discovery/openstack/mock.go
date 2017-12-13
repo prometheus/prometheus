@@ -182,9 +182,139 @@ func (m *SDMock) HandleAuthSuccessfully() {
 	})
 }
 
+const hypervisorListBody = `
+{
+    "hypervisors": [
+        {
+            "status": "enabled",
+            "service": {
+                "host": "nc14.cloud.com",
+                "disabled_reason": null,
+                "id": 16
+            },
+            "vcpus_used": 18,
+            "hypervisor_type": "QEMU",
+            "local_gb_used": 84,
+            "vcpus": 24,
+            "hypervisor_hostname": "nc14.cloud.com",
+            "memory_mb_used": 24064,
+            "memory_mb": 96484,
+            "current_workload": 1,
+            "state": "up",
+            "host_ip": "172.16.70.14",
+            "cpu_info": "{\"vendor\": \"Intel\", \"model\": \"IvyBridge\", \"arch\": \"x86_64\", \"features\": [\"pge\", \"avx\", \"clflush\", \"sep\", \"syscall\", \"vme\", \"dtes64\", \"msr\", \"fsgsbase\", \"xsave\", \"vmx\", \"erms\", \"xtpr\", \"cmov\", \"smep\", \"ssse3\", \"est\", \"pat\", \"monitor\", \"smx\", \"pbe\", \"lm\", \"tsc\", \"nx\", \"fxsr\", \"tm\", \"sse4.1\", \"pae\", \"sse4.2\", \"pclmuldq\", \"acpi\", \"tsc-deadline\", \"mmx\", \"osxsave\", \"cx8\", \"mce\", \"de\", \"tm2\", \"ht\", \"dca\", \"lahf_lm\", \"popcnt\", \"mca\", \"pdpe1gb\", \"apic\", \"sse\", \"f16c\", \"pse\", \"ds\", \"invtsc\", \"pni\", \"rdtscp\", \"aes\", \"sse2\", \"ss\", \"ds_cpl\", \"pcid\", \"fpu\", \"cx16\", \"pse36\", \"mtrr\", \"pdcm\", \"rdrand\", \"x2apic\"], \"topology\": {\"cores\": 6, \"cells\": 2, \"threads\": 2, \"sockets\": 1}}",
+            "running_vms": 10,
+            "free_disk_gb": 315,
+            "hypervisor_version": 2003000,
+            "disk_available_least": 304,
+            "local_gb": 399,
+            "free_ram_mb": 72420,
+            "id": 1
+        },
+        {
+            "status": "enabled",
+            "service": {
+                "host": "cc13.cloud.com",
+                "disabled_reason": null,
+                "id": 17
+            },
+            "vcpus_used": 1,
+            "hypervisor_type": "QEMU",
+            "local_gb_used": 20,
+            "vcpus": 24,
+            "hypervisor_hostname": "cc13.cloud.com",
+            "memory_mb_used": 2560,
+            "memory_mb": 96484,
+            "current_workload": 0,
+            "state": "up",
+            "host_ip": "172.16.70.13",
+            "cpu_info": "{\"vendor\": \"Intel\", \"model\": \"IvyBridge\", \"arch\": \"x86_64\", \"features\": [\"pge\", \"avx\", \"clflush\", \"sep\", \"syscall\", \"vme\", \"dtes64\", \"msr\", \"fsgsbase\", \"xsave\", \"vmx\", \"erms\", \"xtpr\", \"cmov\", \"smep\", \"ssse3\", \"est\", \"pat\", \"monitor\", \"smx\", \"pbe\", \"lm\", \"tsc\", \"nx\", \"fxsr\", \"tm\", \"sse4.1\", \"pae\", \"sse4.2\", \"pclmuldq\", \"acpi\", \"tsc-deadline\", \"mmx\", \"osxsave\", \"cx8\", \"mce\", \"de\", \"tm2\", \"ht\", \"dca\", \"lahf_lm\", \"popcnt\", \"mca\", \"pdpe1gb\", \"apic\", \"sse\", \"f16c\", \"pse\", \"ds\", \"invtsc\", \"pni\", \"rdtscp\", \"aes\", \"sse2\", \"ss\", \"ds_cpl\", \"pcid\", \"fpu\", \"cx16\", \"pse36\", \"mtrr\", \"pdcm\", \"rdrand\", \"x2apic\"], \"topology\": {\"cores\": 6, \"cells\": 2, \"threads\": 2, \"sockets\": 1}}",
+            "running_vms": 0,
+            "free_disk_gb": 379,
+            "hypervisor_version": 2003000,
+            "disk_available_least": 384,
+            "local_gb": 399,
+            "free_ram_mb": 93924,
+            "id": 721
+        }
+    ]
+}`
+
+// HandleHypervisorListSuccessfully mocks os-hypervisors detail call
+func (m *SDMock) HandleHypervisorListSuccessfully() {
+	m.Mux.HandleFunc("/os-hypervisors/detail", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(m.t, r, "GET")
+		testHeader(m.t, r, "X-Auth-Token", tokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		fmt.Fprintf(w, hypervisorListBody)
+	})
+}
+
 const serverListBody = `
 {
 	"servers": [
+		{
+			"status": "ERROR",
+			"updated": "2014-09-25T13:10:10Z",
+			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
+			"OS-EXT-SRV-ATTR:host": "devstack",
+			"addresses": {},
+			"links": [
+				{
+					"href": "http://104.130.131.164:8774/v2/fcad67a6189847c4aecfa3c81a05783b/servers/af9bcad9-3c87-477d-9347-b291eabf480e",
+					"rel": "self"
+				},
+				{
+					"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/servers/af9bcad9-3c87-477d-9347-b291eabf480e",
+					"rel": "bookmark"
+				}
+			],
+			"key_name": null,
+			"image": {
+				"id": "f90f6034-2570-4974-8351-6b49732ef2eb",
+				"links": [
+					{
+						"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/images/f90f6034-2570-4974-8351-6b49732ef2eb",
+						"rel": "bookmark"
+					}
+				]
+			},
+			"OS-EXT-STS:task_state": null,
+			"OS-EXT-STS:vm_state": "error",
+			"OS-EXT-SRV-ATTR:instance_name": "instance-00000010",
+			"OS-SRV-USG:launched_at": "2014-09-25T13:10:10.000000",
+			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
+			"flavor": {
+				"id": "1",
+				"links": [
+					{
+						"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/flavors/1",
+						"rel": "bookmark"
+					}
+				]
+			},
+			"id": "af9bcad9-3c87-477d-9347-b291eabf480e",
+			"security_groups": [
+				{
+					"name": "default"
+				}
+			],
+			"OS-SRV-USG:terminated_at": null,
+			"OS-EXT-AZ:availability_zone": "nova",
+			"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
+			"name": "herp2",
+			"created": "2014-09-25T13:10:02Z",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"OS-DCF:diskConfig": "MANUAL",
+			"os-extended-volumes:volumes_attached": [],
+			"accessIPv4": "",
+			"accessIPv6": "",
+			"progress": 0,
+			"OS-EXT-STS:power_state": 1,
+			"config_drive": "",
+			"metadata": {}
+		},
 		{
 			"status": "ACTIVE",
 			"updated": "2014-09-25T13:10:10Z",

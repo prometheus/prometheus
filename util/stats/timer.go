@@ -45,6 +45,11 @@ func (t *Timer) ElapsedTime() time.Duration {
 	return time.Since(t.start)
 }
 
+// Duration returns the duration value of the timer in seconds.
+func (t *Timer) Duration() float64 {
+	return t.duration.Seconds()
+}
+
 // Return a string representation of the Timer.
 func (t *Timer) String() string {
 	return fmt.Sprintf("%s: %s", t.name, t.duration)
@@ -53,7 +58,6 @@ func (t *Timer) String() string {
 // A TimerGroup represents a group of timers relevant to a single query.
 type TimerGroup struct {
 	timers map[fmt.Stringer]*Timer
-	child  *TimerGroup
 }
 
 // NewTimerGroup constructs a new TimerGroup.

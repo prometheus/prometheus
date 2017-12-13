@@ -19,19 +19,20 @@ type QueryTiming int
 
 // Query timings.
 const (
-	TotalEvalTime QueryTiming = iota
+	EvalTotalTime QueryTiming = iota
 	ResultSortTime
 	QueryPreparationTime
 	InnerEvalTime
 	ResultAppendTime
 	ExecQueueTime
+	ExecTotalTime
 )
 
 // Return a string representation of a QueryTiming identifier.
 func (s QueryTiming) String() string {
 	switch s {
-	case TotalEvalTime:
-		return "Total eval time"
+	case EvalTotalTime:
+		return "Eval total time"
 	case ResultSortTime:
 		return "Result sorting time"
 	case QueryPreparationTime:
@@ -42,7 +43,53 @@ func (s QueryTiming) String() string {
 		return "Result append time"
 	case ExecQueueTime:
 		return "Exec queue wait time"
+	case ExecTotalTime:
+		return "Exec total time"
 	default:
 		return "Unknown query timing"
 	}
+}
+
+// queryTimings with all query timers mapped to durations.
+type queryTimings struct {
+	EvalTotalTime        float64 `json:"evalTotalTime"`
+	ResultSortTime       float64 `json:"resultSortTime"`
+	QueryPreparationTime float64 `json:"queryPreparationTime"`
+	InnerEvalTime        float64 `json:"innerEvalTime"`
+	ResultAppendTime     float64 `json:"resultAppendTime"`
+	ExecQueueTime        float64 `json:"execQueueTime"`
+	ExecTotalTime        float64 `json:"execTotalTime"`
+}
+
+// QueryStats currently only holding query timings.
+type QueryStats struct {
+	Timings queryTimings `json:"timings,omitempty"`
+}
+
+// NewQueryStats makes a QueryStats struct with all QueryTimings found in the
+// given TimerGroup.
+func NewQueryStats(tg *TimerGroup) *QueryStats {
+	var qt queryTimings
+
+	for s, timer := range tg.timers {
+		switch s {
+		case EvalTotalTime:
+			qt.EvalTotalTime = timer.Duration()
+		case ResultSortTime:
+			qt.ResultSortTime = timer.Duration()
+		case QueryPreparationTime:
+			qt.QueryPreparationTime = timer.Duration()
+		case InnerEvalTime:
+			qt.InnerEvalTime = timer.Duration()
+		case ResultAppendTime:
+			qt.ResultAppendTime = timer.Duration()
+		case ExecQueueTime:
+			qt.ExecQueueTime = timer.Duration()
+		case ExecTotalTime:
+			qt.ExecTotalTime = timer.Duration()
+		}
+	}
+
+	qs := QueryStats{Timings: qt}
+	return &qs
 }

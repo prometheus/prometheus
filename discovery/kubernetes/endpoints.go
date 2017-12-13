@@ -14,17 +14,18 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
 
-	"github.com/prometheus/prometheus/config"
-
-	"github.com/prometheus/common/log"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 // Endpoints discovers new endpoint targets.
@@ -42,6 +43,9 @@ type Endpoints struct {
 
 // NewEndpoints returns a new endpoints discovery.
 func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
+	if l == nil {
+		l = log.NewNopLogger()
+	}
 	ep := &Endpoints{
 		logger:         l,
 		endpointsInf:   eps,
@@ -74,7 +78,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		if tg == nil {
 			return
 		}
-		e.logger.With("tg", fmt.Sprintf("%#v", tg)).Debugln("endpoints update")
+		level.Debug(e.logger).Log("msg", "endpoints update", "tg", fmt.Sprintf("%#v", tg))
 		select {
 		case <-ctx.Done():
 		case ch <- []*config.TargetGroup{tg}:
@@ -87,7 +91,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			eps, err := convertToEndpoints(o)
 			if err != nil {
-				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
+				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
 				return
 			}
 			send(e.buildEndpoints(eps))
@@ -97,7 +101,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			eps, err := convertToEndpoints(o)
 			if err != nil {
-				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
+				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
 				return
 			}
 			send(e.buildEndpoints(eps))
@@ -107,7 +111,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 
 			eps, err := convertToEndpoints(o)
 			if err != nil {
-				e.logger.With("err", err).Errorln("converting to Endpoints object failed")
+				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
 				return
 			}
 			send(&config.TargetGroup{Source: endpointsSource(eps)})
@@ -117,7 +121,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	serviceUpdate := func(o interface{}) {
 		svc, err := convertToService(o)
 		if err != nil {
-			e.logger.With("err", err).Errorln("converting to Service object failed")
+			level.Error(e.logger).Log("msg", "converting to Service object failed", "err", err)
 			return
 		}
 
@@ -129,7 +133,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			send(e.buildEndpoints(obj.(*apiv1.Endpoints)))
 		}
 		if err != nil {
-			e.logger.With("err", err).Errorln("retrieving endpoints failed")
+			level.Error(e.logger).Log("msg", "retrieving endpoints failed", "err", err)
 		}
 	}
 	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -154,18 +158,19 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 }
 
 func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
-	endpoints, isEndpoints := o.(*apiv1.Endpoints)
-	if !isEndpoints {
-		deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return nil, fmt.Errorf("Received unexpected object: %v", o)
-		}
-		endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
-		if !ok {
-			return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
-		}
+	endpoints, ok := o.(*apiv1.Endpoints)
+	if ok {
+		return endpoints, nil
 	}
 
+	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
+	if !ok {
+		return nil, fmt.Errorf("Received unexpected object: %v", o)
+	}
+	endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
+	if !ok {
+		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
+	}
 	return endpoints, nil
 }
 
@@ -309,7 +314,7 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 		return nil
 	}
 	if err != nil {
-		e.logger.With("err", err).Errorln("resolving pod ref failed")
+		level.Error(e.logger).Log("msg", "resolving pod ref failed", "err", err)
 	}
 	return obj.(*apiv1.Pod)
 }
@@ -324,7 +329,7 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *config.TargetGroup) {
 		return
 	}
 	if err != nil {
-		e.logger.With("err", err).Errorln("retrieving service failed")
+		level.Error(e.logger).Log("msg", "retrieving service failed", "err", err)
 	}
 	svc = obj.(*apiv1.Service)
 

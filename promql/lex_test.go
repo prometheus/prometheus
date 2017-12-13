@@ -252,9 +252,6 @@ var tests = []struct {
 		input:    "alert",
 		expected: []item{{itemAlert, 0, "alert"}},
 	}, {
-		input:    "keep_common",
-		expected: []item{{itemKeepCommon, 0, "keep_common"}},
-	}, {
 		input:    "if",
 		expected: []item{{itemIf, 0, "if"}},
 	}, {
@@ -395,6 +392,13 @@ var tests = []struct {
 		input: `[[]]`, fail: true,
 	}, {
 		input: `]`, fail: true,
+	},
+	// Test encoding issues.
+	{
+		input: "\"\xff\"", fail: true,
+	},
+	{
+		input: "`\xff`", fail: true,
 	},
 	// Test series description.
 	{

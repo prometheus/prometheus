@@ -14,27 +14,30 @@
 package triton
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
-	"golang.org/x/net/context"
 )
 
 const (
 	tritonLabel             = model.MetaLabelPrefix + "triton_"
-	tritonLabelMachineId    = tritonLabel + "machine_id"
+	tritonLabelMachineID    = tritonLabel + "machine_id"
 	tritonLabelMachineAlias = tritonLabel + "machine_alias"
 	tritonLabelMachineBrand = tritonLabel + "machine_brand"
 	tritonLabelMachineImage = tritonLabel + "machine_image"
-	tritonLabelServerId     = tritonLabel + "server_id"
+	tritonLabelServerID     = tritonLabel + "server_id"
 	namespace               = "prometheus"
 )
 
@@ -56,6 +59,7 @@ func init() {
 	prometheus.MustRegister(refreshDuration)
 }
 
+// DiscoveryResponse models a JSON response from the Triton discovery.
 type DiscoveryResponse struct {
 	Containers []struct {
 		ServerUUID  string `json:"server_uuid"`
@@ -77,12 +81,22 @@ type Discovery struct {
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *config.TritonSDConfig) (*Discovery, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	transport := &http.Transport{TLSClientConfig: tls}
+	transport := &http.Transport{
+		TLSClientConfig: tls,
+		DialContext: conntrack.NewDialContextFunc(
+			conntrack.DialWithTracing(),
+			conntrack.DialWithName("triton_sd"),
+		),
+	}
 	client := &http.Client{Transport: transport}
 
 	return &Discovery{
@@ -103,7 +117,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		d.logger.With("err", err).Error("Refreshing targets failed")
+		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 	} else {
 		ch <- []*config.TargetGroup{tg}
 	}
@@ -113,7 +127,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				d.logger.With("err", err).Error("Refreshing targets failed")
+				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 			} else {
 				ch <- []*config.TargetGroup{tg}
 			}
@@ -157,11 +171,11 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 
 	for _, container := range dr.Containers {
 		labels := model.LabelSet{
-			tritonLabelMachineId:    model.LabelValue(container.VMUUID),
+			tritonLabelMachineID:    model.LabelValue(container.VMUUID),
 			tritonLabelMachineAlias: model.LabelValue(container.VMAlias),
 			tritonLabelMachineBrand: model.LabelValue(container.VMBrand),
 			tritonLabelMachineImage: model.LabelValue(container.VMImageUUID),
-			tritonLabelServerId:     model.LabelValue(container.ServerUUID),
+			tritonLabelServerID:     model.LabelValue(container.ServerUUID),
 		}
 		addr := fmt.Sprintf("%s.%s:%d", container.VMUUID, d.sdConfig.DNSSuffix, d.sdConfig.Port)
 		labels[model.AddressLabel] = model.LabelValue(addr)

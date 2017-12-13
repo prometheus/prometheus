@@ -14,17 +14,17 @@
 package zookeeper
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
-	"golang.org/x/net/context"
 
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
@@ -63,8 +63,12 @@ func NewDiscovery(
 	logger log.Logger,
 	pf func(data []byte, path string) (model.LabelSet, error),
 ) *Discovery {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	conn, _, err := zk.Connect(srvs, timeout)
-	conn.SetLogger(treecache.ZookeeperLogger{})
+	conn.SetLogger(treecache.NewZookeeperLogger(logger))
 	if err != nil {
 		return nil
 	}
@@ -77,7 +81,7 @@ func NewDiscovery(
 		logger:  logger,
 	}
 	for _, path := range paths {
-		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates))
+		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates, logger))
 	}
 	return sd
 }

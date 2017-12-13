@@ -198,97 +198,61 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
-			return "", errSampleLimit
+			return 0, errSampleLimit
 		}
 	}
 	ref, err := app.Appender.Add(lset, t, v)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	return ref, nil
 }
 
-func (app *limitAppender) AddFast(ref string, t int64, v float64) error {
+func (app *limitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return errSampleLimit
 		}
 	}
-	if err := app.Appender.AddFast(ref, t, v); err != nil {
-		return err
-	}
-	return nil
+	err := app.Appender.AddFast(lset, ref, t, v)
+	return err
 }
 
-// Merges the ingested sample's metric with the label set. On a collision the
-// value of the ingested label is stored in a label prefixed with 'exported_'.
-type ruleLabelsAppender struct {
+type timeLimitAppender struct {
 	storage.Appender
-	labels labels.Labels
+
+	maxTime int64
 }
 
-func (app ruleLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	lb := labels.NewBuilder(lset)
-
-	for _, l := range app.labels {
-		lv := lset.Get(l.Name)
-		if lv != "" {
-			lb.Set(model.ExportedLabelPrefix+l.Name, lv)
-		}
-		lb.Set(l.Name, l.Value)
+func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+	if t > app.maxTime {
+		return 0, storage.ErrOutOfBounds
 	}
 
-	return app.Appender.Add(lb.Labels(), t, v)
-}
-
-type honorLabelsAppender struct {
-	storage.Appender
-	labels labels.Labels
-}
-
-// Merges the sample's metric with the given labels if the label is not
-// already present in the metric.
-// This also considers labels explicitly set to the empty string.
-func (app honorLabelsAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	lb := labels.NewBuilder(lset)
-
-	for _, l := range app.labels {
-		if lv := lset.Get(l.Name); lv == "" {
-			lb.Set(l.Name, l.Value)
-		}
+	ref, err := app.Appender.Add(lset, t, v)
+	if err != nil {
+		return 0, err
 	}
-	return app.Appender.Add(lb.Labels(), t, v)
+	return ref, nil
 }
 
-// Applies a set of relabel configurations to the sample's metric
-// before actually appending it.
-type relabelAppender struct {
-	storage.Appender
-	relabelings []*config.RelabelConfig
-}
-
-var errSeriesDropped = errors.New("series dropped")
-
-func (app relabelAppender) Add(lset labels.Labels, t int64, v float64) (string, error) {
-	lset = relabel.Process(lset, app.relabelings...)
-	if lset == nil {
-		return "", errSeriesDropped
+func (app *timeLimitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
+	if t > app.maxTime {
+		return storage.ErrOutOfBounds
 	}
-	return app.Appender.Add(lset, t, v)
+	err := app.Appender.AddFast(lset, ref, t, v)
+	return err
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns a nil label set if the target is dropped during relabeling.
 func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
-	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, fmt.Errorf("no address")
-	}
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -315,6 +279,9 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	// Check if the target was dropped.
 	if lset == nil {
 		return nil, nil, nil
+	}
+	if v := lset.Get(model.AddressLabel); v == "" {
+		return nil, nil, fmt.Errorf("no address")
 	}
 
 	lb = labels.NewBuilder(lset)
@@ -362,7 +329,15 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	if v := lset.Get(model.InstanceLabel); v == "" {
 		lb.Set(model.InstanceLabel, addr)
 	}
-	return lb.Labels(), preRelabelLabels, nil
+
+	res = lb.Labels()
+	for _, l := range res {
+		// Check label values are valid, drop the target if not.
+		if !model.LabelValue(l.Value).IsValid() {
+			return nil, nil, fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+		}
+	}
+	return res, preRelabelLabels, nil
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.

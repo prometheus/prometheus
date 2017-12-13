@@ -11,9 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO           := GO15VENDOREXPERIMENT=1 go
+GO           ?= go
+GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 PROMU        := $(FIRST_GOPATH)/bin/promu
+STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
 pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
 
 PREFIX                  ?= $(shell pwd)
@@ -25,12 +27,20 @@ ifdef DEBUG
 	bindata_flags = -debug
 endif
 
+STATICCHECK_IGNORE = \
+  github.com/prometheus/prometheus/discovery/kubernetes/kubernetes.go:SA1019 \
+  github.com/prometheus/prometheus/discovery/kubernetes/node.go:SA1019 \
+  github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
+  github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \
+  github.com/prometheus/prometheus/pkg/pool/pool.go:SA6002 \
+  github.com/prometheus/prometheus/promql/engine.go:SA6002 \
+  github.com/prometheus/prometheus/web/web.go:SA1019
 
-all: format build test
+all: format staticcheck build test
 
 style:
 	@echo ">> checking code style"
-	@! gofmt -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
+	@! $(GOFMT) -d $(shell find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 check_license:
 	@echo ">> checking license header"
@@ -52,6 +62,10 @@ format:
 vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
+
+staticcheck: $(STATICCHECK)
+	@echo ">> running staticcheck"
+	@$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 
 build: promu
 	@echo ">> building binaries"
@@ -75,7 +89,10 @@ promu:
 	@echo ">> fetching promu"
 	@GOOS=$(shell uname -s | tr A-Z a-z) \
 	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
+	GO="$(GO)" \
 	$(GO) get -u github.com/prometheus/promu
 
+$(FIRST_GOPATH)/bin/staticcheck:
+	@GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
-.PHONY: all style check_license format build test vet assets tarball docker promu
+.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck

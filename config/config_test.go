@@ -17,13 +17,14 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
-	"reflect"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
 
@@ -48,9 +49,8 @@ var expectedConf = &Config{
 	},
 
 	RuleFiles: []string{
-		"testdata/first.rules",
-		"/absolute/second.rules",
-		"testdata/my/*.rules",
+		filepath.FromSlash("testdata/first.rules"),
+		filepath.FromSlash("testdata/my/*.rules"),
 	},
 
 	RemoteWriteConfigs: []*RemoteWriteConfig{
@@ -66,10 +66,26 @@ var expectedConf = &Config{
 					Action:       RelabelDrop,
 				},
 			},
+			QueueConfig: DefaultQueueConfig,
 		},
 		{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
+			QueueConfig:   DefaultQueueConfig,
+		},
+	},
+
+	RemoteReadConfigs: []*RemoteReadConfig{
+		{
+			URL:           mustParseURL("http://remote1/read"),
+			RemoteTimeout: model.Duration(1 * time.Minute),
+			ReadRecent:    true,
+		},
+		{
+			URL:              mustParseURL("http://remote3/read"),
+			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ReadRecent:       false,
+			RequiredMatchers: model.LabelSet{"job": "special"},
 		},
 	},
 
@@ -85,7 +101,7 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			HTTPClientConfig: HTTPClientConfig{
-				BearerTokenFile: "testdata/valid_token_file",
+				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
 			ServiceDiscoveryConfig: ServiceDiscoveryConfig{
@@ -104,11 +120,11 @@ var expectedConf = &Config{
 
 				FileSDConfigs: []*FileSDConfig{
 					{
-						Files:           []string{"foo/*.slow.json", "foo/*.slow.yml", "single/file.yml"},
+						Files:           []string{"testdata/foo/*.slow.json", "testdata/foo/*.slow.yml", "testdata/single/file.yml"},
 						RefreshInterval: model.Duration(10 * time.Minute),
 					},
 					{
-						Files:           []string{"bar/*.yaml"},
+						Files:           []string{"testdata/bar/*.yaml"},
 						RefreshInterval: model.Duration(5 * time.Minute),
 					},
 				},
@@ -252,9 +268,9 @@ var expectedConf = &Config{
 						TagSeparator: DefaultConsulSDConfig.TagSeparator,
 						Scheme:       "https",
 						TLSConfig: TLSConfig{
-							CertFile:           "testdata/valid_cert_file",
-							KeyFile:            "testdata/valid_key_file",
-							CAFile:             "testdata/valid_ca_file",
+							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
+							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
 							InsecureSkipVerify: false,
 						},
 					},
@@ -283,8 +299,8 @@ var expectedConf = &Config{
 
 			HTTPClientConfig: HTTPClientConfig{
 				TLSConfig: TLSConfig{
-					CertFile: "testdata/valid_cert_file",
-					KeyFile:  "testdata/valid_key_file",
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 
 				BearerToken: "mysecret",
@@ -354,8 +370,8 @@ var expectedConf = &Config{
 						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
 						TLSConfig: TLSConfig{
-							CertFile: "testdata/valid_cert_file",
-							KeyFile:  "testdata/valid_key_file",
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
 					},
 				},
@@ -515,38 +531,40 @@ var expectedConf = &Config{
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	if _, err := LoadFile("testdata/global_timeout.good.yml"); err != nil {
-		t.Errorf("Error parsing %s: %s", "testdata/global_timeout.good.yml", err)
-	}
+	_, err := LoadFile("testdata/global_timeout.good.yml")
+	testutil.Ok(t, err)
 
 	c, err := LoadFile("testdata/conf.good.yml")
-	if err != nil {
-		t.Fatalf("Error parsing %s: %s", "testdata/conf.good.yml", err)
-	}
+	testutil.Ok(t, err)
 
-	bgot, err := yaml.Marshal(c)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	bexp, err := yaml.Marshal(expectedConf)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
 	expectedConf.original = c.original
+	testutil.Equals(t, expectedConf, c)
+}
 
-	if !reflect.DeepEqual(c, expectedConf) {
-		t.Fatalf("%s: unexpected config result: \n\n%s\n expected\n\n%s", "testdata/conf.good.yml", bgot, bexp)
-	}
+// YAML marshalling must not reveal authentication credentials.
+func TestElideSecrets(t *testing.T) {
+	c, err := LoadFile("testdata/conf.good.yml")
+	testutil.Ok(t, err)
 
-	// String method must not reveal authentication credentials.
-	s := c.String()
-	secretRe := regexp.MustCompile("<secret>")
-	matches := secretRe.FindAllStringIndex(s, -1)
-	if len(matches) != 6 || strings.Contains(s, "mysecret") {
-		t.Fatalf("config's String method reveals authentication credentials.")
-	}
+	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
 
+	config, err := yaml.Marshal(c)
+	testutil.Ok(t, err)
+	yamlConfig := string(config)
+
+	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
+	testutil.Assert(t, len(matches) == 6, "wrong number of secret matches found")
+	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
+		"yaml marshal reveals authentication credentials.")
+}
+
+func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
+	// Parse a valid file that sets a rule files with an absolute path
+	c, err := LoadFile(ruleFilesConfigFile)
+	testutil.Ok(t, err)
+
+	ruleFilesExpectedConf.original = c.original
+	testutil.Equals(t, ruleFilesExpectedConf, c)
 }
 
 var expectedErrors = []struct {
@@ -643,57 +661,45 @@ var expectedErrors = []struct {
 	}, {
 		filename: "unknown_global_attr.bad.yml",
 		errMsg:   "unknown fields in global config: nonexistent_field",
+	}, {
+		filename: "remote_read_url_missing.bad.yml",
+		errMsg:   `url for remote_read is empty`,
+	}, {
+		filename: "remote_write_url_missing.bad.yml",
+		errMsg:   `url for remote_write is empty`,
 	},
 }
 
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/" + ee.filename)
-		if err == nil {
-			t.Errorf("Expected error parsing %s but got none", ee.filename)
-			continue
-		}
-		if !strings.Contains(err.Error(), ee.errMsg) {
-			t.Errorf("Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
-		}
+		testutil.NotOk(t, err, "%s", ee.filename)
+		testutil.Assert(t, strings.Contains(err.Error(), ee.errMsg),
+			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }
 
 func TestBadStaticConfigs(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	var tg TargetGroup
 	err = json.Unmarshal(content, &tg)
-	if err == nil {
-		t.Errorf("Expected unmarshal error but got none.")
-	}
+	testutil.NotOk(t, err, "")
 }
 
 func TestEmptyConfig(t *testing.T) {
 	c, err := Load("")
-	if err != nil {
-		t.Fatalf("Unexpected error parsing empty config file: %s", err)
-	}
+	testutil.Ok(t, err)
 	exp := DefaultConfig
-
-	if !reflect.DeepEqual(*c, exp) {
-		t.Fatalf("want %v, got %v", exp, c)
-	}
+	testutil.Equals(t, exp, *c)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n")
-	if err != nil {
-		t.Fatalf("Unexpected error parsing empty config file: %s", err)
-	}
+	testutil.Ok(t, err)
 	exp := DefaultConfig
 	exp.original = "global:\n"
-
-	if !reflect.DeepEqual(*c, exp) {
-		t.Fatalf("want %v, got %v", exp, c)
-	}
+	testutil.Equals(t, exp, *c)
 }
 
 func TestTargetLabelValidity(t *testing.T) {
@@ -718,9 +724,8 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		if relabelTarget.Match([]byte(test.str)) != test.valid {
-			t.Fatalf("Expected %q to be %v", test.str, test.valid)
-		}
+		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
+			"Expected %q to be %v", test.str, test.valid)
 	}
 }
 

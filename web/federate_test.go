@@ -14,15 +14,14 @@
 package web
 
 import (
-	"bufio"
 	"bytes"
-	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -202,26 +201,14 @@ func TestFederation(t *testing.T) {
 		storage:     suite.Storage(),
 		queryEngine: suite.QueryEngine(),
 		now:         func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+		config: &config.Config{
+			GlobalConfig: config.GlobalConfig{},
+		},
 	}
 
 	for name, scenario := range scenarios {
-		h.externalLabels = scenario.externalLabels
-		req, err := http.ReadRequest(bufio.NewReader(strings.NewReader(
-			"GET http://example.org/federate?" + scenario.params + " HTTP/1.0\r\n\r\n",
-		)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// HTTP/1.0 was used above to avoid needing a Host field. Change it to 1.1 here.
-		req.Proto = "HTTP/1.1"
-		req.ProtoMinor = 1
-		req.Close = false
-		// 192.0.2.0/24 is "TEST-NET" in RFC 5737 for use solely in
-		// documentation and example source code and should not be
-		// used publicly.
-		req.RemoteAddr = "192.0.2.1:1234"
-		// TODO(beorn7): Once we are completely on Go1.7, replace the lines above by the following:
-		// req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
+		h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
+		req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
 		res := httptest.NewRecorder()
 		h.federation(res, req)
 		if got, want := res.Code, scenario.code; got != want {

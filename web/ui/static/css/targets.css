@@ -1,0 +1,52 @@
+h2.job_header {
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+h2.danger a {
+    color: rgb(242, 65, 65);
+}
+
+.filters button.unhealthy-targets {
+    background-color: white;
+    border-color: #adadad;
+    border-radius: 0;
+    color: #333;
+    font-size: 0.8em;
+}
+
+.filters button.unhealthy-targets.is-checked {
+    color: #fff;
+    background-color: #286090;
+    border-color: #204d74;
+}
+
+.table-container button.targets {
+    padding: 0.3em;
+    font-size: 0.6em;
+    border-radius: 0;
+    font-weight: 400;
+}
+
+.table-container table {
+    width: 100%;
+}
+
+.table-container table tr td {
+    height: auto;
+    word-wrap: break-word;
+    word-break: break-all;
+}
+
+td.endpoint, td.labels {
+    width: 25%;
+}
+
+td.state, td.last-scrape {
+    width: 10%;
+}
+
+td.errors {
+    width: 30%;
+}

@@ -128,7 +128,7 @@ func TestTargetURL(t *testing.T) {
 func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
-	lb.Set(model.AddressLabel, strings.TrimLeft(targetURL, "http://"))
+	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
 	return &Target{labels: lb.Labels()}
@@ -151,7 +151,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg)
+	c, err := httputil.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := httputil.NewClientFromConfig(cfg)
+	_, err := httputil.NewClientFromConfig(cfg, "test")
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}

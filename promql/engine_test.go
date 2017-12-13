@@ -14,13 +14,13 @@
 package promql
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
-
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -193,7 +193,7 @@ func TestEngineShutdown(t *testing.T) {
 		t.Fatalf("expected error on querying with canceled context but got none")
 	}
 	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
-		t.Fatalf("expected cancelation error, got %q", res2.Err)
+		t.Fatalf("expected cancellation error, got %q", res2.Err)
 	}
 }
 
@@ -253,12 +253,22 @@ load 10s
 		{
 			Query: "metric",
 			Result: Matrix{Series{
-				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 2, T: 2000}},
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
 				Metric: labels.FromStrings("__name__", "metric")},
 			},
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(2, 0),
 			Interval: time.Second,
+		},
+		{
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
 		},
 	}
 
@@ -285,7 +295,8 @@ load 10s
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	var ev *evaluator
+	ev := &evaluator{logger: log.NewNopLogger()}
+
 	var err error
 	defer ev.recover(&err)
 
@@ -299,7 +310,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
-	var ev *evaluator
+	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
 
 	e := fmt.Errorf("custom error")

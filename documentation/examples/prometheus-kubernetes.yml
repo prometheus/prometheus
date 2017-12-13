@@ -4,6 +4,9 @@
 #
 # Kubernetes labels will be added as Prometheus labels on metrics via the
 # `labelmap` relabeling action.
+#
+# If you are using Kubernetes 1.7.2 or earlier, please take note of the comments
+# for the kubernetes-cadvisor job; you will need to edit or remove this job.
 
 # Scrape config for API servers.
 #
@@ -47,6 +50,12 @@ scrape_configs:
     action: keep
     regex: default;kubernetes;https
 
+# Scrape config for nodes (kubelet).
+#
+# Rather than connecting directly to the node, the scrape is proxied though the
+# Kubernetes apiserver.  This means it will work if Prometheus is running out of
+# cluster, or can't connect to nodes for some other reason (e.g. because of
+# firewalling).
 - job_name: 'kubernetes-nodes'
 
   # Default to scraping over https. If required, just disable this or change to
@@ -61,13 +70,6 @@ scrape_configs:
   # <kubernetes_sd_config>.
   tls_config:
     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-    # If your node certificates are self-signed or use a different CA to the
-    # master CA, then disable certificate verification below. Note that
-    # certificate verification is an integral part of a secure infrastructure
-    # so this should only be disabled in a controlled environment. You can
-    # disable certificate verification by uncommenting the line below.
-    #
-    # insecure_skip_verify: true
   bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
   kubernetes_sd_configs:
@@ -82,6 +84,49 @@ scrape_configs:
     regex: (.+)
     target_label: __metrics_path__
     replacement: /api/v1/nodes/${1}/proxy/metrics
+
+# Scrape config for Kubelet cAdvisor.
+#
+# This is required for Kubernetes 1.7.3 and later, where cAdvisor metrics
+# (those whose names begin with 'container_') have been removed from the
+# Kubelet metrics endpoint.  This job scrapes the cAdvisor endpoint to
+# retrieve those metrics.
+#
+# In Kubernetes 1.7.0-1.7.2, these metrics are only exposed on the cAdvisor
+# HTTP endpoint; use "replacement: /api/v1/nodes/${1}:4194/proxy/metrics"
+# in that case (and ensure cAdvisor's HTTP server hasn't been disabled with
+# the --cadvisor-port=0 Kubelet flag).
+#
+# This job is not necessary and should be removed in Kubernetes 1.6 and
+# earlier versions, or it will cause the metrics to be scraped twice.
+- job_name: 'kubernetes-cadvisor'
+
+  # Default to scraping over https. If required, just disable this or change to
+  # `http`.
+  scheme: https
+
+  # This TLS & bearer token file config is used to connect to the actual scrape
+  # endpoints for cluster components. This is separate to discovery auth
+  # configuration because discovery & scraping are two separate concerns in
+  # Prometheus. The discovery auth config is automatic if Prometheus runs inside
+  # the cluster. Otherwise, more config options have to be provided within the
+  # <kubernetes_sd_config>.
+  tls_config:
+    ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+  kubernetes_sd_configs:
+  - role: node
+
+  relabel_configs:
+  - action: labelmap
+    regex: __meta_kubernetes_node_label_(.+)
+  - target_label: __address__
+    replacement: kubernetes.default.svc:443
+  - source_labels: [__meta_kubernetes_node_name]
+    regex: (.+)
+    target_label: __metrics_path__
+    replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
 
 # Scrape config for service endpoints.
 #
@@ -147,7 +192,7 @@ scrape_configs:
   - source_labels: [__address__]
     target_label: __param_target
   - target_label: __address__
-    replacement: blackbox
+    replacement: blackbox-exporter.example.com:9115
   - source_labels: [__param_target]
     target_label: instance
   - action: labelmap
@@ -156,6 +201,40 @@ scrape_configs:
     target_label: kubernetes_namespace
   - source_labels: [__meta_kubernetes_service_name]
     target_label: kubernetes_name
+
+# Example scrape config for probing ingresses via the Blackbox Exporter.
+#
+# The relabeling allows the actual ingress scrape endpoint to be configured
+# via the following annotations:
+#
+# * `prometheus.io/probe`: Only probe services that have a value of `true`
+- job_name: 'kubernetes-ingresses'
+
+  metrics_path: /probe
+  params:
+    module: [http_2xx]
+
+  kubernetes_sd_configs:
+    - role: ingress
+
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_ingress_annotation_prometheus_io_probe]
+      action: keep
+      regex: true
+    - source_labels: [__meta_kubernetes_ingress_scheme,__address__,__meta_kubernetes_ingress_path]
+      regex: (.+);(.+);(.+)
+      replacement: ${1}://${2}${3}
+      target_label: __param_target
+    - target_label: __address__
+      replacement: blackbox-exporter.example.com:9115
+    - source_labels: [__param_target]
+      target_label: instance
+    - action: labelmap
+      regex: __meta_kubernetes_ingress_label_(.+)
+    - source_labels: [__meta_kubernetes_namespace]
+      target_label: kubernetes_namespace
+    - source_labels: [__meta_kubernetes_ingress_name]
+      target_label: kubernetes_name
 
 # Example scrape config for pods
 #

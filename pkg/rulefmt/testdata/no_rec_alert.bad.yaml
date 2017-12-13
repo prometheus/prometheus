@@ -1,0 +1,4 @@
+groups:
+  - name: yolo
+    rules:
+      - expr: 1

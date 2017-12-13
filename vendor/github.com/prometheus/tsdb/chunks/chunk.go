@@ -14,8 +14,10 @@
 package chunks
 
 import (
-	"encoding/binary"
 	"fmt"
+	"sync"
+
+	"github.com/pkg/errors"
 )
 
 // Encoding is the identifier for a chunk encoding.
@@ -43,16 +45,14 @@ type Chunk interface {
 	Encoding() Encoding
 	Appender() (Appender, error)
 	Iterator() Iterator
+	NumSamples() int
 }
 
 // FromData returns a chunk from a byte slice of chunk data.
 func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
-		return &XORChunk{
-			b:   &bstream{count: 0, stream: d},
-			num: binary.BigEndian.Uint16(d),
-		}, nil
+		return &XORChunk{b: &bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("unknown chunk encoding: %d", e)
 }
@@ -67,4 +67,65 @@ type Iterator interface {
 	At() (int64, float64)
 	Err() error
 	Next() bool
+}
+
+// NewNopIterator returns a new chunk iterator that does not hold any data.
+func NewNopIterator() Iterator {
+	return nopIterator{}
+}
+
+type nopIterator struct{}
+
+func (nopIterator) At() (int64, float64) { return 0, 0 }
+func (nopIterator) Next() bool           { return false }
+func (nopIterator) Err() error           { return nil }
+
+type Pool interface {
+	Put(Chunk) error
+	Get(e Encoding, b []byte) (Chunk, error)
+}
+
+// Pool is a memory pool of chunk objects.
+type pool struct {
+	xor sync.Pool
+}
+
+func NewPool() Pool {
+	return &pool{
+		xor: sync.Pool{
+			New: func() interface{} {
+				return &XORChunk{b: &bstream{}}
+			},
+		},
+	}
+}
+
+func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
+	switch e {
+	case EncXOR:
+		c := p.xor.Get().(*XORChunk)
+		c.b.stream = b
+		c.b.count = 0
+		return c, nil
+	}
+	return nil, errors.Errorf("invalid encoding %q", e)
+}
+
+func (p *pool) Put(c Chunk) error {
+	switch c.Encoding() {
+	case EncXOR:
+		xc, ok := c.(*XORChunk)
+		// This may happen often with wrapped chunks. Nothing we can really do about
+		// it but returning an error would cause a lot of allocations again. Thus,
+		// we just skip it.
+		if !ok {
+			return nil
+		}
+		xc.b.stream = nil
+		xc.b.count = 0
+		p.xor.Put(c)
+	default:
+		return errors.Errorf("invalid encoding %q", c.Encoding())
+	}
+	return nil
 }

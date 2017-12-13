@@ -17,11 +17,11 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -55,14 +55,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var (
-		mint   = timestamp.FromTime(h.now().Time().Add(-promql.StalenessDelta))
+		mint   = timestamp.FromTime(h.now().Time().Add(-promql.LookbackDelta))
 		maxt   = timestamp.FromTime(h.now().Time())
 		format = expfmt.Negotiate(req.Header)
 		enc    = expfmt.NewEncoder(w, format)
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.storage.Querier(mint, maxt)
+	q, err := h.storage.Querier(req.Context(), mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -72,21 +72,24 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	vec := make(promql.Vector, 0, 8000)
 
-	var set storage.SeriesSet
-
+	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		set = storage.DeduplicateSeriesSet(set, q.Select(mset...))
-	}
-	if set == nil {
-		return
+		s, err := q.Select(mset...)
+		if err != nil {
+			federationErrors.Inc()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		sets = append(sets, s)
 	}
 
+	set := storage.NewMergeSeriesSet(sets)
 	for set.Next() {
 		s := set.At()
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it := storage.NewBuffer(s.Iterator(), int64(promql.StalenessDelta/1e6))
+		it := storage.NewBuffer(s.Iterator(), int64(promql.LookbackDelta/1e6))
 
 		var t int64
 		var v float64
@@ -121,7 +124,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	sort.Sort(byName(vec))
 
-	externalLabels := h.externalLabels.Clone()
+	externalLabels := h.config.GlobalConfig.ExternalLabels.Clone()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
 		externalLabels[model.InstanceLabel] = ""
 	}
@@ -160,7 +163,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
 						federationErrors.Inc()
-						log.With("err", err).Error("federation failed")
+						level.Error(h.logger).Log("msg", "federation failed", "err", err)
 						return
 					}
 				}
@@ -180,7 +183,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		if !nameSeen {
-			log.With("metric", s.Metric).Warn("Ignoring nameless metric during federation.")
+			level.Warn(h.logger).Log("msg", "Ignoring nameless metric during federation", "metric", s.Metric)
 			continue
 		}
 		// Attach global labels if they do not exist yet.
@@ -203,7 +206,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
 			federationErrors.Inc()
-			log.With("err", err).Error("federation failed")
+			level.Error(h.logger).Log("msg", "federation failed", "err", err)
 		}
 	}
 }

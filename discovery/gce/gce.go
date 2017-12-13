@@ -14,19 +14,19 @@
 package gce
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"google.golang.org/api/compute/v1"
-
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/compute/v1"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -81,6 +81,9 @@ type Discovery struct {
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *config.GCESDConfig, logger log.Logger) (*Discovery, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 	gd := &Discovery{
 		project:      conf.Project,
 		zone:         conf.Zone,
@@ -108,7 +111,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		d.logger.Error(err)
+		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 	} else {
 		select {
 		case ch <- []*config.TargetGroup{tg}:
@@ -124,7 +127,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				d.logger.Error(err)
+				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 				continue
 			}
 			select {

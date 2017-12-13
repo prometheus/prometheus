@@ -20,39 +20,81 @@ import (
 	"path/filepath"
 	"strings"
 
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	yaml "gopkg.in/yaml.v2"
+
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/cli"
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
-// CheckConfigCmd validates configuration files.
-func CheckConfigCmd(t cli.Term, args ...string) int {
-	if len(args) == 0 {
-		t.Infof("usage: promtool check-config <files>")
-		return 2
+func main() {
+	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.")
+	app.Version(version.Print("promtool"))
+	app.HelpFlag.Short('h')
+
+	checkCmd := app.Command("check", "Check the resources for validity.")
+
+	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
+	configFiles := checkConfigCmd.Arg(
+		"config-files",
+		"The config files to check.",
+	).Required().ExistingFiles()
+
+	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
+	ruleFiles := checkRulesCmd.Arg(
+		"rule-files",
+		"The rule files to check.",
+	).Required().ExistingFiles()
+
+	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+
+	updateCmd := app.Command("update", "Update the resources to newer formats.")
+	updateRulesCmd := updateCmd.Command("rules", "Update rules from the 1.x to 2.x format.")
+	ruleFilesUp := updateRulesCmd.Arg("rule-files", "The rule files to update.").Required().ExistingFiles()
+
+	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
+	case checkConfigCmd.FullCommand():
+		os.Exit(CheckConfig(*configFiles...))
+
+	case checkRulesCmd.FullCommand():
+		os.Exit(CheckRules(*ruleFiles...))
+
+	case checkMetricsCmd.FullCommand():
+		os.Exit(CheckMetrics())
+
+	case updateRulesCmd.FullCommand():
+		os.Exit(UpdateRules(*ruleFilesUp...))
+
 	}
+
+}
+
+// CheckConfig validates configuration files.
+func CheckConfig(files ...string) int {
 	failed := false
 
-	for _, arg := range args {
-		ruleFiles, err := checkConfig(t, arg)
+	for _, f := range files {
+		ruleFiles, err := checkConfig(f)
 		if err != nil {
-			t.Errorf("  FAILED: %s", err)
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
 		} else {
-			t.Infof("  SUCCESS: %d rule files found", len(ruleFiles))
+			fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
 		}
-		t.Infof("")
+		fmt.Println()
 
 		for _, rf := range ruleFiles {
-			if n, err := checkRules(t, rf); err != nil {
-				t.Errorf("  FAILED: %s", err)
+			if n, err := checkRules(rf); err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
 				failed = true
 			} else {
-				t.Infof("  SUCCESS: %d rules found", n)
+				fmt.Printf("  SUCCESS: %d rules found\n", n)
 			}
-			t.Infof("")
+			fmt.Println()
 		}
 	}
 	if failed {
@@ -70,14 +112,8 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(t cli.Term, filename string) ([]string, error) {
-	t.Infof("Checking %s", filename)
-
-	if stat, err := os.Stat(filename); err != nil {
-		return nil, fmt.Errorf("cannot get file info")
-	} else if stat.IsDir() {
-		return nil, fmt.Errorf("is a directory")
-	}
+func checkConfig(filename string) ([]string, error) {
+	fmt.Println("Checking", filename)
 
 	cfg, err := config.LoadFile(filename)
 	if err != nil {
@@ -116,6 +152,21 @@ func checkConfig(t cli.Term, filename string) ([]string, error) {
 				return nil, err
 			}
 		}
+
+		for _, filesd := range scfg.ServiceDiscoveryConfig.FileSDConfigs {
+			for _, file := range filesd.Files {
+				files, err := filepath.Glob(file)
+				if err != nil {
+					return nil, err
+				}
+				if len(files) != 0 {
+					// There was at least one match for the glob and we can assume checkFileExists
+					// for all matches would pass, we can continue the loop.
+					continue
+				}
+				fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
+			}
+		}
 	}
 
 	return ruleFiles, nil
@@ -139,22 +190,21 @@ func checkTLSConfig(tlsConfig config.TLSConfig) error {
 	return nil
 }
 
-// CheckRulesCmd validates rule files.
-func CheckRulesCmd(t cli.Term, args ...string) int {
-	if len(args) == 0 {
-		t.Infof("usage: promtool check-rules <files>")
-		return 2
-	}
+// CheckRules validates rule files.
+func CheckRules(files ...string) int {
 	failed := false
 
-	for _, arg := range args {
-		if n, err := checkRules(t, arg); err != nil {
-			t.Errorf("  FAILED: %s", err)
+	for _, f := range files {
+		if n, errs := checkRules(f); errs != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+			}
 			failed = true
 		} else {
-			t.Infof("  SUCCESS: %d rules found", n)
+			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
-		t.Infof("")
+		fmt.Println()
 	}
 	if failed {
 		return 1
@@ -162,54 +212,111 @@ func CheckRulesCmd(t cli.Term, args ...string) int {
 	return 0
 }
 
-func checkRules(t cli.Term, filename string) (int, error) {
-	t.Infof("Checking %s", filename)
+func checkRules(filename string) (int, []error) {
+	fmt.Println("Checking", filename)
 
-	if stat, err := os.Stat(filename); err != nil {
-		return 0, fmt.Errorf("cannot get file info")
-	} else if stat.IsDir() {
-		return 0, fmt.Errorf("is a directory")
+	rgs, errs := rulefmt.ParseFile(filename)
+	if errs != nil {
+		return 0, errs
 	}
+
+	numRules := 0
+	for _, rg := range rgs.Groups {
+		numRules += len(rg.Rules)
+	}
+
+	return numRules, nil
+}
+
+// UpdateRules updates the rule files.
+func UpdateRules(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		if err := updateRules(f); err != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			failed = true
+		}
+	}
+
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func updateRules(filename string) error {
+	fmt.Println("Updating", filename)
 
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	rules, err := promql.ParseStmts(string(content))
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return len(rules), nil
+
+	yamlRG := &rulefmt.RuleGroups{
+		Groups: []rulefmt.RuleGroup{{
+			Name: filename,
+		}},
+	}
+
+	yamlRules := make([]rulefmt.Rule, 0, len(rules))
+
+	for _, rule := range rules {
+		switch r := rule.(type) {
+		case *promql.AlertStmt:
+			yamlRules = append(yamlRules, rulefmt.Rule{
+				Alert:       r.Name,
+				Expr:        r.Expr.String(),
+				For:         model.Duration(r.Duration),
+				Labels:      r.Labels.Map(),
+				Annotations: r.Annotations.Map(),
+			})
+		case *promql.RecordStmt:
+			yamlRules = append(yamlRules, rulefmt.Rule{
+				Record: r.Name,
+				Expr:   r.Expr.String(),
+				Labels: r.Labels.Map(),
+			})
+		default:
+			panic("unknown statement type")
+		}
+	}
+
+	yamlRG.Groups[0].Rules = yamlRules
+	y, err := yaml.Marshal(yamlRG)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(filename+".yml", y, 0666)
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
-usage: promtool check-metrics
-
 Pass Prometheus metrics over stdin to lint them for consistency and correctness.
 
 examples:
 
-$ cat metrics.prom | promtool check-metrics
-$ curl -s http://localhost:9090/metrics | promtool check-metrics
+$ cat metrics.prom | promtool check metrics
+
+$ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
-// CheckMetricsCmd performs a linting pass on input metrics.
-func CheckMetricsCmd(t cli.Term, args ...string) int {
-	if len(args) != 0 {
-		t.Infof(checkMetricsUsage)
-		return 2
-	}
-
+// CheckMetrics performs a linting pass on input metrics.
+func CheckMetrics() int {
 	l := promlint.New(os.Stdin)
 	problems, err := l.Lint()
 	if err != nil {
-		t.Errorf("error while linting: %v", err)
+		fmt.Fprintln(os.Stderr, "error while linting:", err)
 		return 1
 	}
 
 	for _, p := range problems {
-		t.Errorf("%s: %s", p.Metric, p.Text)
+		fmt.Fprintln(os.Stderr, p.Metric, p.Text)
 	}
 
 	if len(problems) > 0 {
@@ -217,37 +324,4 @@ func CheckMetricsCmd(t cli.Term, args ...string) int {
 	}
 
 	return 0
-}
-
-// VersionCmd prints the binaries version information.
-func VersionCmd(t cli.Term, _ ...string) int {
-	fmt.Fprintln(os.Stdout, version.Print("promtool"))
-	return 0
-}
-
-func main() {
-	app := cli.NewApp("promtool")
-
-	app.Register("check-config", &cli.Command{
-		Desc: "validate configuration files for correctness",
-		Run:  CheckConfigCmd,
-	})
-
-	app.Register("check-rules", &cli.Command{
-		Desc: "validate rule files for correctness",
-		Run:  CheckRulesCmd,
-	})
-
-	app.Register("check-metrics", &cli.Command{
-		Desc: "validate metrics for correctness",
-		Run:  CheckMetricsCmd,
-	})
-
-	app.Register("version", &cli.Command{
-		Desc: "print the version of this binary",
-		Run:  VersionCmd,
-	})
-
-	t := cli.BasicTerm(os.Stdout, os.Stderr)
-	os.Exit(app.Run(t, os.Args[1:]...))
 }

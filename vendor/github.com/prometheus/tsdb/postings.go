@@ -15,33 +15,145 @@ package tsdb
 
 import (
 	"encoding/binary"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/prometheus/tsdb/labels"
 )
 
+// memPostings holds postings list for series ID per label pair. They may be written
+// to out of order.
+// ensureOrder() must be called once before any reads are done. This allows for quick
+// unordered batch fills on startup.
 type memPostings struct {
-	m map[term][]uint32
+	mtx     sync.RWMutex
+	m       map[labels.Label][]uint64
+	ordered bool
 }
 
-type term struct {
-	name, value string
+// newMemPoistings returns a memPostings that's ready for reads and writes.
+func newMemPostings() *memPostings {
+	return &memPostings{
+		m:       make(map[labels.Label][]uint64, 512),
+		ordered: true,
+	}
+}
+
+// newUnorderedMemPostings returns a memPostings that is not safe to be read from
+// until ensureOrder was called once.
+func newUnorderedMemPostings() *memPostings {
+	return &memPostings{
+		m:       make(map[labels.Label][]uint64, 512),
+		ordered: false,
+	}
+}
+
+// sortedKeys returns a list of sorted label keys of the postings.
+func (p *memPostings) sortedKeys() []labels.Label {
+	p.mtx.RLock()
+	keys := make([]labels.Label, 0, len(p.m))
+
+	for l := range p.m {
+		keys = append(keys, l)
+	}
+	p.mtx.RUnlock()
+
+	sort.Slice(keys, func(i, j int) bool {
+		if d := strings.Compare(keys[i].Name, keys[j].Name); d != 0 {
+			return d < 0
+		}
+		return keys[i].Value < keys[j].Value
+	})
+	return keys
 }
 
 // Postings returns an iterator over the postings list for s.
-func (p *memPostings) get(t term) Postings {
-	l := p.m[t]
+func (p *memPostings) get(name, value string) Postings {
+	p.mtx.RLock()
+	l := p.m[labels.Label{Name: name, Value: value}]
+	p.mtx.RUnlock()
+
 	if l == nil {
 		return emptyPostings
 	}
 	return newListPostings(l)
 }
 
+var allPostingsKey = labels.Label{}
+
+// ensurePostings ensures that all postings lists are sorted. After it returns all further
+// calls to add and addFor will insert new IDs in a sorted manner.
+func (p *memPostings) ensureOrder() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	if p.ordered {
+		return
+	}
+
+	n := runtime.GOMAXPROCS(0)
+	workc := make(chan []uint64)
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		go func() {
+			for l := range workc {
+				sort.Slice(l, func(i, j int) bool { return l[i] < l[j] })
+			}
+			wg.Done()
+		}()
+	}
+
+	for _, l := range p.m {
+		workc <- l
+	}
+	close(workc)
+	wg.Wait()
+
+	p.ordered = true
+}
+
 // add adds a document to the index. The caller has to ensure that no
 // term argument appears twice.
-func (p *memPostings) add(id uint32, terms ...term) {
-	for _, t := range terms {
-		p.m[t] = append(p.m[t], id)
+func (p *memPostings) add(id uint64, lset labels.Labels) {
+	p.mtx.Lock()
+
+	for _, l := range lset {
+		p.addFor(id, l)
 	}
+	p.addFor(id, allPostingsKey)
+
+	p.mtx.Unlock()
+}
+
+func (p *memPostings) addFor(id uint64, l labels.Label) {
+	list := append(p.m[l], id)
+	p.m[l] = list
+
+	if !p.ordered {
+		return
+	}
+	// There is no guarantee that no higher ID was inserted before as they may
+	// be generated independently before adding them to postings.
+	// We repair order violations on insert. The invariant is that the first n-1
+	// items in the list are already sorted.
+	for i := len(list) - 1; i >= 1; i-- {
+		if list[i] >= list[i-1] {
+			break
+		}
+		list[i], list[i-1] = list[i-1], list[i]
+	}
+}
+
+func expandPostings(p Postings) (res []uint64, err error) {
+	for p.Next() {
+		res = append(res, p.At())
+	}
+	return res, p.Err()
 }
 
 // Postings provides iterative access over a postings list.
@@ -51,10 +163,10 @@ type Postings interface {
 
 	// Seek advances the iterator to value v or greater and returns
 	// true if a value was found.
-	Seek(v uint32) bool
+	Seek(v uint64) bool
 
 	// At returns the value at the current iterator position.
-	At() uint32
+	At() uint64
 
 	// Err returns the last error of the iterator.
 	Err() error
@@ -66,11 +178,16 @@ type errPostings struct {
 }
 
 func (e errPostings) Next() bool       { return false }
-func (e errPostings) Seek(uint32) bool { return false }
-func (e errPostings) At() uint32       { return 0 }
+func (e errPostings) Seek(uint64) bool { return false }
+func (e errPostings) At() uint64       { return 0 }
 func (e errPostings) Err() error       { return e.err }
 
 var emptyPostings = errPostings{}
+
+// EmptyPostings returns a postings list that's always empty.
+func EmptyPostings() Postings {
+	return emptyPostings
+}
 
 // Intersect returns a new postings list over the intersection of the
 // input postings.
@@ -78,29 +195,28 @@ func Intersect(its ...Postings) Postings {
 	if len(its) == 0 {
 		return emptyPostings
 	}
-	a := its[0]
-
-	for _, b := range its[1:] {
-		a = newIntersectPostings(a, b)
+	if len(its) == 1 {
+		return its[0]
 	}
-	return a
+	l := len(its) / 2
+	return newIntersectPostings(Intersect(its[:l]...), Intersect(its[l:]...))
 }
 
 type intersectPostings struct {
 	a, b     Postings
 	aok, bok bool
-	cur      uint32
+	cur      uint64
 }
 
 func newIntersectPostings(a, b Postings) *intersectPostings {
 	return &intersectPostings{a: a, b: b}
 }
 
-func (it *intersectPostings) At() uint32 {
+func (it *intersectPostings) At() uint64 {
 	return it.cur
 }
 
-func (it *intersectPostings) doNext(id uint32) bool {
+func (it *intersectPostings) doNext(id uint64) bool {
 	for {
 		if !it.b.Seek(id) {
 			return false
@@ -126,7 +242,7 @@ func (it *intersectPostings) Next() bool {
 	return it.doNext(it.a.At())
 }
 
-func (it *intersectPostings) Seek(id uint32) bool {
+func (it *intersectPostings) Seek(id uint64) bool {
 	if !it.a.Seek(id) {
 		return false
 	}
@@ -145,26 +261,25 @@ func Merge(its ...Postings) Postings {
 	if len(its) == 0 {
 		return nil
 	}
-	a := its[0]
-
-	for _, b := range its[1:] {
-		a = newMergedPostings(a, b)
+	if len(its) == 1 {
+		return its[0]
 	}
-	return a
+	l := len(its) / 2
+	return newMergedPostings(Merge(its[:l]...), Merge(its[l:]...))
 }
 
 type mergedPostings struct {
 	a, b        Postings
 	initialized bool
 	aok, bok    bool
-	cur         uint32
+	cur         uint64
 }
 
 func newMergedPostings(a, b Postings) *mergedPostings {
 	return &mergedPostings{a: a, b: b}
 }
 
-func (it *mergedPostings) At() uint32 {
+func (it *mergedPostings) At() uint64 {
 	return it.cur
 }
 
@@ -206,7 +321,7 @@ func (it *mergedPostings) Next() bool {
 	return true
 }
 
-func (it *mergedPostings) Seek(id uint32) bool {
+func (it *mergedPostings) Seek(id uint64) bool {
 	if it.cur >= id {
 		return true
 	}
@@ -227,15 +342,15 @@ func (it *mergedPostings) Err() error {
 
 // listPostings implements the Postings interface over a plain list.
 type listPostings struct {
-	list []uint32
-	cur  uint32
+	list []uint64
+	cur  uint64
 }
 
-func newListPostings(list []uint32) *listPostings {
+func newListPostings(list []uint64) *listPostings {
 	return &listPostings{list: list}
 }
 
-func (it *listPostings) At() uint32 {
+func (it *listPostings) At() uint64 {
 	return it.cur
 }
 
@@ -249,7 +364,7 @@ func (it *listPostings) Next() bool {
 	return false
 }
 
-func (it *listPostings) Seek(x uint32) bool {
+func (it *listPostings) Seek(x uint64) bool {
 	// If the current value satisfies, then return.
 	if it.cur >= x {
 		return true
@@ -283,8 +398,8 @@ func newBigEndianPostings(list []byte) *bigEndianPostings {
 	return &bigEndianPostings{list: list}
 }
 
-func (it *bigEndianPostings) At() uint32 {
-	return it.cur
+func (it *bigEndianPostings) At() uint64 {
+	return uint64(it.cur)
 }
 
 func (it *bigEndianPostings) Next() bool {
@@ -296,15 +411,15 @@ func (it *bigEndianPostings) Next() bool {
 	return false
 }
 
-func (it *bigEndianPostings) Seek(x uint32) bool {
-	if it.cur >= x {
+func (it *bigEndianPostings) Seek(x uint64) bool {
+	if uint64(it.cur) >= x {
 		return true
 	}
 
 	num := len(it.list) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint32(it.list[i*4:]) >= x
+		return binary.BigEndian.Uint32(it.list[i*4:]) >= uint32(x)
 	})
 	if i < num {
 		j := i * 4

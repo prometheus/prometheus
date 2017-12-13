@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -27,11 +28,11 @@ import (
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	Name         string
-	ArgTypes     []ValueType
-	OptionalArgs int
-	ReturnType   ValueType
-	Call         func(ev *evaluator, args Expressions) Value
+	Name       string
+	ArgTypes   []ValueType
+	Variadic   int
+	ReturnType ValueType
+	Call       func(ev *evaluator, args Expressions) Value
 }
 
 // === time() float64 ===
@@ -172,7 +173,8 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 
 		sampledInterval := lastSample.T - previousSample.T
 		if sampledInterval == 0 {
-			// Avoid dividing by 0.float64
+			// Avoid dividing by 0.
+			continue
 		}
 
 		if isRate {
@@ -326,48 +328,6 @@ func funcClampMin(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
-// === drop_common_labels(node ValueTypeVector) Vector ===
-func funcDropCommonLabels(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	if len(vec) < 1 {
-		return Vector{}
-	}
-	common := map[string]string{}
-
-	for _, l := range vec[0].Metric {
-		// TODO(julius): Should we also drop common metric names?
-		if l.Name == labels.MetricName {
-			continue
-		}
-		common[l.Name] = l.Value
-	}
-
-	for _, el := range vec[1:] {
-		for k, v := range common {
-			for _, l := range el.Metric {
-				if l.Name == k && l.Value != v {
-					// Deletion of map entries while iterating over them is safe.
-					// From http://golang.org/ref/spec#For_statements:
-					// "If map entries that have not yet been reached are deleted during
-					// iteration, the corresponding iteration values will not be produced."
-					delete(common, k)
-				}
-			}
-		}
-	}
-
-	cnames := []string{}
-	for n := range common {
-		cnames = append(cnames, n)
-	}
-
-	for i := range vec {
-		el := &vec[i]
-		el.Metric = labels.NewBuilder(el.Metric).Del(cnames...).Labels()
-	}
-	return vec
-}
-
 // === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
 func funcRound(ev *evaluator, args Expressions) Value {
 	// round returns a number rounded to toNearest.
@@ -400,14 +360,6 @@ func funcScalar(ev *evaluator, args Expressions) Value {
 	}
 	return Scalar{
 		V: v[0].V,
-		T: ev.Timestamp,
-	}
-}
-
-// === count_scalar(Vector ValueTypeVector) float64 ===
-func funcCountScalar(ev *evaluator, args Expressions) Value {
-	return Scalar{
-		V: float64(len(ev.evalVector(args[0]))),
 		T: ev.Timestamp,
 	}
 }
@@ -698,7 +650,11 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 		if len(samples.Points) < 2 {
 			continue
 		}
-		slope, _ := linearRegression(samples.Points, 0)
+
+		// We pass in an arbitrary timestamp that is near the values in use
+		// to avoid floating point accuracy issues, see
+		// https://github.com/prometheus/prometheus/issues/2674
+		slope, _ := linearRegression(samples.Points, samples.Points[0].T)
 		resultSample := Sample{
 			Metric: dropMetricName(samples.Metric),
 			Point:  Point{V: slope, T: ev.Timestamp},
@@ -876,6 +832,56 @@ func funcVector(ev *evaluator, args Expressions) Value {
 	}
 }
 
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
+func funcLabelJoin(ev *evaluator, args Expressions) Value {
+	var (
+		vector    = ev.evalVector(args[0])
+		dst       = ev.evalString(args[1]).V
+		sep       = ev.evalString(args[2]).V
+		srcLabels = make([]string, len(args)-3)
+	)
+	for i := 3; i < len(args); i++ {
+		src := ev.evalString(args[i]).V
+		if !model.LabelName(src).IsValid() {
+			ev.errorf("invalid source label name in label_join(): %s", src)
+		}
+		srcLabels[i-3] = src
+	}
+
+	if !model.LabelName(dst).IsValid() {
+		ev.errorf("invalid destination label name in label_join(): %s", dst)
+	}
+
+	outSet := make(map[uint64]struct{}, len(vector))
+	for i := range vector {
+		el := &vector[i]
+
+		srcVals := make([]string, len(srcLabels))
+		for i, src := range srcLabels {
+			srcVals[i] = el.Metric.Get(src)
+		}
+
+		lb := labels.NewBuilder(el.Metric)
+
+		strval := strings.Join(srcVals, sep)
+		if strval == "" {
+			lb.Del(dst)
+		} else {
+			lb.Set(dst, strval)
+		}
+
+		el.Metric = lb.Labels()
+		h := el.Metric.Hash()
+
+		if _, exists := outSet[h]; exists {
+			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric)
+		} else {
+			outSet[h] = struct{}{}
+		}
+	}
+	return vector
+}
+
 // Common code for date related functions.
 func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Value {
 	var v Vector
@@ -883,7 +889,7 @@ func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Val
 		v = Vector{
 			Sample{
 				Metric: labels.Labels{},
-				Point:  Point{V: float64(ev.Timestamp) / 1000},
+				Point:  Point{V: float64(ev.Timestamp) / 1000, T: ev.Timestamp},
 			},
 		}
 	} else {
@@ -997,32 +1003,26 @@ var functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 		Call:       funcCountOverTime,
 	},
-	"count_scalar": {
-		Name:       "count_scalar",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeScalar,
-		Call:       funcCountScalar,
-	},
 	"days_in_month": {
-		Name:         "days_in_month",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcDaysInMonth,
+		Name:       "days_in_month",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcDaysInMonth,
 	},
 	"day_of_month": {
-		Name:         "day_of_month",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcDayOfMonth,
+		Name:       "day_of_month",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcDayOfMonth,
 	},
 	"day_of_week": {
-		Name:         "day_of_week",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcDayOfWeek,
+		Name:       "day_of_week",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcDayOfWeek,
 	},
 	"delta": {
 		Name:       "delta",
@@ -1035,12 +1035,6 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 		Call:       funcDeriv,
-	},
-	"drop_common_labels": {
-		Name:       "drop_common_labels",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		ReturnType: ValueTypeVector,
-		Call:       funcDropCommonLabels,
 	},
 	"exp": {
 		Name:       "exp",
@@ -1067,11 +1061,11 @@ var functions = map[string]*Function{
 		Call:       funcHoltWinters,
 	},
 	"hour": {
-		Name:         "hour",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcHour,
+		Name:       "hour",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcHour,
 	},
 	"idelta": {
 		Name:       "idelta",
@@ -1096,6 +1090,13 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString, ValueTypeString},
 		ReturnType: ValueTypeVector,
 		Call:       funcLabelReplace,
+	},
+	"label_join": {
+		Name:       "label_join",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString},
+		Variadic:   -1,
+		ReturnType: ValueTypeVector,
+		Call:       funcLabelJoin,
 	},
 	"ln": {
 		Name:       "ln",
@@ -1128,18 +1129,18 @@ var functions = map[string]*Function{
 		Call:       funcMinOverTime,
 	},
 	"minute": {
-		Name:         "minute",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcMinute,
+		Name:       "minute",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcMinute,
 	},
 	"month": {
-		Name:         "month",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcMonth,
+		Name:       "month",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcMonth,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
@@ -1166,11 +1167,11 @@ var functions = map[string]*Function{
 		Call:       funcResets,
 	},
 	"round": {
-		Name:         "round",
-		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeScalar},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcRound,
+		Name:       "round",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcRound,
 	},
 	"scalar": {
 		Name:       "scalar",
@@ -1233,11 +1234,11 @@ var functions = map[string]*Function{
 		Call:       funcVector,
 	},
 	"year": {
-		Name:         "year",
-		ArgTypes:     []ValueType{ValueTypeVector},
-		OptionalArgs: 1,
-		ReturnType:   ValueTypeVector,
-		Call:         funcYear,
+		Name:       "year",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcYear,
 	},
 }
 

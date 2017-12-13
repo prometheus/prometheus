@@ -33,11 +33,20 @@ func TestParse(t *testing.T) {
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
 go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
+go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
+go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
+go_gc_duration_seconds{ quantile="1.0", a="b" } 8.3835e-05
+go_gc_duration_seconds { quantile="1.0", a="b" } 8.3835e-05
+go_gc_duration_seconds { quantile= "1.0", a= "b" } 8.3835e-05
+go_gc_duration_seconds { quantile = "1.0", a = "b" } 8.3835e-05
 go_gc_duration_seconds_count 99
 some:aggregate:rate5m{a_b="c"}	1
 # HELP go_goroutines Number of goroutines that currently exist.
 # TYPE go_goroutines gauge
-go_goroutines 33  	123123`
+go_goroutines 33  	123123
+_metric_starting_with_underscore 1
+testmetric{_label_starting_with_underscore="foo"} 1
+testmetric{label="\"bar\""} 1`
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
 	int64p := func(x int64) *int64 { return &x }
@@ -61,6 +70,30 @@ go_goroutines 33  	123123`
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5", "a", "b"),
 		}, {
+			m:    `go_gc_duration_seconds{quantile="0.8", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.8", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds { quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds { quantile= "1.0", a= "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `go_gc_duration_seconds { quantile = "1.0", a = "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
 			m:    `go_gc_duration_seconds_count`,
 			v:    99,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
@@ -73,6 +106,18 @@ go_goroutines 33  	123123`
 			v:    33,
 			t:    int64p(123123),
 			lset: labels.FromStrings("__name__", "go_goroutines"),
+		}, {
+			m:    "_metric_starting_with_underscore",
+			v:    1,
+			lset: labels.FromStrings("__name__", "_metric_starting_with_underscore"),
+		}, {
+			m:    "testmetric{_label_starting_with_underscore=\"foo\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "_label_starting_with_underscore", "foo"),
+		}, {
+			m:    "testmetric{label=\"\\\"bar\\\"\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
 			m:    "null_byte_metric{a=\"abc\x00\"}",
 			v:    1,
@@ -102,6 +147,104 @@ go_goroutines 33  	123123`
 	require.NoError(t, p.Err())
 	require.Equal(t, len(exp), i)
 
+}
+
+func TestParseErrors(t *testing.T) {
+	cases := []struct {
+		input string
+		err   string
+	}{
+		{
+			input: "a",
+			err:   "no token found",
+		},
+		{
+			input: "a{b='c'} 1\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{b=\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{\xff=\"foo\"} 1\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{b=\"\xff\"} 1\n",
+			err:   "invalid UTF-8 label value",
+		},
+		{
+			input: "a true\n",
+			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
+		},
+		{
+			input: "something_weird{problem=\"",
+			err:   "no token found",
+		},
+	}
+
+	for _, c := range cases {
+		p := New([]byte(c.input))
+		for p.Next() {
+		}
+		require.NotNil(t, p.Err())
+		require.Equal(t, c.err, p.Err().Error())
+	}
+}
+
+func TestNullByteHandling(t *testing.T) {
+	cases := []struct {
+		input string
+		err   string
+	}{
+		{
+			input: "null_byte_metric{a=\"abc\x00\"} 1",
+			err:   "",
+		},
+		{
+			input: "a{b=\"\x00ss\"} 1\n",
+			err:   "",
+		},
+		{
+			input: "a{b=\"\x00\"} 1\n",
+			err:   "",
+		},
+		{
+			input: "a{b=\"\x00\"} 1\n",
+			err:   "",
+		},
+		{
+			input: "a{b=\x00\"ssss\"} 1\n",
+			err:   "no token found",
+		},
+		{
+			input: "a{b=\"\x00",
+			err:   "no token found",
+		},
+		{
+			input: "a{b\x00=\"hiih\"}	1",
+			err: "no token found",
+		},
+		{
+			input: "a\x00{b=\"ddd\"} 1",
+			err:   "no token found",
+		},
+	}
+
+	for _, c := range cases {
+		p := New([]byte(c.input))
+		for p.Next() {
+		}
+
+		if c.err == "" {
+			require.NoError(t, p.Err())
+			continue
+		}
+
+		require.Error(t, p.Err())
+		require.Equal(t, c.err, p.Err().Error())
+	}
 }
 
 const (

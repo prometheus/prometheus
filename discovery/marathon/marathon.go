@@ -14,19 +14,21 @@
 package marathon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/net/context"
-
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -43,6 +45,9 @@ const (
 	appLabel model.LabelName = metaLabelPrefix + "app"
 	// imageLabel is the label that is used for the docker image running the service.
 	imageLabel model.LabelName = metaLabelPrefix + "image"
+	// portIndexLabel is the integer port index when multiple ports are defined;
+	// e.g. PORT1 would have a value of '1'
+	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
 
@@ -90,6 +95,10 @@ type Discovery struct {
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery, error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -108,6 +117,10 @@ func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery,
 		Timeout: time.Duration(conf.Timeout),
 		Transport: &http.Transport{
 			TLSClientConfig: tls,
+			DialContext: conntrack.NewDialContextFunc(
+				conntrack.DialWithTracing(),
+				conntrack.DialWithName("marathon_sd"),
+			),
 		},
 	}
 
@@ -130,7 +143,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-time.After(d.refreshInterval):
 			err := d.updateServices(ctx, ch)
 			if err != nil {
-				d.logger.Errorf("Error while updating services: %s", err)
+				level.Error(d.logger).Log("msg", "Error while updating services", "err", err)
 			}
 		}
 	}
@@ -169,7 +182,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Targ
 			case <-ctx.Done():
 				return ctx.Err()
 			case ch <- []*config.TargetGroup{{Source: source}}:
-				d.logger.Debugf("Removing group for %s", source)
+				level.Debug(d.logger).Log("msg", "Removing group", "source", source)
 			}
 		}
 	}
@@ -209,7 +222,8 @@ type DockerContainer struct {
 
 // Container describes the runtime an app in running in.
 type Container struct {
-	Docker DockerContainer `json:"docker"`
+	Docker       DockerContainer `json:"docker"`
+	PortMappings []PortMappings  `json:"portMappings"`
 }
 
 // PortDefinitions describes which load balancer port you should access to access the service.
@@ -323,6 +337,7 @@ func targetsForApp(app *App) []model.LabelSet {
 			target := model.LabelSet{
 				model.AddressLabel: model.LabelValue(targetAddress),
 				taskLabel:          model.LabelValue(t.ID),
+				portIndexLabel:     model.LabelValue(strconv.Itoa(i)),
 			}
 			if i < len(app.PortDefinitions) {
 				for ln, lv := range app.PortDefinitions[i].Labels {
@@ -330,8 +345,19 @@ func targetsForApp(app *App) []model.LabelSet {
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}
 			}
+			// Prior to Marathon 1.5 the port mappings could be found at the path
+			// "container.docker.portMappings".  When support for Marathon 1.4
+			// is dropped then this section of code can be removed.
 			if i < len(app.Container.Docker.PortMappings) {
 				for ln, lv := range app.Container.Docker.PortMappings[i].Labels {
+					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
+					target[model.LabelName(ln)] = model.LabelValue(lv)
+				}
+			}
+			// In Marathon 1.5.x the container.docker.portMappings object was moved
+			// to container.portMappings.
+			if i < len(app.Container.PortMappings) {
+				for ln, lv := range app.Container.PortMappings[i].Labels {
 					ln = portMappingLabelPrefix + strutil.SanitizeLabelName(ln)
 					target[model.LabelName(ln)] = model.LabelValue(lv)
 				}

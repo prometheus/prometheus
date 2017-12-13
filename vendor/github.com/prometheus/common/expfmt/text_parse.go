@@ -315,6 +315,10 @@ func (p *TextParser) startLabelValue() stateFn {
 	if p.readTokenAsLabelValue(); p.err != nil {
 		return nil
 	}
+	if !model.LabelValue(p.currentToken.String()).IsValid() {
+		p.parseError(fmt.Sprintf("invalid label value %q", p.currentToken.String()))
+		return nil
+	}
 	p.currentLabelPair.Value = proto.String(p.currentToken.String())
 	// Special treatment of summaries:
 	// - Quantile labels are special, will result in dto.Quantile later.

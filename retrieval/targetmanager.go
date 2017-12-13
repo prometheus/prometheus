@@ -14,10 +14,11 @@
 package retrieval
 
 import (
+	"context"
 	"sync"
 
-	"github.com/prometheus/common/log"
-	"golang.org/x/net/context"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -39,6 +40,7 @@ type TargetManager struct {
 	// Set of unqiue targets by scrape configuration.
 	targetSets map[string]*targetSet
 	logger     log.Logger
+	starting   chan struct{}
 }
 
 type targetSet struct {
@@ -49,6 +51,7 @@ type targetSet struct {
 	sp *scrapePool
 }
 
+// Appendable returns an Appender.
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }
@@ -59,12 +62,13 @@ func NewTargetManager(app Appendable, logger log.Logger) *TargetManager {
 		append:     app,
 		targetSets: map[string]*targetSet{},
 		logger:     logger,
+		starting:   make(chan struct{}),
 	}
 }
 
 // Run starts background processing to handle target updates.
 func (tm *TargetManager) Run() {
-	tm.logger.Info("Starting target manager...")
+	level.Info(tm.logger).Log("msg", "Starting target manager...")
 
 	tm.mtx.Lock()
 
@@ -72,13 +76,15 @@ func (tm *TargetManager) Run() {
 	tm.reload()
 
 	tm.mtx.Unlock()
+	close(tm.starting)
 
 	tm.wg.Wait()
 }
 
 // Stop all background processing.
 func (tm *TargetManager) Stop() {
-	tm.logger.Infoln("Stopping target manager...")
+	<-tm.starting
+	level.Info(tm.logger).Log("msg", "Stopping target manager...")
 
 	tm.mtx.Lock()
 	// Cancel the base context, this will cause all target providers to shut down
@@ -90,7 +96,7 @@ func (tm *TargetManager) Stop() {
 	// Wait for all scrape inserts to complete.
 	tm.wg.Wait()
 
-	tm.logger.Debugln("Target manager stopped")
+	level.Info(tm.logger).Log("msg", "Target manager stopped")
 }
 
 func (tm *TargetManager) reload() {
@@ -106,7 +112,7 @@ func (tm *TargetManager) reload() {
 			ts = &targetSet{
 				ctx:    ctx,
 				cancel: cancel,
-				sp:     newScrapePool(ctx, scfg, tm.append),
+				sp:     newScrapePool(ctx, scfg, tm.append, log.With(tm.logger, "scrape_pool", scfg.JobName)),
 			}
 			ts.ts = discovery.NewTargetSet(ts.sp)
 

@@ -14,20 +14,95 @@
 package tsdb
 
 import (
+	"context"
+	"sync"
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
+// ErrNotReady is returned if the underlying storage is not ready yet.
+var ErrNotReady = errors.New("TSDB not ready")
+
+// ReadyStorage implements the Storage interface while allowing to set the actual
+// storage at a later point in time.
+type ReadyStorage struct {
+	mtx sync.RWMutex
+	a   *adapter
+}
+
+// Set the storage.
+func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
+}
+
+// Get the storage.
+func (s *ReadyStorage) Get() *tsdb.DB {
+	if x := s.get(); x != nil {
+		return x.db
+	}
+	return nil
+}
+
+func (s *ReadyStorage) get() *adapter {
+	s.mtx.RLock()
+	x := s.a
+	s.mtx.RUnlock()
+	return x
+}
+
+// StartTime implements the Storage interface.
+func (s *ReadyStorage) StartTime() (int64, error) {
+	if x := s.get(); x != nil {
+		return x.StartTime()
+	}
+	return int64(model.Latest), ErrNotReady
+}
+
+// Querier implements the Storage interface.
+func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	if x := s.get(); x != nil {
+		return x.Querier(ctx, mint, maxt)
+	}
+	return nil, ErrNotReady
+}
+
+// Appender implements the Storage interface.
+func (s *ReadyStorage) Appender() (storage.Appender, error) {
+	if x := s.get(); x != nil {
+		return x.Appender()
+	}
+	return nil, ErrNotReady
+}
+
+// Close implements the Storage interface.
+func (s *ReadyStorage) Close() error {
+	if x := s.Get(); x != nil {
+		return x.Close()
+	}
+	return nil
+}
+
+// Adapter return an adapter as storage.Storage.
+func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
+	return &adapter{db: db, startTimeMargin: startTimeMargin}
+}
+
 // adapter implements a storage.Storage around TSDB.
 type adapter struct {
-	db *tsdb.DB
+	db              *tsdb.DB
+	startTimeMargin int64
 }
 
 // Options of the DB storage.
@@ -37,35 +112,66 @@ type Options struct {
 
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
-	MinBlockDuration time.Duration
+	MinBlockDuration model.Duration
 
 	// The maximum timestamp range of compacted blocks.
-	MaxBlockDuration time.Duration
+	MaxBlockDuration model.Duration
 
 	// Duration for how long to retain data.
-	Retention time.Duration
+	Retention model.Duration
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
 }
 
-// Open returns a new storage backed by a tsdb database.
-func Open(path string, r prometheus.Registerer, opts *Options) (storage.Storage, error) {
-	db, err := tsdb.Open(path, nil, r, &tsdb.Options{
+// Open returns a new storage backed by a TSDB database that is configured for Prometheus.
+func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
+	if opts.MinBlockDuration > opts.MaxBlockDuration {
+		opts.MaxBlockDuration = opts.MinBlockDuration
+	}
+	// Start with smallest block duration and create exponential buckets until the exceed the
+	// configured maximum block duration.
+	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
+
+	for i, v := range rngs {
+		if v > int64(time.Duration(opts.MaxBlockDuration).Seconds()*1000) {
+			rngs = rngs[:i]
+			break
+		}
+	}
+
+	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
-		MinBlockDuration:  uint64(opts.MinBlockDuration.Seconds() * 1000),
-		MaxBlockDuration:  uint64(opts.MaxBlockDuration.Seconds() * 1000),
-		RetentionDuration: uint64(opts.Retention.Seconds() * 1000),
+		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
+		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return adapter{db: db}, nil
+	return db, nil
 }
 
-func (a adapter) Querier(mint, maxt int64) (storage.Querier, error) {
-	return querier{q: a.db.Querier(mint, maxt)}, nil
+// StartTime implements the Storage interface.
+func (a adapter) StartTime() (int64, error) {
+	var startTime int64
+
+	if len(a.db.Blocks()) > 0 {
+		startTime = a.db.Blocks()[0].Meta().MinTime
+	} else {
+		startTime = int64(time.Now().Unix() * 1000)
+	}
+
+	// Add a safety margin as it may take a few minutes for everything to spin up.
+	return startTime + a.startTimeMargin, nil
+}
+
+func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
+	q, err := a.db.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return querier{q: q}, nil
 }
 
 // Appender returns a new appender against the storage.
@@ -82,14 +188,17 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(oms ...*labels.Matcher) storage.SeriesSet {
+func (q querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {
 		ms = append(ms, convertMatcher(om))
 	}
-
-	return seriesSet{set: q.q.Select(ms...)}
+	set, err := q.q.Select(ms...)
+	if err != nil {
+		return nil, err
+	}
+	return seriesSet{set: set}, nil
 }
 
 func (q querier) LabelValues(name string) ([]string, error) { return q.q.LabelValues(name) }
@@ -114,21 +223,23 @@ type appender struct {
 	a tsdb.Appender
 }
 
-func (a appender) Add(lset labels.Labels, t int64, v float64) (string, error) {
+func (a appender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	ref, err := a.a.Add(toTSDBLabels(lset), t, v)
 
 	switch errors.Cause(err) {
 	case tsdb.ErrNotFound:
-		return "", storage.ErrNotFound
+		return 0, storage.ErrNotFound
 	case tsdb.ErrOutOfOrderSample:
-		return "", storage.ErrOutOfOrderSample
+		return 0, storage.ErrOutOfOrderSample
 	case tsdb.ErrAmendSample:
-		return "", storage.ErrDuplicateSampleForTimestamp
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	case tsdb.ErrOutOfBounds:
+		return 0, storage.ErrOutOfBounds
 	}
 	return ref, err
 }
 
-func (a appender) AddFast(ref string, t int64, v float64) error {
+func (a appender) AddFast(_ labels.Labels, ref uint64, t int64, v float64) error {
 	err := a.a.AddFast(ref, t, v)
 
 	switch errors.Cause(err) {
@@ -138,6 +249,8 @@ func (a appender) AddFast(ref string, t int64, v float64) error {
 		return storage.ErrOutOfOrderSample
 	case tsdb.ErrAmendSample:
 		return storage.ErrDuplicateSampleForTimestamp
+	case tsdb.ErrOutOfBounds:
+		return storage.ErrOutOfBounds
 	}
 	return err
 }
@@ -154,14 +267,14 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 		return tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
 
 	case labels.MatchRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
 		if err != nil {
 			panic(err)
 		}
 		return res
 
 	case labels.MatchNotRegexp:
-		res, err := tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
+		res, err := tsdbLabels.NewRegexpMatcher(m.Name, "^(?:"+m.Value+")$")
 		if err != nil {
 			panic(err)
 		}

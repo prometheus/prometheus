@@ -137,6 +137,26 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	require.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
+// At() should not be called once Next() returns false.
+func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
+	done := false
+
+	m := &mockSeriesIterator{
+		seek: func(int64) bool { return false },
+		at: func() (int64, float64) {
+			require.False(t, done)
+			done = true
+			return 0, 0
+		},
+		next: func() bool { return !done },
+		err:  func() error { return nil },
+	}
+
+	it := NewBuffer(m, 60)
+	it.Next()
+	it.Next()
+}
+
 func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	var (
 		samples []sample
@@ -165,16 +185,16 @@ func BenchmarkBufferedSeriesIterator(b *testing.B) {
 }
 
 type mockSeriesIterator struct {
-	seek   func(int64) bool
-	values func() (int64, float64)
-	next   func() bool
-	err    func() error
+	seek func(int64) bool
+	at   func() (int64, float64)
+	next func() bool
+	err  func() error
 }
 
-func (m *mockSeriesIterator) Seek(t int64) bool        { return m.seek(t) }
-func (m *mockSeriesIterator) Values() (int64, float64) { return m.values() }
-func (m *mockSeriesIterator) Next() bool               { return m.next() }
-func (m *mockSeriesIterator) Err() error               { return m.err() }
+func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
+func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
+func (m *mockSeriesIterator) Next() bool           { return m.next() }
+func (m *mockSeriesIterator) Err() error           { return m.err() }
 
 type mockSeries struct {
 	labels   func() labels.Labels

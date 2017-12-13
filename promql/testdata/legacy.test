@@ -45,10 +45,6 @@ eval instant at 50m SUM(http_requests{instance="0"}) BY(job)
 	{job="api-server"} 400
 	{job="app-server"} 1200
 
-eval instant at 50m SUM(http_requests{instance="0"}) BY(job) KEEP_COMMON
-	{instance="0", job="api-server"} 400
-	{instance="0", job="app-server"} 1200
-
 eval instant at 50m SUM(http_requests) BY (job)
 	{job="api-server"} 1000
 	{job="app-server"} 2600
@@ -125,14 +121,6 @@ eval instant at 50m rate(testcounter_zero_cutoff[20m])
 	{start="5m"} 0.6
 
 
-# count_scalar for a non-empty vector should return scalar element count.
-eval instant at 50m count_scalar(http_requests)
-	8
-
-# count_scalar for an empty vector should return scalar 0.
-eval instant at 50m count_scalar(nonexistent)
-	0
-
 eval instant at 50m http_requests{group!="canary"}
 	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="production", instance="0", job="app-server"} 500
@@ -148,9 +136,6 @@ eval instant at 50m http_requests{job=~".+-server",group!="canary"}
 eval instant at 50m http_requests{job!~"api-.+",group!="canary"}
 	http_requests{group="production", instance="1", job="app-server"} 600
 	http_requests{group="production", instance="0", job="app-server"} 500
-
-eval instant at 50m count_scalar(http_requests{job=~"server"})
-	0
 
 eval instant at 50m http_requests{group="production",job=~"api-.+"}
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -244,10 +229,6 @@ eval instant at 50m sum_over_time(http_requests{group="production",job="api-serv
 eval instant at 50m time()
 	3000
 
-eval instant at 50m drop_common_labels(http_requests{group="production",job="api-server"})
-	http_requests{instance="0"} 100
-	http_requests{instance="1"} 200
-
 eval instant at 50m {__name__=~".+"}
 	http_requests{group="canary", instance="0", job="api-server"} 300
 	http_requests{group="canary", instance="0", job="app-server"} 700
@@ -283,11 +264,9 @@ eval instant at 50m absent(nonexistent)
 eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
 	{instance="testinstance", job="testjob"} 1
 
-eval instant at 50m count_scalar(absent(http_requests))
-	0
+eval instant at 50m absent(http_requests)
 
-eval instant at 50m count_scalar(absent(sum(http_requests)))
-	0
+eval instant at 50m absent(sum(http_requests))
 
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
 	{} 1
@@ -370,30 +349,6 @@ eval instant at 50m log10(vector_matching_a - 20)
 
 
 # Matrix tests.
-
-clear
-load 1h
-	testmetric{testlabel="1"} 1 1
-	testmetric{testlabel="2"} _ 2
-
-eval instant at 0h drop_common_labels(testmetric)
-	testmetric 1
-
-eval instant at 1h drop_common_labels(testmetric)
-	testmetric{testlabel="1"} 1
-	testmetric{testlabel="2"} 2
-
-clear
-load 1h
-	testmetric{testlabel="1"} 1 1
-	testmetric{testlabel="2"} 2 _
-
-eval instant at 0h sum(testmetric) keep_common
-	{} 3
-
-eval instant at 1h sum(testmetric) keep_common
-	{testlabel="1"} 1
-
 clear
 load 1h
 	testmetric{aa="bb"} 1

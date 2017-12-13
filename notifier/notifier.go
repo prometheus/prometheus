@@ -15,6 +15,7 @@ package notifier
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -26,10 +27,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"golang.org/x/net/context"
+	old_ctx "golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
@@ -122,7 +124,7 @@ type Options struct {
 	ExternalLabels model.LabelSet
 	RelabelConfigs []*config.RelabelConfig
 	// Used for sending HTTP requests to the Alertmanager.
-	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
+	Do func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
 }
@@ -211,6 +213,9 @@ func New(o *Options, logger log.Logger) *Notifier {
 	if o.Do == nil {
 		o.Do = ctxhttp.Do
 	}
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 
 	n := &Notifier{
 		queue:  make([]*Alert, 0, o.QueueCapacity),
@@ -223,7 +228,14 @@ func New(o *Options, logger log.Logger) *Notifier {
 
 	queueLenFunc := func() float64 { return float64(n.queueLen()) }
 	alertmanagersDiscoveredFunc := func() float64 { return float64(len(n.Alertmanagers())) }
-	n.metrics = newAlertMetrics(o.Registerer, o.QueueCapacity, queueLenFunc, alertmanagersDiscoveredFunc)
+
+	n.metrics = newAlertMetrics(
+		o.Registerer,
+		o.QueueCapacity,
+		queueLenFunc,
+		alertmanagersDiscoveredFunc,
+	)
+
 	return n
 }
 
@@ -337,7 +349,7 @@ func (n *Notifier) Send(alerts ...*Alert) {
 	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
 		alerts = alerts[d:]
 
-		n.logger.Warnf("Alert batch larger than queue capacity, dropping %d alerts", d)
+		level.Warn(n.logger).Log("msg", "Alert batch larger than queue capacity, dropping alerts", "num_dropped", d)
 		n.metrics.dropped.Add(float64(d))
 	}
 
@@ -346,7 +358,7 @@ func (n *Notifier) Send(alerts ...*Alert) {
 	if d := (len(n.queue) + len(alerts)) - n.opts.QueueCapacity; d > 0 {
 		n.queue = n.queue[d:]
 
-		n.logger.Warnf("Alert notification queue full, dropping %d alerts", d)
+		level.Warn(n.logger).Log("msg", "Alert notification queue full, dropping alerts", "num_dropped", d)
 		n.metrics.dropped.Add(float64(d))
 	}
 	n.queue = append(n.queue, alerts...)
@@ -404,7 +416,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 
 	b, err := json.Marshal(alerts)
 	if err != nil {
-		n.logger.Errorf("Encoding alerts failed: %s", err)
+		level.Error(n.logger).Log("msg", "Encoding alerts failed", "err", err)
 		return false
 	}
 
@@ -425,11 +437,11 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 			ctx, cancel := context.WithTimeout(n.ctx, ams.cfg.Timeout)
 			defer cancel()
 
-			go func(am alertmanager) {
+			go func(ams *alertmanagerSet, am alertmanager) {
 				u := am.url().String()
 
 				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
-					n.logger.With("alertmanager", u).With("count", len(alerts)).Errorf("Error sending alerts: %s", err)
+					level.Error(n.logger).Log("alertmanager", u, "count", len(alerts), "msg", "Error sending alert", "err", err)
 					n.metrics.errors.WithLabelValues(u).Inc()
 				} else {
 					atomic.AddUint64(&numSuccess, 1)
@@ -438,7 +450,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 				n.metrics.sent.WithLabelValues(u).Add(float64(len(alerts)))
 
 				wg.Done()
-			}(am)
+			}(ams, am)
 		}
 		ams.mtx.RUnlock()
 	}
@@ -468,7 +480,7 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 
 // Stop shuts down the notification handler.
 func (n *Notifier) Stop() {
-	n.logger.Info("Stopping notification handler...")
+	level.Info(n.logger).Log("msg", "Stopping notification handler...")
 	n.cancel()
 }
 
@@ -504,7 +516,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
-	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig)
+	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +538,7 @@ func (s *alertmanagerSet) Sync(tgs []*config.TargetGroup) {
 	for _, tg := range tgs {
 		ams, err := alertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
-			s.logger.With("err", err).Error("generating discovered Alertmanagers failed")
+			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
 			continue
 		}
 		all = append(all, ams...)

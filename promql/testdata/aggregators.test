@@ -42,7 +42,7 @@ eval instant at 50m sum by () (http_requests{job="api-server"})
   {} 1000
 
 # No by/without.
-eval instant at 50m sum (http_requests{job="api-server"})
+eval instant at 50m sum(http_requests{job="api-server"})
   {} 1000
 
 # Empty without.
@@ -62,16 +62,16 @@ eval instant at 50m sum(http_requests) by (job) + min(http_requests) by (job) + 
   {job="app-server"} 4550
   {job="api-server"} 1750
 
-# Test alternative "by"-clause order with "keep_common".
-eval instant at 50m sum by (group) keep_common (http_requests{job="api-server"})
-  {group="canary", job="api-server"} 700
-  {group="production", job="api-server"} 300
+# Test alternative "by"-clause order.
+eval instant at 50m sum by (group) (http_requests{job="api-server"})
+  {group="canary"} 700
+  {group="production"} 300
 
 # Test both alternative "by"-clause orders in one expression.
 # Public health warning: stick to one form within an expression (or even
 # in an organization), or risk serious user confusion.
-eval instant at 50m sum(sum by (group) keep_common (http_requests{job="api-server"})) by (job)
-  {job="api-server"} 1000
+eval instant at 50m sum(sum by (group) (http_requests{job="api-server"})) by (job)
+  {} 1000
 
 
 

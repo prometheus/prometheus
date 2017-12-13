@@ -27,27 +27,44 @@ func (a nopAppendable) Appender() (storage.Appender, error) {
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(labels.Labels, int64, float64) (string, error) { return "", nil }
-func (a nopAppender) AddFast(string, int64, float64) error              { return nil }
-func (a nopAppender) Commit() error                                     { return nil }
-func (a nopAppender) Rollback() error                                   { return nil }
+func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error)   { return 0, nil }
+func (a nopAppender) AddFast(labels.Labels, uint64, int64, float64) error { return nil }
+func (a nopAppender) Commit() error                                       { return nil }
+func (a nopAppender) Rollback() error                                     { return nil }
 
+// collectResultAppender records all samples that were added through the appender.
+// It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
+	next   storage.Appender
 	result []sample
 }
 
-func (a *collectResultAppender) AddFast(ref string, t int64, v float64) error {
-	// Not implemented.
-	return storage.ErrNotFound
-}
-
-func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (string, error) {
+func (a *collectResultAppender) AddFast(m labels.Labels, ref uint64, t int64, v float64) error {
+	if a.next == nil {
+		return storage.ErrNotFound
+	}
+	err := a.next.AddFast(m, ref, t, v)
+	if err != nil {
+		return err
+	}
 	a.result = append(a.result, sample{
 		metric: m,
 		t:      t,
 		v:      v,
 	})
-	return "", nil
+	return err
+}
+
+func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
+	a.result = append(a.result, sample{
+		metric: m,
+		t:      t,
+		v:      v,
+	})
+	if a.next == nil {
+		return 0, nil
+	}
+	return a.next.Add(m, t, v)
 }
 
 func (a *collectResultAppender) Commit() error   { return nil }

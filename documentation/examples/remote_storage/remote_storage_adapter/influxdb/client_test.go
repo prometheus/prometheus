@@ -103,7 +103,7 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 		Password: "testpass",
 		Timeout:  time.Minute,
 	}
-	c := NewClient(conf, "test_db", "default")
+	c := NewClient(nil, conf, "test_db", "default")
 
 	if err := c.Write(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strings"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -38,6 +39,8 @@ type lexer struct {
 	offsets      []int
 	mstart, mend int
 	nextMstart   int
+
+	state int
 }
 
 const eof = 0
@@ -49,6 +52,11 @@ func (l *lexer) next() byte {
 		return eof
 	}
 	c := l.b[l.i]
+
+	// Consume null byte when encountered in label-value.
+	if c == eof && (l.state == lstateLValueIn || l.state == lstateLValue) {
+		return l.next()
+	}
 	return c
 }
 
@@ -110,18 +118,33 @@ func (p *Parser) Metric(l *labels.Labels) string {
 		Value: s[:p.l.offsets[0]-p.l.mstart],
 	})
 
-	for i := 1; i < len(p.l.offsets); i += 3 {
+	for i := 1; i < len(p.l.offsets); i += 4 {
 		a := p.l.offsets[i] - p.l.mstart
 		b := p.l.offsets[i+1] - p.l.mstart
 		c := p.l.offsets[i+2] - p.l.mstart
+		d := p.l.offsets[i+3] - p.l.mstart
 
-		*l = append(*l, labels.Label{Name: s[a:b], Value: s[b+2 : c]})
+		// Replacer causes allocations. Replace only when necessary.
+		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
+			*l = append(*l, labels.Label{Name: s[a:b], Value: replacer.Replace(s[c:d])})
+			continue
+		}
+
+		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
 	sort.Sort((*l)[1:])
 
 	return s
 }
+
+var replacer = strings.NewReplacer(
+	`\"`, `"`,
+	`\\`, `\`,
+	`\n`, `
+`,
+	`\t`, `	`,
+)
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
