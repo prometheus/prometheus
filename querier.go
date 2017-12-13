@@ -531,6 +531,7 @@ type populatedChunkSeries struct {
 func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
+
 func (s *populatedChunkSeries) Err() error { return s.err }
 
 func (s *populatedChunkSeries) Next() bool {
@@ -544,19 +545,31 @@ func (s *populatedChunkSeries) Next() bool {
 			chks = chks[1:]
 		}
 
-		for i := range chks {
-			c := &chks[i]
+		// This is to delete in place while iterating.
+		for i, rlen := 0, len(chks); i < rlen; i++ {
+			j := i - (rlen - len(chks))
+			c := &chks[j]
 
 			// Break out at the first chunk that has no overlap with mint, maxt.
 			if c.MinTime > s.maxt {
-				chks = chks[:i]
+				chks = chks[:j]
 				break
 			}
+
 			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
 			if s.err != nil {
+				// This means that the chunk has be garbage collected. Remove it from the list.
+				if s.err == ErrNotFound {
+					s.err = nil
+
+					// Delete in-place.
+					chks = append(chks[:j], chks[j+1:]...)
+				}
+
 				return false
 			}
 		}
+
 		if len(chks) == 0 {
 			continue
 		}

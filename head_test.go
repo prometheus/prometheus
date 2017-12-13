@@ -193,7 +193,7 @@ func TestHead_Truncate(t *testing.T) {
 	// Truncation need not be aligned.
 	testutil.Ok(t, h.Truncate(1))
 
-	h.Truncate(2000)
+	testutil.Ok(t, h.Truncate(2000))
 
 	testutil.Equals(t, []*memChunk{
 		{minTime: 2000, maxTime: 2999},
@@ -704,4 +704,86 @@ func TestMemSeries_append(t *testing.T) {
 	for i, c := range s.chunks[1 : len(s.chunks)-1] {
 		testutil.Assert(t, c.chunk.NumSamples() > 100, "unexpected small chunk %d of length %d", i, c.chunk.NumSamples())
 	}
+}
+
+func TestGCChunkAccess(t *testing.T) {
+	// Put a chunk, select it. GC it and then access it.
+	h, err := NewHead(nil, nil, NopWAL(), 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
+	s.chunks = []*memChunk{
+		{minTime: 0, maxTime: 999},
+		{minTime: 1000, maxTime: 1999},
+	}
+
+	idx := h.indexRange(0, 1500)
+	var (
+		lset   labels.Labels
+		chunks []ChunkMeta
+	)
+	testutil.Ok(t, idx.Series(1, &lset, &chunks))
+
+	testutil.Equals(t, labels.Labels{{
+		Name: "a", Value: "1",
+	}}, lset)
+	testutil.Equals(t, 2, len(chunks))
+
+	cr := h.chunksRange(0, 1500)
+	_, err = cr.Chunk(chunks[0].Ref)
+	testutil.Ok(t, err)
+	_, err = cr.Chunk(chunks[1].Ref)
+	testutil.Ok(t, err)
+
+	h.Truncate(1500) // Remove a chunk.
+
+	_, err = cr.Chunk(chunks[0].Ref)
+	testutil.Equals(t, ErrNotFound, err)
+	_, err = cr.Chunk(chunks[1].Ref)
+	testutil.Ok(t, err)
+}
+
+func TestGCSeriesAccess(t *testing.T) {
+	// Put a series, select it. GC it and then access it.
+	h, err := NewHead(nil, nil, NopWAL(), 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	s, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
+	s.chunks = []*memChunk{
+		{minTime: 0, maxTime: 999},
+		{minTime: 1000, maxTime: 1999},
+	}
+
+	idx := h.indexRange(0, 2000)
+	var (
+		lset   labels.Labels
+		chunks []ChunkMeta
+	)
+	testutil.Ok(t, idx.Series(1, &lset, &chunks))
+
+	testutil.Equals(t, labels.Labels{{
+		Name: "a", Value: "1",
+	}}, lset)
+	testutil.Equals(t, 2, len(chunks))
+
+	cr := h.chunksRange(0, 2000)
+	_, err = cr.Chunk(chunks[0].Ref)
+	testutil.Ok(t, err)
+	_, err = cr.Chunk(chunks[1].Ref)
+	testutil.Ok(t, err)
+
+	h.Truncate(2000) // Remove the series.
+
+	testutil.Equals(t, (*memSeries)(nil), h.series.getByID(1))
+
+	_, err = cr.Chunk(chunks[0].Ref)
+	testutil.Equals(t, ErrNotFound, err)
+	_, err = cr.Chunk(chunks[1].Ref)
+	testutil.Equals(t, ErrNotFound, err)
 }
