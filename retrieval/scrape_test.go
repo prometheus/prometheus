@@ -228,6 +228,77 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 }
 
+func TestScrapePoolReloadNoChange(t *testing.T) {
+	// This is to make sure no reload happens when there is no config change.
+	numTargets := 20
+
+	reloadCfg := &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(3 * time.Second),
+		ScrapeTimeout:  model.Duration(2 * time.Second),
+	}
+
+	// As reload never happens, new loop should never be called.
+	newLoop := func(_ *Target, s scraper) loop {
+		t.Fatal("reload happened")
+		return &testLoop{}
+	}
+	sp := &scrapePool{
+		appendable: &nopAppendable{},
+		targets:    map[uint64]*Target{},
+		loops:      map[uint64]loop{},
+		newLoop:    newLoop,
+		logger:     nil,
+		config:     reloadCfg,
+	}
+
+	// Reloading a scrape pool with a new scrape configuration must stop all scrape
+	// loops and start new ones. A new loop must not be started before the preceding
+	// one terminated.
+
+	for i := 0; i < numTargets; i++ {
+		t := &Target{
+			labels: labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
+		}
+		l := &testLoop{}
+		l.stopFunc = func() {
+			time.Sleep(time.Duration(i*20) * time.Millisecond)
+		}
+
+		sp.targets[t.hash()] = t
+		sp.loops[t.hash()] = l
+	}
+	done := make(chan struct{})
+
+	beforeTargets := map[uint64]*Target{}
+	for h, t := range sp.targets {
+		beforeTargets[h] = t
+	}
+
+	reloadTime := time.Now()
+
+	go func() {
+		sp.reload(reloadCfg)
+		close(done)
+	}()
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("scrapeLoop.reload() did not return as expected")
+	case <-done:
+		// This should have taken almost no time.
+		if time.Since(reloadTime) > 20*time.Millisecond {
+			t.Fatalf("scrapeLoop.stop() exited before all targets stopped")
+		}
+	}
+
+	if !reflect.DeepEqual(sp.targets, beforeTargets) {
+		t.Fatalf("Reloading affected target states unexpectedly")
+	}
+	if len(sp.loops) != numTargets {
+		t.Fatalf("Expected %d loops after reload but got %d", numTargets, len(sp.loops))
+	}
+}
+
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
