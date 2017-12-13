@@ -13,9 +13,12 @@ const hexDigit = "0123456789abcdef"
 // SetReply creates a reply message from a request message.
 func (dns *Msg) SetReply(request *Msg) *Msg {
 	dns.Id = request.Id
-	dns.RecursionDesired = request.RecursionDesired // Copy rd bit
 	dns.Response = true
-	dns.Opcode = OpcodeQuery
+	dns.Opcode = request.Opcode
+	if dns.Opcode == OpcodeQuery {
+		dns.RecursionDesired = request.RecursionDesired // Copy rd bit
+		dns.CheckingDisabled = request.CheckingDisabled // Copy cd bit
+	}
 	dns.Rcode = RcodeSuccess
 	if len(request.Question) > 0 {
 		dns.Question = make([]Question, 1)
@@ -270,8 +273,11 @@ func (t Type) String() string {
 
 // String returns the string representation for the class c.
 func (c Class) String() string {
-	if c1, ok := ClassToString[uint16(c)]; ok {
-		return c1
+	if s, ok := ClassToString[uint16(c)]; ok {
+		// Only emit mnemonics when they are unambiguous, specically ANY is in both.
+		if _, ok := StringToType[s]; !ok {
+			return s
+		}
 	}
 	return "CLASS" + strconv.Itoa(int(c))
 }

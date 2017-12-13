@@ -96,7 +96,7 @@ func unpackHeader(msg []byte, off int) (rr RR_Header, off1 int, truncmsg []byte,
 		return hdr, len(msg), msg, err
 	}
 	msg, err = truncateMsgFromRdlength(msg, off, hdr.Rdlength)
-	return hdr, off, msg, nil
+	return hdr, off, msg, err
 }
 
 // pack packs an RR header, returning the offset to the end of the header.
@@ -142,6 +142,11 @@ func truncateMsgFromRdlength(msg []byte, off int, rdlength uint16) (truncmsg []b
 }
 
 func fromBase32(s []byte) (buf []byte, err error) {
+	for i, b := range s {
+		if b >= 'a' && b <= 'z' {
+			s[i] = b - 32
+		}
+	}
 	buflen := base32.HexEncoding.DecodedLen(len(s))
 	buf = make([]byte, buflen)
 	n, err := base32.HexEncoding.Decode(buf, s)
@@ -401,16 +406,13 @@ Option:
 		}
 		edns = append(edns, e)
 		off += int(optlen)
-	case EDNS0SUBNET, EDNS0SUBNETDRAFT:
+	case EDNS0SUBNET:
 		e := new(EDNS0_SUBNET)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
 			return nil, len(msg), err
 		}
 		edns = append(edns, e)
 		off += int(optlen)
-		if code == EDNS0SUBNETDRAFT {
-			e.DraftOption = true
-		}
 	case EDNS0COOKIE:
 		e := new(EDNS0_COOKIE)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
@@ -448,6 +450,13 @@ Option:
 		off += int(optlen)
 	case EDNS0N3U:
 		e := new(EDNS0_N3U)
+		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
+			return nil, len(msg), err
+		}
+		edns = append(edns, e)
+		off += int(optlen)
+	case EDNS0PADDING:
+		e := new(EDNS0_PADDING)
 		if err := e.unpack(msg[off : off+int(optlen)]); err != nil {
 			return nil, len(msg), err
 		}
