@@ -190,14 +190,39 @@ type querier struct {
 
 func (q querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
+	var err error
+	notSeen := false
 
-	for _, om := range oms {
+	for i, om := range oms {
 		ms = append(ms, convertMatcher(om))
+
+		// See: https://github.com/prometheus/prometheus/issues/3575
+		if om.Type == labels.MatchNotRegexp || om.Type == labels.MatchNotEqual {
+			if notSeen == false {
+				notSeen = true
+
+				oms[i], err = labels.NewMatcher(labels.MatchEqual, om.Name, "")
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
+
 	set, err := q.q.Select(ms...)
 	if err != nil {
 		return nil, err
 	}
+
+	if notSeen {
+		lMissingSet, err := q.Select(oms...)
+		if err != nil {
+			return nil, err
+		}
+
+		return storage.NewMergeSeriesSet(lMissingSet, seriesSet{set: set}), nil
+	}
+
 	return seriesSet{set: set}, nil
 }
 
