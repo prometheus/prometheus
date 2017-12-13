@@ -251,7 +251,7 @@ func (app *timeLimitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v
 
 // populateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
-// Returns a nil label set if the target is dropped during relabeling.
+// Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
 func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
@@ -278,7 +278,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 
 	// Check if the target was dropped.
 	if lset == nil {
-		return nil, nil, nil
+		return nil, preRelabelLabels, nil
 	}
 	if v := lset.Get(model.AddressLabel); v == "" {
 		return nil, nil, fmt.Errorf("no address")
@@ -362,7 +362,7 @@ func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Targ
 		if err != nil {
 			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
 		}
-		if lbls != nil {
+		if lbls != nil || origLabels != nil {
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
 		}
 	}
