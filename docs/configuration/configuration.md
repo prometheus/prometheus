@@ -82,11 +82,11 @@ alerting:
   alertmanagers:
     [ - <alertmanager_config> ... ]
 
-# Settings related to the experimental remote write feature.
+# Settings related to the remote write feature.
 remote_write:
   [ - <remote_write> ... ]
 
-# Settings related to the experimental remote read feature.
+# Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
 ```
@@ -253,9 +253,6 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<azure_sd_config>`
 
-CAUTION: Azure SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
 The following meta labels are available on targets during relabeling:
@@ -412,18 +409,8 @@ region: <string>
 
 ### `<openstack_sd_config>`
 
-CAUTION: OpenStack SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
-OpenStack SD configurations allow retrieving scrape targets from the OpenStack
-Nova API.
-
-One of the following `role` types can be configured to discover targets:
-
-#### `hypervisor`
-
-The `hypervisor` role discovers one target per Nova hypervisor node. The target
-address defaults to the `host_ip` attribute of the hypervisor.
+OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
+instances.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -546,9 +533,6 @@ may contain a single `*` that matches any character sequence, e.g. `my/path/tg_*
 
 ### `<gce_sd_config>`
 
-CAUTION: GCE SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 [GCE](https://cloud.google.com/compute/) SD configurations allow retrieving scrape targets from GCP GCE instances.
 The private IP address is used by default, but may be changed to the public IP
 address with relabeling.
@@ -606,9 +590,6 @@ compute resources. If running outside of GCE make sure to create an appropriate
 service account and place the credential file in one of the expected locations.
 
 ### `<kubernetes_sd_config>`
-
-CAUTION: Kubernetes SD is in beta: breaking changes to configuration are still
-likely in future releases.
 
 Kubernetes SD configurations allow retrieving scrape targets from
 [Kubernetes'](http://kubernetes.io/) REST API and always staying synchronized with
@@ -755,9 +736,6 @@ which automates the Prometheus setup on top of Kubernetes.
 
 ### `<marathon_sd_config>`
 
-CAUTION: Marathon SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 Marathon SD configurations allow retrieving scrape targets using the
 [Marathon](https://mesosphere.github.io/marathon/) REST API. Prometheus
 will periodically check the REST endpoint for currently running tasks and
@@ -853,9 +831,6 @@ paths:
 Serverset data must be in the JSON format, the Thrift format is not currently supported.
 
 ### `<triton_sd_config>`
-
-CAUTION: Triton SD is in beta: breaking changes to configuration are still
-likely in future releases.
 
 [Triton](https://github.com/joyent/triton) SD configurations allow retrieving
 scrape targets from [Container Monitor](https://github.com/joyent/rfd/blob/master/rfd/0027/README.md)
@@ -1103,9 +1078,6 @@ relabel_configs:
 
 ### `<remote_write>`
 
-CAUTION: Remote write is experimental: breaking changes to configuration are
-likely in future releases.
-
 `write_relabel_configs` is relabeling applied to samples before sending them
 to the remote endpoint. Write relabeling is applied after external labels. This
 could be used to limit which samples are sent.
@@ -1151,9 +1123,6 @@ There is a list of
 with this feature.
 
 ### `<remote_read>`
-
-CAUTION: Remote read is experimental: breaking changes to configuration are
-likely in future releases.
 
 ```yaml
 # The URL of the endpoint to query from.
