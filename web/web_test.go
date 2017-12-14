@@ -108,7 +108,12 @@ func TestReadyAndHealthy(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	go webHandler.Run(context.Background())
+	go func() {
+		err := webHandler.Run(context.Background())
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
 
 	// Give some time for the web goroutine to run since we need the server
 	// to be up before starting tests.
@@ -202,7 +207,7 @@ func TestRoutePrefix(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
-			panic(fmt.Sprintf("Can't start webhandler error %s", err))
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
 	}()
 
