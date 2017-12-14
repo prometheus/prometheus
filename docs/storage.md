@@ -75,7 +75,7 @@ Prometheus integrates with remote storage systems in two ways:
 
 ![Remote read and write architecture](images/remote_integrations.png)
 
-The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are still marked experimental and may change to use gRPC over HTTP/2 in the future, when all hops between Prometheus and the long-term storage can safely be assumed to support HTTP/2.
+The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are not considered as stable APIs yet and may change to use gRPC over HTTP/2 in the future, when all hops between Prometheus and the long-term storage can safely be assumed to support HTTP/2.
 
 For details on configuring remote storage integrations in Prometheus, see the [remote write](configuration/configuration.md#remote_write) and [remote read](configuration/configuration.md#remote_read) sections of the Prometheus configuration documentation.
 
