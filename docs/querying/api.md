@@ -315,9 +315,6 @@ String results are returned as result type `string`. The corresponding
 
 ## Targets
 
-> This API is experimental as it is intended to be extended with targets
-> dropped due to relabelling in the future.
-
 The following endpoint returns an overview of the current state of the
 Prometheus target discovery:
 
@@ -348,6 +345,21 @@ $ curl http://localhost:9090/api/v1/targets
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "health": "up"
+      }
+    ],
+    "droppedTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9100",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "node"
+        },
+        "labels": {},
+        "scrapeUrl": "",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "health": "unknown"
       }
     ]
   }
