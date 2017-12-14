@@ -14,18 +14,16 @@
 package tsdb
 
 import (
-	"io/ioutil"
+	"bufio"
+	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
-	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
-
-	promlabels "github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -54,19 +52,26 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 	}
 	defer f.Close()
 
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
+	scanner := bufio.NewScanner(f)
 
-	p := textparse.New(b)
-	i := 0
 	var mets []labels.Labels
 	hashes := map[uint64]struct{}{}
+	i := 0
 
-	for p.Next() && i < n {
+	for scanner.Scan() && i < n {
 		m := make(labels.Labels, 0, 10)
-		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
+
+		// Order of the k/v labels matters, so rather than decoding arbitrary json into an
+		// interface{}, parse the line ourselves and remove unnecessary characters.
+		r := strings.NewReplacer("\"", "", "{", "", "}", "")
+		s := r.Replace(scanner.Text())
+
+		labelChunks := strings.Split(s, ",")
+		for _, labelChunk := range labelChunks {
+			split := strings.Split(labelChunk, ":")
+			fmt.Println("split: ", split)
+			m = append(m, labels.Label{Name: split[0], Value: split[1]})
+		}
 
 		h := m.Hash()
 		if _, ok := hashes[h]; ok {
@@ -76,7 +81,7 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 		hashes[h] = struct{}{}
 		i++
 	}
-	if err := p.Err(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 	if i != n {

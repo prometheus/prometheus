@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -22,15 +23,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"text/tabwriter"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	promlabels "github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb"
 	"github.com/prometheus/tsdb/labels"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -302,20 +301,32 @@ func measureTime(stage string, f func()) time.Duration {
 	return time.Since(start)
 }
 
-func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
-	b, err := ioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
+func mapToLabels(m map[string]interface{}, l *labels.Labels) {
+	for k, v := range m {
+		*l = append(*l, labels.Label{Name: k, Value: v.(string)})
 	}
+}
 
-	p := textparse.New(b)
-	i := 0
+func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
+	scanner := bufio.NewScanner(r)
+
 	var mets []labels.Labels
 	hashes := map[uint64]struct{}{}
+	i := 0
 
-	for p.Next() && i < n {
+	for scanner.Scan() && i < n {
 		m := make(labels.Labels, 0, 10)
-		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
+
+		// Order of the k/v labels matters, so rather than decoding arbitrary json into an
+		// interface{}, parse the line ourselves and remove unnecessary characters.
+		r := strings.NewReplacer("\"", "", "{", "", "}", "")
+		s := r.Replace(scanner.Text())
+
+		labelChunks := strings.Split(s, ",")
+		for _, labelChunk := range labelChunks {
+			split := strings.Split(labelChunk, ":")
+			m = append(m, labels.Label{Name: split[0], Value: split[1]})
+		}
 
 		h := m.Hash()
 		if _, ok := hashes[h]; ok {
@@ -325,7 +336,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 		hashes[h] = struct{}{}
 		i++
 	}
-	return mets, p.Err()
+	return mets, nil
 }
 
 func exitWithError(err error) {
