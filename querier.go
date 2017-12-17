@@ -202,25 +202,18 @@ func (q *blockQuerier) Close() error {
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. It returns a list of label names that must be manually
 // checked to not exist in series the postings list points to.
-func PostingsForMatchers(index IndexReader, ms ...labels.Matcher) (Postings, []string, error) {
+func PostingsForMatchers(index IndexReader, ms ...labels.Matcher) (Postings, error) {
 	var (
-		its    []Postings
-		absent []string
+		its []Postings
 	)
 	for _, m := range ms {
-		// If the matcher checks absence of a label, don't select them
-		// but propagate the check into the series set.
-		if _, ok := m.(*labels.EqualMatcher); ok && m.Matches("") {
-			absent = append(absent, m.Name())
-			continue
-		}
 		it, err := postingsForMatcher(index, m)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		its = append(its, it)
 	}
-	return index.SortedPostings(Intersect(its...)), absent, nil
+	return index.SortedPostings(Intersect(its...)), nil
 }
 
 // tuplesByPrefix uses binary search to find prefix matches within ts.
@@ -255,6 +248,13 @@ func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) 
 }
 
 func postingsForMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
+	// If the matcher selects an empty value, it selects all the series which dont
+	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
+	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
+	if m.Matches("") {
+		return postingsForUnsetLabelMatcher(index, m)
+	}
+
 	// Fast-path for equal matching.
 	if em, ok := m.(*labels.EqualMatcher); ok {
 		it, err := index.Postings(em.Name(), em.Value())
@@ -303,6 +303,43 @@ func postingsForMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
 	}
 
 	return Merge(rit...), nil
+}
+
+func postingsForUnsetLabelMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
+	tpls, err := index.LabelValues(m.Name())
+	if err != nil {
+		return nil, err
+	}
+
+	var res []string
+	for i := 0; i < tpls.Len(); i++ {
+		vals, err := tpls.At(i)
+		if err != nil {
+			return nil, err
+		}
+
+		if !m.Matches(vals[0]) {
+			res = append(res, vals[0])
+		}
+	}
+
+	var rit []Postings
+	for _, v := range res {
+		it, err := index.Postings(m.Name(), v)
+		if err != nil {
+			return nil, err
+		}
+
+		rit = append(rit, it)
+	}
+	mrit := Merge(rit...)
+
+	allPostings, err := index.Postings(allPostingsKey.Name, allPostingsKey.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	return newRemovedPostings(allPostings, mrit), nil
 }
 
 func mergeStrings(a, b []string) []string {
@@ -417,6 +454,8 @@ func (s *mergedSeriesSet) Next() bool {
 	return true
 }
 
+// ChunkSeriesSet exposes the chunks and intervals of a series instead of the
+// actual series itself.
 type ChunkSeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []ChunkMeta, Intervals)
@@ -429,7 +468,6 @@ type baseChunkSeries struct {
 	p          Postings
 	index      IndexReader
 	tombstones TombstoneReader
-	absent     []string // labels that must be unset in results.
 
 	lset      labels.Labels
 	chks      []ChunkMeta
@@ -443,7 +481,7 @@ func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher)
 	if tr == nil {
 		tr = EmptyTombstoneReader()
 	}
-	p, absent, err := PostingsForMatchers(ir, ms...)
+	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +489,6 @@ func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher)
 		p:          p,
 		index:      ir,
 		tombstones: tr,
-		absent:     absent,
 	}, nil
 }
 
@@ -467,7 +504,7 @@ func (s *baseChunkSeries) Next() bool {
 		chunks []ChunkMeta
 		err    error
 	)
-Outer:
+
 	for s.p.Next() {
 		ref := s.p.At()
 		if err := s.index.Series(ref, &lset, &chunks); err != nil {
@@ -477,13 +514,6 @@ Outer:
 			}
 			s.err = err
 			return false
-		}
-
-		// If a series contains a label that must be absent, it is skipped as well.
-		for _, abs := range s.absent {
-			if lset.Get(abs) != "" {
-				continue Outer
-			}
 		}
 
 		s.lset = lset

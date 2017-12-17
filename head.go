@@ -574,22 +574,15 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	p, absent, err := PostingsForMatchers(ir, ms...)
+	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
 
 	var stones []Stone
 
-Outer:
 	for p.Next() {
 		series := h.series.getByID(p.At())
-
-		for _, abs := range absent {
-			if series.lset.Get(abs) != "" {
-				continue Outer
-			}
-		}
 
 		// Delete only until the current values and not beyond.
 		t0, t1 := clampInterval(mint, maxt, series.minTime(), series.maxTime())

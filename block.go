@@ -289,7 +289,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, absent, err := PostingsForMatchers(pb.indexr, ms...)
+	p, err := PostingsForMatchers(pb.indexr, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
@@ -307,12 +307,6 @@ Outer:
 		err := ir.Series(p.At(), &lset, &chks)
 		if err != nil {
 			return err
-		}
-
-		for _, abs := range absent {
-			if lset.Get(abs) != "" {
-				continue Outer
-			}
 		}
 
 		for _, chk := range chks {
