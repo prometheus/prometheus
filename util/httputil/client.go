@@ -41,11 +41,12 @@ func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
-		Proxy:              http.ProxyURL(cfg.ProxyURL.URL),
-		MaxIdleConns:       20000,
-		DisableKeepAlives:  false,
-		TLSClientConfig:    tlsConfig,
-		DisableCompression: true,
+		Proxy:               http.ProxyURL(cfg.ProxyURL.URL),
+		MaxIdleConns:        20000,
+		MaxIdleConnsPerHost: 1000, // see https://github.com/golang/go/issues/13801
+		DisableKeepAlives:   false,
+		TLSClientConfig:     tlsConfig,
+		DisableCompression:  true,
 		// 5 minutes is typically above the maximum sane scrape interval. So we can
 		// use keepalive for all configurations.
 		IdleConnTimeout: 5 * time.Minute,
