@@ -20,7 +20,7 @@ import (
 )
 
 type bucket struct {
-	slices []*sync.Pool
+	slices []sync.Pool
 	// new is the function used to initialise an empty slice when none exist yet.
 	new func(int) interface{}
 	// Holds all available sizes for this bucket.
@@ -57,8 +57,9 @@ func (p *Pool) Add(id interface{}, minSize, maxSize int, factor float64, newFunc
 		sizes = append(sizes, s)
 	}
 	p.buckets[id] = bucket{
-		slices: make([]*sync.Pool, len(sizes)),
+		slices: make([]sync.Pool, len(sizes)),
 		new:    newFunc,
+		sizes:  sizes,
 	}
 }
 
@@ -85,13 +86,12 @@ func (p *Pool) Get(id interface{}, giveMe int) (interface{}, error) {
 func (p *Pool) Put(id interface{}, s interface{}) error {
 	if bucket, ok := p.buckets[id]; ok {
 		slice := reflect.ValueOf(s)
-
 		if slice.Kind() == reflect.Slice {
 			for i, size := range bucket.sizes {
 				if slice.Cap() > size {
 					continue
 				}
-				bucket.slices[i].Put(slice.Slice(0, 0))
+				bucket.slices[i].Put(slice.Slice(0, 0).Interface())
 				return nil
 			}
 		}
