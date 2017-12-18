@@ -587,7 +587,7 @@ func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 	var index []string
-	targets := h.targetManager.TargetMap()
+	targets := h.scrapeManager.TargetMap()
 	for job := range targets {
 		index = append(index, job)
 	}

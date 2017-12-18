@@ -53,7 +53,7 @@ type Discoverer interface {
 }
 
 type poolKey struct {
-	set      string
+	setName  string
 	provider string
 }
 
@@ -111,7 +111,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		m.cancelDiscoverers()
 		for _, scfg := range cfg.ScrapeConfigs {
 			for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
-				m.startProvider(ctx, poolKey{set: scfg.JobName, provider: provName}, prov)
+				m.startProvider(ctx, poolKey{setName: scfg.JobName, provider: provName}, prov)
 			}
 		}
 		close(err)
@@ -184,7 +184,7 @@ func (m *Manager) allGroups(pk poolKey) map[string][]*config.TargetGroup {
 		for _, pk := range pKeys {
 			for _, tg := range m.targets[pk] {
 				if tg.Source != "" { // Don't add empty targets.
-					tSetsAll[pk.set] = append(tSetsAll[pk.set], tg)
+					tSetsAll[pk.setName] = append(tSetsAll[pk.setName], tg)
 				}
 			}
 		}

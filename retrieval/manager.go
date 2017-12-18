@@ -92,20 +92,21 @@ func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 }
 
 // TargetMap returns map of active and dropped targets and their corresponding scrape config job name.
-func (tm *TargetManager) TargetMap() map[string][]*Target {
-	tm.mtx.RLock()
-	defer tm.mtx.RUnlock()
-
-	targetsMap := make(map[string][]*Target)
-	for jobName, ps := range tm.targetSets {
-		ps.sp.mtx.RLock()
-		for _, t := range ps.sp.targets {
-			targetsMap[jobName] = append(targetsMap[jobName], t)
+func (m *ScrapeManager) TargetMap() map[string][]*Target {
+	targetsMap := make(chan map[string][]*Target)
+	m.actionCh <- func() {
+		targets := make(map[string][]*Target)
+		for jobName, sp := range m.scrapePools {
+			sp.mtx.RLock()
+			for _, t := range sp.targets {
+				targets[jobName] = append(targets[jobName], t)
+			}
+			targets[jobName] = append(targets[jobName], sp.droppedTargets...)
+			sp.mtx.RUnlock()
 		}
-		targetsMap[jobName] = append(targetsMap[jobName], ps.sp.droppedTargets...)
-		ps.sp.mtx.RUnlock()
+		targetsMap <- targets
 	}
-	return targetsMap
+	return <-targetsMap
 }
 
 // Targets returns the targets currently being scraped.
