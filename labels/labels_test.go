@@ -135,8 +135,6 @@ func readPrometheusLabels(fn string, n int) ([]Labels, error) {
 	for scanner.Scan() && i < n {
 		m := make(Labels, 0, 10)
 
-		// Order of the k/v labels matters, so rather than decoding arbitrary json into an 
-		// interface{}, parse the line ourselves and remove unnecessary characters.
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
 
@@ -145,7 +143,8 @@ func readPrometheusLabels(fn string, n int) ([]Labels, error) {
 			split := strings.Split(labelChunk, ":")
 			m = append(m, Label{Name: split[0], Value: split[1]})
 		}
-
+		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
+		sort.Sort(m)
 		h := m.Hash()
 		if _, ok := hashes[h]; ok {
 			continue
