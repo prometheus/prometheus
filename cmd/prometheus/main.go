@@ -238,11 +238,11 @@ func main() {
 		discoveryManager = discovery.NewManager(log.With(logger, "component", "discovery manager"))
 		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ruleManager := rules.NewManager(&rules.ManagerOptions{
+		ruleManager      = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
 			QueryFunc:   rules.EngineQueryFunc(queryEngine),
 			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
-			Context:     ctx,
+			Context:     ctxRule,
 			ExternalURL: cfg.web.ExternalURL,
 			Registerer:  prometheus.DefaultRegisterer,
 			Logger:      log.With(logger, "component", "rule manager"),
@@ -271,7 +271,7 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
-	// Depend on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
+	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
@@ -281,9 +281,9 @@ func main() {
 
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
-		discoveryManager.ApplyConfig,
 		webHandler.ApplyConfig,
 		notifier.ApplyConfig,
+		discoveryManager.ApplyConfig,
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.

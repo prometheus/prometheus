@@ -590,7 +590,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 		var totalUpdatesCount int
 		for tpName, update := range testCase.updates {
 			provider := newMockDiscoveryProvider(update)
-			discoveryManager.startProvider(ctx, poolKey{set: strconv.Itoa(testIndex), provider: tpName}, provider)
+			discoveryManager.startProvider(ctx, poolKey{setName: strconv.Itoa(testIndex), provider: tpName}, provider)
 
 			if len(update) > 0 {
 				totalUpdatesCount = totalUpdatesCount + len(update)
@@ -674,8 +674,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(cfg)
 
 	_ = <-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
+	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
 
 	sTwo := `
 scrape_configs:
@@ -689,8 +689,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(cfg)
 
 	_ = <-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, poolKey{set: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
+	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
 }
 
 type update struct {
