@@ -15,7 +15,6 @@ package web
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -111,7 +110,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
-			panic(fmt.Sprintf("Can't start web handler:%s", err))
+			t.Fatalf("Can't start web handler:%s", err)
 		}
 	}()
 
@@ -207,7 +206,7 @@ func TestRoutePrefix(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
-			panic(fmt.Sprintf("Can't start web handler:%s", err))
+			t.Fatalf("Can't start web handler:%s", err)
 		}
 	}()
 
