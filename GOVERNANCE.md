@@ -4,7 +4,7 @@ This document describes the rules and governance of the project. It is meant to 
 
 * **Team members**: Any members of the private [prometheus-team][team] Google group.
 
-* **Maintainers**: Team members who are leads on an individual project ([MAINTAINERS.md][maintainers.md]).
+* **Maintainers**: Maintainers lead an individual project or parts thereof ([MAINTAINERS.md][maintainers.md]).
 
 * **Projects**: Any repository in the Prometheus [GitHub organization][gh].
 
