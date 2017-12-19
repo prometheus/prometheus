@@ -12,7 +12,7 @@ This document describes the rules and governance of the project. It is meant to 
 
 ## Values
 
-The Prometheus developers and community are expected to follow the values defined in the [CNCF charter][charter], including the [CNCF Code of Conduct][coc]. Furthermore, the Prometheus community strives for kindness, giving feedback effectively and building a welcoming environment. The Prometheus developer community strives to operate by rough consensus for the majority of decisions and only resort to conflict resolution through a motion if consensus cannot be reached.
+The Prometheus developers and community are expected to follow the values defined in the [CNCF charter][charter], including the [CNCF Code of Conduct][coc]. Furthermore, the Prometheus community strives for kindness, giving feedback effectively, and building a welcoming environment. The Prometheus developer community strives to operate by rough consensus for the majority of decisions and only resort to conflict resolution through a motion if consensus cannot be reached.
 
 ## Projects
 
@@ -24,9 +24,9 @@ Each project must have a MAINTAINERS.md file with at least one maintainer. Where
 
 Team member status may be given to those who have made ongoing contributions for at least 3 months to the Prometheus Project. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account. 
 
-New members may be proposed by any existing member by email to [prometheus-team][team] and voted on by [lazy consensus](#consensus). If no consensus is reached, the new member is not accepted.
+New members may be proposed by any existing member by email to [prometheus-team][team]. It is highly desired to reach consensus about acceptance of a new member. However, the proposal is ultimately voted on by a formal [supermajority vote](#supermajority-vote).
 
-Team members are added to the [GitHub organization][gh] and have commit rights to all projects. They should however respect the maintainers of each project.
+Team members are added to the [GitHub organization][gh] as _Owner_. They should however respect the maintainers of each project.
 
 Team members may retire at any time by emailing [the team][team].
 
@@ -40,11 +40,13 @@ A public list of team members is kept on the [community page][community] or link
 
 ### Maintainers
 
-Maintainers are team members who lead one or more project(s) and serve as a point of conflict resolution amongst the contributors to this project.
+Maintainers lead one or more project(s) or parts thereof and serve as a point of conflict resolution amongst the contributors to this project. Ideally, maintainers are also team members, but exceptions are possible for suitable maintainers that, for whatever reason, are not or not yet team members.
+
+Changes in maintainership have to be announced on the [developers mailing list][devs]. They are decided by [lazy consensus](#consensus) and formalized by changing the `MAINTAINERS.md` file of the respective repository.
+
+Maintainers are granted commit rights to all projects in the [GitHub organization][gh].
 
 A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Maintainers who wish to resign are encouraged to propose another team member to take over the project.
-
-An extraordinary change of maintainership of any project may be proposed on the [team mailing list][team] and is voted on by [majority vote](#majority-vote).
 
 A project may have multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 
@@ -58,11 +60,11 @@ Technical decisions that span multiple parts of the Prometheus Project can be di
 
 ### Governance changes
 
-Material changes to this document are discussed publicly on the [developer mailing mailing list][devs]. Any change requires a [supermajority](#supermajority-vote) in favour. Editorial changes may be made by [lazy consensus](#consensus) unless challenged.
+Material changes to this document are discussed publicly on the [developer mailing mailing list][devs]. Any change requires a [supermajority](#supermajority-vote) in favor. Editorial changes may be made by [lazy consensus](#consensus) unless challenged.
 
 ### Other matters
 
-Any matter that needs a decision, including but not limited to financial matters, may be called to a vote by any member if they deem it necessary. For financial, private or personnel matters discussion and voting takes place on the [team mailing list][team], otherwise on the [developer mailing list][devs].
+Any matter that needs a decision, including but not limited to financial matters, may be called to a vote by any member if they deem it necessary. For financial, private, or personnel matters, discussion and voting takes place on the [team mailing list][team], otherwise on the [developer mailing list][devs].
 
 ## Voting
 
@@ -96,9 +98,9 @@ Majority votes must be called explicitly in a separate thread on the appropriate
 
 Votes may take the form of a single proposal, with the option to vote yes or no; or the form of multiple alternatives.
 
-A vote on a single proposal is considered successful if more vote in favour than against.
+A vote on a single proposal is considered successful if more vote in favor than against.
 
-If there are multiple alternatives, members may vote for one or more alternative, or vote "no" to object to all alternatives. A vote on multiple alternatives is considered decided in favour of one alternative if it has received the most votes in favour, and a vote from least half of those voting. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
+If there are multiple alternatives, members may vote for one or more alternative, or vote “no” to object to all alternatives. It is not possible to cast an “abstain” vote. A vote on multiple alternatives is considered decided in favor of one alternative if it has received the most votes in favor, and a vote from more than half of those voting. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
 
 ### Supermajority vote
 
@@ -106,9 +108,9 @@ Supermajority votes must be called explicitly in a separate thread on the approp
 
 Votes may take the form of a single proposal, with the option to vote yes or no; or the form of multiple alternatives.
 
-A vote on a single proposal is considered successful if at least two thirds of those eligible to vote vote in favour.
+A vote on a single proposal is considered successful if at least two thirds of those eligible to vote vote in favor.
 
-If there are multiple alternatives, members may vote for one or more alternative, or vote "no" to object to all alternatives. A vote on multiple alternatives is considered decided in favour of one alternative if it has received the most votes in favour, and a vote from least two thirds of those eligible to vote. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
+If there are multiple alternatives, members may vote for one or more alternative, or vote “no” to object to all alternatives. A vote on multiple alternatives is considered decided in favor of one alternative if it has received the most votes in favor, and a vote from at least two thirds of those eligible to vote. Should no alternative reach this quorum, another vote on a reduced number of options may be called separately.
 
 ## FAQ
 
@@ -120,9 +122,9 @@ Send an email to [the developer mailing list](devs) with your motion. If there i
 
 ### How do I become a team member?
 
-To become an official team member, you should make ongoing contributions to one or more project(s) for at least three months. At that point, a team member (typically a maintainer of the project) may propose you for membership. The discussion about this will be held in private, and you will be informed privately when a decision has been made.
+To become an official team member, you should make ongoing contributions to one or more project(s) for at least three months. At that point, a team member (typically a maintainer of the project) may propose you for membership. The discussion about this will be held in private, and you will be informed privately when a decision has been made. A possible, but not required, graduation path is to become a maintainer first.
 
-Should the decision be in favour, your new membership will also be announced on the [developers mailing list][devs].
+Should the decision be in favor, your new membership will also be announced on the [developers mailing list][devs].
 
 ### How do I add a project?
 
