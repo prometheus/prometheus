@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 	"unsafe"
@@ -194,9 +195,13 @@ func (sp *scrapePool) stop() {
 }
 
 // reload the scrape pool with the given scrape configuration. The target state is preserved
-// but all scrape loops are restarted with the new scrape configuration.
+// but all scrape loops are restarted with the new scrape configuration when there is a change in the
+// configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
 func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
+	if reflect.DeepEqual(sp.config, cfg) {
+		return
+	}
 	start := time.Now()
 
 	sp.mtx.Lock()
