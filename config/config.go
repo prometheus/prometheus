@@ -721,7 +721,7 @@ func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return checkOverflow(a.XXX, "basic_auth")
 }
 
-// TargetGroup is a set of targets with a common label set.
+// TargetGroup is a set of targets with a common label set(production , test, staging etc.).
 type TargetGroup struct {
 	// Targets is a list of targets identified by a label set. Each target is
 	// uniquely identifiable in the group by its address label.

@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
@@ -230,27 +231,29 @@ func main() {
 
 	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
-		notifier       = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		targetManager  = retrieval.NewTargetManager(fanoutStorage, log.With(logger, "component", "target manager"))
-		queryEngine    = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ctx, cancelCtx = context.WithCancel(context.Background())
+		ctxWeb, cancelWeb = context.WithCancel(context.Background())
+		ctxRule           = context.Background()
+
+		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		discoveryManager = discovery.NewManager(log.With(logger, "component", "discovery manager"))
+		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
+		ruleManager      = rules.NewManager(&rules.ManagerOptions{
+			Appendable:  fanoutStorage,
+			QueryFunc:   rules.EngineQueryFunc(queryEngine),
+			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			Context:     ctxRule,
+			ExternalURL: cfg.web.ExternalURL,
+			Registerer:  prometheus.DefaultRegisterer,
+			Logger:      log.With(logger, "component", "rule manager"),
+		})
 	)
 
-	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		Appendable:  fanoutStorage,
-		QueryFunc:   rules.EngineQueryFunc(queryEngine),
-		NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
-		Context:     ctx,
-		ExternalURL: cfg.web.ExternalURL,
-		Registerer:  prometheus.DefaultRegisterer,
-		Logger:      log.With(logger, "component", "rule manager"),
-	})
-
-	cfg.web.Context = ctx
+	cfg.web.Context = ctxWeb
 	cfg.web.TSDB = localStorage.Get
 	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
-	cfg.web.TargetManager = targetManager
+	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifier
 
@@ -268,6 +271,7 @@ func main() {
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
+	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
@@ -277,9 +281,10 @@ func main() {
 
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
-		targetManager.ApplyConfig,
 		webHandler.ApplyConfig,
 		notifier.ApplyConfig,
+		discoveryManager.ApplyConfig,
+		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.
 			var files []string
@@ -323,6 +328,35 @@ func main() {
 			},
 			func(err error) {
 				close(cancel)
+			},
+		)
+	}
+	{
+		ctxDiscovery, cancelDiscovery := context.WithCancel(context.Background())
+		g.Add(
+			func() error {
+				err := discoveryManager.Run(ctxDiscovery)
+				level.Info(logger).Log("msg", "Discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping discovery manager...")
+				cancelDiscovery()
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				err := scrapeManager.Run(discoveryManager.SyncCh())
+				level.Info(logger).Log("msg", "Scrape manager stopped")
+				return err
+			},
+			func(err error) {
+				// Scrape manager needs to be stopped before closing the local TSDB
+				// so that it doesn't try to write samples to a closed storage.
+				level.Info(logger).Log("msg", "Stopping scrape manager...")
+				scrapeManager.Stop()
 			},
 		)
 	}
@@ -426,7 +460,7 @@ func main() {
 	{
 		g.Add(
 			func() error {
-				if err := webHandler.Run(ctx); err != nil {
+				if err := webHandler.Run(ctxWeb); err != nil {
 					return fmt.Errorf("Error starting web server: %s", err)
 				}
 				return nil
@@ -435,7 +469,7 @@ func main() {
 				// Keep this interrupt before the ruleManager.Stop().
 				// Shutting down the query engine before the rule manager will cause pending queries
 				// to be canceled and ensures a quick shutdown of the rule manager.
-				cancelCtx()
+				cancelWeb()
 			},
 		)
 	}
@@ -464,21 +498,6 @@ func main() {
 			},
 			func(err error) {
 				notifier.Stop()
-			},
-		)
-	}
-	{
-		// TODO(krasi) refactor targetManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
-		g.Add(
-			func() error {
-				targetManager.Run()
-				<-cancel
-				return nil
-			},
-			func(err error) {
-				targetManager.Stop()
-				close(cancel)
 			},
 		)
 	}

@@ -35,7 +35,6 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -248,7 +247,6 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 
 	amSets := []*alertmanagerSet{}
-	ctx, cancel := context.WithCancel(n.ctx)
 
 	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
 		ams, err := newAlertmanagerSet(cfg, n.logger)
@@ -261,17 +259,6 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 		amSets = append(amSets, ams)
 	}
 
-	// After all sets were created successfully, start them and cancel the
-	// old ones.
-	for _, ams := range amSets {
-		go ams.ts.Run(ctx)
-		ams.ts.UpdateProviders(discovery.ProvidersFromConfig(ams.cfg.ServiceDiscoveryConfig, n.logger))
-	}
-	if n.cancelDiscovery != nil {
-		n.cancelDiscovery()
-	}
-
-	n.cancelDiscovery = cancel
 	n.alertmanagers = amSets
 
 	return nil
@@ -504,7 +491,6 @@ func (a alertmanagerLabels) url() *url.URL {
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
 // discovery definitions that have a common configuration on how alerts should be sent.
 type alertmanagerSet struct {
-	ts     *discovery.TargetSet
 	cfg    *config.AlertmanagerConfig
 	client *http.Client
 
@@ -525,8 +511,6 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*ale
 		cfg:    cfg,
 		logger: logger,
 	}
-	s.ts = discovery.NewTargetSet(s)
-
 	return s, nil
 }
 
