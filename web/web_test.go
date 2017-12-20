@@ -107,7 +107,7 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(nil, opts)
+	webHandler := New(nil, opts, nil)
 	go webHandler.Run(context.Background())
 
 	// Give some time for the web goroutine to run since we need the server
@@ -198,7 +198,7 @@ func TestRoutePrefix(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(nil, opts)
+	webHandler := New(nil, opts, nil)
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
@@ -282,7 +282,7 @@ func TestDebugHandler(t *testing.T) {
 			RoutePrefix: tc.prefix,
 			MetricsPath: "/metrics",
 		}
-		handler := New(nil, opts)
+		handler := New(nil, opts, nil)
 		handler.Ready()
 
 		w := httptest.NewRecorder()

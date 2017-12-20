@@ -305,7 +305,7 @@ func TestUpdate(t *testing.T) {
 	})
 	ruleManager.Run()
 
-	err := ruleManager.Update(0, nil)
+	err := ruleManager.Reload(nil)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
@@ -313,7 +313,7 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
-	err = ruleManager.Update(0, nil)
+	err = ruleManager.Reload(nil)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {

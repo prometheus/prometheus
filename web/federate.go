@@ -124,7 +124,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	sort.Sort(byName(vec))
 
-	externalLabels := h.config.GlobalConfig.ExternalLabels.Clone()
+	externalLabels := h.config.Read().GlobalConfig.ExternalLabels.Clone()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
 		externalLabels[model.InstanceLabel] = ""
 	}

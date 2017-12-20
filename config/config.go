@@ -21,10 +21,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 )
@@ -33,7 +37,23 @@ var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
+
+	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "prometheus",
+		Name:      "config_last_reload_successful",
+		Help:      "Whether the last configuration reload attempt was successful.",
+	})
+	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "prometheus",
+		Name:      "config_last_reload_success_timestamp_seconds",
+		Help:      "Timestamp of the last successful configuration reload.",
+	})
 )
+
+func init() {
+	prometheus.MustRegister(configSuccess)
+	prometheus.MustRegister(configSuccessTime)
+}
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
@@ -229,23 +249,6 @@ func (u URL) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
-// Config is the top-level configuration for Prometheus's config files.
-type Config struct {
-	GlobalConfig   GlobalConfig    `yaml:"global"`
-	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
-	RuleFiles      []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
-
-	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
-	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-
-	// original is the input from which the config was parsed.
-	original string
-}
-
 // Secret special type for storing secrets.
 type Secret string
 
@@ -327,6 +330,84 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 		return fmt.Errorf("unknown fields in %s: %s", ctx, strings.Join(keys, ", "))
 	}
 	return nil
+}
+
+// ReloadReader validates and saves new configurations and allows concurent reading from different packages.
+type ReloadReader interface {
+	Reload() error
+	Read() Config
+}
+
+// New returns a new ReloadReader
+func New(logger log.Logger, filename string) (ReloadReader, error) {
+	c, err := LoadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("Couldn't load configuration  (%s): %v", filename, err)
+	}
+	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
+
+	conf := &Manager{
+		config:   *c,
+		mtx:      sync.RWMutex{},
+		filename: filename,
+		logger:   logger,
+	}
+
+	return conf, nil
+}
+
+// Manager implements the ReloadReader interface
+type Manager struct {
+	config   Config
+	mtx      sync.RWMutex
+	filename string
+	logger   log.Logger
+}
+
+// Reload tries to reload the config file.
+// On failure it leaves the current config unchanged so that packages can still use read the current configuration.
+func (m *Manager) Reload() error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	f, err := LoadFile(m.filename)
+
+	if err != nil {
+		configSuccess.Set(0)
+		return fmt.Errorf("Couldn't reload configuration  (%s): %v", m.filename, err)
+	}
+
+	m.config = *f
+	level.Info(m.logger).Log("msg", "Configuration reloaded", "filename", m.filename)
+
+	configSuccess.Set(1)
+	configSuccessTime.Set(float64(time.Now().Unix()))
+
+	return nil
+}
+
+// Read returns the currently saved configuration.
+func (m *Manager) Read() Config {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	return m.config
+}
+
+// Config is the top-level configuration for Prometheus's config files.
+type Config struct {
+	GlobalConfig   GlobalConfig    `yaml:"global"`
+	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles      []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+
+	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+
+	// original is the input from which the config was parsed.
+	original string
 }
 
 func (c Config) String() string {

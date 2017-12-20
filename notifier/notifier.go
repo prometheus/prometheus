@@ -238,17 +238,18 @@ func New(o *Options, logger log.Logger) *Notifier {
 	return n
 }
 
-// ApplyConfig updates the status state as the new config requires.
-func (n *Notifier) ApplyConfig(conf *config.Config) error {
+// Reload updates the status state as the new config requires.
+func (n *Notifier) Reload(cfg config.ReloadReader) error {
+	config := cfg.Read()
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
-	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
+	n.opts.ExternalLabels = config.GlobalConfig.ExternalLabels
+	n.opts.RelabelConfigs = config.AlertingConfig.AlertRelabelConfigs
 
 	amSets := []*alertmanagerSet{}
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
+	for _, cfg := range config.AlertingConfig.AlertmanagerConfigs {
 		ams, err := newAlertmanagerSet(cfg, n.logger)
 		if err != nil {
 			return err

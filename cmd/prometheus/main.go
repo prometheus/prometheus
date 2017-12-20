@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
@@ -53,19 +54,6 @@ import (
 	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
-)
-
-var (
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_successful",
-		Help:      "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_success_timestamp_seconds",
-		Help:      "Timestamp of the last successful configuration reload.",
-	})
 )
 
 func init() {
@@ -225,23 +213,30 @@ func main() {
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote storage"), localStorage.StartTime)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
 	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
+
+	configManager, err := config.New(log.With(logger, "component", "configuration manager"), cfg.configFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, fmt.Sprintf("Couldn't load configuration (--config.file=%s): %v", cfg.configFile, err)))
+		os.Exit(2)
+	}
+
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		notifierManager  = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier manager"))
 		discoveryManager = discovery.NewManager(log.With(logger, "component", "discovery manager"))
-		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage, configManager)
 		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ruleManager      = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
 			QueryFunc:   rules.EngineQueryFunc(queryEngine),
-			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			NotifyFunc:  sendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:     ctxRule,
 			ExternalURL: cfg.web.ExternalURL,
 			Registerer:  prometheus.DefaultRegisterer,
@@ -255,7 +250,7 @@ func main() {
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
-	cfg.web.Notifier = notifier
+	cfg.web.Notifier = notifierManager
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
@@ -272,42 +267,22 @@ func main() {
 	}
 
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
-	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
+	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web, configManager)
 
 	// Monitor outgoing connections on default transport with conntrack.
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
 		conntrack.DialWithTracing(),
 	)
 
-	reloaders := []func(cfg *config.Config) error{
-		remoteStorage.ApplyConfig,
-		webHandler.ApplyConfig,
-		notifier.ApplyConfig,
-		discoveryManager.ApplyConfig,
-		scrapeManager.ApplyConfig,
-		func(cfg *config.Config) error {
-			// Get all rule files matching the configuration oaths.
-			var files []string
-			for _, pat := range cfg.RuleFiles {
-				fs, err := filepath.Glob(pat)
-				if err != nil {
-					// The only error can be a bad pattern.
-					return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
-				}
-				files = append(files, fs...)
-			}
-			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
-		},
+	reloaders := []func(cfg config.ReloadReader) error{
+		remoteStorage.Reload,
+		notifierManager.Reload,
+		discoveryManager.Reload,
+		ruleManager.Reload,
 	}
 
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
-
-	// Start all components while we wait for TSDB to open but only load
-	// initial config and mark ourselves as ready after it completed.
+	// All components that rely on a working tsdb should not start until dbOpen is closed.
 	dbOpen := make(chan struct{})
-	// Wait until the server is ready to handle reloading
-	reloadReady := make(chan struct{})
 
 	var g group.Group
 	{
@@ -348,13 +323,17 @@ func main() {
 	{
 		g.Add(
 			func() error {
+				select {
+				case <-dbOpen: // Ensure the tsdb is started as the scrape loops will write to it.
+					break
+				}
 				err := scrapeManager.Run(discoveryManager.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
 			},
 			func(err error) {
-				// Scrape manager needs to be stopped before closing the local TSDB
-				// so that it doesn't try to write samples to a closed storage.
+				// Scrape manager needs to be in a interrupt group before the local TSDB
+				// so that all scrapes are stopped and  doesn't try to write samples to a closed storage.
 				level.Info(logger).Log("msg", "Stopping scrape manager...")
 				scrapeManager.Stop()
 			},
@@ -368,22 +347,20 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				select {
-				case <-reloadReady:
-					break
-				// In case a shutdown is initiated before the reloadReady is released.
-				case <-cancel:
-					return nil
-				}
-
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
+						if err := configManager.Reload(); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+							break
 						}
+						reloadComponents(logger, configManager, reloaders)
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
+						if err := configManager.Reload(); err != nil {
+							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+							break
+						}
+						if err := reloadComponents(logger, configManager, reloaders); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -404,19 +381,9 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				select {
-				case <-dbOpen:
-					break
-				// In case a shutdown is initiated before the dbOpen is released
-				case <-cancel:
-					return nil
+				if err := reloadComponents(logger, configManager, reloaders); err != nil {
+					return err
 				}
-
-				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
-					return fmt.Errorf("Error loading config %s", err)
-				}
-
-				close(reloadReady)
 				webHandler.Ready()
 				level.Info(logger).Log("msg", "Server is ready to receive requests.")
 				<-cancel
@@ -439,6 +406,7 @@ func main() {
 					&cfg.tsdb,
 				)
 				if err != nil {
+					close(dbOpen) // Release the wait for all dependent components.
 					return fmt.Errorf("Opening storage failed %s", err)
 				}
 				level.Info(logger).Log("msg", "TSDB started")
@@ -493,11 +461,11 @@ func main() {
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
 			func() error {
-				notifier.Run()
+				notifierManager.Run()
 				return nil
 			},
 			func(err error) {
-				notifier.Stop()
+				notifierManager.Stop()
 			},
 		)
 	}
@@ -507,32 +475,18 @@ func main() {
 	level.Info(logger).Log("msg", "See you next time!")
 }
 
-func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config) error) (err error) {
-	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
-
-	defer func() {
-		if err == nil {
-			configSuccess.Set(1)
-			configSuccessTime.Set(float64(time.Now().Unix()))
-		} else {
-			configSuccess.Set(0)
-		}
-	}()
-
-	conf, err := config.LoadFile(filename)
-	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%s): %v", filename, err)
-	}
-
+// TODO Krasi - revert old config if at least one component fails to reload?
+// This will ensure that Prometheus can handle reloads without panicing if one of the components didn't like the new config.
+func reloadComponents(logger log.Logger, cfg config.ReloadReader, rls []func(config.ReloadReader) error) (err error) {
 	failed := false
 	for _, rl := range rls {
-		if err := rl(conf); err != nil {
-			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
+		if err := rl(cfg); err != nil {
+			level.Error(logger).Log("msg", "Failed to reload component:", "name", runtime.FuncForPC(reflect.ValueOf(rl).Pointer()).Name(), "err", err)
 			failed = true
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%s)", filename)
+		return fmt.Errorf("One or more errors occurred while reloading a component")
 	}
 	return nil
 }
