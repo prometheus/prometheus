@@ -29,6 +29,11 @@ import (
 	libtsdb "github.com/prometheus/tsdb"
 )
 
+func TestMain(m *testing.M) {
+	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
+	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
+	os.Exit(m.Run())
+}
 func TestGlobalURL(t *testing.T) {
 	opts := &Options{
 		ListenAddress: ":9090",
