@@ -14,17 +14,14 @@
 package labels
 
 import (
+	"bufio"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"sort"
+	"strings"
 	"testing"
-	"unsafe"
 
-	"github.com/pkg/errors"
-	promlabels "github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -129,20 +126,25 @@ func readPrometheusLabels(fn string, n int) ([]Labels, error) {
 	}
 	defer f.Close()
 
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
+	scanner := bufio.NewScanner(f)
 
-	p := textparse.New(b)
-	i := 0
 	var mets []Labels
 	hashes := map[uint64]struct{}{}
+	i := 0
 
-	for p.Next() && i < n {
+	for scanner.Scan() && i < n {
 		m := make(Labels, 0, 10)
-		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
 
+		r := strings.NewReplacer("\"", "", "{", "", "}", "")
+		s := r.Replace(scanner.Text())
+
+		labelChunks := strings.Split(s, ",")
+		for _, labelChunk := range labelChunks {
+			split := strings.Split(labelChunk, ":")
+			m = append(m, Label{Name: split[0], Value: split[1]})
+		}
+		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
+		sort.Sort(m)
 		h := m.Hash()
 		if _, ok := hashes[h]; ok {
 			continue
@@ -150,12 +152,6 @@ func readPrometheusLabels(fn string, n int) ([]Labels, error) {
 		mets = append(mets, m)
 		hashes[h] = struct{}{}
 		i++
-	}
-	if err := p.Err(); err != nil {
-		return nil, err
-	}
-	if i != n {
-		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
 	}
 	return mets, nil
 }

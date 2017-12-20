@@ -236,7 +236,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	lbls, err := readPrometheusLabels("testdata/20k.series", 20000)
+	lbls, err := readPrometheusLabels("testdata/20kseries.json", 20000)
 	testutil.Ok(t, err)
 
 	// Sort labels as the index writer expects series in sorted order.
