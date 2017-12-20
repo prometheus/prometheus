@@ -35,6 +35,9 @@ func TestMain(m *testing.M) {
 	if testing.Short() {
 		os.Exit(m.Run())
 	}
+	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
+	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
+
 	var err error
 	promPath, err = os.Getwd()
 	if err != nil {
