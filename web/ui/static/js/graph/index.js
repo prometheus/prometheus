@@ -3,6 +3,9 @@ var graphTemplate;
 
 var SECOND = 1000;
 
+/**
+ * Graph
+*/
 Prometheus.Graph = function(element, options, handleChange, handleRemove) {
   this.el = element;
   this.graphHTML = null;
@@ -61,8 +64,8 @@ Prometheus.Graph.prototype.initialize = function() {
 
   self.expr = graphWrapper.find("textarea[name=expr]");
   self.expr.keypress(function(e) {
-    // Enter was pressed without the shift key.
-    if (e.which == 13 && !e.shiftKey) {
+    const enter = 13;
+    if (e.which == enter && !e.shiftKey) {
       self.queryForm.submit();
       e.preventDefault();
     }
@@ -183,7 +186,13 @@ Prometheus.Graph.prototype.initialize = function() {
   });
 
   self.checkTimeDrift();
+  // initialize query history
+  if (!localStorage.getItem("history")) {
+    localStorage.setItem("history", JSON.stringify([]));
+  }
   self.populateInsertableMetrics();
+
+  queryHistory.bindHistoryEvents(self);
 
   if (self.expr.val()) {
     self.submitQuery();
@@ -230,9 +239,10 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           self.showError("Error loading available metrics!");
           return;
         }
-        var metrics = json.data;
-        for (var i = 0; i < metrics.length; i++) {
-          self.insertMetric[0].options.add(new Option(metrics[i], metrics[i]));
+
+        pageConfig.allMetrics = json.data; // todo: do we need self.allMetrics? Or can it just live on the page
+        for (var i = 0; i < pageConfig.allMetrics.length; i++) {
+          self.insertMetric[0].options.add(new Option(pageConfig.allMetrics[i], pageConfig.allMetrics[i]));
         }
 
         self.fuzzyResult = {
@@ -241,47 +251,54 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
           map: {}
         }
 
-        self.expr.typeahead({
-          source: metrics,
-          items: "all",
-          matcher: function(item) {
-            // If we have result for current query, skip
-            if (self.fuzzyResult.query !== this.query) {
-              self.fuzzyResult.query = this.query;
-              self.fuzzyResult.map = {};
-              self.fuzzyResult.result = fuzzy.filter(this.query.replace(/ /g, ''), metrics, {
-                pre: '<strong>',
-                post: '</strong>'
-              });
-              self.fuzzyResult.result.forEach(function(r) {
-                self.fuzzyResult.map[r.original] = r;
-              });
-            }
-
-            return item in self.fuzzyResult.map;
-          },
-
-          sorter: function(items) {
-            items.sort(function(a,b) {
-              var i = self.fuzzyResult.map[b].score - self.fuzzyResult.map[a].score;
-              return i === 0 ? a.localeCompare(b) : i;
-            });
-            return items;
-          },
-
-          highlighter: function (item) {
-            return $('<div>' + self.fuzzyResult.map[item].string + '</div>')
-          },
-        });
-        // This needs to happen after attaching the typeahead plugin, as it
-        // otherwise breaks the typeahead functionality.
-        self.expr.focus();
+        self.initTypeahead(self);
       },
       error: function() {
         self.showError("Error loading available metrics!");
       },
   });
 };
+
+Prometheus.Graph.prototype.initTypeahead = function(self) {
+  const historyIsChecked = $("div.query-history").hasClass("is-checked");
+  const source = historyIsChecked ? pageConfig.allMetrics.concat(JSON.parse(localStorage.getItem("history"))) : pageConfig.allMetrics;
+
+  self.expr.typeahead({
+    source,
+    items: "all",
+    matcher: function (item) {
+      // If we have result for current query, skip
+      if (self.fuzzyResult.query !== this.query) {
+        self.fuzzyResult.query = this.query;
+        self.fuzzyResult.map = {};
+        self.fuzzyResult.result = fuzzy.filter(this.query.replace(/ /g, ""), this.source, {
+          pre: "<strong>",
+          post: "</strong>"
+        });
+        self.fuzzyResult.result.forEach(function(r) {
+          self.fuzzyResult.map[r.original] = r;
+        });
+      }
+
+      return item in self.fuzzyResult.map;
+    },
+
+    sorter: function (items) {
+      items.sort(function(a,b) {
+        var i = self.fuzzyResult.map[b].score - self.fuzzyResult.map[a].score;
+        return i === 0 ? a.localeCompare(b) : i;
+      });
+      return items;
+    },
+
+    highlighter: function (item) {
+      return $("<div>" + self.fuzzyResult.map[item].string + "</div>");
+    },
+  });
+  // This needs to happen after attaching the typeahead plugin, as it
+  // otherwise breaks the typeahead functionality.
+  self.expr.focus();
+}
 
 Prometheus.Graph.prototype.getOptions = function() {
   var self = this;
@@ -429,6 +446,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
           self.showError(json.error);
           return;
         }
+        queryHistory.handleHistory(self);
         success(json.data, textStatus);
       },
       error: function(xhr, resp) {
@@ -807,24 +825,14 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
   }
 }
 
-function escapeHTML(string) {
-  var entityMap = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': '&quot;',
-    "'": '&#39;',
-    "/": '&#x2F;'
-  };
-
-  return String(string).replace(/[&<>"'\/]/g, function (s) {
-    return entityMap[s];
-  });
-}
-
-Prometheus.Page = function() {
-  this.graphs = [];
+/**
+ * Page
+*/
+const pageConfig = {
+  graphs: []
 };
+
+Prometheus.Page = function() {};
 
 Prometheus.Page.prototype.init = function() {
   var graphOptions = this.parseURL();
@@ -833,7 +841,6 @@ Prometheus.Page.prototype.init = function() {
   }
 
   graphOptions.forEach(this.addGraph, this);
-
   $("#add_graph").click(this.addGraph.bind(this, {}));
 };
 
@@ -855,7 +862,9 @@ Prometheus.Page.prototype.addGraph = function(options) {
     this.removeGraph.bind(this)
   );
 
-  this.graphs.push(graph);
+  // this.graphs.push(graph);
+  pageConfig.graphs.push(graph);
+
   $(window).resize(function() {
     graph.resizeGraph();
   });
@@ -863,7 +872,7 @@ Prometheus.Page.prototype.addGraph = function(options) {
 
 // NOTE: This needs to be kept in sync with /util/strutil/strconv.go:GraphLinkForExpression
 Prometheus.Page.prototype.updateURL = function() {
-  var queryString = this.graphs.map(function(graph, index) {
+  var queryString = pageConfig.graphs.map(function(graph, index) {
     var graphOptions = graph.getOptions();
     var queryParamHelper = new Prometheus.Page.QueryParamHelper();
     var queryObject = queryParamHelper.generateQueryObject(graphOptions, index);
@@ -874,7 +883,7 @@ Prometheus.Page.prototype.updateURL = function() {
 };
 
 Prometheus.Page.prototype.removeGraph = function(graph) {
-  this.graphs = this.graphs.filter(function(g) {return g !== graph});
+  pageConfig.graphs = pageConfig.graphs.filter(function(g) {return g !== graph});
 };
 
 Prometheus.Page.QueryParamHelper = function() {};
@@ -950,29 +959,6 @@ Prometheus.Page.QueryParamHelper.prototype.generateQueryObject = function(graphO
   return queryObject;
 };
 
-function init() {
-  $.ajaxSetup({
-    cache: false
-  });
-
-  $.ajax({
-    url: PATH_PREFIX + "/static/js/graph_template.handlebar?v=" + BUILD_VERSION,
-    success: function(data) {
-
-      graphTemplate = data;
-      Mustache.parse(data);
-      if (isDeprecatedGraphURL()) {
-        redirectToMigratedURL();
-      } else {
-        var Page = new Prometheus.Page();
-        Page.init();
-      }
-    }
-  });
-}
-
-
-
 // These two methods (isDeprecatedGraphURL and redirectToMigratedURL)
 // are added only for backward compatibility to old query format.
 function isDeprecatedGraphURL() {
@@ -1004,4 +990,108 @@ function redirectToMigratedURL() {
   window.location = PATH_PREFIX + "/graph?" + query;
 }
 
+/**
+ * Query History helper functions
+ * **/
+const queryHistory = {
+  bindHistoryEvents: function(graph) {
+    const targetEl = $('div.query-history');
+    const icon = $(targetEl).children('i');
+    targetEl.off('click');
+
+    if (JSON.parse(localStorage.getItem('enable-query-history'))) {
+      this.toggleOn(targetEl);
+    }
+
+    targetEl.on('click', function() {
+      if (icon.hasClass('glyphicon-unchecked')) {
+        queryHistory.toggleOn(targetEl);
+      } else if (icon.hasClass('glyphicon-check')) {
+        queryHistory.toggleOff(targetEl);
+      }
+    });
+  },
+
+  handleHistory: function(graph) {
+    const query = graph.expr.val();
+    const isSimpleMetric = pageConfig.allMetrics.indexOf(query) !== -1;
+    if (isSimpleMetric) {
+      return;
+    }
+
+    let parsedQueryHistory = JSON.parse(localStorage.getItem('history'));
+    const hasStoredQuery = parsedQueryHistory.indexOf(query) !== -1;
+    if (hasStoredQuery) {
+      parsedQueryHistory.splice(parsedQueryHistory.indexOf(query), 1);
+    }
+
+    parsedQueryHistory.push(query);
+    const queryCount = parsedQueryHistory.length;
+    parsedQueryHistory = parsedQueryHistory.slice(queryCount - 50, queryCount);
+
+    localStorage.setItem('history', JSON.stringify(parsedQueryHistory));
+
+    this.updateTypeaheadMetricSet(parsedQueryHistory);
+  },
+
+  toggleOn: function(targetEl) {
+    this.updateTypeaheadMetricSet(JSON.parse(localStorage.getItem('history')));
+
+    $(targetEl).children('i').removeClass('glyphicon-unchecked').addClass('glyphicon-check');
+    targetEl.addClass('is-checked');
+    localStorage.setItem('enable-query-history', true);
+  },
+
+  toggleOff: function(targetEl) {
+    this.updateTypeaheadMetricSet();
+
+    $(targetEl).children('i').removeClass('glyphicon-check').addClass('glyphicon-unchecked');
+    targetEl.removeClass('is-checked');
+    localStorage.setItem('enable-query-history', false);
+  },
+
+  updateTypeaheadMetricSet: function(metricSet) {
+    pageConfig.graphs.forEach(function(graph) {
+      graph.expr.data('typeahead').source = metricSet ? pageConfig.allMetrics.concat(metricSet) : pageConfig.allMetrics;
+    });
+  }
+};
+
+function escapeHTML(string) {
+  var entityMap = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': '&quot;',
+    "'": '&#39;',
+    "/": '&#x2F;'
+  };
+
+  return String(string).replace(/[&<>"'\/]/g, function (s) {
+    return entityMap[s];
+  });
+}
+
+function init() {
+  $.ajaxSetup({
+    cache: false
+  });
+
+  $.ajax({
+    url: PATH_PREFIX + "/static/js/graph/graph_template.handlebar?v=" + BUILD_VERSION,
+    success: function(data) {
+
+      graphTemplate = data;
+      Mustache.parse(data);
+      if (isDeprecatedGraphURL()) {
+        redirectToMigratedURL();
+      } else {
+        var Page = new Prometheus.Page();
+        Page.init();
+      }
+    }
+  });
+}
+
 $(init);
+
