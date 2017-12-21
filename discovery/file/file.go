@@ -114,14 +114,13 @@ func (d *Discovery) watchFiles() {
 
 // Run implements the TargetProvider interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer d.stop()
-
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error adding file watcher", "err", err)
 		return
 	}
 	d.watcher = watcher
+	defer d.stop()
 
 	d.refresh(ctx, ch)
 
