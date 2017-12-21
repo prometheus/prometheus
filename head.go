@@ -776,9 +776,20 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 	sid, cid := unpackChunkID(ref)
 
 	s := h.head.series.getByID(sid)
+	// This means that the series has been garbage collected.
+	if s == nil {
+		return nil, ErrNotFound
+	}
 
 	s.Lock()
 	c := s.chunk(int(cid))
+
+	// This means that the chunk has been garbage collected.
+	if c == nil {
+		s.Unlock()
+		return nil, ErrNotFound
+	}
+
 	mint, maxt := c.minTime, c.maxTime
 	s.Unlock()
 
