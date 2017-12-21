@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mailru/easyjson/jwriter"
 )
 
 const (
@@ -38,6 +40,9 @@ const (
 	// a low watermark.
 	Latest = Time(math.MaxInt64)
 )
+
+// How many digits the second variable is (needed for formatting to string)
+var secondDigitLen = len(strconv.FormatInt(second, 10)) - 1
 
 // Time is the number of milliseconds since the epoch
 // (1970-01-01 00:00 UTC) excluding leap seconds.
@@ -112,12 +117,22 @@ var dotPrecision = int(math.Log10(float64(second)))
 
 // String returns a string representation of the Time.
 func (t Time) String() string {
-	return strconv.FormatFloat(float64(t)/float64(second), 'f', -1, 64)
+	timeStr := strconv.FormatInt(int64(t), 10)
+	return timeStr[:len(timeStr)-secondDigitLen] + "." + timeStr[len(timeStr)-secondDigitLen:]
+}
+
+func (t Time) MarshalEasyJSON(w *jwriter.Writer) {
+	timeStr := strconv.FormatInt(int64(t), 10)
+	w.RawString(timeStr[:len(timeStr)-secondDigitLen])
+	w.RawByte('.')
+	w.RawString(timeStr[len(timeStr)-secondDigitLen:])
 }
 
 // MarshalJSON implements the json.Marshaler interface.
 func (t Time) MarshalJSON() ([]byte, error) {
-	return []byte(t.String()), nil
+	w := jwriter.Writer{}
+	t.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.

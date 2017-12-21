@@ -496,25 +496,28 @@
 			"revisionTime": "2015-09-05T19:25:33+02:00"
 		},
 		{
-			"checksumSHA1": "urY45++NYCue4nh4k8OjUFnIGfU=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/mailru/easyjson/buffer",
+			"checksumSHA1": "HIF2ZYMMr2kzt5oE7SRjKefOIOc=",
+			"path": "github.com/mailru/easyjson",
+			"revision": "32fa128f234d041f196a9f3e0fea5ac9772c08e1",
+			"revisionTime": "2017-11-20T08:03:33Z"
+		},
+		{
+			"checksumSHA1": "T8soMJArSZrYnhmdpAnq1bVxQ6Q=",
 			"path": "github.com/mailru/easyjson/buffer",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "32fa128f234d041f196a9f3e0fea5ac9772c08e1",
+			"revisionTime": "2017-11-20T08:03:33Z"
 		},
 		{
-			"checksumSHA1": "yTDKAM4KBgOvXRsZC50zg0OChvM=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/mailru/easyjson/jlexer",
+			"checksumSHA1": "QA+9yav6Xzq7LmuZUREeOX1hfjk=",
 			"path": "github.com/mailru/easyjson/jlexer",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "32fa128f234d041f196a9f3e0fea5ac9772c08e1",
+			"revisionTime": "2017-11-20T08:03:33Z"
 		},
 		{
-			"checksumSHA1": "4+d+6rhM1pei6lBguhqSEW7LaXs=",
-			"origin": "k8s.io/client-go/1.5/vendor/github.com/mailru/easyjson/jwriter",
+			"checksumSHA1": "svJ32su8itWtutcMkP+RzoMsIfw=",
 			"path": "github.com/mailru/easyjson/jwriter",
-			"revision": "c589d0c9f0d81640c518354c7bcae77d99820aa3",
-			"revisionTime": "2016-09-30T00:14:02Z"
+			"revision": "32fa128f234d041f196a9f3e0fea5ac9772c08e1",
+			"revisionTime": "2017-11-20T08:03:33Z"
 		},
 		{
 			"checksumSHA1": "Q2vw4HZBbnU8BLFt8VrzStwqSJg=",

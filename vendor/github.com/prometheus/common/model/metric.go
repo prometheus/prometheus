@@ -18,6 +18,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/mailru/easyjson/jwriter"
 )
 
 var (
@@ -85,6 +87,21 @@ func (m Metric) Fingerprint() Fingerprint {
 // algorithm, which is, however, more susceptible to hash collisions.
 func (m Metric) FastFingerprint() Fingerprint {
 	return LabelSet(m).FastFingerprint()
+}
+
+func (m Metric) MarshalEasyJSON(w *jwriter.Writer) {
+	w.RawByte('{')
+	first := true
+	for k, v := range m {
+		if !first {
+			w.RawByte(',')
+		}
+		first = false
+		w.RawString(string(k))
+		w.RawByte(',')
+		w.RawString(string(v))
+	}
+	w.RawByte('}')
 }
 
 // IsValidMetricName returns true iff name matches the pattern of MetricNameRE.
