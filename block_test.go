@@ -45,8 +45,8 @@ func createEmptyBlock(t *testing.T, dir string) *Block {
 	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{}))
 
 	ir, err := index.NewWriter(filepath.Join(dir, indexFilename))
-	Ok(t, err)
-	Ok(t, ir.Close())
+	testutil.Ok(t, err)
+	testutil.Ok(t, ir.Close())
 
 	testutil.Ok(t, os.MkdirAll(chunkDir(dir), 0777))
 

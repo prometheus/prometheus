@@ -20,11 +20,8 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
-	"unsafe"
 
 	"github.com/pkg/errors"
-	promlabels "github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
@@ -242,7 +239,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	lbls, err := readPrometheusLabels("testdata/20kseries.json", 20000)
+	lbls, err := labels.ReadLabels("../testdata/20kseries.json", 20000)
 	testutil.Ok(t, err)
 
 	// Sort labels as the index writer expects series in sorted order.
@@ -307,7 +304,11 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	for k, v := range values {
-		vals := v.slice()
+		var vals []string
+		for e := range v {
+			vals = append(vals, e)
+		}
+		sort.Strings(vals)
 
 		testutil.Ok(t, iw.WriteLabelIndex([]string{k}, vals))
 		testutil.Ok(t, mi.WriteLabelIndex([]string{k}, vals))
@@ -322,15 +323,15 @@ func TestPersistence_index_e2e(t *testing.T) {
 	mi.WritePostings("", "", newListPostings(all))
 
 	for l := range postings.m {
-		err = iw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
+		err = iw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
 		testutil.Ok(t, err)
-		mi.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
+		mi.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
 	}
 
 	err = iw.Close()
 	testutil.Ok(t, err)
 
-	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
+	ir, err := NewFileReader(filepath.Join(dir, "index"))
 	testutil.Ok(t, err)
 
 	for p := range mi.postings {
@@ -359,7 +360,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	for k, v := range mi.labelIndex {
-		tplsExp, err := newStringTuples(v, 1)
+		tplsExp, err := NewStringTuples(v, 1)
 		testutil.Ok(t, err)
 
 		tplsRes, err := ir.LabelValues(k)
@@ -378,42 +379,4 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	testutil.Ok(t, ir.Close())
-}
-
-func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-
-	p := textparse.New(b)
-	i := 0
-	var mets []labels.Labels
-	hashes := map[uint64]struct{}{}
-
-	for p.Next() && i < n {
-		m := make(labels.Labels, 0, 10)
-		p.Metric((*promlabels.Labels)(unsafe.Pointer(&m)))
-
-		h := m.Hash()
-		if _, ok := hashes[h]; ok {
-			continue
-		}
-		mets = append(mets, m)
-		hashes[h] = struct{}{}
-		i++
-	}
-	if err := p.Err(); err != nil {
-		return nil, err
-	}
-	if i != n {
-		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
-	}
-	return mets, nil
 }

@@ -14,22 +14,18 @@
 package tsdb
 
 import (
-	"bufio"
 	"math/rand"
-	"os"
-	"sort"
-	"strings"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
 
 func BenchmarkCreateSeries(b *testing.B) {
-	lbls, err := readPrometheusLabels("testdata/all.series", b.N)
+	lbls, err := labels.ReadLabels("testdata/all.series", b.N)
 	testutil.Ok(b, err)
 
 	h, err := NewHead(nil, nil, nil, 10000)
@@ -44,49 +40,6 @@ func BenchmarkCreateSeries(b *testing.B) {
 	for _, l := range lbls {
 		h.getOrCreate(l.Hash(), l)
 	}
-}
-
-func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-
-	var mets []labels.Labels
-	hashes := map[uint64]struct{}{}
-	i := 0
-
-	for scanner.Scan() && i < n {
-		m := make(labels.Labels, 0, 10)
-
-		r := strings.NewReplacer("\"", "", "{", "", "}", "")
-		s := r.Replace(scanner.Text())
-
-		labelChunks := strings.Split(s, ",")
-		for _, labelChunk := range labelChunks {
-			split := strings.Split(labelChunk, ":")
-			m = append(m, labels.Label{Name: split[0], Value: split[1]})
-		}
-		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
-		sort.Sort(m)
-		h := m.Hash()
-		if _, ok := hashes[h]; ok {
-			continue
-		}
-		mets = append(mets, m)
-		hashes[h] = struct{}{}
-		i++
-	}
-	if err != nil {
-		return nil, err
-	}
-	if i != n {
-		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
-	}
-	return mets, nil
 }
 
 type memoryWAL struct {
@@ -727,7 +680,7 @@ func TestGCChunkAccess(t *testing.T) {
 	idx := h.indexRange(0, 1500)
 	var (
 		lset   labels.Labels
-		chunks []ChunkMeta
+		chunks []chunks.Meta
 	)
 	testutil.Ok(t, idx.Series(1, &lset, &chunks))
 
@@ -767,7 +720,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	idx := h.indexRange(0, 2000)
 	var (
 		lset   labels.Labels
-		chunks []ChunkMeta
+		chunks []chunks.Meta
 	)
 	testutil.Ok(t, idx.Series(1, &lset, &chunks))
 

@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb/fileutil"
+	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
 )
 
@@ -71,7 +72,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 		numMetrics = 20000
 		batch      = 100
 	)
-	series, err := readPrometheusLabels("testdata/20kseries.json", numMetrics)
+	series, err := labels.ReadLabels("testdata/20kseries.json", numMetrics)
 	testutil.Ok(t, err)
 
 	dir, err := ioutil.TempDir("", "test_wal_log_truncate")
@@ -150,7 +151,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	)
 	// Generate testing data. It does not make semantical sense but
 	// for the purpose of this test.
-	series, err := readPrometheusLabels("testdata/20kseries.json", numMetrics)
+	series, err := labels.ReadLabels("testdata/20kseries.json", numMetrics)
 	testutil.Ok(t, err)
 
 	dir, err := ioutil.TempDir("", "test_wal_log_restore")
