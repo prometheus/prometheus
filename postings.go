@@ -259,7 +259,7 @@ func (it *intersectPostings) Err() error {
 // Merge returns a new iterator over the union of the input iterators.
 func Merge(its ...Postings) Postings {
 	if len(its) == 0 {
-		return nil
+		return EmptyPostings()
 	}
 	if len(its) == 1 {
 		return its[0]
@@ -338,6 +338,80 @@ func (it *mergedPostings) Err() error {
 		return it.a.Err()
 	}
 	return it.b.Err()
+}
+
+type removedPostings struct {
+	full, remove Postings
+
+	cur uint64
+
+	initialized bool
+	fok, rok    bool
+}
+
+func newRemovedPostings(full, remove Postings) *removedPostings {
+	return &removedPostings{
+		full:   full,
+		remove: remove,
+	}
+}
+
+func (rp *removedPostings) At() uint64 {
+	return rp.cur
+}
+
+func (rp *removedPostings) Next() bool {
+	if !rp.initialized {
+		rp.fok = rp.full.Next()
+		rp.rok = rp.remove.Next()
+		rp.initialized = true
+	}
+
+	if !rp.fok {
+		return false
+	}
+
+	if !rp.rok {
+		rp.cur = rp.full.At()
+		rp.fok = rp.full.Next()
+		return true
+	}
+
+	fcur, rcur := rp.full.At(), rp.remove.At()
+	if fcur < rcur {
+		rp.cur = fcur
+		rp.fok = rp.full.Next()
+
+		return true
+	} else if rcur < fcur {
+		// Forward the remove postings to the right position.
+		rp.rok = rp.remove.Seek(fcur)
+	} else {
+		// Skip the current posting.
+		rp.fok = rp.full.Next()
+	}
+
+	return rp.Next()
+}
+
+func (rp *removedPostings) Seek(id uint64) bool {
+	if rp.cur >= id {
+		return true
+	}
+
+	rp.fok = rp.full.Seek(id)
+	rp.rok = rp.remove.Seek(id)
+	rp.initialized = true
+
+	return rp.Next()
+}
+
+func (rp *removedPostings) Err() error {
+	if rp.full.Err() != nil {
+		return rp.full.Err()
+	}
+
+	return rp.remove.Err()
 }
 
 // listPostings implements the Postings interface over a plain list.

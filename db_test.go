@@ -807,3 +807,89 @@ func TestDB_Retention(t *testing.T) {
 	testutil.Equals(t, 1, len(db.blocks))
 	testutil.Equals(t, int64(100), db.blocks[0].meta.MaxTime) // To verify its the right block.
 }
+
+func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "test")
+	defer os.RemoveAll(tmpdir)
+
+	db, err := Open(tmpdir, nil, nil, nil)
+	testutil.Ok(t, err)
+	defer db.Close()
+
+	labelpairs := []labels.Labels{
+		labels.FromStrings("a", "abcd", "b", "abcde"),
+		labels.FromStrings("labelname", "labelvalue"),
+	}
+
+	app := db.Appender()
+	for _, lbls := range labelpairs {
+		_, err = app.Add(lbls, 0, 1)
+		testutil.Ok(t, err)
+	}
+	testutil.Ok(t, app.Commit())
+
+	cases := []struct {
+		selector labels.Selector
+		series   []labels.Labels
+	}{{
+		selector: labels.Selector{
+			labels.Not(labels.NewEqualMatcher("lname", "lvalue")),
+		},
+		series: labelpairs,
+	}, {
+		selector: labels.Selector{
+			labels.NewEqualMatcher("a", "abcd"),
+			labels.Not(labels.NewEqualMatcher("b", "abcde")),
+		},
+		series: []labels.Labels{},
+	}, {
+		selector: labels.Selector{
+			labels.NewEqualMatcher("a", "abcd"),
+			labels.Not(labels.NewEqualMatcher("b", "abc")),
+		},
+		series: []labels.Labels{labelpairs[0]},
+	}, {
+		selector: labels.Selector{
+			labels.Not(labels.NewMustRegexpMatcher("a", "abd.*")),
+		},
+		series: labelpairs,
+	}, {
+		selector: labels.Selector{
+			labels.Not(labels.NewMustRegexpMatcher("a", "abc.*")),
+		},
+		series: labelpairs[1:],
+	}, {
+		selector: labels.Selector{
+			labels.Not(labels.NewMustRegexpMatcher("c", "abd.*")),
+		},
+		series: labelpairs,
+	}, {
+		selector: labels.Selector{
+			labels.Not(labels.NewMustRegexpMatcher("labelname", "labelvalue")),
+		},
+		series: labelpairs[:1],
+	}}
+
+	q, err := db.Querier(0, 10)
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	for _, c := range cases {
+		ss, err := q.Select(c.selector...)
+		testutil.Ok(t, err)
+
+		lres, err := expandSeriesSet(ss)
+		testutil.Ok(t, err)
+
+		testutil.Equals(t, c.series, lres)
+	}
+}
+
+func expandSeriesSet(ss SeriesSet) ([]labels.Labels, error) {
+	result := []labels.Labels{}
+	for ss.Next() {
+		result = append(result, ss.At().Labels())
+	}
+
+	return result, ss.Err()
+}

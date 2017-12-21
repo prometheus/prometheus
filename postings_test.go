@@ -301,6 +301,147 @@ func TestMergedPostingsSeek(t *testing.T) {
 	return
 }
 
+func TestRemovedPostings(t *testing.T) {
+	var cases = []struct {
+		a, b []uint64
+		res  []uint64
+	}{
+		{
+			a:   nil,
+			b:   nil,
+			res: []uint64(nil),
+		},
+		{
+			a:   []uint64{1, 2, 3, 4},
+			b:   nil,
+			res: []uint64{1, 2, 3, 4},
+		},
+		{
+			a:   nil,
+			b:   []uint64{1, 2, 3, 4},
+			res: []uint64(nil),
+		},
+		{
+			a:   []uint64{1, 2, 3, 4, 5},
+			b:   []uint64{6, 7, 8, 9, 10},
+			res: []uint64{1, 2, 3, 4, 5},
+		},
+		{
+			a:   []uint64{1, 2, 3, 4, 5},
+			b:   []uint64{4, 5, 6, 7, 8},
+			res: []uint64{1, 2, 3},
+		},
+		{
+			a:   []uint64{1, 2, 3, 4, 9, 10},
+			b:   []uint64{1, 4, 5, 6, 7, 8, 10, 11},
+			res: []uint64{2, 3, 9},
+		},
+		{
+			a:   []uint64{1, 2, 3, 4, 9, 10},
+			b:   []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+			res: []uint64(nil),
+		},
+	}
+
+	for _, c := range cases {
+		a := newListPostings(c.a)
+		b := newListPostings(c.b)
+
+		res, err := expandPostings(newRemovedPostings(a, b))
+		testutil.Ok(t, err)
+		testutil.Equals(t, c.res, res)
+	}
+
+}
+
+func TestRemovedPostingsSeek(t *testing.T) {
+	var cases = []struct {
+		a, b []uint64
+
+		seek    uint64
+		success bool
+		res     []uint64
+	}{
+		{
+			a: []uint64{2, 3, 4, 5},
+			b: []uint64{6, 7, 8, 9, 10},
+
+			seek:    1,
+			success: true,
+			res:     []uint64{2, 3, 4, 5},
+		},
+		{
+			a: []uint64{1, 2, 3, 4, 5},
+			b: []uint64{6, 7, 8, 9, 10},
+
+			seek:    2,
+			success: true,
+			res:     []uint64{2, 3, 4, 5},
+		},
+		{
+			a: []uint64{1, 2, 3, 4, 5},
+			b: []uint64{4, 5, 6, 7, 8},
+
+			seek:    9,
+			success: false,
+			res:     nil,
+		},
+		{
+			a: []uint64{1, 2, 3, 4, 9, 10},
+			b: []uint64{1, 4, 5, 6, 7, 8, 10, 11},
+
+			seek:    10,
+			success: false,
+			res:     nil,
+		},
+		{
+			a: []uint64{1, 2, 3, 4, 9, 10},
+			b: []uint64{1, 4, 5, 6, 7, 8, 11},
+
+			seek:    4,
+			success: true,
+			res:     []uint64{9, 10},
+		},
+		{
+			a: []uint64{1, 2, 3, 4, 9, 10},
+			b: []uint64{1, 4, 5, 6, 7, 8, 11},
+
+			seek:    5,
+			success: true,
+			res:     []uint64{9, 10},
+		},
+		{
+			a: []uint64{1, 2, 3, 4, 9, 10},
+			b: []uint64{1, 4, 5, 6, 7, 8, 11},
+
+			seek:    10,
+			success: true,
+			res:     []uint64{10},
+		},
+	}
+
+	for _, c := range cases {
+		a := newListPostings(c.a)
+		b := newListPostings(c.b)
+
+		p := newRemovedPostings(a, b)
+
+		testutil.Equals(t, c.success, p.Seek(c.seek))
+
+		// After Seek(), At() should be called.
+		if c.success {
+			start := p.At()
+			lst, err := expandPostings(p)
+			testutil.Ok(t, err)
+
+			lst = append([]uint64{start}, lst...)
+			testutil.Equals(t, c.res, lst)
+		}
+	}
+
+	return
+}
+
 func TestBigEndian(t *testing.T) {
 	num := 1000
 	// mock a list as postings
