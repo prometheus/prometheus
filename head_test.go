@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"bufio"
-	"fmt"
 	"math/rand"
 	"os"
 	"sort"
@@ -68,7 +67,6 @@ func readPrometheusLabels(fn string, n int) ([]labels.Labels, error) {
 		labelChunks := strings.Split(s, ",")
 		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
-			fmt.Println("split: ", split)
 			m = append(m, labels.Label{Name: split[0], Value: split[1]})
 		}
 		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
