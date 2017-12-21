@@ -386,15 +386,14 @@ See below for the configuration options for EC2 discovery:
 ```yaml
 # The information to access the EC2 API.
 
+# AWS authentication mechanisms change often.  The only authentication method that is guaranteed to work is to specify `access_key` and `secret_key` in this configuration file.  Other methods specified below may change or become not functional faster than this documentation is updated.
+
 # The AWS Region.
 region: <string>
 
-# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
-# and `AWS_SECRET_ACCESS_KEY` are used.
+# The AWS API keys.  Takes precedence over role_arn.
 [ access_key: <string> ]
 [ secret_key: <secret> ]
-# Named AWS profile used to connect to the API.
-[ profile: <string> ]
 
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
