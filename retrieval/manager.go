@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -54,8 +55,6 @@ type ScrapeManager struct {
 
 // Run starts background processing to handle target updates and reload the scraping loops.
 func (m *ScrapeManager) Run(tsets <-chan map[string][]*config.TargetGroup) error {
-	level.Info(m.logger).Log("msg", "Starting scrape manager...")
-
 	for {
 		select {
 		case f := <-m.actionCh:
@@ -140,6 +139,8 @@ func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 			m.scrapePools[tsetName] = sp
 			sp.Sync(tgroup)
 
+		} else if !(reflect.DeepEqual(existing.config, scrapeConfig)) {
+			existing.reload(scrapeConfig)
 		} else {
 			existing.Sync(tgroup)
 		}
