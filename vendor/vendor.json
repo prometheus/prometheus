@@ -794,28 +794,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "XgGOJ06okm8qd+x/gdRj48RgXsg=",
+			"checksumSHA1": "C72p7MMwA94LrpqYD3dMcQEKHzY=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
+			"revisionTime": "2017-12-22T14:44:41Z"
 		},
 		{
-			"checksumSHA1": "C5V8KPHm/gZF0qrNwmIEDdG6rhA=",
+			"checksumSHA1": "XTirmk6Pq5TBGIZEaN5VL4k3i1s=",
+			"path": "github.com/prometheus/tsdb/chunkenc",
+			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
+			"revisionTime": "2017-12-22T14:44:41Z"
+		},
+		{
+			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
+			"revisionTime": "2017-12-22T14:44:41Z"
 		},
 		{
-			"checksumSHA1": "7RhNAVcmDmLFqn9nWiudT0B76f8=",
+			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
+			"revisionTime": "2017-12-22T14:44:41Z"
 		},
 		{
-			"checksumSHA1": "zhmlvc322RH1L3l9DaA9d/HVVWs=",
+			"checksumSHA1": "y3lUn43gcc3HtYd20UDujyybGq4=",
+			"path": "github.com/prometheus/tsdb/index",
+			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
+			"revisionTime": "2017-12-22T14:44:41Z"
+		},
+		{
+			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
+			"revisionTime": "2017-12-22T14:44:41Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
