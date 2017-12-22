@@ -63,7 +63,7 @@ type IndexReader interface {
 	// and indices.
 	Symbols() (map[string]struct{}, error)
 
-	// LabelValues returns the possible label values
+	// LabelValues returns the possible label values.
 	LabelValues(names ...string) (index.StringTuples, error)
 
 	// Postings returns the postings list iterator for the label pair.
@@ -81,10 +81,10 @@ type IndexReader interface {
 	// Returns ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
-	// LabelIndices returns the label pairs for which indices exist.
+	// LabelIndices returns a list of string tuples for which a label value index exists.
 	LabelIndices() ([][]string, error)
 
-	// Close released the underlying resources of the reader.
+	// Close releases the underlying resources of the reader.
 	Close() error
 }
 

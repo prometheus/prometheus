@@ -63,9 +63,6 @@ var (
 	errInvalidChecksum = fmt.Errorf("invalid checksum")
 )
 
-// The table gets initialized with sync.Once but may still cause a race
-// with any other use of the crc32 package anywhere. Thus we initialize it
-// before.
 var castagnoliTable *crc32.Table
 
 func init() {

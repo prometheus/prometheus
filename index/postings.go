@@ -23,6 +23,13 @@ import (
 	"github.com/prometheus/tsdb/labels"
 )
 
+var allPostingsKey = labels.Label{}
+
+// AllPostingsKey returns the label key that is used to store the postings list of all existing IDs.
+func AllPostingsKey() (name, value string) {
+	return allPostingsKey.Name, allPostingsKey.Value
+}
+
 // MemPostings holds postings list for series ID per label pair. They may be written
 // to out of order.
 // ensureOrder() must be called once before any reads are done. This allows for quick
@@ -83,10 +90,8 @@ func (p *MemPostings) Get(name, value string) Postings {
 
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
-	return p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	return p.Get(AllPostingsKey())
 }
-
-var allPostingsKey = labels.Label{}
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
 // calls to add and addFor will insert new IDs in a sorted manner.
@@ -126,13 +131,18 @@ func (p *MemPostings) EnsureOrder() {
 func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 	var keys []labels.Label
 
+	// Collect all keys relevant for deletion once. New keys added afterwards
+	// can by definition not be affected by any of the given deletes.
 	p.mtx.RLock()
 	for l := range p.m {
 		keys = append(keys, l)
 	}
 	p.mtx.RUnlock()
 
+	// For each key we first analyse whether the postings list is affected by the deletes.
+	// If yes, we actually reallocate a new postings list.
 	for _, l := range keys {
+		// Only lock for processing one postings list so we don't block reads for too long.
 		p.mtx.Lock()
 
 		found := false

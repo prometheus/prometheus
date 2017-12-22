@@ -334,11 +334,10 @@ func postingsForUnsetLabelMatcher(ix IndexReader, m labels.Matcher) (index.Posti
 		rit = append(rit, it)
 	}
 
-	allPostings, err := ix.Postings("", "")
+	allPostings, err := ix.Postings(index.AllPostingsKey())
 	if err != nil {
 		return nil, err
 	}
-
 	return index.Without(allPostings, index.Merge(rit...)), nil
 }
 
