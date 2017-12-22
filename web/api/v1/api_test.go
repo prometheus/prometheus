@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/web/api/v1/structs"
 )
 
 type targetRetrieverFunc func() []*retrieval.Target
@@ -120,7 +121,7 @@ func TestEndpoints(t *testing.T) {
 		params   map[string]string
 		query    url.Values
 		response interface{}
-		errType  errorType
+		errType  structs.ErrorType
 	}{
 		{
 			endpoint: api.query,
@@ -128,7 +129,7 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"2"},
 				"time":  []string{"123.4"},
 			},
-			response: &queryData{
+			response: &structs.QueryData{
 				ResultType: promql.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 2,
@@ -142,7 +143,7 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"0.333"},
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
-			response: &queryData{
+			response: &structs.QueryData{
 				ResultType: promql.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -156,7 +157,7 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"0.333"},
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
-			response: &queryData{
+			response: &structs.QueryData{
 				ResultType: promql.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -169,7 +170,7 @@ func TestEndpoints(t *testing.T) {
 			query: url.Values{
 				"query": []string{"0.333"},
 			},
-			response: &queryData{
+			response: &structs.QueryData{
 				ResultType: promql.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -185,7 +186,7 @@ func TestEndpoints(t *testing.T) {
 				"end":   []string{"2"},
 				"step":  []string{"1"},
 			},
-			response: &queryData{
+			response: &structs.QueryData{
 				ResultType: promql.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
@@ -207,7 +208,7 @@ func TestEndpoints(t *testing.T) {
 				"end":   []string{"2"},
 				"step":  []string{"1"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		{
 			endpoint: api.queryRange,
@@ -216,7 +217,7 @@ func TestEndpoints(t *testing.T) {
 				"start": []string{"0"},
 				"step":  []string{"1"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		{
 			endpoint: api.queryRange,
@@ -225,7 +226,7 @@ func TestEndpoints(t *testing.T) {
 				"start": []string{"0"},
 				"end":   []string{"2"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		// Bad query expression.
 		{
@@ -234,7 +235,7 @@ func TestEndpoints(t *testing.T) {
 				"query": []string{"invalid][query"},
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		{
 			endpoint: api.queryRange,
@@ -244,7 +245,7 @@ func TestEndpoints(t *testing.T) {
 				"end":   []string{"100"},
 				"step":  []string{"1"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		// Invalid step.
 		{
@@ -255,7 +256,7 @@ func TestEndpoints(t *testing.T) {
 				"end":   []string{"2"},
 				"step":  []string{"0"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		// Start after end.
 		{
@@ -266,7 +267,7 @@ func TestEndpoints(t *testing.T) {
 				"end":   []string{"1"},
 				"step":  []string{"1"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		// Start overflows int64 internally.
 		{
@@ -277,7 +278,7 @@ func TestEndpoints(t *testing.T) {
 				"end":   []string{"1489667272.372"},
 				"step":  []string{"1"},
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		{
 			endpoint: api.labelValues,
@@ -305,7 +306,7 @@ func TestEndpoints(t *testing.T) {
 			params: map[string]string{
 				"name": "not!!!allowed",
 			},
-			errType: errorBadData,
+			errType: structs.ErrorBadData,
 		},
 		{
 			endpoint: api.series,
@@ -414,16 +415,16 @@ func TestEndpoints(t *testing.T) {
 		// Missing match[] query params in series requests.
 		{
 			endpoint: api.series,
-			errType:  errorBadData,
+			errType:  structs.ErrorBadData,
 		},
 		{
 			endpoint: api.dropSeries,
-			errType:  errorInternal,
+			errType:  structs.ErrorInternal,
 		},
 		{
 			endpoint: api.targets,
-			response: &TargetDiscovery{
-				ActiveTargets: []*Target{
+			response: &structs.TargetDiscovery{
+				ActiveTargets: []*structs.Target{
 					{
 						DiscoveredLabels: map[string]string{},
 						Labels:           map[string]string{},
@@ -435,8 +436,8 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			endpoint: api.alertmanagers,
-			response: &AlertmanagerDiscovery{
-				ActiveAlertmanagers: []*AlertmanagerTarget{
+			response: &structs.AlertmanagerDiscovery{
+				ActiveAlertmanagers: []*structs.AlertmanagerTarget{
 					{
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
 					},
@@ -445,7 +446,7 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			endpoint: api.serveConfig,
-			response: &prometheusConfig{
+			response: &structs.PrometheusConfig{
 				YAML: samplePrometheusCfg.String(),
 			},
 		},
@@ -483,15 +484,15 @@ func TestEndpoints(t *testing.T) {
 			}
 			resp, apiErr := test.endpoint(req.WithContext(ctx))
 			if apiErr != nil {
-				if test.errType == errorNone {
+				if test.errType == structs.ErrorNone {
 					t.Fatalf("Unexpected error: %s", apiErr)
 				}
-				if test.errType != apiErr.typ {
-					t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.typ)
+				if test.errType != apiErr.Typ {
+					t.Fatalf("Expected error of type %q but got type %q", test.errType, apiErr.Typ)
 				}
 				continue
 			}
-			if apiErr == nil && test.errType != errorNone {
+			if apiErr == nil && test.errType != structs.ErrorNone {
 				t.Fatalf("Expected error of type %q but got none", test.errType)
 			}
 			if !reflect.DeepEqual(resp, test.response) {
@@ -620,13 +621,13 @@ func TestRespondSuccess(t *testing.T) {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
 	}
 
-	var res response
+	var res structs.Response
 	if err = json.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
-	exp := &response{
-		Status: statusSuccess,
+	exp := &structs.Response{
+		Status: structs.StatusSuccess,
 		Data:   "test",
 	}
 	if !reflect.DeepEqual(&res, exp) {
@@ -636,7 +637,7 @@ func TestRespondSuccess(t *testing.T) {
 
 func TestRespondError(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
+		respondError(w, &structs.ApiError{structs.ErrorTimeout, errors.New("message")}, "test")
 	}))
 	defer s.Close()
 
@@ -657,15 +658,15 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
 	}
 
-	var res response
+	var res structs.Response
 	if err = json.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
-	exp := &response{
-		Status:    statusError,
+	exp := &structs.Response{
+		Status:    structs.StatusError,
 		Data:      "test",
-		ErrorType: errorTimeout,
+		ErrorType: structs.ErrorTimeout,
 		Error:     "message",
 	}
 	if !reflect.DeepEqual(&res, exp) {
