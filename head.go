@@ -17,6 +17,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +26,9 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -64,7 +67,7 @@ type Head struct {
 	symbols map[string]struct{}
 	values  map[string]stringset // label names to possible values
 
-	postings *memPostings // postings lists for terms
+	postings *index.MemPostings // postings lists for terms
 
 	tombstones memTombstones
 }
@@ -185,7 +188,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		series:     newStripeSeries(),
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
-		postings:   newUnorderedMemPostings(),
+		postings:   index.NewUnorderedMemPostings(),
 		tombstones: memTombstones{},
 	}
 	h.metrics = newHeadMetrics(h, r)
@@ -226,7 +229,7 @@ func (h *Head) processWALSamples(
 
 // ReadWAL initializes the head by consuming the write ahead log.
 func (h *Head) ReadWAL() error {
-	defer h.postings.ensureOrder()
+	defer h.postings.EnsureOrder()
 
 	r := h.wal.Reader()
 	mint := h.MinTime()
@@ -616,64 +619,14 @@ func (h *Head) gc() {
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
 
-	// Remove deleted series IDs from the postings lists. First do a collection
-	// run where we rebuild all postings that have something to delete
-	h.postings.mtx.RLock()
-
-	type replEntry struct {
-		idx int
-		l   []uint64
-	}
-	collected := map[labels.Label]replEntry{}
-
-	for t, p := range h.postings.m {
-		repl := replEntry{idx: len(p)}
-
-		for i, id := range p {
-			if _, ok := deleted[id]; ok {
-				// First ID that got deleted, initialize replacement with
-				// all remaining IDs so far.
-				if repl.l == nil {
-					repl.l = make([]uint64, 0, len(p))
-					repl.l = append(repl.l, p[:i]...)
-				}
-				continue
-			}
-			// Only add to the replacement once we know we have to do it.
-			if repl.l != nil {
-				repl.l = append(repl.l, id)
-			}
-		}
-		if repl.l != nil {
-			collected[t] = repl
-		}
-	}
-
-	h.postings.mtx.RUnlock()
-
-	// Replace all postings that have changed. Append all IDs that may have
-	// been added while we switched locks.
-	h.postings.mtx.Lock()
-
-	for t, repl := range collected {
-		l := append(repl.l, h.postings.m[t][repl.idx:]...)
-
-		if len(l) > 0 {
-			h.postings.m[t] = l
-		} else {
-			delete(h.postings.m, t)
-		}
-	}
-
-	h.postings.mtx.Unlock()
+	// Remove deleted series IDs from the postings lists.
+	h.postings.Delete(deleted)
 
 	// Rebuild symbols and label value indices from what is left in the postings terms.
-	h.postings.mtx.RLock()
-
 	symbols := make(map[string]struct{})
 	values := make(map[string]stringset, len(h.values))
 
-	for t := range h.postings.m {
+	h.postings.Iter(func(t labels.Label, _ index.Postings) error {
 		symbols[t.Name] = struct{}{}
 		symbols[t.Value] = struct{}{}
 
@@ -683,9 +636,8 @@ func (h *Head) gc() {
 			values[t.Name] = ss
 		}
 		ss.set(t.Value)
-	}
-
-	h.postings.mtx.RUnlock()
+		return nil
+	})
 
 	h.symMtx.Lock()
 
@@ -765,7 +717,7 @@ func unpackChunkID(id uint64) (seriesID, chunkID uint64) {
 }
 
 // Chunk returns the chunk for the reference number.
-func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
+func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	sid, cid := unpackChunkID(ref)
 
 	s := h.head.series.getByID(sid)
@@ -798,12 +750,12 @@ func (h *headChunkReader) Chunk(ref uint64) (chunks.Chunk, error) {
 }
 
 type safeChunk struct {
-	chunks.Chunk
+	chunkenc.Chunk
 	s   *memSeries
 	cid int
 }
 
-func (c *safeChunk) Iterator() chunks.Iterator {
+func (c *safeChunk) Iterator() chunkenc.Iterator {
 	c.s.Lock()
 	it := c.s.iterator(c.cid)
 	c.s.Unlock()
@@ -836,7 +788,7 @@ func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
 }
 
 // LabelValues returns the possible label values
-func (h *headIndexReader) LabelValues(names ...string) (StringTuples, error) {
+func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
 	if len(names) != 1 {
 		return nil, errInvalidSize
 	}
@@ -850,22 +802,22 @@ func (h *headIndexReader) LabelValues(names ...string) (StringTuples, error) {
 	}
 	sort.Strings(sl)
 
-	return &stringTuples{l: len(names), s: sl}, nil
+	return index.NewStringTuples(sl, len(names))
 }
 
 // Postings returns the postings list iterator for the label pair.
-func (h *headIndexReader) Postings(name, value string) (Postings, error) {
-	return h.head.postings.get(name, value), nil
+func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
+	return h.head.postings.Get(name, value), nil
 }
 
-func (h *headIndexReader) SortedPostings(p Postings) Postings {
+func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	ep := make([]uint64, 0, 128)
 
 	for p.Next() {
 		ep = append(ep, p.At())
 	}
 	if err := p.Err(); err != nil {
-		return errPostings{err: errors.Wrap(err, "expand postings")}
+		return index.ErrPostings(errors.Wrap(err, "expand postings"))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
@@ -878,11 +830,11 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 		}
 		return labels.Compare(a.lset, b.lset) < 0
 	})
-	return newListPostings(ep)
+	return index.NewListPostings(ep)
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkMeta) error {
+func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(ref)
 
 	if s == nil {
@@ -901,7 +853,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]ChunkM
 		if !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
 			continue
 		}
-		*chks = append(*chks, ChunkMeta{
+		*chks = append(*chks, chunks.Meta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
 			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
@@ -949,7 +901,7 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.series.Inc()
 	h.metrics.seriesCreated.Inc()
 
-	h.postings.add(id, lset)
+	h.postings.Add(id, lset)
 
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
@@ -1154,7 +1106,7 @@ type memSeries struct {
 	lastValue float64
 	sampleBuf [4]sample
 
-	app chunks.Appender // Current appender for the chunk.
+	app chunkenc.Appender // Current appender for the chunk.
 }
 
 func (s *memSeries) minTime() int64 {
@@ -1167,7 +1119,7 @@ func (s *memSeries) maxTime() int64 {
 
 func (s *memSeries) cut(mint int64) *memChunk {
 	c := &memChunk{
-		chunk:   chunks.NewXORChunk(),
+		chunk:   chunkenc.NewXORChunk(),
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
@@ -1295,13 +1247,13 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/a
 }
 
-func (s *memSeries) iterator(id int) chunks.Iterator {
+func (s *memSeries) iterator(id int) chunkenc.Iterator {
 	c := s.chunk(id)
 	// TODO(fabxc): Work around! A querier may have retrieved a pointer to a series' chunk,
 	// which got then garbage collected before it got accessed.
 	// We must ensure to not garbage collect as long as any readers still hold a reference.
 	if c == nil {
-		return chunks.NewNopIterator()
+		return chunkenc.NewNopIterator()
 	}
 
 	if id-s.firstChunkID < len(s.chunks)-1 {
@@ -1326,12 +1278,12 @@ func (s *memSeries) head() *memChunk {
 }
 
 type memChunk struct {
-	chunk            chunks.Chunk
+	chunk            chunkenc.Chunk
 	minTime, maxTime int64
 }
 
 type memSafeIterator struct {
-	chunks.Iterator
+	chunkenc.Iterator
 
 	i     int
 	total int
@@ -1355,4 +1307,28 @@ func (it *memSafeIterator) At() (int64, float64) {
 	}
 	s := it.buf[4-(it.total-it.i)]
 	return s.t, s.v
+}
+
+type stringset map[string]struct{}
+
+func (ss stringset) set(s string) {
+	ss[s] = struct{}{}
+}
+
+func (ss stringset) has(s string) bool {
+	_, ok := ss[s]
+	return ok
+}
+
+func (ss stringset) String() string {
+	return strings.Join(ss.slice(), ",")
+}
+
+func (ss stringset) slice() []string {
+	slice := make([]string, 0, len(ss))
+	for k := range ss {
+		slice = append(slice, k)
+	}
+	sort.Strings(slice)
+	return slice
 }

@@ -19,7 +19,9 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 )
 
@@ -202,18 +204,17 @@ func (q *blockQuerier) Close() error {
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. It returns a list of label names that must be manually
 // checked to not exist in series the postings list points to.
-func PostingsForMatchers(index IndexReader, ms ...labels.Matcher) (Postings, error) {
-	var (
-		its []Postings
-	)
+func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, error) {
+	var its []index.Postings
+
 	for _, m := range ms {
-		it, err := postingsForMatcher(index, m)
+		it, err := postingsForMatcher(ix, m)
 		if err != nil {
 			return nil, err
 		}
 		its = append(its, it)
 	}
-	return index.SortedPostings(Intersect(its...)), nil
+	return ix.SortedPostings(index.Intersect(its...)), nil
 }
 
 // tuplesByPrefix uses binary search to find prefix matches within ts.
@@ -247,24 +248,24 @@ func tuplesByPrefix(m *labels.PrefixMatcher, ts StringTuples) ([]string, error) 
 	return matches, nil
 }
 
-func postingsForMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
+func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
 	// If the matcher selects an empty value, it selects all the series which dont
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
 	if m.Matches("") {
-		return postingsForUnsetLabelMatcher(index, m)
+		return postingsForUnsetLabelMatcher(ix, m)
 	}
 
 	// Fast-path for equal matching.
 	if em, ok := m.(*labels.EqualMatcher); ok {
-		it, err := index.Postings(em.Name(), em.Value())
+		it, err := ix.Postings(em.Name(), em.Value())
 		if err != nil {
 			return nil, err
 		}
 		return it, nil
 	}
 
-	tpls, err := index.LabelValues(m.Name())
+	tpls, err := ix.LabelValues(m.Name())
 	if err != nil {
 		return nil, err
 	}
@@ -289,24 +290,24 @@ func postingsForMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
 	}
 
 	if len(res) == 0 {
-		return EmptyPostings(), nil
+		return index.EmptyPostings(), nil
 	}
 
-	var rit []Postings
+	var rit []index.Postings
 
 	for _, v := range res {
-		it, err := index.Postings(m.Name(), v)
+		it, err := ix.Postings(m.Name(), v)
 		if err != nil {
 			return nil, err
 		}
 		rit = append(rit, it)
 	}
 
-	return Merge(rit...), nil
+	return index.Merge(rit...), nil
 }
 
-func postingsForUnsetLabelMatcher(index IndexReader, m labels.Matcher) (Postings, error) {
-	tpls, err := index.LabelValues(m.Name())
+func postingsForUnsetLabelMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
+	tpls, err := ix.LabelValues(m.Name())
 	if err != nil {
 		return nil, err
 	}
@@ -323,23 +324,21 @@ func postingsForUnsetLabelMatcher(index IndexReader, m labels.Matcher) (Postings
 		}
 	}
 
-	var rit []Postings
+	var rit []index.Postings
 	for _, v := range res {
-		it, err := index.Postings(m.Name(), v)
+		it, err := ix.Postings(m.Name(), v)
 		if err != nil {
 			return nil, err
 		}
 
 		rit = append(rit, it)
 	}
-	mrit := Merge(rit...)
 
-	allPostings, err := index.Postings(allPostingsKey.Name, allPostingsKey.Value)
+	allPostings, err := ix.Postings(index.AllPostingsKey())
 	if err != nil {
 		return nil, err
 	}
-
-	return newRemovedPostings(allPostings, mrit), nil
+	return index.Without(allPostings, index.Merge(rit...)), nil
 }
 
 func mergeStrings(a, b []string) []string {
@@ -458,19 +457,19 @@ func (s *mergedSeriesSet) Next() bool {
 // actual series itself.
 type ChunkSeriesSet interface {
 	Next() bool
-	At() (labels.Labels, []ChunkMeta, Intervals)
+	At() (labels.Labels, []chunks.Meta, Intervals)
 	Err() error
 }
 
 // baseChunkSeries loads the label set and chunk references for a postings
 // list from an index. It filters out series that have labels set that should be unset.
 type baseChunkSeries struct {
-	p          Postings
+	p          index.Postings
 	index      IndexReader
 	tombstones TombstoneReader
 
 	lset      labels.Labels
-	chks      []ChunkMeta
+	chks      []chunks.Meta
 	intervals Intervals
 	err       error
 }
@@ -492,7 +491,7 @@ func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher)
 	}, nil
 }
 
-func (s *baseChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
+func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
 
@@ -500,14 +499,14 @@ func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
 	var (
-		lset   labels.Labels
-		chunks []ChunkMeta
-		err    error
+		lset     labels.Labels
+		chkMetas []chunks.Meta
+		err      error
 	)
 
 	for s.p.Next() {
 		ref := s.p.At()
-		if err := s.index.Series(ref, &lset, &chunks); err != nil {
+		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			if errors.Cause(err) == ErrNotFound {
 				continue
@@ -517,7 +516,7 @@ func (s *baseChunkSeries) Next() bool {
 		}
 
 		s.lset = lset
-		s.chks = chunks
+		s.chks = chkMetas
 		s.intervals, err = s.tombstones.Get(s.p.At())
 		if err != nil {
 			s.err = errors.Wrap(err, "get tombstones")
@@ -526,7 +525,7 @@ func (s *baseChunkSeries) Next() bool {
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.
-			chks := make([]ChunkMeta, 0, len(s.chks))
+			chks := make([]chunks.Meta, 0, len(s.chks))
 			for _, chk := range s.chks {
 				if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
 					chks = append(chks, chk)
@@ -553,12 +552,12 @@ type populatedChunkSeries struct {
 	mint, maxt int64
 
 	err       error
-	chks      []ChunkMeta
+	chks      []chunks.Meta
 	lset      labels.Labels
 	intervals Intervals
 }
 
-func (s *populatedChunkSeries) At() (labels.Labels, []ChunkMeta, Intervals) {
+func (s *populatedChunkSeries) At() (labels.Labels, []chunks.Meta, Intervals) {
 	return s.lset, s.chks, s.intervals
 }
 
@@ -651,7 +650,7 @@ func (s *blockSeriesSet) Err() error { return s.err }
 // time series data.
 type chunkSeries struct {
 	labels labels.Labels
-	chunks []ChunkMeta // in-order chunk refs
+	chunks []chunks.Meta // in-order chunk refs
 
 	mint, maxt int64
 
@@ -754,17 +753,17 @@ func (it *chainedSeriesIterator) Err() error {
 // chunkSeriesIterator implements a series iterator on top
 // of a list of time-sorted, non-overlapping chunks.
 type chunkSeriesIterator struct {
-	chunks []ChunkMeta
+	chunks []chunks.Meta
 
 	i   int
-	cur chunks.Iterator
+	cur chunkenc.Iterator
 
 	maxt, mint int64
 
 	intervals Intervals
 }
 
-func newChunkSeriesIterator(cs []ChunkMeta, dranges Intervals, mint, maxt int64) *chunkSeriesIterator {
+func newChunkSeriesIterator(cs []chunks.Meta, dranges Intervals, mint, maxt int64) *chunkSeriesIterator {
 	it := cs[0].Chunk.Iterator()
 
 	if len(dranges) > 0 {
@@ -851,6 +850,46 @@ func (it *chunkSeriesIterator) Next() bool {
 
 func (it *chunkSeriesIterator) Err() error {
 	return it.cur.Err()
+}
+
+// deletedIterator wraps an Iterator and makes sure any deleted metrics are not
+// returned.
+type deletedIterator struct {
+	it chunkenc.Iterator
+
+	intervals Intervals
+}
+
+func (it *deletedIterator) At() (int64, float64) {
+	return it.it.At()
+}
+
+func (it *deletedIterator) Next() bool {
+Outer:
+	for it.it.Next() {
+		ts, _ := it.it.At()
+
+		for _, tr := range it.intervals {
+			if tr.inBounds(ts) {
+				continue Outer
+			}
+
+			if ts > tr.Maxt {
+				it.intervals = it.intervals[1:]
+				continue
+			}
+
+			return true
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func (it *deletedIterator) Err() error {
+	return it.it.Err()
 }
 
 type mockSeriesSet struct {

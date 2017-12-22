@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package index
 
 import (
 	"io/ioutil"
@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
@@ -29,13 +30,13 @@ import (
 
 type series struct {
 	l      labels.Labels
-	chunks []ChunkMeta
+	chunks []chunks.Meta
 }
 
 type mockIndex struct {
 	series     map[uint64]series
 	labelIndex map[string][]string
-	postings   *memPostings
+	postings   map[labels.Label][]uint64
 	symbols    map[string]struct{}
 }
 
@@ -43,11 +44,9 @@ func newMockIndex() mockIndex {
 	ix := mockIndex{
 		series:     make(map[uint64]series),
 		labelIndex: make(map[string][]string),
-		postings:   newMemPostings(),
+		postings:   make(map[labels.Label][]uint64),
 		symbols:    make(map[string]struct{}),
 	}
-	ix.postings.ensureOrder()
-
 	return ix
 }
 
@@ -55,7 +54,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 	return m.symbols, nil
 }
 
-func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...ChunkMeta) error {
+func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -80,23 +79,22 @@ func (m mockIndex) WriteLabelIndex(names []string, values []string) error {
 	if len(names) != 1 {
 		return errors.New("composite indexes not supported yet")
 	}
-
 	sort.Strings(values)
 	m.labelIndex[names[0]] = values
 	return nil
 }
 
 func (m mockIndex) WritePostings(name, value string, it Postings) error {
-	if _, ok := m.postings.m[labels.Label{name, value}]; ok {
-		return errors.Errorf("postings for %s=%q already added", name, value)
+	l := labels.Label{Name: name, Value: value}
+	if _, ok := m.postings[l]; ok {
+		return errors.Errorf("postings for %s already added", l)
 	}
-	ep, err := expandPostings(it)
+	ep, err := ExpandPostings(it)
 	if err != nil {
 		return err
 	}
-	m.postings.m[labels.Label{name, value}] = ep
-
-	return it.Err()
+	m.postings[l] = ep
+	return nil
 }
 
 func (m mockIndex) Close() error {
@@ -109,29 +107,30 @@ func (m mockIndex) LabelValues(names ...string) (StringTuples, error) {
 		return nil, errors.New("composite indexes not supported yet")
 	}
 
-	return newStringTuples(m.labelIndex[names[0]], 1)
+	return NewStringTuples(m.labelIndex[names[0]], 1)
 }
 
 func (m mockIndex) Postings(name, value string) (Postings, error) {
-	return m.postings.get(name, value), nil
+	l := labels.Label{Name: name, Value: value}
+	return NewListPostings(m.postings[l]), nil
 }
 
 func (m mockIndex) SortedPostings(p Postings) Postings {
-	ep, err := expandPostings(p)
+	ep, err := ExpandPostings(p)
 	if err != nil {
-		return errPostings{err: errors.Wrap(err, "expand postings")}
+		return ErrPostings(errors.Wrap(err, "expand postings"))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
 		return labels.Compare(m.series[ep[i]].l, m.series[ep[j]].l) < 0
 	})
-	return newListPostings(ep)
+	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]ChunkMeta) error {
+func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
-		return ErrNotFound
+		return errors.New("not found")
 	}
 	*lset = append((*lset)[:0], s.l...)
 	*chks = append((*chks)[:0], s.chunks...)
@@ -154,22 +153,24 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
+	fn := filepath.Join(dir, "index")
+
 	// An empty index must still result in a readable file.
-	iw, err := newIndexWriter(dir)
+	iw, err := NewWriter(fn)
 	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
-	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
+	ir, err := NewFileReader(fn)
 	testutil.Ok(t, err)
 	testutil.Ok(t, ir.Close())
 
 	// Modify magic header must cause open to fail.
-	f, err := os.OpenFile(filepath.Join(dir, "index"), os.O_WRONLY, 0666)
+	f, err := os.OpenFile(fn, os.O_WRONLY, 0666)
 	testutil.Ok(t, err)
 	_, err = f.WriteAt([]byte{0, 0}, 0)
 	testutil.Ok(t, err)
 
-	_, err = NewFileIndexReader(dir)
+	_, err = NewFileReader(dir)
 	testutil.NotOk(t, err)
 }
 
@@ -178,7 +179,9 @@ func TestIndexRW_Postings(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	iw, err := newIndexWriter(dir)
+	fn := filepath.Join(dir, "index")
+
+	iw, err := NewWriter(fn)
 	testutil.Ok(t, err)
 
 	series := []labels.Labels{
@@ -210,14 +213,14 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	testutil.Ok(t, iw.Close())
 
-	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
+	ir, err := NewFileReader(fn)
 	testutil.Ok(t, err)
 
 	p, err := ir.Postings("a", "1")
 	testutil.Ok(t, err)
 
 	var l labels.Labels
-	var c []ChunkMeta
+	var c []chunks.Meta
 
 	for i := 0; p.Next(); i++ {
 		err := ir.Series(p.At(), &l, &c)
@@ -236,7 +239,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	lbls, err := readPrometheusLabels("testdata/20kseries.json", 20000)
+	lbls, err := labels.ReadLabels("../testdata/20kseries.json", 20000)
 	testutil.Ok(t, err)
 
 	// Sort labels as the index writer expects series in sorted order.
@@ -254,14 +257,14 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	// Generate ChunkMetas for every label set.
 	for i, lset := range lbls {
-		var metas []ChunkMeta
+		var metas []chunks.Meta
 
 		for j := 0; j <= (i % 20); j++ {
-			metas = append(metas, ChunkMeta{
+			metas = append(metas, chunks.Meta{
 				MinTime: int64(j * 10000),
 				MaxTime: int64((j + 1) * 10000),
 				Ref:     rand.Uint64(),
-				Chunk:   chunks.NewXORChunk(),
+				Chunk:   chunkenc.NewXORChunk(),
 			})
 		}
 		input = append(input, &indexWriterSeries{
@@ -270,17 +273,16 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 	}
 
-	iw, err := newIndexWriter(dir)
+	iw, err := NewWriter(filepath.Join(dir, "index"))
 	testutil.Ok(t, err)
 
 	testutil.Ok(t, iw.AddSymbols(symbols))
 
 	// Population procedure as done by compaction.
 	var (
-		postings = newMemPostings()
-		values   = map[string]stringset{}
+		postings = NewMemPostings()
+		values   = map[string]map[string]struct{}{}
 	)
-	postings.ensureOrder()
 
 	mi := newMockIndex()
 
@@ -292,17 +294,21 @@ func TestPersistence_index_e2e(t *testing.T) {
 		for _, l := range s.labels {
 			valset, ok := values[l.Name]
 			if !ok {
-				valset = stringset{}
+				valset = map[string]struct{}{}
 				values[l.Name] = valset
 			}
-			valset.set(l.Value)
+			valset[l.Value] = struct{}{}
 		}
-		postings.add(uint64(i), s.labels)
+		postings.Add(uint64(i), s.labels)
 		i++
 	}
 
 	for k, v := range values {
-		vals := v.slice()
+		var vals []string
+		for e := range v {
+			vals = append(vals, e)
+		}
+		sort.Strings(vals)
 
 		testutil.Ok(t, iw.WriteLabelIndex([]string{k}, vals))
 		testutil.Ok(t, mi.WriteLabelIndex([]string{k}, vals))
@@ -317,25 +323,25 @@ func TestPersistence_index_e2e(t *testing.T) {
 	mi.WritePostings("", "", newListPostings(all))
 
 	for l := range postings.m {
-		err = iw.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
+		err = iw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
 		testutil.Ok(t, err)
-		mi.WritePostings(l.Name, l.Value, postings.get(l.Name, l.Value))
+		mi.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value))
 	}
 
 	err = iw.Close()
 	testutil.Ok(t, err)
 
-	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
+	ir, err := NewFileReader(filepath.Join(dir, "index"))
 	testutil.Ok(t, err)
 
-	for p := range mi.postings.m {
+	for p := range mi.postings {
 		gotp, err := ir.Postings(p.Name, p.Value)
 		testutil.Ok(t, err)
 
 		expp, err := mi.Postings(p.Name, p.Value)
 
 		var lset, explset labels.Labels
-		var chks, expchks []ChunkMeta
+		var chks, expchks []chunks.Meta
 
 		for gotp.Next() {
 			testutil.Assert(t, expp.Next() == true, "")
@@ -354,7 +360,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	}
 
 	for k, v := range mi.labelIndex {
-		tplsExp, err := newStringTuples(v, 1)
+		tplsExp, err := NewStringTuples(v, 1)
 		testutil.Ok(t, err)
 
 		tplsRes, err := ir.LabelValues(k)

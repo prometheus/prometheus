@@ -14,12 +14,9 @@
 package labels
 
 import (
-	"bufio"
 	"fmt"
 	"math/rand"
-	"os"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/tsdb/testutil"
@@ -90,7 +87,7 @@ func TestCompareAndEquals(t *testing.T) {
 }
 
 func BenchmarkSliceSort(b *testing.B) {
-	lbls, err := readPrometheusLabels("../testdata/1m.series", 900000)
+	lbls, err := ReadLabels("../testdata/1m.series", 900000)
 	testutil.Ok(b, err)
 
 	for len(lbls) < 20e6 {
@@ -117,43 +114,6 @@ func BenchmarkSliceSort(b *testing.B) {
 			}
 		})
 	}
-}
-
-func readPrometheusLabels(fn string, n int) ([]Labels, error) {
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-
-	var mets []Labels
-	hashes := map[uint64]struct{}{}
-	i := 0
-
-	for scanner.Scan() && i < n {
-		m := make(Labels, 0, 10)
-
-		r := strings.NewReplacer("\"", "", "{", "", "}", "")
-		s := r.Replace(scanner.Text())
-
-		labelChunks := strings.Split(s, ",")
-		for _, labelChunk := range labelChunks {
-			split := strings.Split(labelChunk, ":")
-			m = append(m, Label{Name: split[0], Value: split[1]})
-		}
-		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
-		sort.Sort(m)
-		h := m.Hash()
-		if _, ok := hashes[h]; ok {
-			continue
-		}
-		mets = append(mets, m)
-		hashes[h] = struct{}{}
-		i++
-	}
-	return mets, nil
 }
 
 func BenchmarkLabelSetFromMap(b *testing.B) {
