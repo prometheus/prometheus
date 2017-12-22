@@ -23,9 +23,100 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 )
+
+// IndexWriter serializes the index for a block of series data.
+// The methods must be called in the order they are specified in.
+type IndexWriter interface {
+	// AddSymbols registers all string symbols that are encountered in series
+	// and other indices.
+	AddSymbols(sym map[string]struct{}) error
+
+	// AddSeries populates the index writer with a series and its offsets
+	// of chunks that the index can reference.
+	// Implementations may require series to be insert in increasing order by
+	// their labels.
+	// The reference numbers are used to resolve entries in postings lists that
+	// are added later.
+	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
+
+	// WriteLabelIndex serializes an index from label names to values.
+	// The passed in values chained tuples of strings of the length of names.
+	WriteLabelIndex(names []string, values []string) error
+
+	// WritePostings writes a postings list for a single label pair.
+	// The Postings here contain refs to the series that were added.
+	WritePostings(name, value string, it index.Postings) error
+
+	// Close writes any finalization and closes the resources associated with
+	// the underlying writer.
+	Close() error
+}
+
+// IndexReader provides reading access of serialized index data.
+type IndexReader interface {
+	// Symbols returns a set of string symbols that may occur in series' labels
+	// and indices.
+	Symbols() (map[string]struct{}, error)
+
+	// LabelValues returns the possible label values.
+	LabelValues(names ...string) (index.StringTuples, error)
+
+	// Postings returns the postings list iterator for the label pair.
+	// The Postings here contain the offsets to the series inside the index.
+	// Found IDs are not strictly required to point to a valid Series, e.g. during
+	// background garbage collections.
+	Postings(name, value string) (index.Postings, error)
+
+	// SortedPostings returns a postings list that is reordered to be sorted
+	// by the label set of the underlying series.
+	SortedPostings(index.Postings) index.Postings
+
+	// Series populates the given labels and chunk metas for the series identified
+	// by the reference.
+	// Returns ErrNotFound if the ref does not resolve to a known series.
+	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
+
+	// LabelIndices returns a list of string tuples for which a label value index exists.
+	LabelIndices() ([][]string, error)
+
+	// Close releases the underlying resources of the reader.
+	Close() error
+}
+
+// StringTuples provides access to a sorted list of string tuples.
+type StringTuples interface {
+	// Total number of tuples in the list.
+	Len() int
+	// At returns the tuple at position i.
+	At(i int) ([]string, error)
+}
+
+// ChunkWriter serializes a time block of chunked series data.
+type ChunkWriter interface {
+	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
+	// must be populated.
+	// After returning successfully, the Ref fields in the ChunkMetas
+	// are set and can be used to retrieve the chunks from the written data.
+	WriteChunks(chunks ...chunks.Meta) error
+
+	// Close writes any required finalization and closes the resources
+	// associated with the underlying writer.
+	Close() error
+}
+
+// ChunkReader provides reading access of serialized time series data.
+type ChunkReader interface {
+	// Chunk returns the series data chunk with the given reference.
+	Chunk(ref uint64) (chunkenc.Chunk, error)
+
+	// Close releases all underlying resources of the reader.
+	Close() error
+}
 
 // BlockReader provides reading access to a data block.
 type BlockReader interface {
@@ -91,7 +182,11 @@ type blockMeta struct {
 	*BlockMeta
 }
 
+const indexFilename = "index"
 const metaFilename = "meta.json"
+
+func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
+func walDir(dir string) string   { return filepath.Join(dir, "wal") }
 
 func readMetaFile(dir string) (*BlockMeta, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
@@ -150,17 +245,17 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(dir string, pool chunks.Pool) (*Block, error) {
+func OpenBlock(dir string, pool chunkenc.Pool) (*Block, error) {
 	meta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	cr, err := NewDirChunkReader(chunkDir(dir), pool)
+	cr, err := chunks.NewDirReader(chunkDir(dir), pool)
 	if err != nil {
 		return nil, err
 	}
-	ir, err := NewFileIndexReader(filepath.Join(dir, "index"))
+	ir, err := index.NewFileReader(filepath.Join(dir, "index"))
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +384,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, absent, err := PostingsForMatchers(pb.indexr, ms...)
+	p, err := PostingsForMatchers(pb.indexr, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
@@ -300,19 +395,13 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	stones := memTombstones{}
 
 	var lset labels.Labels
-	var chks []ChunkMeta
+	var chks []chunks.Meta
 
 Outer:
 	for p.Next() {
 		err := ir.Series(p.At(), &lset, &chks)
 		if err != nil {
 			return err
-		}
-
-		for _, abs := range absent {
-			if lset.Get(abs) != "" {
-				continue Outer
-			}
 		}
 
 		for _, chk := range chks {
@@ -411,9 +500,6 @@ func (pb *Block) Snapshot(dir string) error {
 	return nil
 }
 
-func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
-func walDir(dir string) string   { return filepath.Join(dir, "wal") }
-
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {
 	if a < mint {
 		a = mint
@@ -422,37 +508,4 @@ func clampInterval(a, b, mint, maxt int64) (int64, int64) {
 		b = maxt
 	}
 	return a, b
-}
-
-type mmapFile struct {
-	f *os.File
-	b []byte
-}
-
-func openMmapFile(path string) (*mmapFile, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, errors.Wrap(err, "try lock file")
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return nil, errors.Wrap(err, "stat")
-	}
-
-	b, err := mmap(f, int(info.Size()))
-	if err != nil {
-		return nil, errors.Wrap(err, "mmap")
-	}
-
-	return &mmapFile{f: f, b: b}, nil
-}
-
-func (f *mmapFile) Close() error {
-	err0 := munmap(f.b)
-	err1 := f.f.Close()
-
-	if err0 != nil {
-		return err0
-	}
-	return err1
 }
