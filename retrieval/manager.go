@@ -138,8 +138,7 @@ func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 			sp := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
 			m.scrapePools[tsetName] = sp
 			sp.Sync(tgroup)
-
-		} else if !(reflect.DeepEqual(existing.config, scrapeConfig)) {
+		} else if !reflect.DeepEqual(existing.config, scrapeConfig) {
 			existing.reload(scrapeConfig)
 		} else {
 			existing.Sync(tgroup)
