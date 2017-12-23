@@ -35,3 +35,25 @@ eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 
 	{job="api-server", instance="0", group="canary"} 5
 	{job="api-server", instance="1", group="canary"} 0
 
+# https://github.com/prometheus/prometheus/issues/3575
+eval instant at 0s http_requests{foo!="bar"}
+	http_requests{job="api-server", instance="0", group="production"} 0
+	http_requests{job="api-server", instance="1", group="production"} 0
+	http_requests{job="api-server", instance="0", group="canary"} 0
+	http_requests{job="api-server", instance="1", group="canary"} 0
+
+eval instant at 0s http_requests{foo!="bar", job="api-server"}
+	http_requests{job="api-server", instance="0", group="production"} 0
+	http_requests{job="api-server", instance="1", group="production"} 0
+	http_requests{job="api-server", instance="0", group="canary"} 0
+	http_requests{job="api-server", instance="1", group="canary"} 0
+
+eval instant at 0s http_requests{foo!~"bar", job="api-server"}
+	http_requests{job="api-server", instance="0", group="production"} 0
+	http_requests{job="api-server", instance="1", group="production"} 0
+	http_requests{job="api-server", instance="0", group="canary"} 0
+	http_requests{job="api-server", instance="1", group="canary"} 0
+
+eval instant at 0s http_requests{foo!~"bar", job="api-server", instance="1", x!="y", z="", group!=""}
+	http_requests{job="api-server", instance="1", group="production"} 0
+	http_requests{job="api-server", instance="1", group="canary"} 0
