@@ -1136,6 +1136,10 @@ required_matchers:
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 30s ]
 
+# Whether reads should be made for queries for time ranges that
+# the local storage should have complete data for.
+[ read_recent: <boolean> | default = false ]
+
 # Sets the `Authorization` header on every remote read request with the
 # configured username and password.
 basic_auth:
