@@ -1,15 +1,11 @@
-package tsdb
+package index
 
 import (
 	"encoding/binary"
 	"hash"
 	"hash/crc32"
 	"unsafe"
-
-	"github.com/pkg/errors"
 )
-
-var errInvalidSize = errors.New("invalid size")
 
 // enbuf is a helper type to populate a byte slice with various types.
 type encbuf struct {
