@@ -197,7 +197,6 @@ var (
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout: model.Duration(1 * time.Minute),
-		ReadRecent:    true,
 	}
 )
 
