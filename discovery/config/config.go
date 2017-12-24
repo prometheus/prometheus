@@ -16,6 +16,7 @@ package config
 import (
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
+	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -56,6 +57,8 @@ type ServiceDiscoveryConfig struct {
 	OpenstackSDConfigs []*openstack.SDConfig `yaml:"openstack_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
+	// List of DigitalOcean service discovery configurations.
+	DigitalOceanSDConfigs []*digitalocean.SDConfig `yaml:"digitalocean_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
 

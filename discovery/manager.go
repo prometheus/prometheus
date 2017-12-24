@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
+	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -244,6 +245,9 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 	}
 	for i, c := range cfg.AzureSDConfigs {
 		app("azure", i, azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")))
+	}
+	for i, c := range cfg.DigitalOceanSDConfigs {
+		app("digitalocean", i, digitalocean.NewDiscovery(c, log.With(m.logger, "discovery", "digitalocean")))
 	}
 	for i, c := range cfg.TritonSDConfigs {
 		t, err := triton.New(log.With(m.logger, "discovery", "trition"), c)
