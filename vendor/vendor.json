@@ -282,6 +282,12 @@
 			"revisionTime": "2016-06-01T07:36:36Z"
 		},
 		{
+			"checksumSHA1": "U5eU6xftDR73B99mAGC+Y3kom/c=",
+			"path": "github.com/digitalocean/godo",
+			"revision": "7249498ac084d6cc697aae29fb1108acbfba99e2",
+			"revisionTime": "2017-11-27T16:47:15Z"
+		},
+		{
 			"checksumSHA1": "f1wARLDzsF/JoyN01yoxXEwFIp8=",
 			"origin": "k8s.io/client-go/1.5/vendor/github.com/docker/distribution/digest",
 			"path": "github.com/docker/distribution/digest",
