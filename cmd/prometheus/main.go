@@ -148,12 +148,12 @@ func main() {
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
-	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted.").
-		Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
+	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
+		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
 	a.Flag("storage.tsdb.max-block-duration",
-		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)").
-		PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
+		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
+		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
 	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
