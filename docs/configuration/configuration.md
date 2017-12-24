@@ -350,7 +350,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 See below for the configuration options for DigitalOcean discovery:
 
 ```yaml
-# The information to access the Azure API.
+# The information to access the DigitalOcean API.
 # A DigitalOcean region slug (e.g. nyc3)
 region: <string>
 # A (read-only) DigitalOcean API token
