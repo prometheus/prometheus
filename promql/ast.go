@@ -72,6 +72,10 @@ type EvalStmt struct {
 	Start, End model.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
+
+	// StalenessDelta determines the time since the last sample after which a time
+	// series is considered stale.
+	stalenessDelta time.Duration
 }
 
 // RecordStmt represents an added recording rule.

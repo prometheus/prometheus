@@ -315,6 +315,14 @@ type Queryable interface {
 	Querier() (local.Querier, error)
 }
 
+// Function to determine the StalenessDelta of an Eval Stmt
+type StalenessDeltaFunc func(*EvalStmt) time.Duration
+
+// Default function to return 5m
+func DefaultStalenessDelta(*EvalStmt) time.Duration {
+	return time.Minute * 5
+}
+
 // NewEngine returns a new engine.
 func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 	if o == nil {
@@ -332,12 +340,14 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 type EngineOptions struct {
 	MaxConcurrentQueries int
 	Timeout              time.Duration
+	StalenessDeltaFunc   StalenessDeltaFunc
 }
 
 // DefaultEngineOptions are the default engine options.
 var DefaultEngineOptions = &EngineOptions{
 	MaxConcurrentQueries: 20,
 	Timeout:              2 * time.Minute,
+	StalenessDeltaFunc:   DefaultStalenessDelta,
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -370,11 +380,17 @@ func (ng *Engine) NewRangeQuery(qs string, start, end model.Time, interval time.
 
 func (ng *Engine) newQuery(expr Expr, start, end model.Time, interval time.Duration) *query {
 	es := &EvalStmt{
-		Expr:     expr,
-		Start:    start,
-		End:      end,
-		Interval: interval,
+		Expr:     expr,     // promql
+		Start:    start,    // beginning of range
+		End:      end,      // end of range (same as start for instant)
+		Interval: interval, // Step
 	}
+	es.stalenessDelta = ng.options.StalenessDeltaFunc(es)
+	// Ensure that the staleness delta is non-negative
+	if es.stalenessDelta < 0 {
+		panic("must have non-negative staleness delta")
+	}
+
 	qry := &query{
 		stmt:  es,
 		ng:    ng,
@@ -466,6 +482,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		evaluator := &evaluator{
 			Timestamp: s.Start,
 			ctx:       ctx,
+			es:        s,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -499,6 +516,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		evaluator := &evaluator{
 			Timestamp: ts,
 			ctx:       ctx,
+			es:        s,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -576,13 +594,13 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 				n.iterators, queryErr = querier.QueryInstant(
 					ctx,
 					s.Start.Add(-n.Offset),
-					StalenessDelta,
+					s.stalenessDelta,
 					n.LabelMatchers...,
 				)
 			} else {
 				n.iterators, queryErr = querier.QueryRange(
 					ctx,
-					s.Start.Add(-n.Offset-StalenessDelta),
+					s.Start.Add(-n.Offset-s.stalenessDelta),
 					s.End.Add(-n.Offset),
 					n.LabelMatchers...,
 				)
@@ -627,6 +645,7 @@ func (ng *Engine) closeIterators(s *EvalStmt) {
 // cancellation of its context it terminates.
 type evaluator struct {
 	ctx context.Context
+	es  *EvalStmt
 
 	Timestamp model.Time
 }
@@ -813,7 +832,7 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) vector {
 	for _, it := range node.iterators {
 		refTime := ev.Timestamp.Add(-node.Offset)
 		samplePair := it.ValueAtOrBeforeTime(refTime)
-		if samplePair.Timestamp.Before(refTime.Add(-StalenessDelta)) {
+		if samplePair.Timestamp.Before(refTime.Add(-ev.es.stalenessDelta)) {
 			continue // Sample outside of staleness policy window.
 		}
 		vec = append(vec, &sample{
@@ -1385,10 +1404,6 @@ func shouldDropMetricName(op itemType) bool {
 		return false
 	}
 }
-
-// StalenessDelta determines the time since the last sample after which a time
-// series is considered stale.
-var StalenessDelta = 5 * time.Minute
 
 // A queryGate controls the maximum number of concurrently running and waiting queries.
 type queryGate struct {
