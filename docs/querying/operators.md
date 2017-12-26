@@ -34,8 +34,8 @@ is multiplied by 2, the result is another vector in which every sample value of
 the original vector is multiplied by 2.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
-each entry in the left-hand-side vector and its [matching element](#vector-matching)
-in the right hand vector. The result is propagated into the result vector and the metric
+each entry in the left-hand side vector and its [matching element](#vector-matching)
+in the right-hand vector. The result is propagated into the result vector and the metric
 name is dropped. Entries for which no matching entry in the right-hand vector can be
 found are not part of the result.
 
@@ -69,10 +69,10 @@ modifier is provided, vector elements that would be dropped instead have the val
 applied to matching entries. Vector elements for which the expression is not
 true or which do not find a match on the other side of the expression get
 dropped from the result, while the others are propagated into a result vector
-with their original (left-hand-side) metric names and label values.
+with their original (left-hand side) metric names and label values.
 If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
-the value `1` with the left-hand-side metric names and label values.
+the value `1` with the left-hand side metric names and label values.
 
 ### Logical/set binary operators
 
@@ -85,7 +85,7 @@ These logical/set binary operators are only defined between instant vectors:
 `vector1 and vector2` results in a vector consisting of the elements of
 `vector1` for which there are elements in `vector2` with exactly matching
 label sets. Other elements are dropped. The metric name and values are carried
-over from the left-hand-side vector.
+over from the left-hand side vector.
 
 `vector1 or vector2` results in a vector that contains all original elements
 (label sets + values) of `vector1` and additionally all elements of `vector2`
@@ -97,9 +97,9 @@ label sets. All matching elements in both vectors are dropped.
 
 ## Vector matching
 
-Operations between vectors attempt to find a matching element in the right-hand-side
-vector for each entry in the left-hand-side. There are two basic types of
-matching behavior: One-to-one and Many-to-one or one-to-many.
+Operations between vectors attempt to find a matching element in the right-hand side
+vector for each entry in the left-hand side. There are two basic types of
+matching behavior: One-to-one and many-to-one or one-to-many.
 
 ### One-to-one vector matches
 
