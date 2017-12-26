@@ -99,7 +99,7 @@ label sets. All matching elements in both vectors are dropped.
 
 Operations between vectors attempt to find a matching element in the right-hand side
 vector for each entry in the left-hand side. There are two basic types of
-matching behavior: One-to-one and many-to-one or one-to-many.
+matching behavior: One-to-one and many-to-one/one-to-many.
 
 ### One-to-one vector matches
 
