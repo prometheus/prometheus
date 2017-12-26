@@ -98,8 +98,10 @@ label sets. All matching elements in both vectors are dropped.
 ## Vector matching
 
 Operations between vectors attempt to find a matching element in the right-hand-side
-vector for each entry in the left-hand side. There are two basic types of
-matching behavior:
+vector for each entry in the left-hand-side. There are two basic types of
+matching behavior: One-to-one and Many-to-one or one-to-many.
+
+### One-to-one vector matches
 
 **One-to-one** finds a unique pair of entries from each side of the operation.
 In the default case, that is an operation following the format `vector1 <operator> vector2`.
@@ -133,6 +135,8 @@ The entries with methods `put` and `del` have no match and will not show up in t
 
     {method="get"}  0.04            //  24 / 600
     {method="post"} 0.05            //   6 / 120
+
+### Many-to-one and one-to-many vector matches
 
 **Many-to-one** and **one-to-many** matchings refer to the case where each vector element on
 the "one"-side can match with multiple elements on the "many"-side. This has to
