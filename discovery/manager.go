@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
@@ -49,7 +50,7 @@ type Discoverer interface {
 	// updated target groups.
 	// Must returns if the context gets canceled. It should not close the update
 	// channel on returning.
-	Run(ctx context.Context, up chan<- []*config.TargetGroup)
+	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
 type poolKey struct {
@@ -70,8 +71,8 @@ func NewManager(logger log.Logger) *Manager {
 	return &Manager{
 		logger:         logger,
 		actionCh:       make(chan func(context.Context)),
-		syncCh:         make(chan map[string][]*config.TargetGroup),
-		targets:        make(map[poolKey][]*config.TargetGroup),
+		syncCh:         make(chan map[string][]*targetgroup.Group),
+		targets:        make(map[poolKey][]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
 	}
 }
@@ -81,9 +82,9 @@ type Manager struct {
 	logger         log.Logger
 	actionCh       chan func(context.Context)
 	discoverCancel []context.CancelFunc
-	targets        map[poolKey][]*config.TargetGroup
+	targets        map[poolKey][]*targetgroup.Group
 	// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
-	syncCh chan map[string][]*config.TargetGroup
+	syncCh chan map[string][]*targetgroup.Group
 }
 
 // Run starts the background processing
@@ -100,7 +101,7 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 // SyncCh returns a read only channel used by all Discoverers to send target updates.
-func (m *Manager) SyncCh() <-chan map[string][]*config.TargetGroup {
+func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 	return m.syncCh
 }
 
@@ -122,7 +123,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Discoverer) {
 	ctx, cancel := context.WithCancel(ctx)
-	updates := make(chan []*config.TargetGroup)
+	updates := make(chan []*targetgroup.Group)
 
 	m.discoverCancel = append(m.discoverCancel, cancel)
 
@@ -130,7 +131,7 @@ func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Dis
 	go m.runProvider(ctx, poolKey, updates)
 }
 
-func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan []*config.TargetGroup) {
+func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan []*targetgroup.Group) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -151,11 +152,11 @@ func (m *Manager) cancelDiscoverers() {
 	for _, c := range m.discoverCancel {
 		c()
 	}
-	m.targets = make(map[poolKey][]*config.TargetGroup)
+	m.targets = make(map[poolKey][]*targetgroup.Group)
 	m.discoverCancel = nil
 }
 
-func (m *Manager) addGroup(poolKey poolKey, tg []*config.TargetGroup) {
+func (m *Manager) addGroup(poolKey poolKey, tg []*targetgroup.Group) {
 	done := make(chan struct{})
 
 	m.actionCh <- func(ctx context.Context) {
@@ -168,8 +169,8 @@ func (m *Manager) addGroup(poolKey poolKey, tg []*config.TargetGroup) {
 	<-done
 }
 
-func (m *Manager) allGroups(pk poolKey) map[string][]*config.TargetGroup {
-	tSets := make(chan map[string][]*config.TargetGroup)
+func (m *Manager) allGroups(pk poolKey) map[string][]*targetgroup.Group {
+	tSets := make(chan map[string][]*targetgroup.Group)
 
 	m.actionCh <- func(ctx context.Context) {
 
@@ -180,7 +181,7 @@ func (m *Manager) allGroups(pk poolKey) map[string][]*config.TargetGroup {
 		}
 		sort.Sort(byProvider(pKeys))
 
-		tSetsAll := map[string][]*config.TargetGroup{}
+		tSetsAll := map[string][]*targetgroup.Group{}
 		for _, pk := range pKeys {
 			for _, tg := range m.targets[pk] {
 				if tg.Source != "" { // Don't add empty targets.
@@ -202,7 +203,7 @@ func (m *Manager) providersFromConfig(cfg config.ServiceDiscoveryConfig) map[str
 	}
 
 	for i, c := range cfg.DNSSDConfigs {
-		app("dns", i, dns.NewDiscovery(c, log.With(m.logger, "discovery", "dns")))
+		app("dns", i, dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")))
 	}
 	for i, c := range cfg.FileSDConfigs {
 		app("file", i, file.NewDiscovery(c, log.With(m.logger, "discovery", "file")))
@@ -216,7 +217,7 @@ func (m *Manager) providersFromConfig(cfg config.ServiceDiscoveryConfig) map[str
 		app("consul", i, k)
 	}
 	for i, c := range cfg.MarathonSDConfigs {
-		t, err := marathon.NewDiscovery(c, log.With(m.logger, "discovery", "marathon"))
+		t, err := marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create Marathon discovery", "err", err)
 			continue
@@ -250,7 +251,7 @@ func (m *Manager) providersFromConfig(cfg config.ServiceDiscoveryConfig) map[str
 	}
 
 	for i, c := range cfg.GCESDConfigs {
-		gced, err := gce.NewDiscovery(c, log.With(m.logger, "discovery", "gce"))
+		gced, err := gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot initialize GCE discovery", "err", err)
 			continue
@@ -277,12 +278,12 @@ func (m *Manager) providersFromConfig(cfg config.ServiceDiscoveryConfig) map[str
 
 // StaticProvider holds a list of target groups that never change.
 type StaticProvider struct {
-	TargetGroups []*config.TargetGroup
+	TargetGroups []*targetgroup.Group
 }
 
 // NewStaticProvider returns a StaticProvider configured with the given
 // target groups.
-func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
+func NewStaticProvider(groups []*targetgroup.Group) *StaticProvider {
 	for i, tg := range groups {
 		tg.Source = fmt.Sprintf("%d", i)
 	}
@@ -290,7 +291,7 @@ func NewStaticProvider(groups []*config.TargetGroup) *StaticProvider {
 }
 
 // Run implements the Worker interface.
-func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// We still have to consider that the consumer exits right away in which case
 	// the context will be canceled.
 	select {
