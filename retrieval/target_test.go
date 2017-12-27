@@ -28,8 +28,8 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	configUtil "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -148,7 +148,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
+	cfg := configUtil.HTTPClientConfig{
 		BearerToken: "1234",
 	}
 	c, err := httputil.NewClientFromConfig(cfg, "test")
@@ -175,7 +175,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
+	cfg := configUtil.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
 	c, err := httputil.NewClientFromConfig(cfg, "test")
@@ -201,8 +201,8 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 	)
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
-		BasicAuth: &config.BasicAuth{
+	cfg := configUtil.HTTPClientConfig{
+		BasicAuth: &configUtil.BasicAuth{
 			Username: "user",
 			Password: "password123",
 		},
@@ -230,8 +230,8 @@ func TestNewHTTPCACert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
-		TLSConfig: config.TLSConfig{
+	cfg := configUtil.HTTPClientConfig{
+		TLSConfig: configUtil.TLSConfig{
 			CAFile: caCertPath,
 		},
 	}
@@ -262,8 +262,8 @@ func TestNewHTTPClientCert(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
-		TLSConfig: config.TLSConfig{
+	cfg := configUtil.HTTPClientConfig{
+		TLSConfig: configUtil.TLSConfig{
 			CAFile:   caCertPath,
 			CertFile: "testdata/client.cer",
 			KeyFile:  "testdata/client.key",
@@ -292,8 +292,8 @@ func TestNewHTTPWithServerName(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
-		TLSConfig: config.TLSConfig{
+	cfg := configUtil.HTTPClientConfig{
+		TLSConfig: configUtil.TLSConfig{
 			CAFile:     caCertPath,
 			ServerName: "prometheus.rocks",
 		},
@@ -321,8 +321,8 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 
-	cfg := config.HTTPClientConfig{
-		TLSConfig: config.TLSConfig{
+	cfg := configUtil.HTTPClientConfig{
+		TLSConfig: configUtil.TLSConfig{
 			CAFile:     caCertPath,
 			ServerName: "badname",
 		},
@@ -359,8 +359,8 @@ func newTLSConfig(certName string, t *testing.T) *tls.Config {
 }
 
 func TestNewClientWithBadTLSConfig(t *testing.T) {
-	cfg := config.HTTPClientConfig{
-		TLSConfig: config.TLSConfig{
+	cfg := configUtil.HTTPClientConfig{
+		TLSConfig: configUtil.TLSConfig{
 			CAFile:   "testdata/nonexistent_ca.cer",
 			CertFile: "testdata/nonexistent_client.cer",
 			KeyFile:  "testdata/nonexistent_client.key",

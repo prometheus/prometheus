@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
+	configUtil "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
@@ -172,7 +173,7 @@ func checkConfig(filename string) ([]string, error) {
 	return ruleFiles, nil
 }
 
-func checkTLSConfig(tlsConfig config.TLSConfig) error {
+func checkTLSConfig(tlsConfig configUtil.TLSConfig) error {
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
 		return fmt.Errorf("error checking client cert file %q: %s", tlsConfig.CertFile, err)
 	}

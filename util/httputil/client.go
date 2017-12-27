@@ -134,7 +134,7 @@ func cloneRequest(r *http.Request) *http.Request {
 	return r2
 }
 
-// NewTLSConfig creates a new tls.Config from the given config.TLSConfig.
+// NewTLSConfig creates a new tls.Config from the given configUtil.TLSConfig.
 func NewTLSConfig(cfg configUtil.TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 
