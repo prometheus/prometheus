@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 )
 
 var (
@@ -77,7 +78,7 @@ func TestTritonSDNewBadConfig(t *testing.T) {
 func TestTritonSDRun(t *testing.T) {
 	var (
 		td, err     = New(nil, &conf)
-		ch          = make(chan []*config.TargetGroup)
+		ch          = make(chan []*targetgroup.Group)
 		ctx, cancel = context.WithCancel(context.Background())
 	)
 

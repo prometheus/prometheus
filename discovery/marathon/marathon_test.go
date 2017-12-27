@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 )
 
 var (
@@ -31,7 +32,7 @@ var (
 	conf               = config.MarathonSDConfig{Servers: testServers}
 )
 
-func testUpdateServices(client AppListClient, ch chan []*config.TargetGroup) error {
+func testUpdateServices(client AppListClient, ch chan []*targetgroup.Group) error {
 	md, err := NewDiscovery(&conf, nil)
 	if err != nil {
 		return err
@@ -43,7 +44,7 @@ func testUpdateServices(client AppListClient, ch chan []*config.TargetGroup) err
 func TestMarathonSDHandleError(t *testing.T) {
 	var (
 		errTesting = errors.New("testing failure")
-		ch         = make(chan []*config.TargetGroup, 1)
+		ch         = make(chan []*targetgroup.Group, 1)
 		client     = func(client *http.Client, url, token string) (*AppList, error) { return nil, errTesting }
 	)
 	if err := testUpdateServices(client, ch); err != errTesting {
@@ -58,7 +59,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 
 func TestMarathonSDEmptyList(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) { return &AppList{}, nil }
 	)
 	if err := testUpdateServices(client, ch); err != nil {
@@ -105,7 +106,7 @@ func marathonTestAppList(labels map[string]string, runningTasks int) *AppList {
 
 func TestMarathonSDSendGroup(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppList(marathonValidLabel, 1), nil
 		}
@@ -139,7 +140,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	var ch = make(chan []*config.TargetGroup, 1)
+	var ch = make(chan []*targetgroup.Group, 1)
 	md, err := NewDiscovery(&conf, nil)
 	if err != nil {
 		t.Fatalf("%s", err)
@@ -173,7 +174,7 @@ func TestMarathonSDRunAndStop(t *testing.T) {
 	var (
 		refreshInterval = model.Duration(time.Millisecond * 10)
 		conf            = config.MarathonSDConfig{Servers: testServers, RefreshInterval: refreshInterval}
-		ch              = make(chan []*config.TargetGroup)
+		ch              = make(chan []*targetgroup.Group)
 		doneCh          = make(chan error)
 	)
 	md, err := NewDiscovery(&conf, nil)
@@ -237,7 +238,7 @@ func marathonTestAppListWithMutiplePorts(labels map[string]string, runningTasks 
 
 func TestMarathonSDSendGroupWithMutiplePort(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppListWithMutiplePorts(marathonValidLabel, 1), nil
 		}
@@ -304,7 +305,7 @@ func marathonTestZeroTaskPortAppList(labels map[string]string, runningTasks int)
 
 func TestMarathonZeroTaskPorts(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestZeroTaskPortAppList(marathonValidLabel, 1), nil
 		}
@@ -357,7 +358,7 @@ func marathonTestAppListWithoutPortMappings(labels map[string]string, runningTas
 
 func TestMarathonSDSendGroupWithoutPortMappings(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppListWithoutPortMappings(marathonValidLabel, 1), nil
 		}
@@ -430,7 +431,7 @@ func marathonTestAppListWithoutPortDefinitions(labels map[string]string, running
 
 func TestMarathonSDSendGroupWithoutPortDefinitions(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppListWithoutPortDefinitions(marathonValidLabel, 1), nil
 		}
@@ -505,7 +506,7 @@ func marathonTestAppListWithContainerPortMappings(labels map[string]string, runn
 
 func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
 	var (
-		ch     = make(chan []*config.TargetGroup, 1)
+		ch     = make(chan []*targetgroup.Group, 1)
 		client = func(client *http.Client, url, token string) (*AppList, error) {
 			return marathonTestAppListWithContainerPortMappings(marathonValidLabel, 1), nil
 		}

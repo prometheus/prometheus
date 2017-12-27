@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 )
 
 const testDir = "fixtures"
@@ -48,7 +49,7 @@ func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 
 	var (
 		fsd         = NewDiscovery(&conf, nil)
-		ch          = make(chan []*config.TargetGroup)
+		ch          = make(chan []*targetgroup.Group)
 		ctx, cancel = context.WithCancel(context.Background())
 	)
 	go fsd.Run(ctx, ch)
