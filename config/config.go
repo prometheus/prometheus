@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
+	"github.com/prometheus/prometheus/discovery/gce"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
@@ -130,13 +131,6 @@ var (
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
 	DefaultKubernetesSDConfig = KubernetesSDConfig{}
-
-	// DefaultGCESDConfig is the default EC2 SD configuration.
-	DefaultGCESDConfig = GCESDConfig{
-		Port:            80,
-		TagSeparator:    ",",
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
 
 	// DefaultOpenstackSDConfig is the default OpenStack SD configuration.
 	DefaultOpenstackSDConfig = OpenstackSDConfig{
@@ -417,7 +411,7 @@ type ServiceDiscoveryConfig struct {
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
-	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
+	GCESDConfigs []*gce.SDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
 	EC2SDConfigs []*ec2.SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of OpenStack service discovery configurations.
@@ -860,48 +854,6 @@ func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{})
 		return err
 	}
 	return yamlUtil.CheckOverflow(c.XXX, "namespaces")
-}
-
-// GCESDConfig is the configuration for GCE based service discovery.
-type GCESDConfig struct {
-	// Project: The Google Cloud Project ID
-	Project string `yaml:"project"`
-
-	// Zone: The zone of the scrape targets.
-	// If you need to configure multiple zones use multiple gce_sd_configs
-	Zone string `yaml:"zone"`
-
-	// Filter: Can be used optionally to filter the instance list by other criteria.
-	// Syntax of this filter string is described here in the filter query parameter section:
-	// https://cloud.google.com/compute/docs/reference/latest/instances/list
-	Filter string `yaml:"filter,omitempty"`
-
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	Port            int            `yaml:"port"`
-	TagSeparator    string         `yaml:"tag_separator,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultGCESDConfig
-	type plain GCESDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "gce_sd_config"); err != nil {
-		return err
-	}
-	if c.Project == "" {
-		return fmt.Errorf("GCE SD configuration requires a project")
-	}
-	if c.Zone == "" {
-		return fmt.Errorf("GCE SD configuration requires a zone")
-	}
-	return nil
 }
 
 // OpenstackSDConfig is the configuration for OpenStack based service discovery.
