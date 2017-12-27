@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/discovery/azure"
+	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -105,12 +106,6 @@ var (
 		Separator:   ";",
 		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
-	}
-
-	// DefaultConsulSDConfig is the default Consul SD configuration.
-	DefaultConsulSDConfig = ConsulSDConfig{
-		TagSeparator: ",",
-		Scheme:       "http",
 	}
 
 	// DefaultServersetSDConfig is the default Serverset SD configuration.
@@ -373,7 +368,7 @@ type ServiceDiscoveryConfig struct {
 	// List of file service discovery configurations.
 	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of Consul service discovery configurations.
-	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
+	ConsulSDConfigs []*consul.SDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
 	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
 	// NerveSDConfigs is a list of Nerve service discovery configurations.
@@ -574,41 +569,6 @@ type FileSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// ConsulSDConfig is the configuration for Consul service discovery.
-type ConsulSDConfig struct {
-	Server       string            `yaml:"server"`
-	Token        configUtil.Secret `yaml:"token,omitempty"`
-	Datacenter   string            `yaml:"datacenter,omitempty"`
-	TagSeparator string            `yaml:"tag_separator,omitempty"`
-	Scheme       string            `yaml:"scheme,omitempty"`
-	Username     string            `yaml:"username,omitempty"`
-	Password     configUtil.Secret `yaml:"password,omitempty"`
-	// The list of services for which targets are discovered.
-	// Defaults to all services if empty.
-	Services []string `yaml:"services"`
-
-	TLSConfig configUtil.TLSConfig `yaml:"tls_config,omitempty"`
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultConsulSDConfig
-	type plain ConsulSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "consul_sd_config"); err != nil {
-		return err
-	}
-	if strings.TrimSpace(c.Server) == "" {
-		return fmt.Errorf("Consul SD configuration requires a server address")
-	}
-	return nil
 }
 
 // ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
