@@ -25,6 +25,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 
+	"github.com/prometheus/prometheus/discovery/azure"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	configUtil "github.com/prometheus/prometheus/util/config"
@@ -158,12 +160,6 @@ var (
 	DefaultOpenstackSDConfig = OpenstackSDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
-	}
-
-	// DefaultAzureSDConfig is the default Azure SD configuration.
-	DefaultAzureSDConfig = AzureSDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
 	// DefaultTritonSDConfig is the default Triton SD configuration.
@@ -445,7 +441,7 @@ type ServiceDiscoveryConfig struct {
 	// List of OpenStack service discovery configurations.
 	OpenstackSDConfigs []*OpenstackSDConfig `yaml:"openstack_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
-	AzureSDConfigs []*AzureSDConfig `yaml:"azure_sd_configs,omitempty"`
+	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*TritonSDConfig `yaml:"triton_sd_configs,omitempty"`
 
@@ -1081,31 +1077,6 @@ func (c *OpenstackSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
 	return yamlUtil.CheckOverflow(c.XXX, "openstack_sd_config")
-}
-
-// AzureSDConfig is the configuration for Azure based service discovery.
-type AzureSDConfig struct {
-	Port            int               `yaml:"port"`
-	SubscriptionID  string            `yaml:"subscription_id"`
-	TenantID        string            `yaml:"tenant_id,omitempty"`
-	ClientID        string            `yaml:"client_id,omitempty"`
-	ClientSecret    configUtil.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval model.Duration    `yaml:"refresh_interval,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultAzureSDConfig
-	type plain AzureSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-
-	return yamlUtil.CheckOverflow(c.XXX, "azure_sd_config")
 }
 
 // TritonSDConfig is the configuration for Triton based service discovery.
