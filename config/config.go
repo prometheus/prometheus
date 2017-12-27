@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
+	"github.com/prometheus/prometheus/discovery/marathon"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
@@ -116,12 +117,6 @@ var (
 	// DefaultNerveSDConfig is the default Nerve SD configuration.
 	DefaultNerveSDConfig = NerveSDConfig{
 		Timeout: model.Duration(10 * time.Second),
-	}
-
-	// DefaultMarathonSDConfig is the default Marathon SD configuration.
-	DefaultMarathonSDConfig = MarathonSDConfig{
-		Timeout:         model.Duration(30 * time.Second),
-		RefreshInterval: model.Duration(30 * time.Second),
 	}
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
@@ -374,7 +369,7 @@ type ServiceDiscoveryConfig struct {
 	// NerveSDConfigs is a list of Nerve service discovery configurations.
 	NerveSDConfigs []*NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
-	MarathonSDConfigs []*MarathonSDConfig `yaml:"marathon_sd_configs,omitempty"`
+	MarathonSDConfigs []*marathon.SDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
 	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
@@ -638,40 +633,6 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
 		}
 	}
-	return nil
-}
-
-// MarathonSDConfig is the configuration for services running on Marathon.
-type MarathonSDConfig struct {
-	Servers         []string             `yaml:"servers,omitempty"`
-	Timeout         model.Duration       `yaml:"timeout,omitempty"`
-	RefreshInterval model.Duration       `yaml:"refresh_interval,omitempty"`
-	TLSConfig       configUtil.TLSConfig `yaml:"tls_config,omitempty"`
-	BearerToken     configUtil.Secret    `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string               `yaml:"bearer_token_file,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultMarathonSDConfig
-	type plain MarathonSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "marathon_sd_config"); err != nil {
-		return err
-	}
-	if len(c.Servers) == 0 {
-		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
-	}
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
-
 	return nil
 }
 
