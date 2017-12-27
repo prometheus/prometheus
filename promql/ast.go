@@ -139,6 +139,10 @@ type MatrixSelector struct {
 	iterators []local.SeriesIterator
 }
 
+func (m *MatrixSelector) SetIterators(its []local.SeriesIterator) {
+	m.iterators = its
+}
+
 // NumberLiteral represents a number.
 type NumberLiteral struct {
 	Val model.SampleValue
@@ -170,6 +174,10 @@ type VectorSelector struct {
 
 	// The series iterators are populated at query preparation time.
 	iterators []local.SeriesIterator
+}
+
+func (v *VectorSelector) SetIterators(its []local.SeriesIterator) {
+	v.iterators = its
 }
 
 func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
@@ -251,44 +259,50 @@ type Visitor interface {
 // v.Visit(node) is not nil, Walk is invoked recursively with visitor
 // w for each of the non-nil children of node, followed by a call of
 // w.Visit(nil).
-func Walk(v Visitor, node Node) {
+func Walk(v Visitor, st *EvalStmt, node Node, nr NodeReplacer) Node {
+	if nr != nil {
+		if replacement := nr(st, node); replacement != nil {
+			node = replacement
+		}
+	}
+
 	if v = v.Visit(node); v == nil {
-		return
+		return node
 	}
 
 	switch n := node.(type) {
 	case Statements:
 		for _, s := range n {
-			Walk(v, s)
+			Walk(v, st, s, nr)
 		}
 	case *AlertStmt:
-		Walk(v, n.Expr)
+		Walk(v, st, n.Expr, nr)
 
 	case *EvalStmt:
-		Walk(v, n.Expr)
+		Walk(v, st, n.Expr, nr)
 
 	case *RecordStmt:
-		Walk(v, n.Expr)
+		Walk(v, st, n.Expr, nr)
 
 	case Expressions:
 		for _, e := range n {
-			Walk(v, e)
+			Walk(v, st, e, nr)
 		}
 	case *AggregateExpr:
-		Walk(v, n.Expr)
+		Walk(v, st, n.Expr, nr)
 
 	case *BinaryExpr:
-		Walk(v, n.LHS)
-		Walk(v, n.RHS)
+		Walk(v, st, n.LHS, nr)
+		Walk(v, st, n.RHS, nr)
 
 	case *Call:
-		Walk(v, n.Args)
+		Walk(v, st, n.Args, nr)
 
 	case *ParenExpr:
-		Walk(v, n.Expr)
+		Walk(v, st, n.Expr, nr)
 
 	case *UnaryExpr:
-		Walk(v, n.Expr)
+		Walk(v, st, n.Expr, nr)
 
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
@@ -298,6 +312,7 @@ func Walk(v Visitor, node Node) {
 	}
 
 	v.Visit(nil)
+	return node
 }
 
 type inspector func(Node) bool
@@ -312,6 +327,8 @@ func (f inspector) Visit(node Node) Visitor {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node); node must not be nil. If f returns true, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(node Node, f func(Node) bool) {
-	Walk(inspector(f), node)
+func Inspect(s *EvalStmt, f func(Node) bool, nr NodeReplacer) Node {
+	return Walk(inspector(f), s, s.Expr, nr)
 }
+
+type NodeReplacer func(*EvalStmt, Node) Node

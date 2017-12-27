@@ -332,6 +332,7 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 type EngineOptions struct {
 	MaxConcurrentQueries int
 	Timeout              time.Duration
+	NodeReplacer         NodeReplacer
 }
 
 // DefaultEngineOptions are the default engine options.
@@ -569,45 +570,54 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, s *EvalStmt) error {
 	var queryErr error
-	Inspect(s.Expr, func(node Node) bool {
+	n := Inspect(s, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
-			if s.Start.Equal(s.End) {
-				n.iterators, queryErr = querier.QueryInstant(
-					ctx,
-					s.Start.Add(-n.Offset),
-					StalenessDelta,
-					n.LabelMatchers...,
-				)
-			} else {
+			if n.iterators == nil {
+				if s.Start.Equal(s.End) {
+					n.iterators, queryErr = querier.QueryInstant(
+						ctx,
+						s.Start.Add(-n.Offset),
+						StalenessDelta,
+						n.LabelMatchers...,
+					)
+				} else {
+					n.iterators, queryErr = querier.QueryRange(
+						ctx,
+						s.Start.Add(-n.Offset-StalenessDelta),
+						s.End.Add(-n.Offset),
+						n.LabelMatchers...,
+					)
+				}
+				if queryErr != nil {
+					return false
+				}
+			}
+		case *MatrixSelector:
+			if n.iterators == nil {
 				n.iterators, queryErr = querier.QueryRange(
 					ctx,
-					s.Start.Add(-n.Offset-StalenessDelta),
+					s.Start.Add(-n.Offset-n.Range),
 					s.End.Add(-n.Offset),
 					n.LabelMatchers...,
 				)
-			}
-			if queryErr != nil {
-				return false
-			}
-		case *MatrixSelector:
-			n.iterators, queryErr = querier.QueryRange(
-				ctx,
-				s.Start.Add(-n.Offset-n.Range),
-				s.End.Add(-n.Offset),
-				n.LabelMatchers...,
-			)
-			if queryErr != nil {
-				return false
+				if queryErr != nil {
+					return false
+				}
 			}
 		}
 		return true
-	})
+	}, ng.options.NodeReplacer)
+	if nTyped, ok := n.(Expr); ok {
+		s.Expr = nTyped
+	} else {
+		return fmt.Errorf("Invalid statement return")
+	}
 	return queryErr
 }
 
 func (ng *Engine) closeIterators(s *EvalStmt) {
-	Inspect(s.Expr, func(node Node) bool {
+	Inspect(s, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for _, it := range n.iterators {
@@ -619,7 +629,8 @@ func (ng *Engine) closeIterators(s *EvalStmt) {
 			}
 		}
 		return true
-	})
+	}, nil)
+
 }
 
 // An evaluator evaluates given expressions at a fixed timestamp. It is attached to an
