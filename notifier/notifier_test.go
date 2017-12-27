@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -440,8 +441,8 @@ func TestLabelSetNotReused(t *testing.T) {
 	}
 }
 
-func makeInputTargetGroup() *config.TargetGroup {
-	return &config.TargetGroup{
+func makeInputTargetGroup() *targetgroup.Group {
+	return &targetgroup.Group{
 		Targets: []model.LabelSet{
 			{
 				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),
