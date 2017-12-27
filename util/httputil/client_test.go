@@ -24,7 +24,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/config"
 	configUtil "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -145,7 +144,7 @@ func TestNewClientFromConfig(t *testing.T) {
 			},
 		}, {
 			clientConfig: configUtil.HTTPClientConfig{
-				BasicAuth: &config.BasicAuth{
+				BasicAuth: &configUtil.BasicAuth{
 					Username: ExpectedUsername,
 					Password: ExpectedPassword,
 				},

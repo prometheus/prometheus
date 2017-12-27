@@ -23,7 +23,6 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 )
 
@@ -43,7 +42,7 @@ func TestFileSD(t *testing.T) {
 func testFileSD(t *testing.T, prefix, ext string, expect bool) {
 	// As interval refreshing is more of a fallback, we only want to test
 	// whether file watches work as expected.
-	var conf config.FileSDConfig
+	var conf SDConfig
 	conf.Files = []string{filepath.Join(testDir, "_*"+ext)}
 	conf.RefreshInterval = model.Duration(1 * time.Hour)
 

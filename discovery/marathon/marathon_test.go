@@ -21,19 +21,17 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 )
 
 var (
 	marathonValidLabel = map[string]string{"prometheus": "yes"}
 	testServers        = []string{"http://localhost:8080"}
-	conf               = config.MarathonSDConfig{Servers: testServers}
+	conf               = SDConfig{Servers: testServers}
 )
 
 func testUpdateServices(client AppListClient, ch chan []*targetgroup.Group) error {
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(conf, nil)
 	if err != nil {
 		return err
 	}
@@ -141,7 +139,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 
 func TestMarathonSDRemoveApp(t *testing.T) {
 	var ch = make(chan []*targetgroup.Group, 1)
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(conf, nil)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -173,11 +171,11 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 func TestMarathonSDRunAndStop(t *testing.T) {
 	var (
 		refreshInterval = model.Duration(time.Millisecond * 10)
-		conf            = config.MarathonSDConfig{Servers: testServers, RefreshInterval: refreshInterval}
+		conf            = SDConfig{Servers: testServers, RefreshInterval: refreshInterval}
 		ch              = make(chan []*targetgroup.Group)
 		doneCh          = make(chan error)
 	)
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(conf, nil)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}

@@ -28,10 +28,11 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
+	"github.com/prometheus/prometheus/util/config"
 )
 
 var (
-	conf = config.SDConfig{
+	conf = SDConfig{
 		Account:         "testAccount",
 		DNSSuffix:       "triton.example.com",
 		Endpoint:        "127.0.0.1",
@@ -40,7 +41,7 @@ var (
 		RefreshInterval: 1,
 		TLSConfig:       config.TLSConfig{InsecureSkipVerify: true},
 	}
-	badconf = config.SDConfig{
+	badconf = SDConfig{
 		Account:         "badTestAccount",
 		DNSSuffix:       "bad.triton.example.com",
 		Endpoint:        "127.0.0.1",
