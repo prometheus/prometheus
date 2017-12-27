@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -245,7 +246,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set.
-func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
+func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	start := time.Now()
 
 	var all []*Target

@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -53,7 +54,7 @@ type ScrapeManager struct {
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
-func (m *ScrapeManager) Run(tsets <-chan map[string][]*config.TargetGroup) error {
+func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	level.Info(m.logger).Log("msg", "Starting scrape manager...")
 
 	for {
@@ -126,7 +127,7 @@ func (m *ScrapeManager) Targets() []*Target {
 	return <-targets
 }
 
-func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
+func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]
 		if !ok {
