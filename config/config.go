@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 
 	"github.com/prometheus/prometheus/discovery/azure"
+	"github.com/prometheus/prometheus/discovery/dns"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
@@ -105,12 +106,6 @@ var (
 		Separator:   ";",
 		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
-	}
-
-	// DefaultDNSSDConfig is the default DNS SD configuration.
-	DefaultDNSSDConfig = DNSSDConfig{
-		RefreshInterval: model.Duration(30 * time.Second),
-		Type:            "SRV",
 	}
 
 	// DefaultFileSDConfig is the default file SD configuration.
@@ -421,7 +416,7 @@ type ServiceDiscoveryConfig struct {
 	// List of labeled target groups for this job.
 	StaticConfigs []*targetgroup.Group `yaml:"static_configs,omitempty"`
 	// List of DNS service discovery configurations.
-	DNSSDConfigs []*DNSSDConfig `yaml:"dns_sd_configs,omitempty"`
+	DNSSDConfigs []*dns.SDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of file service discovery configurations.
 	FileSDConfigs []*FileSDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of Consul service discovery configurations.
@@ -644,42 +639,6 @@ type ClientCert struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// DNSSDConfig is the configuration for DNS based service discovery.
-type DNSSDConfig struct {
-	Names           []string       `yaml:"names"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	Type            string         `yaml:"type"`
-	Port            int            `yaml:"port"` // Ignored for SRV records
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultDNSSDConfig
-	type plain DNSSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "dns_sd_config"); err != nil {
-		return err
-	}
-	if len(c.Names) == 0 {
-		return fmt.Errorf("DNS-SD config must contain at least one SRV record name")
-	}
-	switch strings.ToUpper(c.Type) {
-	case "SRV":
-	case "A", "AAAA":
-		if c.Port == 0 {
-			return fmt.Errorf("a port is required in DNS-SD configs for all record types except SRV")
-		}
-	default:
-		return fmt.Errorf("invalid DNS-SD records type %s", c.Type)
-	}
-	return nil
 }
 
 // FileSDConfig is the configuration for file based discovery.
