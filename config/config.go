@@ -175,34 +175,6 @@ var (
 	}
 )
 
-// URL is a custom URL type that allows validation at configuration load time.
-type URL struct {
-	*url.URL
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface for URLs.
-func (u *URL) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-
-	urlp, err := url.Parse(s)
-	if err != nil {
-		return err
-	}
-	u.URL = urlp
-	return nil
-}
-
-// MarshalYAML implements the yaml.Marshaler interface for URLs.
-func (u URL) MarshalYAML() (interface{}, error) {
-	if u.URL != nil {
-		return u.String(), nil
-	}
-	return nil, nil
-}
-
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig   GlobalConfig    `yaml:"global"`
@@ -234,7 +206,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		cfg.RuleFiles[i] = join(rf)
 	}
 
-	clientPaths := func(scfg *HTTPClientConfig) {
+	clientPaths := func(scfg *configUtil.HTTPClientConfig) {
 		scfg.BearerTokenFile = join(scfg.BearerTokenFile)
 		scfg.TLSConfig.CAFile = join(scfg.TLSConfig.CAFile)
 		scfg.TLSConfig.CertFile = join(scfg.TLSConfig.CertFile)
@@ -434,33 +406,6 @@ func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error
 	return yamlUtil.CheckOverflow(c.XXX, "service discovery config")
 }
 
-// HTTPClientConfig configures an HTTP client.
-type HTTPClientConfig struct {
-	// The HTTP basic authentication credentials for the targets.
-	BasicAuth *configUtil.BasicAuth `yaml:"basic_auth,omitempty"`
-	// The bearer token for the targets.
-	BearerToken configUtil.Secret `yaml:"bearer_token,omitempty"`
-	// The bearer token file for the targets.
-	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
-	// HTTP proxy server to use to connect to the targets.
-	ProxyURL URL `yaml:"proxy_url,omitempty"`
-	// TLSConfig to use to connect to the targets.
-	TLSConfig configUtil.TLSConfig `yaml:"tls_config,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-func (c *HTTPClientConfig) validate() error {
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
-	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
-	}
-	return nil
-}
-
 // ScrapeConfig configures a scraping unit for Prometheus.
 type ScrapeConfig struct {
 	// The job name to which the job label is set by default.
@@ -483,8 +428,8 @@ type ScrapeConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       HTTPClientConfig       `yaml:",inline"`
+	ServiceDiscoveryConfig ServiceDiscoveryConfig      `yaml:",inline"`
+	HTTPClientConfig       configUtil.HTTPClientConfig `yaml:",inline"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -513,7 +458,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err = c.HTTPClientConfig.validate(); err != nil {
+	if err = c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -556,8 +501,8 @@ type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig ServiceDiscoveryConfig `yaml:",inline"`
-	HTTPClientConfig       HTTPClientConfig       `yaml:",inline"`
+	ServiceDiscoveryConfig ServiceDiscoveryConfig      `yaml:",inline"`
+	HTTPClientConfig       configUtil.HTTPClientConfig `yaml:",inline"`
 
 	// The URL scheme to use when talking to Alertmanagers.
 	Scheme string `yaml:"scheme,omitempty"`
@@ -587,7 +532,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.validate(); err != nil {
+	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -797,7 +742,7 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 // KubernetesSDConfig is the configuration for Kubernetes service discovery.
 type KubernetesSDConfig struct {
-	APIServer          URL                          `yaml:"api_server"`
+	APIServer          configUtil.URL               `yaml:"api_server"`
 	Role               KubernetesRole               `yaml:"role"`
 	BasicAuth          *configUtil.BasicAuth        `yaml:"basic_auth,omitempty"`
 	BearerToken        configUtil.Secret            `yaml:"bearer_token,omitempty"`
@@ -1096,14 +1041,14 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *URL             `yaml:"url"`
+	URL                 *configUtil.URL  `yaml:"url"`
 	RemoteTimeout       model.Duration   `yaml:"remote_timeout,omitempty"`
 	WriteRelabelConfigs []*RelabelConfig `yaml:"write_relabel_configs,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
-	QueueConfig      QueueConfig      `yaml:"queue_config,omitempty"`
+	HTTPClientConfig configUtil.HTTPClientConfig `yaml:",inline"`
+	QueueConfig      QueueConfig                 `yaml:"queue_config,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1123,7 +1068,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.validate(); err != nil {
+	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -1155,12 +1100,12 @@ type QueueConfig struct {
 
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
-	URL           *URL           `yaml:"url"`
-	RemoteTimeout model.Duration `yaml:"remote_timeout,omitempty"`
-	ReadRecent    bool           `yaml:"read_recent,omitempty"`
+	URL           *configUtil.URL `yaml:"url"`
+	RemoteTimeout model.Duration  `yaml:"remote_timeout,omitempty"`
+	ReadRecent    bool            `yaml:"read_recent,omitempty"`
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
-	HTTPClientConfig HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig configUtil.HTTPClientConfig `yaml:",inline"`
 
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
@@ -1184,7 +1129,7 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.validate(); err != nil {
+	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
 

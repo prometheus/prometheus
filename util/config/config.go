@@ -14,6 +14,9 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
+
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 )
 
@@ -77,4 +80,59 @@ func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	return yamlUtil.CheckOverflow(a.XXX, "basic_auth")
+}
+
+// URL is a custom URL type that allows validation at configuration load time.
+type URL struct {
+	*url.URL
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface for URLs.
+func (u *URL) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	urlp, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+	u.URL = urlp
+	return nil
+}
+
+// MarshalYAML implements the yaml.Marshaler interface for URLs.
+func (u URL) MarshalYAML() (interface{}, error) {
+	if u.URL != nil {
+		return u.String(), nil
+	}
+	return nil, nil
+}
+
+// HTTPClientConfig configures an HTTP client.
+type HTTPClientConfig struct {
+	// The HTTP basic authentication credentials for the targets.
+	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
+	// The bearer token for the targets.
+	BearerToken Secret `yaml:"bearer_token,omitempty"`
+	// The bearer token file for the targets.
+	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
+	// HTTP proxy server to use to connect to the targets.
+	ProxyURL URL `yaml:"proxy_url,omitempty"`
+	// TLSConfig to use to connect to the targets.
+	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+func (c *HTTPClientConfig) Validate() error {
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	}
+	return nil
 }

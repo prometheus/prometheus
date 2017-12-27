@@ -23,7 +23,6 @@ import (
 	"time"
 
 	conntrack "github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/prometheus/config"
 	configUtil "github.com/prometheus/prometheus/util/config"
 )
 
@@ -34,7 +33,7 @@ func newClient(rt http.RoundTripper) *http.Client {
 
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client, error) {
+func NewClientFromConfig(cfg configUtil.HTTPClientConfig, name string) (*http.Client, error) {
 	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
