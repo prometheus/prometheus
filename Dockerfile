@@ -13,6 +13,7 @@ RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles
     ln -s /prometheus /etc/prometheus/data
 
 USER       nobody
+HEALTHCHECK CMD wget -q --spider http://localhost:9090/-/healthy || exit 1
 EXPOSE     9090
 VOLUME     [ "/prometheus" ]
 WORKDIR    /etc/prometheus
