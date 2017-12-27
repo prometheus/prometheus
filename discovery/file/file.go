@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,11 +30,51 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"gopkg.in/fsnotify.v1"
-	"gopkg.in/yaml.v2"
-
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
+	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	fsnotify "gopkg.in/fsnotify.v1"
+	yaml "gopkg.in/yaml.v2"
 )
+
+var (
+	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
+
+	// DefaultSDConfig is the default file SD configuration.
+	DefaultSDConfig = SDConfig{
+		RefreshInterval: model.Duration(5 * time.Minute),
+	}
+)
+
+// SDConfig is the configuration for file based discovery.
+type SDConfig struct {
+	Files           []string       `yaml:"files"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yamlUtil.CheckOverflow(c.XXX, "file_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Files) == 0 {
+		return fmt.Errorf("file service discovery config must contain at least one path name")
+	}
+	for _, name := range c.Files {
+		if !patFileSDName.MatchString(name) {
+			return fmt.Errorf("path name %q is not valid for file discovery", name)
+		}
+	}
+	return nil
+}
 
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
 
@@ -133,7 +174,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new file discovery for the given paths.
-func NewDiscovery(conf *config.FileSDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -181,7 +222,7 @@ func (d *Discovery) watchFiles() {
 }
 
 // Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error adding file watcher", "err", err)
@@ -271,7 +312,7 @@ func (d *Discovery) stop() {
 
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
-func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	t0 := time.Now()
 	defer func() {
 		fileSDScanDuration.Observe(time.Since(t0).Seconds())
@@ -303,7 +344,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup
 			d.deleteTimestamp(f)
 			for i := m; i < n; i++ {
 				select {
-				case ch <- []*config.TargetGroup{{Source: fileSource(f, i)}}:
+				case ch <- []*targetgroup.Group{{Source: fileSource(f, i)}}:
 				case <-ctx.Done():
 					return
 				}
@@ -317,7 +358,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup
 
 // readFile reads a JSON or YAML list of targets groups from the file, depending on its
 // file extension. It returns full configuration target groups.
-func (d *Discovery) readFile(filename string) ([]*config.TargetGroup, error) {
+func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 	fd, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -334,7 +375,7 @@ func (d *Discovery) readFile(filename string) ([]*config.TargetGroup, error) {
 		return nil, err
 	}
 
-	var targetGroups []*config.TargetGroup
+	var targetGroups []*targetgroup.Group
 
 	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
 	case ".json":

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
+	"github.com/prometheus/prometheus/discovery/file"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
@@ -34,7 +35,6 @@ import (
 )
 
 var (
-	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
 )
@@ -104,11 +104,6 @@ var (
 		Separator:   ";",
 		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
-	}
-
-	// DefaultFileSDConfig is the default file SD configuration.
-	DefaultFileSDConfig = FileSDConfig{
-		RefreshInterval: model.Duration(5 * time.Minute),
 	}
 
 	// DefaultConsulSDConfig is the default Consul SD configuration.
@@ -410,7 +405,7 @@ type ServiceDiscoveryConfig struct {
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*dns.SDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of file service discovery configurations.
-	FileSDConfigs []*FileSDConfig `yaml:"file_sd_configs,omitempty"`
+	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
 	// List of Consul service discovery configurations.
 	ConsulSDConfigs []*ConsulSDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
@@ -640,28 +635,6 @@ type FileSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultFileSDConfig
-	type plain FileSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "file_sd_config"); err != nil {
-		return err
-	}
-	if len(c.Files) == 0 {
-		return fmt.Errorf("file service discovery config must contain at least one path name")
-	}
-	for _, name := range c.Files {
-		if !patFileSDName.MatchString(name) {
-			return fmt.Errorf("path name %q is not valid for file discovery", name)
-		}
-	}
-	return nil
 }
 
 // ConsulSDConfig is the configuration for Consul service discovery.
