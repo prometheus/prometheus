@@ -22,8 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/prometheus/config"
+	configUtil "github.com/prometheus/prometheus/util/config"
 )
 
 // NewClient returns a http.Client using the specified http.RoundTripper.
@@ -135,7 +136,7 @@ func cloneRequest(r *http.Request) *http.Request {
 }
 
 // NewTLSConfig creates a new tls.Config from the given config.TLSConfig.
-func NewTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
+func NewTLSConfig(cfg configUtil.TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 
 	// If a CA cert is provided then let's read it in so we can validate the

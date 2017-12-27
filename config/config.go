@@ -27,6 +27,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
+	configUtil "github.com/prometheus/prometheus/util/config"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -247,23 +248,6 @@ type Config struct {
 	original string
 }
 
-// Secret special type for storing secrets.
-type Secret string
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface for Secrets.
-func (s *Secret) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain Secret
-	return unmarshal((*plain)(s))
-}
-
-// MarshalYAML implements the yaml.Marshaler interface for Secrets.
-func (s Secret) MarshalYAML() (interface{}, error) {
-	if s != "" {
-		return "<secret>", nil
-	}
-	return nil, nil
-}
-
 // resolveFilepaths joins all relative paths in a configuration
 // with a given base directory.
 func resolveFilepaths(baseDir string, cfg *Config) {
@@ -436,32 +420,6 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0
 }
 
-// TLSConfig configures the options for TLS connections.
-type TLSConfig struct {
-	// The CA cert to use for the targets.
-	CAFile string `yaml:"ca_file,omitempty"`
-	// The client cert file for the targets.
-	CertFile string `yaml:"cert_file,omitempty"`
-	// The client key file for the targets.
-	KeyFile string `yaml:"key_file,omitempty"`
-	// Used to verify the hostname for the targets.
-	ServerName string `yaml:"server_name,omitempty"`
-	// Disable target certificate validation.
-	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain TLSConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	return yamlUtil.CheckOverflow(c.XXX, "TLS config")
-}
-
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
 type ServiceDiscoveryConfig struct {
 	// List of labeled target groups for this job.
@@ -507,15 +465,15 @@ func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error
 // HTTPClientConfig configures an HTTP client.
 type HTTPClientConfig struct {
 	// The HTTP basic authentication credentials for the targets.
-	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
+	BasicAuth *configUtil.BasicAuth `yaml:"basic_auth,omitempty"`
 	// The bearer token for the targets.
-	BearerToken Secret `yaml:"bearer_token,omitempty"`
+	BearerToken configUtil.Secret `yaml:"bearer_token,omitempty"`
 	// The bearer token file for the targets.
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
 	// TLSConfig to use to connect to the targets.
-	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig configUtil.TLSConfig `yaml:"tls_config,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -683,32 +641,13 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
-// BasicAuth contains basic HTTP authentication credentials.
-type BasicAuth struct {
-	Username string `yaml:"username"`
-	Password Secret `yaml:"password"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
 // ClientCert contains client cert credentials.
 type ClientCert struct {
-	Cert string `yaml:"cert"`
-	Key  Secret `yaml:"key"`
+	Cert string            `yaml:"cert"`
+	Key  configUtil.Secret `yaml:"key"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain BasicAuth
-	err := unmarshal((*plain)(a))
-	if err != nil {
-		return err
-	}
-	return yamlUtil.CheckOverflow(a.XXX, "basic_auth")
 }
 
 // DNSSDConfig is the configuration for DNS based service discovery.
@@ -780,18 +719,18 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // ConsulSDConfig is the configuration for Consul service discovery.
 type ConsulSDConfig struct {
-	Server       string `yaml:"server"`
-	Token        Secret `yaml:"token,omitempty"`
-	Datacenter   string `yaml:"datacenter,omitempty"`
-	TagSeparator string `yaml:"tag_separator,omitempty"`
-	Scheme       string `yaml:"scheme,omitempty"`
-	Username     string `yaml:"username,omitempty"`
-	Password     Secret `yaml:"password,omitempty"`
+	Server       string            `yaml:"server"`
+	Token        configUtil.Secret `yaml:"token,omitempty"`
+	Datacenter   string            `yaml:"datacenter,omitempty"`
+	TagSeparator string            `yaml:"tag_separator,omitempty"`
+	Scheme       string            `yaml:"scheme,omitempty"`
+	Username     string            `yaml:"username,omitempty"`
+	Password     configUtil.Secret `yaml:"password,omitempty"`
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
 
-	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig configUtil.TLSConfig `yaml:"tls_config,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
@@ -885,12 +824,12 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // MarathonSDConfig is the configuration for services running on Marathon.
 type MarathonSDConfig struct {
-	Servers         []string       `yaml:"servers,omitempty"`
-	Timeout         model.Duration `yaml:"timeout,omitempty"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-	BearerToken     Secret         `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
+	Servers         []string             `yaml:"servers,omitempty"`
+	Timeout         model.Duration       `yaml:"timeout,omitempty"`
+	RefreshInterval model.Duration       `yaml:"refresh_interval,omitempty"`
+	TLSConfig       configUtil.TLSConfig `yaml:"tls_config,omitempty"`
+	BearerToken     configUtil.Secret    `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string               `yaml:"bearer_token_file,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -946,10 +885,10 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 type KubernetesSDConfig struct {
 	APIServer          URL                          `yaml:"api_server"`
 	Role               KubernetesRole               `yaml:"role"`
-	BasicAuth          *BasicAuth                   `yaml:"basic_auth,omitempty"`
-	BearerToken        Secret                       `yaml:"bearer_token,omitempty"`
+	BasicAuth          *configUtil.BasicAuth        `yaml:"basic_auth,omitempty"`
+	BearerToken        configUtil.Secret            `yaml:"bearer_token,omitempty"`
 	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
-	TLSConfig          TLSConfig                    `yaml:"tls_config,omitempty"`
+	TLSConfig          configUtil.TLSConfig         `yaml:"tls_config,omitempty"`
 	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -1047,13 +986,13 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // EC2SDConfig is the configuration for EC2 based service discovery.
 type EC2SDConfig struct {
-	Region          string         `yaml:"region"`
-	AccessKey       string         `yaml:"access_key,omitempty"`
-	SecretKey       Secret         `yaml:"secret_key,omitempty"`
-	Profile         string         `yaml:"profile,omitempty"`
-	RoleARN         string         `yaml:"role_arn,omitempty"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	Port            int            `yaml:"port"`
+	Region          string            `yaml:"region"`
+	AccessKey       string            `yaml:"access_key,omitempty"`
+	SecretKey       configUtil.Secret `yaml:"secret_key,omitempty"`
+	Profile         string            `yaml:"profile,omitempty"`
+	RoleARN         string            `yaml:"role_arn,omitempty"`
+	RefreshInterval model.Duration    `yaml:"refresh_interval,omitempty"`
+	Port            int               `yaml:"port"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1087,18 +1026,18 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // OpenstackSDConfig is the configuration for OpenStack based service discovery.
 type OpenstackSDConfig struct {
-	IdentityEndpoint string         `yaml:"identity_endpoint"`
-	Username         string         `yaml:"username"`
-	UserID           string         `yaml:"userid"`
-	Password         Secret         `yaml:"password"`
-	ProjectName      string         `yaml:"project_name"`
-	ProjectID        string         `yaml:"project_id"`
-	DomainName       string         `yaml:"domain_name"`
-	DomainID         string         `yaml:"domain_id"`
-	Role             OpenStackRole  `yaml:"role"`
-	Region           string         `yaml:"region"`
-	RefreshInterval  model.Duration `yaml:"refresh_interval,omitempty"`
-	Port             int            `yaml:"port"`
+	IdentityEndpoint string            `yaml:"identity_endpoint"`
+	Username         string            `yaml:"username"`
+	UserID           string            `yaml:"userid"`
+	Password         configUtil.Secret `yaml:"password"`
+	ProjectName      string            `yaml:"project_name"`
+	ProjectID        string            `yaml:"project_id"`
+	DomainName       string            `yaml:"domain_name"`
+	DomainID         string            `yaml:"domain_id"`
+	Role             OpenStackRole     `yaml:"role"`
+	Region           string            `yaml:"region"`
+	RefreshInterval  model.Duration    `yaml:"refresh_interval,omitempty"`
+	Port             int               `yaml:"port"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1146,12 +1085,12 @@ func (c *OpenstackSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 
 // AzureSDConfig is the configuration for Azure based service discovery.
 type AzureSDConfig struct {
-	Port            int            `yaml:"port"`
-	SubscriptionID  string         `yaml:"subscription_id"`
-	TenantID        string         `yaml:"tenant_id,omitempty"`
-	ClientID        string         `yaml:"client_id,omitempty"`
-	ClientSecret    Secret         `yaml:"client_secret,omitempty"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int               `yaml:"port"`
+	SubscriptionID  string            `yaml:"subscription_id"`
+	TenantID        string            `yaml:"tenant_id,omitempty"`
+	ClientID        string            `yaml:"client_id,omitempty"`
+	ClientSecret    configUtil.Secret `yaml:"client_secret,omitempty"`
+	RefreshInterval model.Duration    `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -1171,13 +1110,13 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // TritonSDConfig is the configuration for Triton based service discovery.
 type TritonSDConfig struct {
-	Account         string         `yaml:"account"`
-	DNSSuffix       string         `yaml:"dns_suffix"`
-	Endpoint        string         `yaml:"endpoint"`
-	Port            int            `yaml:"port"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-	TLSConfig       TLSConfig      `yaml:"tls_config,omitempty"`
-	Version         int            `yaml:"version"`
+	Account         string               `yaml:"account"`
+	DNSSuffix       string               `yaml:"dns_suffix"`
+	Endpoint        string               `yaml:"endpoint"`
+	Port            int                  `yaml:"port"`
+	RefreshInterval model.Duration       `yaml:"refresh_interval,omitempty"`
+	TLSConfig       configUtil.TLSConfig `yaml:"tls_config,omitempty"`
+	Version         int                  `yaml:"version"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
