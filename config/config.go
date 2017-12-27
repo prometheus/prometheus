@@ -14,7 +14,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -25,8 +24,11 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
+	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml "gopkg.in/yaml.v2"
 )
 
 var (
@@ -317,17 +319,6 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 	}
 }
 
-func checkOverflow(m map[string]interface{}, ctx string) error {
-	if len(m) > 0 {
-		var keys []string
-		for k := range m {
-			keys = append(keys, k)
-		}
-		return fmt.Errorf("unknown fields in %s: %s", ctx, strings.Join(keys, ", "))
-	}
-	return nil
-}
-
 func (c Config) String() string {
 	b, err := yaml.Marshal(c)
 	if err != nil {
@@ -346,7 +337,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "config"); err != nil {
 		return err
 	}
 	// If a global block was open but empty the default global config is overwritten.
@@ -412,7 +403,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
-	if err := checkOverflow(gc.XXX, "global config"); err != nil {
+	if err := yamlUtil.CheckOverflow(gc.XXX, "global config"); err != nil {
 		return err
 	}
 	// First set the correct scrape interval, then check that the timeout
@@ -468,13 +459,13 @@ func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return checkOverflow(c.XXX, "TLS config")
+	return yamlUtil.CheckOverflow(c.XXX, "TLS config")
 }
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
 type ServiceDiscoveryConfig struct {
 	// List of labeled target groups for this job.
-	StaticConfigs []*TargetGroup `yaml:"static_configs,omitempty"`
+	StaticConfigs []*targetgroup.Group `yaml:"static_configs,omitempty"`
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*DNSSDConfig `yaml:"dns_sd_configs,omitempty"`
 	// List of file service discovery configurations.
@@ -510,7 +501,7 @@ func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return checkOverflow(c.XXX, "service discovery config")
+	return yamlUtil.CheckOverflow(c.XXX, "service discovery config")
 }
 
 // HTTPClientConfig configures an HTTP client.
@@ -582,7 +573,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err = checkOverflow(c.XXX, "scrape_config"); err != nil {
+	if err = yamlUtil.CheckOverflow(c.XXX, "scrape_config"); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {
@@ -627,7 +618,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return checkOverflow(c.XXX, "alerting config")
+	return yamlUtil.CheckOverflow(c.XXX, "alerting config")
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -659,7 +650,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "alertmanager config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "alertmanager config"); err != nil {
 		return err
 	}
 
@@ -717,77 +708,7 @@ func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	return checkOverflow(a.XXX, "basic_auth")
-}
-
-// TargetGroup is a set of targets with a common label set(production , test, staging etc.).
-type TargetGroup struct {
-	// Targets is a list of targets identified by a label set. Each target is
-	// uniquely identifiable in the group by its address label.
-	Targets []model.LabelSet
-	// Labels is a set of labels that is common across all targets in the group.
-	Labels model.LabelSet
-
-	// Source is an identifier that describes a group of targets.
-	Source string
-}
-
-func (tg TargetGroup) String() string {
-	return tg.Source
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (tg *TargetGroup) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	g := struct {
-		Targets []string               `yaml:"targets"`
-		Labels  model.LabelSet         `yaml:"labels"`
-		XXX     map[string]interface{} `yaml:",inline"`
-	}{}
-	if err := unmarshal(&g); err != nil {
-		return err
-	}
-	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
-	for _, t := range g.Targets {
-		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel: model.LabelValue(t),
-		})
-	}
-	tg.Labels = g.Labels
-	return checkOverflow(g.XXX, "static_config")
-}
-
-// MarshalYAML implements the yaml.Marshaler interface.
-func (tg TargetGroup) MarshalYAML() (interface{}, error) {
-	g := &struct {
-		Targets []string       `yaml:"targets"`
-		Labels  model.LabelSet `yaml:"labels,omitempty"`
-	}{
-		Targets: make([]string, 0, len(tg.Targets)),
-		Labels:  tg.Labels,
-	}
-	for _, t := range tg.Targets {
-		g.Targets = append(g.Targets, string(t[model.AddressLabel]))
-	}
-	return g, nil
-}
-
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (tg *TargetGroup) UnmarshalJSON(b []byte) error {
-	g := struct {
-		Targets []string       `json:"targets"`
-		Labels  model.LabelSet `json:"labels"`
-	}{}
-	if err := json.Unmarshal(b, &g); err != nil {
-		return err
-	}
-	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))
-	for _, t := range g.Targets {
-		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel: model.LabelValue(t),
-		})
-	}
-	tg.Labels = g.Labels
-	return nil
+	return yamlUtil.CheckOverflow(a.XXX, "basic_auth")
 }
 
 // DNSSDConfig is the configuration for DNS based service discovery.
@@ -808,7 +729,7 @@ func (c *DNSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "dns_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "dns_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Names) == 0 {
@@ -843,7 +764,7 @@ func (c *FileSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "file_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "file_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Files) == 0 {
@@ -883,7 +804,7 @@ func (c *ConsulSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "consul_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "consul_sd_config"); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Server) == "" {
@@ -910,7 +831,7 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "serverset_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "serverset_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {
@@ -945,7 +866,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "nerve_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "nerve_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {
@@ -983,7 +904,7 @@ func (c *MarathonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "marathon_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "marathon_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {
@@ -1043,7 +964,7 @@ func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
 		return err
 	}
 	if c.Role == "" {
@@ -1079,7 +1000,7 @@ func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{})
 	if err != nil {
 		return err
 	}
-	return checkOverflow(c.XXX, "namespaces")
+	return yamlUtil.CheckOverflow(c.XXX, "namespaces")
 }
 
 // GCESDConfig is the configuration for GCE based service discovery.
@@ -1112,7 +1033,7 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "gce_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "gce_sd_config"); err != nil {
 		return err
 	}
 	if c.Project == "" {
@@ -1146,7 +1067,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "ec2_sd_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "ec2_sd_config"); err != nil {
 		return err
 	}
 	if c.Region == "" {
@@ -1220,7 +1141,7 @@ func (c *OpenstackSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if c.Role == "" {
 		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
-	return checkOverflow(c.XXX, "openstack_sd_config")
+	return yamlUtil.CheckOverflow(c.XXX, "openstack_sd_config")
 }
 
 // AzureSDConfig is the configuration for Azure based service discovery.
@@ -1245,7 +1166,7 @@ func (c *AzureSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	return checkOverflow(c.XXX, "azure_sd_config")
+	return yamlUtil.CheckOverflow(c.XXX, "azure_sd_config")
 }
 
 // TritonSDConfig is the configuration for Triton based service discovery.
@@ -1281,7 +1202,7 @@ func (c *TritonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if c.RefreshInterval <= 0 {
 		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
 	}
-	return checkOverflow(c.XXX, "triton_sd_config")
+	return yamlUtil.CheckOverflow(c.XXX, "triton_sd_config")
 }
 
 // RelabelAction is the action to be performed on relabeling.
@@ -1348,7 +1269,7 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := checkOverflow(c.XXX, "relabel_config"); err != nil {
+	if err := yamlUtil.CheckOverflow(c.XXX, "relabel_config"); err != nil {
 		return err
 	}
 	if c.Regex.Regexp == nil {
@@ -1460,7 +1381,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	return checkOverflow(c.XXX, "remote_write")
+	return yamlUtil.CheckOverflow(c.XXX, "remote_write")
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -1521,5 +1442,5 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 
-	return checkOverflow(c.XXX, "remote_read")
+	return yamlUtil.CheckOverflow(c.XXX, "remote_read")
 }
