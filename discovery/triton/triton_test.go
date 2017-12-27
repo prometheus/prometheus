@@ -27,11 +27,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 )
 
 var (
-	conf = config.TritonSDConfig{
+	conf = config.SDConfig{
 		Account:         "testAccount",
 		DNSSuffix:       "triton.example.com",
 		Endpoint:        "127.0.0.1",
@@ -40,7 +39,7 @@ var (
 		RefreshInterval: 1,
 		TLSConfig:       config.TLSConfig{InsecureSkipVerify: true},
 	}
-	badconf = config.TritonSDConfig{
+	badconf = config.SDConfig{
 		Account:         "badTestAccount",
 		DNSSuffix:       "bad.triton.example.com",
 		Endpoint:        "127.0.0.1",
