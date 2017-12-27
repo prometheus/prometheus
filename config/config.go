@@ -22,11 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
-
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/dns"
+	"github.com/prometheus/prometheus/discovery/ec2"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
@@ -142,12 +140,6 @@ var (
 	DefaultGCESDConfig = GCESDConfig{
 		Port:            80,
 		TagSeparator:    ",",
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-
-	// DefaultEC2SDConfig is the default EC2 SD configuration.
-	DefaultEC2SDConfig = EC2SDConfig{
-		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 
@@ -432,7 +424,7 @@ type ServiceDiscoveryConfig struct {
 	// List of GCE service discovery configurations.
 	GCESDConfigs []*GCESDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
-	EC2SDConfigs []*EC2SDConfig `yaml:"ec2_sd_configs,omitempty"`
+	EC2SDConfigs []*ec2.SDConfig `yaml:"ec2_sd_configs,omitempty"`
 	// List of OpenStack service discovery configurations.
 	OpenstackSDConfigs []*OpenstackSDConfig `yaml:"openstack_sd_configs,omitempty"`
 	// List of Azure service discovery configurations.
@@ -935,46 +927,6 @@ func (c *GCESDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.Zone == "" {
 		return fmt.Errorf("GCE SD configuration requires a zone")
-	}
-	return nil
-}
-
-// EC2SDConfig is the configuration for EC2 based service discovery.
-type EC2SDConfig struct {
-	Region          string            `yaml:"region"`
-	AccessKey       string            `yaml:"access_key,omitempty"`
-	SecretKey       configUtil.Secret `yaml:"secret_key,omitempty"`
-	Profile         string            `yaml:"profile,omitempty"`
-	RoleARN         string            `yaml:"role_arn,omitempty"`
-	RefreshInterval model.Duration    `yaml:"refresh_interval,omitempty"`
-	Port            int               `yaml:"port"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultEC2SDConfig
-	type plain EC2SDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "ec2_sd_config"); err != nil {
-		return err
-	}
-	if c.Region == "" {
-		sess, err := session.NewSession()
-		if err != nil {
-			return err
-		}
-		metadata := ec2metadata.New(sess)
-		region, err := metadata.Region()
-		if err != nil {
-			return fmt.Errorf("EC2 SD configuration requires a region")
-		}
-		c.Region = region
 	}
 	return nil
 }
