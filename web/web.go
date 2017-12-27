@@ -99,16 +99,6 @@ type Handler struct {
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
-// Reload updates the config field of the Handler struct
-// func (h *Handler) Reload(conf config.ReloadReader) error {
-// 	h.mtx.Lock()
-// 	defer h.mtx.Unlock()
-
-// 	h.config = conf
-
-// 	return nil
-// }
-
 // PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion struct {
 	Version   string `json:"version"`
