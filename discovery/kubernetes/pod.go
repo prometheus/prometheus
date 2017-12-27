@@ -27,7 +27,7 @@ import (
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -51,9 +51,9 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 }
 
 // Run implements the TargetProvider interface.
-func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
-	var initial []*config.TargetGroup
+	var initial []*targetgroup.Group
 	for _, o := range p.store.List() {
 		tg := p.buildPod(o.(*apiv1.Pod))
 		initial = append(initial, tg)
@@ -67,11 +67,11 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 
 	// Send target groups for pod updates.
-	send := func(tg *config.TargetGroup) {
+	send := func(tg *targetgroup.Group) {
 		level.Debug(p.logger).Log("msg", "pod update", "tg", fmt.Sprintf("%#v", tg))
 		select {
 		case <-ctx.Done():
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		}
 	}
 	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -93,7 +93,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 				level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
 				return
 			}
-			send(&config.TargetGroup{Source: podSource(pod)})
+			send(&targetgroup.Group{Source: podSource(pod)})
 		},
 		UpdateFunc: func(_, o interface{}) {
 			eventCount.WithLabelValues("pod", "update").Inc()
@@ -166,13 +166,13 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	return ls
 }
 
-func (p *Pod) buildPod(pod *apiv1.Pod) *config.TargetGroup {
+func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	// During startup the pod may not have an IP yet. This does not even allow
 	// for an up metric, so we skip the target.
 	if len(pod.Status.PodIP) == 0 {
 		return nil
 	}
-	tg := &config.TargetGroup{
+	tg := &targetgroup.Group{
 		Source: podSource(pod),
 	}
 	tg.Labels = podLabels(pod)

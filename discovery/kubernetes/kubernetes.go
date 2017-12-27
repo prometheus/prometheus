@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"sync"
 	"time"
@@ -23,14 +24,16 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/targetgroup"
+	configUtil "github.com/prometheus/prometheus/util/config"
+	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/prometheus/prometheus/config"
 )
 
 const (
@@ -48,7 +51,95 @@ var (
 		},
 		[]string{"role", "event"},
 	)
+	// DefaultSDConfig is the default Kubernetes SD configuration
+	DefaultSDConfig = SDConfig{}
 )
+
+// KubernetesRole is role of the service in Kubernetes.
+type KubernetesRole string
+
+// The valid options for KubernetesRole.
+const (
+	KubernetesRoleNode     KubernetesRole = "node"
+	KubernetesRolePod      KubernetesRole = "pod"
+	KubernetesRoleService  KubernetesRole = "service"
+	KubernetesRoleEndpoint KubernetesRole = "endpoints"
+	KubernetesRoleIngress  KubernetesRole = "ingress"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleIngress:
+		return nil
+	default:
+		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
+	}
+}
+
+// SDConfig is the configuration for Kubernetes service discovery.
+type SDConfig struct {
+	APIServer          configUtil.URL               `yaml:"api_server"`
+	Role               KubernetesRole               `yaml:"role"`
+	BasicAuth          *configUtil.BasicAuth        `yaml:"basic_auth,omitempty"`
+	BearerToken        configUtil.Secret            `yaml:"bearer_token,omitempty"`
+	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
+	TLSConfig          configUtil.TLSConfig         `yaml:"tls_config,omitempty"`
+	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = SDConfig{}
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yamlUtil.CheckOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
+		return err
+	}
+	if c.Role == "" {
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, node)")
+	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
+	}
+	if c.APIServer.URL == nil &&
+		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
+			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
+		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
+	}
+	return nil
+}
+
+// KubernetesNamespaceDiscovery is the configuration for discovering
+// Kubernetes namespaces.
+type KubernetesNamespaceDiscovery struct {
+	Names []string `yaml:"names"`
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = KubernetesNamespaceDiscovery{}
+	type plain KubernetesNamespaceDiscovery
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	return yamlUtil.CheckOverflow(c.XXX, "namespaces")
+}
 
 func init() {
 	prometheus.MustRegister(eventCount)
@@ -65,9 +156,9 @@ func init() {
 // targets from Kubernetes.
 type Discovery struct {
 	client             kubernetes.Interface
-	role               config.KubernetesRole
+	role               KubernetesRole
 	logger             log.Logger
-	namespaceDiscovery *config.KubernetesNamespaceDiscovery
+	namespaceDiscovery *KubernetesNamespaceDiscovery
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -79,7 +170,7 @@ func (d *Discovery) getNamespaces() []string {
 }
 
 // New creates a new Kubernetes discovery for the given role.
-func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
+func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -154,7 +245,7 @@ func New(l log.Logger, conf *config.KubernetesSDConfig) (*Discovery, error) {
 const resyncPeriod = 10 * time.Minute
 
 // Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	rclient := d.client.Core().RESTClient()
 	reclient := d.client.Extensions().RESTClient()
 

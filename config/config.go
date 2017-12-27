@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/gce"
+	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
@@ -111,9 +112,6 @@ var (
 		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
 	}
-
-	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
-	DefaultKubernetesSDConfig = KubernetesSDConfig{}
 
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
@@ -351,7 +349,7 @@ type ServiceDiscoveryConfig struct {
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*marathon.SDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
-	KubernetesSDConfigs []*KubernetesSDConfig `yaml:"kubernetes_sd_configs,omitempty"`
+	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
 	GCESDConfigs []*gce.SDConfig `yaml:"gce_sd_configs,omitempty"`
 	// List of EC2 service discovery configurations.
@@ -544,92 +542,6 @@ type FileSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// KubernetesRole is role of the service in Kubernetes.
-type KubernetesRole string
-
-// The valid options for KubernetesRole.
-const (
-	KubernetesRoleNode     KubernetesRole = "node"
-	KubernetesRolePod      KubernetesRole = "pod"
-	KubernetesRoleService  KubernetesRole = "service"
-	KubernetesRoleEndpoint KubernetesRole = "endpoints"
-	KubernetesRoleIngress  KubernetesRole = "ingress"
-)
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	if err := unmarshal((*string)(c)); err != nil {
-		return err
-	}
-	switch *c {
-	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleIngress:
-		return nil
-	default:
-		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
-	}
-}
-
-// KubernetesSDConfig is the configuration for Kubernetes service discovery.
-type KubernetesSDConfig struct {
-	APIServer          configUtil.URL               `yaml:"api_server"`
-	Role               KubernetesRole               `yaml:"role"`
-	BasicAuth          *configUtil.BasicAuth        `yaml:"basic_auth,omitempty"`
-	BearerToken        configUtil.Secret            `yaml:"bearer_token,omitempty"`
-	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
-	TLSConfig          configUtil.TLSConfig         `yaml:"tls_config,omitempty"`
-	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = KubernetesSDConfig{}
-	type plain KubernetesSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
-		return err
-	}
-	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: pod, service, endpoints, node)")
-	}
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
-	}
-	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
-	}
-	if c.APIServer.URL == nil &&
-		(c.BasicAuth != nil || c.BearerToken != "" || c.BearerTokenFile != "" ||
-			c.TLSConfig.CAFile != "" || c.TLSConfig.CertFile != "" || c.TLSConfig.KeyFile != "") {
-		return fmt.Errorf("to use custom authentication please provide the 'api_server' URL explicitly")
-	}
-	return nil
-}
-
-// KubernetesNamespaceDiscovery is the configuration for discovering
-// Kubernetes namespaces.
-type KubernetesNamespaceDiscovery struct {
-	Names []string `yaml:"names"`
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = KubernetesNamespaceDiscovery{}
-	type plain KubernetesNamespaceDiscovery
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	return yamlUtil.CheckOverflow(c.XXX, "namespaces")
 }
 
 // RelabelAction is the action to be performed on relabeling.
