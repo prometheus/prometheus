@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/triton"
+	"github.com/prometheus/prometheus/discovery/zookeeper"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
@@ -108,16 +109,6 @@ var (
 		Separator:   ";",
 		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
-	}
-
-	// DefaultServersetSDConfig is the default Serverset SD configuration.
-	DefaultServersetSDConfig = ServersetSDConfig{
-		Timeout: model.Duration(10 * time.Second),
-	}
-
-	// DefaultNerveSDConfig is the default Nerve SD configuration.
-	DefaultNerveSDConfig = NerveSDConfig{
-		Timeout: model.Duration(10 * time.Second),
 	}
 
 	// DefaultKubernetesSDConfig is the default Kubernetes SD configuration
@@ -359,9 +350,9 @@ type ServiceDiscoveryConfig struct {
 	// List of Consul service discovery configurations.
 	ConsulSDConfigs []*consul.SDConfig `yaml:"consul_sd_configs,omitempty"`
 	// List of Serverset service discovery configurations.
-	ServersetSDConfigs []*ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
+	ServersetSDConfigs []*zookeeper.ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
 	// NerveSDConfigs is a list of Nerve service discovery configurations.
-	NerveSDConfigs []*NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
+	NerveSDConfigs []*zookeeper.NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*marathon.SDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
@@ -558,76 +549,6 @@ type FileSDConfig struct {
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
-type ServersetSDConfig struct {
-	Servers []string       `yaml:"servers"`
-	Paths   []string       `yaml:"paths"`
-	Timeout model.Duration `yaml:"timeout,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultServersetSDConfig
-	type plain ServersetSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "serverset_sd_config"); err != nil {
-		return err
-	}
-	if len(c.Servers) == 0 {
-		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
-	}
-	if len(c.Paths) == 0 {
-		return fmt.Errorf("serverset SD config must contain at least one path")
-	}
-	for _, path := range c.Paths {
-		if !strings.HasPrefix(path, "/") {
-			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
-		}
-	}
-	return nil
-}
-
-// NerveSDConfig is the configuration for AirBnB's Nerve in Zookeeper based discovery.
-type NerveSDConfig struct {
-	Servers []string       `yaml:"servers"`
-	Paths   []string       `yaml:"paths"`
-	Timeout model.Duration `yaml:"timeout,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultNerveSDConfig
-	type plain NerveSDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "nerve_sd_config"); err != nil {
-		return err
-	}
-	if len(c.Servers) == 0 {
-		return fmt.Errorf("nerve SD config must contain at least one Zookeeper server")
-	}
-	if len(c.Paths) == 0 {
-		return fmt.Errorf("nerve SD config must contain at least one path")
-	}
-	for _, path := range c.Paths {
-		if !strings.HasPrefix(path, "/") {
-			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
-		}
-	}
-	return nil
 }
 
 // KubernetesRole is role of the service in Kubernetes.
