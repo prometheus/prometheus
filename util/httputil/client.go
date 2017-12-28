@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	configUtil "github.com/prometheus/prometheus/util/config"
 )
 

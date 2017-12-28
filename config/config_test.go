@@ -37,7 +37,7 @@ import (
 	"github.com/prometheus/common/model"
 	configUtil "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/testutil"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 func mustParseURL(u string) *configUtil.URL {

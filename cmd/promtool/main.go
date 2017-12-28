@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"

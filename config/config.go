@@ -38,7 +38,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	configUtil "github.com/prometheus/prometheus/util/config"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 var (

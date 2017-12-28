@@ -32,8 +32,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
-	fsnotify "gopkg.in/fsnotify.v1"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/fsnotify.v1"
+	"gopkg.in/yaml.v2"
 )
 
 var (
