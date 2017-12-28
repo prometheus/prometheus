@@ -40,3 +40,11 @@ message Query {
 message QueryResult {
   repeated prometheus.TimeSeries timeseries = 1;
 }
+
+message LabelValuesRequest {
+  string label_name = 1;
+}
+
+message LabelValuesResponse {
+  repeated string label_values = 1;
+}
