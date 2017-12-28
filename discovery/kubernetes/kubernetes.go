@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	config_util "github.com/prometheus/prometheus/util/config"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
@@ -102,7 +102,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
 		return err
 	}
 	if c.Role == "" {
@@ -138,7 +138,7 @@ func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err != nil {
 		return err
 	}
-	return yamlUtil.CheckOverflow(c.XXX, "namespaces")
+	return yaml_util.CheckOverflow(c.XXX, "namespaces")
 }
 
 func init() {

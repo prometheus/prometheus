@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	config_util "github.com/prometheus/prometheus/util/config"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/yaml.v2"
 )
 
@@ -221,7 +221,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "config"); err != nil {
 		return err
 	}
 	// If a global block was open but empty the default global config is overwritten.
@@ -287,7 +287,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(gc.XXX, "global config"); err != nil {
+	if err := yaml_util.CheckOverflow(gc.XXX, "global config"); err != nil {
 		return err
 	}
 	// First set the correct scrape interval, then check that the timeout
@@ -362,7 +362,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err = yamlUtil.CheckOverflow(c.XXX, "scrape_config"); err != nil {
+	if err = yaml_util.CheckOverflow(c.XXX, "scrape_config"); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {
@@ -407,7 +407,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return yamlUtil.CheckOverflow(c.XXX, "alerting config")
+	return yaml_util.CheckOverflow(c.XXX, "alerting config")
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -439,7 +439,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "alertmanager config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "alertmanager config"); err != nil {
 		return err
 	}
 
@@ -554,7 +554,7 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "relabel_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "relabel_config"); err != nil {
 		return err
 	}
 	if c.Regex.Regexp == nil {
@@ -666,7 +666,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	return yamlUtil.CheckOverflow(c.XXX, "remote_write")
+	return yaml_util.CheckOverflow(c.XXX, "remote_write")
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -727,5 +727,5 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 
-	return yamlUtil.CheckOverflow(c.XXX, "remote_read")
+	return yaml_util.CheckOverflow(c.XXX, "remote_read")
 }

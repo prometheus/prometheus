@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 var (
@@ -61,7 +61,7 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "serverset_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "serverset_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {
@@ -96,7 +96,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "nerve_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "nerve_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {

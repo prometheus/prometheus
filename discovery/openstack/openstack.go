@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	config_util "github.com/prometheus/prometheus/util/config"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 var (
@@ -103,7 +103,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Role == "" {
 		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
-	return yamlUtil.CheckOverflow(c.XXX, "openstack_sd_config")
+	return yaml_util.CheckOverflow(c.XXX, "openstack_sd_config")
 }
 
 func init() {

@@ -32,7 +32,7 @@ import (
 	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -111,7 +111,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "consul_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "consul_sd_config"); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Server) == "" {

@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
@@ -69,5 +69,5 @@ func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return yamlUtil.CheckOverflow(c.XXX, "service discovery config")
+	return yaml_util.CheckOverflow(c.XXX, "service discovery config")
 }

@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/strutil"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -93,7 +93,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "ec2_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "ec2_sd_config"); err != nil {
 		return err
 	}
 	if c.Region == "" {

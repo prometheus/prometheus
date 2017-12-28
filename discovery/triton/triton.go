@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -95,7 +95,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.RefreshInterval <= 0 {
 		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
 	}
-	return yamlUtil.CheckOverflow(c.XXX, "triton_sd_config")
+	return yaml_util.CheckOverflow(c.XXX, "triton_sd_config")
 }
 
 func init() {

@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"net/url"
 
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 // Secret special type for storing secrets.
@@ -60,7 +60,7 @@ func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	return yamlUtil.CheckOverflow(c.XXX, "TLS config")
+	return yaml_util.CheckOverflow(c.XXX, "TLS config")
 }
 
 // BasicAuth contains basic HTTP authentication credentials.
@@ -79,7 +79,7 @@ func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	return yamlUtil.CheckOverflow(a.XXX, "basic_auth")
+	return yaml_util.CheckOverflow(a.XXX, "basic_auth")
 }
 
 // URL is a custom URL type that allows validation at configuration load time.

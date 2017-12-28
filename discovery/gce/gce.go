@@ -30,7 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -96,7 +96,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "gce_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "gce_sd_config"); err != nil {
 		return err
 	}
 	if c.Project == "" {

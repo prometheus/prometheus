@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/strutil"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -86,7 +86,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	return yamlUtil.CheckOverflow(c.XXX, "azure_sd_config")
+	return yaml_util.CheckOverflow(c.XXX, "azure_sd_config")
 }
 
 func init() {

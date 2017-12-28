@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	yamlUtil "github.com/prometheus/prometheus/util/yaml"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"
 )
@@ -62,7 +62,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err := yamlUtil.CheckOverflow(c.XXX, "file_sd_config"); err != nil {
+	if err := yaml_util.CheckOverflow(c.XXX, "file_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Files) == 0 {
