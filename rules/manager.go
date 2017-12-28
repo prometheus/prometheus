@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -466,14 +468,25 @@ func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
 
-// Update the rule manager's state as the config requires. If
+// Reload the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string) error {
+func (m *Manager) Reload(cfg config.ReloadReader) error {
+	config := cfg.Read()
+	// Get all rule files matching the configuration oaths.
+	var files []string
+	for _, pat := range config.RuleFiles {
+		fs, err := filepath.Glob(pat)
+		if err != nil {
+			// The only error can be a bad pattern.
+			return fmt.Errorf("error retrieving rule files for %s: %s", pat, err)
+		}
+		files = append(files, fs...)
+	}
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
 	// To be replaced with a configurable per-group interval.
-	groups, errs := m.loadGroups(interval, files...)
+	groups, errs := m.loadGroups(time.Duration(config.GlobalConfig.EvaluationInterval), files...)
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)

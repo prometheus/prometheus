@@ -49,13 +49,13 @@ func NewStorage(l log.Logger, stCallback startTimeCallback) *Storage {
 	return &Storage{logger: l, localStartTimeCallback: stCallback}
 }
 
-// ApplyConfig updates the state as the new config requires.
-func (s *Storage) ApplyConfig(conf *config.Config) error {
+// Reload updates the state as the new config requires.
+func (s *Storage) Reload(cfg config.ReloadReader) error {
+	conf := cfg.Read()
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	// Update write queues
-
 	newQueues := []*QueueManager{}
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.

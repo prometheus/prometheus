@@ -42,9 +42,9 @@ import (
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -85,7 +85,7 @@ type Handler struct {
 	quitCh       chan struct{}
 	reloadCh     chan chan error
 	options      *Options
-	config       *config.Config
+	config       config.ReloadReader
 	configString string
 	versionInfo  *PrometheusVersion
 	birth        time.Time
@@ -97,16 +97,6 @@ type Handler struct {
 	now            func() model.Time
 
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
-}
-
-// ApplyConfig updates the config field of the Handler struct
-func (h *Handler) ApplyConfig(conf *config.Config) error {
-	h.mtx.Lock()
-	defer h.mtx.Unlock()
-
-	h.config = conf
-
-	return nil
 }
 
 // PrometheusVersion contains build information about Prometheus.
@@ -146,7 +136,7 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(logger log.Logger, o *Options) *Handler {
+func New(logger log.Logger, o *Options, cfg config.ReloadReader) *Handler {
 	router := route.New()
 	cwd, err := os.Getwd()
 
@@ -179,13 +169,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		now: model.Now,
 
 		ready: 0,
+
+		config: cfg,
 	}
 
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
-			return *h.config
+			return h.config.Read()
 		},
 		h.testReady,
 		h.options.TSDB,
@@ -578,7 +570,7 @@ func (h *Handler) serveConfig(w http.ResponseWriter, r *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
-	h.executeTemplate(w, "config.html", h.config.String())
+	h.executeTemplate(w, "config.html", h.config.Read().String())
 }
 
 func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {

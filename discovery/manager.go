@@ -88,6 +88,7 @@ type Manager struct {
 
 // Run starts the background processing
 func (m *Manager) Run(ctx context.Context) error {
+	level.Info(m.logger).Log("msg", "Starting discovery manager...")
 	for {
 		select {
 		case f := <-m.actionCh:
@@ -104,33 +105,33 @@ func (m *Manager) SyncCh() <-chan map[string][]*config.TargetGroup {
 	return m.syncCh
 }
 
-// ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg *config.Config) error {
-	err := make(chan error)
+// Reload removes all running discovery providers and starts new ones using the scrape config.
+func (m *Manager) Reload(cfg config.ReloadReader) error {
+	wait := make(chan error)
 	m.actionCh <- func(ctx context.Context) {
 		m.cancelDiscoverers()
-		for _, scfg := range cfg.ScrapeConfigs {
-			for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
-				m.startProvider(ctx, poolKey{setName: scfg.JobName, provider: provName}, prov)
-			}
-		}
-		close(err)
+		m.runProviders(ctx, cfg)
+		close(wait)
 	}
-
-	return <-err
+	<-wait
+	return nil
 }
 
-func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Discoverer) {
-	ctx, cancel := context.WithCancel(ctx)
-	updates := make(chan []*config.TargetGroup)
+func (m *Manager) runProviders(ctx context.Context, cfg config.ReloadReader) {
+	for _, scfg := range cfg.Read().ScrapeConfigs {
+		for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
 
-	m.discoverCancel = append(m.discoverCancel, cancel)
+			ctx, cancel := context.WithCancel(ctx)
+			updates := make(chan []*config.TargetGroup)
+			m.discoverCancel = append(m.discoverCancel, cancel)
 
-	go worker.Run(ctx, updates)
-	go m.runProvider(ctx, poolKey, updates)
+			go prov.Run(ctx, updates)
+			go m.sendUpdates(ctx, poolKey{setName: scfg.JobName, provider: provName}, updates)
+		}
+	}
 }
 
-func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan []*config.TargetGroup) {
+func (m *Manager) sendUpdates(ctx context.Context, poolKey poolKey, updates chan []*config.TargetGroup) {
 	for {
 		select {
 		case <-ctx.Done():

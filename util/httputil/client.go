@@ -19,12 +19,40 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/prometheus/config"
 )
+
+type HTTPClientConfig struct {
+	// The HTTP basic authentication credentials for the targets.
+	BasicAuth *struct {
+		Username string
+		Password string
+	}
+	// The bearer token for the targets.
+	BearerToken string
+	// The bearer token file for the targets.
+	BearerTokenFile string
+	// HTTP proxy server to use to connect to the targets.
+	ProxyURL *url.URL
+	// TLSConfig to use to connect to the targets.
+	TLSConfig
+}
+type TLSConfig struct {
+	// The CA cert to use for the targets.
+	CAFile string
+	// The client cert file for the targets.
+	CertFile string
+	// The client key file for the targets.
+	KeyFile string
+	// Used to verify the hostname for the targets.
+	ServerName string
+	// Disable target certificate validation.
+	InsecureSkipVerify bool
+}
 
 // NewClient returns a http.Client using the specified http.RoundTripper.
 func newClient(rt http.RoundTripper) *http.Client {
@@ -33,7 +61,7 @@ func newClient(rt http.RoundTripper) *http.Client {
 
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client, error) {
+func NewClientFromConfig(cfg HTTPClientConfig, name string) (*http.Client, error) {
 	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -41,7 +69,7 @@ func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client
 	// The only timeout we care about is the configured scrape timeout.
 	// It is applied on request. So we leave out any timings here.
 	var rt http.RoundTripper = &http.Transport{
-		Proxy:               http.ProxyURL(cfg.ProxyURL.URL),
+		Proxy:               http.ProxyURL(cfg.ProxyURL),
 		MaxIdleConns:        20000,
 		MaxIdleConnsPerHost: 1000, // see https://github.com/golang/go/issues/13801
 		DisableKeepAlives:   false,
@@ -135,7 +163,7 @@ func cloneRequest(r *http.Request) *http.Request {
 }
 
 // NewTLSConfig creates a new tls.Config from the given config.TLSConfig.
-func NewTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
+func NewTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 
 	// If a CA cert is provided then let's read it in so we can validate the
@@ -165,4 +193,13 @@ func NewTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
 	tlsConfig.BuildNameToCertificate()
 
 	return tlsConfig, nil
+}
+
+// CheckTargetAddress checks if target address is valid.
+func CheckTargetAddress(address string) error {
+	// For now check for a URL, we may want to expand this later.
+	if strings.Contains(address, "/") {
+		return fmt.Errorf("%q is not a valid hostname", address)
+	}
+	return nil
 }

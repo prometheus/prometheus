@@ -19,8 +19,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval/config"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // Appendable returns an Appender.
@@ -29,33 +30,31 @@ type Appendable interface {
 }
 
 // NewScrapeManager is the ScrapeManager constructor
-func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
+func NewScrapeManager(logger log.Logger, app Appendable, conf config.Reader) *ScrapeManager {
 
 	return &ScrapeManager{
-		append:        app,
-		logger:        logger,
-		actionCh:      make(chan func()),
-		scrapeConfigs: make(map[string]*config.ScrapeConfig),
-		scrapePools:   make(map[string]*scrapePool),
-		graceShut:     make(chan struct{}),
+		append:      app,
+		logger:      logger,
+		actionCh:    make(chan func()),
+		scrapePools: make(map[string]*scrapePool),
+		graceShut:   make(chan struct{}),
+		config:      conf,
 	}
 }
 
 // ScrapeManager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
 type ScrapeManager struct {
-	logger        log.Logger
-	append        Appendable
-	scrapeConfigs map[string]*config.ScrapeConfig
-	scrapePools   map[string]*scrapePool
-	actionCh      chan func()
-	graceShut     chan struct{}
+	logger      log.Logger
+	append      Appendable
+	scrapePools map[string]*scrapePool
+	actionCh    chan func()
+	graceShut   chan struct{}
+	config      config.Reader
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
 func (m *ScrapeManager) Run(tsets <-chan map[string][]*config.TargetGroup) error {
-	level.Info(m.logger).Log("msg", "Starting scrape manager...")
-
 	for {
 		select {
 		case f := <-m.actionCh:
@@ -76,19 +75,6 @@ func (m *ScrapeManager) Stop() {
 		sp.stop()
 	}
 	close(m.graceShut)
-}
-
-// ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
-func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
-	done := make(chan struct{})
-	m.actionCh <- func() {
-		for _, scfg := range cfg.ScrapeConfigs {
-			m.scrapeConfigs[scfg.JobName] = scfg
-		}
-		close(done)
-	}
-	<-done
-	return nil
 }
 
 // TargetMap returns map of active and dropped targets and their corresponding scrape config job name.
@@ -128,8 +114,37 @@ func (m *ScrapeManager) Targets() []*Target {
 
 func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 	for tsetName, tgroup := range t {
-		scrapeConfig, ok := m.scrapeConfigs[tsetName]
-		if !ok {
+
+		scrapeConfigs := m.config.Read()
+		scrapeConfig := config.Config{}
+
+		for _, scfg := range scrapeConfigs {
+			if scfg.JobName == tsetName {
+
+				scrapeConfig = config.Config{
+					JobName:        scfg.JobName,
+					HonorLabels:    scfg.HonorLabels,
+					Params:         scfg.Params,
+					ScrapeInterval: scfg.ScrapeInterval,
+					ScrapeTimeout:  scfg.ScrapeTimeout,
+					MetricsPath:    scfg.MetricsPath,
+					Scheme:         scfg.Scheme,
+					SampleLimit:    scfg.SampleLimit,
+					HTTPClientConfig: httputil.HTTPClientConfig{
+						BasicAuth:       scfg.HTTPClientConfig.BasicAuth,
+						BearerToken:     scfg.HTTPClientConfig.BearerToken,
+						BearerTokenFile: scfg.HTTPClientConfig.BearerTokenFile,
+						ProxyURL:        scfg.HTTPClientConfig.ProxyURL,
+						TLSConfig:       scfg.HTTPClientConfig.TLSConfig,
+					},
+					RelabelConfigs:       config.RelabelConfig(scfg.RelabelConfigs),
+					MetricRelabelConfigs: config.RelabelConfig(scfg.MetricRelabelConfigs),
+				}
+				break
+			}
+		}
+
+		if scrapeConfig.JobName == "" {
 			return fmt.Errorf("target set '%v' doesn't have valid config", tsetName)
 		}
 
@@ -147,8 +162,8 @@ func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 		// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
 		jobs := make(map[string]struct{})
 
-		for k := range m.scrapeConfigs {
-			jobs[k] = struct{}{}
+		for _, k := range scrapeConfigs {
+			jobs[k.JobName] = struct{}{}
 		}
 
 		for name, sp := range m.scrapePools {
