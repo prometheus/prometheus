@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 
 	"k8s.io/client-go/kubernetes"
@@ -82,13 +82,13 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          configUtil.URL        `yaml:"api_server"`
-	Role               Role                  `yaml:"role"`
-	BasicAuth          *configUtil.BasicAuth `yaml:"basic_auth,omitempty"`
-	BearerToken        configUtil.Secret     `yaml:"bearer_token,omitempty"`
-	BearerTokenFile    string                `yaml:"bearer_token_file,omitempty"`
-	TLSConfig          configUtil.TLSConfig  `yaml:"tls_config,omitempty"`
-	NamespaceDiscovery NamespaceDiscovery    `yaml:"namespaces"`
+	APIServer          config_util.URL        `yaml:"api_server"`
+	Role               Role                   `yaml:"role"`
+	BasicAuth          *config_util.BasicAuth `yaml:"basic_auth,omitempty"`
+	BearerToken        config_util.Secret     `yaml:"bearer_token,omitempty"`
+	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
+	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
+	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

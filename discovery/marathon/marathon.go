@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
@@ -84,12 +84,12 @@ var (
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
-	Servers         []string             `yaml:"servers,omitempty"`
-	Timeout         model.Duration       `yaml:"timeout,omitempty"`
-	RefreshInterval model.Duration       `yaml:"refresh_interval,omitempty"`
-	TLSConfig       configUtil.TLSConfig `yaml:"tls_config,omitempty"`
-	BearerToken     configUtil.Secret    `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string               `yaml:"bearer_token_file,omitempty"`
+	Servers         []string              `yaml:"servers,omitempty"`
+	Timeout         model.Duration        `yaml:"timeout,omitempty"`
+	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
+	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	BearerToken     config_util.Secret    `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string                `yaml:"bearer_token_file,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

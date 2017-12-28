@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
@@ -87,18 +87,18 @@ var (
 
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
-	Server       string            `yaml:"server"`
-	Token        configUtil.Secret `yaml:"token,omitempty"`
-	Datacenter   string            `yaml:"datacenter,omitempty"`
-	TagSeparator string            `yaml:"tag_separator,omitempty"`
-	Scheme       string            `yaml:"scheme,omitempty"`
-	Username     string            `yaml:"username,omitempty"`
-	Password     configUtil.Secret `yaml:"password,omitempty"`
+	Server       string             `yaml:"server"`
+	Token        config_util.Secret `yaml:"token,omitempty"`
+	Datacenter   string             `yaml:"datacenter,omitempty"`
+	TagSeparator string             `yaml:"tag_separator,omitempty"`
+	Scheme       string             `yaml:"scheme,omitempty"`
+	Username     string             `yaml:"username,omitempty"`
+	Password     config_util.Secret `yaml:"password,omitempty"`
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
 
-	TLSConfig configUtil.TLSConfig `yaml:"tls_config,omitempty"`
+	TLSConfig config_util.TLSConfig `yaml:"tls_config,omitempty"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }

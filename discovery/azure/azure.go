@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 )
@@ -66,12 +66,12 @@ var (
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Port            int               `yaml:"port"`
-	SubscriptionID  string            `yaml:"subscription_id"`
-	TenantID        string            `yaml:"tenant_id,omitempty"`
-	ClientID        string            `yaml:"client_id,omitempty"`
-	ClientSecret    configUtil.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval model.Duration    `yaml:"refresh_interval,omitempty"`
+	Port            int                `yaml:"port"`
+	SubscriptionID  string             `yaml:"subscription_id"`
+	TenantID        string             `yaml:"tenant_id,omitempty"`
+	ClientID        string             `yaml:"client_id,omitempty"`
+	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
+	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

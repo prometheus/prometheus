@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 )
 
@@ -49,18 +49,18 @@ var (
 
 // SDConfig is the configuration for OpenStack based service discovery.
 type SDConfig struct {
-	IdentityEndpoint string            `yaml:"identity_endpoint"`
-	Username         string            `yaml:"username"`
-	UserID           string            `yaml:"userid"`
-	Password         configUtil.Secret `yaml:"password"`
-	ProjectName      string            `yaml:"project_name"`
-	ProjectID        string            `yaml:"project_id"`
-	DomainName       string            `yaml:"domain_name"`
-	DomainID         string            `yaml:"domain_id"`
-	Role             Role              `yaml:"role"`
-	Region           string            `yaml:"region"`
-	RefreshInterval  model.Duration    `yaml:"refresh_interval,omitempty"`
-	Port             int               `yaml:"port"`
+	IdentityEndpoint string             `yaml:"identity_endpoint"`
+	Username         string             `yaml:"username"`
+	UserID           string             `yaml:"userid"`
+	Password         config_util.Secret `yaml:"password"`
+	ProjectName      string             `yaml:"project_name"`
+	ProjectID        string             `yaml:"project_id"`
+	DomainName       string             `yaml:"domain_name"`
+	DomainID         string             `yaml:"domain_id"`
+	Role             Role               `yaml:"role"`
+	Region           string             `yaml:"region"`
+	RefreshInterval  model.Duration     `yaml:"refresh_interval,omitempty"`
+	Port             int                `yaml:"port"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

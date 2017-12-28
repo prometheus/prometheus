@@ -33,7 +33,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 )
@@ -73,13 +73,13 @@ var (
 
 // SDConfig is the configuration for EC2 based service discovery.
 type SDConfig struct {
-	Region          string            `yaml:"region"`
-	AccessKey       string            `yaml:"access_key,omitempty"`
-	SecretKey       configUtil.Secret `yaml:"secret_key,omitempty"`
-	Profile         string            `yaml:"profile,omitempty"`
-	RoleARN         string            `yaml:"role_arn,omitempty"`
-	RefreshInterval model.Duration    `yaml:"refresh_interval,omitempty"`
-	Port            int               `yaml:"port"`
+	Region          string             `yaml:"region"`
+	AccessKey       string             `yaml:"access_key,omitempty"`
+	SecretKey       config_util.Secret `yaml:"secret_key,omitempty"`
+	Profile         string             `yaml:"profile,omitempty"`
+	RoleARN         string             `yaml:"role_arn,omitempty"`
+	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
+	Port            int                `yaml:"port"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

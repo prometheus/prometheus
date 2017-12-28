@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/targetgroup"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 )
@@ -64,13 +64,13 @@ var (
 
 // SDConfig is the configuration for Triton based service discovery.
 type SDConfig struct {
-	Account         string               `yaml:"account"`
-	DNSSuffix       string               `yaml:"dns_suffix"`
-	Endpoint        string               `yaml:"endpoint"`
-	Port            int                  `yaml:"port"`
-	RefreshInterval model.Duration       `yaml:"refresh_interval,omitempty"`
-	TLSConfig       configUtil.TLSConfig `yaml:"tls_config,omitempty"`
-	Version         int                  `yaml:"version"`
+	Account         string                `yaml:"account"`
+	DNSSuffix       string                `yaml:"dns_suffix"`
+	Endpoint        string                `yaml:"endpoint"`
+	Port            int                   `yaml:"port"`
+	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
+	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	Version         int                   `yaml:"version"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -77,12 +77,12 @@ func newTestServer(handler func(w http.ResponseWriter, r *http.Request)) (*httpt
 
 func TestNewClientFromConfig(t *testing.T) {
 	var newClientValidConfig = []struct {
-		clientConfig configUtil.HTTPClientConfig
+		clientConfig config_util.HTTPClientConfig
 		handler      func(w http.ResponseWriter, r *http.Request)
 	}{
 		{
-			clientConfig: configUtil.HTTPClientConfig{
-				TLSConfig: configUtil.TLSConfig{
+			clientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             "",
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -93,8 +93,8 @@ func TestNewClientFromConfig(t *testing.T) {
 				fmt.Fprint(w, ExpectedMessage)
 			},
 		}, {
-			clientConfig: configUtil.HTTPClientConfig{
-				TLSConfig: configUtil.TLSConfig{
+			clientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -105,9 +105,9 @@ func TestNewClientFromConfig(t *testing.T) {
 				fmt.Fprint(w, ExpectedMessage)
 			},
 		}, {
-			clientConfig: configUtil.HTTPClientConfig{
+			clientConfig: config_util.HTTPClientConfig{
 				BearerToken: BearerToken,
-				TLSConfig: configUtil.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -124,9 +124,9 @@ func TestNewClientFromConfig(t *testing.T) {
 				}
 			},
 		}, {
-			clientConfig: configUtil.HTTPClientConfig{
+			clientConfig: config_util.HTTPClientConfig{
 				BearerTokenFile: BearerTokenFile,
-				TLSConfig: configUtil.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -143,12 +143,12 @@ func TestNewClientFromConfig(t *testing.T) {
 				}
 			},
 		}, {
-			clientConfig: configUtil.HTTPClientConfig{
-				BasicAuth: &configUtil.BasicAuth{
+			clientConfig: config_util.HTTPClientConfig{
+				BasicAuth: &config_util.BasicAuth{
 					Username: ExpectedUsername,
 					Password: ExpectedPassword,
 				},
-				TLSConfig: configUtil.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -205,12 +205,12 @@ func TestNewClientFromConfig(t *testing.T) {
 
 func TestNewClientFromInvalidConfig(t *testing.T) {
 	var newClientInvalidConfig = []struct {
-		clientConfig configUtil.HTTPClientConfig
+		clientConfig config_util.HTTPClientConfig
 		errorMsg     string
 	}{
 		{
-			clientConfig: configUtil.HTTPClientConfig{
-				TLSConfig: configUtil.TLSConfig{
+			clientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             MissingCA,
 					CertFile:           "",
 					KeyFile:            "",
@@ -219,9 +219,9 @@ func TestNewClientFromInvalidConfig(t *testing.T) {
 			},
 			errorMsg: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
 		}, {
-			clientConfig: configUtil.HTTPClientConfig{
+			clientConfig: config_util.HTTPClientConfig{
 				BearerTokenFile: MissingBearerTokenFile,
-				TLSConfig: configUtil.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -307,7 +307,7 @@ func TestBasicAuthRoundTripper(t *testing.T) {
 }
 
 func TestTLSConfig(t *testing.T) {
-	configTLSConfig := configUtil.TLSConfig{
+	configTLSConfig := config_util.TLSConfig{
 		CAFile:             TLSCAChainPath,
 		CertFile:           BarneyCertificatePath,
 		KeyFile:            BarneyKeyNoPassPath,
@@ -346,7 +346,7 @@ func TestTLSConfig(t *testing.T) {
 }
 
 func TestTLSConfigEmpty(t *testing.T) {
-	configTLSConfig := configUtil.TLSConfig{
+	configTLSConfig := config_util.TLSConfig{
 		CAFile:             "",
 		CertFile:           "",
 		KeyFile:            "",
@@ -369,11 +369,11 @@ func TestTLSConfigEmpty(t *testing.T) {
 
 func TestTLSConfigInvalidCA(t *testing.T) {
 	var invalidTLSConfig = []struct {
-		configTLSConfig configUtil.TLSConfig
+		configTLSConfig config_util.TLSConfig
 		errorMessage    string
 	}{
 		{
-			configTLSConfig: configUtil.TLSConfig{
+			configTLSConfig: config_util.TLSConfig{
 				CAFile:             MissingCA,
 				CertFile:           "",
 				KeyFile:            "",
@@ -381,7 +381,7 @@ func TestTLSConfigInvalidCA(t *testing.T) {
 				InsecureSkipVerify: false},
 			errorMessage: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
 		}, {
-			configTLSConfig: configUtil.TLSConfig{
+			configTLSConfig: config_util.TLSConfig{
 				CAFile:             "",
 				CertFile:           MissingCert,
 				KeyFile:            BarneyKeyNoPassPath,
@@ -389,7 +389,7 @@ func TestTLSConfigInvalidCA(t *testing.T) {
 				InsecureSkipVerify: false},
 			errorMessage: fmt.Sprintf("unable to use specified client cert (%s) & key (%s):", MissingCert, BarneyKeyNoPassPath),
 		}, {
-			configTLSConfig: configUtil.TLSConfig{
+			configTLSConfig: config_util.TLSConfig{
 				CAFile:             "",
 				CertFile:           BarneyCertificatePath,
 				KeyFile:            MissingKey,

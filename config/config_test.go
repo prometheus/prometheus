@@ -36,17 +36,17 @@ import (
 
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
-	configUtil "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
 
-func mustParseURL(u string) *configUtil.URL {
+func mustParseURL(u string) *config_util.URL {
 	parsed, err := url.Parse(u)
 	if err != nil {
 		panic(err)
 	}
-	return &configUtil.URL{URL: parsed}
+	return &config_util.URL{URL: parsed}
 }
 
 var expectedConf = &Config{
@@ -113,7 +113,7 @@ var expectedConf = &Config{
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			HTTPClientConfig: configUtil.HTTPClientConfig{
+			HTTPClientConfig: config_util.HTTPClientConfig{
 				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
 			},
 
@@ -181,8 +181,8 @@ var expectedConf = &Config{
 			ScrapeTimeout:  model.Duration(5 * time.Second),
 			SampleLimit:    1000,
 
-			HTTPClientConfig: configUtil.HTTPClientConfig{
-				BasicAuth: &configUtil.BasicAuth{
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				BasicAuth: &config_util.BasicAuth{
 					Username: "admin_name",
 					Password: "multiline\nmysecret\ntest",
 				},
@@ -280,7 +280,7 @@ var expectedConf = &Config{
 						Services:     []string{"nginx", "cache", "mysql"},
 						TagSeparator: consul.DefaultSDConfig.TagSeparator,
 						Scheme:       "https",
-						TLSConfig: configUtil.TLSConfig{
+						TLSConfig: config_util.TLSConfig{
 							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
 							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
@@ -310,8 +310,8 @@ var expectedConf = &Config{
 			MetricsPath: "/metrics",
 			Scheme:      "http",
 
-			HTTPClientConfig: configUtil.HTTPClientConfig{
-				TLSConfig: configUtil.TLSConfig{
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
@@ -333,7 +333,7 @@ var expectedConf = &Config{
 					{
 						APIServer: kubernetesSDHostURL(),
 						Role:      kubernetes.KubernetesRoleEndpoint,
-						BasicAuth: &configUtil.BasicAuth{
+						BasicAuth: &config_util.BasicAuth{
 							Username: "myusername",
 							Password: "mysecret",
 						},
@@ -382,7 +382,7 @@ var expectedConf = &Config{
 						},
 						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
-						TLSConfig: configUtil.TLSConfig{
+						TLSConfig: config_util.TLSConfig{
 							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
@@ -510,7 +510,7 @@ var expectedConf = &Config{
 						Port:            9163,
 						RefreshInterval: model.Duration(60 * time.Second),
 						Version:         1,
-						TLSConfig: configUtil.TLSConfig{
+						TLSConfig: config_util.TLSConfig{
 							CertFile: "testdata/valid_cert_file",
 							KeyFile:  "testdata/valid_key_file",
 						},
@@ -742,7 +742,7 @@ func TestTargetLabelValidity(t *testing.T) {
 	}
 }
 
-func kubernetesSDHostURL() configUtil.URL {
+func kubernetesSDHostURL() config_util.URL {
 	tURL, _ := url.Parse("https://localhost:1234")
-	return configUtil.URL{URL: tURL}
+	return config_util.URL{URL: tURL}
 }
