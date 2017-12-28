@@ -332,7 +332,7 @@ var expectedConf = &Config{
 				KubernetesSDConfigs: []*kubernetes.SDConfig{
 					{
 						APIServer: kubernetesSDHostURL(),
-						Role:      kubernetes.KubernetesRoleEndpoint,
+						Role:      kubernetes.RoleEndpoint,
 						BasicAuth: &config_util.BasicAuth{
 							Username: "myusername",
 							Password: "mysecret",
@@ -355,7 +355,7 @@ var expectedConf = &Config{
 				KubernetesSDConfigs: []*kubernetes.SDConfig{
 					{
 						APIServer: kubernetesSDHostURL(),
-						Role:      kubernetes.KubernetesRoleEndpoint,
+						Role:      kubernetes.RoleEndpoint,
 						NamespaceDiscovery: kubernetes.NamespaceDiscovery{
 							Names: []string{
 								"default",

@@ -60,11 +60,11 @@ type Role string
 
 // The valid options for Role.
 const (
-	KubernetesRoleNode     Role = "node"
-	KubernetesRolePod      Role = "pod"
-	KubernetesRoleService  Role = "service"
-	KubernetesRoleEndpoint Role = "endpoints"
-	KubernetesRoleIngress  Role = "ingress"
+	RoleNode     Role = "node"
+	RolePod      Role = "pod"
+	RoleService  Role = "service"
+	RoleEndpoint Role = "endpoints"
+	RoleIngress  Role = "ingress"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -73,7 +73,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch *c {
-	case KubernetesRoleNode, KubernetesRolePod, KubernetesRoleService, KubernetesRoleEndpoint, KubernetesRoleIngress:
+	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleIngress:
 		return nil
 	default:
 		return fmt.Errorf("Unknown Kubernetes SD role %q", *c)
