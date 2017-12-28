@@ -22,20 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/ec2"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/gce"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
-	"github.com/prometheus/prometheus/discovery/openstack"
-	"github.com/prometheus/prometheus/discovery/triton"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
-
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/targetgroup"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	configUtil "github.com/prometheus/prometheus/util/config"
 	yamlUtil "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/yaml.v2"
@@ -180,7 +168,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		scfg.TLSConfig.CertFile = join(scfg.TLSConfig.CertFile)
 		scfg.TLSConfig.KeyFile = join(scfg.TLSConfig.KeyFile)
 	}
-	sdPaths := func(cfg *ServiceDiscoveryConfig) {
+	sdPaths := func(cfg *sd_config.ServiceDiscoveryConfig) {
 		for _, kcfg := range cfg.KubernetesSDConfigs {
 			kcfg.BearerTokenFile = join(kcfg.BearerTokenFile)
 			kcfg.TLSConfig.CAFile = join(kcfg.TLSConfig.CAFile)
@@ -332,48 +320,6 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0
 }
 
-// ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
-type ServiceDiscoveryConfig struct {
-	// List of labeled target groups for this job.
-	StaticConfigs []*targetgroup.Group `yaml:"static_configs,omitempty"`
-	// List of DNS service discovery configurations.
-	DNSSDConfigs []*dns.SDConfig `yaml:"dns_sd_configs,omitempty"`
-	// List of file service discovery configurations.
-	FileSDConfigs []*file.SDConfig `yaml:"file_sd_configs,omitempty"`
-	// List of Consul service discovery configurations.
-	ConsulSDConfigs []*consul.SDConfig `yaml:"consul_sd_configs,omitempty"`
-	// List of Serverset service discovery configurations.
-	ServersetSDConfigs []*zookeeper.ServersetSDConfig `yaml:"serverset_sd_configs,omitempty"`
-	// NerveSDConfigs is a list of Nerve service discovery configurations.
-	NerveSDConfigs []*zookeeper.NerveSDConfig `yaml:"nerve_sd_configs,omitempty"`
-	// MarathonSDConfigs is a list of Marathon service discovery configurations.
-	MarathonSDConfigs []*marathon.SDConfig `yaml:"marathon_sd_configs,omitempty"`
-	// List of Kubernetes service discovery configurations.
-	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
-	// List of GCE service discovery configurations.
-	GCESDConfigs []*gce.SDConfig `yaml:"gce_sd_configs,omitempty"`
-	// List of EC2 service discovery configurations.
-	EC2SDConfigs []*ec2.SDConfig `yaml:"ec2_sd_configs,omitempty"`
-	// List of OpenStack service discovery configurations.
-	OpenstackSDConfigs []*openstack.SDConfig `yaml:"openstack_sd_configs,omitempty"`
-	// List of Azure service discovery configurations.
-	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
-	// List of Triton service discovery configurations.
-	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain ServiceDiscoveryConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	return yamlUtil.CheckOverflow(c.XXX, "service discovery config")
-}
-
 // ScrapeConfig configures a scraping unit for Prometheus.
 type ScrapeConfig struct {
 	// The job name to which the job label is set by default.
@@ -396,8 +342,8 @@ type ScrapeConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig ServiceDiscoveryConfig      `yaml:",inline"`
-	HTTPClientConfig       configUtil.HTTPClientConfig `yaml:",inline"`
+	ServiceDiscoveryConfig sd_config.ServiceDiscoveryConfig `yaml:",inline"`
+	HTTPClientConfig       configUtil.HTTPClientConfig      `yaml:",inline"`
 
 	// List of target relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -469,8 +415,8 @@ type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 
-	ServiceDiscoveryConfig ServiceDiscoveryConfig      `yaml:",inline"`
-	HTTPClientConfig       configUtil.HTTPClientConfig `yaml:",inline"`
+	ServiceDiscoveryConfig sd_config.ServiceDiscoveryConfig `yaml:",inline"`
+	HTTPClientConfig       configUtil.HTTPClientConfig      `yaml:",inline"`
 
 	// The URL scheme to use when talking to Alertmanagers.
 	Scheme string `yaml:"scheme,omitempty"`

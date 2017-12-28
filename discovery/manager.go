@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 
 	"github.com/prometheus/prometheus/config"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/pkg/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/azure"
@@ -195,7 +196,7 @@ func (m *Manager) allGroups(pk poolKey) map[string][]*targetgroup.Group {
 
 }
 
-func (m *Manager) providersFromConfig(cfg config.ServiceDiscoveryConfig) map[string]Discoverer {
+func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[string]Discoverer {
 	providers := map[string]Discoverer{}
 
 	app := func(mech string, i int, tp Discoverer) {
