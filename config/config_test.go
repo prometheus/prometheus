@@ -336,7 +336,7 @@ var expectedConf = &Config{
 							Username: "myusername",
 							Password: "mysecret",
 						},
-						NamespaceDiscovery: kubernetes.KubernetesNamespaceDiscovery{},
+						NamespaceDiscovery: kubernetes.NamespaceDiscovery{},
 					},
 				},
 			},
@@ -355,7 +355,7 @@ var expectedConf = &Config{
 					{
 						APIServer: kubernetesSDHostURL(),
 						Role:      kubernetes.KubernetesRoleEndpoint,
-						NamespaceDiscovery: kubernetes.KubernetesNamespaceDiscovery{
+						NamespaceDiscovery: kubernetes.NamespaceDiscovery{
 							Names: []string{
 								"default",
 							},

@@ -55,20 +55,20 @@ var (
 	DefaultSDConfig = SDConfig{}
 )
 
-// KubernetesRole is role of the service in Kubernetes.
-type KubernetesRole string
+// Role is role of the service in Kubernetes.
+type Role string
 
-// The valid options for KubernetesRole.
+// The valid options for Role.
 const (
-	KubernetesRoleNode     KubernetesRole = "node"
-	KubernetesRolePod      KubernetesRole = "pod"
-	KubernetesRoleService  KubernetesRole = "service"
-	KubernetesRoleEndpoint KubernetesRole = "endpoints"
-	KubernetesRoleIngress  KubernetesRole = "ingress"
+	KubernetesRoleNode     Role = "node"
+	KubernetesRolePod      Role = "pod"
+	KubernetesRoleService  Role = "service"
+	KubernetesRoleEndpoint Role = "endpoints"
+	KubernetesRoleIngress  Role = "ingress"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
 	}
@@ -82,13 +82,13 @@ func (c *KubernetesRole) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          configUtil.URL               `yaml:"api_server"`
-	Role               KubernetesRole               `yaml:"role"`
-	BasicAuth          *configUtil.BasicAuth        `yaml:"basic_auth,omitempty"`
-	BearerToken        configUtil.Secret            `yaml:"bearer_token,omitempty"`
-	BearerTokenFile    string                       `yaml:"bearer_token_file,omitempty"`
-	TLSConfig          configUtil.TLSConfig         `yaml:"tls_config,omitempty"`
-	NamespaceDiscovery KubernetesNamespaceDiscovery `yaml:"namespaces"`
+	APIServer          configUtil.URL        `yaml:"api_server"`
+	Role               Role                  `yaml:"role"`
+	BasicAuth          *configUtil.BasicAuth `yaml:"basic_auth,omitempty"`
+	BearerToken        configUtil.Secret     `yaml:"bearer_token,omitempty"`
+	BearerTokenFile    string                `yaml:"bearer_token_file,omitempty"`
+	TLSConfig          configUtil.TLSConfig  `yaml:"tls_config,omitempty"`
+	NamespaceDiscovery NamespaceDiscovery    `yaml:"namespaces"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -122,18 +122,18 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// KubernetesNamespaceDiscovery is the configuration for discovering
+// NamespaceDiscovery is the configuration for discovering
 // Kubernetes namespaces.
-type KubernetesNamespaceDiscovery struct {
+type NamespaceDiscovery struct {
 	Names []string `yaml:"names"`
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KubernetesNamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = KubernetesNamespaceDiscovery{}
-	type plain KubernetesNamespaceDiscovery
+func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = NamespaceDiscovery{}
+	type plain NamespaceDiscovery
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -156,9 +156,9 @@ func init() {
 // targets from Kubernetes.
 type Discovery struct {
 	client             kubernetes.Interface
-	role               KubernetesRole
+	role               Role
 	logger             log.Logger
-	namespaceDiscovery *KubernetesNamespaceDiscovery
+	namespaceDiscovery *NamespaceDiscovery
 }
 
 func (d *Discovery) getNamespaces() []string {
