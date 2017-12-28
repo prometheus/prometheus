@@ -57,10 +57,9 @@ func (q *querier) Select(matchers ...*labels.Matcher) (storage.SeriesSet, error)
 	return FromQueryResult(res), nil
 }
 
-// LabelValues implements storage.Querier and is a noop.
+// LabelValues implements storage.Querier.
 func (q *querier) LabelValues(name string) ([]string, error) {
-	// TODO implement?
-	return nil, nil
+	return q.client.LabelValues(q.ctx, name)
 }
 
 // Close implements storage.Querier and is a noop.

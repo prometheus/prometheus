@@ -37,10 +37,11 @@ const maxErrMsgLen = 256
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	index   int // Used to differentiate clients in metrics.
-	url     *config_util.URL
-	client  *http.Client
-	timeout time.Duration
+	index          int // Used to differentiate clients in metrics.
+	url            *config_util.URL
+	client         *http.Client
+	timeout        time.Duration
+	labelValuesURL *config_util.URL
 }
 
 // ClientConfig configures a Client.
@@ -48,6 +49,7 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+	LabelValuesURL   *config_util.URL
 }
 
 // NewClient creates a new Client.
@@ -58,10 +60,11 @@ func NewClient(index int, conf *ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		index:   index,
-		url:     conf.URL,
-		client:  httpClient,
-		timeout: time.Duration(conf.Timeout),
+		index:          index,
+		url:            conf.URL,
+		client:         httpClient,
+		timeout:        time.Duration(conf.Timeout),
+		labelValuesURL: conf.LabelValuesURL,
 	}, nil
 }
 
@@ -126,15 +129,49 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 			query,
 		},
 	}
+	resp := &prompb.ReadResponse{}
+
+	err := c.request(ctx, c.url.String(), req, resp)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(resp.Results) != len(req.Queries) {
+		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
+	}
+
+	return resp.Results[0], nil
+}
+
+// LabelValues get all label values for the given label name.
+func (c *Client) LabelValues(ctx context.Context, name string) ([]string, error) {
+	if c.labelValuesURL == nil {
+		return nil, nil
+	}
+
+	req := &prompb.LabelValuesRequest{
+		LabelName: name,
+	}
+	resp := &prompb.LabelValuesResponse{}
+
+	err := c.request(ctx, c.labelValuesURL.String(), req, resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.LabelValues, nil
+}
+
+func (c *Client) request(ctx context.Context, url string, req proto.Message, resp proto.Message) error {
 	data, err := proto.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal read request: %v", err)
+		return fmt.Errorf("unable to marshal read request: %v", err)
 	}
 
 	compressed := snappy.Encode(nil, data)
-	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(compressed))
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(compressed))
 	if err != nil {
-		return nil, fmt.Errorf("unable to create request: %v", err)
+		return fmt.Errorf("unable to create request: %v", err)
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
@@ -145,32 +182,27 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	httpResp, err := ctxhttp.Do(ctx, c.client, httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
+		return fmt.Errorf("error sending request: %v", err)
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("server returned HTTP status %s", httpResp.Status)
+		return fmt.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
 
 	compressed, err = ioutil.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return fmt.Errorf("error reading response: %v", err)
 	}
 
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+		return fmt.Errorf("error reading response: %v", err)
 	}
 
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
+	err = proto.Unmarshal(uncompressed, resp)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
+		return fmt.Errorf("unable to unmarshal response body: %v", err)
 	}
 
-	if len(resp.Results) != len(req.Queries) {
-		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
-	}
-
-	return resp.Results[0], nil
+	return nil
 }
