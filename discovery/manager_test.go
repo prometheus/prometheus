@@ -701,7 +701,7 @@ type update struct {
 
 type mockdiscoveryProvider struct {
 	updates []update
-	up      chan<- []targetgroup.Group
+	up      chan<- []*targetgroup.Group
 }
 
 func newMockDiscoveryProvider(updates []update) mockdiscoveryProvider {
@@ -712,7 +712,7 @@ func newMockDiscoveryProvider(updates []update) mockdiscoveryProvider {
 	return tp
 }
 
-func (tp mockdiscoveryProvider) Run(ctx context.Context, up chan<- []targetgroup.Group) {
+func (tp mockdiscoveryProvider) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
 	tp.up = up
 	tp.sendUpdates()
 }
@@ -722,9 +722,9 @@ func (tp mockdiscoveryProvider) sendUpdates() {
 
 		time.Sleep(update.interval * time.Millisecond)
 
-		tgs := make([]targetgroup.Group, len(update.targetGroups))
+		tgs := make([]*targetgroup.Group, len(update.targetGroups))
 		for i := range update.targetGroups {
-			tgs[i] = update.targetGroups[i]
+			tgs[i] = &update.targetGroups[i]
 		}
 		tp.up <- tgs
 	}
