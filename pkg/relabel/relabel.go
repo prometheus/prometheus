@@ -16,21 +16,22 @@ package relabel
 import (
 	"crypto/md5"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/retrieval/config"
 )
 
 // Process returns a relabeled copy of the given label set. The relabel configurations
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
 // May return the input labelSet modified.
-func Process(labels labels.Labels, cfgs ...*config.RelabelConfig) labels.Labels {
+func Process(labels labels.Labels, cfgs config.RelabelConfig) labels.Labels {
 	for _, cfg := range cfgs {
-		labels = relabel(labels, cfg)
+		labels = relabel(labels, cfg.Regex.Regexp, cfg.SourceLabels, cfg.Separator, cfg.Action, cfg.TargetLabel, cfg.Replacement, cfg.Modulus)
 		if labels == nil {
 			return nil
 		}
@@ -38,65 +39,65 @@ func Process(labels labels.Labels, cfgs ...*config.RelabelConfig) labels.Labels 
 	return labels
 }
 
-func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
-	values := make([]string, 0, len(cfg.SourceLabels))
-	for _, ln := range cfg.SourceLabels {
+func relabel(lset labels.Labels, regex *regexp.Regexp, sourceLabels []string, separator, action, targetLabel, replacement string, modulus uint64) labels.Labels {
+	values := make([]string, 0, len(sourceLabels))
+	for _, ln := range sourceLabels {
 		values = append(values, lset.Get(string(ln)))
 	}
-	val := strings.Join(values, cfg.Separator)
+	val := strings.Join(values, separator)
 
 	lb := labels.NewBuilder(lset)
 
-	switch cfg.Action {
+	switch action {
 	case config.RelabelDrop:
-		if cfg.Regex.MatchString(val) {
+		if regex.MatchString(val) {
 			return nil
 		}
 	case config.RelabelKeep:
-		if !cfg.Regex.MatchString(val) {
+		if !regex.MatchString(val) {
 			return nil
 		}
 	case config.RelabelReplace:
-		indexes := cfg.Regex.FindStringSubmatchIndex(val)
+		indexes := regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
 		if indexes == nil {
 			break
 		}
-		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
+		target := model.LabelName(regex.ExpandString([]byte{}, targetLabel, val, indexes))
 		if !target.IsValid() {
-			lb.Del(cfg.TargetLabel)
+			lb.Del(targetLabel)
 			break
 		}
-		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
+		res := regex.ExpandString([]byte{}, replacement, val, indexes)
 		if len(res) == 0 {
-			lb.Del(cfg.TargetLabel)
+			lb.Del(targetLabel)
 			break
 		}
 		lb.Set(string(target), string(res))
 	case config.RelabelHashMod:
-		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
-		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
+		mod := sum64(md5.Sum([]byte(val))) % modulus
+		lb.Set(targetLabel, fmt.Sprintf("%d", mod))
 	case config.RelabelLabelMap:
 		for _, l := range lset {
-			if cfg.Regex.MatchString(l.Name) {
-				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
+			if regex.MatchString(l.Name) {
+				res := regex.ReplaceAllString(l.Name, replacement)
 				lb.Set(res, l.Value)
 			}
 		}
 	case config.RelabelLabelDrop:
 		for _, l := range lset {
-			if cfg.Regex.MatchString(l.Name) {
+			if regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		}
 	case config.RelabelLabelKeep:
 		for _, l := range lset {
-			if !cfg.Regex.MatchString(l.Name) {
+			if !regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		}
 	default:
-		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
+		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", action))
 	}
 
 	return lb.Labels()

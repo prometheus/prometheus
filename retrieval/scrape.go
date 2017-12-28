@@ -33,13 +33,13 @@ import (
 	"github.com/prometheus/common/version"
 	"golang.org/x/net/context/ctxhttp"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/retrieval/config"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -119,7 +119,7 @@ type scrapePool struct {
 	logger     log.Logger
 
 	mtx    sync.RWMutex
-	config *config.ScrapeConfig
+	config config.Config
 	client *http.Client
 	// Targets and loops must always be synchronized to have the same
 	// set of hashes.
@@ -136,12 +136,20 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) *scrapePool {
+func newScrapePool(cfg config.Config, app Appendable, logger log.Logger) *scrapePool {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	HTTPClientConfig := httputil.HTTPClientConfig{
+		BasicAuth:       cfg.HTTPClientConfig.BasicAuth,
+		BearerToken:     cfg.HTTPClientConfig.BearerToken,
+		BearerTokenFile: cfg.HTTPClientConfig.BearerTokenFile,
+		ProxyURL:        cfg.HTTPClientConfig.ProxyURL,
+		TLSConfig:       cfg.HTTPClientConfig.TLSConfig,
+	}
+
+	client, err := httputil.NewClientFromConfig(HTTPClientConfig, cfg.JobName)
 	if err != nil {
 		// Any errors that could occur here should be caught during config validation.
 		level.Error(logger).Log("msg", "Error creating HTTP client", "err", err)
@@ -199,7 +207,7 @@ func (sp *scrapePool) stop() {
 // reload the scrape pool with the given scrape configuration. The target state is preserved
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
-func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
+func (sp *scrapePool) reload(cfg config.Config) {
 	start := time.Now()
 
 	sp.mtx.Lock()
@@ -245,7 +253,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set.
-func (sp *scrapePool) Sync(tgs []*config.TargetGroup) {
+func (sp *scrapePool) Sync(tgs []config.TargetGroup) {
 	start := time.Now()
 
 	var all []*Target
@@ -345,7 +353,7 @@ func (sp *scrapePool) mutateSampleLabels(lset labels.Labels, target *Target) lab
 	res := lb.Labels()
 
 	if mrc := sp.config.MetricRelabelConfigs; len(mrc) > 0 {
-		res = relabel.Process(res, mrc...)
+		res = relabel.Process(res, mrc)
 	}
 
 	return res

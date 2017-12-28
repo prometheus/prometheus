@@ -19,8 +19,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval/config"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // Appendable returns an Appender.
@@ -29,7 +30,7 @@ type Appendable interface {
 }
 
 // NewScrapeManager is the ScrapeManager constructor
-func NewScrapeManager(logger log.Logger, app Appendable, conf config.ReloadReader) *ScrapeManager {
+func NewScrapeManager(logger log.Logger, app Appendable, conf config.Reader) *ScrapeManager {
 
 	return &ScrapeManager{
 		append:      app,
@@ -49,7 +50,7 @@ type ScrapeManager struct {
 	scrapePools map[string]*scrapePool
 	actionCh    chan func()
 	graceShut   chan struct{}
-	config      config.ReloadReader
+	config      config.Reader
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
@@ -113,17 +114,37 @@ func (m *ScrapeManager) Targets() []*Target {
 
 func (m *ScrapeManager) reload(t map[string][]*config.TargetGroup) error {
 	for tsetName, tgroup := range t {
-		var scrapeConfig *config.ScrapeConfig
 
-		scrapeConfigs := m.config.Read().ScrapeConfigs
+		scrapeConfigs := m.config.Read()
+		scrapeConfig := config.Config{}
 
 		for _, scfg := range scrapeConfigs {
 			if scfg.JobName == tsetName {
-				scrapeConfig = scfg
+
+				scrapeConfig = config.Config{
+					JobName:        scfg.JobName,
+					HonorLabels:    scfg.HonorLabels,
+					Params:         scfg.Params,
+					ScrapeInterval: scfg.ScrapeInterval,
+					ScrapeTimeout:  scfg.ScrapeTimeout,
+					MetricsPath:    scfg.MetricsPath,
+					Scheme:         scfg.Scheme,
+					SampleLimit:    scfg.SampleLimit,
+					HTTPClientConfig: httputil.HTTPClientConfig{
+						BasicAuth:       scfg.HTTPClientConfig.BasicAuth,
+						BearerToken:     scfg.HTTPClientConfig.BearerToken,
+						BearerTokenFile: scfg.HTTPClientConfig.BearerTokenFile,
+						ProxyURL:        scfg.HTTPClientConfig.ProxyURL,
+						TLSConfig:       scfg.HTTPClientConfig.TLSConfig,
+					},
+					RelabelConfigs:       config.RelabelConfig(scfg.RelabelConfigs),
+					MetricRelabelConfigs: config.RelabelConfig(scfg.MetricRelabelConfigs),
+				}
+				break
 			}
 		}
 
-		if scrapeConfig == nil {
+		if scrapeConfig.JobName == "" {
 			return fmt.Errorf("target set '%v' doesn't have valid config", tsetName)
 		}
 

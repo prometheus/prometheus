@@ -21,15 +21,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	configRetrieval "github.com/prometheus/prometheus/retrieval/config"
+	"github.com/prometheus/prometheus/util/httputil"
 	"gopkg.in/yaml.v2"
 )
 
@@ -37,23 +35,7 @@ var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 	patRulePath   = regexp.MustCompile(`^[^*]*(\*[^/]*)?$`)
 	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
-
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_successful",
-		Help:      "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_success_timestamp_seconds",
-		Help:      "Timestamp of the last successful configuration reload.",
-	})
 )
-
-func init() {
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
-}
 
 // Load parses the YAML input s into a Config.
 func Load(s string) (*Config, error) {
@@ -116,7 +98,7 @@ var (
 
 	// DefaultRelabelConfig is the default Relabel configuration.
 	DefaultRelabelConfig = RelabelConfig{
-		Action:      RelabelReplace,
+		Action:      configRetrieval.RelabelReplace,
 		Separator:   ";",
 		Regex:       MustNewRegexp("(.*)"),
 		Replacement: "$1",
@@ -217,7 +199,6 @@ var (
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout: model.Duration(1 * time.Minute),
-		ReadRecent:    true,
 	}
 )
 
@@ -247,6 +228,23 @@ func (u URL) MarshalYAML() (interface{}, error) {
 		return u.String(), nil
 	}
 	return nil, nil
+}
+
+// Config is the top-level configuration for Prometheus's config files.
+type Config struct {
+	GlobalConfig   GlobalConfig    `yaml:"global"`
+	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles      []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+
+	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+
+	// original is the input from which the config was parsed.
+	original string
 }
 
 // Secret special type for storing secrets.
@@ -330,84 +328,6 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 		return fmt.Errorf("unknown fields in %s: %s", ctx, strings.Join(keys, ", "))
 	}
 	return nil
-}
-
-// ReloadReader validates and saves new configurations and allows concurent reading from different packages.
-type ReloadReader interface {
-	Reload() error
-	Read() Config
-}
-
-// New returns a new ReloadReader
-func New(logger log.Logger, filename string) (ReloadReader, error) {
-	c, err := LoadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("Couldn't load configuration  (%s): %v", filename, err)
-	}
-	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
-
-	conf := &Manager{
-		config:   *c,
-		mtx:      sync.RWMutex{},
-		filename: filename,
-		logger:   logger,
-	}
-
-	return conf, nil
-}
-
-// Manager implements the ReloadReader interface
-type Manager struct {
-	config   Config
-	mtx      sync.RWMutex
-	filename string
-	logger   log.Logger
-}
-
-// Reload tries to reload the config file.
-// On failure it leaves the current config unchanged so that packages can still use read the current configuration.
-func (m *Manager) Reload() error {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	f, err := LoadFile(m.filename)
-
-	if err != nil {
-		configSuccess.Set(0)
-		return fmt.Errorf("Couldn't reload configuration  (%s): %v", m.filename, err)
-	}
-
-	m.config = *f
-	level.Info(m.logger).Log("msg", "Configuration reloaded", "filename", m.filename)
-
-	configSuccess.Set(1)
-	configSuccessTime.Set(float64(time.Now().Unix()))
-
-	return nil
-}
-
-// Read returns the currently saved configuration.
-func (m *Manager) Read() Config {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	return m.config
-}
-
-// Config is the top-level configuration for Prometheus's config files.
-type Config struct {
-	GlobalConfig   GlobalConfig    `yaml:"global"`
-	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
-	RuleFiles      []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
-
-	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
-	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-
-	// original is the input from which the config was parsed.
-	original string
 }
 
 func (c Config) String() string {
@@ -682,7 +602,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
 			for _, t := range tg.Targets {
-				if err = CheckTargetAddress(t[model.AddressLabel]); err != nil {
+				if err = httputil.CheckTargetAddress(string(t[model.AddressLabel])); err != nil {
 					return err
 				}
 			}
@@ -756,20 +676,11 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
 			for _, t := range tg.Targets {
-				if err := CheckTargetAddress(t[model.AddressLabel]); err != nil {
+				if err := httputil.CheckTargetAddress(string(t[model.AddressLabel])); err != nil {
 					return err
 				}
 			}
 		}
-	}
-	return nil
-}
-
-// CheckTargetAddress checks if target address is valid.
-func CheckTargetAddress(address model.LabelValue) error {
-	// For now check for a URL, we may want to expand this later.
-	if strings.Contains(string(address), "/") {
-		return fmt.Errorf("%q is not a valid hostname", address)
 	}
 	return nil
 }
@@ -1369,23 +1280,6 @@ func (c *TritonSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 // RelabelAction is the action to be performed on relabeling.
 type RelabelAction string
 
-const (
-	// RelabelReplace performs a regex replacement.
-	RelabelReplace RelabelAction = "replace"
-	// RelabelKeep drops targets for which the input does not match the regex.
-	RelabelKeep RelabelAction = "keep"
-	// RelabelDrop drops targets for which the input does match the regex.
-	RelabelDrop RelabelAction = "drop"
-	// RelabelHashMod sets a label to the modulus of a hash of labels.
-	RelabelHashMod RelabelAction = "hashmod"
-	// RelabelLabelMap copies labels to other labelnames based on a regex.
-	RelabelLabelMap RelabelAction = "labelmap"
-	// RelabelLabelDrop drops any label matching the regex.
-	RelabelLabelDrop RelabelAction = "labeldrop"
-	// RelabelLabelKeep drops any label not matching the regex.
-	RelabelLabelKeep RelabelAction = "labelkeep"
-)
-
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
@@ -1393,7 +1287,7 @@ func (a *RelabelAction) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := RelabelAction(strings.ToLower(s)); act {
-	case RelabelReplace, RelabelKeep, RelabelDrop, RelabelHashMod, RelabelLabelMap, RelabelLabelDrop, RelabelLabelKeep:
+	case configRetrieval.RelabelReplace, configRetrieval.RelabelKeep, configRetrieval.RelabelDrop, configRetrieval.RelabelHashMod, configRetrieval.RelabelLabelMap, configRetrieval.RelabelLabelDrop, configRetrieval.RelabelLabelKeep:
 		*a = act
 		return nil
 	}
@@ -1436,20 +1330,20 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
-	if c.Modulus == 0 && c.Action == RelabelHashMod {
+	if c.Modulus == 0 && c.Action == configRetrieval.RelabelHashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	if (c.Action == RelabelReplace || c.Action == RelabelHashMod) && c.TargetLabel == "" {
+	if (c.Action == configRetrieval.RelabelReplace || c.Action == configRetrieval.RelabelHashMod) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == RelabelReplace && !relabelTarget.MatchString(c.TargetLabel) {
+	if c.Action == configRetrieval.RelabelReplace && !relabelTarget.MatchString(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
+	if c.Action == configRetrieval.RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
-	if c.Action == RelabelLabelDrop || c.Action == RelabelLabelKeep {
+	if c.Action == configRetrieval.RelabelLabelDrop || c.Action == configRetrieval.RelabelLabelKeep {
 		if c.SourceLabels != nil ||
 			c.TargetLabel != DefaultRelabelConfig.TargetLabel ||
 			c.Modulus != DefaultRelabelConfig.Modulus ||

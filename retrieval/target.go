@@ -25,11 +25,12 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/retrieval/config"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/httputil"
 )
 
 // TargetHealth describes the health state of a target.
@@ -252,7 +253,7 @@ func (app *timeLimitAppender) AddFast(lset labels.Labels, ref uint64, t int64, v
 // populateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
+func populateLabels(lset labels.Labels, cfg config.Config) (res, orig labels.Labels, err error) {
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -274,7 +275,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	}
 
 	preRelabelLabels := lb.Labels()
-	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs)
 
 	// Check if the target was dropped.
 	if lset == nil {
@@ -313,7 +314,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		lb.Set(model.AddressLabel, addr)
 	}
 
-	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
+	if err := httputil.CheckTargetAddress(string(model.LabelValue(addr))); err != nil {
 		return nil, nil, err
 	}
 
@@ -341,7 +342,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
+func targetsFromGroup(tg config.TargetGroup, cfg config.Config) ([]*Target, error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 
 	for i, tlset := range tg.Targets {

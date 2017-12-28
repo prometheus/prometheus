@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/retrieval/config"
 )
 
 // Process returns a relabeled copy of the given label set. The relabel configurations
@@ -37,7 +37,7 @@ func Process(labels model.LabelSet, cfgs ...*config.RelabelConfig) model.LabelSe
 	return labels
 }
 
-func relabel(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
+func relabel(labels model.LabelSet, cfg config.RelabelConfig) model.LabelSet {
 	values := make([]string, 0, len(cfg.SourceLabels))
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, string(labels[ln]))
