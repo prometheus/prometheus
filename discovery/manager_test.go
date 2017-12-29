@@ -23,7 +23,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"gopkg.in/yaml.v2"
 )
 
 // TestDiscoveryManagerSyncCalls checks that the target updates are received in the expected order.
@@ -35,7 +36,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 	testCases := []struct {
 		title           string
 		updates         map[string][]update
-		expectedTargets [][]*config.TargetGroup
+		expectedTargets [][]*targetgroup.Group
 	}{
 		{
 			title: "Single TP no updates",
@@ -58,12 +59,12 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{},
+						targetGroups: []targetgroup.Group{},
 						interval:     5,
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{},
 			},
 		},
@@ -72,24 +73,24 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{},
+						targetGroups: []targetgroup.Group{},
 						interval:     5,
 					},
 				},
 				"tp2": {
 					{
-						targetGroups: []config.TargetGroup{},
+						targetGroups: []targetgroup.Group{},
 						interval:     200,
 					},
 				},
 				"tp3": {
 					{
-						targetGroups: []config.TargetGroup{},
+						targetGroups: []targetgroup.Group{},
 						interval:     100,
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{},
 				{},
 				{},
@@ -100,7 +101,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -112,7 +113,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "initial1",
@@ -130,7 +131,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp1-initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -144,7 +145,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				},
 				"tp2": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp2-initial1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
@@ -154,7 +155,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "tp1-initial1",
@@ -185,7 +186,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -198,12 +199,12 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 0,
 					},
 					{
-						targetGroups: []config.TargetGroup{},
+						targetGroups: []targetgroup.Group{},
 						interval:     10,
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "initial1",
@@ -222,7 +223,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -235,7 +236,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 0,
 					},
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "update1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
@@ -249,7 +250,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "initial1",
@@ -277,7 +278,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp1-initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -290,7 +291,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 10,
 					},
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp1-update1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
@@ -305,7 +306,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				},
 				"tp2": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp2-initial1",
 								Targets: []model.LabelSet{{"__instance__": "5"}},
@@ -318,7 +319,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 100,
 					},
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp2-update1",
 								Targets: []model.LabelSet{{"__instance__": "7"}},
@@ -332,7 +333,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "tp1-initial1",
@@ -404,7 +405,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp1-initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -417,7 +418,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 10,
 					},
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp1-update1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
@@ -432,7 +433,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				},
 				"tp2": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp2-initial1",
 								Targets: []model.LabelSet{{"__instance__": "5"}},
@@ -445,7 +446,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 200,
 					},
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tp2-update1",
 								Targets: []model.LabelSet{{"__instance__": "7"}},
@@ -459,7 +460,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "tp1-initial1",
@@ -524,7 +525,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "initial1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
@@ -537,11 +538,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 						interval: 30,
 					},
 					{
-						targetGroups: []config.TargetGroup{},
+						targetGroups: []targetgroup.Group{},
 						interval:     10,
 					},
 					{
-						targetGroups: []config.TargetGroup{
+						targetGroups: []targetgroup.Group{
 							{
 								Source:  "update1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
@@ -555,7 +556,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					},
 				},
 			},
-			expectedTargets: [][]*config.TargetGroup{
+			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
 						Source:  "initial1",
@@ -627,7 +628,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	verifyPresence := func(tSets map[poolKey][]*config.TargetGroup, poolKey poolKey, label string, present bool) {
+	verifyPresence := func(tSets map[poolKey][]*targetgroup.Group, poolKey poolKey, label string, present bool) {
 		if _, ok := tSets[poolKey]; !ok {
 			t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
 			return
@@ -694,13 +695,13 @@ scrape_configs:
 }
 
 type update struct {
-	targetGroups []config.TargetGroup
+	targetGroups []targetgroup.Group
 	interval     time.Duration
 }
 
 type mockdiscoveryProvider struct {
 	updates []update
-	up      chan<- []*config.TargetGroup
+	up      chan<- []*targetgroup.Group
 }
 
 func newMockDiscoveryProvider(updates []update) mockdiscoveryProvider {
@@ -711,7 +712,7 @@ func newMockDiscoveryProvider(updates []update) mockdiscoveryProvider {
 	return tp
 }
 
-func (tp mockdiscoveryProvider) Run(ctx context.Context, up chan<- []*config.TargetGroup) {
+func (tp mockdiscoveryProvider) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
 	tp.up = up
 	tp.sendUpdates()
 }
@@ -721,7 +722,7 @@ func (tp mockdiscoveryProvider) sendUpdates() {
 
 		time.Sleep(update.interval * time.Millisecond)
 
-		tgs := make([]*config.TargetGroup, len(update.targetGroups))
+		tgs := make([]*targetgroup.Group, len(update.targetGroups))
 		for i := range update.targetGroups {
 			tgs[i] = &update.targetGroups[i]
 		}

@@ -15,12 +15,10 @@ package consul
 
 import (
 	"testing"
-
-	"github.com/prometheus/prometheus/config"
 )
 
 func TestConfiguredService(t *testing.T) {
-	conf := &config.ConsulSDConfig{
+	conf := &SDConfig{
 		Services: []string{"configuredServiceName"}}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
@@ -36,7 +34,7 @@ func TestConfiguredService(t *testing.T) {
 }
 
 func TestNonConfiguredService(t *testing.T) {
-	conf := &config.ConsulSDConfig{}
+	conf := &SDConfig{}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
 	if err != nil {

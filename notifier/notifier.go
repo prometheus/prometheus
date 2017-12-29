@@ -35,6 +35,7 @@ import (
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -516,7 +517,7 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*ale
 
 // Sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
-func (s *alertmanagerSet) Sync(tgs []*config.TargetGroup) {
+func (s *alertmanagerSet) Sync(tgs []*targetgroup.Group) {
 	all := []alertmanager{}
 
 	for _, tg := range tgs {
@@ -555,7 +556,7 @@ func postPath(pre string) string {
 
 // alertmanagersFromGroup extracts a list of alertmanagers from a target group and an associcated
 // AlertmanagerConfig.
-func alertmanagerFromGroup(tg *config.TargetGroup, cfg *config.AlertmanagerConfig) ([]alertmanager, error) {
+func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, error) {
 	var res []alertmanager
 
 	for _, tlset := range tg.Targets {
