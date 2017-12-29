@@ -19,6 +19,7 @@ import (
 	"math"
 	"net"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -34,6 +35,9 @@ type Client struct {
 	transport string
 	timeout   time.Duration
 	prefix    string
+
+	conn     net.Conn
+	connLock sync.Mutex
 }
 
 // NewClient creates a new Client.
@@ -47,6 +51,8 @@ func NewClient(logger log.Logger, address string, transport string, timeout time
 		transport: transport,
 		timeout:   timeout,
 		prefix:    prefix,
+		conn:      nil,
+		connLock:  sync.Mutex{},
 	}
 }
 
@@ -81,11 +87,21 @@ func pathFromMetric(m model.Metric, prefix string) string {
 
 // Write sends a batch of samples to Graphite.
 func (c *Client) Write(samples model.Samples) error {
-	conn, err := net.DialTimeout(c.transport, c.address, c.timeout)
-	if err != nil {
-		return err
+	var conn net.Conn
+	var err error
+	c.connLock.Lock()
+	if c.conn == nil {
+		conn, err = net.DialTimeout(c.transport, c.address, c.timeout)
+		if err != nil {
+			c.connLock.Unlock()
+			return err
+		}
+		level.Info(c.logger).Log("msg", "connected to graphite server", "address", c.address)
+		c.conn = conn
+	} else {
+		conn = c.conn
 	}
-	defer conn.Close()
+	c.connLock.Unlock()
 
 	var buf bytes.Buffer
 	for _, s := range samples {
@@ -101,6 +117,12 @@ func (c *Client) Write(samples model.Samples) error {
 
 	_, err = conn.Write(buf.Bytes())
 	if err != nil {
+		c.connLock.Lock()
+		if c.conn != nil {
+			c.conn.Close()
+			c.conn = nil
+		}
+		c.connLock.Unlock()
 		return err
 	}
 
@@ -108,6 +130,6 @@ func (c *Client) Write(samples model.Samples) error {
 }
 
 // Name identifies the client as a Graphite client.
-func (c Client) Name() string {
+func (c *Client) Name() string {
 	return "graphite"
 }
