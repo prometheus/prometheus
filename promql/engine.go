@@ -840,9 +840,25 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		maxt   = ev.Timestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = getMatrix(len(node.series))
-		// Write all points into a single slice to avoid lots of tiny allocations.
-		allPoints = getPointSlice(5 * len(matrix))
 	)
+
+	// Count the number of samples so we now how big is the array we need to allocate.
+	// This avoids a lot of copying when appending to the array.
+	var numSamples = 1
+	for _, it := range node.iterators {
+		ok := it.Seek(maxt)
+		if !ok {
+			if it.Err() != nil {
+				ev.error(it.Err())
+			}
+		}
+		buf := it.Buffer()
+		for buf.Next() {
+			numSamples++
+
+		}
+	}
+	allPoints := getPointSlice(numSamples)
 
 	ev.finalizers = append(ev.finalizers,
 		func() { putPointSlice(allPoints) },
