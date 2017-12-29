@@ -54,6 +54,7 @@ type config struct {
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
+	logLevel                string
 }
 
 var (
@@ -99,7 +100,7 @@ func main() {
 	http.Handle(cfg.telemetryPath, prometheus.Handler())
 
 	logLevel := promlog.AllowedLevel{}
-	logLevel.Set("debug")
+	logLevel.Set(cfg.logLevel)
 
 	logger := promlog.New(logLevel)
 
@@ -141,6 +142,7 @@ func parseFlags() *config {
 	)
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
+	flag.StringVar(&cfg.logLevel, "log.level", "debug", "Logging level, one of debug, info, warn, error.")
 
 	flag.Parse()
 
