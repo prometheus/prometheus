@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
@@ -77,12 +77,12 @@ func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
 	}
 }
 
-func expectedTargetGroups(tls bool) []*config.TargetGroup {
+func expectedTargetGroups(tls bool) []*targetgroup.Group {
 	scheme := "http"
 	if tls {
 		scheme = "https"
 	}
-	return []*config.TargetGroup{
+	return []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
 				{

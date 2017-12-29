@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/prometheus/config"
+	config_util "github.com/prometheus/prometheus/util/config"
 )
 
 // NewClient returns a http.Client using the specified http.RoundTripper.
@@ -33,7 +33,7 @@ func newClient(rt http.RoundTripper) *http.Client {
 
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
-func NewClientFromConfig(cfg config.HTTPClientConfig, name string) (*http.Client, error) {
+func NewClientFromConfig(cfg config_util.HTTPClientConfig, name string) (*http.Client, error) {
 	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -153,8 +153,8 @@ func cloneRequest(r *http.Request) *http.Request {
 	return r2
 }
 
-// NewTLSConfig creates a new tls.Config from the given config.TLSConfig.
-func NewTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
+// NewTLSConfig creates a new tls.Config from the given config_util.TLSConfig.
+func NewTLSConfig(cfg config_util.TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 
 	// If a CA cert is provided then let's read it in so we can validate the
