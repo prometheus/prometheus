@@ -29,7 +29,9 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
+	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
@@ -165,8 +167,8 @@ func TestHandlerSendAll(t *testing.T) {
 
 	h := New(&Options{}, nil)
 
-	authClient, _ := httputil.NewClientFromConfig(config.HTTPClientConfig{
-		BasicAuth: &config.BasicAuth{
+	authClient, _ := httputil.NewClientFromConfig(config_util.HTTPClientConfig{
+		BasicAuth: &config_util.BasicAuth{
 			Username: "prometheus",
 			Password: "testing_password",
 		},
@@ -440,8 +442,8 @@ func TestLabelSetNotReused(t *testing.T) {
 	}
 }
 
-func makeInputTargetGroup() *config.TargetGroup {
-	return &config.TargetGroup{
+func makeInputTargetGroup() *targetgroup.Group {
+	return &targetgroup.Group{
 		Targets: []model.LabelSet{
 			{
 				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),

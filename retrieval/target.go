@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -341,7 +342,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *config.TargetGroup, cfg *config.ScrapeConfig) ([]*Target, error) {
+func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 
 	for i, tlset := range tg.Targets {
