@@ -23,7 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
-	"github.com/prometheus/prometheus/pkg/targetgroup"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"

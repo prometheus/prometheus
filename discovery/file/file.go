@@ -30,7 +30,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/targetgroup"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"

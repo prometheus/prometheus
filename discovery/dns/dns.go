@@ -26,7 +26,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/targetgroup"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
