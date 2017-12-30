@@ -173,7 +173,10 @@ func TestHandlerSendAll(t *testing.T) {
 			Password: "testing_password",
 		},
 	}, "auth_alertmanager")
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
@@ -183,9 +186,9 @@ func TestHandlerSendAll(t *testing.T) {
 			Timeout: time.Second,
 		},
 		client: authClient,
-	})
+	}
 
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+	h.alertmanagers["2"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
@@ -194,7 +197,7 @@ func TestHandlerSendAll(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	})
+	}
 
 	for i := range make([]struct{}, maxBatchSize) {
 		h.queue = append(h.queue, &Alert{
@@ -355,7 +358,10 @@ func TestHandlerQueueing(t *testing.T) {
 	},
 		nil,
 	)
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server.URL },
@@ -364,7 +370,7 @@ func TestHandlerQueueing(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	})
+	}
 
 	var alerts []*Alert
 
@@ -374,7 +380,8 @@ func TestHandlerQueueing(t *testing.T) {
 		})
 	}
 
-	go h.Run()
+	c := make(chan map[string][]*targetgroup.Group)
+	go h.Run(c)
 	defer h.Stop()
 
 	h.Send(alerts[:4*maxBatchSize]...)
