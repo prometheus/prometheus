@@ -113,9 +113,8 @@ type Notifier struct {
 	ctx    context.Context
 	cancel func()
 
-	alertmanagers   []*alertmanagerSet
-	cancelDiscovery func()
-	logger          log.Logger
+	alertmanagers map[string]*alertmanagerSet
+	logger        log.Logger
 }
 
 // Options are the configurable parameters of a Handler.
@@ -247,7 +246,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 
-	amSets := []*alertmanagerSet{}
+	amSets := make(map[string]*alertmanagerSet)
 
 	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
 		ams, err := newAlertmanagerSet(cfg, n.logger)
@@ -257,7 +256,8 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 
 		ams.metrics = n.metrics
 
-		amSets = append(amSets, ams)
+		// The config pointer is used for the map lookup identifier.
+		amSets[fmt.Sprintf("%p", cfg)] = ams
 	}
 
 	n.alertmanagers = amSets
@@ -292,11 +292,14 @@ func (n *Notifier) nextBatch() []*Alert {
 }
 
 // Run dispatches notifications continuously.
-func (n *Notifier) Run() {
+func (n *Notifier) Run(tsets <-chan map[string][]*targetgroup.Group) {
+
 	for {
 		select {
 		case <-n.ctx.Done():
 			return
+		case ts := <-tsets:
+			n.reload(ts)
 		case <-n.more:
 		}
 		alerts := n.nextBatch()
@@ -308,6 +311,20 @@ func (n *Notifier) Run() {
 		if n.queueLen() > 0 {
 			n.setMore()
 		}
+	}
+}
+
+func (n *Notifier) reload(tgs map[string][]*targetgroup.Group) {
+	n.mtx.Lock()
+	defer n.mtx.Unlock()
+
+	for id, tgroup := range tgs {
+		am, ok := n.alertmanagers[id]
+		if !ok {
+			level.Error(n.logger).Log("msg", "couldn't sync alert manager set", "err", fmt.Sprintf("invalid id:%v", id))
+			continue
+		}
+		am.sync(tgroup)
 	}
 }
 
@@ -515,9 +532,9 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*ale
 	return s, nil
 }
 
-// Sync extracts a deduplicated set of Alertmanager endpoints from a list
+// sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
-func (s *alertmanagerSet) Sync(tgs []*targetgroup.Group) {
+func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	all := []alertmanager{}
 
 	for _, tg := range tgs {
