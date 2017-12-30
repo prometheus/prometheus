@@ -26,6 +26,7 @@ import (
 	"time"
 
 	old_ctx "golang.org/x/net/context"
+	yaml "gopkg.in/yaml.v2"
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -33,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPostPath(t *testing.T) {
@@ -447,6 +449,53 @@ func TestLabelSetNotReused(t *testing.T) {
 	if !reflect.DeepEqual(tg, makeInputTargetGroup()) {
 		t.Fatal("Target modified during alertmanager extraction")
 	}
+}
+
+func TestReload(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
+	}
+
+	n := New(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+`
+	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+
+		tgs[fmt.Sprintf("%p", cfg.AlertingConfig.AlertmanagerConfigs[0])] = []*targetgroup.Group{
+			tt.in,
+		}
+		n.reload(tgs)
+		res := n.Alertmanagers()[0].String()
+
+		testutil.Equals(t, res, tt.out)
+	}
+
 }
 
 func makeInputTargetGroup() *targetgroup.Group {
