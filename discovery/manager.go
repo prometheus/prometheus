@@ -20,7 +20,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
@@ -101,13 +100,13 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg *config.Config) error {
+func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
 	err := make(chan error)
 	m.actionCh <- func(ctx context.Context) {
 		m.cancelDiscoverers()
-		for _, scfg := range cfg.ScrapeConfigs {
-			for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
-				m.startProvider(ctx, poolKey{setName: scfg.JobName, provider: provName}, prov)
+		for name, scfg := range cfg {
+			for provName, prov := range m.providersFromConfig(scfg) {
+				m.startProvider(ctx, poolKey{setName: name, provider: provName}, prov)
 			}
 		}
 		close(err)
