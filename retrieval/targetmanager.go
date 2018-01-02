@@ -179,6 +179,22 @@ func (tm *TargetManager) Targets() []*Target {
 	return targets
 }
 
+// DroppedTargets returns the targets dropped during relabelling.
+func (tm *TargetManager) DroppedTargets() []*Target {
+	tm.mtx.RLock()
+	defer tm.mtx.RUnlock()
+
+	targets := []*Target{}
+	for _, ps := range tm.targetSets {
+		// Lock the scrape pool's mutex.
+		ps.sp.mtx.RLock()
+		targets = append(targets, ps.sp.droppedTargets...)
+		ps.sp.mtx.RUnlock()
+	}
+
+	return targets
+}
+
 // ApplyConfig resets the manager's target providers and job configurations as defined
 // by the new cfg. The state of targets that are valid in the new configuration remains unchanged.
 func (tm *TargetManager) ApplyConfig(cfg *config.Config) error {
