@@ -42,10 +42,35 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-type targetRetrieverFunc func() []*retrieval.Target
+type testTargetRetriever struct{}
 
-func (f targetRetrieverFunc) Targets() []*retrieval.Target {
-	return f()
+func (t testTargetRetriever) Targets() []*retrieval.Target {
+	return []*retrieval.Target{
+		retrieval.NewTarget(
+			labels.FromMap(map[string]string{
+				model.SchemeLabel:      "http",
+				model.AddressLabel:     "example.com:8080",
+				model.MetricsPathLabel: "/metrics",
+			}),
+			nil,
+			url.Values{},
+		),
+	}
+}
+
+func (t testTargetRetriever) DroppedTargets() []*retrieval.Target {
+	return []*retrieval.Target{
+		retrieval.NewTarget(
+			nil,
+			labels.FromMap(map[string]string{
+				model.AddressLabel:     "http://dropped.example.com:9115",
+				model.MetricsPathLabel: "/probe",
+				model.SchemeLabel:      "http",
+				model.JobLabel:         "blackbox",
+			}),
+			url.Values{},
+		),
+	}
 }
 
 type alertmanagerRetrieverFunc func() []*url.URL
@@ -81,19 +106,7 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	tr := targetRetrieverFunc(func() []*retrieval.Target {
-		return []*retrieval.Target{
-			retrieval.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "example.com:8080",
-					model.MetricsPathLabel: "/metrics",
-				}),
-				nil,
-				url.Values{},
-			),
-		}
-	})
+	var tr testTargetRetriever
 
 	ar := alertmanagerRetrieverFunc(func() []*url.URL {
 		return []*url.URL{{
@@ -429,6 +442,17 @@ func TestEndpoints(t *testing.T) {
 						Labels:           map[string]string{},
 						ScrapeURL:        "http://example.com:8080/metrics",
 						Health:           "unknown",
+					},
+				},
+				DroppedTargets: []*Target{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
+						Labels: map[string]string{},
 					},
 				},
 			},
