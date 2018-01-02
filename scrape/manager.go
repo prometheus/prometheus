@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"fmt"
@@ -29,10 +29,10 @@ type Appendable interface {
 	Appender() (storage.Appender, error)
 }
 
-// NewScrapeManager is the ScrapeManager constructor
-func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
+// NewManager is the Manager constructor
+func NewManager(logger log.Logger, app Appendable) *Manager {
 
-	return &ScrapeManager{
+	return &Manager{
 		append:        app,
 		logger:        logger,
 		actionCh:      make(chan func()),
@@ -42,9 +42,9 @@ func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
 	}
 }
 
-// ScrapeManager maintains a set of scrape pools and manages start/stop cycles
+// Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
-type ScrapeManager struct {
+type Manager struct {
 	logger        log.Logger
 	append        Appendable
 	scrapeConfigs map[string]*config.ScrapeConfig
@@ -54,7 +54,7 @@ type ScrapeManager struct {
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
-func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
+func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	level.Info(m.logger).Log("msg", "Starting scrape manager...")
 
 	for {
@@ -72,7 +72,7 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error 
 }
 
 // Stop cancels all running scrape pools and blocks until all have exited.
-func (m *ScrapeManager) Stop() {
+func (m *Manager) Stop() {
 	for _, sp := range m.scrapePools {
 		sp.stop()
 	}
@@ -80,7 +80,7 @@ func (m *ScrapeManager) Stop() {
 }
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
-func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
+func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	done := make(chan struct{})
 	m.actionCh <- func() {
 		for _, scfg := range cfg.ScrapeConfigs {
@@ -93,7 +93,7 @@ func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 }
 
 // TargetMap returns map of active and dropped targets and their corresponding scrape config job name.
-func (m *ScrapeManager) TargetMap() map[string][]*Target {
+func (m *Manager) TargetMap() map[string][]*Target {
 	targetsMap := make(chan map[string][]*Target)
 	m.actionCh <- func() {
 		targets := make(map[string][]*Target)
@@ -111,7 +111,7 @@ func (m *ScrapeManager) TargetMap() map[string][]*Target {
 }
 
 // Targets returns the targets currently being scraped.
-func (m *ScrapeManager) Targets() []*Target {
+func (m *Manager) Targets() []*Target {
 	targets := make(chan []*Target)
 	m.actionCh <- func() {
 		var t []*Target
@@ -127,7 +127,7 @@ func (m *ScrapeManager) Targets() []*Target {
 	return <-targets
 }
 
-func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
+func (m *Manager) reload(t map[string][]*targetgroup.Group) error {
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]
 		if !ok {
