@@ -395,18 +395,17 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 	}
 	defer q.Close()
 
-	var set storage.SeriesSet
-
+	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
 		s, err := q.Select(mset...)
 		if err != nil {
 			return nil, &apiError{errorExec, err}
 		}
-		set = storage.DeduplicateSeriesSet(set, s)
+		sets = append(sets, s)
 	}
 
+	set := storage.NewMergeSeriesSet(sets)
 	metrics := []labels.Labels{}
-
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
 	}
@@ -642,8 +641,10 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError) {
 
 	var (
 		snapdir = filepath.Join(db.Dir(), "snapshots")
-		name    = fmt.Sprintf("%s-%x", time.Now().UTC().Format(time.RFC3339), rand.Int())
-		dir     = filepath.Join(snapdir, name)
+		name    = fmt.Sprintf("%s-%x",
+			time.Now().UTC().Format("20060102T150405Z0700"),
+			rand.Int())
+		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %s", err)}

@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	config_util "github.com/prometheus/prometheus/util/config"
 )
 
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
@@ -66,7 +66,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		c, err := NewClient(0, &ClientConfig{
-			URL:     &config.URL{URL: serverURL},
+			URL:     &config_util.URL{URL: serverURL},
 			Timeout: model.Duration(time.Second),
 		})
 		if err != nil {

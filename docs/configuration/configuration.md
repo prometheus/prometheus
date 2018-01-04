@@ -82,11 +82,11 @@ alerting:
   alertmanagers:
     [ - <alertmanager_config> ... ]
 
-# Settings related to the experimental remote write feature.
+# Settings related to the remote write feature.
 remote_write:
   [ - <remote_write> ... ]
 
-# Settings related to the experimental remote read feature.
+# Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
 ```
@@ -253,9 +253,6 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<azure_sd_config>`
 
-CAUTION: Azure SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
 The following meta labels are available on targets during relabeling:
@@ -311,9 +308,12 @@ The following meta labels are available on targets during [relabeling](#relabel_
 server: <host>
 [ token: <secret> ]
 [ datacenter: <string> ]
-[ scheme: <string> ]
+[ scheme: <string> | default = "http"]
 [ username: <string> ]
 [ password: <secret> ]
+
+tls_config:
+  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
@@ -409,26 +409,41 @@ region: <string>
 
 ### `<openstack_sd_config>`
 
-CAUTION: OpenStack SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
 instances.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_openstack_instance_id`: the OpenStack instance ID
-* `__meta_openstack_instance_name`: the OpenStack instance name
-* `__meta_openstack_instance_status`: the status of the OpenStack instance
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance
-* `__meta_openstack_private_ip`: the private IP of the OpenStack instance
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance
+* `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_name`: the OpenStack instance name.
+* `__meta_openstack_instance_status`: the status of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
+* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+
+#### `instance`
+
+The `instance` role discovers one target per Nova instance. The target
+address defaults to the first private IP address of the instance.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_name`: the OpenStack instance name.
+* `__meta_openstack_instance_status`: the status of the OpenStack instance.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
+* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
 
 See below for the configuration options for OpenStack discovery:
 
 ```yaml
 # The information to access the OpenStack API.
+
+# The OpenStack role of entities that should be discovered.
+role: <role>
 
 # The OpenStack Region.
 region: <string>
@@ -518,9 +533,6 @@ may contain a single `*` that matches any character sequence, e.g. `my/path/tg_*
 
 ### `<gce_sd_config>`
 
-CAUTION: GCE SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 [GCE](https://cloud.google.com/compute/) SD configurations allow retrieving scrape targets from GCP GCE instances.
 The private IP address is used by default, but may be changed to the public IP
 address with relabeling.
@@ -578,9 +590,6 @@ compute resources. If running outside of GCE make sure to create an appropriate
 service account and place the credential file in one of the expected locations.
 
 ### `<kubernetes_sd_config>`
-
-CAUTION: Kubernetes SD is in beta: breaking changes to configuration are still
-likely in future releases.
 
 Kubernetes SD configurations allow retrieving scrape targets from
 [Kubernetes'](http://kubernetes.io/) REST API and always staying synchronized with
@@ -727,9 +736,6 @@ which automates the Prometheus setup on top of Kubernetes.
 
 ### `<marathon_sd_config>`
 
-CAUTION: Marathon SD is in beta: breaking changes to configuration are still
-likely in future releases.
-
 Marathon SD configurations allow retrieving scrape targets using the
 [Marathon](https://mesosphere.github.io/marathon/) REST API. Prometheus
 will periodically check the REST endpoint for currently running tasks and
@@ -825,9 +831,6 @@ paths:
 Serverset data must be in the JSON format, the Thrift format is not currently supported.
 
 ### `<triton_sd_config>`
-
-CAUTION: Triton SD is in beta: breaking changes to configuration are still
-likely in future releases.
 
 [Triton](https://github.com/joyent/triton) SD configurations allow retrieving
 scrape targets from [Container Monitor](https://github.com/joyent/rfd/blob/master/rfd/0027/README.md)
@@ -979,10 +982,6 @@ external labels send identical alerts.
 
 ### `<alertmanager_config>`
 
-CAUTION: Dynamic discovery of Alertmanager instances is in alpha state. Breaking configuration
-changes may happen in future releases. Use static configuration via the `-alertmanager.url` flag
-as a stable alternative.
-
 An `alertmanager_config` section specifies Alertmanager instances the Prometheus server sends
 alerts to. It also provides parameters to configure how to communicate with these Alertmanagers.
 
@@ -1079,9 +1078,6 @@ relabel_configs:
 
 ### `<remote_write>`
 
-CAUTION: Remote write is experimental: breaking changes to configuration are
-likely in future releases.
-
 `write_relabel_configs` is relabeling applied to samples before sending them
 to the remote endpoint. Write relabeling is applied after external labels. This
 could be used to limit which samples are sent.
@@ -1128,9 +1124,6 @@ with this feature.
 
 ### `<remote_read>`
 
-CAUTION: Remote read is experimental: breaking changes to configuration are
-likely in future releases.
-
 ```yaml
 # The URL of the endpoint to query from.
 url: <string>
@@ -1142,6 +1135,10 @@ required_matchers:
 
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 30s ]
+
+# Whether reads should be made for queries for time ranges that
+# the local storage should have complete data for.
+[ read_recent: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote read request with the
 # configured username and password.

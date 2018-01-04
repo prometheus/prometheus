@@ -13,7 +13,7 @@
 
 // +build !windows,!plan9
 
-package tsdb
+package fileutil
 
 import (
 	"os"

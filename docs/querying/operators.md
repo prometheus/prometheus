@@ -34,8 +34,8 @@ is multiplied by 2, the result is another vector in which every sample value of
 the original vector is multiplied by 2.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
-each entry in the left-hand-side vector and its [matching element](#vector-matching)
-in the right hand vector. The result is propagated into the result vector and the metric
+each entry in the left-hand side vector and its [matching element](#vector-matching)
+in the right-hand vector. The result is propagated into the result vector and the metric
 name is dropped. Entries for which no matching entry in the right-hand vector can be
 found are not part of the result.
 
@@ -69,10 +69,10 @@ modifier is provided, vector elements that would be dropped instead have the val
 applied to matching entries. Vector elements for which the expression is not
 true or which do not find a match on the other side of the expression get
 dropped from the result, while the others are propagated into a result vector
-with their original (left-hand-side) metric names and label values.
+with their original (left-hand side) metric names and label values.
 If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
-the value `1` with the left-hand-side metric names and label values.
+the value `1` with the left-hand side metric names and label values.
 
 ### Logical/set binary operators
 
@@ -85,7 +85,7 @@ These logical/set binary operators are only defined between instant vectors:
 `vector1 and vector2` results in a vector consisting of the elements of
 `vector1` for which there are elements in `vector2` with exactly matching
 label sets. Other elements are dropped. The metric name and values are carried
-over from the left-hand-side vector.
+over from the left-hand side vector.
 
 `vector1 or vector2` results in a vector that contains all original elements
 (label sets + values) of `vector1` and additionally all elements of `vector2`
@@ -97,9 +97,11 @@ label sets. All matching elements in both vectors are dropped.
 
 ## Vector matching
 
-Operations between vectors attempt to find a matching element in the right-hand-side
+Operations between vectors attempt to find a matching element in the right-hand side
 vector for each entry in the left-hand side. There are two basic types of
-matching behavior:
+matching behavior: One-to-one and many-to-one/one-to-many.
+
+### One-to-one vector matches
 
 **One-to-one** finds a unique pair of entries from each side of the operation.
 In the default case, that is an operation following the format `vector1 <operator> vector2`.
@@ -133,6 +135,8 @@ The entries with methods `put` and `del` have no match and will not show up in t
 
     {method="get"}  0.04            //  24 / 600
     {method="post"} 0.05            //   6 / 120
+
+### Many-to-one and one-to-many vector matches
 
 **Many-to-one** and **one-to-many** matchings refer to the case where each vector element on
 the "one"-side can match with multiple elements on the "many"-side. This has to
@@ -217,6 +221,10 @@ If the metric `http_requests_total` had time series that fan out by
 number of seen HTTP requests per application and group over all instances via:
 
     sum(http_requests_total) without (instance)
+
+Which is equivalent to:
+ 
+     sum(http_requests_total) by (application, group)
 
 If we are just interested in the total of HTTP requests we have seen in **all**
 applications, we could simply write:

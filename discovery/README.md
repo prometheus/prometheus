@@ -2,7 +2,9 @@
 
 This directory contains the service discovery (SD) component of Prometheus.
 
-
+There is currently a moratorium on new service discovery mechanisms being added
+to Prometheus due to a lack of developer capacity. In the meantime `file_sd` 
+remains available.
 
 ## Design of a Prometheus SD
 
@@ -131,9 +133,9 @@ the Prometheus server will be able to see them.
 
 A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. We expect similar targets to be grouped together, in the form of a [`TargetGroup`](https://godoc.org/github.com/prometheus/prometheus/config#TargetGroup). The SD mechanism sends the targets down to prometheus as list of `TargetGroups`.
 
-An SD mechanism has to implement the `TargetProvider` Interface:
+An SD mechanism has to implement the `Discoverer` Interface:
 ```go
-type TargetProvider interface {
+type Discoverer interface {
 	Run(ctx context.Context, up chan<- []*config.TargetGroup)
 }
 ```

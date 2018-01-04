@@ -14,7 +14,7 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -74,10 +74,10 @@ func (a *collectResultAppender) Rollback() error { return nil }
 // of TargetGroups through the update channel.
 type fakeTargetProvider struct {
 	sources []string
-	update  chan *config.TargetGroup
+	update  chan *targetgroup.Group
 }
 
-func (tp *fakeTargetProvider) Run(ch chan<- config.TargetGroup, done <-chan struct{}) {
+func (tp *fakeTargetProvider) Run(ch chan<- targetgroup.Group, done <-chan struct{}) {
 	defer close(ch)
 	for {
 		select {
