@@ -16,7 +16,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -58,14 +57,6 @@ type poolKey struct {
 	setName  string
 	provider string
 }
-
-// byProvider implements sort.Interface for []poolKey based on the provider field.
-// Sorting is needed so that we can have predictable tests.
-type byProvider []poolKey
-
-func (a byProvider) Len() int           { return len(a) }
-func (a byProvider) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byProvider) Less(i, j int) bool { return a[i].provider < a[j].provider }
 
 // NewManager is the Discovery Manager constructor
 func NewManager(logger log.Logger) *Manager {
@@ -182,18 +173,10 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := make(chan map[string][]*targetgroup.Group)
 
 	m.actionCh <- func(ctx context.Context) {
-
-		// Sorting by the poolKey is needed so that we can have predictable tests.
-		var pKeys []poolKey
-		for pk := range m.targets {
-			pKeys = append(pKeys, pk)
-		}
-		sort.Sort(byProvider(pKeys))
-
 		tSetsAll := map[string][]*targetgroup.Group{}
-		for _, pk := range pKeys {
-			for _, tg := range m.targets[pk] {
-				tSetsAll[pk.setName] = append(tSetsAll[pk.setName], tg)
+		for pkey, tsets := range m.targets {
+			for _, tg := range tsets {
+				tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
 			}
 		}
 		tSets <- tSetsAll
