@@ -158,16 +158,18 @@ func (m *Manager) cancelDiscoverers() {
 	m.discoverCancel = nil
 }
 
-func (m *Manager) updateGroup(poolKey poolKey, tg []*targetgroup.Group) {
+func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	done := make(chan struct{})
 
 	m.actionCh <- func(ctx context.Context) {
-		if tg != nil {
-			for _, t := range tg {
-				if _, ok := m.targets[poolKey]; !ok {
-					m.targets[poolKey] = make(map[string]*targetgroup.Group)
+		if tgs != nil {
+			for _, tg := range tgs {
+				if tg != nil { // Some Discoverers send nil targetgroup so need to check for it to avoid panics.
+					if _, ok := m.targets[poolKey]; !ok {
+						m.targets[poolKey] = make(map[string]*targetgroup.Group)
+					}
+					m.targets[poolKey][tg.Source] = tg
 				}
-				m.targets[poolKey][t.Source] = t
 			}
 		}
 		close(done)
@@ -191,11 +193,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 		tSetsAll := map[string][]*targetgroup.Group{}
 		for _, pk := range pKeys {
 			for _, tg := range m.targets[pk] {
-				// Don't add empty targets.
-				// Some Discoverers(eg. k8s) send only the updates so removed targets will be updated with an empty Source value.
-				if tg.Source != "" {
-					tSetsAll[pk.setName] = append(tSetsAll[pk.setName], tg)
-				}
+				tSetsAll[pk.setName] = append(tSetsAll[pk.setName], tg)
 			}
 		}
 		tSets <- tSetsAll
