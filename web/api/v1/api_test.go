@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
@@ -103,6 +104,10 @@ func TestEndpoints(t *testing.T) {
 		}}
 	})
 
+	ruleManager := rules.NewManager(
+		&rules.ManagerOptions{Context: context.Background()},
+	)
+
 	api := &API{
 		Queryable:             suite.Storage(),
 		QueryEngine:           suite.QueryEngine(),
@@ -111,6 +116,7 @@ func TestEndpoints(t *testing.T) {
 		now:    func() time.Time { return now },
 		config: func() config.Config { return samplePrometheusCfg },
 		ready:  func(f http.HandlerFunc) http.HandlerFunc { return f },
+		ruleManager: ruleManager,
 	}
 
 	start := time.Unix(0, 0)
@@ -441,6 +447,13 @@ func TestEndpoints(t *testing.T) {
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
 					},
 				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			response: &RuleGroups{
+					[]*Group{
+					},
 			},
 		},
 		{
