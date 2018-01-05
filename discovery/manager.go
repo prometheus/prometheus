@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/static"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
@@ -271,33 +272,8 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 		app("triton", i, t)
 	}
 	if len(cfg.StaticConfigs) > 0 {
-		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
+		app("static", 0, static.NewProvider(cfg.StaticConfigs))
 	}
 
 	return providers
-}
-
-// StaticProvider holds a list of target groups that never change.
-type StaticProvider struct {
-	TargetGroups []*targetgroup.Group
-}
-
-// NewStaticProvider returns a StaticProvider configured with the given
-// target groups.
-func NewStaticProvider(groups []*targetgroup.Group) *StaticProvider {
-	for i, tg := range groups {
-		tg.Source = fmt.Sprintf("%d", i)
-	}
-	return &StaticProvider{groups}
-}
-
-// Run implements the Worker interface.
-func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// We still have to consider that the consumer exits right away in which case
-	// the context will be canceled.
-	select {
-	case ch <- sd.TargetGroups:
-	case <-ctx.Done():
-	}
-	close(ch)
 }

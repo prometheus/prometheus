@@ -38,7 +38,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -82,7 +82,7 @@ func (e *apiError) Error() string {
 }
 
 type targetRetriever interface {
-	Targets() []*retrieval.Target
+	Targets() []*scrape.Target
 }
 
 type alertmanagerRetriever interface {
@@ -428,9 +428,9 @@ type Target struct {
 
 	ScrapeURL string `json:"scrapeUrl"`
 
-	LastError  string                 `json:"lastError"`
-	LastScrape time.Time              `json:"lastScrape"`
-	Health     retrieval.TargetHealth `json:"health"`
+	LastError  string              `json:"lastError"`
+	LastScrape time.Time           `json:"lastScrape"`
+	Health     scrape.TargetHealth `json:"health"`
 }
 
 // TargetDiscovery has all the active targets.

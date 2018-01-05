@@ -100,9 +100,9 @@ func (a *Alert) ResolvedAt(ts time.Time) bool {
 	return !a.EndsAt.After(ts)
 }
 
-// Notifier is responsible for dispatching alert notifications to an
+// Manager is responsible for dispatching alert notifications to an
 // alert manager service.
-type Notifier struct {
+type Manager struct {
 	queue []*Alert
 	opts  *Options
 
@@ -206,8 +206,8 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 	return m
 }
 
-// New constructs a new Notifier.
-func New(o *Options, logger log.Logger) *Notifier {
+// New constructs a new Manager.
+func NewManager(o *Options, logger log.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if o.Do == nil {
@@ -217,7 +217,7 @@ func New(o *Options, logger log.Logger) *Notifier {
 		logger = log.NewNopLogger()
 	}
 
-	n := &Notifier{
+	n := &Manager{
 		queue:  make([]*Alert, 0, o.QueueCapacity),
 		ctx:    ctx,
 		cancel: cancel,
@@ -240,7 +240,7 @@ func New(o *Options, logger log.Logger) *Notifier {
 }
 
 // ApplyConfig updates the status state as the new config requires.
-func (n *Notifier) ApplyConfig(conf *config.Config) error {
+func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -267,14 +267,14 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 
 const maxBatchSize = 64
 
-func (n *Notifier) queueLen() int {
+func (n *Manager) queueLen() int {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
 
 	return len(n.queue)
 }
 
-func (n *Notifier) nextBatch() []*Alert {
+func (n *Manager) nextBatch() []*Alert {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -292,7 +292,7 @@ func (n *Notifier) nextBatch() []*Alert {
 }
 
 // Run dispatches notifications continuously.
-func (n *Notifier) Run() {
+func (n *Manager) Run() {
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -313,7 +313,7 @@ func (n *Notifier) Run() {
 
 // Send queues the given notification requests for processing.
 // Panics if called on a handler that is not running.
-func (n *Notifier) Send(alerts ...*Alert) {
+func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -355,7 +355,7 @@ func (n *Notifier) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
-func (n *Notifier) relabelAlerts(alerts []*Alert) []*Alert {
+func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 	var relabeledAlerts []*Alert
 
 	for _, alert := range alerts {
@@ -369,7 +369,7 @@ func (n *Notifier) relabelAlerts(alerts []*Alert) []*Alert {
 }
 
 // setMore signals that the alert queue has items.
-func (n *Notifier) setMore() {
+func (n *Manager) setMore() {
 	// If we cannot send on the channel, it means the signal already exists
 	// and has not been consumed yet.
 	select {
@@ -379,7 +379,7 @@ func (n *Notifier) setMore() {
 }
 
 // Alertmanagers returns a slice of Alertmanager URLs.
-func (n *Notifier) Alertmanagers() []*url.URL {
+func (n *Manager) Alertmanagers() []*url.URL {
 	n.mtx.RLock()
 	amSets := n.alertmanagers
 	n.mtx.RUnlock()
@@ -399,7 +399,7 @@ func (n *Notifier) Alertmanagers() []*url.URL {
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
-func (n *Notifier) sendAll(alerts ...*Alert) bool {
+func (n *Manager) sendAll(alerts ...*Alert) bool {
 	begin := time.Now()
 
 	b, err := json.Marshal(alerts)
@@ -447,7 +447,7 @@ func (n *Notifier) sendAll(alerts ...*Alert) bool {
 	return numSuccess > 0
 }
 
-func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
+func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
 	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
 	if err != nil {
 		return err
@@ -467,7 +467,7 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 }
 
 // Stop shuts down the notification handler.
-func (n *Notifier) Stop() {
+func (n *Manager) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification handler...")
 	n.cancel()
 }
