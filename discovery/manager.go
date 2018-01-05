@@ -154,14 +154,17 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	done := make(chan struct{})
 
 	m.actionCh <- func(ctx context.Context) {
-		if tgs != nil {
-			for _, tg := range tgs {
-				if tg != nil { // Some Discoverers send nil targetgroup so need to check for it to avoid panics.
-					if _, ok := m.targets[poolKey]; !ok {
-						m.targets[poolKey] = make(map[string]*targetgroup.Group)
-					}
-					m.targets[poolKey][tg.Source] = tg
+		if tgs == nil {
+			close(done)
+			return
+		}
+
+		for _, tg := range tgs {
+			if tg != nil { // Some Discoverers send nil targetgroup so need to check for it to avoid panics.
+				if _, ok := m.targets[poolKey]; !ok {
+					m.targets[poolKey] = make(map[string]*targetgroup.Group)
 				}
+				m.targets[poolKey][tg.Source] = tg
 			}
 		}
 		close(done)
