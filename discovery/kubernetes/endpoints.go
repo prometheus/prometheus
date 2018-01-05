@@ -185,10 +185,6 @@ const (
 )
 
 func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
-	if len(eps.Subsets) == 0 {
-		return nil
-	}
-
 	tg := &targetgroup.Group{
 		Source: endpointsSource(eps),
 	}
