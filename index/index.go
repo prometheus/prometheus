@@ -180,11 +180,11 @@ func (w *Writer) write(bufs ...[]byte) error {
 		if err != nil {
 			return err
 		}
-		// For now the index file must not grow beyond 4GiB. Some of the fixed-sized
+		// For now the index file must not grow beyond 64GiB. Some of the fixed-sized
 		// offset references in v1 are only 4 bytes large.
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
-		if w.pos > math.MaxUint32 {
+		if w.pos > 16*math.MaxUint32 {
 			return errors.Errorf("exceeding max size of 4GiB")
 		}
 	}
@@ -250,6 +250,7 @@ func (w *Writer) writeMeta() error {
 	return w.write(w.buf1.get())
 }
 
+//AddSeries adds the series one at a time along with its chunks.
 func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
@@ -261,7 +262,8 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	if _, ok := w.seriesOffsets[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
-	w.seriesOffsets[ref] = w.pos
+	w.addPadding(16)
+	w.seriesOffsets[ref] = w.pos / 16
 
 	w.buf2.reset()
 	w.buf2.putUvarint(len(lset))
@@ -854,7 +856,7 @@ func (r *Reader) LabelIndices() ([][]string, error) {
 
 // Series the series with the given ID and writes its labels and chunks into lbls and chks.
 func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
-	d := r.decbufUvarintAt(int(id))
+	d := r.decbufUvarintAt(int(16 * id))
 	if d.err() != nil {
 		return d.err()
 	}
