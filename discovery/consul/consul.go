@@ -202,7 +202,7 @@ func (d *Discovery) shouldWatch(name string) bool {
 	return false
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Watched services and their cancelation functions.
 	services := map[string]func(){}

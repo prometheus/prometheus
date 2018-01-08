@@ -58,7 +58,7 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 	return ep
 }
 
-// Run implements the retrieval.TargetProvider interface.
+// Run implements the Discoverer interface.
 func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of endpoint targets.
 	var initial []*targetgroup.Group

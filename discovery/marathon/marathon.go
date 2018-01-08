@@ -175,7 +175,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	}, nil
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
