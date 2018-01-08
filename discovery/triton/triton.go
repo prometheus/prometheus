@@ -115,7 +115,7 @@ type DiscoveryResponse struct {
 }
 
 // Discovery periodically performs Triton-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
 	client   *http.Client
 	interval time.Duration
@@ -151,7 +151,7 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 	}, nil
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer close(ch)
 

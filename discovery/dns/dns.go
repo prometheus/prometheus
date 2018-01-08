@@ -102,7 +102,7 @@ func init() {
 }
 
 // Discovery periodically performs DNS-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
 	names []string
 
@@ -136,7 +136,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 	}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
