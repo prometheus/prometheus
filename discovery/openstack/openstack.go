@@ -112,7 +112,7 @@ func init() {
 }
 
 // Discovery periodically performs OpenStack-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery interface {
 	Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	refresh() (tg *targetgroup.Group, err error)
