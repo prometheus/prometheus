@@ -53,7 +53,7 @@ func NewHypervisorDiscovery(opts *gophercloud.AuthOptions,
 		region: region, interval: interval, port: port, logger: l}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := h.refresh()

@@ -114,7 +114,7 @@ func init() {
 }
 
 // Discovery periodically performs GCE-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
 	project      string
 	zone         string
@@ -155,7 +155,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	return gd, nil
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := d.refresh()

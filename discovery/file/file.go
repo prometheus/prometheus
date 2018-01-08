@@ -221,7 +221,7 @@ func (d *Discovery) watchFiles() {
 	}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

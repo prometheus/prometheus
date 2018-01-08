@@ -152,7 +152,7 @@ func init() {
 	}
 }
 
-// Discovery implements the TargetProvider interface for discovering
+// Discovery implements the Discoverer interface for discovering
 // targets from Kubernetes.
 type Discovery struct {
 	client             kubernetes.Interface
@@ -244,7 +244,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 
 const resyncPeriod = 10 * time.Minute
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	rclient := d.client.Core().RESTClient()
 	reclient := d.client.Extensions().RESTClient()
