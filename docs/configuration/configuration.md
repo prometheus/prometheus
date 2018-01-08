@@ -726,7 +726,8 @@ namespaces:
     [ - <string> ]
 ```
 
-Where `<role>` must be `endpoints`, `service`, `pod`, or `node`.
+Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or
+`ingress`.
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
