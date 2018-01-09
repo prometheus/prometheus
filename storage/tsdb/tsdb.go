@@ -188,7 +188,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {
