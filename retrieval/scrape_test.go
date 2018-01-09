@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -624,6 +626,49 @@ func TestScrapeLoopAppend(t *testing.T) {
 	}
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
+	}
+}
+
+func TestScrapeLoopAppendSampleLimit(t *testing.T) {
+	resApp := &collectResultAppender{}
+	app := &limitAppender{Appender: resApp, limit: 1}
+
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		nopMutator,
+		nopMutator,
+		func() storage.Appender { return app },
+	)
+
+	now := time.Now()
+	_, _, err := sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), now)
+	if err != errSampleLimit {
+		t.Fatalf("Did not see expected sample limit error: %s", err)
+	}
+
+	// Check that the Counter has been incremented a simgle time for the scrape,
+	// not multiple times for each sample
+	metric := dto.Metric{}
+	err = targetScrapeSampleLimit.Write(&metric)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	value := metric.GetCounter().GetValue()
+	if value != 1 {
+		t.Fatal("Unexpected value of sample limit metric: %f", value)
+	}
+
+	// And verify that we got the samples that fit under the limit
+	want := []sample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now),
+			v:      1,
+		},
+	}
+	if !reflect.DeepEqual(want, resApp.result) {
+		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, resApp.result)
 	}
 }
 
