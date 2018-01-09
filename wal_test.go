@@ -371,9 +371,9 @@ func TestWALRestoreCorrupted(t *testing.T) {
 
 			testutil.Ok(t, w.cut())
 
-			//Sleep 2 seconds to avoid error where cut and test "cases" function may write or
-			//truncate the file out of orders as "cases" are not synchronized with cut.
-			//Hopefully cut will complete by 2 seconds
+			// Sleep 2 seconds to avoid error where cut and test "cases" function may write or
+			// truncate the file out of orders as "cases" are not synchronized with cut.
+			// Hopefully cut will complete by 2 seconds.
 			time.Sleep(2 * time.Second)
 
 			testutil.Ok(t, w.LogSamples([]RefSample{{T: 3, V: 4}}))
