@@ -640,26 +640,33 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		func() storage.Appender { return app },
 	)
 
+	// Get the value of the Counter before performing the append.
+	beforeMetric := dto.Metric{}
+	err := targetScrapeSampleLimit.Write(&beforeMetric)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeMetricValue := beforeMetric.GetCounter().GetValue()
+
 	now := time.Now()
-	_, _, err := sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), now)
+	_, _, err = sl.append([]byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), now)
 	if err != errSampleLimit {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
 
 	// Check that the Counter has been incremented a simgle time for the scrape,
-	// not multiple times for each sample
+	// not multiple times for each sample.
 	metric := dto.Metric{}
 	err = targetScrapeSampleLimit.Write(&metric)
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	value := metric.GetCounter().GetValue()
-	if value != 1 {
-		t.Fatal("Unexpected value of sample limit metric: %f", value)
+	if (value - beforeMetricValue) != 1 {
+		t.Fatal("Unexpected change of sample limit metric: %f", (value - beforeMetricValue))
 	}
 
-	// And verify that we got the samples that fit under the limit
+	// And verify that we got the samples that fit under the limit.
 	want := []sample{
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),

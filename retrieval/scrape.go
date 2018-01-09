@@ -905,10 +905,9 @@ loop:
 		err = p.Err()
 	}
 	if sampleLimitErr != nil {
-		// We only want to increment this once per scrape, so this is Inc'd outside the loop
+		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeSampleLimit.Inc()
 	}
-
 	if numOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", numOutOfOrder)
 	}
