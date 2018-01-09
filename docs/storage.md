@@ -58,6 +58,12 @@ On average, Prometheus uses only around 1-2 bytes per sample. Thus, to plan the 
 needed_disk_space = retention_time_seconds * ingested_samples_per_second * bytes_per_sample
 ```
 
+To find out the number of ingested samples per second, you can use this query:
+
+```
+rate(prometheus_tsdb_head_samples_appended_total[1m])
+```
+
 To tune the rate of ingested samples per second, you can either reduce the number of time series you scrape (fewer targets or fewer series per target), or you can increase the scrape interval. However, reducing the number of series is likely more effective, due to compression of samples within a series.
 
 If your local storage becomes corrupted for whatever reason, your best bet is to shut down Prometheus and remove the entire storage directory. However, you can also try removing individual block directories to resolve the problem. This means losing a time window of around two hours worth of data per block directory. Again, Prometheus's local storage is not meant as durable long-term storage.
