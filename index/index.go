@@ -168,6 +168,8 @@ func NewWriter(fn string) (*Writer, error) {
 		symbols:       make(map[string]uint32, 1<<13),
 		seriesOffsets: make(map[uint64]uint64, 1<<16),
 		crc32:         newCRC32(),
+
+		Version: 2,
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
