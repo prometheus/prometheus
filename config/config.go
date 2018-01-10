@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
-	config_util "github.com/prometheus/prometheus/util/config"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/yaml.v2"
 )
@@ -235,7 +235,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("invalid rule file path %q", rf)
 		}
 	}
-	// Do global overrides and validate unique names.
+	// Do global overrides and Validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
 		// First set the correct scrape interval, then check that the timeout

@@ -27,11 +27,11 @@ import (
 
 	old_ctx "golang.org/x/net/context"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 
