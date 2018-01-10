@@ -428,6 +428,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	indexw, err := index.NewWriter(filepath.Join(tmp, indexFilename))
+	meta.Version = indexw.Version
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}

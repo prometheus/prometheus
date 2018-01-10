@@ -216,7 +216,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	enc.SetIndent("", "\t")
 
 	var merr MultiError
-	meta.Version = 2
+
 	if merr.Add(enc.Encode(meta)); merr.Err() != nil {
 		merr.Add(f.Close())
 		return merr.Err()
@@ -253,7 +253,7 @@ func OpenBlock(dir string, pool chunkenc.Pool) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	ir, err := index.NewFileReader(filepath.Join(dir, "index"))
+	ir, err := index.NewFileReader(filepath.Join(dir, "index"), meta.Version)
 	if err != nil {
 		return nil, err
 	}
