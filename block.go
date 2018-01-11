@@ -152,7 +152,7 @@ type BlockMeta struct {
 	// Information on compactions the block was created from.
 	Compaction BlockMetaCompaction `json:"compaction"`
 
-	// Version of the index format
+	// Version of the index format.
 	Version int `json:"version"`
 }
 

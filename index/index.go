@@ -268,7 +268,6 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	}
 	w.addPadding(16)
 	w.seriesOffsets[ref] = w.pos / 16
-	w.Version = 2
 
 	w.buf2.reset()
 	w.buf2.putUvarint(len(lset))
@@ -572,24 +571,24 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 }
 
 // NewReader returns a new IndexReader on the given byte slice.
-func NewReader(b ByteSlice, v int) (*Reader, error) {
-	return newReader(b, nil, v)
+func NewReader(b ByteSlice, version int) (*Reader, error) {
+	return newReader(b, nil, version)
 }
 
-func NewReaderV1(b ByteSlice, c io.Closer, v int) (*Reader, error) {
-	return newReader(b, c, v)
+func NewReaderV1(b ByteSlice, c io.Closer, version int) (*Reader, error) {
+	return newReader(b, c, version)
 }
 
 // NewFileReader returns a new index reader against the given index file.
-func NewFileReader(path string, v int) (*Reader, error) {
+func NewFileReader(path string, version int) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return newReader(realByteSlice(f.Bytes()), f, v)
+	return newReader(realByteSlice(f.Bytes()), f, version)
 }
 
-func newReader(b ByteSlice, c io.Closer, v int) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, version int) (*Reader, error) {
 	r := &Reader{
 		b:        b,
 		c:        c,
@@ -597,7 +596,7 @@ func newReader(b ByteSlice, c io.Closer, v int) (*Reader, error) {
 		labels:   map[string]uint32{},
 		postings: map[labels.Label]uint32{},
 		crc32:    newCRC32(),
-		version:  v,
+		version:  version,
 	}
 	// Verify magic number.
 	if b.Len() < 4 {
@@ -866,7 +865,7 @@ func (r *Reader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-// Reads the series with the given ID and writes its labels and chunks into lbls and chks.
+// Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
 func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	offset := id
 	if r.version == 2 {
