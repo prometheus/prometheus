@@ -235,7 +235,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("invalid rule file path %q", rf)
 		}
 	}
-	// Do global overrides and Validate unique names.
+	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
 		// First set the correct scrape interval, then check that the timeout
