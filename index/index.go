@@ -575,12 +575,12 @@ func NewReader(b ByteSlice, version int) (*Reader, error) {
 	return newReader(b, nil, version)
 }
 
-func NewReaderV1(b ByteSlice, c io.Closer, version int) (*Reader, error) {
-	return newReader(b, c, version)
-}
-
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, version int) (*Reader, error) {
+	if version != 1 && version != 2 {
+		return nil, errors.Errorf("unexpected file version %d", version)
+
+	}
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
