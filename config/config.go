@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
-	config_util "github.com/prometheus/prometheus/util/config"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/yaml.v2"
 )

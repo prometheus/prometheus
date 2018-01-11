@@ -32,8 +32,8 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
