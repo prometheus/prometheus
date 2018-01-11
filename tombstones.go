@@ -131,7 +131,7 @@ func readTombstones(dir string) (memTombstones, error) {
 		return nil, d.err()
 	}
 
-	// Verify checksum
+	// Verify checksum.
 	hash := newCRC32()
 	if _, err := hash.Write(d.get()); err != nil {
 		return nil, errors.Wrap(err, "write to hash")
