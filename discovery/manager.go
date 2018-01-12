@@ -179,8 +179,16 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	m.actionCh <- func(ctx context.Context) {
 		tSetsAll := map[string][]*targetgroup.Group{}
 		for pkey, tsets := range m.targets {
+			del := true
 			for _, tg := range tsets {
-				tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
+				if len(tg.Targets) != 0 {
+					tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
+					del = false
+				}
+			}
+			// Delete the empty map for this target set to avoid memory leaks.
+			if del {
+				delete(m.targets, pkey)
 			}
 		}
 		tSets <- tSetsAll
