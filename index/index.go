@@ -577,10 +577,6 @@ func NewReader(b ByteSlice, version int) (*Reader, error) {
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, version int) (*Reader, error) {
-	if version != 1 && version != 2 {
-		return nil, errors.Errorf("unexpected file version %d", version)
-
-	}
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
@@ -597,6 +593,11 @@ func newReader(b ByteSlice, c io.Closer, version int) (*Reader, error) {
 		postings: map[labels.Label]uint32{},
 		crc32:    newCRC32(),
 		version:  version,
+	}
+
+	if version != 1 && version != 2 {
+		return nil, errors.Errorf("unexpected file version %d", version)
+
 	}
 	// Verify magic number.
 	if b.Len() < 4 {
