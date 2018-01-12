@@ -649,57 +649,6 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				},
 			},
 		},
-		{
-			title: "Single TP update with an empty group to check for memory leaks",
-			updates: map[string][]update{
-				"tp1": {
-					{
-						targetGroups: []targetgroup.Group{
-							{
-								Source:  "tp1_group1",
-								Targets: []model.LabelSet{{"__instance__": "1"}},
-							},
-							{
-								Source:  "tp1_group2",
-								Targets: []model.LabelSet{{"__instance__": "2"}},
-							},
-						},
-						interval: 30,
-					},
-					{
-						targetGroups: []targetgroup.Group{
-							{
-								Source:  "tp1_group1",
-								Targets: []model.LabelSet{{"__instance__": "3"}},
-							},
-							{
-								Source:  "tp1_group2",
-								Targets: nil,
-							},
-						},
-						interval: 10,
-					},
-				},
-			},
-			expectedTargets: [][]*targetgroup.Group{
-				{
-					{
-						Source:  "tp1_group1",
-						Targets: []model.LabelSet{{"__instance__": "1"}},
-					},
-					{
-						Source:  "tp1_group2",
-						Targets: []model.LabelSet{{"__instance__": "2"}},
-					},
-				},
-				{
-					{
-						Source:  "tp1_group1",
-						Targets: []model.LabelSet{{"__instance__": "3"}},
-					},
-				},
-			},
-		},
 	}
 
 	for testIndex, testCase := range testCases {

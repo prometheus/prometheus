@@ -70,8 +70,7 @@ func NewManager(logger log.Logger) *Manager {
 }
 
 // Manager maintains a set of discovery providers and sends each update to a channel used by other packages.
-// Targets are grouped by target set names.
-// When a given target set doesn't include any targets the manager doesn't send any updates for this target set.
+// Targets sent to the channel are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
 	actionCh       chan func(context.Context)
@@ -181,18 +180,10 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	m.actionCh <- func(ctx context.Context) {
 		tSetsAll := map[string][]*targetgroup.Group{}
 		for pkey, tsets := range m.targets {
-			del := true
 			for _, tg := range tsets {
-				// Don't add a target set if the target group has no targets.
-				// This happens when a Discoverer sends an empty targets array for a group to indicate that these targets have been removed.
-				if len(tg.Targets) != 0 {
-					tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
-					del = false
-				}
-			}
-			// Delete the empty map for this target set to avoid memory leaks.
-			if del {
-				delete(m.targets, pkey)
+				// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
+				// to singal that is needs to stop all scrape loops for this target set.
+				tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
 			}
 		}
 		tSets <- tSetsAll
