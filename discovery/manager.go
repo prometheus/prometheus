@@ -75,7 +75,7 @@ type Manager struct {
 	actionCh       chan func(context.Context)
 	discoverCancel []context.CancelFunc
 	// Some Discoverers(eg. k8s) send only the updates for a given target group
-	// so we use map[tg.Source]*targetgroup.Group to  know which group to update.
+	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
 	targets map[poolKey]map[string]*targetgroup.Group
 	// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
