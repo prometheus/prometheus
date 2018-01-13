@@ -116,6 +116,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
+			// Using panic as t.Fatalf is not thread safe!
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
 	}()
@@ -212,6 +213,7 @@ func TestRoutePrefix(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
+			// Using panic as t.Fatalf is not thread safe!
 			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
 	}()
