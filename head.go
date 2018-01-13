@@ -397,7 +397,7 @@ func (h *rangeHead) Tombstones() (TombstoneReader, error) {
 	return h.head.tombstones, nil
 }
 
-// initAppender is a helper to initialize the time bounds of a the head
+// initAppender is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
 type initAppender struct {
 	app  Appender
@@ -604,7 +604,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	return nil
 }
 
-// gc removes data before the minimum timestmap from the head.
+// gc removes data before the minimum timestamp from the head.
 func (h *Head) gc() {
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
@@ -962,7 +962,7 @@ func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 }
 
 // stripeSeries locks modulo ranges of IDs and hashes to reduce lock contention.
-// The locks are padded to not be on the same cache line. Filling the badded space
+// The locks are padded to not be on the same cache line. Filling the padded space
 // with the maps was profiled to be slower – likely due to the additional pointer
 // dereferences.
 type stripeSeries struct {
@@ -1092,7 +1092,7 @@ type sample struct {
 }
 
 // memSeries is the in-memory representation of a series. None of its methods
-// are goroutine safe and its the callers responsibility to lock it.
+// are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	sync.Mutex
 
