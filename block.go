@@ -151,6 +151,9 @@ type BlockMeta struct {
 
 	// Information on compactions the block was created from.
 	Compaction BlockMetaCompaction `json:"compaction"`
+
+	// Version of the index format.
+	Version int `json:"version"`
 }
 
 // BlockStats contains stats about contents of a block.
@@ -176,12 +179,6 @@ const (
 	flagStd  = 1
 )
 
-type blockMeta struct {
-	Version int `json:"version"`
-
-	*BlockMeta
-}
-
 const indexFilename = "index"
 const metaFilename = "meta.json"
 
@@ -193,16 +190,16 @@ func readMetaFile(dir string) (*BlockMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	var m blockMeta
+	var m BlockMeta
 
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
-	if m.Version != 1 {
+	if m.Version != 1 && m.Version != 2 {
 		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 
-	return m.BlockMeta, nil
+	return &m, nil
 }
 
 func writeMetaFile(dir string, meta *BlockMeta) error {
@@ -219,7 +216,8 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 	enc.SetIndent("", "\t")
 
 	var merr MultiError
-	if merr.Add(enc.Encode(&blockMeta{Version: 1, BlockMeta: meta})); merr.Err() != nil {
+
+	if merr.Add(enc.Encode(meta)); merr.Err() != nil {
 		merr.Add(f.Close())
 		return merr.Err()
 	}
@@ -255,7 +253,7 @@ func OpenBlock(dir string, pool chunkenc.Pool) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	ir, err := index.NewFileReader(filepath.Join(dir, "index"))
+	ir, err := index.NewFileReader(filepath.Join(dir, "index"), meta.Version)
 	if err != nil {
 		return nil, err
 	}

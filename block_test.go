@@ -42,7 +42,7 @@ func TestSetCompactionFailed(t *testing.T) {
 func createEmptyBlock(t *testing.T, dir string) *Block {
 	testutil.Ok(t, os.MkdirAll(dir, 0777))
 
-	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{}))
+	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{Version: 2}))
 
 	ir, err := index.NewWriter(filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
