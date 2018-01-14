@@ -83,9 +83,11 @@ func (m *ScrapeManager) Stop() {
 func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 	done := make(chan struct{})
 	m.actionCh <- func() {
+		c := make(map[string]*config.ScrapeConfig)
 		for _, scfg := range cfg.ScrapeConfigs {
-			m.scrapeConfigs[scfg.JobName] = scfg
+			c[scfg.JobName] = scfg
 		}
+		m.scrapeConfigs = c
 		close(done)
 	}
 	<-done
