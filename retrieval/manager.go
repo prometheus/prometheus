@@ -146,20 +146,15 @@ func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
 		} else {
 			existing.Sync(tgroup)
 		}
+	}
 
-		// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
-		jobs := make(map[string]struct{})
-
-		for k := range m.scrapeConfigs {
-			jobs[k] = struct{}{}
-		}
-
-		for name, sp := range m.scrapePools {
-			if _, ok := jobs[name]; !ok {
-				sp.stop()
-				delete(m.scrapePools, name)
-			}
+	// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
+	for name, sp := range m.scrapePools {
+		if _, ok := m.scrapeConfigs[name]; !ok {
+			sp.stop()
+			delete(m.scrapePools, name)
 		}
 	}
+
 	return nil
 }
