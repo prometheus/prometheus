@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -103,11 +104,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "initial1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 							{
-								Source:  "initial2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							}},
 					},
@@ -116,11 +117,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
-						Source:  "initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 				},
@@ -133,11 +134,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp1-initial1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 							{
-								Source:  "tp1-initial2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
@@ -147,7 +148,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp2-initial1",
+								Source:  "tp2_group1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 						},
@@ -158,24 +159,24 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
-						Source:  "tp1-initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "tp1-initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 				}, {
 					{
-						Source:  "tp1-initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "tp1-initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 					{
-						Source:  "tp2-initial1",
+						Source:  "tp2_group1",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 				},
@@ -188,48 +189,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "initial1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 							{
-								Source:  "initial2",
-								Targets: []model.LabelSet{{"__instance__": "2"}},
-							},
-						},
-						interval: 0,
-					},
-					{
-						targetGroups: []targetgroup.Group{},
-						interval:     10,
-					},
-				},
-			},
-			expectedTargets: [][]*targetgroup.Group{
-				{
-					{
-						Source:  "initial1",
-						Targets: []model.LabelSet{{"__instance__": "1"}},
-					},
-					{
-						Source:  "initial2",
-						Targets: []model.LabelSet{{"__instance__": "2"}},
-					},
-				},
-				{},
-			},
-		},
-		{
-			title: "Single TP initials and new groups",
-			updates: map[string][]update{
-				"tp1": {
-					{
-						targetGroups: []targetgroup.Group{
-							{
-								Source:  "initial1",
-								Targets: []model.LabelSet{{"__instance__": "1"}},
-							},
-							{
-								Source:  "initial2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
@@ -238,12 +202,12 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "update1",
-								Targets: []model.LabelSet{{"__instance__": "3"}},
+								Source:  "tp1_group1",
+								Targets: []model.LabelSet{},
 							},
 							{
-								Source:  "update2",
-								Targets: []model.LabelSet{{"__instance__": "4"}},
+								Source:  "tp1_group2",
+								Targets: []model.LabelSet{},
 							},
 						},
 						interval: 10,
@@ -253,22 +217,85 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
-						Source:  "initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 				},
 				{
 					{
-						Source:  "update1",
+						Source:  "tp1_group1",
+						Targets: []model.LabelSet{},
+					},
+					{
+						Source:  "tp1_group2",
+						Targets: []model.LabelSet{},
+					},
+				},
+			},
+		},
+		{
+			title: "Single TP initials and new groups",
+			updates: map[string][]update{
+				"tp1": {
+					{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tp1_group1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+							{
+								Source:  "tp1_group2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+						interval: 0,
+					},
+					{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tp1_group1",
+								Targets: []model.LabelSet{{"__instance__": "3"}},
+							},
+							{
+								Source:  "tp1_group2",
+								Targets: []model.LabelSet{{"__instance__": "4"}},
+							},
+							{
+								Source:  "tp1_group3",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+						interval: 10,
+					},
+				},
+			},
+			expectedTargets: [][]*targetgroup.Group{
+				{
+					{
+						Source:  "tp1_group1",
+						Targets: []model.LabelSet{{"__instance__": "1"}},
+					},
+					{
+						Source:  "tp1_group2",
+						Targets: []model.LabelSet{{"__instance__": "2"}},
+					},
+				},
+				{
+					{
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 					{
-						Source:  "update2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "4"}},
+					},
+					{
+						Source:  "tp1_group3",
+						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 				},
 			},
@@ -280,11 +307,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp1-initial1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 							{
-								Source:  "tp1-initial2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
@@ -293,11 +320,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp1-update1",
+								Source:  "tp1_group3",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 							{
-								Source:  "tp1-update2",
+								Source:  "tp1_group4",
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
@@ -308,11 +335,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp2-initial1",
+								Source:  "tp2_group1",
 								Targets: []model.LabelSet{{"__instance__": "5"}},
 							},
 							{
-								Source:  "tp2-initial2",
+								Source:  "tp2_group2",
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
@@ -321,11 +348,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp2-update1",
+								Source:  "tp2_group3",
 								Targets: []model.LabelSet{{"__instance__": "7"}},
 							},
 							{
-								Source:  "tp2-update2",
+								Source:  "tp2_group4",
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
@@ -336,82 +363,106 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
-						Source:  "tp1-initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "tp1-initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 				},
 				{
 					{
-						Source:  "tp1-initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "tp1-initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 					{
-						Source:  "tp2-initial1",
+						Source:  "tp2_group1",
 						Targets: []model.LabelSet{{"__instance__": "5"}},
 					},
 					{
-						Source:  "tp2-initial2",
+						Source:  "tp2_group2",
 						Targets: []model.LabelSet{{"__instance__": "6"}},
 					},
 				},
 				{
 					{
-						Source:  "tp1-initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "tp1-initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 					{
-						Source:  "tp2-update1",
+						Source:  "tp2_group1",
+						Targets: []model.LabelSet{{"__instance__": "5"}},
+					},
+					{
+						Source:  "tp2_group2",
+						Targets: []model.LabelSet{{"__instance__": "6"}},
+					},
+					{
+						Source:  "tp2_group3",
 						Targets: []model.LabelSet{{"__instance__": "7"}},
 					},
 					{
-						Source:  "tp2-update2",
+						Source:  "tp2_group4",
 						Targets: []model.LabelSet{{"__instance__": "8"}},
 					},
 				},
 				{
 					{
-						Source:  "tp1-update1",
+						Source:  "tp1_group1",
+						Targets: []model.LabelSet{{"__instance__": "1"}},
+					},
+					{
+						Source:  "tp1_group2",
+						Targets: []model.LabelSet{{"__instance__": "2"}},
+					},
+					{
+						Source:  "tp1_group3",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 					{
-						Source:  "tp1-update2",
+						Source:  "tp1_group4",
 						Targets: []model.LabelSet{{"__instance__": "4"}},
 					},
 					{
-						Source:  "tp2-update1",
+						Source:  "tp2_group1",
+						Targets: []model.LabelSet{{"__instance__": "5"}},
+					},
+					{
+						Source:  "tp2_group2",
+						Targets: []model.LabelSet{{"__instance__": "6"}},
+					},
+					{
+						Source:  "tp2_group3",
 						Targets: []model.LabelSet{{"__instance__": "7"}},
 					},
 					{
-						Source:  "tp2-update2",
+						Source:  "tp2_group4",
 						Targets: []model.LabelSet{{"__instance__": "8"}},
 					},
 				},
 			},
 		},
 		{
-			title: "One tp initials arrive after other tp updates.",
+			title: "One TP initials arrive after other TP updates.",
 			updates: map[string][]update{
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp1-initial1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 							{
-								Source:  "tp1-initial2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
@@ -420,11 +471,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp1-update1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 							{
-								Source:  "tp1-update2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
@@ -435,11 +486,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp2-initial1",
+								Source:  "tp2_group1",
 								Targets: []model.LabelSet{{"__instance__": "5"}},
 							},
 							{
-								Source:  "tp2-initial2",
+								Source:  "tp2_group2",
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
@@ -448,11 +499,11 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "tp2-update1",
+								Source:  "tp2_group1",
 								Targets: []model.LabelSet{{"__instance__": "7"}},
 							},
 							{
-								Source:  "tp2-update2",
+								Source:  "tp2_group2",
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
@@ -463,57 +514,57 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
-						Source:  "tp1-initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "tp1-initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 				},
 				{
 					{
-						Source:  "tp1-update1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 					{
-						Source:  "tp1-update2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "4"}},
 					},
 				},
 				{
 					{
-						Source:  "tp1-update1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 					{
-						Source:  "tp1-update2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "4"}},
 					},
 					{
-						Source:  "tp2-initial1",
+						Source:  "tp2_group1",
 						Targets: []model.LabelSet{{"__instance__": "5"}},
 					},
 					{
-						Source:  "tp2-initial2",
+						Source:  "tp2_group2",
 						Targets: []model.LabelSet{{"__instance__": "6"}},
 					},
 				},
 				{
 					{
-						Source:  "tp1-update1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 					{
-						Source:  "tp1-update2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "4"}},
 					},
 					{
-						Source:  "tp2-update1",
+						Source:  "tp2_group1",
 						Targets: []model.LabelSet{{"__instance__": "7"}},
 					},
 					{
-						Source:  "tp2-update2",
+						Source:  "tp2_group2",
 						Targets: []model.LabelSet{{"__instance__": "8"}},
 					},
 				},
@@ -521,34 +572,43 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 		},
 
 		{
-			title: "Single TP Single provider empty update in between",
+			title: "Single TP empty update in between",
 			updates: map[string][]update{
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "initial1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 							{
-								Source:  "initial2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
 						interval: 30,
 					},
 					{
-						targetGroups: []targetgroup.Group{},
-						interval:     10,
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tp1_group1",
+								Targets: []model.LabelSet{},
+							},
+							{
+								Source:  "tp1_group2",
+								Targets: []model.LabelSet{},
+							},
+						},
+						interval: 10,
 					},
 					{
 						targetGroups: []targetgroup.Group{
 							{
-								Source:  "update1",
+								Source:  "tp1_group1",
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 							{
-								Source:  "update2",
+								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
@@ -559,22 +619,31 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			expectedTargets: [][]*targetgroup.Group{
 				{
 					{
-						Source:  "initial1",
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "1"}},
 					},
 					{
-						Source:  "initial2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "2"}},
 					},
 				},
-				{},
 				{
 					{
-						Source:  "update1",
+						Source:  "tp1_group1",
+						Targets: []model.LabelSet{},
+					},
+					{
+						Source:  "tp1_group2",
+						Targets: []model.LabelSet{},
+					},
+				},
+				{
+					{
+						Source:  "tp1_group1",
 						Targets: []model.LabelSet{{"__instance__": "3"}},
 					},
 					{
-						Source:  "update2",
+						Source:  "tp1_group2",
 						Targets: []model.LabelSet{{"__instance__": "4"}},
 					},
 				},
@@ -606,6 +675,8 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 				break Loop
 			case tsetMap := <-discoveryManager.SyncCh():
 				for _, received := range tsetMap {
+					// Need to sort by the Groups source as the Discovery manager doesn't guarantee the order.
+					sort.Sort(byGroupSource(received))
 					if !reflect.DeepEqual(received, testCase.expectedTargets[x]) {
 						var receivedFormated string
 						for _, receivedTargets := range received {
@@ -628,7 +699,7 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	verifyPresence := func(tSets map[poolKey][]*targetgroup.Group, poolKey poolKey, label string, present bool) {
+	verifyPresence := func(tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
 		if _, ok := tSets[poolKey]; !ok {
 			t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
 			return
@@ -729,3 +800,10 @@ func (tp mockdiscoveryProvider) sendUpdates() {
 		tp.up <- tgs
 	}
 }
+
+// byGroupSource implements sort.Interface so we can sort by the Source field.
+type byGroupSource []*targetgroup.Group
+
+func (a byGroupSource) Len() int           { return len(a) }
+func (a byGroupSource) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byGroupSource) Less(i, j int) bool { return a[i].Source < a[j].Source }

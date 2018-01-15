@@ -16,7 +16,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -59,31 +58,26 @@ type poolKey struct {
 	provider string
 }
 
-// byProvider implements sort.Interface for []poolKey based on the provider field.
-// Sorting is needed so that we can have predictable tests.
-type byProvider []poolKey
-
-func (a byProvider) Len() int           { return len(a) }
-func (a byProvider) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byProvider) Less(i, j int) bool { return a[i].provider < a[j].provider }
-
 // NewManager is the Discovery Manager constructor
 func NewManager(logger log.Logger) *Manager {
 	return &Manager{
 		logger:         logger,
 		actionCh:       make(chan func(context.Context)),
 		syncCh:         make(chan map[string][]*targetgroup.Group),
-		targets:        make(map[poolKey][]*targetgroup.Group),
+		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
 	}
 }
 
-// Manager maintains a set of discovery providers and sends each update to a channel used by other packages.
+// Manager maintains a set of discovery providers and sends each update to a map channel.
+// Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
 	actionCh       chan func(context.Context)
 	discoverCancel []context.CancelFunc
-	targets        map[poolKey][]*targetgroup.Group
+	// Some Discoverers(eg. k8s) send only the updates for a given target group
+	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
+	targets map[poolKey]map[string]*targetgroup.Group
 	// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
 }
@@ -143,8 +137,8 @@ func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan
 			if !ok {
 				return
 			}
-			m.addGroup(poolKey, tgs)
-			m.syncCh <- m.allGroups(poolKey)
+			m.updateGroup(poolKey, tgs)
+			m.syncCh <- m.allGroups()
 		}
 	}
 }
@@ -153,16 +147,21 @@ func (m *Manager) cancelDiscoverers() {
 	for _, c := range m.discoverCancel {
 		c()
 	}
-	m.targets = make(map[poolKey][]*targetgroup.Group)
+	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.discoverCancel = nil
 }
 
-func (m *Manager) addGroup(poolKey poolKey, tg []*targetgroup.Group) {
+func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	done := make(chan struct{})
 
 	m.actionCh <- func(ctx context.Context) {
-		if tg != nil {
-			m.targets[poolKey] = tg
+		for _, tg := range tgs {
+			if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
+				if _, ok := m.targets[poolKey]; !ok {
+					m.targets[poolKey] = make(map[string]*targetgroup.Group)
+				}
+				m.targets[poolKey][tg.Source] = tg
+			}
 		}
 		close(done)
 
@@ -170,24 +169,16 @@ func (m *Manager) addGroup(poolKey poolKey, tg []*targetgroup.Group) {
 	<-done
 }
 
-func (m *Manager) allGroups(pk poolKey) map[string][]*targetgroup.Group {
+func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := make(chan map[string][]*targetgroup.Group)
 
 	m.actionCh <- func(ctx context.Context) {
-
-		// Sorting by the poolKey is needed so that we can have predictable tests.
-		var pKeys []poolKey
-		for pk := range m.targets {
-			pKeys = append(pKeys, pk)
-		}
-		sort.Sort(byProvider(pKeys))
-
 		tSetsAll := map[string][]*targetgroup.Group{}
-		for _, pk := range pKeys {
-			for _, tg := range m.targets[pk] {
-				if tg.Source != "" { // Don't add empty targets.
-					tSetsAll[pk.setName] = append(tSetsAll[pk.setName], tg)
-				}
+		for pkey, tsets := range m.targets {
+			for _, tg := range tsets {
+				// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
+				// to signal that it needs to stop all scrape loops for this target set.
+				tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
 			}
 		}
 		tSets <- tSetsAll
