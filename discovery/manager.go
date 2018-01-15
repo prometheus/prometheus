@@ -69,8 +69,8 @@ func NewManager(logger log.Logger) *Manager {
 	}
 }
 
-// Manager maintains a set of discovery providers and sends each update to a channel used by other packages.
-// Targets sent to the channel are grouped by the target set name.
+// Manager maintains a set of discovery providers and sends each update to a map channel.
+// Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
 	actionCh       chan func(context.Context)
@@ -182,7 +182,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 		for pkey, tsets := range m.targets {
 			for _, tg := range tsets {
 				// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
-				// to singal that is needs to stop all scrape loops for this target set.
+				// to signal that it needs to stop all scrape loops for this target set.
 				tSetsAll[pkey.setName] = append(tSetsAll[pkey.setName], tg)
 			}
 		}
