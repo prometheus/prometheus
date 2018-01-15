@@ -83,9 +83,11 @@ func (m *ScrapeManager) Stop() {
 func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 	done := make(chan struct{})
 	m.actionCh <- func() {
+		c := make(map[string]*config.ScrapeConfig)
 		for _, scfg := range cfg.ScrapeConfigs {
-			m.scrapeConfigs[scfg.JobName] = scfg
+			c[scfg.JobName] = scfg
 		}
+		m.scrapeConfigs = c
 		close(done)
 	}
 	<-done
@@ -144,20 +146,15 @@ func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
 		} else {
 			existing.Sync(tgroup)
 		}
+	}
 
-		// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
-		jobs := make(map[string]struct{})
-
-		for k := range m.scrapeConfigs {
-			jobs[k] = struct{}{}
-		}
-
-		for name, sp := range m.scrapePools {
-			if _, ok := jobs[name]; !ok {
-				sp.stop()
-				delete(m.scrapePools, name)
-			}
+	// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
+	for name, sp := range m.scrapePools {
+		if _, ok := m.scrapeConfigs[name]; !ok {
+			sp.stop()
+			delete(m.scrapePools, name)
 		}
 	}
+
 	return nil
 }
