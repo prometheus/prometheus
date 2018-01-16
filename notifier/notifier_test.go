@@ -15,6 +15,7 @@ package notifier
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -487,7 +488,11 @@ alerting:
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {
 
-		tgs[fmt.Sprintf("%p", cfg.AlertingConfig.AlertmanagerConfigs[0])] = []*targetgroup.Group{
+		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
+		if err != nil {
+			t.Fatalf("Error creating config hash:%v", err)
+		}
+		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
 			tt.in,
 		}
 		n.reload(tgs)
