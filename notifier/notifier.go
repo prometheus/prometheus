@@ -257,6 +257,7 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 		ams.metrics = n.metrics
 
 		// The config pointer is used for the map lookup identifier.
+		// TODO Krasi - Maybe use the slice index as the reference.
 		amSets[fmt.Sprintf("%p", cfg)] = ams
 	}
 
