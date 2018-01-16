@@ -16,6 +16,7 @@ package notifier
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -256,9 +257,12 @@ func (n *Notifier) ApplyConfig(conf *config.Config) error {
 
 		ams.metrics = n.metrics
 
-		// The config pointer is used for the map lookup identifier.
-		// TODO Krasi - Maybe use the slice index as the reference.
-		amSets[fmt.Sprintf("%p", cfg)] = ams
+		// The config hash is used for the map lookup identifier.
+		b, err := json.Marshal(cfg)
+		if err != nil {
+			return err
+		}
+		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
 	}
 
 	n.alertmanagers = amSets

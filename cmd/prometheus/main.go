@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -295,9 +297,12 @@ func main() {
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
-				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config pointer as the identifier.
-				// TODO Krasi - Maybe use the slice index as the reference.
-				c[fmt.Sprintf("%p", v)] = v.ServiceDiscoveryConfig
+				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				b, err := json.Marshal(v)
+				if err != nil {
+					return err
+				}
+				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
 			}
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
