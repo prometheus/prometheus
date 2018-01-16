@@ -29,6 +29,7 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
@@ -156,8 +157,8 @@ type Engine struct {
 	// The gate limiting the maximum number of concurrent and waiting queries.
 	gate    *queryGate
 	options *EngineOptions
-
-	logger log.Logger
+	logger  log.Logger
+	buffers *pool.Pool
 }
 
 // Queryable allows opening a storage querier.
@@ -224,13 +225,19 @@ func NewEngine(queryable Queryable, o *EngineOptions) *Engine {
 			metrics.queryResultSort,
 		)
 	}
-	return &Engine{
+
+	e := &Engine{
 		queryable: queryable,
 		gate:      newQueryGate(o.MaxConcurrentQueries),
 		options:   o,
 		logger:    o.Logger,
 		metrics:   metrics,
 	}
+	b := pool.New()
+	b.Add("matrix", 163, 100e6, 3, func(sz int) interface{} { return make(Matrix, 0, sz) })
+	b.Add("vector", 163, 100e6, 3, func(sz int) interface{} { return make([]Point, 0, sz) })
+	e.buffers = b
+	return e
 }
 
 // EngineOptions contains configuration parameters for an Engine.
@@ -388,7 +395,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			Timestamp: start,
 			ctx:       ctx,
 			logger:    ng.logger,
+			buffers:   ng.buffers,
 		}
+
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
 			return nil, err
@@ -424,6 +433,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			Timestamp: t,
 			ctx:       ctx,
 			logger:    ng.logger,
+			buffers:   ng.buffers,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -570,13 +580,11 @@ func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 // engine through which it connects to a querier and reports errors. On timeout or
 // cancellation of its context it terminates.
 type evaluator struct {
-	ctx context.Context
-
-	Timestamp int64 // time in milliseconds
-
+	ctx        context.Context
+	Timestamp  int64 // time in milliseconds
 	finalizers []func()
-
-	logger log.Logger
+	logger     log.Logger
+	buffers    *pool.Pool
 }
 
 func (ev *evaluator) close() {
@@ -807,31 +815,31 @@ func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
 
 var pointPool = sync.Pool{}
 
-func getPointSlice(sz int) []Point {
-	p := pointPool.Get()
-	if p != nil {
-		return p.([]Point)
-	}
-	return make([]Point, 0, sz)
-}
+// func getPointSlice(sz int) []Point {
+// 	p := pointPool.Get()
+// 	if p != nil {
+// 		return p.([]Point)
+// 	}
+// 	return make([]Point, 0, sz)
+// }
 
-func putPointSlice(p []Point) {
-	pointPool.Put(p[:0])
-}
+// func putPointSlice(p []Point) {
+// 	pointPool.Put(p[:0])
+// }
 
-var matrixPool = sync.Pool{}
+// var matrixPool = sync.Pool{}
 
-func getMatrix(sz int) Matrix {
-	m := matrixPool.Get()
-	if m != nil {
-		return m.(Matrix)
-	}
-	return make(Matrix, 0, sz)
-}
+// func getMatrix(sz int) Matrix {
+// 	m := matrixPool.Get()
+// 	if m != nil {
+// 		return m.(Matrix)
+// 	}
+// 	return make(Matrix, 0, sz)
+// }
 
-func putMatrix(m Matrix) {
-	matrixPool.Put(m[:0])
-}
+// func putMatrix(m Matrix) {
+// 	matrixPool.Put(m[:0])
+// }
 
 // matrixSelector evaluates a *MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
@@ -839,20 +847,45 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		offset = durationMilliseconds(node.Offset)
 		maxt   = ev.Timestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = getMatrix(len(node.series))
-		// Write all points into a single slice to avoid lots of tiny allocations.
-		allPoints = getPointSlice(5 * len(matrix))
 	)
+
+	// Since there is no other way to know the exact number os sample run a loop to count them and allocate the a big enough array.
+	// This is cheaper than appending the array on every iteration.
+	var numSamples = 1
+	for _, it := range node.iterators {
+		ok := it.Seek(maxt)
+		if !ok {
+			if it.Err() != nil {
+				ev.error(it.Err())
+			}
+		}
+		buf := it.Buffer()
+		for buf.Next() {
+			numSamples++
+
+		}
+	}
+
+	m, err := ev.buffers.Get("matrix", len(node.series))
+	a, err := ev.buffers.Get("vector", numSamples)
+	if err != nil {
+		// TODO ????????????????
+	}
+	matrix := m.(Matrix)
+	allPoints := a.([]Point)
+
+	//fmt.Println(cap(allPoints))
 
 	ev.finalizers = append(ev.finalizers,
-		func() { putPointSlice(allPoints) },
-		func() { putMatrix(matrix) },
+		func() { ev.buffers.Put("vector", allPoints) },
+		func() { ev.buffers.Put("matrix", matrix) },
 	)
 
+	var ss Series
 	for i, it := range node.iterators {
 		start := len(allPoints)
 
-		ss := Series{
+		ss = Series{
 			Metric: node.series[i].Labels(),
 		}
 
@@ -888,6 +921,8 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 			matrix = append(matrix, ss)
 		}
 	}
+
+	fmt.Println(len(allPoints))
 	return matrix
 }
 

@@ -148,7 +148,9 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		level.Error(logger).Log("msg", "Error creating HTTP client", "err", err)
 	}
 
-	buffers := pool.NewBytesPool(163, 100e6, 3)
+	buffers := pool.New()
+	// Each scrape loop needs only one buffer pool so that is why we can use the "buffers" pointer as the map id for the lookup.
+	buffers.Add(buffers, 163, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
@@ -160,6 +162,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		loops:      map[uint64]loop{},
 		logger:     logger,
 	}
+
 	sp.newLoop = func(t *Target, s scraper) loop {
 		return newScrapeLoop(
 			ctx,
@@ -474,7 +477,7 @@ type scrapeLoop struct {
 	l              log.Logger
 	cache          *scrapeCache
 	lastScrapeSize int
-	buffers        *pool.BytesPool
+	buffers        *pool.Pool
 
 	appender            func() storage.Appender
 	sampleMutator       labelsMutator
@@ -589,7 +592,7 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
-	buffers *pool.BytesPool,
+	buffers *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func() storage.Appender,
@@ -598,7 +601,9 @@ func newScrapeLoop(ctx context.Context,
 		l = log.NewNopLogger()
 	}
 	if buffers == nil {
-		buffers = pool.NewBytesPool(1e3, 1e6, 3)
+		buffers = pool.New()
+		// Each scrape loop needs only one buffer pool so that is why we can use the "buffers" pointer as the map id for the lookup.
+		buffers.Add(buffers, 163, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 	}
 	sl := &scrapeLoop{
 		scraper:             sc,
@@ -655,19 +660,26 @@ mainLoop:
 				time.Since(last).Seconds(),
 			)
 		}
-		b := sl.buffers.Get(sl.lastScrapeSize)
-		buf := bytes.NewBuffer(b)
+		temp, err := sl.buffers.Get(sl.buffers, sl.lastScrapeSize)
+		if err != nil {
+			level.Error(sl.l).Log("msg", "scrape buffer pool failed to initialize", "err", err)
+		}
+		scrapePool, ok := temp.([]byte)
+		if !ok {
+			level.Error(sl.l).Log("msg", "scrape buffer pool didn't validate type assertion")
+		}
 
+		buf := bytes.NewBuffer(scrapePool)
 		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
 		cancel()
 
 		if scrapeErr == nil {
-			b = buf.Bytes()
+			scrapePool = buf.Bytes()
 			// NOTE: There were issues with misbehaving clients in the past
 			// that occasionally returned empty results. We don't want those
 			// to falsely reset our buffer size.
-			if len(b) > 0 {
-				sl.lastScrapeSize = len(b)
+			if len(scrapePool) > 0 {
+				sl.lastScrapeSize = len(scrapePool)
 			}
 		} else {
 			level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
@@ -678,7 +690,7 @@ mainLoop:
 
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
-		total, added, appErr := sl.append(b, start)
+		total, added, appErr := sl.append(scrapePool, start)
 		if appErr != nil {
 			level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
 			// The append failed, probably due to a parse error or sample limit.
@@ -688,7 +700,7 @@ mainLoop:
 			}
 		}
 
-		sl.buffers.Put(b)
+		sl.buffers.Put(sl.buffers, scrapePool)
 
 		if scrapeErr == nil {
 			scrapeErr = appErr
