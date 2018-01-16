@@ -296,6 +296,7 @@ func main() {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
 				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config pointer as the identifier.
+				// TODO Krasi - Maybe use the slice index as the reference.
 				c[fmt.Sprintf("%p", v)] = v.ServiceDiscoveryConfig
 			}
 			return discoveryManagerNotify.ApplyConfig(c)
