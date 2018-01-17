@@ -286,9 +286,9 @@ func main() {
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
+		// The Scrape and notifier managers need to reload before the Discovery manager as
+		// they need to read the most updated config when receiving the new targets list.
 		notifier.ApplyConfig,
-		// The Scrape manager needs to reload before the Discvoery manager as
-		// it needs to read the latest config when it receives the new targets list.
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -343,6 +343,15 @@ func main() {
 				select {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+					// Release the reloadReady channel so that waiting blocks can exit normally.
+					select {
+					case _, ok := <-reloadReady:
+						if ok {
+							close(reloadReady)
+						}
+					default:
+					}
+
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
@@ -388,8 +397,9 @@ func main() {
 			func() error {
 				select {
 				// When the scrape manager receives a new targets list
-				// it needs to read a valid config for each target and
-				// it depends on the config being in sync with the discovery manager.
+				// it needs to read a valid config for each job and
+				// it depends on the config being in sync with the discovery manager
+				// so we wait until the config is fully loaded.
 				case <-reloadReady:
 					break
 				}
@@ -417,9 +427,6 @@ func main() {
 				select {
 				case <-reloadReady:
 					break
-				// In case a shutdown is initiated before the reloadReady is released.
-				case <-cancel:
-					return nil
 				}
 
 				for {
@@ -462,7 +469,15 @@ func main() {
 					return fmt.Errorf("Error loading config %s", err)
 				}
 
-				close(reloadReady)
+				// Check that it is not already closed by the SIGTERM handling.
+				select {
+				case _, ok := <-reloadReady:
+					if ok {
+						close(reloadReady)
+					}
+				default:
+				}
+
 				webHandler.Ready()
 				level.Info(logger).Log("msg", "Server is ready to receive requests.")
 				<-cancel
@@ -539,6 +554,14 @@ func main() {
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
 			func() error {
+				select {
+				// When the notifier manager receives a new targets list
+				// it needs to read a valid config for each job and
+				// it depends on the config being in sync with the discovery manager
+				// so we wait until the config is fully loaded.
+				case <-reloadReady:
+					break
+				}
 				notifier.Run(discoveryManagerNotify.SyncCh())
 				return nil
 			},
