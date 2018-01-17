@@ -287,6 +287,9 @@ func main() {
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
 		notifier.ApplyConfig,
+		// The Scrape manager needs to reload before the Discvoery manager as
+		// it needs to read the latest config when it receives the new targets list.
+		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.ScrapeConfigs {
@@ -306,7 +309,6 @@ func main() {
 			}
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
-		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.
 			var files []string
@@ -384,6 +386,14 @@ func main() {
 	{
 		g.Add(
 			func() error {
+				select {
+				// When the scrape manager receives a new targets list
+				// it needs to read a valid config for each target and
+				// it depends on the config being in sync with the discovery manager.
+				case <-reloadReady:
+					break
+				}
+
 				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
