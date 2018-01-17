@@ -35,6 +35,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -57,6 +58,41 @@ func TestNewScrapePool(t *testing.T) {
 	}
 	if sp.newLoop == nil {
 		t.Fatalf("newLoop function not initialized")
+	}
+}
+
+func TestDroppedTargetsList(t *testing.T) {
+	var (
+		app = &nopAppendable{}
+		cfg = &config.ScrapeConfig{
+			JobName:        "dropMe",
+			ScrapeInterval: model.Duration(1),
+			RelabelConfigs: []*config.RelabelConfig{
+				{
+					Action:       config.RelabelDrop,
+					Regex:        mustNewRegexp("dropMe"),
+					SourceLabels: model.LabelNames{"job"},
+				},
+			},
+		}
+		tgs = []*targetgroup.Group{
+			{
+				Targets: []model.LabelSet{
+					model.LabelSet{model.AddressLabel: "127.0.0.1:9090"},
+				},
+			},
+		}
+		sp                     = newScrapePool(cfg, app, nil)
+		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __metrics_path__=\"\", __scheme__=\"\", job=\"dropMe\"}"
+		expectedLength         = 1
+	)
+	sp.Sync(tgs)
+	sp.Sync(tgs)
+	if len(sp.droppedTargets) != expectedLength {
+		t.Fatalf("Length of dropped targets exceeded expected length, expected %v, got %v", expectedLength, len(sp.droppedTargets))
+	}
+	if sp.droppedTargets[0].DiscoveredLabels().String() != expectedLabelSetString {
+		t.Fatalf("Got %v, expected %v", sp.droppedTargets[0].DiscoveredLabels().String(), expectedLabelSetString)
 	}
 }
 
