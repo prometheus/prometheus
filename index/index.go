@@ -273,17 +273,17 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	w.buf2.putUvarint(len(lset))
 
 	for _, l := range lset {
-		offset, ok := w.symbols[l.Name]
+		index, ok := w.symbols[l.Name]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Name)
 		}
-		w.buf2.putUvarint32(offset)
+		w.buf2.putUvarint32(index)
 
-		offset, ok = w.symbols[l.Value]
+		index, ok = w.symbols[l.Value]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Value)
 		}
-		w.buf2.putUvarint32(offset)
+		w.buf2.putUvarint32(index)
 	}
 
 	w.buf2.putUvarint(len(chunks))
@@ -341,8 +341,8 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 
 	w.symbols = make(map[string]uint32, len(symbols))
 
-	for _, s := range symbols {
-		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
+	for index, s := range symbols {
+		w.symbols[s] = uint32(index)
 		w.buf2.putUvarintStr(s)
 	}
 
@@ -382,11 +382,11 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	w.buf2.putBE32int(valt.Len())
 
 	for _, v := range valt.s {
-		offset, ok := w.symbols[v]
+		index, ok := w.symbols[v]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", v)
 		}
-		w.buf2.putBE32(offset)
+		w.buf2.putBE32(index)
 	}
 
 	w.buf1.reset()
@@ -751,16 +751,14 @@ func (r *Reader) readSymbols(off int) error {
 	d := r.decbufAt(off)
 
 	var (
-		origLen = d.len()
 		cnt     = d.be32int()
-		basePos = uint32(off) + 4
-		nextPos = basePos + uint32(origLen-d.len())
+		nextPos = 0
 	)
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
 		r.symbols[uint32(nextPos)] = s
 
-		nextPos = basePos + uint32(origLen-d.len())
+		nextPos++
 		cnt--
 	}
 	return d.err()
