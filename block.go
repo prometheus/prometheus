@@ -319,7 +319,7 @@ func (pb *Block) Index() (IndexReader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
-	return blockIndexReader{IndexReader: pb.indexr, b: pb}, nil
+	return blockIndexReader{ir: pb.indexr, b: pb}, nil
 }
 
 // Chunks returns a new ChunkReader against the block data.
@@ -344,8 +344,40 @@ func (pb *Block) setCompactionFailed() error {
 }
 
 type blockIndexReader struct {
-	IndexReader
-	b *Block
+	ir IndexReader
+	b  *Block
+}
+
+func (r blockIndexReader) Symbols() (map[string]struct{}, error) {
+	s, err := r.ir.Symbols()
+	return s, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+}
+
+func (r blockIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
+	st, err := r.ir.LabelValues(names...)
+	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+}
+
+func (r blockIndexReader) Postings(name, value string) (index.Postings, error) {
+	p, err := r.ir.Postings(name, value)
+	return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+}
+
+func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
+	return r.ir.SortedPostings(p)
+}
+
+func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+	return errors.Wrapf(
+		r.ir.Series(ref, lset, chks),
+		"block: %s",
+		r.b.Meta().ULID,
+	)
+}
+
+func (r blockIndexReader) LabelIndices() ([][]string, error) {
+	ss, err := r.ir.LabelIndices()
+	return ss, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
 func (r blockIndexReader) Close() error {

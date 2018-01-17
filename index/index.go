@@ -585,6 +585,10 @@ func NewFileReader(path string, version int) (*Reader, error) {
 }
 
 func newReader(b ByteSlice, c io.Closer, version int) (*Reader, error) {
+	if version != 1 && version != 2 {
+		return nil, errors.Errorf("unexpected file version %d", version)
+	}
+
 	r := &Reader{
 		b:        b,
 		c:        c,
@@ -595,10 +599,6 @@ func newReader(b ByteSlice, c io.Closer, version int) (*Reader, error) {
 		version:  version,
 	}
 
-	if version != 1 && version != 2 {
-		return nil, errors.Errorf("unexpected file version %d", version)
-
-	}
 	// Verify magic number.
 	if b.Len() < 4 {
 		return nil, errors.Wrap(errInvalidSize, "index header")
@@ -674,7 +674,7 @@ func (r *Reader) readTOC() error {
 	d := decbuf{b: b[:len(b)-4]}
 
 	if d.crc32() != expCRC {
-		return errInvalidChecksum
+		return errors.Wrap(errInvalidChecksum, "read TOC")
 	}
 
 	r.toc.symbols = d.be64()
@@ -763,7 +763,7 @@ func (r *Reader) readSymbols(off int) error {
 		nextPos = basePos + uint32(origLen-d.len())
 		cnt--
 	}
-	return d.err()
+	return errors.Wrap(d.err(), "read symbols")
 }
 
 // readOffsetTable reads an offset table at the given position calls f for each
@@ -876,7 +876,7 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 	if d.err() != nil {
 		return d.err()
 	}
-	return r.dec.Series(d.get(), lbls, chks)
+	return errors.Wrap(r.dec.Series(d.get(), lbls, chks), "read series")
 }
 
 // Postings returns a postings list for the given label pair.
