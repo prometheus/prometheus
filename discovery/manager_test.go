@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"gopkg.in/yaml.v2"
 )
@@ -743,7 +744,11 @@ scrape_configs:
 	discoveryManager := NewManager(nil)
 	go discoveryManager.Run(ctx)
 
-	discoveryManager.ApplyConfig(cfg)
+	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
 
 	_ = <-discoveryManager.SyncCh()
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
@@ -758,7 +763,11 @@ scrape_configs:
 	if err := yaml.Unmarshal([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
-	discoveryManager.ApplyConfig(cfg)
+	c = make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
 
 	_ = <-discoveryManager.SyncCh()
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)

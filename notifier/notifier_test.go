@@ -15,6 +15,7 @@ package notifier
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	old_ctx "golang.org/x/net/context"
+	yaml "gopkg.in/yaml.v2"
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -33,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPostPath(t *testing.T) {
@@ -173,7 +176,10 @@ func TestHandlerSendAll(t *testing.T) {
 			Password: "testing_password",
 		},
 	}, "auth_alertmanager")
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
@@ -183,9 +189,9 @@ func TestHandlerSendAll(t *testing.T) {
 			Timeout: time.Second,
 		},
 		client: authClient,
-	})
+	}
 
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+	h.alertmanagers["2"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
@@ -194,7 +200,7 @@ func TestHandlerSendAll(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	})
+	}
 
 	for i := range make([]struct{}, maxBatchSize) {
 		h.queue = append(h.queue, &Alert{
@@ -355,7 +361,10 @@ func TestHandlerQueueing(t *testing.T) {
 	},
 		nil,
 	)
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server.URL },
@@ -364,7 +373,7 @@ func TestHandlerQueueing(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	})
+	}
 
 	var alerts []*Alert
 
@@ -374,7 +383,8 @@ func TestHandlerQueueing(t *testing.T) {
 		})
 	}
 
-	go h.Run()
+	c := make(chan map[string][]*targetgroup.Group)
+	go h.Run(c)
 	defer h.Stop()
 
 	h.Send(alerts[:4*maxBatchSize]...)
@@ -440,6 +450,57 @@ func TestLabelSetNotReused(t *testing.T) {
 	if !reflect.DeepEqual(tg, makeInputTargetGroup()) {
 		t.Fatal("Target modified during alertmanager extraction")
 	}
+}
+
+func TestReload(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
+	}
+
+	n := New(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+`
+	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+
+		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
+		if err != nil {
+			t.Fatalf("Error creating config hash:%v", err)
+		}
+		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
+			tt.in,
+		}
+		n.reload(tgs)
+		res := n.Alertmanagers()[0].String()
+
+		testutil.Equals(t, res, tt.out)
+	}
+
 }
 
 func makeInputTargetGroup() *targetgroup.Group {
