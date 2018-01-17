@@ -225,7 +225,7 @@ func (q *mergeQuerier) Select(matchers ...*labels.Matcher) (SeriesSet, error) {
 		}
 		seriesSets = append(seriesSets, set)
 	}
-	return NewMergeSeriesSet(seriesSets), nil
+	return NewMergeSeriesSet(seriesSets...), nil
 }
 
 // LabelValues returns all potential values for a label name.
@@ -302,7 +302,7 @@ type mergeSeriesSet struct {
 
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
-func NewMergeSeriesSet(sets []SeriesSet) SeriesSet {
+func NewMergeSeriesSet(sets ...SeriesSet) SeriesSet {
 	// Sets need to be pre-advanced, so we can introspect the label of the
 	// series under the cursor.
 	var h seriesSetHeap
