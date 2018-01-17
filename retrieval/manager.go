@@ -62,9 +62,7 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error 
 		case f := <-m.actionCh:
 			f()
 		case ts := <-tsets:
-			if err := m.reload(ts); err != nil {
-				level.Error(m.logger).Log("msg", "error reloading the scrape manager", "err", err)
-			}
+			m.reload(ts)
 		case <-m.graceShut:
 			return nil
 		}
@@ -129,11 +127,12 @@ func (m *ScrapeManager) Targets() []*Target {
 	return <-targets
 }
 
-func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
+func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) {
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]
 		if !ok {
-			return fmt.Errorf("target set '%v' doesn't have valid config", tsetName)
+			level.Error(m.logger).Log("msg", "error reloading target set", "err", fmt.Sprintf("invalid config id:%v", tsetName))
+			continue
 		}
 
 		// Scrape pool doesn't exist so start a new one.
@@ -155,6 +154,4 @@ func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
 			delete(m.scrapePools, name)
 		}
 	}
-
-	return nil
 }

@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -44,6 +46,7 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
@@ -234,11 +237,12 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		discoveryManager = discovery.NewManager(log.With(logger, "component", "discovery manager"))
-		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
-		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ruleManager      = rules.NewManager(&rules.ManagerOptions{
+		notifier               = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		discoveryManagerScrape = discovery.NewManager(log.With(logger, "component", "discovery manager scrape"))
+		discoveryManagerNotify = discovery.NewManager(log.With(logger, "component", "discovery manager notify"))
+		scrapeManager          = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		queryEngine            = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
+		ruleManager            = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
 			QueryFunc:   rules.EngineQueryFunc(queryEngine),
 			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
@@ -283,7 +287,25 @@ func main() {
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
 		notifier.ApplyConfig,
-		discoveryManager.ApplyConfig,
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.ScrapeConfigs {
+				c[v.JobName] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManagerScrape.ApplyConfig(c)
+		},
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
+				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				b, err := json.Marshal(v)
+				if err != nil {
+					return err
+				}
+				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManagerNotify.ApplyConfig(c)
+		},
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.
@@ -332,23 +354,37 @@ func main() {
 		)
 	}
 	{
-		ctxDiscovery, cancelDiscovery := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManager.Run(ctxDiscovery)
-				level.Info(logger).Log("msg", "Discovery manager stopped")
+				err := discoveryManagerScrape.Run(ctx)
+				level.Info(logger).Log("msg", "Scrape discovery manager stopped")
 				return err
 			},
 			func(err error) {
-				level.Info(logger).Log("msg", "Stopping discovery manager...")
-				cancelDiscovery()
+				level.Info(logger).Log("msg", "Stopping scrape discovery manager...")
+				cancel()
+			},
+		)
+	}
+	{
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(
+			func() error {
+				err := discoveryManagerNotify.Run(ctx)
+				level.Info(logger).Log("msg", "Notify discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping notify discovery manager...")
+				cancel()
 			},
 		)
 	}
 	{
 		g.Add(
 			func() error {
-				err := scrapeManager.Run(discoveryManager.SyncCh())
+				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
 			},
@@ -493,7 +529,7 @@ func main() {
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
 			func() error {
-				notifier.Run()
+				notifier.Run(discoveryManagerNotify.SyncCh())
 				return nil
 			},
 			func(err error) {
