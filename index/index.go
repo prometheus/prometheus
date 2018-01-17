@@ -273,6 +273,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	w.buf2.putUvarint(len(lset))
 
 	for _, l := range lset {
+		// here we have an index for the symbol file if v2, otherwise it's an offset
 		index, ok := w.symbols[l.Name]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Name)
@@ -342,7 +343,10 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	w.symbols = make(map[string]uint32, len(symbols))
 
 	for index, s := range symbols {
-		w.symbols[s] = uint32(index)
+		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
+		if w.Version == 2 {
+			w.symbols[s] = uint32(index)
+		}
 		w.buf2.putUvarintStr(s)
 	}
 
@@ -381,6 +385,7 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	w.buf2.putBE32int(len(names))
 	w.buf2.putBE32int(valt.Len())
 
+	// here we have an index for the symbol file if v2, otherwise it's an offset
 	for _, v := range valt.s {
 		index, ok := w.symbols[v]
 		if !ok {
@@ -751,14 +756,25 @@ func (r *Reader) readSymbols(off int) error {
 	d := r.decbufAt(off)
 
 	var (
+		origLen = d.len()
 		cnt     = d.be32int()
-		nextPos = 0
+		basePos = uint32(off) + 4
+		nextPos = basePos + uint32(origLen-d.len())
 	)
+
+	if r.version == 2 {
+		nextPos = 0
+	}
+
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
 		r.symbols[uint32(nextPos)] = s
 
-		nextPos++
+		if r.version == 2 {
+			nextPos++
+		} else {
+			nextPos = basePos + uint32(origLen-d.len())
+		}
 		cnt--
 	}
 	return d.err()
