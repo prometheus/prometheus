@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -286,7 +287,10 @@ func main() {
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
+		// The Scrape and notifier managers need to reload before the Discovery manager as
+		// they need to read the most updated config when receiving the new targets list.
 		notifier.ApplyConfig,
+		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.ScrapeConfigs {
@@ -306,7 +310,6 @@ func main() {
 			}
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
-		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.
 			var files []string
@@ -328,8 +331,22 @@ func main() {
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
 	dbOpen := make(chan struct{})
-	// Wait until the server is ready to handle reloading
-	reloadReady := make(chan struct{})
+
+	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
+	type closeOnce struct {
+		C     chan struct{}
+		once  sync.Once
+		Close func()
+	}
+	// Wait until the server is ready to handle reloading.
+	reloadReady := &closeOnce{
+		C: make(chan struct{}),
+	}
+	reloadReady.Close = func() {
+		reloadReady.once.Do(func() {
+			close(reloadReady.C)
+		})
+	}
 
 	var g group.Group
 	{
@@ -338,12 +355,16 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
+				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+					reloadReady.Close()
+
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
+					reloadReady.Close()
 					break
 				}
 				return nil
@@ -384,6 +405,15 @@ func main() {
 	{
 		g.Add(
 			func() error {
+				// When the scrape manager receives a new targets list
+				// it needs to read a valid config for each job.
+				// It depends on the config being in sync with the discovery manager so
+				// we wait until the config is fully loaded.
+				select {
+				case <-reloadReady.C:
+					break
+				}
+
 				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
@@ -405,11 +435,8 @@ func main() {
 		g.Add(
 			func() error {
 				select {
-				case <-reloadReady:
+				case <-reloadReady.C:
 					break
-				// In case a shutdown is initiated before the reloadReady is released.
-				case <-cancel:
-					return nil
 				}
 
 				for {
@@ -445,6 +472,7 @@ func main() {
 					break
 				// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
+					reloadReady.Close()
 					return nil
 				}
 
@@ -452,9 +480,10 @@ func main() {
 					return fmt.Errorf("Error loading config %s", err)
 				}
 
-				close(reloadReady)
+				reloadReady.Close()
+
 				webHandler.Ready()
-				level.Info(logger).Log("msg", "Server is ready to receive requests.")
+				level.Info(logger).Log("msg", "Server is ready to receive web requests.")
 				<-cancel
 				return nil
 			},
@@ -529,7 +558,16 @@ func main() {
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
 			func() error {
+				// When the notifier manager receives a new targets list
+				// it needs to read a valid config for each job.
+				// It depends on the config being in sync with the discovery manager
+				// so we wait until the config is fully loaded.
+				select {
+				case <-reloadReady.C:
+					break
+				}
 				notifier.Run(discoveryManagerNotify.SyncCh())
+				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
 			func(err error) {
