@@ -27,10 +27,10 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/strutil"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
@@ -95,7 +95,7 @@ func init() {
 }
 
 // Discovery periodically performs Azure-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
 	cfg      *SDConfig
 	interval time.Duration
@@ -116,7 +116,7 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()

@@ -250,6 +250,8 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	start := time.Now()
 
 	var all []*Target
+	sp.mtx.Lock()
+	sp.droppedTargets = []*Target{}
 	for _, tg := range tgs {
 		targets, err := targetsFromGroup(tg, sp.config)
 		if err != nil {
@@ -264,6 +266,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			}
 		}
 	}
+	sp.mtx.Unlock()
 	sp.sync(all)
 
 	targetSyncIntervalLength.WithLabelValues(sp.config.JobName).Observe(
@@ -904,9 +907,9 @@ loop:
 	if err == nil {
 		err = p.Err()
 	}
-	if err == nil && sampleLimitErr != nil {
+	if sampleLimitErr != nil {
+		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeSampleLimit.Inc()
-		err = sampleLimitErr
 	}
 	if numOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", numOutOfOrder)

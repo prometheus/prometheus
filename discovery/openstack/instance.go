@@ -62,7 +62,7 @@ func NewInstanceDiscovery(opts *gophercloud.AuthOptions,
 		region: region, interval: interval, port: port, logger: l}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := i.refresh()

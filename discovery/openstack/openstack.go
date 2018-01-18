@@ -23,9 +23,9 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	config_util "github.com/prometheus/prometheus/util/config"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
@@ -112,7 +112,7 @@ func init() {
 }
 
 // Discovery periodically performs OpenStack-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery interface {
 	Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	refresh() (tg *targetgroup.Group, err error)
