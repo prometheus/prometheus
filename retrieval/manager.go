@@ -15,6 +15,7 @@ package retrieval
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/go-kit/kit/log"
@@ -84,6 +85,17 @@ func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 		c[scfg.JobName] = scfg
 	}
 	m.scrapeConfigs = c
+
+	// Cleanup and reload pool if config has changed.
+	for name, sp := range m.scrapePools {
+		if cfg, ok := m.scrapeConfigs[name]; !ok {
+			sp.stop()
+			delete(m.scrapePools, name)
+		} else if !reflect.DeepEqual(sp.config, cfg) {
+			sp.reload(cfg)
+		}
+	}
+
 	return nil
 }
 
@@ -139,14 +151,6 @@ func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) {
 
 		} else {
 			existing.Sync(tgroup)
-		}
-	}
-
-	// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
-	for name, sp := range m.scrapePools {
-		if _, ok := m.scrapeConfigs[name]; !ok {
-			sp.stop()
-			delete(m.scrapePools, name)
 		}
 	}
 }
