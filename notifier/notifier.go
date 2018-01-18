@@ -490,7 +490,7 @@ func (n *Notifier) sendOne(ctx context.Context, c *http.Client, url string, b []
 
 // Stop shuts down the notification handler.
 func (n *Notifier) Stop() {
-	level.Info(n.logger).Log("msg", "Stopping notification handler...")
+	level.Info(n.logger).Log("msg", "Stopping notification manager...")
 	n.cancel()
 }
 
