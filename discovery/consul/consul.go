@@ -82,12 +82,13 @@ var (
 	DefaultSDConfig = SDConfig{
 		TagSeparator: ",",
 		Scheme:       "http",
+		Server:       "localhost:8500",
 	}
 )
 
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
-	Server       string             `yaml:"server"`
+	Server       string             `yaml:"server,omitempty"`
 	Token        config_util.Secret `yaml:"token,omitempty"`
 	Datacenter   string             `yaml:"datacenter,omitempty"`
 	TagSeparator string             `yaml:"tag_separator,omitempty"`

@@ -305,7 +305,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 ```yaml
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
-server: <host>
+server: <host> | default = "localhost:8500"
 [ token: <secret> ]
 [ datacenter: <string> ]
 [ scheme: <string> | default = "http"]
