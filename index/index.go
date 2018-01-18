@@ -343,10 +343,7 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	w.symbols = make(map[string]uint32, len(symbols))
 
 	for index, s := range symbols {
-		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
-		if w.Version == 2 {
-			w.symbols[s] = uint32(index)
-		}
+		w.symbols[s] = uint32(index)
 		w.buf2.putUvarintStr(s)
 	}
 
