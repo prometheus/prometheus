@@ -56,8 +56,6 @@ type ScrapeManager struct {
 
 // Run starts background processing to handle target updates and reload the scraping loops.
 func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
-	level.Info(m.logger).Log("msg", "Starting scrape manager...")
-
 	for {
 		select {
 		case ts := <-tsets:
