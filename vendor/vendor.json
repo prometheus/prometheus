@@ -800,40 +800,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "C72p7MMwA94LrpqYD3dMcQEKHzY=",
+			"checksumSHA1": "XHNJVYnIBaFpQOOA4wTqjDbMkUo=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
-			"revisionTime": "2017-12-22T14:44:41Z"
+			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
+			"revisionTime": "2018-01-18T08:32:54Z"
 		},
 		{
 			"checksumSHA1": "XTirmk6Pq5TBGIZEaN5VL4k3i1s=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
-			"revisionTime": "2017-12-22T14:44:41Z"
+			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
+			"revisionTime": "2018-01-18T08:32:54Z"
 		},
 		{
 			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
-			"revisionTime": "2017-12-22T14:44:41Z"
+			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
+			"revisionTime": "2018-01-18T08:32:54Z"
 		},
 		{
 			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
-			"revisionTime": "2017-12-22T14:44:41Z"
+			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
+			"revisionTime": "2018-01-18T08:32:54Z"
 		},
 		{
-			"checksumSHA1": "y3lUn43gcc3HtYd20UDujyybGq4=",
+			"checksumSHA1": "yuiJaE3cAmZ/ws8NOfd56x36Sg4=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
-			"revisionTime": "2017-12-22T14:44:41Z"
+			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
+			"revisionTime": "2018-01-18T08:32:54Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "07ef80820ef1250db82f9544f3fcf7f0f63ccee0",
-			"revisionTime": "2017-12-22T14:44:41Z"
+			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
+			"revisionTime": "2018-01-18T08:32:54Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",

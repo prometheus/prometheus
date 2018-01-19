@@ -98,7 +98,7 @@ func newCRC32() hash.Hash32 {
 	return crc32.New(castagnoliTable)
 }
 
-// indexWriter implements the IndexWriter interface for the standard
+// Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
 	f    *os.File
@@ -122,6 +122,8 @@ type Writer struct {
 	lastSeries labels.Labels
 
 	crc32 hash.Hash
+
+	Version int
 }
 
 type indexTOC struct {
@@ -166,6 +168,8 @@ func NewWriter(fn string) (*Writer, error) {
 		symbols:       make(map[string]uint32, 1<<13),
 		seriesOffsets: make(map[uint64]uint64, 1<<16),
 		crc32:         newCRC32(),
+
+		Version: 2,
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -180,12 +184,12 @@ func (w *Writer) write(bufs ...[]byte) error {
 		if err != nil {
 			return err
 		}
-		// For now the index file must not grow beyond 4GiB. Some of the fixed-sized
+		// For now the index file must not grow beyond 64GiB. Some of the fixed-sized
 		// offset references in v1 are only 4 bytes large.
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
-		if w.pos > math.MaxUint32 {
-			return errors.Errorf("exceeding max size of 4GiB")
+		if w.pos > 16*math.MaxUint32 {
+			return errors.Errorf("exceeding max size of 64GiB")
 		}
 	}
 	return nil
@@ -250,6 +254,7 @@ func (w *Writer) writeMeta() error {
 	return w.write(w.buf1.get())
 }
 
+// AddSeries adds the series one at a time along with its chunks.
 func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
@@ -261,23 +266,25 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	if _, ok := w.seriesOffsets[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
-	w.seriesOffsets[ref] = w.pos
+	w.addPadding(16)
+	w.seriesOffsets[ref] = w.pos / 16
 
 	w.buf2.reset()
 	w.buf2.putUvarint(len(lset))
 
 	for _, l := range lset {
-		offset, ok := w.symbols[l.Name]
+		// here we have an index for the symbol file if v2, otherwise it's an offset
+		index, ok := w.symbols[l.Name]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Name)
 		}
-		w.buf2.putUvarint32(offset)
+		w.buf2.putUvarint32(index)
 
-		offset, ok = w.symbols[l.Value]
+		index, ok = w.symbols[l.Value]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Value)
 		}
-		w.buf2.putUvarint32(offset)
+		w.buf2.putUvarint32(index)
 	}
 
 	w.buf2.putUvarint(len(chunks))
@@ -335,8 +342,8 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 
 	w.symbols = make(map[string]uint32, len(symbols))
 
-	for _, s := range symbols {
-		w.symbols[s] = uint32(w.pos) + headerSize + uint32(w.buf2.len())
+	for index, s := range symbols {
+		w.symbols[s] = uint32(index)
 		w.buf2.putUvarintStr(s)
 	}
 
@@ -375,12 +382,13 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	w.buf2.putBE32int(len(names))
 	w.buf2.putBE32int(valt.Len())
 
+	// here we have an index for the symbol file if v2, otherwise it's an offset
 	for _, v := range valt.s {
-		offset, ok := w.symbols[v]
+		index, ok := w.symbols[v]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", v)
 		}
-		w.buf2.putBE32(offset)
+		w.buf2.putBE32(index)
 	}
 
 	w.buf1.reset()
@@ -531,9 +539,11 @@ type Reader struct {
 	// the block has been unmapped.
 	symbols map[uint32]string
 
-	dec *DecoderV1
+	dec *Decoder
 
 	crc32 hash.Hash32
+
+	version int
 }
 
 var (
@@ -563,20 +573,24 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 }
 
 // NewReader returns a new IndexReader on the given byte slice.
-func NewReader(b ByteSlice) (*Reader, error) {
-	return newReader(b, nil)
+func NewReader(b ByteSlice, version int) (*Reader, error) {
+	return newReader(b, nil, version)
 }
 
 // NewFileReader returns a new index reader against the given index file.
-func NewFileReader(path string) (*Reader, error) {
+func NewFileReader(path string, version int) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return newReader(realByteSlice(f.Bytes()), f)
+	return newReader(realByteSlice(f.Bytes()), f, version)
 }
 
-func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, version int) (*Reader, error) {
+	if version != 1 && version != 2 {
+		return nil, errors.Errorf("unexpected file version %d", version)
+	}
+
 	r := &Reader{
 		b:        b,
 		c:        c,
@@ -584,7 +598,9 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		labels:   map[string]uint32{},
 		postings: map[labels.Label]uint32{},
 		crc32:    newCRC32(),
+		version:  version,
 	}
+
 	// Verify magic number.
 	if b.Len() < 4 {
 		return nil, errors.Wrap(errInvalidSize, "index header")
@@ -622,7 +638,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		return nil, errors.Wrap(err, "read postings table")
 	}
 
-	r.dec = &DecoderV1{symbols: r.symbols}
+	r.dec = &Decoder{symbols: r.symbols}
 
 	return r, nil
 }
@@ -660,7 +676,7 @@ func (r *Reader) readTOC() error {
 	d := decbuf{b: b[:len(b)-4]}
 
 	if d.crc32() != expCRC {
-		return errInvalidChecksum
+		return errors.Wrap(errInvalidChecksum, "read TOC")
 	}
 
 	r.toc.symbols = d.be64()
@@ -742,14 +758,23 @@ func (r *Reader) readSymbols(off int) error {
 		basePos = uint32(off) + 4
 		nextPos = basePos + uint32(origLen-d.len())
 	)
+
+	if r.version == 2 {
+		nextPos = 0
+	}
+
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
 		r.symbols[uint32(nextPos)] = s
 
-		nextPos = basePos + uint32(origLen-d.len())
+		if r.version == 2 {
+			nextPos++
+		} else {
+			nextPos = basePos + uint32(origLen-d.len())
+		}
 		cnt--
 	}
-	return d.err()
+	return errors.Wrap(d.err(), "read symbols")
 }
 
 // readOffsetTable reads an offset table at the given position calls f for each
@@ -852,13 +877,17 @@ func (r *Reader) LabelIndices() ([][]string, error) {
 	return res, nil
 }
 
-// Series the series with the given ID and writes its labels and chunks into lbls and chks.
+// Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
 func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
-	d := r.decbufUvarintAt(int(id))
+	offset := id
+	if r.version == 2 {
+		offset = 16 * id
+	}
+	d := r.decbufUvarintAt(int(offset))
 	if d.err() != nil {
 		return d.err()
 	}
-	return r.dec.Series(d.get(), lbls, chks)
+	return errors.Wrap(r.dec.Series(d.get(), lbls, chks), "read series")
 }
 
 // Postings returns a postings list for the given label pair.
@@ -955,15 +984,15 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 	return res, nil
 }
 
-// DecoderV1 provides decoding methods for the v1 index file format.
+// Decoder provides decoding methods for the v1 and v2 index file format.
 //
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
-type DecoderV1 struct {
+type Decoder struct {
 	symbols map[uint32]string
 }
 
-func (dec *DecoderV1) lookupSymbol(o uint32) (string, error) {
+func (dec *Decoder) lookupSymbol(o uint32) (string, error) {
 	s, ok := dec.symbols[o]
 	if !ok {
 		return "", errors.Errorf("unknown symbol offset %d", o)
@@ -973,12 +1002,12 @@ func (dec *DecoderV1) lookupSymbol(o uint32) (string, error) {
 
 // SetSymbolTable set the symbol table to be used for lookups when decoding series
 // and label indices
-func (dec *DecoderV1) SetSymbolTable(t map[uint32]string) {
+func (dec *Decoder) SetSymbolTable(t map[uint32]string) {
 	dec.symbols = t
 }
 
 // Postings returns a postings list for b and its number of elements.
-func (dec *DecoderV1) Postings(b []byte) (int, Postings, error) {
+func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	d := decbuf{b: b}
 	n := d.be32int()
 	l := d.get()
@@ -986,7 +1015,7 @@ func (dec *DecoderV1) Postings(b []byte) (int, Postings, error) {
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
-func (dec *DecoderV1) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	*lbls = (*lbls)[:0]
 	*chks = (*chks)[:0]
 
