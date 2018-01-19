@@ -278,8 +278,11 @@ var expectedConf = &Config{
 						Server:       "localhost:1234",
 						Token:        "mysecret",
 						Services:     []string{"nginx", "cache", "mysql"},
+						Tag:          "canary",
+						NodeMeta:     map[string]string{"rack": "123"},
 						TagSeparator: consul.DefaultSDConfig.TagSeparator,
 						Scheme:       "https",
+						AllowStale:   true,
 						TLSConfig: config_util.TLSConfig{
 							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),

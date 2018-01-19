@@ -295,7 +295,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
-* `__meta_consul_metadata_<key>`: each metadata key value of the target
+* `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
@@ -321,8 +321,22 @@ tls_config:
 services:
   [ - <string> ]
 
+# An optional tag used to filter instances inside services.
+[ tag: <string> ]
+
+# Node metadata used to filter nodes.
+[ node_meta:
+  [ <name>: <value> ... ] ]
+
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
+
+# Allow stale consul results (see https://www.consul.io/api/index.html#consistency-modes). Will reduce load on consul.
+[ allow_stale: <bool> ]
+
+# The time after which the provided names are refreshed. By default refresh as soon as new target are discovered.
+# On large setup it might be a good idea to increase this value because the catalog send to change all the time.
+[ refresh_interval: <duration> | default = 0s ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
