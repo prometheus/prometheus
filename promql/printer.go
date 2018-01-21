@@ -139,15 +139,15 @@ func (node *AggregateExpr) String() string {
 		aggrString += fmt.Sprintf("%s, ", node.Param)
 	}
 	aggrString += fmt.Sprintf("%s)", node.Expr)
-	if len(node.Grouping) > 0 {
-		var format string
-		if node.Without {
-			format = "%s WITHOUT (%s)"
-		} else {
-			format = "%s BY (%s)"
+
+	if node.Without {
+		aggrString = fmt.Sprintf("%s WITHOUT (%s)", aggrString, strings.Join(node.Grouping, ", "))
+	} else {
+		if len(node.Grouping) > 0 {
+			aggrString = fmt.Sprintf("%s BY (%s)", aggrString, strings.Join(node.Grouping, ", "))
 		}
-		aggrString = fmt.Sprintf(format, aggrString, strings.Join(node.Grouping, ", "))
 	}
+
 	return aggrString
 }
 
