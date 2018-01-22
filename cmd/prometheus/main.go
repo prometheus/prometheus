@@ -649,7 +649,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
-// sendAlerts implements a the rules.NotifyFunc for a Notifier.
+// sendAlerts implements the rules.NotifyFunc for a Notifier.
 // It filters any non-firing alerts from the input.
 func sendAlerts(n *notifier.Notifier, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
