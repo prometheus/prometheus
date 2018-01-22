@@ -289,13 +289,13 @@ func TestBearerAuthRoundTripper(t *testing.T) {
 		}
 	}, nil, nil)
 
-	//Normal flow
+	// Normal flow.
 	bearerAuthRoundTripper := NewBearerAuthRoundTripper(BearerToken, fakeRoundTripper)
 	request, _ := http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("User-Agent", "Douglas Adams mind")
 	bearerAuthRoundTripper.RoundTrip(request)
 
-	//Should honor already Authorization header set
+	// Should honor already Authorization header set.
 	bearerAuthRoundTripperShouldNotModifyExistingAuthorization := NewBearerAuthRoundTripper(newBearerToken, fakeRoundTripper)
 	request, _ = http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("Authorization", ExpectedBearer)
@@ -315,13 +315,13 @@ func TestBearerAuthFileRoundTripper(t *testing.T) {
 		}
 	}, nil, nil)
 
-	//Normal flow
+	// Normal flow.
 	bearerAuthRoundTripper := NewBearerAuthFileRoundTripper(BearerTokenFile, fakeRoundTripper)
 	request, _ := http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("User-Agent", "Douglas Adams mind")
 	bearerAuthRoundTripper.RoundTrip(request)
 
-	//Should honor already Authorization header set
+	// Should honor already Authorization header set.
 	bearerAuthRoundTripperShouldNotModifyExistingAuthorization := NewBearerAuthFileRoundTripper(MissingBearerTokenFile, fakeRoundTripper)
 	request, _ = http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("Authorization", ExpectedBearer)
@@ -347,14 +347,14 @@ func TestBasicAuthRoundTripper(t *testing.T) {
 		}
 	}, nil, nil)
 
-	//Normal flow
+	// Normal flow.
 	basicAuthRoundTripper := NewBasicAuthRoundTripper(ExpectedUsername,
 		ExpectedPassword, fakeRoundTripper)
 	request, _ := http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("User-Agent", "Douglas Adams mind")
 	basicAuthRoundTripper.RoundTrip(request)
 
-	//Should honor already Authorization header set
+	// Should honor already Authorization header set.
 	basicAuthRoundTripperShouldNotModifyExistingAuthorization := NewBasicAuthRoundTripper(newUsername,
 		newPassword, fakeRoundTripper)
 	request, _ = http.NewRequest("GET", "/hitchhiker", nil)
