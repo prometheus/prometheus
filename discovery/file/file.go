@@ -127,7 +127,7 @@ func (t *TimestampCollector) removeDiscoverer(disc *Discovery) {
 func NewTimestampCollector() *TimestampCollector {
 	return &TimestampCollector{
 		Description: prometheus.NewDesc(
-			"prometheus_sd_file_timestamp",
+			"prometheus_sd_file_mtime_seconds",
 			"Timestamp (mtime) of files read by FileSD. Timestamp is set at read time.",
 			[]string{"filename"},
 			nil,
