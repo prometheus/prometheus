@@ -91,7 +91,8 @@ func init() {
 	prometheus.MustRegister(digitaloceanSDRefreshDuration)
 }
 
-// Discovery periodically performs DigitalOcean SD requests.
+// Discovery periodically performs DigitalOcean SD requests. It implements
+// the Discoverer interface.
 type Discovery struct {
 	client   *godo.Client
 	region   string
