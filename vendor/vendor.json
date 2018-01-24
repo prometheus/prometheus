@@ -800,10 +800,10 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "XHNJVYnIBaFpQOOA4wTqjDbMkUo=",
+			"checksumSHA1": "errrSfk16j274D3QY61bWODd56c=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
-			"revisionTime": "2018-01-18T08:32:54Z"
+			"revision": "ad0fdaf436fc99828bce60f81984dcfa3a282a44",
+			"revisionTime": "2018-01-24T14:58:35Z"
 		},
 		{
 			"checksumSHA1": "XTirmk6Pq5TBGIZEaN5VL4k3i1s=",
