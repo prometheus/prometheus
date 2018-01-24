@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -59,6 +60,13 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error 
 	level.Info(m.logger).Log("msg", "Starting scrape manager...")
 
 	for {
+		// Throttle syncing to once per five seconds.
+		select {
+		case <-m.graceShut:
+			return nil
+		case <-time.After(5 * time.Second):
+		}
+
 		select {
 		case ts := <-tsets:
 			m.reload(ts)
