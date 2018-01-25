@@ -50,7 +50,7 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
 	var initial []*targetgroup.Group

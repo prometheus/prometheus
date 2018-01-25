@@ -15,6 +15,8 @@ package retrieval
 
 import (
 	"fmt"
+	"reflect"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -35,7 +37,6 @@ func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
 	return &ScrapeManager{
 		append:        app,
 		logger:        logger,
-		actionCh:      make(chan func()),
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
 		scrapePools:   make(map[string]*scrapePool),
 		graceShut:     make(chan struct{}),
@@ -49,7 +50,7 @@ type ScrapeManager struct {
 	append        Appendable
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
-	actionCh      chan func()
+	mtx           sync.RWMutex
 	graceShut     chan struct{}
 }
 
@@ -59,12 +60,8 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error 
 
 	for {
 		select {
-		case f := <-m.actionCh:
-			f()
 		case ts := <-tsets:
-			if err := m.reload(ts); err != nil {
-				level.Error(m.logger).Log("msg", "error reloading the scrape manager", "err", err)
-			}
+			m.reload(ts)
 		case <-m.graceShut:
 			return nil
 		}
@@ -81,57 +78,68 @@ func (m *ScrapeManager) Stop() {
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
 func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
-	done := make(chan struct{})
-	m.actionCh <- func() {
-		for _, scfg := range cfg.ScrapeConfigs {
-			m.scrapeConfigs[scfg.JobName] = scfg
-		}
-		close(done)
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	c := make(map[string]*config.ScrapeConfig)
+	for _, scfg := range cfg.ScrapeConfigs {
+		c[scfg.JobName] = scfg
 	}
-	<-done
+	m.scrapeConfigs = c
+
+	// Cleanup and reload pool if config has changed.
+	for name, sp := range m.scrapePools {
+		if cfg, ok := m.scrapeConfigs[name]; !ok {
+			sp.stop()
+			delete(m.scrapePools, name)
+		} else if !reflect.DeepEqual(sp.config, cfg) {
+			sp.reload(cfg)
+		}
+	}
+
 	return nil
 }
 
 // TargetMap returns map of active and dropped targets and their corresponding scrape config job name.
 func (m *ScrapeManager) TargetMap() map[string][]*Target {
-	targetsMap := make(chan map[string][]*Target)
-	m.actionCh <- func() {
-		targets := make(map[string][]*Target)
-		for jobName, sp := range m.scrapePools {
-			sp.mtx.RLock()
-			for _, t := range sp.targets {
-				targets[jobName] = append(targets[jobName], t)
-			}
-			targets[jobName] = append(targets[jobName], sp.droppedTargets...)
-			sp.mtx.RUnlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	targets := make(map[string][]*Target)
+	for jobName, sp := range m.scrapePools {
+		sp.mtx.RLock()
+		for _, t := range sp.targets {
+			targets[jobName] = append(targets[jobName], t)
 		}
-		targetsMap <- targets
+		targets[jobName] = append(targets[jobName], sp.droppedTargets...)
+		sp.mtx.RUnlock()
 	}
-	return <-targetsMap
+
+	return targets
 }
 
 // Targets returns the targets currently being scraped.
 func (m *ScrapeManager) Targets() []*Target {
-	targets := make(chan []*Target)
-	m.actionCh <- func() {
-		var t []*Target
-		for _, p := range m.scrapePools {
-			p.mtx.RLock()
-			for _, tt := range p.targets {
-				t = append(t, tt)
-			}
-			p.mtx.RUnlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	var targets []*Target
+	for _, p := range m.scrapePools {
+		p.mtx.RLock()
+		for _, tt := range p.targets {
+			targets = append(targets, tt)
 		}
-		targets <- t
+		p.mtx.RUnlock()
 	}
-	return <-targets
+
+	return targets
 }
 
-func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
+func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) {
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]
 		if !ok {
-			return fmt.Errorf("target set '%v' doesn't have valid config", tsetName)
+			level.Error(m.logger).Log("msg", "error reloading target set", "err", fmt.Sprintf("invalid config id:%v", tsetName))
+			continue
 		}
 
 		// Scrape pool doesn't exist so start a new one.
@@ -144,20 +152,5 @@ func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) error {
 		} else {
 			existing.Sync(tgroup)
 		}
-
-		// Cleanup - check the config and cancel the scrape loops if it don't exist in the scrape config.
-		jobs := make(map[string]struct{})
-
-		for k := range m.scrapeConfigs {
-			jobs[k] = struct{}{}
-		}
-
-		for name, sp := range m.scrapePools {
-			if _, ok := jobs[name]; !ok {
-				sp.stop()
-				delete(m.scrapePools, name)
-			}
-		}
 	}
-	return nil
 }

@@ -103,12 +103,12 @@ func (i *fakeInformer) Update(obj interface{}) {
 	}
 }
 
-type targetProvider interface {
+type discoverer interface {
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
 type k8sDiscoveryTest struct {
-	discovery       targetProvider
+	discovery       discoverer
 	afterStart      func()
 	expectedInitial []*targetgroup.Group
 	expectedRes     []*targetgroup.Group

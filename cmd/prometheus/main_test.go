@@ -35,6 +35,9 @@ func TestMain(m *testing.M) {
 	if testing.Short() {
 		os.Exit(m.Run())
 	}
+	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
+	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
+
 	var err error
 	promPath, err = os.Getwd()
 	if err != nil {
@@ -75,25 +78,20 @@ func TestStartupInterrupt(t *testing.T) {
 	}()
 
 	var startedOk bool
-	var stoppedOk bool
 	var stoppedErr error
 
 Loop:
 	for x := 0; x < 10; x++ {
-
 		// error=nil means prometheus has started so can send the interrupt signal and wait for the grace shutdown.
 		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
 			startedOk = true
 			prom.Process.Signal(os.Interrupt)
 			select {
 			case stoppedErr = <-done:
-				stoppedOk = true
 				break Loop
 			case <-time.After(10 * time.Second):
-
 			}
 			break Loop
-
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -102,10 +100,10 @@ Loop:
 		t.Errorf("prometheus didn't start in the specified timeout")
 		return
 	}
-	if err := prom.Process.Kill(); err == nil && !stoppedOk {
+	if err := prom.Process.Kill(); err == nil {
 		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
-	} else if stoppedErr != nil {
-		t.Errorf("prometheus exited with an error:%v", stoppedErr)
+	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
+		t.Errorf("prometheus exited with an unexpected error:%v", stoppedErr)
 	}
 }
 

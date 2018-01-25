@@ -113,7 +113,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// Discovery implements the TargetProvider interface for discovering
+// Discovery implements the Discoverer interface for discovering
 // targets from Zookeeper.
 type Discovery struct {
 	conn *zk.Conn
@@ -169,7 +169,7 @@ func NewDiscovery(
 	return sd
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer func() {
 		for _, tc := range d.treeCaches {

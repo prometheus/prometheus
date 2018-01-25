@@ -305,10 +305,10 @@ The following meta labels are available on targets during [relabeling](#relabel_
 ```yaml
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
-server: <host>
+[ server: <host> | default = "localhost:8500" ]
 [ token: <secret> ]
 [ datacenter: <string> ]
-[ scheme: <string> | default = "http"]
+[ scheme: <string> | default = "http" ]
 [ username: <string> ]
 [ password: <secret> ]
 
@@ -726,7 +726,8 @@ namespaces:
     [ - <string> ]
 ```
 
-Where `<role>` must be `endpoints`, `service`, `pod`, or `node`.
+Where `<role>` must be `endpoints`, `service`, `pod`, `node`, or
+`ingress`.
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.

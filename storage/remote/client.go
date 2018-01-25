@@ -28,8 +28,8 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context/ctxhttp"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 

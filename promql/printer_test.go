@@ -57,14 +57,17 @@ func TestExprString(t *testing.T) {
 		in, out string
 	}{
 		{
-			in:  `sum(task:errors:rate10s{job="s"}) BY ()`,
+			in:  `sum by() (task:errors:rate10s{job="s"})`,
 			out: `sum(task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum(task:errors:rate10s{job="s"}) BY (code)`,
+			in: `sum by(code) (task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum(task:errors:rate10s{job="s"}) WITHOUT (instance)`,
+			in: `sum without() (task:errors:rate10s{job="s"})`,
+		},
+		{
+			in: `sum without(instance) (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `topk(5, task:errors:rate10s{job="s"})`,
@@ -73,42 +76,42 @@ func TestExprString(t *testing.T) {
 			in: `count_values("value", task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `a - ON() c`,
+			in: `a - on() c`,
 		},
 		{
-			in: `a - ON(b) c`,
+			in: `a - on(b) c`,
 		},
 		{
-			in: `a - ON(b) GROUP_LEFT(x) c`,
+			in: `a - on(b) group_left(x) c`,
 		},
 		{
-			in: `a - ON(b) GROUP_LEFT(x, y) c`,
+			in: `a - on(b) group_left(x, y) c`,
 		},
 		{
-			in:  `a - ON(b) GROUP_LEFT c`,
-			out: `a - ON(b) GROUP_LEFT() c`,
+			in:  `a - on(b) group_left c`,
+			out: `a - on(b) group_left() c`,
 		},
 		{
-			in: `a - ON(b) GROUP_LEFT() (c)`,
+			in: `a - on(b) group_left() (c)`,
 		},
 		{
-			in: `a - IGNORING(b) c`,
+			in: `a - ignoring(b) c`,
 		},
 		{
-			in:  `a - IGNORING() c`,
+			in:  `a - ignoring() c`,
 			out: `a - c`,
 		},
 		{
-			in: `up > BOOL 0`,
+			in: `up > bool 0`,
 		},
 		{
-			in: `a OFFSET 1m`,
+			in: `a offset 1m`,
 		},
 		{
-			in: `a{c="d"}[5m] OFFSET 1m`,
+			in: `a{c="d"}[5m] offset 1m`,
 		},
 		{
-			in: `a[5m] OFFSET 1m`,
+			in: `a[5m] offset 1m`,
 		},
 	}
 

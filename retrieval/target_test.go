@@ -28,8 +28,8 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pkg/labels"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 )
 

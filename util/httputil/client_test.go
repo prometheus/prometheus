@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	config_util "github.com/prometheus/prometheus/util/config"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 

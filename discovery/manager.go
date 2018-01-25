@@ -16,12 +16,11 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"sort"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
@@ -60,41 +59,36 @@ type poolKey struct {
 	provider string
 }
 
-// byProvider implements sort.Interface for []poolKey based on the provider field.
-// Sorting is needed so that we can have predictable tests.
-type byProvider []poolKey
-
-func (a byProvider) Len() int           { return len(a) }
-func (a byProvider) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byProvider) Less(i, j int) bool { return a[i].provider < a[j].provider }
-
 // NewManager is the Discovery Manager constructor
 func NewManager(logger log.Logger) *Manager {
 	return &Manager{
 		logger:         logger,
-		actionCh:       make(chan func(context.Context)),
 		syncCh:         make(chan map[string][]*targetgroup.Group),
-		targets:        make(map[poolKey][]*targetgroup.Group),
+		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
+		ctx:            context.Background(),
 	}
 }
 
-// Manager maintains a set of discovery providers and sends each update to a channel used by other packages.
+// Manager maintains a set of discovery providers and sends each update to a map channel.
+// Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
-	actionCh       chan func(context.Context)
+	mtx            sync.RWMutex
+	ctx            context.Context
 	discoverCancel []context.CancelFunc
-	targets        map[poolKey][]*targetgroup.Group
+	// Some Discoverers(eg. k8s) send only the updates for a given target group
+	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
+	targets map[poolKey]map[string]*targetgroup.Group
 	// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
 }
 
 // Run starts the background processing
 func (m *Manager) Run(ctx context.Context) error {
+	m.ctx = ctx
 	for {
 		select {
-		case f := <-m.actionCh:
-			f(ctx)
 		case <-ctx.Done():
 			m.cancelDiscoverers()
 			return ctx.Err()
@@ -108,19 +102,18 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg *config.Config) error {
-	err := make(chan error)
-	m.actionCh <- func(ctx context.Context) {
-		m.cancelDiscoverers()
-		for _, scfg := range cfg.ScrapeConfigs {
-			for provName, prov := range m.providersFromConfig(scfg.ServiceDiscoveryConfig) {
-				m.startProvider(ctx, poolKey{setName: scfg.JobName, provider: provName}, prov)
-			}
+func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	m.cancelDiscoverers()
+	for name, scfg := range cfg {
+		for provName, prov := range m.providersFromConfig(scfg) {
+			m.startProvider(m.ctx, poolKey{setName: name, provider: provName}, prov)
 		}
-		close(err)
 	}
 
-	return <-err
+	return nil
 }
 
 func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Discoverer) {
@@ -144,8 +137,8 @@ func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan
 			if !ok {
 				return
 			}
-			m.addGroup(poolKey, tgs)
-			m.syncCh <- m.allGroups(poolKey)
+			m.updateGroup(poolKey, tgs)
+			m.syncCh <- m.allGroups()
 		}
 	}
 }
@@ -154,47 +147,37 @@ func (m *Manager) cancelDiscoverers() {
 	for _, c := range m.discoverCancel {
 		c()
 	}
-	m.targets = make(map[poolKey][]*targetgroup.Group)
+	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.discoverCancel = nil
 }
 
-func (m *Manager) addGroup(poolKey poolKey, tg []*targetgroup.Group) {
-	done := make(chan struct{})
+func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 
-	m.actionCh <- func(ctx context.Context) {
-		if tg != nil {
-			m.targets[poolKey] = tg
+	for _, tg := range tgs {
+		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
+			if _, ok := m.targets[poolKey]; !ok {
+				m.targets[poolKey] = make(map[string]*targetgroup.Group)
+			}
+			m.targets[poolKey][tg.Source] = tg
 		}
-		close(done)
-
 	}
-	<-done
 }
 
-func (m *Manager) allGroups(pk poolKey) map[string][]*targetgroup.Group {
-	tSets := make(chan map[string][]*targetgroup.Group)
+func (m *Manager) allGroups() map[string][]*targetgroup.Group {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 
-	m.actionCh <- func(ctx context.Context) {
-
-		// Sorting by the poolKey is needed so that we can have predictable tests.
-		var pKeys []poolKey
-		for pk := range m.targets {
-			pKeys = append(pKeys, pk)
+	tSets := map[string][]*targetgroup.Group{}
+	for pkey, tsets := range m.targets {
+		for _, tg := range tsets {
+			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
+			// to signal that it needs to stop all scrape loops for this target set.
+			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
 		}
-		sort.Sort(byProvider(pKeys))
-
-		tSetsAll := map[string][]*targetgroup.Group{}
-		for _, pk := range pKeys {
-			for _, tg := range m.targets[pk] {
-				if tg.Source != "" { // Don't add empty targets.
-					tSetsAll[pk.setName] = append(tSetsAll[pk.setName], tg)
-				}
-			}
-		}
-		tSets <- tSetsAll
 	}
-	return <-tSets
-
+	return tSets
 }
 
 func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[string]Discoverer {

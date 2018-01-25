@@ -44,7 +44,7 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	return &Node{logger: l, informer: inf, store: inf.GetStore()}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
 	var initial []*targetgroup.Group

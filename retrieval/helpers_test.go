@@ -14,7 +14,6 @@
 package retrieval
 
 import (
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -69,26 +68,3 @@ func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64
 
 func (a *collectResultAppender) Commit() error   { return nil }
 func (a *collectResultAppender) Rollback() error { return nil }
-
-// fakeTargetProvider implements a TargetProvider and allows manual injection
-// of TargetGroups through the update channel.
-type fakeTargetProvider struct {
-	sources []string
-	update  chan *targetgroup.Group
-}
-
-func (tp *fakeTargetProvider) Run(ch chan<- targetgroup.Group, done <-chan struct{}) {
-	defer close(ch)
-	for {
-		select {
-		case tg := <-tp.update:
-			ch <- *tg
-		case <-done:
-			return
-		}
-	}
-}
-
-func (tp *fakeTargetProvider) Sources() []string {
-	return tp.sources
-}

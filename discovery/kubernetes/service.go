@@ -44,7 +44,7 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	return &Service{logger: l, informer: inf, store: inf.GetStore()}
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
 	var initial []*targetgroup.Group

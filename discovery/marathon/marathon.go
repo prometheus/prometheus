@@ -29,9 +29,9 @@ import (
 	"github.com/go-kit/kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
@@ -175,7 +175,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	}, nil
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {

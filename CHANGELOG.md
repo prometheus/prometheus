@@ -1,3 +1,24 @@
+## 2.1.0 / 2018-1-19
+
+* [FEATURE] New Service Discovery UI showing labels before and after relabelling.
+* [FEATURE] New Admin APIs added to v1 to delete, snapshot and remove tombstones.
+* [ENHANCEMENT] The graph UI autcomplete now includes your previous queries.
+* [ENHANCEMENT] Federation is now much faster for large numbers of series.
+* [ENHANCEMENT] Added new metrics to measure rule timings.
+* [ENHANCEMENT] Rule evaluation times added to the rules UI.
+* [ENHANCEMENT] Added metrics to measure modified time of file SD files.
+* [ENHANCEMENT] Kubernetes SD now includes POD UID in discovery metadata.
+* [ENHANCEMENT] The Query APIs now return optional stats on query execution times.
+* [ENHANCEMENT] The index now no longer has the 4GiB size limit and is also smaller.
+* [BUGFIX] Remote read `read_recent` option is now false by default.
+* [BUGFIX] Pass the right configuration to each Alertmanager (AM) when using multiple AM configs.
+* [BUGFIX] Fix not-matchers not selecting series with labels unset.
+* [BUGFIX] tsdb: Fix occasional panic in head block.
+* [BUGFIX] tsdb: Close files before deletion to fix retention issues on Windows and NFS.
+* [BUGFIX] tsdb: Cleanup and do not retry failing compactions.
+* [BUGFIX] tsdb: Close WAL while shutting down.
+
+
 ## 2.0.0 / 2017-11-08
 
 This release includes a completely rewritten storage, huge performance

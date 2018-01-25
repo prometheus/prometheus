@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -26,6 +28,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,6 +47,7 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
@@ -234,11 +238,12 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier         = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		discoveryManager = discovery.NewManager(log.With(logger, "component", "discovery manager"))
-		scrapeManager    = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
-		queryEngine      = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ruleManager      = rules.NewManager(&rules.ManagerOptions{
+		notifier               = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		discoveryManagerScrape = discovery.NewManager(log.With(logger, "component", "discovery manager scrape"))
+		discoveryManagerNotify = discovery.NewManager(log.With(logger, "component", "discovery manager notify"))
+		scrapeManager          = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		queryEngine            = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
+		ruleManager            = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
 			QueryFunc:   rules.EngineQueryFunc(queryEngine),
 			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
@@ -282,9 +287,29 @@ func main() {
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
+		// The Scrape and notifier managers need to reload before the Discovery manager as
+		// they need to read the most updated config when receiving the new targets list.
 		notifier.ApplyConfig,
-		discoveryManager.ApplyConfig,
 		scrapeManager.ApplyConfig,
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.ScrapeConfigs {
+				c[v.JobName] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManagerScrape.ApplyConfig(c)
+		},
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
+				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				b, err := json.Marshal(v)
+				if err != nil {
+					return err
+				}
+				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManagerNotify.ApplyConfig(c)
+		},
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.
 			var files []string
@@ -306,8 +331,22 @@ func main() {
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
 	dbOpen := make(chan struct{})
-	// Wait until the server is ready to handle reloading
-	reloadReady := make(chan struct{})
+
+	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
+	type closeOnce struct {
+		C     chan struct{}
+		once  sync.Once
+		Close func()
+	}
+	// Wait until the server is ready to handle reloading.
+	reloadReady := &closeOnce{
+		C: make(chan struct{}),
+	}
+	reloadReady.Close = func() {
+		reloadReady.once.Do(func() {
+			close(reloadReady.C)
+		})
+	}
 
 	var g group.Group
 	{
@@ -316,12 +355,16 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
+				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+					reloadReady.Close()
+
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
+					reloadReady.Close()
 					break
 				}
 				return nil
@@ -332,23 +375,46 @@ func main() {
 		)
 	}
 	{
-		ctxDiscovery, cancelDiscovery := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManager.Run(ctxDiscovery)
-				level.Info(logger).Log("msg", "Discovery manager stopped")
+				err := discoveryManagerScrape.Run(ctx)
+				level.Info(logger).Log("msg", "Scrape discovery manager stopped")
 				return err
 			},
 			func(err error) {
-				level.Info(logger).Log("msg", "Stopping discovery manager...")
-				cancelDiscovery()
+				level.Info(logger).Log("msg", "Stopping scrape discovery manager...")
+				cancel()
+			},
+		)
+	}
+	{
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(
+			func() error {
+				err := discoveryManagerNotify.Run(ctx)
+				level.Info(logger).Log("msg", "Notify discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping notify discovery manager...")
+				cancel()
 			},
 		)
 	}
 	{
 		g.Add(
 			func() error {
-				err := scrapeManager.Run(discoveryManager.SyncCh())
+				// When the scrape manager receives a new targets list
+				// it needs to read a valid config for each job.
+				// It depends on the config being in sync with the discovery manager so
+				// we wait until the config is fully loaded.
+				select {
+				case <-reloadReady.C:
+					break
+				}
+
+				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
 				return err
 			},
@@ -369,11 +435,8 @@ func main() {
 		g.Add(
 			func() error {
 				select {
-				case <-reloadReady:
+				case <-reloadReady.C:
 					break
-				// In case a shutdown is initiated before the reloadReady is released.
-				case <-cancel:
-					return nil
 				}
 
 				for {
@@ -409,6 +472,7 @@ func main() {
 					break
 				// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
+					reloadReady.Close()
 					return nil
 				}
 
@@ -416,9 +480,10 @@ func main() {
 					return fmt.Errorf("Error loading config %s", err)
 				}
 
-				close(reloadReady)
+				reloadReady.Close()
+
 				webHandler.Ready()
-				level.Info(logger).Log("msg", "Server is ready to receive requests.")
+				level.Info(logger).Log("msg", "Server is ready to receive web requests.")
 				<-cancel
 				return nil
 			},
@@ -493,7 +558,16 @@ func main() {
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
 			func() error {
-				notifier.Run()
+				// When the notifier manager receives a new targets list
+				// it needs to read a valid config for each job.
+				// It depends on the config being in sync with the discovery manager
+				// so we wait until the config is fully loaded.
+				select {
+				case <-reloadReady.C:
+					break
+				}
+				notifier.Run(discoveryManagerNotify.SyncCh())
+				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
 			func(err error) {

@@ -27,9 +27,9 @@ import (
 	consul "github.com/hashicorp/consul/api"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	config_util "github.com/prometheus/prometheus/util/config"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
@@ -82,12 +82,13 @@ var (
 	DefaultSDConfig = SDConfig{
 		TagSeparator: ",",
 		Scheme:       "http",
+		Server:       "localhost:8500",
 	}
 )
 
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
-	Server       string             `yaml:"server"`
+	Server       string             `yaml:"server,omitempty"`
 	Token        config_util.Secret `yaml:"token,omitempty"`
 	Datacenter   string             `yaml:"datacenter,omitempty"`
 	TagSeparator string             `yaml:"tag_separator,omitempty"`
@@ -202,7 +203,7 @@ func (d *Discovery) shouldWatch(name string) bool {
 	return false
 }
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Watched services and their cancelation functions.
 	services := map[string]func(){}

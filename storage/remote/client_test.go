@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	config_util "github.com/prometheus/prometheus/util/config"
 )
 
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)

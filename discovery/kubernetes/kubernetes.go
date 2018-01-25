@@ -23,9 +23,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	config_util "github.com/prometheus/prometheus/util/config"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
 
 	"k8s.io/client-go/kubernetes"
@@ -152,7 +152,7 @@ func init() {
 	}
 }
 
-// Discovery implements the TargetProvider interface for discovering
+// Discovery implements the Discoverer interface for discovering
 // targets from Kubernetes.
 type Discovery struct {
 	client             kubernetes.Interface
@@ -244,7 +244,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 
 const resyncPeriod = 10 * time.Minute
 
-// Run implements the TargetProvider interface.
+// Run implements the Discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	rclient := d.client.Core().RESTClient()
 	reclient := d.client.Extensions().RESTClient()
