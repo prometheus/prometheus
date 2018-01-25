@@ -340,6 +340,9 @@ func (c *mergeSeriesSet) Next() bool {
 }
 
 func (c *mergeSeriesSet) At() Series {
+	if len(c.currentSets) == 1 {
+		return c.currentSets[0].At()
+	}
 	series := []Series{}
 	for _, seriesSet := range c.currentSets {
 		series = append(series, seriesSet.At())
