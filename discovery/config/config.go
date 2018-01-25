@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
+	"github.com/prometheus/prometheus/discovery/webhook"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
@@ -58,6 +59,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
+	// List of file service discovery configurations.
+	WebHookSDConfig []*webhook.SDConfig `yaml:"webhook_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
+	"github.com/prometheus/prometheus/discovery/webhook"
 )
 
 // Discoverer provides information about target groups. It maintains a set
@@ -209,6 +210,11 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 	for i, c := range cfg.FileSDConfigs {
 		app("file", i, file.NewDiscovery(c, log.With(m.logger, "discovery", "file")))
 	}
+
+	for i, c := range cfg.WebHookSDConfig {
+		app("webhook", i, webhook.NewDiscovery(c, log.With(m.logger, "discovery", "webhook")))
+	}
+
 	for i, c := range cfg.ConsulSDConfigs {
 		k, err := consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
 		if err != nil {
