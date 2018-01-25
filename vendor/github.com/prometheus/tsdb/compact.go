@@ -428,10 +428,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	indexw, err := index.NewWriter(filepath.Join(tmp, indexFilename))
-	meta.Version = indexw.Version
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
+	meta.Version = indexw.Version
 
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
