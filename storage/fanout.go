@@ -303,6 +303,10 @@ type mergeSeriesSet struct {
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
 func NewMergeSeriesSet(sets []SeriesSet) SeriesSet {
+	if len(sets) == 1 {
+		return sets[0]
+	}
+
 	// Sets need to be pre-advanced, so we can introspect the label of the
 	// series under the cursor.
 	var h seriesSetHeap
