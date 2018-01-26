@@ -168,7 +168,7 @@ Prometheus.Graph.prototype.initialize = function() {
   });
   self.spinner.hide();
 
-  range.bindRangeEvents(self);
+  range.bindRangeEvents.call(this);
 
   self.insertMetric.change(function() {
     self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
@@ -928,75 +928,75 @@ function redirectToMigratedURL() {
  * Chart range helper functions
  * **/
 const range = {
-  bindRangeEvents: function(self) {
+  bindRangeEvents: function() {
     var events = [
-      { name: "inc_range", func: this.increaseRange.bind(this, self) },
-      { name: "dec_range", func: this.decreaseRange.bind(this, self) },
-      { name: "inc_end", func: this.increaseEnd.bind(this, self) },
-      { name: "dec_end", func: this.decreaseEnd.bind(this, self) }
+      { name: "inc_range", func: range.increaseRange.bind(this) },
+      { name: "dec_range", func: range.decreaseRange.bind(this) },
+      { name: "inc_end", func: range.increaseEnd.bind(this) },
+      { name: "dec_end", func: range.decreaseEnd.bind(this) }
     ];
-
+    const self = this;
     events.forEach(function(event) {
-      var debouncedFunction = debounce(event.func, 300);
+      var debouncedFunction = debounce(event.func.bind(this), 300);
       self.queryForm.find("button[name=" + event.name + "]").click(debouncedFunction);
     });
   },
 
-  decreaseEnd: function(self) {
-    var newDate = moment(this.getOrSetEndDate(self));
-    newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
-    this.setEndDate(self, newDate);
-    self.submitQuery();
+  decreaseEnd: function() {
+    var newDate = moment(range.getOrSetEndDate.call(this));
+    newDate.subtract(this.parseDuration(this.rangeInput.val()) / 2, 'seconds');
+    range.setEndDate.call(this, newDate);
+    this.submitQuery();
   },
 
-  decreaseRange: function(self) {
-    var rangeSeconds = self.parseDuration(self.rangeInput.val());
+  decreaseRange: function() {
+    var rangeSeconds = this.parseDuration(this.rangeInput.val());
     for (var i = Prometheus.Graph.stepValues.length - 1; i >= 0; i--) {
-      if (rangeSeconds > self.parseDuration(Prometheus.Graph.stepValues[i])) {
-        self.rangeInput.val(Prometheus.Graph.stepValues[i]);
-        if (self.expr.val()) {
-          self.submitQuery();
+      if (rangeSeconds > this.parseDuration(Prometheus.Graph.stepValues[i])) {
+        this.rangeInput.val(Prometheus.Graph.stepValues[i]);
+        if (this.expr.val()) {
+          this.submitQuery();
         }
         return;
       }
     }
   },
 
-  getEndDate: function(self) {
-    if (!self.endDate || !self.endDate.val()) {
+  getEndDate: function() {
+    if (!this.endDate || !this.endDate.val()) {
       return moment();
     }
-    return self.endDate.data('DateTimePicker').date();
+    return this.endDate.data('DateTimePicker').date();
   },
 
-  getOrSetEndDate: function(self) {
-    var date = range.getEndDate(self);
-    this.setEndDate(self, date);
+  getOrSetEndDate: function() {
+    var date = range.getEndDate.call(this);
+    range.setEndDate.call(this, date);
     return date;
   },
 
-  increaseEnd: function(self) {
-    var newDate = moment(this.getOrSetEndDate(self));
-    newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
-    this.setEndDate(self, newDate);
-    self.submitQuery();
+  increaseEnd: function() {
+    var newDate = moment(range.getOrSetEndDate.call(this));
+    newDate.add(this.parseDuration(this.rangeInput.val()) / 2, 'seconds');
+    range.setEndDate.call(this, newDate);
+    this.submitQuery();
   },
 
-  increaseRange: function(self) {
-    var rangeSeconds = self.parseDuration(self.rangeInput.val());
+  increaseRange: function() {
+    var rangeSeconds = this.parseDuration(this.rangeInput.val());
     for (var i = 0; i < Prometheus.Graph.stepValues.length; i++) {
-      if (rangeSeconds < self.parseDuration(Prometheus.Graph.stepValues[i])) {
-        self.rangeInput.val(Prometheus.Graph.stepValues[i]);
-        if (self.expr.val()) {
-          self.submitQuery();
+      if (rangeSeconds < this.parseDuration(Prometheus.Graph.stepValues[i])) {
+        this.rangeInput.val(Prometheus.Graph.stepValues[i]);
+        if (this.expr.val()) {
+          this.submitQuery();
         }
         return;
       }
     }
   },
 
-  setEndDate: function(self, date) {
-    self.endDate.data('DateTimePicker').date(date);
+  setEndDate: function(date) {
+    this.endDate.data('DateTimePicker').date(date);
   },
  };
 
