@@ -671,6 +671,7 @@ Available meta labels:
   * `__meta_kubernetes_endpoint_port_protocol`: Protocol of the endpoint port.
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
+* For all targets backed by a node, all labels of the `role: node` discovery are attached.
 
 #### `ingress`
 
