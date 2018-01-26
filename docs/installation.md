@@ -81,8 +81,7 @@ the following third-party contributions:
 
 ### Ansible
 
-* [griggheo/ansible-prometheus](https://github.com/griggheo/ansible-prometheus)
-* [William-Yeh/ansible-prometheus](https://github.com/William-Yeh/ansible-prometheus)
+* [Cloud Alchemy/ansible-prometheus](https://github.com/cloudalchemy/ansible-prometheus)
 
 ### Chef
 
