@@ -1,5 +1,40 @@
 {{ template "head" . }}
 
+{{ template "prom_content_head" . }}
+  <h1>Node Disk - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
+
+  <h3>Disk I/O Utilization</h3>
+  <div id="diskioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#diskioGraph"),
+    expr: [
+      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\\\d+$|dm-)'}[5m]) / 1000 * 100",
+    ],
+    min: 0,
+    name: '[[ device ]]',
+    yUnits: "%",
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Disk I/O Utilization'
+  })
+  </script>
+  <h3>Filesystem Usage</h3>
+  <div id="fsGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#fsGraph"),
+    expr: "100 - node_filesystem_free{job='node',instance='{{ .Params.instance }}'} / node_filesystem_size{job='node'} * 100",
+    min: 0,
+    max: 100,
+    name: '[[ mountpoint ]]',
+    yUnits: "%",
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Filesystem Fullness'
+  })
+  </script>
+
 {{ template "prom_right_table_head" }}
   <th colspan="2">Disks</th>
 </tr>
@@ -37,40 +72,6 @@
 </tr>
 {{ template "prom_right_table_tail" }}
 
-{{ template "prom_content_head" . }}
-  <h1>Node Disk - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
-
-  <h3>Disk I/O Utilization</h3>
-  <div id="diskioGraph"></div>
-  <script>
-  new PromConsole.Graph({
-    node: document.querySelector("#diskioGraph"),
-    expr: [
-      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\\\d+$|dm-)'}[5m]) / 1000 * 100",
-    ],
-    min: 0,
-    name: '[[ device ]]',
-    yUnits: "%",
-    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yTitle: 'Disk I/O Utilization'
-  })
-  </script>
-  <h3>Filesystem Usage</h3>
-  <div id="fsGraph"></div>
-  <script>
-  new PromConsole.Graph({
-    node: document.querySelector("#fsGraph"),
-    expr: "100 - node_filesystem_free{job='node',instance='{{ .Params.instance }}'} / node_filesystem_size{job='node'} * 100",
-    min: 0,
-    max: 100,
-    name: '[[ mountpoint ]]',
-    yUnits: "%",
-    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yTitle: 'Filesystem Fullness'
-  })
-  </script>
 {{ template "prom_content_tail" . }}
 
 {{ template "tail" }}
