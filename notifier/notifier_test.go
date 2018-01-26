@@ -396,7 +396,7 @@ func TestHandlerQueueing(t *testing.T) {
 		case <-called:
 			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]
 			unblock <- struct{}{}
-		case <-time.After(5 * time.Second):
+		case <-time.After(60 * time.Second):
 			t.Fatalf("Alerts were not pushed")
 		}
 	}
@@ -422,7 +422,7 @@ func TestHandlerQueueing(t *testing.T) {
 		case <-called:
 			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]
 			unblock <- struct{}{}
-		case <-time.After(5 * time.Second):
+		case <-time.After(60 * time.Second):
 			t.Fatalf("Alerts were not pushed")
 		}
 	}

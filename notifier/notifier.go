@@ -298,8 +298,14 @@ func (n *Notifier) nextBatch() []*Alert {
 
 // Run dispatches notifications continuously.
 func (n *Notifier) Run(tsets <-chan map[string][]*targetgroup.Group) {
-
 	for {
+		// Throttle syncing to once per five seconds.
+		select {
+		case <-n.ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+
 		select {
 		case <-n.ctx.Done():
 			return
