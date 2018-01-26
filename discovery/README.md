@@ -140,7 +140,9 @@ type Discoverer interface {
 }
 ```
 
-Prometheus will call the `Run()` method on a provider to initialise the discovery mechanism. The mechanism will then send *all* the `TargetGroup`s into the channel. Now the mechanism will watch for changes and then send only changed and new `TargetGroup`s down the channel.
+Prometheus will call the `Run()` method on a provider to initialise the discovery mechanism. The mechanism will then send *all* the `TargetGroup`s into the channel. 
+Now the mechanism will watch for changes. For each update it can send all `TargetGroup`s, or only changed and new `TargetGroup`s, down the channel. `Manager` will handle 
+both cases.
 
 For example if we had a discovery mechanism and it retrieves the following groups:
 
