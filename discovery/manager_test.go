@@ -655,7 +655,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for testIndex, testCase := range testCases {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		discoveryManager := NewManager(nil)
+		discoveryManager := NewManager(ctx, nil)
 
 		var totalUpdatesCount int
 
@@ -741,8 +741,8 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(nil)
-	go discoveryManager.Run(ctx)
+	discoveryManager := NewManager(ctx, nil)
+	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
