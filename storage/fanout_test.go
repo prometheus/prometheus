@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -218,13 +219,58 @@ func (m *mockSeriesSet) Err() error {
 	return nil
 }
 
-func newMockSeries(lset labels.Labels, samples []sample) Series {
-	return &mockSeries{
-		labels: func() labels.Labels {
-			return lset
-		},
-		iterator: func() SeriesIterator {
-			return newListSeriesIterator(samples)
-		},
+var result []sample
+
+func makeSeriesSet(numSeries, numSamples int) SeriesSet {
+	series := []Series{}
+	for j := 0; j < numSeries; j++ {
+		labels := labels.Labels{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}
+		samples := []sample{}
+		for k := 0; k < numSamples; k++ {
+			samples = append(samples, sample{t: int64(k), v: float64(k)})
+		}
+		series = append(series, newMockSeries(labels, samples))
 	}
+	return newMockSeriesSet(series...)
+}
+
+func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
+	seriesSets := []SeriesSet{}
+	for i := 0; i < numSeriesSets; i++ {
+		seriesSets = append(seriesSets, makeSeriesSet(numSeries, numSamples))
+	}
+	return NewMergeSeriesSet(seriesSets)
+}
+
+func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		for seriesSet.Next() {
+			result = drainSamples(seriesSet.At().Iterator())
+		}
+	}
+}
+
+func BenchmarkNoMergeSeriesSet_100_100(b *testing.B) {
+	seriesSet := makeSeriesSet(100, 100)
+	benchmarkDrain(seriesSet, b)
+}
+
+func BenchmarkMergeSeriesSet_1_100_100(b *testing.B) {
+	seriesSet := makeMergeSeriesSet(1, 100, 100)
+	benchmarkDrain(seriesSet, b)
+}
+
+func BenchmarkMergeSeriesSet_10_100_100(b *testing.B) {
+	seriesSet := makeMergeSeriesSet(10, 100, 100)
+	benchmarkDrain(seriesSet, b)
+}
+
+func BenchmarkMergeSeriesSet_100_100_100(b *testing.B) {
+	seriesSet := makeMergeSeriesSet(100, 100, 100)
+	benchmarkDrain(seriesSet, b)
+}
+
+func BenchmarkMergeSeriesSet_1000_100_100(b *testing.B) {
+	seriesSet := makeMergeSeriesSet(100, 100, 100)
+	benchmarkDrain(seriesSet, b)
 }
