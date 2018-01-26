@@ -168,11 +168,7 @@ Prometheus.Graph.prototype.initialize = function() {
   });
   self.spinner.hide();
 
-  self.queryForm.find("button[name=inc_range]").click(function() { self.increaseRange(); });
-  self.queryForm.find("button[name=dec_range]").click(function() { self.decreaseRange(); });
-
-  self.queryForm.find("button[name=inc_end]").click(function() { self.increaseEnd(); });
-  self.queryForm.find("button[name=dec_end]").click(function() { self.decreaseEnd(); });
+  range.bindRangeEvents(self);
 
   self.insertMetric.change(function() {
     self.expr.selection("replace", {text: self.insertMetric.val(), mode: "before"});
@@ -336,70 +332,6 @@ Prometheus.Graph.prototype.parseDuration = function(rangeText) {
   return value * Prometheus.Graph.timeFactors[unit];
 };
 
-Prometheus.Graph.prototype.increaseRange = function() {
-  var self = this;
-  var rangeSeconds = self.parseDuration(self.rangeInput.val());
-  for (var i = 0; i < Prometheus.Graph.stepValues.length; i++) {
-    if (rangeSeconds < self.parseDuration(Prometheus.Graph.stepValues[i])) {
-      self.rangeInput.val(Prometheus.Graph.stepValues[i]);
-      if (self.expr.val()) {
-        self.submitQuery();
-      }
-      return;
-    }
-  }
-};
-
-Prometheus.Graph.prototype.decreaseRange = function() {
-  var self = this;
-  var rangeSeconds = self.parseDuration(self.rangeInput.val());
-  for (var i = Prometheus.Graph.stepValues.length - 1; i >= 0; i--) {
-    if (rangeSeconds > self.parseDuration(Prometheus.Graph.stepValues[i])) {
-      self.rangeInput.val(Prometheus.Graph.stepValues[i]);
-      if (self.expr.val()) {
-        self.submitQuery();
-      }
-      return;
-    }
-  }
-};
-
-Prometheus.Graph.prototype.getEndDate = function() {
-  var self = this;
-  if (!self.endDate || !self.endDate.val()) {
-    return moment();
-  }
-  return self.endDate.data('DateTimePicker').date();
-};
-
-Prometheus.Graph.prototype.getOrSetEndDate = function() {
-  var self = this;
-  var date = self.getEndDate();
-  self.setEndDate(date);
-  return date;
-};
-
-Prometheus.Graph.prototype.setEndDate = function(date) {
-  var self = this;
-  self.endDate.data('DateTimePicker').date(date);
-};
-
-Prometheus.Graph.prototype.increaseEnd = function() {
-  var self = this;
-  var newDate = moment(self.getOrSetEndDate());
-  newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
-  self.setEndDate(newDate);
-  self.submitQuery();
-};
-
-Prometheus.Graph.prototype.decreaseEnd = function() {
-  var self = this;
-  var newDate = moment(self.getOrSetEndDate());
-  newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
-  self.setEndDate(newDate);
-  self.submitQuery();
-};
-
 Prometheus.Graph.prototype.submitQuery = function() {
   var self = this;
   self.clearError();
@@ -413,7 +345,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
   var startTime = new Date().getTime();
   var rangeSeconds = self.parseDuration(self.rangeInput.val());
   var resolution = parseInt(self.queryForm.find("input[name=step_input]").val()) || Math.max(Math.floor(rangeSeconds / 250), 1);
-  var endDate = self.getEndDate() / 1000;
+  var endDate = range.getEndDate(self) / 1000;
 
   if (self.queryXhr) {
     self.queryXhr.abort();
@@ -601,7 +533,7 @@ Prometheus.Graph.prototype.updateGraph = function() {
   self.graphArea.append(self.graph);
   self.graphArea.append(self.yAxis);
 
-  var endTime = self.getEndDate() / 1000; // Convert to UNIX timestamp.
+  var endTime = range.getEndDate(self) / 1000; // Convert to UNIX timestamp.
   var duration = self.parseDuration(self.rangeInput.val()) || 3600; // 1h default.
   var startTime = endTime - duration;
   self.data.forEach(function(s) {
@@ -990,6 +922,97 @@ function redirectToMigratedURL() {
   });
   var query = $.param(queryObject);
   window.location = PATH_PREFIX + "/graph?" + query;
+}
+
+/**
+ * Chart range helper functions
+ * **/
+const range = {
+  bindRangeEvents: function(self) {
+    var events = [
+      { name: "inc_range", func: this.increaseRange.bind(this, self) },
+      { name: "dec_range", func: this.decreaseRange.bind(this, self) },
+      { name: "inc_end", func: this.increaseEnd.bind(this, self) },
+      { name: "dec_end", func: this.decreaseEnd.bind(this, self) }
+    ];
+
+    events.forEach(function(event) {
+      var debouncedFunction = debounce(event.func, 300);
+      self.queryForm.find("button[name=" + event.name + "]").click(debouncedFunction);
+    });
+  },
+
+  decreaseEnd: function(self) {
+    var newDate = moment(this.getOrSetEndDate(self));
+    newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+    this.setEndDate(self, newDate);
+    self.submitQuery();
+  },
+
+  decreaseRange: function(self) {
+    var rangeSeconds = self.parseDuration(self.rangeInput.val());
+    for (var i = Prometheus.Graph.stepValues.length - 1; i >= 0; i--) {
+      if (rangeSeconds > self.parseDuration(Prometheus.Graph.stepValues[i])) {
+        self.rangeInput.val(Prometheus.Graph.stepValues[i]);
+        if (self.expr.val()) {
+          self.submitQuery();
+        }
+        return;
+      }
+    }
+  },
+
+  getEndDate: function(self) {
+    if (!self.endDate || !self.endDate.val()) {
+      return moment();
+    }
+    return self.endDate.data('DateTimePicker').date();
+  },
+
+  getOrSetEndDate: function(self) {
+    var date = range.getEndDate(self);
+    this.setEndDate(self, date);
+    return date;
+  },
+
+  increaseEnd: function(self) {
+    var newDate = moment(this.getOrSetEndDate(self));
+    newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+    this.setEndDate(self, newDate);
+    self.submitQuery();
+  },
+
+  increaseRange: function(self) {
+    var rangeSeconds = self.parseDuration(self.rangeInput.val());
+    for (var i = 0; i < Prometheus.Graph.stepValues.length; i++) {
+      if (rangeSeconds < self.parseDuration(Prometheus.Graph.stepValues[i])) {
+        self.rangeInput.val(Prometheus.Graph.stepValues[i]);
+        if (self.expr.val()) {
+          self.submitQuery();
+        }
+        return;
+      }
+    }
+  },
+
+  setEndDate: function(self, date) {
+    self.endDate.data('DateTimePicker').date(date);
+  },
+ };
+
+function debounce(func, wait, now) {
+  var timeout;
+  return function() {
+    const self = this, args = arguments;
+    var callLater = function() {
+      timeout = null;
+      if (!now) func.apply(self, args);
+    }
+    const callNow = now && !timeout;
+    clearTimeout(timeout);
+    timeout = setTimeout(callLater, wait);
+    if (callNow) func.apply(self, args);
+  };
 }
 
 /**
