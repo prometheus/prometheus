@@ -587,7 +587,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	defer func() {
 		if err == nil {
 			configSuccess.Set(1)
-			configSuccessTime.Set(float64(time.Now().Unix()))
+			configSuccessTime.SetToCurrentTime()
 		} else {
 			configSuccess.Set(0)
 		}
