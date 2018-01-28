@@ -96,9 +96,11 @@ func (t *TimestampCollector) Collect(ch chan<- prometheus.Metric) {
 	uniqueFiles := make(map[string]float64)
 	t.lock.RLock()
 	for fileSD := range t.discoverers {
+		fileSD.lock.RLock()
 		for filename, timestamp := range fileSD.timestamps {
 			uniqueFiles[filename] = timestamp
 		}
+		fileSD.lock.RUnlock()
 	}
 	t.lock.RUnlock()
 	for filename, timestamp := range uniqueFiles {
