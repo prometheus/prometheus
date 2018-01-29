@@ -152,6 +152,8 @@ func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan
 
 func (m *Manager) runUpdater(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
