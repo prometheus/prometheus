@@ -255,22 +255,17 @@ func BenchmarkNoMergeSeriesSet_100_100(b *testing.B) {
 	benchmarkDrain(seriesSet, b)
 }
 
-func BenchmarkMergeSeriesSet_1_100_100(b *testing.B) {
-	seriesSet := makeMergeSeriesSet(1, 100, 100)
-	benchmarkDrain(seriesSet, b)
-}
-
-func BenchmarkMergeSeriesSet_10_100_100(b *testing.B) {
-	seriesSet := makeMergeSeriesSet(10, 100, 100)
-	benchmarkDrain(seriesSet, b)
-}
-
-func BenchmarkMergeSeriesSet_100_100_100(b *testing.B) {
-	seriesSet := makeMergeSeriesSet(100, 100, 100)
-	benchmarkDrain(seriesSet, b)
-}
-
-func BenchmarkMergeSeriesSet_1000_100_100(b *testing.B) {
-	seriesSet := makeMergeSeriesSet(100, 100, 100)
-	benchmarkDrain(seriesSet, b)
+func BenchmarkMergeSeriesSet(b *testing.B) {
+	for _, bm := range []struct {
+		numSeriesSets, numSeries, numSamples int
+	}{
+		{1, 100, 100},
+		{10, 100, 100},
+		{100, 100, 100},
+	} {
+		seriesSet := makeMergeSeriesSet(bm.numSeriesSets, bm.numSeries, bm.numSamples)
+		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
+			benchmarkDrain(seriesSet, b)
+		})
+	}
 }
