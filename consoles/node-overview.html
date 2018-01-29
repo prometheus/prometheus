@@ -1,5 +1,60 @@
 {{ template "head" . }}
 
+{{ template "prom_content_head" . }}
+  <h1>Node Overview - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
+
+  <h3>CPU Usage</h3>
+  <div id="cpuGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#cpuGraph"),
+    expr: "sum by (mode)(irate(node_cpu{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
+    renderer: 'area',
+    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yTitle: 'Cores'
+  })
+  </script>
+
+  <h3>Disk I/O Utilization</h3>
+  <div id="diskioGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#diskioGraph"),
+    expr: [
+      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\\\d+$|dm-)'}[5m]) / 1000 * 100",
+    ],
+    min: 0,
+    name: '[[ device ]]',
+    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
+    yUnits: "%",
+    yTitle: 'Disk I/O Utilization'
+  })
+  </script>
+
+  <h3>Memory</h3>
+  <div id="memoryGraph"></div>
+  <script>
+  new PromConsole.Graph({
+    node: document.querySelector("#memoryGraph"),
+    renderer: 'area',
+    expr: [
+      "node_memory_Cached{job='node',instance='{{ .Params.instance }}'}",
+      "node_memory_Buffers{job='node',instance='{{ .Params.instance }}'}",
+      "node_memory_MemTotal{job='node',instance='{{ .Params.instance }}'} - node_memory_MemFree{job='node',instance='{{.Params.instance}}'} - node_memory_Buffers{job='node',instance='{{.Params.instance}}'} - node_memory_Cached{job='node',instance='{{.Params.instance}}'}",
+      "node_memory_MemFree{job='node',instance='{{ .Params.instance }}'}",
+    ],
+    name: ["Cached", "Buffers", "Used", "Free"],
+    min: 0,
+    yUnits: "B",
+    yAxisFormatter: PromConsole.NumberFormatter.humanize1024,
+    yHoverFormatter: PromConsole.NumberFormatter.humanize1024,
+    yTitle: 'Memory'
+  })
+  </script>
+
 {{ template "prom_right_table_head" }}
   <tr><th colspan="2">Overview</th></tr>
   <tr>
@@ -62,60 +117,6 @@
 </tr>
 {{ template "prom_right_table_tail" }}
 
-{{ template "prom_content_head" . }}
-  <h1>Node Overview - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
-
-  <h3>CPU Usage</h3>
-  <div id="cpuGraph"></div>
-  <script>
-  new PromConsole.Graph({
-    node: document.querySelector("#cpuGraph"),
-    expr: "sum by (mode)(irate(node_cpu{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
-    renderer: 'area',
-    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
-    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yTitle: 'Cores'
-  })
-  </script>
-
-  <h3>Disk I/O Utilization</h3>
-  <div id="diskioGraph"></div>
-  <script>
-  new PromConsole.Graph({
-    node: document.querySelector("#diskioGraph"),
-    expr: [
-      "irate(node_disk_io_time_ms{job='node',instance='{{ .Params.instance }}',device!~'^(md\\\\d+$|dm-)'}[5m]) / 1000 * 100",
-    ],
-    min: 0,
-    name: '[[ device ]]',
-    yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
-    yUnits: "%",
-    yTitle: 'Disk I/O Utilization'
-  })
-  </script>
-
-  <h3>Memory</h3>
-  <div id="memoryGraph"></div>
-  <script>
-  new PromConsole.Graph({
-    node: document.querySelector("#memoryGraph"),
-    renderer: 'area',
-    expr: [
-      "node_memory_Cached{job='node',instance='{{ .Params.instance }}'}",
-      "node_memory_Buffers{job='node',instance='{{ .Params.instance }}'}",
-      "node_memory_MemTotal{job='node',instance='{{ .Params.instance }}'} - node_memory_MemFree{job='node',instance='{{.Params.instance}}'} - node_memory_Buffers{job='node',instance='{{.Params.instance}}'} - node_memory_Cached{job='node',instance='{{.Params.instance}}'}",
-      "node_memory_MemFree{job='node',instance='{{ .Params.instance }}'}",
-    ],
-    name: ["Cached", "Buffers", "Used", "Free"],
-    min: 0,
-    yUnits: "B",
-    yAxisFormatter: PromConsole.NumberFormatter.humanize1024,
-    yHoverFormatter: PromConsole.NumberFormatter.humanize1024,
-    yTitle: 'Memory'
-  })
-  </script>
 {{ template "prom_content_tail" . }}
 
 {{ template "tail" }}
