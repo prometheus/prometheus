@@ -299,7 +299,11 @@ func (db *DB) retentionCutoff() (bool, error) {
 	}
 
 	// This will close the dirs and then delete the dirs.
-	return len(dirs) > 0, db.reload(dirs...)
+	if len(dirs) > 0 {
+		return true, db.reload(dirs...)
+	}
+
+	return false, nil
 }
 
 // Appender opens a new appender against the database.
