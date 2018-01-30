@@ -60,13 +60,13 @@ type poolKey struct {
 }
 
 // NewManager is the Discovery Manager constructor
-func NewManager(logger log.Logger) *Manager {
+func NewManager(ctx context.Context, logger log.Logger) *Manager {
 	return &Manager{
 		logger:         logger,
 		syncCh:         make(chan map[string][]*targetgroup.Group),
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
-		ctx:            context.Background(),
+		ctx:            ctx,
 	}
 }
 
@@ -89,13 +89,12 @@ type Manager struct {
 }
 
 // Run starts the background processing
-func (m *Manager) Run(ctx context.Context) error {
-	m.ctx = ctx
+func (m *Manager) Run() error {
 	for {
 		select {
-		case <-ctx.Done():
+		case <-m.ctx.Done():
 			m.cancelDiscoverers()
-			return ctx.Err()
+			return m.ctx.Err()
 		}
 	}
 }

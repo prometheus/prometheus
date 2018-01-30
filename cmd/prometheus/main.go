@@ -238,12 +238,17 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier               = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		discoveryManagerScrape = discovery.NewManager(log.With(logger, "component", "discovery manager scrape"))
-		discoveryManagerNotify = discovery.NewManager(log.With(logger, "component", "discovery manager notify"))
-		scrapeManager          = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
-		queryEngine            = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ruleManager            = rules.NewManager(&rules.ManagerOptions{
+		notifier = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+
+		ctxScrape, cancelScrape = context.WithCancel(context.Background())
+		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"))
+
+		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"))
+
+		scrapeManager = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		queryEngine   = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
+		ruleManager   = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
 			QueryFunc:   rules.EngineQueryFunc(queryEngine),
 			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
@@ -375,30 +380,28 @@ func main() {
 		)
 	}
 	{
-		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManagerScrape.Run(ctx)
+				err := discoveryManagerScrape.Run()
 				level.Info(logger).Log("msg", "Scrape discovery manager stopped")
 				return err
 			},
 			func(err error) {
 				level.Info(logger).Log("msg", "Stopping scrape discovery manager...")
-				cancel()
+				cancelScrape()
 			},
 		)
 	}
 	{
-		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManagerNotify.Run(ctx)
+				err := discoveryManagerNotify.Run()
 				level.Info(logger).Log("msg", "Notify discovery manager stopped")
 				return err
 			},
 			func(err error) {
 				level.Info(logger).Log("msg", "Stopping notify discovery manager...")
-				cancel()
+				cancelNotify()
 			},
 		)
 	}
