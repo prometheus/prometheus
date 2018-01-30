@@ -58,17 +58,10 @@ func NewClientFromConfig(cfg config_util.HTTPClientConfig, name string) (*http.C
 
 	// If a bearer token is provided, create a round tripper that will set the
 	// Authorization header correctly on each request.
-	bearerToken := string(cfg.BearerToken)
-	if len(bearerToken) == 0 && len(cfg.BearerTokenFile) > 0 {
-		b, err := ioutil.ReadFile(cfg.BearerTokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read bearer token file %s: %s", cfg.BearerTokenFile, err)
-		}
-		bearerToken = strings.TrimSpace(string(b))
-	}
-
-	if len(bearerToken) > 0 {
-		rt = NewBearerAuthRoundTripper(bearerToken, rt)
+	if len(cfg.BearerToken) > 0 {
+		rt = NewBearerAuthRoundTripper(string(cfg.BearerToken), rt)
+	} else if len(cfg.BearerTokenFile) > 0 {
+		rt = NewBearerAuthFileRoundTripper(cfg.BearerTokenFile, rt)
 	}
 
 	if cfg.BasicAuth != nil {
@@ -94,6 +87,32 @@ func (rt *bearerAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	if len(req.Header.Get("Authorization")) == 0 {
 		req = cloneRequest(req)
 		req.Header.Set("Authorization", "Bearer "+rt.bearerToken)
+	}
+
+	return rt.rt.RoundTrip(req)
+}
+
+type bearerAuthFileRoundTripper struct {
+	bearerFile string
+	rt         http.RoundTripper
+}
+
+// NewBearerAuthFileRoundTripper adds the bearer token read from the provided file to a request unless
+// the authorization header has already been set. This file is read for every request.
+func NewBearerAuthFileRoundTripper(bearerFile string, rt http.RoundTripper) http.RoundTripper {
+	return &bearerAuthFileRoundTripper{bearerFile, rt}
+}
+
+func (rt *bearerAuthFileRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if len(req.Header.Get("Authorization")) == 0 {
+		b, err := ioutil.ReadFile(rt.bearerFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read bearer token file %s: %s", rt.bearerFile, err)
+		}
+		bearerToken := strings.TrimSpace(string(b))
+
+		req = cloneRequest(req)
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
 
 	return rt.rt.RoundTrip(req)
