@@ -84,6 +84,7 @@ type Handler struct {
 	router       *route.Router
 	quitCh       chan struct{}
 	reloadCh     chan chan error
+	reloadChForce     chan chan error
 	options      *Options
 	config       *config.Config
 	configString string
@@ -162,6 +163,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		router:      router,
 		quitCh:      make(chan struct{}),
 		reloadCh:    make(chan chan error),
+		reloadChForce:    make(chan chan error),
 		options:     o,
 		versionInfo: o.Version,
 		birth:       time.Now(),
@@ -237,6 +239,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	if o.EnableLifecycle {
 		router.Post("/-/quit", h.quit)
 		router.Post("/-/reload", h.reload)
+		router.Post("/-/reload/force", h.reloadForce)
 	} else {
 		router.Post("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
@@ -246,12 +249,20 @@ func New(logger log.Logger, o *Options) *Handler {
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("Lifecycle APIs are not enabled"))
 		})
+		router.Post("/-/reload/force", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Lifecycle APIs are not enabled"))
+		})
 	}
 	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		w.Write([]byte("Only POST requests allowed"))
 	})
 	router.Get("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.Write([]byte("Only POST requests allowed"))
+	})
+	router.Get("/-/reload/force", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		w.Write([]byte("Only POST requests allowed"))
 	})
@@ -376,6 +387,10 @@ func (h *Handler) Quit() <-chan struct{} {
 // Reload returns the receive-only channel that signals configuration reload requests.
 func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
+}
+
+func (h *Handler) ReloadForce() <-chan chan error {
+	return h.reloadChForce
 }
 
 // Run serves the HTTP endpoints.
@@ -639,6 +654,14 @@ func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
 	rc := make(chan error)
 	h.reloadCh <- rc
 	if err := <-rc; err != nil {
+		http.Error(w, fmt.Sprintf("failed to reload config: %s", err), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) reloadForce(w http.ResponseWriter, r *http.Request) {
+	rcf := make(chan error)
+	h.reloadChForce <- rcf
+	if err := <-rcf; err != nil {
 		http.Error(w, fmt.Sprintf("failed to reload config: %s", err), http.StatusInternalServerError)
 	}
 }

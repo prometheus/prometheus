@@ -176,7 +176,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
-func (sp *scrapePool) stop() {
+func (sp *scrapePool) stop(force bool) {
 	sp.cancel()
 	var wg sync.WaitGroup
 
@@ -187,7 +187,12 @@ func (sp *scrapePool) stop() {
 		wg.Add(1)
 
 		go func(l loop) {
-			l.stop()
+			if (force){
+				l.stopForce();
+			} else {
+				l.stop()
+			}
+
 			wg.Done()
 		}(l)
 
@@ -200,7 +205,7 @@ func (sp *scrapePool) stop() {
 // reload the scrape pool with the given scrape configuration. The target state is preserved
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
-func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
+func (sp *scrapePool) reload(cfg *config.ScrapeConfig, force bool) {
 	start := time.Now()
 
 	sp.mtx.Lock()
@@ -229,7 +234,11 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		wg.Add(1)
 
 		go func(oldLoop, newLoop loop) {
-			oldLoop.stop()
+			if (force) {
+				oldLoop.stopForce()
+			} else {
+				oldLoop.stop()
+			}
 			wg.Done()
 
 			go newLoop.run(interval, timeout, nil)
@@ -463,6 +472,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
 	stop()
+	stopForce()
 }
 
 type cacheEntry struct {
@@ -768,6 +778,10 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 func (sl *scrapeLoop) stop() {
 	sl.cancel()
 	<-sl.stopped
+}
+
+func (sl *scrapeLoop) stopForce() {
+	sl.cancel()
 }
 
 type sample struct {
