@@ -126,6 +126,81 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 	return resultVector
 }
 
+func exactRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
+	ms := arg.(*MatrixSelector)
+	// XXX: Hack for including at least one non-stale point before the beginning of the range.
+	ms.Range += LookbackDelta
+	matrix := ev.evalMatrix(ms)
+	ms.Range -= LookbackDelta
+
+	var (
+		rangeStart   = ev.Timestamp - durationMilliseconds(ms.Range+ms.Offset)
+		rangeEnd     = ev.Timestamp - durationMilliseconds(ms.Offset)
+		resultVector = make(Vector, 0, len(matrix))
+	)
+
+	for _, samples := range matrix {
+		points := samples.Points
+		// Skip all points before rangeStart except the last.
+		firstPoint := 0
+		for i := 0; i < len(points) && points[i].T <= rangeStart; i++ {
+			firstPoint = i
+		}
+
+		if len(points)-firstPoint < 2 {
+			continue
+		}
+		sampledInterval := float64(points[len(points)-1].T - points[firstPoint].T)
+		intervalThreshold := sampledInterval / float64(len(points)-1-firstPoint) * 1.1
+
+		// If the last point before the range is too far from rangeStart, drop it.
+		if float64(rangeStart-points[firstPoint].T) > intervalThreshold {
+			firstPoint++
+			if len(points)-firstPoint < 2 {
+				continue
+			}
+			sampledInterval = float64(points[len(points)-1].T - points[firstPoint].T)
+			intervalThreshold = sampledInterval / float64(len(points)-1-firstPoint) * 1.1
+		}
+
+		var (
+			counterCorrection float64
+			lastValue         float64
+		)
+		if isCounter {
+			for i := firstPoint; i < len(points); i++ {
+				sample := points[i]
+				if sample.V < lastValue {
+					counterCorrection += lastValue
+				}
+				lastValue = sample.V
+			}
+		}
+		resultValue := points[len(points)-1].V - points[firstPoint].V + counterCorrection
+
+		if isRate {
+			// Duration between last sample and boundary of range.
+			durationToEnd := float64(rangeEnd - points[len(points)-1].T)
+			if points[firstPoint].T < rangeStart && durationToEnd < intervalThreshold {
+				// If the points cover the whole range (i.e. they start just before the
+				// range start and end just before the range end) the rate is the
+				// increase divided by the sampled interval.
+				resultValue = resultValue / (sampledInterval / 1000)
+			} else {
+				// If the points don't cover the whole range, the rate is the increase
+				// divided by the range length.
+				resultValue = resultValue / ms.Range.Seconds()
+			}
+		}
+
+		resultVector = append(resultVector, Sample{
+			Metric: dropMetricName(samples.Metric),
+			Point:  Point{V: resultValue, T: ev.Timestamp},
+		})
+	}
+	return resultVector
+}
+
 // === delta(Matrix ValueTypeMatrix) Vector ===
 func funcDelta(ev *evaluator, args Expressions) Value {
 	return extrapolatedRate(ev, args[0], false, false)
@@ -139,6 +214,21 @@ func funcRate(ev *evaluator, args Expressions) Value {
 // === increase(node ValueTypeMatrix) Vector ===
 func funcIncrease(ev *evaluator, args Expressions) Value {
 	return extrapolatedRate(ev, args[0], true, false)
+}
+
+// === xdelta(Matrix ValueTypeMatrix) Vector ===
+func funcXdelta(ev *evaluator, args Expressions) Value {
+	return exactRate(ev, args[0], false, false)
+}
+
+// === xrate(node ValueTypeMatrix) Vector ===
+func funcXrate(ev *evaluator, args Expressions) Value {
+	return exactRate(ev, args[0], true, true)
+}
+
+// === xincrease(node ValueTypeMatrix) Vector ===
+func funcXincrease(ev *evaluator, args Expressions) Value {
+	return exactRate(ev, args[0], true, false)
 }
 
 // === irate(node ValueTypeMatrix) Vector ===
@@ -1232,6 +1322,24 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 		Call:       funcVector,
+	},
+	"xdelta": {
+		Name:       "xdelta",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcXdelta,
+	},
+	"xincrease": {
+		Name:       "xincrease",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcXincrease,
+	},
+	"xrate": {
+		Name:       "xrate",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcXrate,
 	},
 	"year": {
 		Name:       "year",

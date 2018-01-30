@@ -62,23 +62,57 @@ eval instant at 15m changes(x[15m])
 
 clear
 
-# Tests for increase().
-load 5m
+# Tests for increase()/xincrease()/xrate().
+load 5s
 	http_requests{path="/foo"}	0+10x10
 	http_requests{path="/bar"}	0+10x5 0+10x5
 
 # Tests for increase().
-eval instant at 50m increase(http_requests[50m])
+eval instant at 50s increase(http_requests[50s])
 	{path="/foo"} 100
 	{path="/bar"}  90
 
-eval instant at 50m increase(http_requests[100m])
+eval instant at 50s increase(http_requests[100s])
 	{path="/foo"} 100
 	{path="/bar"}  90
+
+# Tests for xincrease().
+eval instant at 50s xincrease(http_requests[50s])
+	{path="/foo"} 100
+	{path="/bar"}  90
+
+eval instant at 50s xincrease(http_requests[5s])
+	{path="/foo"} 10
+	{path="/bar"} 10
+
+eval instant at 50s xincrease(http_requests[3s])
+	{path="/foo"} 10
+	{path="/bar"} 10
+
+eval instant at 49s xincrease(http_requests[3s])
+
+# Tests for xrate().
+eval instant at 50s xrate(http_requests[50s])
+	{path="/foo"} 2
+	{path="/bar"} 1.8
+
+eval instant at 50s xrate(http_requests[100s])
+	{path="/foo"} 1
+	{path="/bar"} 0.9
+
+eval instant at 50s xrate(http_requests[5s])
+	{path="/foo"} 2
+	{path="/bar"} 2
+
+eval instant at 50s xrate(http_requests[3s])
+	{path="/foo"} 2
+	{path="/bar"} 2
+
+eval instant at 49s xrate(http_requests[3s])
 
 clear
 
-# Test for increase() with counter reset.
+# Test for increase()/xincrease with counter reset.
 # When the counter is reset, it always starts at 0.
 # So the sequence 3 2 (decreasing counter = reset) is interpreted the same as 3 0 1 2.
 # Prometheus assumes it missed the intermediate values 0 and 1.
@@ -86,7 +120,10 @@ load 5m
 	http_requests{path="/foo"}	0 1 2 3 2 3 4
 
 eval instant at 30m increase(http_requests[30m])
-    {path="/foo"} 7
+	{path="/foo"} 7
+
+eval instant at 30m xincrease(http_requests[30m])
+	{path="/foo"} 7
 
 clear
 
@@ -106,14 +143,26 @@ eval instant at 30m irate(http_requests[50m])
 
 clear
 
-# Tests for delta().
+# Tests for delta()/xdelta().
 load 5m
-	http_requests{path="/foo"}	0 50 100 150 200
-	http_requests{path="/bar"}	200 150 100 50 0
+	http_requests{path="/foo"}	0 50 300 150 200
+	http_requests{path="/bar"}	200 150 300 50 0
 
 eval instant at 20m delta(http_requests[20m])
 	{path="/foo"} 200
 	{path="/bar"} -200
+
+eval instant at 20m xdelta(http_requests[20m])
+	{path="/foo"} 200
+	{path="/bar"} -200
+
+eval instant at 20m xdelta(http_requests[19m])
+	{path="/foo"} 200
+	{path="/bar"} -200
+
+eval instant at 20m xdelta(http_requests[1m])
+	{path="/foo"} 50
+	{path="/bar"} -50
 
 clear
 
