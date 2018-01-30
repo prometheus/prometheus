@@ -109,6 +109,10 @@ func (l *testLoop) stop() {
 	l.stopFunc()
 }
 
+func (l *testLoop) stopForce() {
+	l.stopFunc()
+}
+
 func TestScrapePoolStop(t *testing.T) {
 	sp := &scrapePool{
 		targets: map[uint64]*Target{},
@@ -144,7 +148,7 @@ func TestScrapePoolStop(t *testing.T) {
 	stopTime := time.Now()
 
 	go func() {
-		sp.stop()
+		sp.stop(false)
 		close(done)
 	}()
 
@@ -239,7 +243,7 @@ func TestScrapePoolReload(t *testing.T) {
 	reloadTime := time.Now()
 
 	go func() {
-		sp.reload(reloadCfg)
+		sp.reload(reloadCfg, false)
 		close(done)
 	}()
 

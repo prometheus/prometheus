@@ -71,7 +71,7 @@ func (m *ScrapeManager) Run(tsets <-chan map[string][]*targetgroup.Group) error 
 // Stop cancels all running scrape pools and blocks until all have exited.
 func (m *ScrapeManager) Stop() {
 	for _, sp := range m.scrapePools {
-		sp.stop()
+		sp.stop(false)
 	}
 	close(m.graceShut)
 }
@@ -89,10 +89,32 @@ func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 	// Cleanup and reload pool if config has changed.
 	for name, sp := range m.scrapePools {
 		if cfg, ok := m.scrapeConfigs[name]; !ok {
-			sp.stop()
+			sp.stop(false)
 			delete(m.scrapePools, name)
 		} else if !reflect.DeepEqual(sp.config, cfg) {
-			sp.reload(cfg)
+			sp.reload(cfg, false)
+		}
+	}
+
+	return nil
+}
+
+func (m *ScrapeManager) ApplyConfigForce(cfg *config.Config) error {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	c := make(map[string]*config.ScrapeConfig)
+	for _, scfg := range cfg.ScrapeConfigs {
+		c[scfg.JobName] = scfg
+	}
+	m.scrapeConfigs = c
+
+	// Cleanup and reload pool if config has changed.
+	for name, sp := range m.scrapePools {
+		if cfg, ok := m.scrapeConfigs[name]; !ok {
+			sp.stop(true)
+			delete(m.scrapePools, name)
+		} else if !reflect.DeepEqual(sp.config, cfg) {
+			sp.reload(cfg, true)
 		}
 	}
 
