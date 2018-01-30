@@ -68,6 +68,9 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	// Send target groups for pod updates.
 	send := func(tg *targetgroup.Group) {
+		if tg == nil {
+			return
+		}
 		level.Debug(p.logger).Log("msg", "pod update", "tg", fmt.Sprintf("%#v", tg))
 		select {
 		case <-ctx.Done():
