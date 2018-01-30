@@ -31,8 +31,8 @@ type Appendable interface {
 	Appender() (storage.Appender, error)
 }
 
-// NewScrapeManager is the ScrapeManager constructor
-func NewScrapeManager(logger log.Logger, app Appendable) *ScrapeManager {
+// NewManager is the ScrapeManager constructor
+func NewManager(logger log.Logger, app Appendable) *ScrapeManager {
 
 	return &ScrapeManager{
 		append:        app,

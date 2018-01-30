@@ -77,7 +77,7 @@ type Handler struct {
 	context       context.Context
 	tsdb          func() *tsdb.DB
 	storage       storage.Storage
-	notifier      *notifier.Notifier
+	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
 
@@ -127,7 +127,7 @@ type Options struct {
 	QueryEngine   *promql.Engine
 	ScrapeManager *retrieval.ScrapeManager
 	RuleManager   *rules.Manager
-	Notifier      *notifier.Notifier
+	Notifier      *notifier.Manager
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
