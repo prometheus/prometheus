@@ -261,7 +261,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
 
 Prometheus.Graph.prototype.initTypeahead = function(self) {
   const historyIsChecked = $("div.query-history").hasClass("is-checked");
-  const source = historyIsChecked ? pageConfig.allMetrics.concat(JSON.parse(localStorage.getItem("history"))) : pageConfig.allMetrics;
+  const source = historyIsChecked ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
 
   self.expr.typeahead({
     afterSelect: this.submitQuery.bind(this),
@@ -831,7 +831,9 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
  * Page
 */
 const pageConfig = {
-  graphs: []
+  graphs: [],
+  queryHistMetrics: JSON.parse(localStorage.getItem('history')),
+  allMetrics: [],
 };
 
 Prometheus.Page = function() {};
@@ -1032,12 +1034,11 @@ const queryHistory = {
     parsedQueryHistory = parsedQueryHistory.slice(queryCount - 50, queryCount);
 
     localStorage.setItem('history', JSON.stringify(parsedQueryHistory));
-
-    this.updateTypeaheadMetricSet(parsedQueryHistory);
+    pageConfig.queryHistMetrics = parsedQueryHistory;
   },
 
   toggleOn: function(targetEl) {
-    this.updateTypeaheadMetricSet(JSON.parse(localStorage.getItem('history')));
+    this.updateTypeaheadMetricSet(pageConfig.queryHistMetrics.concat(pageConfig.allMetrics));
 
     $(targetEl).children('i').removeClass('glyphicon-unchecked').addClass('glyphicon-check');
     targetEl.addClass('is-checked');
@@ -1045,7 +1046,7 @@ const queryHistory = {
   },
 
   toggleOff: function(targetEl) {
-    this.updateTypeaheadMetricSet();
+    this.updateTypeaheadMetricSet(pageConfig.allMetrics);
 
     $(targetEl).children('i').removeClass('glyphicon-check').addClass('glyphicon-unchecked');
     targetEl.removeClass('is-checked');
@@ -1054,7 +1055,7 @@ const queryHistory = {
 
   updateTypeaheadMetricSet: function(metricSet) {
     pageConfig.graphs.forEach(function(graph) {
-      graph.expr.data('typeahead').source = metricSet ? pageConfig.allMetrics.concat(metricSet) : pageConfig.allMetrics;
+      graph.expr.data('typeahead').source = metricSet;
     });
   }
 };
