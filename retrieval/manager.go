@@ -132,6 +132,23 @@ func (m *ScrapeManager) Targets() []*Target {
 	return targets
 }
 
+// DroppedTargets returns the targets dropped during relabelling.
+func (m *ScrapeManager) DroppedTargets() []*Target {
+	targets := make(chan []*Target)
+	m.actionCh <- func() {
+		var t []*Target
+		for _, p := range m.scrapePools {
+			p.mtx.RLock()
+			for _, tt := range p.droppedTargets {
+				t = append(t, tt)
+			}
+			p.mtx.RUnlock()
+		}
+		targets <- t
+	}
+	return <-targets
+}
+
 func (m *ScrapeManager) reload(t map[string][]*targetgroup.Group) {
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]

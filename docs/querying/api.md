@@ -315,9 +315,6 @@ String results are returned as result type `string`. The corresponding
 
 ## Targets
 
-> This API is experimental as it is intended to be extended with targets
-> dropped due to relabelling in the future.
-
 The following endpoint returns an overview of the current state of the
 Prometheus target discovery:
 
@@ -325,7 +322,10 @@ Prometheus target discovery:
 GET /api/v1/targets
 ```
 
-Currently only the active targets are part of the response.
+Both the active and dropped targets are part of the response.
+`labels` represents the label set after relabelling has occurred.
+`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabelling has occurred. A label is considered dropped as soon as the first relabelling rule drops it.
+
 
 ```json
 $ curl http://localhost:9090/api/v1/targets
@@ -348,6 +348,20 @@ $ curl http://localhost:9090/api/v1/targets
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "health": "up"
+      }
+    ],
+    "droppedTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9100",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "node"
+        },
+        "labels": {},
+        "scrapeUrl": "",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
       }
     ]
   }
