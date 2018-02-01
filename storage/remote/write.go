@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Appender implements retrieval.Appendable.
+// Appender implements scrape.Appendable.
 func (s *Storage) Appender() (storage.Appender, error) {
 	return s, nil
 }

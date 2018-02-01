@@ -40,7 +40,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -50,7 +50,7 @@ type API struct {
 	now           func() time.Time
 	db            func() *tsdb.DB
 	q             func(ctx context.Context, mint, maxt int64) (storage.Querier, error)
-	targets       func() []*retrieval.Target
+	targets       func() []*scrape.Target
 	alertmanagers func() []*url.URL
 }
 
@@ -60,7 +60,7 @@ func New(
 	db func() *tsdb.DB,
 	qe *promql.Engine,
 	q func(ctx context.Context, mint, maxt int64) (storage.Querier, error),
-	targets func() []*retrieval.Target,
+	targets func() []*scrape.Target,
 	alertmanagers func() []*url.URL,
 	enableAdmin bool,
 ) *API {

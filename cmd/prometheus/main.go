@@ -50,8 +50,8 @@ import (
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
@@ -246,7 +246,7 @@ func main() {
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"))
 
-		scrapeManager = retrieval.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 		queryEngine   = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ruleManager   = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,

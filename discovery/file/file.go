@@ -389,7 +389,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	default:
-		panic(fmt.Errorf("retrieval.FileDiscovery.readFile: unhandled file extension %q", ext))
+		panic(fmt.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
 	}
 
 	for i, tg := range targetGroups {
