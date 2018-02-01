@@ -38,13 +38,13 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-type targetRetrieverFunc func() []*retrieval.Target
+type targetRetrieverFunc func() []*scrape.Target
 
-func (f targetRetrieverFunc) Targets() []*retrieval.Target {
+func (f targetRetrieverFunc) Targets() []*scrape.Target {
 	return f()
 }
 
@@ -81,9 +81,9 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	tr := targetRetrieverFunc(func() []*retrieval.Target {
-		return []*retrieval.Target{
-			retrieval.NewTarget(
+	tr := targetRetrieverFunc(func() []*scrape.Target {
+		return []*scrape.Target{
+			scrape.NewTarget(
 				labels.FromMap(map[string]string{
 					model.SchemeLabel:      "http",
 					model.AddressLabel:     "example.com:8080",
