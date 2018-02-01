@@ -71,7 +71,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{}, nil)
+	h := NewManager(&Options{}, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -168,7 +168,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{}, nil)
+	h := NewManager(&Options{}, nil)
 
 	authClient, _ := httputil.NewClientFromConfig(config_util.HTTPClientConfig{
 		BasicAuth: &config_util.BasicAuth{
@@ -233,7 +233,7 @@ func TestCustomDo(t *testing.T) {
 	const testBody = "testbody"
 
 	var received bool
-	h := New(&Options{
+	h := NewManager(&Options{
 		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
@@ -260,7 +260,7 @@ func TestCustomDo(t *testing.T) {
 }
 
 func TestExternalLabels(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
 		ExternalLabels: model.LabelSet{"a": "b"},
 		RelabelConfigs: []*config.RelabelConfig{
@@ -296,7 +296,7 @@ func TestExternalLabels(t *testing.T) {
 }
 
 func TestHandlerRelabel(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 		RelabelConfigs: []*config.RelabelConfig{
 			{
@@ -356,7 +356,7 @@ func TestHandlerQueueing(t *testing.T) {
 		}
 	}))
 
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 	},
 		nil,
@@ -469,7 +469,7 @@ func TestReload(t *testing.T) {
 		},
 	}
 
-	n := New(&Options{}, nil)
+	n := NewManager(&Options{}, nil)
 
 	cfg := &config.Config{}
 	s := `
