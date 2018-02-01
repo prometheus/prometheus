@@ -47,9 +47,6 @@ const (
 	// Limit to 1 log event every 10s
 	logRateLimit = 0.1
 	logBurst     = 10
-
-	// Allow 1 minute to flush samples`, then exit anyway.
-	stopFlushDeadline = 1 * time.Minute
 )
 
 var (
@@ -259,7 +256,7 @@ func (t *QueueManager) Stop() {
 
 	t.shardsMtx.Lock()
 	defer t.shardsMtx.Unlock()
-	t.shards.stop()
+	t.shards.stop(t.cfg.FlushDeadline)
 
 	level.Info(t.logger).Log("msg", "Remote storage stopped.")
 }
@@ -364,7 +361,7 @@ func (t *QueueManager) reshard(n int) {
 	t.shards = newShards
 	t.shardsMtx.Unlock()
 
-	oldShards.stop()
+	oldShards.stop(t.cfg.FlushDeadline)
 
 	// We start the newShards after we have stopped (the therefore completely
 	// flushed) the oldShards, to guarantee we only every deliver samples in
@@ -403,14 +400,14 @@ func (s *shards) start() {
 	}
 }
 
-func (s *shards) stop() {
+func (s *shards) stop(deadline time.Duration) {
 	for _, shard := range s.queues {
 		close(shard)
 	}
 
 	select {
 	case <-s.done:
-	case <-time.After(stopFlushDeadline):
+	case <-time.After(deadline):
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
 	}
 }
