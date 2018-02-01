@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -120,6 +121,7 @@ type API struct {
 
 	db          func() *tsdb.DB
 	enableAdmin bool
+	ruleManager *rules.Manager
 }
 
 // NewAPI returns an initialized API type.
@@ -132,6 +134,7 @@ func NewAPI(
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
+	ruleManager *rules.Manager,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -143,6 +146,7 @@ func NewAPI(
 		ready:       readyFunc,
 		db:          db,
 		enableAdmin: enableAdmin,
+		ruleManager: ruleManager,
 	}
 }
 
@@ -178,6 +182,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/targets", instr("targets", api.targets))
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
+	r.Get("/rules", instr("rules", api.rules))
 
 	r.Get("/status/config", instr("config", api.serveConfig))
 	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
@@ -481,6 +486,43 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return ams, nil
+}
+
+// RuleGroup has all the RuleGroups.
+type RuleGroups struct {
+	RuleGroup []*Group `json:"groups"`
+}
+
+type Group struct {
+	Name  string  `json:"name"`
+	File  string  `json:"file"`
+	Rules []*Rule `json:"rules"`
+}
+
+type Rule struct {
+	YAML string `json:"rule"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError) {
+	rgs := api.ruleManager.RuleGroups()
+	nrgs := &RuleGroups{RuleGroup: make([]*Group, len(rgs))}
+
+	for i, group := range rgs {
+		ng := &Group{Rules: make([]*Rule, len(group.Rules()))}
+
+		for a, rule := range group.Rules() {
+			ng.Rules[a] = &Rule{YAML: rule.String()}
+		}
+
+		nrgs.RuleGroup[i] = &Group{
+			Name:  group.Name(),
+			File:  group.File(),
+			Rules: ng.Rules,
+		}
+
+	}
+
+	return nrgs, nil
 }
 
 type prometheusConfig struct {
