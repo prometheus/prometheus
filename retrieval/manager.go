@@ -90,7 +90,7 @@ func (m *ScrapeManager) ApplyConfig(cfg *config.Config) error {
 			sp.stop()
 			delete(m.scrapePools, name)
 		} else if !reflect.DeepEqual(sp.config, cfg) {
-			sp.reload(cfg)
+			go sp.reload(cfg)
 		}
 	}
 
