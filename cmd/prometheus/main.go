@@ -238,7 +238,7 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
+		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"))
@@ -246,7 +246,7 @@ func main() {
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"))
 
-		scrapeManager = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager = retrieval.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 		queryEngine   = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
 		ruleManager   = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
@@ -654,7 +654,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 
 // sendAlerts implements a the rules.NotifyFunc for a Notifier.
 // It filters any non-firing alerts from the input.
-func sendAlerts(n *notifier.Notifier, externalURL string) rules.NotifyFunc {
+func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
 		var res []*notifier.Alert
 
