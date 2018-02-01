@@ -71,7 +71,7 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 type Handler struct {
 	logger log.Logger
 
-	scrapeManager *scrape.ScrapeManager
+	scrapeManager *scrape.Manager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
 	context       context.Context
@@ -125,7 +125,7 @@ type Options struct {
 	TSDB          func() *tsdb.DB
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
-	ScrapeManager *scrape.ScrapeManager
+	ScrapeManager *scrape.Manager
 	RuleManager   *rules.Manager
 	Notifier      *notifier.Manager
 	Version       *PrometheusVersion
