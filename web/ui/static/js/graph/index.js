@@ -260,8 +260,7 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
 };
 
 Prometheus.Graph.prototype.initTypeahead = function(self) {
-  const historyIsChecked = $("div.query-history").hasClass("is-checked");
-  const source = historyIsChecked ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
+  const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
 
   self.expr.typeahead({
     afterSelect: this.submitQuery.bind(this),
@@ -832,7 +831,7 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
 */
 const pageConfig = {
   graphs: [],
-  queryHistMetrics: JSON.parse(localStorage.getItem('history')),
+  queryHistMetrics: JSON.parse(localStorage.getItem('history')) || [],
   allMetrics: [],
 };
 
@@ -998,12 +997,16 @@ function redirectToMigratedURL() {
  * Query History helper functions
  * **/
 const queryHistory = {
+  isEnabled: function() {
+    return JSON.parse(localStorage.getItem('enable-query-history'))
+  },
+
   bindHistoryEvents: function(graph) {
     const targetEl = $('div.query-history');
     const icon = $(targetEl).children('i');
     targetEl.off('click');
 
-    if (JSON.parse(localStorage.getItem('enable-query-history'))) {
+    if (queryHistory.isEnabled()) {
       this.toggleOn(targetEl);
     }
 
@@ -1035,6 +1038,9 @@ const queryHistory = {
 
     localStorage.setItem('history', JSON.stringify(parsedQueryHistory));
     pageConfig.queryHistMetrics = parsedQueryHistory;
+    if (queryHistory.isEnabled()) {
+      this.updateTypeaheadMetricSet(pageConfig.queryHistMetrics.concat(pageConfig.allMetrics));
+    }
   },
 
   toggleOn: function(targetEl) {
