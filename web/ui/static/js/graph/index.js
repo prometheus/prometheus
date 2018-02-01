@@ -264,6 +264,8 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   const source = historyIsChecked ? pageConfig.allMetrics.concat(JSON.parse(localStorage.getItem("history"))) : pageConfig.allMetrics;
 
   self.expr.typeahead({
+    afterSelect: this.submitQuery.bind(this),
+    autoSelect: false,
     source,
     items: "all",
     matcher: function (item) {
