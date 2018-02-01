@@ -266,7 +266,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
-				a.FiredAt = time.Time{}
 			}
 			continue
 		}
