@@ -96,7 +96,7 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 			}
 		}
 	default:
-		panic(fmt.Errorf("retrieval.relabel: unknown relabel action type %q", cfg.Action))
+		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
 	return lb.Labels()
