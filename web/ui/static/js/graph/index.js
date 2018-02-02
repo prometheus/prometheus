@@ -192,8 +192,6 @@ Prometheus.Graph.prototype.initialize = function() {
   }
   self.populateInsertableMetrics();
 
-  queryHistory.bindHistoryEvents(self);
-
   if (self.expr.val()) {
     self.submitQuery();
   }
@@ -261,7 +259,6 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
 
 Prometheus.Graph.prototype.initTypeahead = function(self) {
   const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
-
   self.expr.typeahead({
     autoSelect: false,
     source,
@@ -298,6 +295,7 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   // This needs to happen after attaching the typeahead plugin, as it
   // otherwise breaks the typeahead functionality.
   self.expr.focus();
+  queryHistory.bindHistoryEvents(self);
 }
 
 Prometheus.Graph.prototype.getOptions = function() {
@@ -1060,7 +1058,9 @@ const queryHistory = {
 
   updateTypeaheadMetricSet: function(metricSet) {
     pageConfig.graphs.forEach(function(graph) {
-      graph.expr.data('typeahead').source = metricSet;
+      if (graph.expr.data('typeahead')) {
+        graph.expr.data('typeahead').source = metricSet;
+      }
     });
   }
 };
@@ -1102,4 +1102,3 @@ function init() {
 }
 
 $(init);
-
