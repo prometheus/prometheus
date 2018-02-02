@@ -263,7 +263,6 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
 
   self.expr.typeahead({
-    afterSelect: this.submitQuery.bind(this),
     autoSelect: false,
     source,
     items: "all",
