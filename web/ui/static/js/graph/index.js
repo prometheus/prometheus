@@ -260,10 +260,10 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
 };
 
 Prometheus.Graph.prototype.initTypeahead = function(self) {
-  const historyIsChecked = $("div.query-history").hasClass("is-checked");
-  const source = historyIsChecked ? pageConfig.allMetrics.concat(JSON.parse(localStorage.getItem("history"))) : pageConfig.allMetrics;
+  const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
 
   self.expr.typeahead({
+    autoSelect: false,
     source,
     items: "all",
     matcher: function (item) {
@@ -829,7 +829,9 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
  * Page
 */
 const pageConfig = {
-  graphs: []
+  graphs: [],
+  queryHistMetrics: JSON.parse(localStorage.getItem('history')) || [],
+  allMetrics: [],
 };
 
 Prometheus.Page = function() {};
@@ -994,12 +996,16 @@ function redirectToMigratedURL() {
  * Query History helper functions
  * **/
 const queryHistory = {
+  isEnabled: function() {
+    return JSON.parse(localStorage.getItem('enable-query-history'))
+  },
+
   bindHistoryEvents: function(graph) {
     const targetEl = $('div.query-history');
     const icon = $(targetEl).children('i');
     targetEl.off('click');
 
-    if (JSON.parse(localStorage.getItem('enable-query-history'))) {
+    if (queryHistory.isEnabled()) {
       this.toggleOn(targetEl);
     }
 
@@ -1030,12 +1036,14 @@ const queryHistory = {
     parsedQueryHistory = parsedQueryHistory.slice(queryCount - 50, queryCount);
 
     localStorage.setItem('history', JSON.stringify(parsedQueryHistory));
-
-    this.updateTypeaheadMetricSet(parsedQueryHistory);
+    pageConfig.queryHistMetrics = parsedQueryHistory;
+    if (queryHistory.isEnabled()) {
+      this.updateTypeaheadMetricSet(pageConfig.queryHistMetrics.concat(pageConfig.allMetrics));
+    }
   },
 
   toggleOn: function(targetEl) {
-    this.updateTypeaheadMetricSet(JSON.parse(localStorage.getItem('history')));
+    this.updateTypeaheadMetricSet(pageConfig.queryHistMetrics.concat(pageConfig.allMetrics));
 
     $(targetEl).children('i').removeClass('glyphicon-unchecked').addClass('glyphicon-check');
     targetEl.addClass('is-checked');
@@ -1043,7 +1051,7 @@ const queryHistory = {
   },
 
   toggleOff: function(targetEl) {
-    this.updateTypeaheadMetricSet();
+    this.updateTypeaheadMetricSet(pageConfig.allMetrics);
 
     $(targetEl).children('i').removeClass('glyphicon-check').addClass('glyphicon-unchecked');
     targetEl.removeClass('is-checked');
@@ -1052,7 +1060,7 @@ const queryHistory = {
 
   updateTypeaheadMetricSet: function(metricSet) {
     pageConfig.graphs.forEach(function(graph) {
-      graph.expr.data('typeahead').source = metricSet ? pageConfig.allMetrics.concat(metricSet) : pageConfig.allMetrics;
+      graph.expr.data('typeahead').source = metricSet;
     });
   }
 };
