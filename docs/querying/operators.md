@@ -192,7 +192,7 @@ vector of fewer elements with aggregated values:
 * `count_values` (count number of elements with the same value)
 * `bottomk` (smallest k elements by sample value)
 * `topk` (largest k elements by sample value)
-* `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
+* `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions; use 0.5 to get the median)
 
 These operators can either be used to aggregate over **all** label dimensions
 or preserve distinct dimensions by including a `without` or `by` clause.
