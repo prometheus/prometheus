@@ -849,10 +849,11 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		func() { putMatrix(matrix) },
 	)
 
+	var ss Series
 	for i, it := range node.iterators {
 		start := len(allPoints)
 
-		ss := Series{
+		ss = Series{
 			Metric: node.series[i].Labels(),
 		}
 
