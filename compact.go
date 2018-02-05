@@ -91,8 +91,8 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 		Help: "Total number of compactions that failed for the partition.",
 	})
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_duration",
-		Help:    "Duration of compaction runs.",
+		Name:    "prometheus_tsdb_compaction_duration_seconds",
+		Help:    "Duration of compaction runs",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	})
 	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
