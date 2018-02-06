@@ -143,15 +143,20 @@ func funcIncrease(ev *evaluator, args Expressions) Value {
 
 // === irate(node ValueTypeMatrix) Vector ===
 func funcIrate(ev *evaluator, args Expressions) Value {
-	return instantValue(ev, args[0], true)
+	return instantValue(ev, args[0], true, true)
 }
 
 // === idelta(node model.ValMatric) Vector ===
 func funcIdelta(ev *evaluator, args Expressions) Value {
-	return instantValue(ev, args[0], false)
+	return instantValue(ev, args[0], false, false)
 }
 
-func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
+// === iincrease(node model.ValMatric) Vector ===
+func funcIincrease(ev *evaluator, args Expressions) Value {
+	return instantValue(ev, args[0], true, false)
+}
+
+func instantValue(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
 	resultVector := Vector{}
 	for _, samples := range ev.evalMatrix(arg) {
 		// No sense in trying to compute a rate without at least two points. Drop
@@ -164,7 +169,7 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 		previousSample := samples.Points[len(samples.Points)-2]
 
 		var resultValue float64
-		if isRate && lastSample.V < previousSample.V {
+		if isCounter && lastSample.V < previousSample.V {
 			// Counter reset.
 			resultValue = lastSample.V
 		} else {
@@ -1072,6 +1077,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 		Call:       funcIdelta,
+	},
+	"iincrease": {
+		Name:       "iincrease",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcIincrease,
 	},
 	"increase": {
 		Name:       "increase",

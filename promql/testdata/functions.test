@@ -128,6 +128,17 @@ eval instant at 20m idelta(http_requests[20m])
 
 clear
 
+# Tests for iincrease().
+load 5m
+	http_requests{path="/foo"}	0 50 100 150
+	http_requests{path="/bar"}	0 50 100 50
+
+eval instant at 20m iincrease(http_requests[20m])
+	{path="/foo"} 50
+	{path="/bar"} 50
+
+clear
+
 # Tests for deriv() and predict_linear().
 load 5m
 	testcounter_reset_middle	0+10x4 0+10x5
