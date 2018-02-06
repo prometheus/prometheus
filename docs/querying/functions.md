@@ -187,6 +187,17 @@ equivalent labels.
 
 `idelta` should only be used with gauges.
 
+## `iincrease()`
+
+`iincrease(v range-vector)`
+
+`iincrease(v range-vector)` calculates the difference between the last two samples
+in the range vector. This is based on the last two data points.
+Breaks in monotonicity (such as counter resets due to target restarts) are
+automatically adjusted for.
+
+`iincrease` should only be used with gauges.
+
 ## `increase()`
 
 `increase(v range-vector)` calculates the increase in the
