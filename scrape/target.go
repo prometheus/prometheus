@@ -115,6 +115,11 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 	return lset
 }
 
+// SetDiscoveredLabels sets new DiscoveredLabels
+func (t *Target) SetDiscoveredLabels(l labels.Labels) {
+	t.discoveredLabels = l
+}
+
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
 	params := url.Values{}
