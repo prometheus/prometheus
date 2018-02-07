@@ -163,6 +163,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm.submit(function() {
     self.consoleTab.addClass("reload");
     self.graphTab.addClass("reload");
+    self.handleChange();
     self.submitQuery();
     return false;
   });
@@ -444,6 +445,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
           self.showError(json.error);
           return;
         }
+
         queryHistory.handleHistory(self);
         success(json.data, textStatus);
       },
@@ -827,9 +829,9 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
  * Page
 */
 const pageConfig = {
+  allMetrics: [],
   graphs: [],
   queryHistMetrics: JSON.parse(localStorage.getItem('history')) || [],
-  allMetrics: [],
 };
 
 Prometheus.Page = function() {};
@@ -862,7 +864,6 @@ Prometheus.Page.prototype.addGraph = function(options) {
     this.removeGraph.bind(this)
   );
 
-  // this.graphs.push(graph);
   pageConfig.graphs.push(graph);
 
   $(window).resize(function() {
