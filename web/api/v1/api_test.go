@@ -882,11 +882,11 @@ func TestRespond(t *testing.T) {
 		},
 		{
 			response: promql.Point{V: 20, T: 10},
-			expected: `{"status":"success","data":[0.01,"20"]}`,
+			expected: `{"status":"success","data":[0.010,"20"]}`,
 		},
 		{
 			response: promql.Point{V: 20, T: 100},
-			expected: `{"status":"success","data":[0.1,"20"]}`,
+			expected: `{"status":"success","data":[0.100,"20"]}`,
 		},
 		{
 			response: promql.Point{V: 20, T: 1001},
@@ -894,15 +894,15 @@ func TestRespond(t *testing.T) {
 		},
 		{
 			response: promql.Point{V: 20, T: 1010},
-			expected: `{"status":"success","data":[1.01,"20"]}`,
+			expected: `{"status":"success","data":[1.010,"20"]}`,
 		},
 		{
 			response: promql.Point{V: 20, T: 1100},
-			expected: `{"status":"success","data":[1.1,"20"]}`,
+			expected: `{"status":"success","data":[1.100,"20"]}`,
 		},
 		{
 			response: promql.Point{V: 20, T: 12345678123456555},
-			expected: `{"status":"success","data":[12345678123456.557,"20"]}`,
+			expected: `{"status":"success","data":[12345678123456.555,"20"]}`,
 		},
 		{
 			response: promql.Point{V: 20, T: -1},
