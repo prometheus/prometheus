@@ -438,7 +438,7 @@ Outer:
 
 		for _, chk := range chks {
 			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
-				// Delete only until the current vlaues and not beyond.
+				// Delete only until the current values and not beyond.
 				tmin, tmax := clampInterval(mint, maxt, chks[0].MinTime, chks[len(chks)-1].MaxTime)
 				stones[p.At()] = Intervals{{tmin, tmax}}
 				continue Outer
