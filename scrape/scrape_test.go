@@ -96,6 +96,40 @@ func TestDroppedTargetsList(t *testing.T) {
 	}
 }
 
+// TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
+// even when new labels don't affect the target `hash`.
+func TestDiscoveredLabelsUpdate(t *testing.T) {
+
+	sp := &scrapePool{}
+	// These are used when syncing so need this to avoid a panic.
+	sp.config = &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(1),
+		ScrapeTimeout:  model.Duration(1),
+	}
+	sp.targets = make(map[uint64]*Target)
+	t1 := &Target{
+		discoveredLabels: labels.Labels{
+			labels.Label{
+				Name:  "label",
+				Value: "name",
+			},
+		},
+	}
+	sp.targets[t1.hash()] = t1
+
+	t2 := &Target{
+		discoveredLabels: labels.Labels{
+			labels.Label{
+				Name:  "labelNew",
+				Value: "nameNew",
+			},
+		},
+	}
+	sp.sync([]*Target{t2})
+
+	testutil.Equals(t, t2.DiscoveredLabels(), sp.targets[t1.hash()].DiscoveredLabels())
+}
+
 type testLoop struct {
 	startFunc func(interval, timeout time.Duration, errc chan<- error)
 	stopFunc  func()
