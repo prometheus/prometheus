@@ -59,6 +59,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/health"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
@@ -96,6 +97,8 @@ type Handler struct {
 	mtx            sync.RWMutex
 	now            func() model.Time
 
+	healthReporters []health.Reporter
+
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
@@ -121,15 +124,16 @@ type PrometheusVersion struct {
 
 // Options for the web Handler.
 type Options struct {
-	Context       context.Context
-	TSDB          func() *tsdb.DB
-	Storage       storage.Storage
-	QueryEngine   *promql.Engine
-	ScrapeManager *scrape.Manager
-	RuleManager   *rules.Manager
-	Notifier      *notifier.Manager
-	Version       *PrometheusVersion
-	Flags         map[string]string
+	Context         context.Context
+	TSDB            func() *tsdb.DB
+	Storage         storage.Storage
+	QueryEngine     *promql.Engine
+	ScrapeManager   *scrape.Manager
+	RuleManager     *rules.Manager
+	Notifier        *notifier.Manager
+	HealthReporters []health.Reporter
+	Version         *PrometheusVersion
+	Flags           map[string]string
 
 	ListenAddress        string
 	ReadTimeout          time.Duration
@@ -168,13 +172,14 @@ func New(logger log.Logger, o *Options) *Handler {
 		cwd:         cwd,
 		flagsMap:    o.Flags,
 
-		context:       o.Context,
-		scrapeManager: o.ScrapeManager,
-		ruleManager:   o.RuleManager,
-		queryEngine:   o.QueryEngine,
-		tsdb:          o.TSDB,
-		storage:       o.Storage,
-		notifier:      o.Notifier,
+		context:         o.Context,
+		scrapeManager:   o.ScrapeManager,
+		ruleManager:     o.RuleManager,
+		queryEngine:     o.QueryEngine,
+		tsdb:            o.TSDB,
+		storage:         o.Storage,
+		notifier:        o.Notifier,
+		healthReporters: o.HealthReporters,
 
 		now: model.Now,
 
@@ -259,10 +264,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/debug/*subpath", serveDebug)
 	router.Post("/debug/*subpath", serveDebug)
 
-	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Prometheus is Healthy.\n")
-	})
+	router.Get("/-/healthy", h.healthy)
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Ready.\n")
@@ -335,6 +337,29 @@ func (h *Handler) serveStaticAsset(w http.ResponseWriter, req *http.Request) {
 	}
 
 	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
+}
+
+func (h *Handler) healthy(w http.ResponseWriter, r *http.Request) {
+	var unhealthy bool
+	details := make([]string, 0, len(h.healthReporters))
+	for _, r := range h.healthReporters {
+		err := r.Report()
+		if err != nil {
+			unhealthy = true
+			details = append(details, fmt.Sprintf("%s: FAIL (%v)", r.String(), err))
+		} else {
+			details = append(details, fmt.Sprintf("%s: OK", r.String()))
+		}
+	}
+
+	if unhealthy {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, "Prometheus is Unhealthy.\n")
+	} else {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Prometheus is Healthy.\n")
+	}
+	fmt.Fprintf(w, strings.Join(details, "\n"))
 }
 
 // Ready sets Handler to be ready.

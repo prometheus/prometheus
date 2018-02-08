@@ -55,6 +55,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/util/health"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
 )
@@ -267,6 +268,9 @@ func main() {
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifier
+	cfg.web.HealthReporters = []health.Reporter{
+		health.NewDiskSpaceReporter(cfg.localStoragePath),
+	}
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
