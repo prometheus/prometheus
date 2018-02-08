@@ -263,6 +263,7 @@ func (d *Discovery) getDatacenter() error {
 	info, err := d.client.Agent().Self()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
+		rpcFailuresCount.Inc()
 		return err
 	}
 
