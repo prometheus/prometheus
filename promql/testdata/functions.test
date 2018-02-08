@@ -434,6 +434,9 @@ clear
 eval instant at 0m year()
   {} 1970
 
+eval instant at 1ms time()
+  0.001
+
 eval instant at 0m year(vector(1136239445))
   {} 2006
 
