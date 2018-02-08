@@ -46,8 +46,8 @@ func TestConfiguredService(t *testing.T) {
 
 func TestConfiguredServiceWithTag(t *testing.T) {
 	conf := &SDConfig{
-		Services: []string{"configuredServiceName"},
-		Tag:      "http",
+		Services:   []string{"configuredServiceName"},
+		ServiceTag: "http",
 	}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
@@ -193,7 +193,7 @@ func TestAllOptions(t *testing.T) {
 
 	config.Services = []string{"test"}
 	config.NodeMeta = map[string]string{"rack_name": "2304"}
-	config.Tag = "tag1"
+	config.ServiceTag = "tag1"
 	config.AllowStale = true
 	config.Token = "fake-token"
 

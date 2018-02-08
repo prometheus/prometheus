@@ -318,13 +318,15 @@ tls_config:
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
+# See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
+# about the possible filters that can be used.
 services:
   [ - <string> ]
 
-# An optional tag used to filter instances inside services.
+# An optional tag used to filter nodes for a given service.
 [ tag: <string> ]
 
-# Node metadata used to filter nodes.
+# Node metadata used to filter nodes for a given service.
 [ node_meta:
   [ <name>: <value> ... ] ]
 
@@ -344,6 +346,10 @@ Note that the IP number and port used to scrape the targets is assembled as
 Consul setups, the relevant address is in `__meta_consul_service_address`.
 In those cases, you can use the [relabel](#relabel_config)
 feature to replace the special `__address__` label.
+
+The Consul API only has basic support for filtering nodes (currently by node
+metadata and tag). Any additional filtering must be done using [relabel](#relabel_config)
+but might be slightly less efficient.
 
 ### `<dns_sd_config>`
 

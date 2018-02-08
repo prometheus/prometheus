@@ -84,7 +84,7 @@ var (
 		Scheme:          "http",
 		Server:          "localhost:8500",
 		AllowStale:      true,
-		RefreshInterval: model.Duration(0 * time.Second),
+		RefreshInterval: model.Duration(15 * time.Second),
 	}
 )
 
@@ -97,11 +97,12 @@ type SDConfig struct {
 	Scheme       string             `yaml:"scheme,omitempty"`
 	Username     string             `yaml:"username,omitempty"`
 	Password     config_util.Secret `yaml:"password,omitempty"`
+
 	// See https://www.consul.io/docs/internals/consensus.html#consistency-modes,
 	// stale reads are a lot cheaper and are a necessity if you have >5k targets.
 	AllowStale bool `yaml:"allow_stale,omitempty"`
-	// By default use blocking queries () but allow users to delay
-	// updates if necessary. This can be useful because of "bugs" like
+	// By default use blocking queries (https://www.consul.io/api/index.html#blocking-queries)
+	// but allow users to delay updates if necessary. This can be useful because of "bugs" like
 	// https://github.com/hashicorp/consul/issues/3712 which cause an un-necessary
 	// amount of requests on consul.
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
@@ -110,8 +111,9 @@ type SDConfig struct {
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
 	Services []string `yaml:"services"`
-	// An optional tag used to filter instances inside a service.
-	Tag string `yaml:"tag,omitempty"`
+	// An optional tag used to filter instances inside a service. A single tag is supported
+	// here to match the Consul API.
+	ServiceTag string `yaml:"tag,omitempty"`
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
@@ -203,7 +205,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		clientConf:       clientConf,
 		tagSeparator:     conf.TagSeparator,
 		watchedServices:  conf.Services,
-		watchedTag:       conf.Tag,
+		watchedTag:       conf.ServiceTag,
 		watchedNodeMeta:  conf.NodeMeta,
 		allowStale:       conf.AllowStale,
 		refreshInterval:  time.Duration(conf.RefreshInterval),
@@ -234,6 +236,8 @@ func (d *Discovery) shouldWatchFromName(name string) bool {
 }
 
 // shouldWatch returns whether the service of the given name should be watched based on its tags.
+// This gets called when the user doesn't specify a list of services in order to avoid watching
+// *all* services. Details in https://github.com/prometheus/prometheus/pull/3814
 func (d *Discovery) shouldWatchFromTags(tags []string) bool {
 	// If there's no fixed set of watched tags, we watch everything.
 	if d.watchedTag == "" {
