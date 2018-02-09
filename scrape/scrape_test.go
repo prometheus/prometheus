@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"bytes"
@@ -94,6 +94,40 @@ func TestDroppedTargetsList(t *testing.T) {
 	if sp.droppedTargets[0].DiscoveredLabels().String() != expectedLabelSetString {
 		t.Fatalf("Got %v, expected %v", sp.droppedTargets[0].DiscoveredLabels().String(), expectedLabelSetString)
 	}
+}
+
+// TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
+// even when new labels don't affect the target `hash`.
+func TestDiscoveredLabelsUpdate(t *testing.T) {
+
+	sp := &scrapePool{}
+	// These are used when syncing so need this to avoid a panic.
+	sp.config = &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(1),
+		ScrapeTimeout:  model.Duration(1),
+	}
+	sp.targets = make(map[uint64]*Target)
+	t1 := &Target{
+		discoveredLabels: labels.Labels{
+			labels.Label{
+				Name:  "label",
+				Value: "name",
+			},
+		},
+	}
+	sp.targets[t1.hash()] = t1
+
+	t2 := &Target{
+		discoveredLabels: labels.Labels{
+			labels.Label{
+				Name:  "labelNew",
+				Value: "nameNew",
+			},
+		},
+	}
+	sp.sync([]*Target{t2})
+
+	testutil.Equals(t, t2.DiscoveredLabels(), sp.targets[t1.hash()].DiscoveredLabels())
 }
 
 type testLoop struct {
@@ -699,7 +733,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	}
 	value := metric.GetCounter().GetValue()
 	if (value - beforeMetricValue) != 1 {
-		t.Fatal("Unexpected change of sample limit metric: %f", (value - beforeMetricValue))
+		t.Fatalf("Unexpected change of sample limit metric: %f", (value - beforeMetricValue))
 	}
 
 	// And verify that we got the samples that fit under the limit.

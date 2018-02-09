@@ -29,8 +29,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// TestDiscoveryManagerSyncCalls checks that the target updates are received in the expected order.
-func TestDiscoveryManagerSyncCalls(t *testing.T) {
+// TestTargetUpdatesOrder checks that the target updates are received in the expected order.
+func TestTargetUpdatesOrder(t *testing.T) {
 
 	// The order by which the updates are send is detirmened by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
@@ -655,16 +655,15 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 	for testIndex, testCase := range testCases {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		discoveryManager := NewManager(nil)
-		go discoveryManager.Run(ctx)
+		discoveryManager := NewManager(ctx, nil)
 
 		var totalUpdatesCount int
-		for tpName, update := range testCase.updates {
-			provider := newMockDiscoveryProvider(update)
-			discoveryManager.startProvider(ctx, poolKey{setName: strconv.Itoa(testIndex), provider: tpName}, provider)
 
-			if len(update) > 0 {
-				totalUpdatesCount = totalUpdatesCount + len(update)
+		provUpdates := make(chan []*targetgroup.Group)
+		for _, up := range testCase.updates {
+			go newMockDiscoveryProvider(up).Run(ctx, provUpdates)
+			if len(up) > 0 {
+				totalUpdatesCount = totalUpdatesCount + len(up)
 			}
 		}
 
@@ -674,9 +673,10 @@ func TestDiscoveryManagerSyncCalls(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Errorf("%v. %q: no update arrived within the timeout limit", x, testCase.title)
 				break Loop
-			case tsetMap := <-discoveryManager.SyncCh():
-				for _, received := range tsetMap {
-					// Need to sort by the Groups source as the Discovery manager doesn't guarantee the order.
+			case tgs := <-provUpdates:
+				discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(testIndex), provider: testCase.title}, tgs)
+				for _, received := range discoveryManager.allGroups() {
+					// Need to sort by the Groups source as the received order is not guaranteed.
 					sort.Sort(byGroupSource(received))
 					if !reflect.DeepEqual(received, testCase.expectedTargets[x]) {
 						var receivedFormated string
@@ -741,8 +741,8 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(nil)
-	go discoveryManager.Run(ctx)
+	discoveryManager := NewManager(ctx, nil)
+	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {

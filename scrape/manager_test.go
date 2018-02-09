@@ -11,15 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -229,4 +231,45 @@ func TestPopulateLabels(t *testing.T) {
 			t.Errorf("case %d: expected resOrig\n\t%+v\n got\n\t%+v", i, c.resOrig, orig)
 		}
 	}
+}
+
+// TestScrapeManagerReloadNoChange tests that no scrape reload happens when there is no config change.
+func TestManagerReloadNoChange(t *testing.T) {
+	tsetName := "test"
+
+	reloadCfg := &config.Config{
+		ScrapeConfigs: []*config.ScrapeConfig{
+			&config.ScrapeConfig{
+				ScrapeInterval: model.Duration(3 * time.Second),
+				ScrapeTimeout:  model.Duration(2 * time.Second),
+			},
+		},
+	}
+
+	scrapeManager := NewManager(nil, nil)
+	scrapeManager.scrapeConfigs[tsetName] = reloadCfg.ScrapeConfigs[0]
+	// As reload never happens, new loop should never be called.
+	newLoop := func(_ *Target, s scraper) loop {
+		t.Fatal("reload happened")
+		return nil
+	}
+	sp := &scrapePool{
+		appendable: &nopAppendable{},
+		targets:    map[uint64]*Target{},
+		loops: map[uint64]loop{
+			1: &scrapeLoop{},
+		},
+		newLoop: newLoop,
+		logger:  nil,
+		config:  reloadCfg.ScrapeConfigs[0],
+	}
+	scrapeManager.scrapePools = map[string]*scrapePool{
+		tsetName: sp,
+	}
+
+	targets := map[string][]*targetgroup.Group{
+		tsetName: []*targetgroup.Group{},
+	}
+
+	scrapeManager.reload(targets)
 }

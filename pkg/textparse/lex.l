@@ -30,6 +30,7 @@ const (
     lstateTimestamp
     lstateLabels
     lstateLName
+    lstateLEq
     lstateLValue
     lstateLValueIn
 )
@@ -54,7 +55,7 @@ D     [0-9]
 L     [a-zA-Z_]
 M     [a-zA-Z_:]
 
-%x lstateName lstateValue lstateTimestamp lstateLabels lstateLName lstateLValue lstateLValueIn
+%x lstateName lstateValue lstateTimestamp lstateLabels lstateLName lstateLEq lstateLValue lstateLValueIn
 
 
 %yyc c
@@ -84,8 +85,10 @@ M     [a-zA-Z_:]
 <lstateLabels>(,?[ \t]*)              l.state = lstateLName
                                       l.offsets = append(l.offsets, l.i)
 
-<lstateLName>{L}({L}|{D})*            l.offsets = append(l.offsets, l.i)
-<lstateLName>[ \t]*=                  l.state = lstateLValue
+<lstateLName>{L}({L}|{D})*            l.state = lstateLEq
+                                      l.offsets = append(l.offsets, l.i)
+
+<lstateLEq>[ \t]*=                    l.state = lstateLValue
 
 <lstateLValue>[ \t]+
 <lstateLValue>\"                      l.state = lstateLValueIn

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"bufio"
@@ -301,6 +301,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 			sp.loops[hash] = l
 
 			go l.run(interval, timeout, nil)
+		} else {
+			// Need to keep the most updated labels information
+			// for displaying it in the Service Discovery web page.
+			sp.targets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
 		}
 	}
 
