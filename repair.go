@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/go-kit/kit/log"
@@ -26,6 +27,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		if _, err := ulid.Parse(d); err != nil {
 			continue
 		}
+		d = path.Join(dir, d)
 
 		meta, err := readBogusMetaFile(d)
 		if err != nil {
