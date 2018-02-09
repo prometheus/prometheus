@@ -195,7 +195,7 @@ func readMetaFile(dir string) (*BlockMeta, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
-	if m.Version != 1 && m.Version != 2 {
+	if m.Version != 1 {
 		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 
@@ -203,6 +203,8 @@ func readMetaFile(dir string) (*BlockMeta, error) {
 }
 
 func writeMetaFile(dir string, meta *BlockMeta) error {
+	meta.Version = 1
+
 	// Make any changes to the file appear atomic.
 	path := filepath.Join(dir, metaFilename)
 	tmp := path + ".tmp"
@@ -253,7 +255,7 @@ func OpenBlock(dir string, pool chunkenc.Pool) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	ir, err := index.NewFileReader(filepath.Join(dir, "index"), meta.Version)
+	ir, err := index.NewFileReader(filepath.Join(dir, "index"))
 	if err != nil {
 		return nil, err
 	}

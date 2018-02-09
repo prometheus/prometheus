@@ -160,7 +160,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, iw.Close())
 
-	ir, err := NewFileReader(fn, 1)
+	ir, err := NewFileReader(fn)
 	testutil.Ok(t, err)
 	testutil.Ok(t, ir.Close())
 
@@ -170,7 +170,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	_, err = f.WriteAt([]byte{0, 0}, 0)
 	testutil.Ok(t, err)
 
-	_, err = NewFileReader(dir, 1)
+	_, err = NewFileReader(dir)
 	testutil.NotOk(t, err)
 }
 
@@ -213,7 +213,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	testutil.Ok(t, iw.Close())
 
-	ir, err := NewFileReader(fn, 2)
+	ir, err := NewFileReader(fn)
 	testutil.Ok(t, err)
 
 	p, err := ir.Postings("a", "1")
@@ -331,7 +331,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	err = iw.Close()
 	testutil.Ok(t, err)
 
-	ir, err := NewFileReader(filepath.Join(dir, "index"), 2)
+	ir, err := NewFileReader(filepath.Join(dir, "index"))
 	testutil.Ok(t, err)
 
 	for p := range mi.postings {
