@@ -800,7 +800,7 @@ func TestDB_Retention(t *testing.T) {
 
 	testutil.Equals(t, 2, len(db.blocks))
 
-	// Now call rentention.
+	// Now call retention.
 	changes, err := db.retentionCutoff()
 	testutil.Ok(t, err)
 	testutil.Assert(t, changes, "there should be changes")
