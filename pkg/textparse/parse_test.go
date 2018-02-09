@@ -182,6 +182,10 @@ func TestParseErrors(t *testing.T) {
 			input: "something_weird{problem=\"",
 			err:   "no token found",
 		},
+		{
+			input: "empty_label_name{=\"\"} 0",
+			err:   "no token found",
+		},
 	}
 
 	for _, c := range cases {
