@@ -25,8 +25,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/relabel"
 )
 
 // String constants for instrumentation.
@@ -207,7 +207,7 @@ func (t *QueueManager) Append(s *model.Sample) error {
 	}
 
 	snew.Metric = model.Metric(
-		relabel.Process(model.LabelSet(snew.Metric), t.relabelConfigs...))
+		relabel.ProcessSet(model.LabelSet(snew.Metric), t.relabelConfigs...))
 
 	if snew.Metric == nil {
 		return nil

@@ -24,10 +24,10 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
-// Process returns a relabeled copy of the given label set. The relabel configurations
+// Process returns a relabeled copy of the given labels. The relabel configurations
 // are applied in order of input.
-// If a label set is dropped, nil is returned.
-// May return the input labelSet modified.
+// If a label is dropped, nil is returned.
+// May return the input labels modified.
 func Process(labels labels.Labels, cfgs ...*config.RelabelConfig) labels.Labels {
 	for _, cfg := range cfgs {
 		labels = relabel(labels, cfg)
@@ -100,6 +100,87 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 	}
 
 	return lb.Labels()
+}
+
+// ProcessSet returns a relabeled copy of the given label set. The relabel configurations
+// are applied in order of input.
+// If a label set is dropped, nil is returned.
+// May return the input labelSet modified.
+func ProcessSet(labels model.LabelSet, cfgs ...*config.RelabelConfig) model.LabelSet {
+	for _, cfg := range cfgs {
+		labels = relabelSet(labels, cfg)
+		if labels == nil {
+			return nil
+		}
+	}
+	return labels
+}
+
+func relabelSet(labels model.LabelSet, cfg *config.RelabelConfig) model.LabelSet {
+	values := make([]string, 0, len(cfg.SourceLabels))
+	for _, ln := range cfg.SourceLabels {
+		values = append(values, string(labels[ln]))
+	}
+	val := strings.Join(values, cfg.Separator)
+
+	switch cfg.Action {
+	case config.RelabelDrop:
+		if cfg.Regex.MatchString(val) {
+			return nil
+		}
+	case config.RelabelKeep:
+		if !cfg.Regex.MatchString(val) {
+			return nil
+		}
+	case config.RelabelReplace:
+		indexes := cfg.Regex.FindStringSubmatchIndex(val)
+		// If there is no match no replacement must take place.
+		if indexes == nil {
+			break
+		}
+		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
+		if !target.IsValid() {
+			delete(labels, model.LabelName(cfg.TargetLabel))
+			break
+		}
+		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
+		if len(res) == 0 {
+			delete(labels, model.LabelName(cfg.TargetLabel))
+			break
+		}
+		labels[target] = model.LabelValue(res)
+	case config.RelabelHashMod:
+		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
+		labels[model.LabelName(cfg.TargetLabel)] = model.LabelValue(fmt.Sprintf("%d", mod))
+	case config.RelabelLabelMap:
+		out := make(model.LabelSet, len(labels))
+		// Take a copy to avoid infinite loops.
+		for ln, lv := range labels {
+			out[ln] = lv
+		}
+		for ln, lv := range labels {
+			if cfg.Regex.MatchString(string(ln)) {
+				res := cfg.Regex.ReplaceAllString(string(ln), cfg.Replacement)
+				out[model.LabelName(res)] = lv
+			}
+		}
+		labels = out
+	case config.RelabelLabelDrop:
+		for ln := range labels {
+			if cfg.Regex.MatchString(string(ln)) {
+				delete(labels, ln)
+			}
+		}
+	case config.RelabelLabelKeep:
+		for ln := range labels {
+			if !cfg.Regex.MatchString(string(ln)) {
+				delete(labels, ln)
+			}
+		}
+	default:
+		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+	}
+	return labels
 }
 
 // sum64 sums the md5 hash to an uint64.
