@@ -1151,7 +1151,7 @@ func (ev *evaluator) VectorscalarBinop(op itemType, lhs Vector, rhs Scalar, swap
 		}
 		if keep {
 			lhsSample.V = value
-			if shouldDropMetricName(op) {
+			if shouldDropMetricName(op) || returnBool {
 				lhsSample.Metric = dropMetricName(lhsSample.Metric)
 			}
 			vec = append(vec, lhsSample)
