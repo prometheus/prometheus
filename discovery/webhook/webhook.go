@@ -43,7 +43,7 @@ var (
 var (
 	// DefaultSDConfig is the default webhook SD configuration.
 	DefaultSDConfig = SDConfig{
-		RefreshInterval: model.Duration(30 * time.Second),
+		RefreshInterval: model.Duration(5 * time.Second),
 	}
 )
 
@@ -90,7 +90,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
-	th := time.NewTicker(5 * time.Second)
+	th := time.NewTicker(d.interval)
 	for {
 		select {
 		case <-ctx.Done():

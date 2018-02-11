@@ -59,7 +59,7 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
-	// List of file service discovery configurations.
+	// List of web hook service discovery configurations.
 	WebHookSDConfig []*webhook.SDConfig `yaml:"webhook_sd_configs,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
