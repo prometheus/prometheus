@@ -299,7 +299,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		} else {
 			// We only have fully defined services.
 			for _, name := range d.watchedServices {
-				ctx, _ := context.WithCancel(ctx)
 				d.watchService(name, ctx, ch)
 			}
 			// Wait for cancellation.
@@ -309,9 +308,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-// Watch the catalog for services we would like to watch. This is only necessary
-// for services filtered by tag. If we already have the name it is more efficient to
-// watch nodes the service directly.
+// Watch the catalog for new services we would like to watch. This is called only
+// when we don't know yet the names of the services and need to ask Consul the
+// entire list of services.
 func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) error {
 	catalog := d.client.Catalog()
 	level.Debug(d.logger).Log("msg", "Watching services", "tag", d.watchedTag)

@@ -122,7 +122,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
 		default:
-			t.Error("Unhandeld consul call: %s", r.URL)
+			t.Errorf("Unhandeld consul call: %s", r.URL)
 		}
 		w.Header().Add("X-Consul-Index", "1")
 		w.Write([]byte(response))
