@@ -299,7 +299,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		} else {
 			// We only have fully defined services.
 			for _, name := range d.watchedServices {
-				d.watchService(name, ctx, ch)
+				d.watchService(ctx, name, ch)
 			}
 			// Wait for cancellation.
 			<-ctx.Done()
@@ -350,7 +350,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 		}
 
 		wctx, cancel := context.WithCancel(ctx)
-		d.watchService(name, wctx, ch)
+		d.watchService(wctx, name, ch)
 		services[name] = cancel
 	}
 
@@ -386,7 +386,7 @@ type consulService struct {
 }
 
 // Start watching a service.
-func (d *Discovery) watchService(name string, ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (d *Discovery) watchService(ctx context.Context, name string, ch chan<- []*targetgroup.Group) {
 	srv := &consulService{
 		discovery: d,
 		client:    d.client,

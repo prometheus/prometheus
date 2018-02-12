@@ -64,7 +64,7 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 		t.Errorf("Expected service %s to not be watched without tag", "nonConfiguredServiceName")
 	}
 	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
-		t.Errorf("Expected service %s to not be watched with tag", "nonConfiguredServiceName", "http")
+		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
 	}
 }
 
