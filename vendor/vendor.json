@@ -800,40 +800,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "5mCM640B2xa7y+kRRUeVCglEk7o=",
+			"checksumSHA1": "CeD8QwiLL5CBkWMOfbaJxs4AFuM=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "44dd5e1202b7598d50c69ce3617ca6ae6503cf52",
-			"revisionTime": "2018-01-26T14:54:38Z"
+			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
+			"revisionTime": "2018-02-12T10:58:46Z"
 		},
 		{
-			"checksumSHA1": "XTirmk6Pq5TBGIZEaN5VL4k3i1s=",
+			"checksumSHA1": "4X26TfLh8M4WuCFo/5a+Qk+ieSw=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
-			"revisionTime": "2018-01-18T08:32:54Z"
+			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
+			"revisionTime": "2018-02-12T10:58:46Z"
 		},
 		{
 			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
-			"revisionTime": "2018-01-18T08:32:54Z"
+			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
+			"revisionTime": "2018-02-12T10:58:46Z"
 		},
 		{
 			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
-			"revisionTime": "2018-01-18T08:32:54Z"
+			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
+			"revisionTime": "2018-02-12T10:58:46Z"
 		},
 		{
-			"checksumSHA1": "yuiJaE3cAmZ/ws8NOfd56x36Sg4=",
+			"checksumSHA1": "Cpumd1FEx22Kz8I3HrhMPrSRPNA=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
-			"revisionTime": "2018-01-18T08:32:54Z"
+			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
+			"revisionTime": "2018-02-12T10:58:46Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "467948f3c3f2f6f4ed9881afba27dd3ae24393eb",
-			"revisionTime": "2018-01-18T08:32:54Z"
+			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
+			"revisionTime": "2018-02-12T10:58:46Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
