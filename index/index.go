@@ -136,7 +136,7 @@ type indexTOC struct {
 	postingsTable     uint64
 }
 
-// NewWriter returns a new Writer to the given filename.
+// NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
 func NewWriter(fn string) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
@@ -577,7 +577,8 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 	return b[start:end]
 }
 
-// NewReader returns a new IndexReader on the given byte slice.
+// NewReader returns a new IndexReader on the given byte slice. It automatically
+// handles different format versions.
 func NewReader(b ByteSlice) (*Reader, error) {
 	return newReader(b, nil)
 }

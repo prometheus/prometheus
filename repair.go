@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/tsdb/fileutil"
 )
 
+// repairBadIndexVersion repairs an issue in index and meta.json persistence introduced in
+// commit 129773b41a565fde5156301e37f9a87158030443.
 func repairBadIndexVersion(logger log.Logger, dir string) error {
 	// All blocks written by Prometheus 2.1 with a meta.json version of 2 are affected.
 	// We must actually set the index file version to 2 and revert the meta.json version back to 1.

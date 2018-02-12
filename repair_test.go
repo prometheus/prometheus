@@ -1,12 +1,12 @@
 package tsdb
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
 	"github.com/prometheus/tsdb/chunks"
 
-	"github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 )
@@ -52,6 +52,8 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	if err == nil {
 		t.Fatal("error expected but got none")
 	}
+	// Touch chunks dir in block.
+	os.MkdirAll(dir+"chunks", 0777)
 
 	r, err := index.NewFileReader(dir + "index")
 	if err != nil {
@@ -73,9 +75,12 @@ func TestRepairBadIndexVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := repairBadIndexVersion(log.NewNopLogger(), "testdata/repair_index_version"); err != nil {
+	// On DB opening all blocks in the base dir should be repaired.
+	db, _ := Open("testdata/repair_index_version", nil, nil, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
+	db.Close()
 
 	r, err = index.NewFileReader(dir + "index")
 	if err != nil {
