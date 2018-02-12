@@ -188,6 +188,10 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if opts == nil {
 		opts = DefaultOptions
 	}
+	// Fixup bad format written by Prometheus 2.1.
+	if err := repairBadIndexVersion(l, dir); err != nil {
+		return nil, err
+	}
 
 	db = &DB{
 		dir:                dir,
