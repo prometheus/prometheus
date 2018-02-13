@@ -100,9 +100,9 @@ type SDConfig struct {
 
 	// See https://www.consul.io/docs/internals/consensus.html#consistency-modes,
 	// stale reads are a lot cheaper and are a necessity if you have >5k targets.
-	AllowStale bool `yaml:"allow_stale,omitempty"`
+	AllowStale bool `yaml:"allow_stale"`
 	// By default use blocking queries (https://www.consul.io/api/index.html#blocking-queries)
-	// but allow users to delay updates if necessary. This can be useful because of "bugs" like
+	// but allow users to throttle updates if necessary. This can be useful because of "bugs" like
 	// https://github.com/hashicorp/consul/issues/3712 which cause an un-necessary
 	// amount of requests on consul.
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
@@ -267,7 +267,14 @@ func (d *Discovery) getDatacenter() error {
 		return err
 	}
 
-	d.clientDatacenter = info["Config"]["Datacenter"].(string)
+	dc, ok := info["Config"]["Datacenter"].(string)
+	if !ok {
+		err := fmt.Errorf("Invalid value '%v' for Config.Datacenter", info["Config"]["Datacenter"])
+		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
+		return err
+	}
+
+	d.clientDatacenter = dc
 	return nil
 }
 

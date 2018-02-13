@@ -318,10 +318,11 @@ tls_config:
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
-# See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
-# about the possible filters that can be used.
 services:
   [ - <string> ]
+
+# See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
+# about the possible filters that can be used.
 
 # An optional tag used to filter nodes for a given service.
 [ tag: <string> ]
@@ -333,7 +334,7 @@ services:
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
 
-# Allow stale consul results (see https://www.consul.io/api/index.html#consistency-modes). Will reduce load on consul.
+# Allow stale Consul results (see https://www.consul.io/api/index.html#consistency-modes). Will reduce load on Consul.
 [ allow_stale: <bool> ]
 
 # The time after which the provided names are refreshed. By default refresh as soon as new target are discovered.
@@ -347,9 +348,11 @@ Consul setups, the relevant address is in `__meta_consul_service_address`.
 In those cases, you can use the [relabel](#relabel_config)
 feature to replace the special `__address__` label.
 
-The Consul API only has basic support for filtering nodes (currently by node
-metadata and tag). Any additional filtering must be done using [relabel](#relabel_config)
-but might be slightly less efficient.
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter services or nodes for a service based on arbitrary labels. For
+users with thousands of services it can be more efficient to use the Consul API
+directly which has basic support for filtering nodes (currently by node
+metadata and tag).
 
 ### `<dns_sd_config>`
 
