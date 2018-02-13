@@ -4,6 +4,7 @@
 
 {{define "content"}}
   <div class="container-fluid">
+    <h2>Rules</h2>
     <table class="table table-bordered">
       {{range .RuleGroups}}
         <thead>
@@ -23,8 +24,14 @@
             <td>{{humanizeDuration .GetEvaluationTime.Seconds}}</td>
           </tr>
           {{end}}
-        </tbody>
+      {{else}}
+        <tr>
+          <td>
+            No rules defined
+          </td>
+        </tr>
       {{end}}
+      </tbody>
     </table>
   </div>
 {{end}}
