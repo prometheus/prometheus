@@ -352,7 +352,7 @@ The [relabeling phase](#relabel_config) is the preferred and more powerful
 way to filter services or nodes for a service based on arbitrary labels. For
 users with thousands of services it can be more efficient to use the Consul API
 directly which has basic support for filtering nodes (currently by node
-metadata and tag).
+metadata and a single tag).
 
 ### `<dns_sd_config>`
 
