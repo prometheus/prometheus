@@ -84,7 +84,7 @@ var (
 		Scheme:          "http",
 		Server:          "localhost:8500",
 		AllowStale:      true,
-		RefreshInterval: model.Duration(15 * time.Second),
+		RefreshInterval: model.Duration(watchTimeout),
 	}
 )
 
@@ -329,7 +329,8 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 		AllowStale: d.allowStale,
 		NodeMeta:   d.watchedNodeMeta,
 	})
-	rpcDuration.WithLabelValues("catalog", "services").Observe(time.Since(t0).Seconds())
+	elapsed := time.Since(t0)
+	rpcDuration.WithLabelValues("catalog", "services").Observe(elapsed.Seconds())
 
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error refreshing service list", "err", err)
@@ -376,8 +377,9 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 			}
 		}
 	}
-
-	time.Sleep(d.refreshInterval)
+	if elapsed < d.refreshInterval {
+		time.Sleep(d.refreshInterval - elapsed)
+	}
 	return nil
 }
 
@@ -425,7 +427,8 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			AllowStale: srv.discovery.allowStale,
 			NodeMeta:   srv.discovery.watchedNodeMeta,
 		})
-		rpcDuration.WithLabelValues("catalog", "service").Observe(time.Since(t0).Seconds())
+		elapsed := time.Since(t0)
+		rpcDuration.WithLabelValues("catalog", "service").Observe(elapsed.Seconds())
 
 		// Check the context before potentially falling in a continue-loop.
 		select {
@@ -497,6 +500,8 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			return
 		case ch <- []*targetgroup.Group{&tgroup}:
 		}
-		time.Sleep(srv.discovery.refreshInterval)
+		if elapsed < srv.discovery.refreshInterval {
+			time.Sleep(srv.discovery.refreshInterval - elapsed)
+		}
 	}
 }

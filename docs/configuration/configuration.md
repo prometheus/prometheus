@@ -337,9 +337,9 @@ services:
 # Allow stale Consul results (see https://www.consul.io/api/index.html#consistency-modes). Will reduce load on Consul.
 [ allow_stale: <bool> ]
 
-# The time after which the provided names are refreshed. By default refresh as soon as new target are discovered.
-# On large setup it might be a good idea to increase this value because the catalog send to change all the time.
-[ refresh_interval: <duration> | default = 0s ]
+# The time after which the provided names are refreshed.
+# On large setup it might be a good idea to increase this value because the catalog will change all the time.
+[ refresh_interval: <duration> | default = 30s ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
