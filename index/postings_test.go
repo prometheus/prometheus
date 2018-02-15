@@ -354,6 +354,28 @@ func TestRemovedPostings(t *testing.T) {
 
 }
 
+func TestRemovedNextStackoverflow(t *testing.T) {
+	var full []uint64
+	var remove []uint64
+
+	var i uint64
+	for i = 0; i < 1e7; i++ {
+		full = append(full, i)
+		remove = append(remove, i)
+	}
+
+	flp := newListPostings(full)
+	rlp := newListPostings(remove)
+	rp := newRemovedPostings(flp, rlp)
+	gotElem := false
+	for rp.Next() {
+		gotElem = true
+	}
+	
+	testutil.Ok(t, rp.Err())
+	testutil.Assert(t, !gotElem, "")
+}
+
 func TestRemovedPostingsSeek(t *testing.T) {
 	var cases = []struct {
 		a, b []uint64
