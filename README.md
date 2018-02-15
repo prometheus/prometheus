@@ -77,6 +77,7 @@ You can also clone the repository yourself and build using `make`:
 The Makefile provides several targets:
 
   * *build*: build the `prometheus` and `promtool` binaries
+  * *crossbuild*: build the `prometheus` and `promtool` binaries for all the available architectures
   * *test*: run the tests
   * *test-short*: run the short tests
   * *format*: format the source code
