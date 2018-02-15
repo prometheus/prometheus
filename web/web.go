@@ -536,7 +536,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		"__console_"+name,
 		data,
 		h.now(),
-		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine)),
+		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
 		h.options.ExternalURL,
 	)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
@@ -766,7 +766,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		name,
 		data,
 		h.now(),
-		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine)),
+		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
 		h.options.ExternalURL,
 	)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))
