@@ -445,32 +445,31 @@ func (rp *removedPostings) Next() bool {
 		rp.rok = rp.remove.Next()
 		rp.initialized = true
 	}
+	for {
+		if !rp.fok {
+			return false
+		}
 
-	if !rp.fok {
-		return false
+		if !rp.rok {
+			rp.cur = rp.full.At()
+			rp.fok = rp.full.Next()
+			return true
+		}
+
+		fcur, rcur := rp.full.At(), rp.remove.At()
+		if fcur < rcur {
+			rp.cur = fcur
+			rp.fok = rp.full.Next()
+
+			return true
+		} else if rcur < fcur {
+			// Forward the remove postings to the right position.
+			rp.rok = rp.remove.Seek(fcur)
+		} else {
+			// Skip the current posting.
+			rp.fok = rp.full.Next()
+		}
 	}
-
-	if !rp.rok {
-		rp.cur = rp.full.At()
-		rp.fok = rp.full.Next()
-		return true
-	}
-
-	fcur, rcur := rp.full.At(), rp.remove.At()
-	if fcur < rcur {
-		rp.cur = fcur
-		rp.fok = rp.full.Next()
-
-		return true
-	} else if rcur < fcur {
-		// Forward the remove postings to the right position.
-		rp.rok = rp.remove.Seek(fcur)
-	} else {
-		// Skip the current posting.
-		rp.fok = rp.full.Next()
-	}
-
-	return rp.Next()
 }
 
 func (rp *removedPostings) Seek(id uint64) bool {
