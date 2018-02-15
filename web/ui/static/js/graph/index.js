@@ -163,6 +163,7 @@ Prometheus.Graph.prototype.initialize = function() {
   self.queryForm.submit(function() {
     self.consoleTab.addClass("reload");
     self.graphTab.addClass("reload");
+    self.handleChange();
     self.submitQuery();
     return false;
   });
@@ -191,8 +192,6 @@ Prometheus.Graph.prototype.initialize = function() {
     localStorage.setItem("history", JSON.stringify([]));
   }
   self.populateInsertableMetrics();
-
-  queryHistory.bindHistoryEvents(self);
 
   if (self.expr.val()) {
     self.submitQuery();
@@ -261,7 +260,6 @@ Prometheus.Graph.prototype.populateInsertableMetrics = function() {
 
 Prometheus.Graph.prototype.initTypeahead = function(self) {
   const source = queryHistory.isEnabled() ? pageConfig.queryHistMetrics.concat(pageConfig.allMetrics) : pageConfig.allMetrics;
-
   self.expr.typeahead({
     autoSelect: false,
     source,
@@ -298,6 +296,7 @@ Prometheus.Graph.prototype.initTypeahead = function(self) {
   // This needs to happen after attaching the typeahead plugin, as it
   // otherwise breaks the typeahead functionality.
   self.expr.focus();
+  queryHistory.bindHistoryEvents(self);
 }
 
 Prometheus.Graph.prototype.getOptions = function() {
@@ -446,6 +445,7 @@ Prometheus.Graph.prototype.submitQuery = function() {
           self.showError(json.error);
           return;
         }
+
         queryHistory.handleHistory(self);
         success(json.data, textStatus);
       },
@@ -829,9 +829,9 @@ Prometheus.Graph.prototype.formatKMBT = function(y) {
  * Page
 */
 const pageConfig = {
+  allMetrics: [],
   graphs: [],
   queryHistMetrics: JSON.parse(localStorage.getItem('history')) || [],
-  allMetrics: [],
 };
 
 Prometheus.Page = function() {};
@@ -864,7 +864,6 @@ Prometheus.Page.prototype.addGraph = function(options) {
     this.removeGraph.bind(this)
   );
 
-  // this.graphs.push(graph);
   pageConfig.graphs.push(graph);
 
   $(window).resize(function() {
@@ -1060,7 +1059,9 @@ const queryHistory = {
 
   updateTypeaheadMetricSet: function(metricSet) {
     pageConfig.graphs.forEach(function(graph) {
-      graph.expr.data('typeahead').source = metricSet;
+      if (graph.expr.data('typeahead')) {
+        graph.expr.data('typeahead').source = metricSet;
+      }
     });
   }
 };
@@ -1102,4 +1103,3 @@ function init() {
 }
 
 $(init);
-
