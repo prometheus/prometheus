@@ -802,38 +802,38 @@
 		{
 			"checksumSHA1": "CeD8QwiLL5CBkWMOfbaJxs4AFuM=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
-			"revisionTime": "2018-02-12T10:58:46Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
-			"checksumSHA1": "4X26TfLh8M4WuCFo/5a+Qk+ieSw=",
+			"checksumSHA1": "S7F4yWxVLhxQNHMdgoOo6plmOOs=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
-			"revisionTime": "2018-02-12T10:58:46Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
 			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
-			"revisionTime": "2018-02-12T10:58:46Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
 			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
-			"revisionTime": "2018-02-12T10:58:46Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
-			"checksumSHA1": "Cpumd1FEx22Kz8I3HrhMPrSRPNA=",
+			"checksumSHA1": "UlvN+ZhTu52S8f9niySQpPC+dvQ=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
-			"revisionTime": "2018-02-12T10:58:46Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "bc49a665d16326ad6ad078b97e0f903d894f80f8",
-			"revisionTime": "2018-02-12T10:58:46Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
