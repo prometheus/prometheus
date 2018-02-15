@@ -112,7 +112,7 @@ func (ls Labels) Get(name string) string {
 	return ""
 }
 
-// Has returns if the label with the given name is present.
+// Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
 	for _, l := range ls {
 		if l.Name == name {
