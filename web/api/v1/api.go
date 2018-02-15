@@ -108,7 +108,7 @@ type apiFunc func(r *http.Request) (interface{}, *apiError)
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
-	Queryable   promql.Queryable
+	Queryable   storage.Queryable
 	QueryEngine *promql.Engine
 
 	targetRetriever       targetRetriever
@@ -125,7 +125,7 @@ type API struct {
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe *promql.Engine,
-	q promql.Queryable,
+	q storage.Queryable,
 	tr targetRetriever,
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
@@ -222,7 +222,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewInstantQuery(r.FormValue("query"), ts)
+	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
@@ -296,7 +296,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(r.FormValue("query"), start, end, step)
+	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}
 	}
@@ -396,7 +396,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, err := q.Select(mset...)
+		s, err := q.Select(nil, mset...)
 		if err != nil {
 			return nil, &apiError{errorExec, err}
 		}
@@ -537,7 +537,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		set, err := querier.Select(filteredMatchers...)
+		set, err := querier.Select(nil, filteredMatchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

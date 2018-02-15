@@ -1135,7 +1135,7 @@ required_matchers:
   [ <labelname>: <labelvalue> ... ]
 
 # Timeout for requests to the remote read endpoint.
-[ remote_timeout: <duration> | default = 30s ]
+[ remote_timeout: <duration> | default = 1m ]
 
 # Whether reads should be made for queries for time ranges that
 # the local storage should have complete data for.

@@ -22,7 +22,7 @@ func NoopQuerier() Querier {
 	return noopQuerier{}
 }
 
-func (noopQuerier) Select(...*labels.Matcher) (SeriesSet, error) {
+func (noopQuerier) Select(*SelectParams, ...*labels.Matcher) (SeriesSet, error) {
 	return NoopSeriesSet(), nil
 }
 

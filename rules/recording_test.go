@@ -28,7 +28,7 @@ func TestRuleEval(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
 
-	engine := promql.NewEngine(storage, nil)
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -62,7 +62,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine), nil)
+		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
 		testutil.Ok(t, err)
 		testutil.Equals(t, result, test.result)
 	}
