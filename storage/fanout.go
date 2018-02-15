@@ -216,10 +216,10 @@ func NewMergeQuerier(queriers []Querier) Querier {
 }
 
 // Select returns a set of series that matches the given label matchers.
-func (q *mergeQuerier) Select(matchers ...*labels.Matcher) (SeriesSet, error) {
+func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	for _, querier := range q.queriers {
-		set, err := querier.Select(matchers...)
+		set, err := querier.Select(params, matchers...)
 		if err != nil {
 			return nil, err
 		}
