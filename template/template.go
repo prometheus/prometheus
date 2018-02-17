@@ -265,8 +265,7 @@ func (te Expander) Expand() (result string, resultErr error) {
 		}
 	}()
 
-	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Parse(te.text)
-	tmpl.Option("missingkey=zero")
+	tmpl, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
 	if err != nil {
 		return "", fmt.Errorf("error parsing template %v: %v", te.name, err)
 	}

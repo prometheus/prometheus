@@ -31,6 +31,7 @@ type testTemplatesScenario struct {
 	queryResult promql.Vector
 	shouldFail  bool
 	html        bool
+	errorMsg    string
 }
 
 func TestTemplateExpansion(t *testing.T) {
@@ -44,6 +45,12 @@ func TestTemplateExpansion(t *testing.T) {
 			// Simple value.
 			text:   "{{ 1 }}",
 			output: "1",
+		},
+		{
+			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
+			text:       "{{ }}",
+			shouldFail: true,
+			errorMsg:   "error parsing template test: template: test:1: unexpected unrecognized character in action: U+00A0 in command",
 		},
 		{
 			// HTML escaping.
@@ -140,18 +147,21 @@ func TestTemplateExpansion(t *testing.T) {
 			// Unparsable template.
 			text:       "{{",
 			shouldFail: true,
+			errorMsg:   "error parsing template test: template: test:1: unexpected unclosed action in command",
 		},
 		{
 			// Error in function.
 			text:        "{{ query \"missing\" | first }}",
 			queryResult: promql.Vector{},
 			shouldFail:  true,
+			errorMsg:    "error executing template test: template: test:1:21: executing \"test\" at <first>: error calling first: first() called on vector with no elements",
 		},
 		{
 			// Panic.
 			text:        "{{ (query \"missing\").banana }}",
 			queryResult: promql.Vector{},
 			shouldFail:  true,
+			errorMsg:    "error executing template test: template: test:1:10: executing \"test\" at <\"missing\">: can't evaluate field banana in type template.queryResult",
 		},
 		{
 			// Regex replacement.
@@ -261,6 +271,9 @@ func TestTemplateExpansion(t *testing.T) {
 		if s.shouldFail {
 			if err == nil {
 				t.Fatalf("%d. Error not returned from %v", i, s.text)
+			}
+			if err.Error() != s.errorMsg {
+				t.Fatalf("%d. Error message returned is wrong:\n returned: %v\n expected: %v", i, err.Error(), s.errorMsg)
 			}
 			continue
 		}
