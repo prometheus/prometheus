@@ -10,8 +10,8 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.4" ]]; then
-	echo "could not find protoc 3.4.x, is it installed + in PATH?"
+if ! [[ $(protoc --version) =~ "3.5" ]]; then
+	echo "could not find protoc 3.5.x, is it installed + in PATH?"
 	exit 255
 fi
 
@@ -25,7 +25,7 @@ DIRS="prompb"
 
 for dir in ${DIRS}; do
 	pushd ${dir}
-		protoc --gogofast_out=plugins=grpc:. -I=. \
+		protoc --gofast_out=plugins=grpc:. -I=. \
             -I="${GOGOPROTO_PATH}" \
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
