@@ -170,14 +170,14 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 }
 
 func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
-	// During startup the pod may not have an IP yet. This does not even allow
-	// for an up metric, so we skip the target.
-	if len(pod.Status.PodIP) == 0 {
-		return nil
-	}
 	tg := &targetgroup.Group{
 		Source: podSource(pod),
 	}
+	// PodIP can be empty when a pod is starting or has been evicted.
+	if len(pod.Status.PodIP) == 0 {
+		return tg
+	}
+
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
