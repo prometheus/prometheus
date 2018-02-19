@@ -63,6 +63,11 @@ var samplePrometheusCfg = config.Config{
 	RemoteReadConfigs:  []*config.RemoteReadConfig{},
 }
 
+var sampleFlagMap = map[string]string{
+	"flag1": "value1",
+	"flag2": "value2",
+}
+
 func TestEndpoints(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
@@ -108,9 +113,10 @@ func TestEndpoints(t *testing.T) {
 		QueryEngine:           suite.QueryEngine(),
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:    func() time.Time { return now },
-		config: func() config.Config { return samplePrometheusCfg },
-		ready:  func(f http.HandlerFunc) http.HandlerFunc { return f },
+		now:      func() time.Time { return now },
+		config:   func() config.Config { return samplePrometheusCfg },
+		flagsMap: sampleFlagMap,
+		ready:    func(f http.HandlerFunc) http.HandlerFunc { return f },
 	}
 
 	start := time.Unix(0, 0)
@@ -448,6 +454,10 @@ func TestEndpoints(t *testing.T) {
 			response: &prometheusConfig{
 				YAML: samplePrometheusCfg.String(),
 			},
+		},
+		{
+			endpoint: api.serveFlags,
+			response: sampleFlagMap,
 		},
 	}
 

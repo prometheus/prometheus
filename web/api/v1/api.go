@@ -114,9 +114,10 @@ type API struct {
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 
-	now    func() time.Time
-	config func() config.Config
-	ready  func(http.HandlerFunc) http.HandlerFunc
+	now      func() time.Time
+	config   func() config.Config
+	flagsMap map[string]string
+	ready    func(http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -129,6 +130,7 @@ func NewAPI(
 	tr targetRetriever,
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
+	flagsMap map[string]string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
@@ -140,6 +142,7 @@ func NewAPI(
 		alertmanagerRetriever: ar,
 		now:         time.Now,
 		config:      configFunc,
+		flagsMap:    flagsMap,
 		ready:       readyFunc,
 		db:          db,
 		enableAdmin: enableAdmin,
@@ -180,6 +183,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
 
 	r.Get("/status/config", instr("config", api.serveConfig))
+	r.Get("/status/flags", instr("flags", api.serveFlags))
 	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
 
 	// Admin APIs
@@ -492,6 +496,10 @@ func (api *API) serveConfig(r *http.Request) (interface{}, *apiError) {
 		YAML: api.config().String(),
 	}
 	return cfg, nil
+}
+
+func (api *API) serveFlags(r *http.Request) (interface{}, *apiError) {
+	return api.flagsMap, nil
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {

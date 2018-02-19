@@ -187,6 +187,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			defer h.mtx.RUnlock()
 			return *h.config
 		},
+		o.Flags,
 		h.testReady,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
