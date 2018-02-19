@@ -1,8 +1,8 @@
 FROM        quay.io/prometheus/busybox:latest
 LABEL maintainer "The Prometheus Authors <prometheus-developers@googlegroups.com>"
 
-COPY prometheus                             /bin/prometheus
-COPY promtool                               /bin/promtool
+COPY cmd/prometheus                         /bin/prometheus
+COPY cmd/promtool                           /bin/promtool
 COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
 COPY console_libraries/                     /usr/share/prometheus/console_libraries/
 COPY consoles/                              /usr/share/prometheus/consoles/
