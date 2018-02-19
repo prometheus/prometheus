@@ -71,16 +71,16 @@ func (p *Pool) Get(sz int) interface{} {
 }
 
 // Put adds a slice to the right bucket in the pool.
-func (p *Pool) Put(s interface{}) error {
+func (p *Pool) Put(s interface{}) {
 	slice := reflect.ValueOf(s)
-	if slice.Kind() == reflect.Slice {
-		for i, size := range p.sizes {
-			if slice.Cap() > size {
-				continue
-			}
-			p.buckets[i].Put(slice.Slice(0, 0).Interface())
-			return nil
-		}
+
+	if slice.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("%+v is not a slice", slice))
 	}
-	return fmt.Errorf("%+v is not a slice", slice)
+	for i, size := range p.sizes {
+		if slice.Cap() > size {
+			continue
+		}
+		p.buckets[i].Put(slice.Slice(0, 0).Interface())
+	}
 }
