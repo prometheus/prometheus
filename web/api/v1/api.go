@@ -28,7 +28,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -120,6 +119,7 @@ type API struct {
 	config   func() config.Config
 	flagsMap map[string]string
 	ready    func(http.HandlerFunc) http.HandlerFunc
+	instr    func(string, http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -134,6 +134,7 @@ func NewAPI(
 	configFunc func() config.Config,
 	flagsMap map[string]string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
+	instrFunc func(handlerName string, handler http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
 ) *API {
@@ -146,6 +147,7 @@ func NewAPI(
 		config:      configFunc,
 		flagsMap:    flagsMap,
 		ready:       readyFunc,
+		instr:       instrFunc,
 		db:          db,
 		enableAdmin: enableAdmin,
 	}
@@ -164,9 +166,9 @@ func (api *API) Register(r *route.Router) {
 				w.WriteHeader(http.StatusNoContent)
 			}
 		})
-		return api.ready(prometheus.InstrumentHandler(name, httputil.CompressionHandler{
+		return api.ready(api.instr(name, httputil.CompressionHandler{
 			Handler: hf,
-		}))
+		}.ServeHTTP))
 	}
 
 	r.Options("/*path", instr("options", api.options))
@@ -186,7 +188,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/status/config", instr("config", api.serveConfig))
 	r.Get("/status/flags", instr("flags", api.serveFlags))
-	r.Post("/read", api.ready(prometheus.InstrumentHandler("read", http.HandlerFunc(api.remoteRead))))
+	r.Post("/read", api.ready(api.instr("read", http.HandlerFunc(api.remoteRead))))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", instr("delete_series", api.deleteSeries))

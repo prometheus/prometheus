@@ -47,6 +47,7 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -67,6 +68,29 @@ import (
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+
+var (
+	requestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "prometheus_http_request_duration_seconds",
+			Help:    "Histogram of latencies for HTTP requests.",
+			Buckets: []float64{.1, .2, .4, 1, 3, 8, 20, 60, 120},
+		},
+		[]string{"handler"},
+	)
+	responseSize = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "prometheus_http_response_size_bytes",
+			Help:    "Histogram of response size for HTTP requests.",
+			Buckets: prometheus.ExponentialBuckets(100, 10, 8),
+		},
+		[]string{"handler"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(requestDuration, responseSize)
+}
 
 // Handler serves various HTTP endpoints of the Prometheus server
 type Handler struct {
@@ -182,6 +206,16 @@ func New(logger log.Logger, o *Options) *Handler {
 		ready: 0,
 	}
 
+	instrf := func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+		return promhttp.InstrumentHandlerDuration(
+			requestDuration.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+			promhttp.InstrumentHandlerResponseSize(
+				responseSize.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+				handler,
+			),
+		)
+	}
+
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, h.scrapeManager, h.notifier,
 		func() config.Config {
 			h.mtx.RLock()
@@ -190,6 +224,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		h.testReady,
+		instrf,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
 	)
@@ -202,8 +237,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	instrh := prometheus.InstrumentHandler
-	instrf := prometheus.InstrumentHandlerFunc
 	readyf := h.testReady
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -222,11 +255,11 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/heap", instrf("heap", h.dumpHeap))
 
-	router.Get("/metrics", prometheus.Handler().ServeHTTP)
+	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
-	router.Get("/federate", readyf(instrh("federate", httputil.CompressionHandler{
+	router.Get("/federate", readyf(instrf("federate", httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),
-	})))
+	}.ServeHTTP)))
 
 	router.Get("/consoles/*filepath", readyf(instrf("consoles", h.consoles)))
 
