@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 	"unsafe"
@@ -130,7 +131,7 @@ type scrapePool struct {
 	cancel         context.CancelFunc
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
-	newLoop func(*Target, scraper) loop
+	newLoop func(*Target, scraper, *scrapeCache) loop
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -160,7 +161,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		loops:      map[uint64]loop{},
 		logger:     logger,
 	}
-	sp.newLoop = func(t *Target, s scraper) loop {
+	sp.newLoop = func(t *Target, s scraper, sc *scrapeCache) loop {
 		return newScrapeLoop(
 			ctx,
 			s,
@@ -169,6 +170,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 			func(l labels.Labels) labels.Labels { return sp.mutateSampleLabels(l, t) },
 			func(l labels.Labels) labels.Labels { return sp.mutateReportSampleLabels(l, t) },
 			sp.appender,
+			sc,
 		)
 	}
 
@@ -197,6 +199,38 @@ func (sp *scrapePool) stop() {
 	wg.Wait()
 }
 
+func equalRelabelConfigs(as, bs []*config.RelabelConfig) bool {
+	if len(as) != len(bs) {
+		return false
+	}
+	for i, a := range as {
+		b := bs[i]
+
+		if a.Action != b.Action {
+			return false
+		}
+		if a.Modulus != b.Modulus {
+			return false
+		}
+		if a.Regex.String() != b.Regex.String() {
+			return false
+		}
+		if a.Replacement != b.Replacement {
+			return false
+		}
+		if a.Separator != b.Separator {
+			return false
+		}
+		if !reflect.DeepEqual(a.SourceLabels, b.SourceLabels) {
+			return false
+		}
+		if a.TargetLabel != b.TargetLabel {
+			return false
+		}
+	}
+	return true
+}
+
 // reload the scrape pool with the given scrape configuration. The target state is preserved
 // but all scrape loops are restarted with the new scrape configuration.
 // This method returns after all scrape loops that were stopped have stopped scraping.
@@ -211,21 +245,27 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 		// Any errors that could occur here should be caught during config validation.
 		level.Error(sp.logger).Log("msg", "Error creating HTTP client", "err", err)
 	}
-	sp.config = cfg
-	sp.client = client
 
 	var (
 		wg       sync.WaitGroup
-		interval = time.Duration(sp.config.ScrapeInterval)
-		timeout  = time.Duration(sp.config.ScrapeTimeout)
+		interval = time.Duration(cfg.ScrapeInterval)
+		timeout  = time.Duration(cfg.ScrapeTimeout)
 	)
 
 	for fp, oldLoop := range sp.loops {
 		var (
-			t       = sp.targets[fp]
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
-			newLoop = sp.newLoop(t, s)
+			t = sp.targets[fp]
+			s = &targetScraper{Target: t, client: client, timeout: timeout}
 		)
+		var cache *scrapeCache
+		// If the metric relabel configurations did not change it is safe to propagate the
+		// scrape cache of the previous loop. Target labels are equal as otherwise a new loop
+		// would be started entirely.
+		if sp.config != nil && equalRelabelConfigs(cfg.MetricRelabelConfigs, sp.config.MetricRelabelConfigs) {
+			cache = oldLoop.getCache()
+		}
+		newLoop := sp.newLoop(t, s, cache)
+
 		wg.Add(1)
 
 		go func(oldLoop, newLoop loop) {
@@ -237,6 +277,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 		sp.loops[fp] = newLoop
 	}
+
+	sp.config = cfg
+	sp.client = client
 
 	wg.Wait()
 	targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
@@ -295,7 +338,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 		if _, ok := sp.targets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
-			l := sp.newLoop(t, s)
+			l := sp.newLoop(t, s, nil)
 
 			sp.targets[hash] = t
 			sp.loops[hash] = l
@@ -466,6 +509,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 // A loop can run and be stopped again. It must not be reused after it was stopped.
 type loop interface {
 	run(interval, timeout time.Duration, errc chan<- error)
+	getCache() *scrapeCache
 	stop()
 }
 
@@ -600,6 +644,7 @@ func newScrapeLoop(ctx context.Context,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func() storage.Appender,
+	cache *scrapeCache,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -607,10 +652,13 @@ func newScrapeLoop(ctx context.Context,
 	if buffers == nil {
 		buffers = pool.NewBytesPool(1e3, 1e6, 3)
 	}
+	if cache == nil {
+		cache = newScrapeCache()
+	}
 	sl := &scrapeLoop{
 		scraper:             sc,
 		buffers:             buffers,
-		cache:               newScrapeCache(),
+		cache:               cache,
 		appender:            appender,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
@@ -621,6 +669,10 @@ func newScrapeLoop(ctx context.Context,
 	sl.scrapeCtx, sl.cancel = context.WithCancel(ctx)
 
 	return sl
+}
+
+func (sl *scrapeLoop) getCache() *scrapeCache {
+	return sl.cache
 }
 
 func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {

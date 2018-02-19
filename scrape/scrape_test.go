@@ -143,6 +143,10 @@ func (l *testLoop) stop() {
 	l.stopFunc()
 }
 
+func (l *testLoop) getCache() *scrapeCache {
+	return nil
+}
+
 func TestScrapePoolStop(t *testing.T) {
 	sp := &scrapePool{
 		targets: map[uint64]*Target{},
@@ -218,7 +222,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(_ *Target, s scraper) loop {
+	newLoop := func(_ *Target, s scraper, _ *scrapeCache) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -342,6 +346,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		nil,
+		nil,
 	)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
@@ -404,6 +409,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 
 	// Terminate loop after 2 scrapes.
@@ -468,6 +474,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -512,6 +519,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 
 	go func() {
@@ -560,6 +568,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 	// Succeed once, several failures, then stop.
 	numScrapes := 0
@@ -617,6 +626,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 
 	// Succeed once, several failures, then stop.
@@ -667,6 +677,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func() storage.Appender { return app },
+		nil,
 	)
 
 	now := time.Now()
@@ -708,6 +719,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func() storage.Appender { return app },
+		nil,
 	)
 
 	// Get the value of the Counter before performing the append.
@@ -767,6 +779,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func() storage.Appender { return capp },
+		nil,
 	)
 
 	now := time.Now()
@@ -805,6 +818,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func() storage.Appender { return app },
+		nil,
 	)
 
 	now := time.Now()
@@ -849,6 +863,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func() storage.Appender { return app },
+		nil,
 	)
 
 	now := time.Now()
@@ -887,6 +902,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -915,6 +931,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		nil,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -960,6 +977,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		nopMutator,
 		nopMutator,
 		func() storage.Appender { return app },
+		nil,
 	)
 
 	now := time.Unix(1, 0)
@@ -992,6 +1010,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 				maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
 			}
 		},
+		nil,
 	)
 
 	now := time.Now().Add(20 * time.Minute)
