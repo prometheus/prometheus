@@ -23,13 +23,13 @@ import (
 type Pool struct {
 	buckets []sync.Pool
 	sizes   []int
-	// initialize is the function used to create an empty slice when none exist yet.
-	initialize func(int) interface{}
+	// make is the function used to create an empty slice when none exist yet.
+	make func(int) interface{}
 }
 
 // New returns a new Pool with size buckets for minSize to maxSize
 // increasing by the given factor.
-func New(minSize, maxSize int, factor float64, newFunc func(int) interface{}) *Pool {
+func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *Pool {
 	if minSize < 1 {
 		panic("invalid minimum pool size")
 	}
@@ -47,9 +47,9 @@ func New(minSize, maxSize int, factor float64, newFunc func(int) interface{}) *P
 	}
 
 	p := &Pool{
-		buckets:    make([]sync.Pool, len(sizes)),
-		sizes:      sizes,
-		initialize: newFunc,
+		buckets: make([]sync.Pool, len(sizes)),
+		sizes:   sizes,
+		make:    makeFunc,
 	}
 
 	return p
@@ -63,11 +63,11 @@ func (p *Pool) Get(sz int) interface{} {
 		}
 		b := p.buckets[i].Get()
 		if b == nil {
-			b = p.initialize(bktSize)
+			b = p.make(bktSize)
 		}
 		return b
 	}
-	return p.initialize(sz)
+	return p.make(sz)
 }
 
 // Put adds a slice to the right bucket in the pool.
