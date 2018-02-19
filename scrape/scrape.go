@@ -705,9 +705,7 @@ mainLoop:
 			}
 		}
 
-		if err := sl.buffers.Put(b); err != nil {
-			level.Error(sl.l).Log("msg", "buffer pool error", "err", err)
-		}
+		sl.buffers.Put(b)
 
 		if scrapeErr == nil {
 			scrapeErr = appErr
