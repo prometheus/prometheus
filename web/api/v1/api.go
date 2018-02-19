@@ -87,6 +87,7 @@ type targetRetriever interface {
 
 type alertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
+	DroppedAlertmanagers() []*url.URL
 }
 
 type response struct {
@@ -464,7 +465,8 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
 type AlertmanagerDiscovery struct {
-	ActiveAlertmanagers []*AlertmanagerTarget `json:"activeAlertmanagers"`
+	ActiveAlertmanagers  []*AlertmanagerTarget `json:"activeAlertmanagers"`
+	DroppedAlertmanagers []*AlertmanagerTarget `json:"droppedAlertmanagers"`
 }
 
 // AlertmanagerTarget has info on one AM.
@@ -474,12 +476,14 @@ type AlertmanagerTarget struct {
 
 func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 	urls := api.alertmanagerRetriever.Alertmanagers()
-	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls))}
-
+	droppedURLS := api.alertmanagerRetriever.DroppedAlertmanagers()
+	ams := &AlertmanagerDiscovery{ActiveAlertmanagers: make([]*AlertmanagerTarget, len(urls)), DroppedAlertmanagers: make([]*AlertmanagerTarget, len(droppedURLS))}
 	for i, url := range urls {
 		ams.ActiveAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
 	}
-
+	for i, url := range droppedURLS {
+		ams.DroppedAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
+	}
 	return ams, nil
 }
 

@@ -48,10 +48,26 @@ func (f targetRetrieverFunc) Targets() []*scrape.Target {
 	return f()
 }
 
-type alertmanagerRetrieverFunc func() []*url.URL
+type testAlertmanagerRetriever struct{}
 
-func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
-	return f()
+func (t testAlertmanagerRetriever) Alertmanagers() []*url.URL {
+	return []*url.URL{
+		{
+			Scheme: "http",
+			Host:   "alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		},
+	}
+}
+
+func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
+	return []*url.URL{
+		{
+			Scheme: "http",
+			Host:   "dropped.alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		},
+	}
 }
 
 var samplePrometheusCfg = config.Config{
@@ -95,13 +111,7 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
-	ar := alertmanagerRetrieverFunc(func() []*url.URL {
-		return []*url.URL{{
-			Scheme: "http",
-			Host:   "alertmanager.example.com:8080",
-			Path:   "/api/v1/alerts",
-		}}
-	})
+	var ar testAlertmanagerRetriever
 
 	api := &API{
 		Queryable:             suite.Storage(),
@@ -439,6 +449,11 @@ func TestEndpoints(t *testing.T) {
 				ActiveAlertmanagers: []*AlertmanagerTarget{
 					{
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
+				DroppedAlertmanagers: []*AlertmanagerTarget{
+					{
+						URL: "http://dropped.alertmanager.example.com:8080/api/v1/alerts",
 					},
 				},
 			},
