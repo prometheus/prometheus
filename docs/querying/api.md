@@ -382,6 +382,79 @@ $ curl http://localhost:9090/api/v1/alertmanagers
 }
 ```
 
+## Status
+
+Following status endpoints expose current Prometheus configuration.
+
+### Config
+
+The following endpoint returns currently loaded configuration file:
+
+```
+GET /api/v1/status/config
+```
+
+Currently, config is returned as dumped YAML file.
+
+```json
+$ curl http://localhost:9090/api/v1/status/config
+{
+  "status": "success",
+  "data": {
+    "yaml": "<content of the loaded config file in YAML>",
+  }
+}
+```
+
+### Flags
+
+The following endpoint returns flag values that Prometheus was configured with:
+
+```
+GET /api/v1/status/flags
+```
+
+All values are in a form of "string".
+
+```json
+$ curl http://localhost:9090/api/v1/status/flags
+{
+  "status": "success",
+  "data": {
+    "alertmanager.notification-queue-capacity": "10000",
+    "alertmanager.timeout": "10s",
+    "completion-bash": "false",
+    "completion-script-bash": "false",
+    "completion-script-zsh": "false",
+    "config.file": "/etc/prometheus/prometheus.yaml",
+    "help": "false",
+    "help-long": "false",
+    "help-man": "false",
+    "log.level": "info",
+    "query.lookback-delta": "5m",
+    "query.max-concurrency": "20",
+    "query.timeout": "2m",
+    "storage.tsdb.max-block-duration": "36h",
+    "storage.tsdb.min-block-duration": "2h",
+    "storage.tsdb.no-lockfile": "false",
+    "storage.tsdb.path": "data/",
+    "storage.tsdb.retention": "15d",
+    "version": "false",
+    "web.console.libraries": "console_libraries",
+    "web.console.templates": "consoles",
+    "web.enable-admin-api": "false",
+    "web.enable-lifecycle": "false",
+    "web.external-url": "",
+    "web.listen-address": "0.0.0.0:9090",
+    "web.max-connections": "512",
+    "web.read-timeout": "5m",
+    "web.route-prefix": "/",
+    "web.user-assets": ""
+  }
+}
+```
+
+*New in v2.2*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
