@@ -429,7 +429,7 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 
 	for _, ams := range amSets {
 		ams.mtx.RLock()
-		for _, dam := range ams.dams {
+		for _, dam := range ams.droppedAms {
 			res = append(res, dam.url())
 		}
 		ams.mtx.RUnlock()
@@ -538,10 +538,10 @@ type alertmanagerSet struct {
 
 	metrics *alertMetrics
 
-	mtx    sync.RWMutex
-	ams    []alertmanager
-	dams   []alertmanager
-	logger log.Logger
+	mtx        sync.RWMutex
+	ams        []alertmanager
+	droppedAms []alertmanager
+	logger     log.Logger
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
@@ -561,24 +561,24 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*ale
 // of target groups definitions.
 func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	allAms := []alertmanager{}
-	allDams := []alertmanager{}
+	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
-		ams, dams, err := alertmanagerFromGroup(tg, s.cfg)
+		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
 			continue
 		}
 		allAms = append(allAms, ams...)
-		allDams = append(allDams, dams...)
+		allDroppedAms = append(allDroppedAms, droppedAms...)
 	}
 
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	// Set new Alertmanagers and deduplicate them along their unique URL.
 	s.ams = []alertmanager{}
-	s.dams = []alertmanager{}
-	s.dams = append(s.dams, allDams...)
+	s.droppedAms = []alertmanager{}
+	s.droppedAms = append(s.droppedAms, allDroppedAms...)
 	seen := map[string]struct{}{}
 
 	for _, am := range allAms {
