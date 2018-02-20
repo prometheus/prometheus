@@ -82,5 +82,6 @@ func (p *Pool) Put(s interface{}) {
 			continue
 		}
 		p.buckets[i].Put(slice.Slice(0, 0).Interface())
+		return
 	}
 }

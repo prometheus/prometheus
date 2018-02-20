@@ -668,11 +668,8 @@ mainLoop:
 				time.Since(last).Seconds(),
 			)
 		}
-		b, ok := sl.buffers.Get(sl.lastScrapeSize).([]byte)
-		if !ok {
-			b = make([]byte, 0, sl.lastScrapeSize)
-			level.Error(sl.l).Log("msg", "buffer pool type assertion error")
-		}
+
+		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		buf := bytes.NewBuffer(b)
 
 		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
