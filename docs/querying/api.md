@@ -394,7 +394,8 @@ The following endpoint returns currently loaded configuration file:
 GET /api/v1/status/config
 ```
 
-Currently, config is returned as dumped YAML file.
+The config is returned as dumped YAML file. Due to limitation of the YAML
+library, YAML comments are not included.
 
 ```json
 $ curl http://localhost:9090/api/v1/status/config
@@ -423,33 +424,10 @@ $ curl http://localhost:9090/api/v1/status/flags
   "data": {
     "alertmanager.notification-queue-capacity": "10000",
     "alertmanager.timeout": "10s",
-    "completion-bash": "false",
-    "completion-script-bash": "false",
-    "completion-script-zsh": "false",
-    "config.file": "/etc/prometheus/prometheus.yaml",
-    "help": "false",
-    "help-long": "false",
-    "help-man": "false",
     "log.level": "info",
     "query.lookback-delta": "5m",
     "query.max-concurrency": "20",
-    "query.timeout": "2m",
-    "storage.tsdb.max-block-duration": "36h",
-    "storage.tsdb.min-block-duration": "2h",
-    "storage.tsdb.no-lockfile": "false",
-    "storage.tsdb.path": "data/",
-    "storage.tsdb.retention": "15d",
-    "version": "false",
-    "web.console.libraries": "console_libraries",
-    "web.console.templates": "consoles",
-    "web.enable-admin-api": "false",
-    "web.enable-lifecycle": "false",
-    "web.external-url": "",
-    "web.listen-address": "0.0.0.0:9090",
-    "web.max-connections": "512",
-    "web.read-timeout": "5m",
-    "web.route-prefix": "/",
-    "web.user-assets": ""
+    ...
   }
 }
 ```
