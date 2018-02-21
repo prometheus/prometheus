@@ -265,7 +265,7 @@ func (h *Head) ReadWAL() error {
 
 	// TODO(fabxc): series entries spread between samples can starve the sample workers.
 	// Even with bufferd channels, this can impact startup time with lots of series churn.
-	// We must not pralellize series creation itself but could make the indexing asynchronous.
+	// We must not paralellize series creation itself but could make the indexing asynchronous.
 	seriesFunc := func(series []RefSeries) {
 		for _, s := range series {
 			h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
@@ -762,10 +762,6 @@ func (c *safeChunk) Iterator() chunkenc.Iterator {
 	return it
 }
 
-// func (c *safeChunk) Appender() (chunks.Appender, error) { panic("illegal") }
-// func (c *safeChunk) Bytes() []byte                      { panic("illegal") }
-// func (c *safeChunk) Encoding() chunks.Encoding          { panic("illegal") }
-
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
@@ -1259,7 +1255,7 @@ func (s *memSeries) iterator(id int) chunkenc.Iterator {
 	if id-s.firstChunkID < len(s.chunks)-1 {
 		return c.chunk.Iterator()
 	}
-	// Serve the last 4 samples for the last chunk from the series buffer
+	// Serve the last 4 samples for the last chunk from the sample buffer
 	// as their compressed bytes may be mutated by added samples.
 	it := &memSafeIterator{
 		Iterator: c.chunk.Iterator(),
