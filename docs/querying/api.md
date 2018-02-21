@@ -382,6 +382,57 @@ $ curl http://localhost:9090/api/v1/alertmanagers
 }
 ```
 
+## Status
+
+Following status endpoints expose current Prometheus configuration.
+
+### Config
+
+The following endpoint returns currently loaded configuration file:
+
+```
+GET /api/v1/status/config
+```
+
+The config is returned as dumped YAML file. Due to limitation of the YAML
+library, YAML comments are not included.
+
+```json
+$ curl http://localhost:9090/api/v1/status/config
+{
+  "status": "success",
+  "data": {
+    "yaml": "<content of the loaded config file in YAML>",
+  }
+}
+```
+
+### Flags
+
+The following endpoint returns flag values that Prometheus was configured with:
+
+```
+GET /api/v1/status/flags
+```
+
+All values are in a form of "string".
+
+```json
+$ curl http://localhost:9090/api/v1/status/flags
+{
+  "status": "success",
+  "data": {
+    "alertmanager.notification-queue-capacity": "10000",
+    "alertmanager.timeout": "10s",
+    "log.level": "info",
+    "query.lookback-delta": "5m",
+    "query.max-concurrency": "20",
+    ...
+  }
+}
+```
+
+*New in v2.2*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
