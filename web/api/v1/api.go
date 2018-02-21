@@ -83,6 +83,7 @@ func (e *apiError) Error() string {
 
 type targetRetriever interface {
 	Targets() []*scrape.Target
+	DroppedTargets() []*scrape.Target
 }
 
 type alertmanagerRetriever interface {
@@ -433,14 +434,22 @@ type Target struct {
 	Health     scrape.TargetHealth `json:"health"`
 }
 
+// DroppedTarget has the information for one target that was dropped during relabelling.
+type DroppedTarget struct {
+	// Labels before any processing.
+	DiscoveredLabels map[string]string `json:"discoveredLabels"`
+}
+
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets []*Target `json:"activeTargets"`
+	ActiveTargets  []*Target        `json:"activeTargets"`
+	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
 func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 	targets := api.targetRetriever.Targets()
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(targets))}
+	droppedTargets := api.targetRetriever.DroppedTargets()
+	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(targets)), DroppedTargets: make([]*DroppedTarget, len(droppedTargets))}
 
 	for i, t := range targets {
 		lastErrStr := ""
@@ -456,6 +465,12 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError) {
 			LastError:        lastErrStr,
 			LastScrape:       t.LastScrape(),
 			Health:           t.Health(),
+		}
+	}
+
+	for i, t := range droppedTargets {
+		res.DroppedTargets[i] = &DroppedTarget{
+			DiscoveredLabels: t.DiscoveredLabels().Map(),
 		}
 	}
 
