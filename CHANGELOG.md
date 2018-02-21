@@ -1,11 +1,18 @@
-## 2.2.0-rc.0 / 2018-02-13
+## 2.2.0-rc.1 / 2018-02-21
 
 * [CHANGE] Rename file SD mtime metric.
+* [CHANGE] Send target update on empty pod IP in Kubernetes SD.
+* [FEATURE] Add API endpoint for flags.
 * [ENHANCEMENT] Federation performance improvement.
 * [ENHANCEMENT] Read bearer token file on every scrape.
 * [ENHANCEMENT] Improve typeahead on `/graph` page.
 * [ENHANCEMENT] Change rule file formatting.
 * [ENHANCEMENT] Set consul server default to `localhost:8500`.
+* [ENHANCEMENT] Add dropped Alertmanagers to API info endpoint.
+* [ENHANCEMENT] Add OS type meta label to Azure SD.
+* [BUGFIX] Prevent stack overflow on deep recursion in TSDB.
+* [BUGFIX] Correctly read offsets in index files that are greater than 4GB.
+* [BUGFIX] Fix scraping behavior for empty labels.
 * [BUGFIX] Drop metric name for bool modifier.
 * [BUGFIX] Fix races in discovery.
 * [BUGFIX] Fix Kubernetes endpoints SD for empty subsets.
