@@ -356,9 +356,6 @@ $ curl http://localhost:9090/api/v1/targets
 
 ## Alertmanagers
 
-> This API is experimental as it is intended to be extended with Alertmanagers
-> dropped due to relabelling in the future.
-
 The following endpoint returns an overview of the current state of the
 Prometheus alertmanager discovery:
 
@@ -366,7 +363,7 @@ Prometheus alertmanager discovery:
 GET /api/v1/alertmanagers
 ```
 
-Currently only the active Alertmanagers are part of the response.
+Both the active and dropped Alertmanagers are part of the response.
 
 ```json
 $ curl http://localhost:9090/api/v1/alertmanagers
@@ -376,6 +373,11 @@ $ curl http://localhost:9090/api/v1/alertmanagers
     "activeAlertmanagers": [
       {
         "url": "http://127.0.0.1:9090/api/v1/alerts"
+      }
+    ],
+    "droppedAlertmanagers": [
+      {
+        "url": "http://127.0.0.1:9093/api/v1/alerts"
       }
     ]
   }
