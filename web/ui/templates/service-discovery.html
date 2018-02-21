@@ -11,6 +11,10 @@
     height: 65px;
     visibility: hidden;
   }
+
+  .label {
+    white-space: normal;
+  }
 </style>
 
 {{define "content"}}
@@ -49,7 +53,7 @@
           <tr>
             <td class="labels">
                 {{$labels := .DiscoveredLabels.Map }}
-                <ul style="list-style-type:none">
+                <ul class="list-inline" style="list-style-type:none">
                   {{range $label, $value := $labels}}
                     <li>
                       <span class="label label-primary">{{$label}}="{{$value}}"</span>
@@ -63,7 +67,7 @@
             </td>
             <td class="labels">
                 {{$labels := .Labels.Map }}
-                <ul style="list-style-type:none">
+                <ul class="list-inline" style="list-style-type:none">
                   {{range $label, $value := $labels}}
                     <li>
                       <span class="label label-primary">{{$label}}="{{$value}}"</span>
