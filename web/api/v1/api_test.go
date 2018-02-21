@@ -42,10 +42,34 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-type targetRetrieverFunc func() []*scrape.Target
+type testTargetRetriever struct{}
 
-func (f targetRetrieverFunc) Targets() []*scrape.Target {
-	return f()
+func (t testTargetRetriever) Targets() []*scrape.Target {
+	return []*scrape.Target{
+		scrape.NewTarget(
+			labels.FromMap(map[string]string{
+				model.SchemeLabel:      "http",
+				model.AddressLabel:     "example.com:8080",
+				model.MetricsPathLabel: "/metrics",
+			}),
+			nil,
+			url.Values{},
+		),
+	}
+}
+func (t testTargetRetriever) DroppedTargets() []*scrape.Target {
+	return []*scrape.Target{
+		scrape.NewTarget(
+			nil,
+			labels.FromMap(map[string]string{
+				model.AddressLabel:     "http://dropped.example.com:9115",
+				model.MetricsPathLabel: "/probe",
+				model.SchemeLabel:      "http",
+				model.JobLabel:         "blackbox",
+			}),
+			url.Values{},
+		),
+	}
 }
 
 type testAlertmanagerRetriever struct{}
@@ -102,19 +126,7 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	tr := targetRetrieverFunc(func() []*scrape.Target {
-		return []*scrape.Target{
-			scrape.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "example.com:8080",
-					model.MetricsPathLabel: "/metrics",
-				}),
-				nil,
-				url.Values{},
-			),
-		}
-	})
+	var tr testTargetRetriever
 
 	var ar testAlertmanagerRetriever
 
@@ -445,6 +457,16 @@ func TestEndpoints(t *testing.T) {
 						Labels:           map[string]string{},
 						ScrapeURL:        "http://example.com:8080/metrics",
 						Health:           "unknown",
+					},
+				},
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
 					},
 				},
 			},
