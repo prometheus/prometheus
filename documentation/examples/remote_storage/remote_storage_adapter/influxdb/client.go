@@ -85,7 +85,9 @@ func (c *Client) ensureDatabase() {
 	q := influx.Query{
 		Command: fmt.Sprintf(`CREATE DATABASE %s`, c.database),
 	}
-	for _ = range time.Tick(5 * time.Second) {
+	tk := time.NewTicker(5 * time.Second)
+	defer tk.Stop()
+	for range tk.C {
 		_, err := c.client.Query(q)
 		if err == nil {
 			return
