@@ -145,7 +145,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "latency_seconds",
-			Help:      "Latency quantiles for sending alert notifications (not including dropped notifications).",
+			Help:      "Latency quantiles for sending alert notifications.",
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -161,7 +161,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "sent_total",
-			Help:      "Total number of alerts successfully sent.",
+			Help:      "Total number of alerts sent.",
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -419,6 +419,25 @@ func (n *Manager) Alertmanagers() []*url.URL {
 	return res
 }
 
+// DroppedAlertmanagers returns a slice of Alertmanager URLs.
+func (n *Manager) DroppedAlertmanagers() []*url.URL {
+	n.mtx.RLock()
+	amSets := n.alertmanagers
+	n.mtx.RUnlock()
+
+	var res []*url.URL
+
+	for _, ams := range amSets {
+		ams.mtx.RLock()
+		for _, dam := range ams.droppedAms {
+			res = append(res, dam.url())
+		}
+		ams.mtx.RUnlock()
+	}
+
+	return res
+}
+
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
 func (n *Manager) sendAll(alerts ...*Alert) bool {
@@ -519,9 +538,10 @@ type alertmanagerSet struct {
 
 	metrics *alertMetrics
 
-	mtx    sync.RWMutex
-	ams    []alertmanager
-	logger log.Logger
+	mtx        sync.RWMutex
+	ams        []alertmanager
+	droppedAms []alertmanager
+	logger     log.Logger
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
@@ -540,24 +560,28 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*ale
 // sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
 func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
-	all := []alertmanager{}
+	allAms := []alertmanager{}
+	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
-		ams, err := alertmanagerFromGroup(tg, s.cfg)
+		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
 			continue
 		}
-		all = append(all, ams...)
+		allAms = append(allAms, ams...)
+		allDroppedAms = append(allDroppedAms, droppedAms...)
 	}
 
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	// Set new Alertmanagers and deduplicate them along their unique URL.
 	s.ams = []alertmanager{}
+	s.droppedAms = []alertmanager{}
+	s.droppedAms = append(s.droppedAms, allDroppedAms...)
 	seen := map[string]struct{}{}
 
-	for _, am := range all {
+	for _, am := range allAms {
 		us := am.url().String()
 		if _, ok := seen[us]; ok {
 			continue
@@ -578,8 +602,9 @@ func postPath(pre string) string {
 
 // alertmanagersFromGroup extracts a list of alertmanagers from a target group and an associcated
 // AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, error) {
+func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
+	var droppedAlertManagers []alertmanager
 
 	for _, tlset := range tg.Targets {
 		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
@@ -600,6 +625,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
 		if lset == nil {
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
 			continue
 		}
 
@@ -627,13 +653,13 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			case "https":
 				addr = addr + ":443"
 			default:
-				return nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
+				return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 			}
 			lb.Set(model.AddressLabel, addr)
 		}
 
 		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Meta labels are deleted after relabelling. Other internal labels propagate to
@@ -646,5 +672,5 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		res = append(res, alertmanagerLabels{lset})
 	}
-	return res, nil
+	return res, droppedAlertManagers, nil
 }

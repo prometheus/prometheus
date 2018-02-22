@@ -278,7 +278,14 @@ func main() {
 	}
 
 	cfg.web.Flags = map[string]string{}
+
+	// Exclude kingpin default flags to expose only Prometheus ones.
+	boilerplateFlags := kingpin.New("", "").Version("")
 	for _, f := range a.Model().Flags {
+		if boilerplateFlags.GetFlag(f.Name) != nil {
+			continue
+		}
+
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 

@@ -6,17 +6,6 @@
 /*.rules
 *.exe
 
-# Editor files #
-################
-*~
-.*.swp
-.*.swo
-*.iml
-.idea
-tags
-.history
-.vscode
-
 /prometheus
 /promtool
 benchmark.txt

@@ -112,6 +112,16 @@ func (ls Labels) Get(name string) string {
 	return ""
 }
 
+// Has returns true if the label with the given name is present.
+func (ls Labels) Has(name string) bool {
+	for _, l := range ls {
+		if l.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	if len(ls) != len(o) {
