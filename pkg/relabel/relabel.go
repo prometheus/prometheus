@@ -16,6 +16,7 @@ package relabel
 import (
 	"crypto/md5"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -47,7 +48,10 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 
 	lb := labels.NewBuilder(lset)
 	// Copying the regex avoids contention when this runs from multiple goroutines.
-	regex := cfg.Regex.Copy()
+	var regex regexp.Regexp
+	if cfg.Regex.Regexp != nil {
+		regex := cfg.Regex.Copy()
+	}
 
 	switch cfg.Action {
 	case config.RelabelDrop:
