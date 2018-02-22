@@ -16,6 +16,7 @@ package relabel
 import (
 	"crypto/md5"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/prometheus/common/model"
@@ -46,28 +47,33 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 	val := strings.Join(values, cfg.Separator)
 
 	lb := labels.NewBuilder(lset)
+	// Copying the regex avoids contention when this runs from multiple goroutines.
+	var regex *regexp.Regexp
+	if cfg.Regex.Regexp != nil {
+		regex = cfg.Regex.Copy()
+	}
 
 	switch cfg.Action {
 	case config.RelabelDrop:
-		if cfg.Regex.MatchString(val) {
+		if regex.MatchString(val) {
 			return nil
 		}
 	case config.RelabelKeep:
-		if !cfg.Regex.MatchString(val) {
+		if !regex.MatchString(val) {
 			return nil
 		}
 	case config.RelabelReplace:
-		indexes := cfg.Regex.FindStringSubmatchIndex(val)
+		indexes := regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
 		if indexes == nil {
 			break
 		}
-		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
+		target := model.LabelName(regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
 		if !target.IsValid() {
 			lb.Del(cfg.TargetLabel)
 			break
 		}
-		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
+		res := regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
 		if len(res) == 0 {
 			lb.Del(cfg.TargetLabel)
 			break
@@ -78,20 +84,20 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case config.RelabelLabelMap:
 		for _, l := range lset {
-			if cfg.Regex.MatchString(l.Name) {
-				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
+			if regex.MatchString(l.Name) {
+				res := regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
 		}
 	case config.RelabelLabelDrop:
 		for _, l := range lset {
-			if cfg.Regex.MatchString(l.Name) {
+			if regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		}
 	case config.RelabelLabelKeep:
 		for _, l := range lset {
-			if !cfg.Regex.MatchString(l.Name) {
+			if !regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		}
