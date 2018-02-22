@@ -201,6 +201,17 @@ type mockSeries struct {
 	iterator func() SeriesIterator
 }
 
+func newMockSeries(lset labels.Labels, samples []sample) Series {
+	return &mockSeries{
+		labels: func() labels.Labels {
+			return lset
+		},
+		iterator: func() SeriesIterator {
+			return newListSeriesIterator(samples)
+		},
+	}
+}
+
 func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
 func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
 

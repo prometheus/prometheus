@@ -28,7 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -62,15 +62,15 @@ func NewInstanceDiscovery(opts *gophercloud.AuthOptions,
 		region: region, interval: interval, port: port, logger: l}
 }
 
-// Run implements the TargetProvider interface.
-func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := i.refresh()
 	if err != nil {
 		level.Error(i.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
 	} else {
 		select {
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		case <-ctx.Done():
 			return
 		}
@@ -89,7 +89,7 @@ func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetG
 			}
 
 			select {
-			case ch <- []*config.TargetGroup{tg}:
+			case ch <- []*targetgroup.Group{tg}:
 			case <-ctx.Done():
 				return
 			}
@@ -99,7 +99,7 @@ func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetG
 	}
 }
 
-func (i *InstanceDiscovery) refresh() (*config.TargetGroup, error) {
+func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 	var err error
 	t0 := time.Now()
 	defer func() {
@@ -145,7 +145,7 @@ func (i *InstanceDiscovery) refresh() (*config.TargetGroup, error) {
 	// https://developer.openstack.org/api-ref/compute/#list-servers
 	opts := servers.ListOpts{}
 	pager := servers.List(client, opts)
-	tg := &config.TargetGroup{
+	tg := &targetgroup.Group{
 		Source: fmt.Sprintf("OS_" + i.region),
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {

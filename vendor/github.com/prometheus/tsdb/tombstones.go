@@ -109,7 +109,9 @@ type Stone struct {
 
 func readTombstones(dir string) (memTombstones, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
-	if err != nil {
+	if os.IsNotExist(err) {
+		return memTombstones{}, nil
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -129,7 +131,7 @@ func readTombstones(dir string) (memTombstones, error) {
 		return nil, d.err()
 	}
 
-	// Verify checksum
+	// Verify checksum.
 	hash := newCRC32()
 	if _, err := hash.Write(d.get()); err != nil {
 		return nil, errors.Wrap(err, "write to hash")

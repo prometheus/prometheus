@@ -52,13 +52,19 @@ type Queryable interface {
 // Querier provides reading access to time series data.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...*labels.Matcher) (SeriesSet, error)
+	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, error)
 
 	// LabelValues returns all potential values for a label name.
 	LabelValues(name string) ([]string, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
+}
+
+// SelectParams specifies parameters passed to data selections.
+type SelectParams struct {
+	Step int64  // Query step size in milliseconds.
+	Func string // String representation of surrounding function or aggregation.
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as
@@ -109,74 +115,4 @@ type SeriesIterator interface {
 	Next() bool
 	// Err returns the current error.
 	Err() error
-}
-
-// dedupedSeriesSet takes two series sets and returns them deduplicated.
-// The input sets must be sorted and identical if two series exist in both, i.e.
-// if their label sets are equal, the datapoints must be equal as well.
-type dedupedSeriesSet struct {
-	a, b SeriesSet
-
-	cur          Series
-	adone, bdone bool
-}
-
-// DeduplicateSeriesSet merges two SeriesSet and removes duplicates.
-// If two series exist in both sets, their datapoints must be equal.
-func DeduplicateSeriesSet(a, b SeriesSet) SeriesSet {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-
-	s := &dedupedSeriesSet{a: a, b: b}
-	s.adone = !s.a.Next()
-	s.bdone = !s.b.Next()
-
-	return s
-}
-
-func (s *dedupedSeriesSet) At() Series {
-	return s.cur
-}
-
-func (s *dedupedSeriesSet) Err() error {
-	if s.a.Err() != nil {
-		return s.a.Err()
-	}
-	return s.b.Err()
-}
-
-func (s *dedupedSeriesSet) compare() int {
-	if s.adone {
-		return 1
-	}
-	if s.bdone {
-		return -1
-	}
-	return labels.Compare(s.a.At().Labels(), s.b.At().Labels())
-}
-
-func (s *dedupedSeriesSet) Next() bool {
-	if s.adone && s.bdone || s.Err() != nil {
-		return false
-	}
-
-	d := s.compare()
-
-	// Both sets contain the current series. Chain them into a single one.
-	if d > 0 {
-		s.cur = s.b.At()
-		s.bdone = !s.b.Next()
-	} else if d < 0 {
-		s.cur = s.a.At()
-		s.adone = !s.a.Next()
-	} else {
-		s.cur = s.a.At()
-		s.adone = !s.a.Next()
-		s.bdone = !s.b.Next()
-	}
-	return true
 }

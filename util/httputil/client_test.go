@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/config"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -77,12 +77,12 @@ func newTestServer(handler func(w http.ResponseWriter, r *http.Request)) (*httpt
 
 func TestNewClientFromConfig(t *testing.T) {
 	var newClientValidConfig = []struct {
-		clientConfig config.HTTPClientConfig
+		clientConfig config_util.HTTPClientConfig
 		handler      func(w http.ResponseWriter, r *http.Request)
 	}{
 		{
-			clientConfig: config.HTTPClientConfig{
-				TLSConfig: config.TLSConfig{
+			clientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             "",
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -93,8 +93,8 @@ func TestNewClientFromConfig(t *testing.T) {
 				fmt.Fprint(w, ExpectedMessage)
 			},
 		}, {
-			clientConfig: config.HTTPClientConfig{
-				TLSConfig: config.TLSConfig{
+			clientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -105,9 +105,9 @@ func TestNewClientFromConfig(t *testing.T) {
 				fmt.Fprint(w, ExpectedMessage)
 			},
 		}, {
-			clientConfig: config.HTTPClientConfig{
+			clientConfig: config_util.HTTPClientConfig{
 				BearerToken: BearerToken,
-				TLSConfig: config.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -124,9 +124,9 @@ func TestNewClientFromConfig(t *testing.T) {
 				}
 			},
 		}, {
-			clientConfig: config.HTTPClientConfig{
+			clientConfig: config_util.HTTPClientConfig{
 				BearerTokenFile: BearerTokenFile,
-				TLSConfig: config.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -143,12 +143,12 @@ func TestNewClientFromConfig(t *testing.T) {
 				}
 			},
 		}, {
-			clientConfig: config.HTTPClientConfig{
-				BasicAuth: &config.BasicAuth{
+			clientConfig: config_util.HTTPClientConfig{
+				BasicAuth: &config_util.BasicAuth{
 					Username: ExpectedUsername,
 					Password: ExpectedPassword,
 				},
-				TLSConfig: config.TLSConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             TLSCAChainPath,
 					CertFile:           BarneyCertificatePath,
 					KeyFile:            BarneyKeyNoPassPath,
@@ -205,12 +205,12 @@ func TestNewClientFromConfig(t *testing.T) {
 
 func TestNewClientFromInvalidConfig(t *testing.T) {
 	var newClientInvalidConfig = []struct {
-		clientConfig config.HTTPClientConfig
+		clientConfig config_util.HTTPClientConfig
 		errorMsg     string
 	}{
 		{
-			clientConfig: config.HTTPClientConfig{
-				TLSConfig: config.TLSConfig{
+			clientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
 					CAFile:             MissingCA,
 					CertFile:           "",
 					KeyFile:            "",
@@ -218,17 +218,6 @@ func TestNewClientFromInvalidConfig(t *testing.T) {
 					InsecureSkipVerify: true},
 			},
 			errorMsg: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
-		}, {
-			clientConfig: config.HTTPClientConfig{
-				BearerTokenFile: MissingBearerTokenFile,
-				TLSConfig: config.TLSConfig{
-					CAFile:             TLSCAChainPath,
-					CertFile:           BarneyCertificatePath,
-					KeyFile:            BarneyKeyNoPassPath,
-					ServerName:         "",
-					InsecureSkipVerify: false},
-			},
-			errorMsg: fmt.Sprintf("unable to read bearer token file %s:", MissingBearerTokenFile),
 		},
 	}
 
@@ -246,6 +235,47 @@ func TestNewClientFromInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestMissingBearerAuthFile(t *testing.T) {
+	cfg := config_util.HTTPClientConfig{
+		BearerTokenFile: MissingBearerTokenFile,
+		TLSConfig: config_util.TLSConfig{
+			CAFile:             TLSCAChainPath,
+			CertFile:           BarneyCertificatePath,
+			KeyFile:            BarneyKeyNoPassPath,
+			ServerName:         "",
+			InsecureSkipVerify: false},
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		bearer := r.Header.Get("Authorization")
+		if bearer != ExpectedBearer {
+			fmt.Fprintf(w, "The expected Bearer Authorization (%s) differs from the obtained Bearer Authorization (%s)",
+				ExpectedBearer, bearer)
+		} else {
+			fmt.Fprint(w, ExpectedMessage)
+		}
+	}
+
+	testServer, err := newTestServer(handler)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	defer testServer.Close()
+
+	client, err := NewClientFromConfig(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.Get(testServer.URL)
+	if err == nil {
+		t.Fatal("No error is returned here")
+	}
+
+	if !strings.Contains(err.Error(), "unable to read bearer token file missing/bearer.token: open missing/bearer.token: no such file or directory") {
+		t.Fatal("wrong error message being returned")
+	}
+}
+
 func TestBearerAuthRoundTripper(t *testing.T) {
 	const (
 		newBearerToken = "goodbyeandthankyouforthefish"
@@ -259,14 +289,40 @@ func TestBearerAuthRoundTripper(t *testing.T) {
 		}
 	}, nil, nil)
 
-	//Normal flow
+	// Normal flow.
 	bearerAuthRoundTripper := NewBearerAuthRoundTripper(BearerToken, fakeRoundTripper)
 	request, _ := http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("User-Agent", "Douglas Adams mind")
 	bearerAuthRoundTripper.RoundTrip(request)
 
-	//Should honor already Authorization header set
+	// Should honor already Authorization header set.
 	bearerAuthRoundTripperShouldNotModifyExistingAuthorization := NewBearerAuthRoundTripper(newBearerToken, fakeRoundTripper)
+	request, _ = http.NewRequest("GET", "/hitchhiker", nil)
+	request.Header.Set("Authorization", ExpectedBearer)
+	bearerAuthRoundTripperShouldNotModifyExistingAuthorization.RoundTrip(request)
+}
+
+func TestBearerAuthFileRoundTripper(t *testing.T) {
+	const (
+		newBearerToken = "goodbyeandthankyouforthefish"
+	)
+
+	fakeRoundTripper := testutil.NewRoundTripCheckRequest(func(req *http.Request) {
+		bearer := req.Header.Get("Authorization")
+		if bearer != ExpectedBearer {
+			t.Errorf("The expected Bearer Authorization (%s) differs from the obtained Bearer Authorization (%s)",
+				ExpectedBearer, bearer)
+		}
+	}, nil, nil)
+
+	// Normal flow.
+	bearerAuthRoundTripper := NewBearerAuthFileRoundTripper(BearerTokenFile, fakeRoundTripper)
+	request, _ := http.NewRequest("GET", "/hitchhiker", nil)
+	request.Header.Set("User-Agent", "Douglas Adams mind")
+	bearerAuthRoundTripper.RoundTrip(request)
+
+	// Should honor already Authorization header set.
+	bearerAuthRoundTripperShouldNotModifyExistingAuthorization := NewBearerAuthFileRoundTripper(MissingBearerTokenFile, fakeRoundTripper)
 	request, _ = http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("Authorization", ExpectedBearer)
 	bearerAuthRoundTripperShouldNotModifyExistingAuthorization.RoundTrip(request)
@@ -291,14 +347,14 @@ func TestBasicAuthRoundTripper(t *testing.T) {
 		}
 	}, nil, nil)
 
-	//Normal flow
+	// Normal flow.
 	basicAuthRoundTripper := NewBasicAuthRoundTripper(ExpectedUsername,
 		ExpectedPassword, fakeRoundTripper)
 	request, _ := http.NewRequest("GET", "/hitchhiker", nil)
 	request.Header.Set("User-Agent", "Douglas Adams mind")
 	basicAuthRoundTripper.RoundTrip(request)
 
-	//Should honor already Authorization header set
+	// Should honor already Authorization header set.
 	basicAuthRoundTripperShouldNotModifyExistingAuthorization := NewBasicAuthRoundTripper(newUsername,
 		newPassword, fakeRoundTripper)
 	request, _ = http.NewRequest("GET", "/hitchhiker", nil)
@@ -307,7 +363,7 @@ func TestBasicAuthRoundTripper(t *testing.T) {
 }
 
 func TestTLSConfig(t *testing.T) {
-	configTLSConfig := config.TLSConfig{
+	configTLSConfig := config_util.TLSConfig{
 		CAFile:             TLSCAChainPath,
 		CertFile:           BarneyCertificatePath,
 		KeyFile:            BarneyKeyNoPassPath,
@@ -346,7 +402,7 @@ func TestTLSConfig(t *testing.T) {
 }
 
 func TestTLSConfigEmpty(t *testing.T) {
-	configTLSConfig := config.TLSConfig{
+	configTLSConfig := config_util.TLSConfig{
 		CAFile:             "",
 		CertFile:           "",
 		KeyFile:            "",
@@ -369,11 +425,11 @@ func TestTLSConfigEmpty(t *testing.T) {
 
 func TestTLSConfigInvalidCA(t *testing.T) {
 	var invalidTLSConfig = []struct {
-		configTLSConfig config.TLSConfig
+		configTLSConfig config_util.TLSConfig
 		errorMessage    string
 	}{
 		{
-			configTLSConfig: config.TLSConfig{
+			configTLSConfig: config_util.TLSConfig{
 				CAFile:             MissingCA,
 				CertFile:           "",
 				KeyFile:            "",
@@ -381,7 +437,7 @@ func TestTLSConfigInvalidCA(t *testing.T) {
 				InsecureSkipVerify: false},
 			errorMessage: fmt.Sprintf("unable to use specified CA cert %s:", MissingCA),
 		}, {
-			configTLSConfig: config.TLSConfig{
+			configTLSConfig: config_util.TLSConfig{
 				CAFile:             "",
 				CertFile:           MissingCert,
 				KeyFile:            BarneyKeyNoPassPath,
@@ -389,7 +445,7 @@ func TestTLSConfigInvalidCA(t *testing.T) {
 				InsecureSkipVerify: false},
 			errorMessage: fmt.Sprintf("unable to use specified client cert (%s) & key (%s):", MissingCert, BarneyKeyNoPassPath),
 		}, {
-			configTLSConfig: config.TLSConfig{
+			configTLSConfig: config_util.TLSConfig{
 				CAFile:             "",
 				CertFile:           BarneyCertificatePath,
 				KeyFile:            MissingKey,

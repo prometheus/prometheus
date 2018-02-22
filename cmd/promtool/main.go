@@ -20,9 +20,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v2"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
@@ -172,7 +173,7 @@ func checkConfig(filename string) ([]string, error) {
 	return ruleFiles, nil
 }
 
-func checkTLSConfig(tlsConfig config.TLSConfig) error {
+func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
 		return fmt.Errorf("error checking client cert file %q: %s", tlsConfig.CertFile, err)
 	}

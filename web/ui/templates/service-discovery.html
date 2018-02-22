@@ -1,0 +1,86 @@
+{{define "head"}}
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/targets.css?v={{ buildVersion }}">
+<script src="{{ pathPrefix }}/static/js/targets.js?v={{ buildVersion }}"></script>
+{{end}}
+
+<style>
+  *[id]:before {
+    display: block;
+    content: " ";
+    margin-top: -65px;
+    height: 65px;
+    visibility: hidden;
+  }
+</style>
+
+{{define "content"}}
+  <div class="container-fluid">
+
+    <h1>Service Discovery</h1>
+    <div class="table-container">
+      <table class="table table-condensed table-bordered table-striped table-hover">
+      <ul>
+        {{range $i, $job := .Index}}
+          <li>
+            <a href="#job-{{$job}}">{{$job}}</a>
+          </li>
+        {{end}}
+      </ul>
+    </div>
+
+    {{$targets := .Targets}}
+    {{range $job := .Index}}
+
+    <div class="table-container">
+      <h2 id="job-{{$job}}">
+        {{$job}}
+        <button type="button" class="targets collapsed-table btn btn-primary">show more</button>
+      </h2>
+      <table class="table table-condensed table-bordered table-striped table-hover" style="display:none">
+        <thead class="job_details">
+          <tr>
+            <th>Discovered Labels</th>
+            <th>Target Labels</th>
+          </tr>
+        </thead>
+        <tbody>
+
+        {{range index $targets $job}}
+          <tr>
+            <td class="labels">
+                {{$labels := .DiscoveredLabels.Map }}
+                <ul style="list-style-type:none">
+                  {{range $label, $value := $labels}}
+                    <li>
+                      <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                    </li>
+                  {{else}}
+                  <li>
+                    <span class="label label-default">none</span>
+                  </li>
+                  {{end}}
+                </ul>
+            </td>
+            <td class="labels">
+                {{$labels := .Labels.Map }}
+                <ul style="list-style-type:none">
+                  {{range $label, $value := $labels}}
+                    <li>
+                      <span class="label label-primary">{{$label}}="{{$value}}"</span>
+                    </li>
+                  {{else}}
+                    <li>
+                      <span class="label label-default">Dropped</span>
+                    </li>
+                  {{end}}
+                </ul>
+            </td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+  </div>
+
+{{end}}

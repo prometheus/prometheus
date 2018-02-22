@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/net/context/ctxhttp"
 
-	"github.com/prometheus/prometheus/config"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/httputil"
 )
@@ -38,16 +38,16 @@ const maxErrMsgLen = 256
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
 	index   int // Used to differentiate clients in metrics.
-	url     *config.URL
+	url     *config_util.URL
 	client  *http.Client
 	timeout time.Duration
 }
 
 // ClientConfig configures a Client.
 type ClientConfig struct {
-	URL              *config.URL
+	URL              *config_util.URL
 	Timeout          model.Duration
-	HTTPClientConfig config.HTTPClientConfig
+	HTTPClientConfig config_util.HTTPClientConfig
 }
 
 // NewClient creates a new Client.

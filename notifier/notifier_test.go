@@ -15,6 +15,7 @@ package notifier
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,10 +27,15 @@ import (
 	"time"
 
 	old_ctx "golang.org/x/net/context"
+	yaml "gopkg.in/yaml.v2"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPostPath(t *testing.T) {
@@ -65,7 +71,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{}, nil)
+	h := NewManager(&Options{}, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -141,10 +147,20 @@ func TestHandlerSendAll(t *testing.T) {
 		}
 	}
 	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, _ := r.BasicAuth()
+		if user != "prometheus" || pass != "testing_password" {
+			t.Fatalf("Incorrect auth details for an alertmanager")
+		}
+
 		f(w, r)
 		w.WriteHeader(status1)
 	}))
 	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, _ := r.BasicAuth()
+		if user != "" || pass != "" {
+			t.Fatalf("Incorrectly received auth details for an alertmanager")
+		}
+
 		f(w, r)
 		w.WriteHeader(status2)
 	}))
@@ -152,12 +168,31 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{}, nil)
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+	h := NewManager(&Options{}, nil)
+
+	authClient, _ := httputil.NewClientFromConfig(config_util.HTTPClientConfig{
+		BasicAuth: &config_util.BasicAuth{
+			Username: "prometheus",
+			Password: "testing_password",
+		},
+	}, "auth_alertmanager")
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server1.URL },
 			},
+		},
+		cfg: &config.AlertmanagerConfig{
+			Timeout: time.Second,
+		},
+		client: authClient,
+	}
+
+	h.alertmanagers["2"] = &alertmanagerSet{
+		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
 			},
@@ -165,7 +200,7 @@ func TestHandlerSendAll(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	})
+	}
 
 	for i := range make([]struct{}, maxBatchSize) {
 		h.queue = append(h.queue, &Alert{
@@ -198,7 +233,7 @@ func TestCustomDo(t *testing.T) {
 	const testBody = "testbody"
 
 	var received bool
-	h := New(&Options{
+	h := NewManager(&Options{
 		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
@@ -225,7 +260,7 @@ func TestCustomDo(t *testing.T) {
 }
 
 func TestExternalLabels(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
 		ExternalLabels: model.LabelSet{"a": "b"},
 		RelabelConfigs: []*config.RelabelConfig{
@@ -261,7 +296,7 @@ func TestExternalLabels(t *testing.T) {
 }
 
 func TestHandlerRelabel(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 		RelabelConfigs: []*config.RelabelConfig{
 			{
@@ -321,12 +356,15 @@ func TestHandlerQueueing(t *testing.T) {
 		}
 	}))
 
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 	},
 		nil,
 	)
-	h.alertmanagers = append(h.alertmanagers, &alertmanagerSet{
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
 				urlf: func() string { return server.URL },
@@ -335,7 +373,7 @@ func TestHandlerQueueing(t *testing.T) {
 		cfg: &config.AlertmanagerConfig{
 			Timeout: time.Second,
 		},
-	})
+	}
 
 	var alerts []*Alert
 
@@ -345,7 +383,8 @@ func TestHandlerQueueing(t *testing.T) {
 		})
 	}
 
-	go h.Run()
+	c := make(chan map[string][]*targetgroup.Group)
+	go h.Run(c)
 	defer h.Stop()
 
 	h.Send(alerts[:4*maxBatchSize]...)
@@ -403,7 +442,7 @@ func (a alertmanagerMock) url() *url.URL {
 
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
-	_, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,8 +452,114 @@ func TestLabelSetNotReused(t *testing.T) {
 	}
 }
 
-func makeInputTargetGroup() *config.TargetGroup {
-	return &config.TargetGroup{
+func TestReload(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
+	}
+
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+`
+	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+
+		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
+		if err != nil {
+			t.Fatalf("Error creating config hash:%v", err)
+		}
+		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
+			tt.in,
+		}
+		n.reload(tgs)
+		res := n.Alertmanagers()[0].String()
+
+		testutil.Equals(t, res, tt.out)
+	}
+
+}
+
+func TestDroppedAlertmanagers(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
+	}
+
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+    relabel_configs:
+      - source_labels: ['__address__']
+        regex: 'alertmanager:9093'
+        action: drop
+`
+	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+
+		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
+		if err != nil {
+			t.Fatalf("Error creating config hash:%v", err)
+		}
+		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
+			tt.in,
+		}
+		n.reload(tgs)
+		res := n.DroppedAlertmanagers()[0].String()
+
+		testutil.Equals(t, res, tt.out)
+	}
+
+}
+
+func makeInputTargetGroup() *targetgroup.Group {
+	return &targetgroup.Group{
 		Targets: []model.LabelSet{
 			{
 				model.AddressLabel:            model.LabelValue("1.1.1.1:9090"),

@@ -22,7 +22,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
@@ -44,10 +44,10 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	return &Node{logger: l, informer: inf, store: inf.GetStore()}
 }
 
-// Run implements the TargetProvider interface.
-func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
-	var initial []*config.TargetGroup
+	var initial []*targetgroup.Group
 	for _, o := range n.store.List() {
 		tg := n.buildNode(o.(*apiv1.Node))
 		initial = append(initial, tg)
@@ -59,10 +59,13 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 
 	// Send target groups for service updates.
-	send := func(tg *config.TargetGroup) {
+	send := func(tg *targetgroup.Group) {
+		if tg == nil {
+			return
+		}
 		select {
 		case <-ctx.Done():
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		}
 	}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -84,7 +87,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 				return
 			}
-			send(&config.TargetGroup{Source: nodeSource(node)})
+			send(&targetgroup.Group{Source: nodeSource(node)})
 		},
 		UpdateFunc: func(_, o interface{}) {
 			eventCount.WithLabelValues("node", "update").Inc()
@@ -147,8 +150,8 @@ func nodeLabels(n *apiv1.Node) model.LabelSet {
 	return ls
 }
 
-func (n *Node) buildNode(node *apiv1.Node) *config.TargetGroup {
-	tg := &config.TargetGroup{
+func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
+	tg := &targetgroup.Group{
 		Source: nodeSource(node),
 	}
 	tg.Labels = nodeLabels(node)

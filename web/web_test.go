@@ -30,6 +30,11 @@ import (
 	libtsdb "github.com/prometheus/tsdb"
 )
 
+func TestMain(m *testing.M) {
+	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
+	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
+	os.Exit(m.Run())
+}
 func TestGlobalURL(t *testing.T) {
 	opts := &Options{
 		ListenAddress: ":9090",
@@ -96,7 +101,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		Context:        nil,
 		Storage:        &tsdb.ReadyStorage{},
 		QueryEngine:    nil,
-		TargetManager:  nil,
+		ScrapeManager:  nil,
 		RuleManager:    nil,
 		Notifier:       nil,
 		RoutePrefix:    "/",
@@ -108,7 +113,12 @@ func TestReadyAndHealthy(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	go webHandler.Run(context.Background())
+	go func() {
+		err := webHandler.Run(context.Background())
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
 
 	// Give some time for the web goroutine to run since we need the server
 	// to be up before starting tests.
@@ -187,7 +197,7 @@ func TestRoutePrefix(t *testing.T) {
 		Context:        nil,
 		Storage:        &tsdb.ReadyStorage{},
 		QueryEngine:    nil,
-		TargetManager:  nil,
+		ScrapeManager:  nil,
 		RuleManager:    nil,
 		Notifier:       nil,
 		RoutePrefix:    "/prometheus",
@@ -202,7 +212,7 @@ func TestRoutePrefix(t *testing.T) {
 	go func() {
 		err := webHandler.Run(context.Background())
 		if err != nil {
-			panic(fmt.Sprintf("Can't start webhandler error %s", err))
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
 		}
 	}()
 

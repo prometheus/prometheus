@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/pkg/api/v1"
@@ -89,7 +89,7 @@ func TestEndpointsDiscoveryInitial(t *testing.T) {
 
 	k8sDiscoveryTest{
 		discovery: n,
-		expectedInitial: []*config.TargetGroup{
+		expectedInitial: []*targetgroup.Group{
 			{
 				Targets: []model.LabelSet{
 					{
@@ -195,7 +195,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 				)
 			}()
 		},
-		expectedRes: []*config.TargetGroup{
+		expectedRes: []*targetgroup.Group{
 			{
 				Targets: []model.LabelSet{
 					{
@@ -245,7 +245,7 @@ func TestEndpointsDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { eps.Delete(makeEndpoints()) }() },
-		expectedRes: []*config.TargetGroup{
+		expectedRes: []*targetgroup.Group{
 			{
 				Source: "endpoints/default/testendpoints",
 			},
@@ -260,7 +260,7 @@ func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { eps.Delete(cache.DeletedFinalStateUnknown{Obj: makeEndpoints()}) }() },
-		expectedRes: []*config.TargetGroup{
+		expectedRes: []*targetgroup.Group{
 			{
 				Source: "endpoints/default/testendpoints",
 			},
@@ -314,7 +314,7 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 				})
 			}()
 		},
-		expectedRes: []*config.TargetGroup{
+		expectedRes: []*targetgroup.Group{
 			{
 				Targets: []model.LabelSet{
 					{
@@ -330,6 +330,35 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpoint_ready":         "true",
 					},
 				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				eps.Update(&v1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testendpoints",
+						Namespace: "default",
+					},
+					Subsets: []v1.EndpointSubset{},
+				})
+			}()
+		},
+		expectedRes: []*targetgroup.Group{
+			{
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":      "default",
 					"__meta_kubernetes_endpoints_name": "testendpoints",

@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
 )
 
 type OpenstackSDHypervisorTestSuite struct {
@@ -48,7 +47,7 @@ func TestOpenstackSDHypervisorSuite(t *testing.T) {
 }
 
 func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, error) {
-	conf := config.OpenstackSDConfig{
+	conf := SDConfig{
 		IdentityEndpoint: s.Mock.Endpoint(),
 		Password:         "test",
 		Username:         "test",

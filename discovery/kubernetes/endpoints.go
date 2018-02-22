@@ -22,10 +22,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/prometheus/prometheus/config"
 )
 
 // Endpoints discovers new endpoint targets.
@@ -59,10 +58,10 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 	return ep
 }
 
-// Run implements the retrieval.TargetProvider interface.
-func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of endpoint targets.
-	var initial []*config.TargetGroup
+	var initial []*targetgroup.Group
 
 	for _, o := range e.endpointsStore.List() {
 		tg := e.buildEndpoints(o.(*apiv1.Endpoints))
@@ -74,14 +73,14 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	case ch <- initial:
 	}
 	// Send target groups for pod updates.
-	send := func(tg *config.TargetGroup) {
+	send := func(tg *targetgroup.Group) {
 		if tg == nil {
 			return
 		}
 		level.Debug(e.logger).Log("msg", "endpoints update", "tg", fmt.Sprintf("%#v", tg))
 		select {
 		case <-ctx.Done():
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		}
 	}
 
@@ -114,7 +113,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
 				return
 			}
-			send(&config.TargetGroup{Source: endpointsSource(eps)})
+			send(&targetgroup.Group{Source: endpointsSource(eps)})
 		},
 	})
 
@@ -185,12 +184,8 @@ const (
 	endpointPortProtocolLabel = metaLabelPrefix + "endpoint_port_protocol"
 )
 
-func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *config.TargetGroup {
-	if len(eps.Subsets) == 0 {
-		return nil
-	}
-
-	tg := &config.TargetGroup{
+func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
+	tg := &targetgroup.Group{
 		Source: endpointsSource(eps),
 	}
 	tg.Labels = model.LabelSet{
@@ -319,7 +314,7 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	return obj.(*apiv1.Pod)
 }
 
-func (e *Endpoints) addServiceLabels(ns, name string, tg *config.TargetGroup) {
+func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	svc := &apiv1.Service{}
 	svc.Namespace = ns
 	svc.Name = name

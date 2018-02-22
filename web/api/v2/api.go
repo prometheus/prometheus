@@ -40,7 +40,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -50,7 +50,7 @@ type API struct {
 	now           func() time.Time
 	db            func() *tsdb.DB
 	q             func(ctx context.Context, mint, maxt int64) (storage.Querier, error)
-	targets       func() []*retrieval.Target
+	targets       func() []*scrape.Target
 	alertmanagers func() []*url.URL
 }
 
@@ -60,7 +60,7 @@ func New(
 	db func() *tsdb.DB,
 	qe *promql.Engine,
 	q func(ctx context.Context, mint, maxt int64) (storage.Querier, error),
-	targets func() []*retrieval.Target,
+	targets func() []*scrape.Target,
 	alertmanagers func() []*url.URL,
 	enableAdmin bool,
 ) *API {
@@ -174,8 +174,10 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.
 	}
 	var (
 		snapdir = filepath.Join(db.Dir(), "snapshots")
-		name    = fmt.Sprintf("%s-%x", time.Now().UTC().Format(time.RFC3339), rand.Int())
-		dir     = filepath.Join(snapdir, name)
+		name    = fmt.Sprintf("%s-%x",
+			time.Now().UTC().Format("20060102T150405Z0700"),
+			rand.Int())
+		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, status.Errorf(codes.Internal, "created snapshot directory: %s", err)

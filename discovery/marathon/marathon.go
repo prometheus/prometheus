@@ -27,12 +27,14 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -73,7 +75,46 @@ var (
 			Name:      "sd_marathon_refresh_duration_seconds",
 			Help:      "The duration of a Marathon-SD refresh in seconds.",
 		})
+	// DefaultSDConfig is the default Marathon SD configuration.
+	DefaultSDConfig = SDConfig{
+		Timeout:         model.Duration(30 * time.Second),
+		RefreshInterval: model.Duration(30 * time.Second),
+	}
 )
+
+// SDConfig is the configuration for services running on Marathon.
+type SDConfig struct {
+	Servers         []string              `yaml:"servers,omitempty"`
+	Timeout         model.Duration        `yaml:"timeout,omitempty"`
+	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
+	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	BearerToken     config_util.Secret    `yaml:"bearer_token,omitempty"`
+	BearerTokenFile string                `yaml:"bearer_token_file,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yaml_util.CheckOverflow(c.XXX, "marathon_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+	}
+	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
+		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	}
+
+	return nil
+}
 
 func init() {
 	prometheus.MustRegister(refreshFailuresCount)
@@ -87,14 +128,14 @@ type Discovery struct {
 	client          *http.Client
 	servers         []string
 	refreshInterval time.Duration
-	lastRefresh     map[string]*config.TargetGroup
+	lastRefresh     map[string]*targetgroup.Group
 	appsClient      AppListClient
 	token           string
 	logger          log.Logger
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -134,8 +175,8 @@ func NewDiscovery(conf *config.MarathonSDConfig, logger log.Logger) (*Discovery,
 	}, nil
 }
 
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -149,7 +190,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
-func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.TargetGroup) (err error) {
+func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup.Group) (err error) {
 	t0 := time.Now()
 	defer func() {
 		refreshDuration.Observe(time.Since(t0).Seconds())
@@ -163,7 +204,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Targ
 		return err
 	}
 
-	all := make([]*config.TargetGroup, 0, len(targetMap))
+	all := make([]*targetgroup.Group, 0, len(targetMap))
 	for _, tg := range targetMap {
 		all = append(all, tg)
 	}
@@ -181,7 +222,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Targ
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case ch <- []*config.TargetGroup{{Source: source}}:
+			case ch <- []*targetgroup.Group{{Source: source}}:
 				level.Debug(d.logger).Log("msg", "Removing group", "source", source)
 			}
 		}
@@ -191,7 +232,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*config.Targ
 	return nil
 }
 
-func (d *Discovery) fetchTargetGroups() (map[string]*config.TargetGroup, error) {
+func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
 	url := RandomAppsURL(d.servers)
 	apps, err := d.appsClient(d.client, url, d.token)
 	if err != nil {
@@ -294,8 +335,8 @@ func RandomAppsURL(servers []string) string {
 }
 
 // AppsToTargetGroups takes an array of Marathon apps and converts them into target groups.
-func AppsToTargetGroups(apps *AppList) map[string]*config.TargetGroup {
-	tgroups := map[string]*config.TargetGroup{}
+func AppsToTargetGroups(apps *AppList) map[string]*targetgroup.Group {
+	tgroups := map[string]*targetgroup.Group{}
 	for _, a := range apps.Apps {
 		group := createTargetGroup(&a)
 		tgroups[group.Source] = group
@@ -303,13 +344,13 @@ func AppsToTargetGroups(apps *AppList) map[string]*config.TargetGroup {
 	return tgroups
 }
 
-func createTargetGroup(app *App) *config.TargetGroup {
+func createTargetGroup(app *App) *targetgroup.Group {
 	var (
 		targets = targetsForApp(app)
 		appName = model.LabelValue(app.ID)
 		image   = model.LabelValue(app.Container.Docker.Image)
 	)
-	tg := &config.TargetGroup{
+	tg := &targetgroup.Group{
 		Targets: targets,
 		Labels: model.LabelSet{
 			appLabel:   appName,

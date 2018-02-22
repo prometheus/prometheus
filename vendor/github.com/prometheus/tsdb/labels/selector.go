@@ -76,6 +76,18 @@ func NewRegexpMatcher(name, pattern string) (Matcher, error) {
 	return &regexpMatcher{name: name, re: re}, nil
 }
 
+// NewRegexpMatcher returns a new matcher verifying that a value matches
+// the regular expression pattern. Will panic if the pattern is not a valid
+// regular expression.
+func NewMustRegexpMatcher(name, pattern string) Matcher {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		panic(err)
+	}
+	return &regexpMatcher{name: name, re: re}
+
+}
+
 // notMatcher inverts the matching result for a matcher.
 type notMatcher struct {
 	Matcher

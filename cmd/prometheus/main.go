@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -26,6 +28,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -43,10 +46,12 @@ import (
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
@@ -83,12 +88,12 @@ func main() {
 		localStoragePath string
 		notifier         notifier.Options
 		notifierTimeout  model.Duration
-		queryEngine      promql.EngineOptions
 		web              web.Options
 		tsdb             tsdb.Options
 		lookbackDelta    model.Duration
 		webTimeout       model.Duration
 		queryTimeout     model.Duration
+		queryConcurrency int
 
 		prometheusURL string
 
@@ -96,9 +101,6 @@ func main() {
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
-		},
-		queryEngine: promql.EngineOptions{
-			Metrics: prometheus.DefaultRegisterer,
 		},
 	}
 
@@ -147,12 +149,12 @@ func main() {
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
-	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted.").
-		Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
+	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
+		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
 	a.Flag("storage.tsdb.max-block-duration",
-		"Maximum duration compacted blocks may span. (Defaults to 10% of the retention period)").
-		PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
+		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
+		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
 	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
@@ -173,7 +175,7 @@ func main() {
 		Default("2m").SetValue(&cfg.queryTimeout)
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
-		Default("20").IntVar(&cfg.queryEngine.MaxConcurrentQueries)
+		Default("20").IntVar(&cfg.queryConcurrency)
 
 	promlogflag.AddFlags(a, &cfg.logLevel)
 
@@ -204,8 +206,6 @@ func main() {
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
-	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
-
 	logger := promlog.New(cfg.logLevel)
 
 	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
@@ -220,6 +220,7 @@ func main() {
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
+	level.Info(logger).Log("fd_limits", FdLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
@@ -227,29 +228,43 @@ func main() {
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
-	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
-		notifier       = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		targetManager  = retrieval.NewTargetManager(fanoutStorage, log.With(logger, "component", "target manager"))
-		queryEngine    = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ctx, cancelCtx = context.WithCancel(context.Background())
+		ctxWeb, cancelWeb = context.WithCancel(context.Background())
+		ctxRule           = context.Background()
+
+		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+
+		ctxScrape, cancelScrape = context.WithCancel(context.Background())
+		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"))
+
+		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"))
+
+		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+
+		queryEngine = promql.NewEngine(
+			log.With(logger, "component", "query engine"),
+			prometheus.DefaultRegisterer,
+			cfg.queryConcurrency,
+			time.Duration(cfg.queryTimeout),
+		)
+
+		ruleManager = rules.NewManager(&rules.ManagerOptions{
+			Appendable:  fanoutStorage,
+			QueryFunc:   rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			Context:     ctxRule,
+			ExternalURL: cfg.web.ExternalURL,
+			Registerer:  prometheus.DefaultRegisterer,
+			Logger:      log.With(logger, "component", "rule manager"),
+		})
 	)
 
-	ruleManager := rules.NewManager(&rules.ManagerOptions{
-		Appendable:  fanoutStorage,
-		QueryFunc:   rules.EngineQueryFunc(queryEngine),
-		NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
-		Context:     ctx,
-		ExternalURL: cfg.web.ExternalURL,
-		Registerer:  prometheus.DefaultRegisterer,
-		Logger:      log.With(logger, "component", "rule manager"),
-	})
-
-	cfg.web.Context = ctx
+	cfg.web.Context = ctxWeb
 	cfg.web.TSDB = localStorage.Get
 	cfg.web.Storage = fanoutStorage
 	cfg.web.QueryEngine = queryEngine
-	cfg.web.TargetManager = targetManager
+	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifier
 
@@ -263,10 +278,18 @@ func main() {
 	}
 
 	cfg.web.Flags = map[string]string{}
+
+	// Exclude kingpin default flags to expose only Prometheus ones.
+	boilerplateFlags := kingpin.New("", "").Version("")
 	for _, f := range a.Model().Flags {
+		if boilerplateFlags.GetFlag(f.Name) != nil {
+			continue
+		}
+
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
+	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
@@ -276,9 +299,30 @@ func main() {
 
 	reloaders := []func(cfg *config.Config) error{
 		remoteStorage.ApplyConfig,
-		targetManager.ApplyConfig,
 		webHandler.ApplyConfig,
+		// The Scrape and notifier managers need to reload before the Discovery manager as
+		// they need to read the most updated config when receiving the new targets list.
 		notifier.ApplyConfig,
+		scrapeManager.ApplyConfig,
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.ScrapeConfigs {
+				c[v.JobName] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManagerScrape.ApplyConfig(c)
+		},
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
+				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				b, err := json.Marshal(v)
+				if err != nil {
+					return err
+				}
+				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManagerNotify.ApplyConfig(c)
+		},
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration oaths.
 			var files []string
@@ -300,8 +344,22 @@ func main() {
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
 	dbOpen := make(chan struct{})
-	// Wait until the server is ready to handle reloading
-	reloadReady := make(chan struct{})
+
+	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
+	type closeOnce struct {
+		C     chan struct{}
+		once  sync.Once
+		Close func()
+	}
+	// Wait until the server is ready to handle reloading.
+	reloadReady := &closeOnce{
+		C: make(chan struct{}),
+	}
+	reloadReady.Close = func() {
+		reloadReady.once.Do(func() {
+			close(reloadReady.C)
+		})
+	}
 
 	var g group.Group
 	{
@@ -310,18 +368,72 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
+				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+					reloadReady.Close()
+
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
+					reloadReady.Close()
 					break
 				}
 				return nil
 			},
 			func(err error) {
 				close(cancel)
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				err := discoveryManagerScrape.Run()
+				level.Info(logger).Log("msg", "Scrape discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping scrape discovery manager...")
+				cancelScrape()
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				err := discoveryManagerNotify.Run()
+				level.Info(logger).Log("msg", "Notify discovery manager stopped")
+				return err
+			},
+			func(err error) {
+				level.Info(logger).Log("msg", "Stopping notify discovery manager...")
+				cancelNotify()
+			},
+		)
+	}
+	{
+		g.Add(
+			func() error {
+				// When the scrape manager receives a new targets list
+				// it needs to read a valid config for each job.
+				// It depends on the config being in sync with the discovery manager so
+				// we wait until the config is fully loaded.
+				select {
+				case <-reloadReady.C:
+					break
+				}
+
+				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
+				level.Info(logger).Log("msg", "Scrape manager stopped")
+				return err
+			},
+			func(err error) {
+				// Scrape manager needs to be stopped before closing the local TSDB
+				// so that it doesn't try to write samples to a closed storage.
+				level.Info(logger).Log("msg", "Stopping scrape manager...")
+				scrapeManager.Stop()
 			},
 		)
 	}
@@ -334,11 +446,8 @@ func main() {
 		g.Add(
 			func() error {
 				select {
-				case <-reloadReady:
+				case <-reloadReady.C:
 					break
-				// In case a shutdown is initiated before the reloadReady is released.
-				case <-cancel:
-					return nil
 				}
 
 				for {
@@ -374,6 +483,7 @@ func main() {
 					break
 				// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
+					reloadReady.Close()
 					return nil
 				}
 
@@ -381,9 +491,10 @@ func main() {
 					return fmt.Errorf("Error loading config %s", err)
 				}
 
-				close(reloadReady)
+				reloadReady.Close()
+
 				webHandler.Ready()
-				level.Info(logger).Log("msg", "Server is ready to receive requests.")
+				level.Info(logger).Log("msg", "Server is ready to receive web requests.")
 				<-cancel
 				return nil
 			},
@@ -425,7 +536,7 @@ func main() {
 	{
 		g.Add(
 			func() error {
-				if err := webHandler.Run(ctx); err != nil {
+				if err := webHandler.Run(ctxWeb); err != nil {
 					return fmt.Errorf("Error starting web server: %s", err)
 				}
 				return nil
@@ -434,7 +545,7 @@ func main() {
 				// Keep this interrupt before the ruleManager.Stop().
 				// Shutting down the query engine before the rule manager will cause pending queries
 				// to be canceled and ensures a quick shutdown of the rule manager.
-				cancelCtx()
+				cancelWeb()
 			},
 		)
 	}
@@ -458,26 +569,20 @@ func main() {
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
 			func() error {
-				notifier.Run()
+				// When the notifier manager receives a new targets list
+				// it needs to read a valid config for each job.
+				// It depends on the config being in sync with the discovery manager
+				// so we wait until the config is fully loaded.
+				select {
+				case <-reloadReady.C:
+					break
+				}
+				notifier.Run(discoveryManagerNotify.SyncCh())
+				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
 			},
 			func(err error) {
 				notifier.Stop()
-			},
-		)
-	}
-	{
-		// TODO(krasi) refactor targetManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
-		g.Add(
-			func() error {
-				targetManager.Run()
-				<-cancel
-				return nil
-			},
-			func(err error) {
-				targetManager.Stop()
-				close(cancel)
 			},
 		)
 	}
@@ -493,7 +598,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	defer func() {
 		if err == nil {
 			configSuccess.Set(1)
-			configSuccessTime.Set(float64(time.Now().Unix()))
+			configSuccessTime.SetToCurrentTime()
 		} else {
 			configSuccess.Set(0)
 		}
@@ -555,9 +660,9 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
-// sendAlerts implements a the rules.NotifyFunc for a Notifier.
+// sendAlerts implements the rules.NotifyFunc for a Notifier.
 // It filters any non-firing alerts from the input.
-func sendAlerts(n *notifier.Notifier, externalURL string) rules.NotifyFunc {
+func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
 		var res []*notifier.Alert
 

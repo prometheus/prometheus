@@ -26,10 +26,11 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -57,7 +58,55 @@ var (
 			Name: "prometheus_sd_gce_refresh_duration",
 			Help: "The duration of a GCE-SD refresh in seconds.",
 		})
+	// DefaultSDConfig is the default GCE SD configuration.
+	DefaultSDConfig = SDConfig{
+		Port:            80,
+		TagSeparator:    ",",
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
 )
+
+// SDConfig is the configuration for GCE based service discovery.
+type SDConfig struct {
+	// Project: The Google Cloud Project ID
+	Project string `yaml:"project"`
+
+	// Zone: The zone of the scrape targets.
+	// If you need to configure multiple zones use multiple gce_sd_configs
+	Zone string `yaml:"zone"`
+
+	// Filter: Can be used optionally to filter the instance list by other criteria.
+	// Syntax of this filter string is described here in the filter query parameter section:
+	// https://cloud.google.com/compute/docs/reference/latest/instances/list
+	Filter string `yaml:"filter,omitempty"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Port            int            `yaml:"port"`
+	TagSeparator    string         `yaml:"tag_separator,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yaml_util.CheckOverflow(c.XXX, "gce_sd_config"); err != nil {
+		return err
+	}
+	if c.Project == "" {
+		return fmt.Errorf("GCE SD configuration requires a project")
+	}
+	if c.Zone == "" {
+		return fmt.Errorf("GCE SD configuration requires a zone")
+	}
+	return nil
+}
 
 func init() {
 	prometheus.MustRegister(gceSDRefreshFailuresCount)
@@ -65,7 +114,7 @@ func init() {
 }
 
 // Discovery periodically performs GCE-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
 	project      string
 	zone         string
@@ -80,7 +129,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *config.GCESDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -106,15 +155,15 @@ func NewDiscovery(conf *config.GCESDConfig, logger log.Logger) (*Discovery, erro
 	return gd, nil
 }
 
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 	} else {
 		select {
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		case <-ctx.Done():
 		}
 	}
@@ -131,7 +180,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 				continue
 			}
 			select {
-			case ch <- []*config.TargetGroup{tg}:
+			case ch <- []*targetgroup.Group{tg}:
 			case <-ctx.Done():
 			}
 		case <-ctx.Done():
@@ -140,7 +189,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
-func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
+func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
 		gceSDRefreshDuration.Observe(time.Since(t0).Seconds())
@@ -149,7 +198,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 		}
 	}()
 
-	tg = &config.TargetGroup{
+	tg = &targetgroup.Group{
 		Source: fmt.Sprintf("GCE_%s_%s", d.project, d.zone),
 	}
 

@@ -19,21 +19,124 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v2"
-
-	"github.com/prometheus/prometheus/config"
 )
 
+var (
+	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
+
+	// DefaultSDConfig is the default file SD configuration.
+	DefaultSDConfig = SDConfig{
+		RefreshInterval: model.Duration(5 * time.Minute),
+	}
+)
+
+// SDConfig is the configuration for file based discovery.
+type SDConfig struct {
+	Files           []string       `yaml:"files"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yaml_util.CheckOverflow(c.XXX, "file_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Files) == 0 {
+		return fmt.Errorf("file service discovery config must contain at least one path name")
+	}
+	for _, name := range c.Files {
+		if !patFileSDName.MatchString(name) {
+			return fmt.Errorf("path name %q is not valid for file discovery", name)
+		}
+	}
+	return nil
+}
+
 const fileSDFilepathLabel = model.MetaLabelPrefix + "filepath"
+
+// TimestampCollector is a Custom Collector for Timestamps of the files.
+type TimestampCollector struct {
+	Description *prometheus.Desc
+	discoverers map[*Discovery]struct{}
+	lock        sync.RWMutex
+}
+
+// Describe method sends the description to the channel.
+func (t *TimestampCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- t.Description
+}
+
+// Collect creates constant metrics for each file with last modified time of the file.
+func (t *TimestampCollector) Collect(ch chan<- prometheus.Metric) {
+	// New map to dedup filenames.
+	uniqueFiles := make(map[string]float64)
+	t.lock.RLock()
+	for fileSD := range t.discoverers {
+		fileSD.lock.RLock()
+		for filename, timestamp := range fileSD.timestamps {
+			uniqueFiles[filename] = timestamp
+		}
+		fileSD.lock.RUnlock()
+	}
+	t.lock.RUnlock()
+	for filename, timestamp := range uniqueFiles {
+		ch <- prometheus.MustNewConstMetric(
+			t.Description,
+			prometheus.GaugeValue,
+			timestamp,
+			filename,
+		)
+	}
+}
+
+func (t *TimestampCollector) addDiscoverer(disc *Discovery) {
+	t.lock.Lock()
+	t.discoverers[disc] = struct{}{}
+	t.lock.Unlock()
+}
+
+func (t *TimestampCollector) removeDiscoverer(disc *Discovery) {
+	t.lock.Lock()
+	delete(t.discoverers, disc)
+	t.lock.Unlock()
+}
+
+// NewTimestampCollector creates a TimestampCollector.
+func NewTimestampCollector() *TimestampCollector {
+	return &TimestampCollector{
+		Description: prometheus.NewDesc(
+			"prometheus_sd_file_mtime_seconds",
+			"Timestamp (mtime) of files read by FileSD. Timestamp is set at read time.",
+			[]string{"filename"},
+			nil,
+		),
+		discoverers: make(map[*Discovery]struct{}),
+	}
+}
 
 var (
 	fileSDScanDuration = prometheus.NewSummary(
@@ -46,20 +149,24 @@ var (
 			Name: "prometheus_sd_file_read_errors_total",
 			Help: "The number of File-SD read errors.",
 		})
+	fileSDTimeStamp = NewTimestampCollector()
 )
 
 func init() {
 	prometheus.MustRegister(fileSDScanDuration)
 	prometheus.MustRegister(fileSDReadErrorsCount)
+	prometheus.MustRegister(fileSDTimeStamp)
 }
 
 // Discovery provides service discovery functionality based
 // on files that contain target groups in JSON or YAML format. Refreshing
 // happens using file watches and periodic refreshes.
 type Discovery struct {
-	paths    []string
-	watcher  *fsnotify.Watcher
-	interval time.Duration
+	paths      []string
+	watcher    *fsnotify.Watcher
+	interval   time.Duration
+	timestamps map[string]float64
+	lock       sync.RWMutex
 
 	// lastRefresh stores which files were found during the last refresh
 	// and how many target groups they contained.
@@ -69,15 +176,19 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new file discovery for the given paths.
-func NewDiscovery(conf *config.FileSDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	return &Discovery{
-		paths:    conf.Files,
-		interval: time.Duration(conf.RefreshInterval),
-		logger:   logger,
+
+	disc := &Discovery{
+		paths:      conf.Files,
+		interval:   time.Duration(conf.RefreshInterval),
+		timestamps: make(map[string]float64),
+		logger:     logger,
 	}
+	fileSDTimeStamp.addDiscoverer(disc)
+	return disc
 }
 
 // listFiles returns a list of all files that match the configured patterns.
@@ -112,16 +223,15 @@ func (d *Discovery) watchFiles() {
 	}
 }
 
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
-	defer d.stop()
-
+// Run implements the Discoverer interface.
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error adding file watcher", "err", err)
 		return
 	}
 	d.watcher = watcher
+	defer d.stop()
 
 	d.refresh(ctx, ch)
 
@@ -162,12 +272,26 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 }
 
+func (d *Discovery) writeTimestamp(filename string, timestamp float64) {
+	d.lock.Lock()
+	d.timestamps[filename] = timestamp
+	d.lock.Unlock()
+}
+
+func (d *Discovery) deleteTimestamp(filename string) {
+	d.lock.Lock()
+	delete(d.timestamps, filename)
+	d.lock.Unlock()
+}
+
 // stop shuts down the file watcher.
 func (d *Discovery) stop() {
 	level.Debug(d.logger).Log("msg", "Stopping file discovery...", "paths", d.paths)
 
 	done := make(chan struct{})
 	defer close(done)
+
+	fileSDTimeStamp.removeDiscoverer(d)
 
 	// Closing the watcher will deadlock unless all events and errors are drained.
 	go func() {
@@ -190,15 +314,14 @@ func (d *Discovery) stop() {
 
 // refresh reads all files matching the discovery's patterns and sends the respective
 // updated target groups through the channel.
-func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup) {
+func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	t0 := time.Now()
 	defer func() {
 		fileSDScanDuration.Observe(time.Since(t0).Seconds())
 	}()
-
 	ref := map[string]int{}
 	for _, p := range d.listFiles() {
-		tgroups, err := readFile(p)
+		tgroups, err := d.readFile(p)
 		if err != nil {
 			fileSDReadErrorsCount.Inc()
 
@@ -219,9 +342,11 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup
 	for f, n := range d.lastRefresh {
 		m, ok := ref[f]
 		if !ok || n > m {
+			level.Debug(d.logger).Log("msg", "file_sd refresh found file that should be removed", "file", f)
+			d.deleteTimestamp(f)
 			for i := m; i < n; i++ {
 				select {
-				case ch <- []*config.TargetGroup{{Source: fileSource(f, i)}}:
+				case ch <- []*targetgroup.Group{{Source: fileSource(f, i)}}:
 				case <-ctx.Done():
 					return
 				}
@@ -233,20 +358,26 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*config.TargetGroup
 	d.watchFiles()
 }
 
-// fileSource returns a source ID for the i-th target group in the file.
-func fileSource(filename string, i int) string {
-	return fmt.Sprintf("%s:%d", filename, i)
-}
-
 // readFile reads a JSON or YAML list of targets groups from the file, depending on its
 // file extension. It returns full configuration target groups.
-func readFile(filename string) ([]*config.TargetGroup, error) {
-	content, err := ioutil.ReadFile(filename)
+func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
+	fd, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+
+	content, err := ioutil.ReadAll(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	var targetGroups []*config.TargetGroup
+	info, err := fd.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	var targetGroups []*targetgroup.Group
 
 	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
 	case ".json":
@@ -258,7 +389,7 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 			return nil, err
 		}
 	default:
-		panic(fmt.Errorf("retrieval.FileDiscovery.readFile: unhandled file extension %q", ext))
+		panic(fmt.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
 	}
 
 	for i, tg := range targetGroups {
@@ -273,5 +404,13 @@ func readFile(filename string) ([]*config.TargetGroup, error) {
 		}
 		tg.Labels[fileSDFilepathLabel] = model.LabelValue(filename)
 	}
+
+	d.writeTimestamp(filename, float64(info.ModTime().Unix()))
+
 	return targetGroups, nil
+}
+
+// fileSource returns a source ID for the i-th target group in the file.
+func fileSource(filename string, i int) string {
+	return fmt.Sprintf("%s:%d", filename, i)
 }

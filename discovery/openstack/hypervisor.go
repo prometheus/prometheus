@@ -26,8 +26,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 const (
@@ -54,15 +53,15 @@ func NewHypervisorDiscovery(opts *gophercloud.AuthOptions,
 		region: region, interval: interval, port: port, logger: l}
 }
 
-// Run implements the TargetProvider interface.
-func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := h.refresh()
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Unable refresh target groups", "err", err.Error())
 	} else {
 		select {
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		case <-ctx.Done():
 			return
 		}
@@ -81,7 +80,7 @@ func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*config.Targe
 			}
 
 			select {
-			case ch <- []*config.TargetGroup{tg}:
+			case ch <- []*targetgroup.Group{tg}:
 			case <-ctx.Done():
 				return
 			}
@@ -91,7 +90,7 @@ func (h *HypervisorDiscovery) Run(ctx context.Context, ch chan<- []*config.Targe
 	}
 }
 
-func (h *HypervisorDiscovery) refresh() (*config.TargetGroup, error) {
+func (h *HypervisorDiscovery) refresh() (*targetgroup.Group, error) {
 	var err error
 	t0 := time.Now()
 	defer func() {
@@ -112,7 +111,7 @@ func (h *HypervisorDiscovery) refresh() (*config.TargetGroup, error) {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)
 	}
 
-	tg := &config.TargetGroup{
+	tg := &targetgroup.Group{
 		Source: fmt.Sprintf("OS_" + h.region),
 	}
 	// OpenStack API reference

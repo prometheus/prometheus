@@ -174,15 +174,20 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 	return nil
 }
 
-// ParseFile parses the rule file and validates it.
+// Parse parses and validates a set of rules.
+func Parse(content []byte) (*RuleGroups, []error) {
+	var groups RuleGroups
+	if err := yaml.Unmarshal(content, &groups); err != nil {
+		return nil, []error{err}
+	}
+	return &groups, groups.Validate()
+}
+
+// ParseFile reads and parses rules from a file.
 func ParseFile(file string) (*RuleGroups, []error) {
 	b, err := ioutil.ReadFile(file)
 	if err != nil {
 		return nil, []error{err}
 	}
-	var groups RuleGroups
-	if err := yaml.Unmarshal(b, &groups); err != nil {
-		return nil, []error{err}
-	}
-	return &groups, groups.Validate()
+	return Parse(b)
 }

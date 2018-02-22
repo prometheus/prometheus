@@ -87,10 +87,7 @@ assets:
 
 promu:
 	@echo ">> fetching promu"
-	@GOOS=$(shell uname -s | tr A-Z a-z) \
-	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
-	GO="$(GO)" \
-	$(GO) get -u github.com/prometheus/promu
+	@GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 
 $(FIRST_GOPATH)/bin/staticcheck:
 	@GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck

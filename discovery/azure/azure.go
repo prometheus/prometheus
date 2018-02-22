@@ -27,10 +27,12 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -38,6 +40,7 @@ const (
 	azureLabelMachineID            = azureLabel + "machine_id"
 	azureLabelMachineResourceGroup = azureLabel + "machine_resource_group"
 	azureLabelMachineName          = azureLabel + "machine_name"
+	azureLabelMachineOSType        = azureLabel + "machine_os_type"
 	azureLabelMachineLocation      = azureLabel + "machine_location"
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
@@ -54,7 +57,38 @@ var (
 			Name: "prometheus_sd_azure_refresh_duration_seconds",
 			Help: "The duration of a Azure-SD refresh in seconds.",
 		})
+
+	// DefaultSDConfig is the default Azure SD configuration.
+	DefaultSDConfig = SDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(5 * time.Minute),
+	}
 )
+
+// SDConfig is the configuration for Azure based service discovery.
+type SDConfig struct {
+	Port            int                `yaml:"port"`
+	SubscriptionID  string             `yaml:"subscription_id"`
+	TenantID        string             `yaml:"tenant_id,omitempty"`
+	ClientID        string             `yaml:"client_id,omitempty"`
+	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
+	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
+	type plain SDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+
+	return yaml_util.CheckOverflow(c.XXX, "azure_sd_config")
+}
 
 func init() {
 	prometheus.MustRegister(azureSDRefreshDuration)
@@ -62,16 +96,16 @@ func init() {
 }
 
 // Discovery periodically performs Azure-SD requests. It implements
-// the TargetProvider interface.
+// the Discoverer interface.
 type Discovery struct {
-	cfg      *config.AzureSDConfig
+	cfg      *SDConfig
 	interval time.Duration
 	port     int
 	logger   log.Logger
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *config.AzureSDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -83,8 +117,8 @@ func NewDiscovery(cfg *config.AzureSDConfig, logger log.Logger) *Discovery {
 	}
 }
 
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
@@ -101,7 +135,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		} else {
 			select {
 			case <-ctx.Done():
-			case ch <- []*config.TargetGroup{tg}:
+			case ch <- []*targetgroup.Group{tg}:
 			}
 		}
 
@@ -120,7 +154,7 @@ type azureClient struct {
 }
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
-func createAzureClient(cfg config.AzureSDConfig) (azureClient, error) {
+func createAzureClient(cfg SDConfig) (azureClient, error) {
 	var c azureClient
 	oauthConfig, err := azure.PublicCloud.OAuthConfigForTenant(cfg.TenantID)
 	if err != nil {
@@ -162,7 +196,7 @@ func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error)
 	}, nil
 }
 
-func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
+func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
 
 	t0 := time.Now()
@@ -172,7 +206,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			azureSDRefreshFailuresCount.Inc()
 		}
 	}()
-	tg = &config.TargetGroup{}
+	tg = &targetgroup.Group{}
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
 		return tg, fmt.Errorf("could not create Azure client: %s", err)
@@ -214,6 +248,7 @@ func (d *Discovery) refresh() (tg *config.TargetGroup, err error) {
 			labels := model.LabelSet{
 				azureLabelMachineID:            model.LabelValue(*vm.ID),
 				azureLabelMachineName:          model.LabelValue(*vm.Name),
+				azureLabelMachineOSType:        model.LabelValue(vm.Properties.StorageProfile.OsDisk.OsType),
 				azureLabelMachineLocation:      model.LabelValue(*vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
 			}

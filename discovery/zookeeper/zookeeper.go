@@ -19,23 +19,106 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/samuel/go-zookeeper/zk"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
+	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
-// Discovery implements the TargetProvider interface for discovering
+var (
+	// DefaultServersetSDConfig is the default Serverset SD configuration.
+	DefaultServersetSDConfig = ServersetSDConfig{
+		Timeout: model.Duration(10 * time.Second),
+	}
+	// DefaultNerveSDConfig is the default Nerve SD configuration.
+	DefaultNerveSDConfig = NerveSDConfig{
+		Timeout: model.Duration(10 * time.Second),
+	}
+)
+
+// ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
+type ServersetSDConfig struct {
+	Servers []string       `yaml:"servers"`
+	Paths   []string       `yaml:"paths"`
+	Timeout model.Duration `yaml:"timeout,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultServersetSDConfig
+	type plain ServersetSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yaml_util.CheckOverflow(c.XXX, "serverset_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("serverset SD config must contain at least one Zookeeper server")
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("serverset SD config must contain at least one path")
+	}
+	for _, path := range c.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
+		}
+	}
+	return nil
+}
+
+// NerveSDConfig is the configuration for AirBnB's Nerve in Zookeeper based discovery.
+type NerveSDConfig struct {
+	Servers []string       `yaml:"servers"`
+	Paths   []string       `yaml:"paths"`
+	Timeout model.Duration `yaml:"timeout,omitempty"`
+
+	// Catches all undefined fields and must be empty after parsing.
+	XXX map[string]interface{} `yaml:",inline"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultNerveSDConfig
+	type plain NerveSDConfig
+	err := unmarshal((*plain)(c))
+	if err != nil {
+		return err
+	}
+	if err := yaml_util.CheckOverflow(c.XXX, "nerve_sd_config"); err != nil {
+		return err
+	}
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("nerve SD config must contain at least one Zookeeper server")
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("nerve SD config must contain at least one path")
+	}
+	for _, path := range c.Paths {
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
+		}
+	}
+	return nil
+}
+
+// Discovery implements the Discoverer interface for discovering
 // targets from Zookeeper.
 type Discovery struct {
 	conn *zk.Conn
 
-	sources map[string]*config.TargetGroup
+	sources map[string]*targetgroup.Group
 
 	updates    chan treecache.ZookeeperTreeCacheEvent
 	treeCaches []*treecache.ZookeeperTreeCache
@@ -45,12 +128,12 @@ type Discovery struct {
 }
 
 // NewNerveDiscovery returns a new Discovery for the given Nerve config.
-func NewNerveDiscovery(conf *config.NerveSDConfig, logger log.Logger) *Discovery {
+func NewNerveDiscovery(conf *NerveSDConfig, logger log.Logger) *Discovery {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseNerveMember)
 }
 
 // NewServersetDiscovery returns a new Discovery for the given serverset config.
-func NewServersetDiscovery(conf *config.ServersetSDConfig, logger log.Logger) *Discovery {
+func NewServersetDiscovery(conf *ServersetSDConfig, logger log.Logger) *Discovery {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseServersetMember)
 }
 
@@ -76,7 +159,7 @@ func NewDiscovery(
 	sd := &Discovery{
 		conn:    conn,
 		updates: updates,
-		sources: map[string]*config.TargetGroup{},
+		sources: map[string]*targetgroup.Group{},
 		parse:   pf,
 		logger:  logger,
 	}
@@ -86,8 +169,8 @@ func NewDiscovery(
 	return sd
 }
 
-// Run implements the TargetProvider interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer func() {
 		for _, tc := range d.treeCaches {
 			tc.Stop()
@@ -103,7 +186,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 		case <-ctx.Done():
 			return
 		case event := <-d.updates:
-			tg := &config.TargetGroup{
+			tg := &targetgroup.Group{
 				Source: event.Path,
 			}
 			if event.Data != nil {
@@ -120,7 +203,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 			select {
 			case <-ctx.Done():
 				return
-			case ch <- []*config.TargetGroup{tg}:
+			case ch <- []*targetgroup.Group{tg}:
 			}
 		}
 	}

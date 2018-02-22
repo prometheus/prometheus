@@ -17,14 +17,19 @@
     <script src="{{ pathPrefix }}/static/vendor/js/jquery.selection.js?v={{ buildVersion }}"></script>
     <script src="{{ pathPrefix }}/static/vendor/js/jquery.hotkeys.js?v={{ buildVersion }}"></script>
 
-    <script src="{{ pathPrefix }}/static/js/graph.js?v={{ buildVersion }}"></script>
+    <script src="{{ pathPrefix }}/static/js/graph/index.js?v={{ buildVersion }}"></script>
 
     <script id="graph_template" type="text/x-handlebars-template"></script>
 {{end}}
 
 {{define "content"}}
     <div id="graph_container" class="container-fluid">
+        <div class="query-history">
+            <i class="glyphicon glyphicon-unchecked"></i>
+            <button type="button" class="search-history" title="search previous queries">Enable query history</button>
+        </div>
     </div>
+
     <div class="container-fluid">
       <div><input class="btn btn-primary" type="submit" value="Add Graph" id="add_graph"></div>
     </div>

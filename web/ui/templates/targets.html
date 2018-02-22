@@ -13,7 +13,7 @@
       </button>
     </div>
 
-    {{range $job, $pool := .TargetPools }}
+    {{range $job, $pool := .TargetPools}}
     {{$healthy := numHealthy $pool}}
     {{$total := len $pool}}
 

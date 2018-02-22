@@ -20,7 +20,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/tools/cache"
@@ -38,10 +38,10 @@ func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
 	return &Ingress{logger: l, informer: inf, store: inf.GetStore()}
 }
 
-// Run implements the TargetProvider interface.
-func (s *Ingress) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
+// Run implements the Discoverer interface.
+func (s *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
-	var initial []*config.TargetGroup
+	var initial []*targetgroup.Group
 	for _, o := range s.store.List() {
 		tg := s.buildIngress(o.(*v1beta1.Ingress))
 		initial = append(initial, tg)
@@ -53,10 +53,10 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 	}
 
 	// Send target groups for ingress updates.
-	send := func(tg *config.TargetGroup) {
+	send := func(tg *targetgroup.Group) {
 		select {
 		case <-ctx.Done():
-		case ch <- []*config.TargetGroup{tg}:
+		case ch <- []*targetgroup.Group{tg}:
 		}
 	}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -78,7 +78,7 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*config.TargetGroup) {
 				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
 				return
 			}
-			send(&config.TargetGroup{Source: ingressSource(ingress)})
+			send(&targetgroup.Group{Source: ingressSource(ingress)})
 		},
 		UpdateFunc: func(_, o interface{}) {
 			eventCount.WithLabelValues("ingress", "update").Inc()
@@ -158,8 +158,8 @@ func pathsFromIngressRule(rv *v1beta1.IngressRuleValue) []string {
 	return paths
 }
 
-func (s *Ingress) buildIngress(ingress *v1beta1.Ingress) *config.TargetGroup {
-	tg := &config.TargetGroup{
+func (s *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
+	tg := &targetgroup.Group{
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)

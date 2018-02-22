@@ -746,6 +746,12 @@
 			"revisionTime": "2015-02-12T10:17:44Z"
 		},
 		{
+			"checksumSHA1": "i+0TxE6bOpJdPNOeNHpO0vMzFh4=",
+			"path": "github.com/prometheus/common/config",
+			"revision": "89604d197083d4781071d3c65855d24ecfb0a563",
+			"revisionTime": "2018-01-10T21:49:58Z"
+		},
+		{
 			"checksumSHA1": "xfnn0THnqNwjwimeTClsxahYrIo=",
 			"path": "github.com/prometheus/common/expfmt",
 			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
@@ -794,28 +800,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "XgGOJ06okm8qd+x/gdRj48RgXsg=",
+			"checksumSHA1": "CeD8QwiLL5CBkWMOfbaJxs4AFuM=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
-			"checksumSHA1": "C5V8KPHm/gZF0qrNwmIEDdG6rhA=",
+			"checksumSHA1": "S7F4yWxVLhxQNHMdgoOo6plmOOs=",
+			"path": "github.com/prometheus/tsdb/chunkenc",
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
+		},
+		{
+			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
-			"checksumSHA1": "7RhNAVcmDmLFqn9nWiudT0B76f8=",
+			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
-			"checksumSHA1": "zhmlvc322RH1L3l9DaA9d/HVVWs=",
+			"checksumSHA1": "UlvN+ZhTu52S8f9niySQpPC+dvQ=",
+			"path": "github.com/prometheus/tsdb/index",
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
+		},
+		{
+			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "30bbbe34f8787df072cf04563bc98fb8094ba070",
-			"revisionTime": "2017-11-30T09:58:01Z"
+			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
+			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",

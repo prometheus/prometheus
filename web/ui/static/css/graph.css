@@ -6,6 +6,30 @@ body {
   font-size: 11px;
 }
 
+div.query-history {
+  font-size: 0.8em;
+  padding-top: 1em;
+}
+
+div.query-history:hover {
+  cursor: pointer;
+}
+
+div.query-history button {
+  background-color: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+
+div.query-history.is-checked {
+  color: #286090;
+}
+
+div.page-options {
+  display: flex;
+}
+
 .graph_wrapper {
   margin-top: 12px;
 }

@@ -9,4 +9,4 @@ go:
 go_import_path: github.com/prometheus/prometheus
 
 script:
-- make check_license style test
+- make check_license style test staticcheck

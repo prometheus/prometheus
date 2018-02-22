@@ -1,3 +1,8 @@
+---
+title: Migration
+sort_rank: 7
+---
+
 # Prometheus 2.0 migration guide
 
 In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
@@ -6,14 +11,15 @@ This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0
 
 ## Flags
 
-The format of the Prometheus command line flags have changed.  Instead of a
+The format of the Prometheus command line flags has changed. Instead of a
 single dash, all flags now use a double dash. Common flags (`--config.file`,
 `--web.listen-address` and `--web.external-url`) are still the same but beyond
 that, almost all the storage-related flags have been removed.
 
 Some notable flags which have been removed:
+
 - `-alertmanager.url` In Prometheus 2.0, the command line flags for configuring
-  a static Alertmanager URL have been removed.  Alertmanager must now be
+  a static Alertmanager URL have been removed. Alertmanager must now be
   discovered via service discovery, see [Alertmanager service discovery](#amsd).
 
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
@@ -26,14 +32,14 @@ Some notable flags which have been removed:
   new engine, see [Storage](#storage).
 
 - `-storage.remote.*` Prometheus 2.0 has removed the already deprecated remote
-  storage flags, and will fail to start if they are supplied.  To write to
+  storage flags, and will fail to start if they are supplied. To write to
   InfluxDB, Graphite, or OpenTSDB use the relevant storage adapter.
 
 ## Alertmanager service discovery
 
 Alertmanager service discovery was introduced in Prometheus 1.4, allowing Prometheus
 to dynamically discover Alertmanager replicas using the same mechanism as scrape
-targets.  In Prometheus 2.0, the command line flags for static Alertmanager config
+targets. In Prometheus 2.0, the command line flags for static Alertmanager config
 have been removed, so the following command line flag:
 
 ```
@@ -42,7 +48,7 @@ have been removed, so the following command line flag:
 
 Would be replaced with the following in the `prometheus.yml` config file:
 
-```yml
+```yaml
 alerting:
   alertmanagers:
   - static_configs:
@@ -50,12 +56,12 @@ alerting:
       - alertmanager:9093
 ```
 
-You can also use all the usual Prothetheus service discovery integrations and
-relabeling in your Alertmanager configuration.  This snippet instructs
+You can also use all the usual Prometheus service discovery integrations and
+relabeling in your Alertmanager configuration. This snippet instructs
 Prometheus to search for Kubernetes pods, in the `default` namespace, with the
 label `name: alertmanager` and with a non-empty port.
 
-```yml
+```yaml
 alerting:
   alertmanagers:
   - kubernetes_sd_configs:
@@ -94,15 +100,15 @@ ALERT FrontendRequestLatency
 
 Would look like this:
 
-```yml
+```yaml
 groups:
 - name: example.rules
   rules:
-  - record: job:request_duration_seconds:99percentile
+  - record: job:request_duration_seconds:histogram_quantile99
     expr: histogram_quantile(0.99, sum(rate(request_duration_seconds_bucket[1m]))
       BY (le, job))
   - alert: FrontendRequestLatency
-    expr: job:request_duration_seconds:99percentile{job="frontend"} > 0.1
+    expr: job:request_duration_seconds:histogram_quantile99{job="frontend"} > 0.1
     for: 5m
     annotations:
       summary: High frontend request latency
@@ -115,39 +121,39 @@ new format. For example:
 $ promtool update rules example.rules
 ```
 
+Note that you will need to use promtool from 2.0, not 1.8.
+
 ## Storage
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
-compatible with 1.8. To retain access to your historic monitoring data we recommend
-you run a non-scraping Prometheus 1.8.1 instance in parallel with your Prometheus 2.0
-instance, and have the new server read existing data from the old one via the
-remote write protocol.
+compatible with 1.8. To retain access to your historic monitoring data we
+recommend you run a non-scraping Prometheus instance running at least version
+1.8.1 in parallel with your Prometheus 2.0 instance, and have the new server
+read existing data from the old one via the remote read protocol.
 
 Your Prometheus 1.8 instance should be started with the following flags and an
-empty config file (`empty.yml`):
+config file containing only the `external_labels` setting (if any):
 
 ```
-$ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file empty.yml
+$ ./prometheus-1.8.1.linux-amd64/prometheus -web.listen-address ":9094" -config.file old.yml
 ```
 
-NOTE: **NOTE** If you used external labels in your Prometheus 2.0 config, they need to be
-preserved in your Prometheus 1.8 config.
 Prometheus 2.0 can then be started (on the same machine) with the following flags:
 
 ```
 $ ./prometheus-2.0.0.linux-amd64/prometheus --config.file prometheus.yml
 ```
 
-Where `prometheus.yml` contains the stanza:
+Where `prometheus.yml` contains in addition to your full existing configuration, the stanza:
 
-```
+```yaml
 remote_read:
   - url: "http://localhost:9094/api/v1/read"
 ```
 
 ## PromQL
 
-The follow features have been removed from PromQL:
+The following features have been removed from PromQL:
 
 - `drop_common_labels` function - the `without` aggregation modifier should be used
   instead.
@@ -163,11 +169,11 @@ details.
 ### Prometheus non-root user
 
 The Prometheus Docker image is now built to [run Prometheus
-as a non-root user](https://github.com/prometheus/prometheus/pull/2859).  If you
+as a non-root user](https://github.com/prometheus/prometheus/pull/2859). If you
 want the Prometheus UI/API to listen on a low port number (say, port 80), you'll
-need to override it.  For Kubernetes, you would use the following YAML:
+need to override it. For Kubernetes, you would use the following YAML:
 
-```yml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -178,16 +184,16 @@ spec:
 ...
 ```
 
-See [https://kubernetes.io/docs/tasks/configure-pod-container/security-context/](Configure a Security Context for a Pod or Container)
+See [Configure a Security Context for a Pod or Container](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/)
 for more details.
 
-If you're using Docker, then the follow snippet would be used:
+If you're using Docker, then the following snippet would be used:
 
 ```
 docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
 ```
 
-## Prometheus lifecycle
+### Prometheus lifecycle
 
 If you use the Prometheus `/-/reload` HTTP endpoint to [automatically reload your
 Prometheus config when it changes](configuration/configuration.md),
