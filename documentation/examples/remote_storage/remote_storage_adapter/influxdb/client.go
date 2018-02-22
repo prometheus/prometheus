@@ -65,7 +65,7 @@ func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) 
 			},
 		),
 	}
-	go client.ensureDatabase()
+	client.ensureDatabase()
 	return client
 }
 
