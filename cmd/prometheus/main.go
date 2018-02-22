@@ -672,7 +672,7 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 				continue
 			}
 			a := &notifier.Alert{
-				StartsAt:     alert.FiredAt,
+				StartsAt:     alert.ActiveAt,
 				Labels:       alert.Labels,
 				Annotations:  alert.Annotations,
 				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
