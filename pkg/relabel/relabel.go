@@ -48,9 +48,9 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 
 	lb := labels.NewBuilder(lset)
 	// Copying the regex avoids contention when this runs from multiple goroutines.
-	var regex regexp.Regexp
+	var regex *regexp.Regexp
 	if cfg.Regex.Regexp != nil {
-		regex := cfg.Regex.Copy()
+		regex = cfg.Regex.Copy()
 	}
 
 	switch cfg.Action {
