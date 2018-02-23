@@ -78,7 +78,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "test_wal_log_truncate")
 	testutil.Ok(t, err)
-	// defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
 	testutil.Ok(t, err)

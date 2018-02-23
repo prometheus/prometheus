@@ -351,6 +351,7 @@ func TestDB_Snapshot(t *testing.T) {
 	// create snapshot
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
+	defer os.RemoveAll(snap)
 	testutil.Ok(t, db.Snapshot(snap))
 	testutil.Ok(t, db.Close())
 
@@ -416,6 +417,7 @@ Outer:
 		// create snapshot
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
+		defer os.RemoveAll(snap)
 		testutil.Ok(t, db.Snapshot(snap))
 		testutil.Ok(t, db.Close())
 
@@ -629,23 +631,21 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(tmpdir)
+	db, close := openTestDB(t, nil)
+	defer close()
 
-	db, err := Open(tmpdir, nil, nil, nil)
-	testutil.Ok(t, err)
+	dirDb := db.Dir()
 
 	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
 
 	app := db.Appender()
-	_, err = app.Add(lbls, 0, 1)
+	_, err := app.Add(lbls, 0, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
 	testutil.Ok(t, db.Close())
 
-	db, err = Open(tmpdir, nil, nil, nil)
+	db, err = Open(dirDb, nil, nil, nil)
 	testutil.Ok(t, err)
 	defer db.Close()
 
@@ -688,6 +688,7 @@ func TestTombstoneClean(t *testing.T) {
 		// create snapshot
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
+		defer os.RemoveAll(snap)
 		testutil.Ok(t, db.Snapshot(snap))
 		testutil.Ok(t, db.Close())
 
@@ -751,16 +752,13 @@ func TestTombstoneClean(t *testing.T) {
 }
 
 func TestDB_Retention(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
-
-	db, err := Open(tmpdir, nil, nil, nil)
-	testutil.Ok(t, err)
+	db, close := openTestDB(t, nil)
+	defer close()
 
 	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
 
 	app := db.Appender()
-	_, err = app.Add(lbls, 0, 1)
+	_, err := app.Add(lbls, 0, 1)
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
@@ -768,9 +766,9 @@ func TestDB_Retention(t *testing.T) {
 	// TODO(gouthamve): Add a method to compact headblock.
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
+	defer os.RemoveAll(snap)
 	testutil.Ok(t, db.Snapshot(snap))
 	testutil.Ok(t, db.Close())
-	defer os.RemoveAll(snap)
 
 	// reopen DB from snapshot
 	db, err = Open(snap, nil, nil, nil)
@@ -786,9 +784,9 @@ func TestDB_Retention(t *testing.T) {
 	// Snapshot again to create another block.
 	snap, err = ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
+	defer os.RemoveAll(snap)
 	testutil.Ok(t, db.Snapshot(snap))
 	testutil.Ok(t, db.Close())
-	defer os.RemoveAll(snap)
 
 	// reopen DB from snapshot
 	db, err = Open(snap, nil, nil, &Options{
@@ -809,12 +807,8 @@ func TestDB_Retention(t *testing.T) {
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer os.RemoveAll(tmpdir)
-
-	db, err := Open(tmpdir, nil, nil, nil)
-	testutil.Ok(t, err)
-	defer db.Close()
+	db, close := openTestDB(t, nil)
+	defer close()
 
 	labelpairs := []labels.Labels{
 		labels.FromStrings("a", "abcd", "b", "abcde"),
@@ -823,7 +817,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 
 	app := db.Appender()
 	for _, lbls := range labelpairs {
-		_, err = app.Add(lbls, 0, 1)
+		_, err := app.Add(lbls, 0, 1)
 		testutil.Ok(t, err)
 	}
 	testutil.Ok(t, app.Commit())

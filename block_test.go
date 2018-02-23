@@ -39,8 +39,9 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 }
 
 func TestSetCompactionFailed(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test-tsdb")
+	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
+	defer os.RemoveAll(tmpdir)
 
 	b := createEmptyBlock(t, tmpdir)
 

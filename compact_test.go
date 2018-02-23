@@ -328,6 +328,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 
 	tmpdir, err := ioutil.TempDir("", "test")
 	testutil.Ok(t, err)
+	defer os.RemoveAll(tmpdir)
 
 	testutil.NotOk(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + ".tmp")
