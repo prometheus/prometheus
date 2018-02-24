@@ -20,3 +20,7 @@ body {
   max-width: none;
   text-align: left;
 }
+
+.label {
+  white-space: normal;
+}
