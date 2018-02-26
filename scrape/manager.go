@@ -139,9 +139,7 @@ func (m *Manager) DroppedTargets() []*Target {
 	var droppedTargets []*Target
 	for _, p := range m.scrapePools {
 		p.mtx.RLock()
-		for _, tt := range p.droppedTargets {
-			droppedTargets = append(droppedTargets, tt)
-		}
+		droppedTargets = append(droppedTargets, p.droppedTargets...)
 		p.mtx.RUnlock()
 	}
 	return droppedTargets

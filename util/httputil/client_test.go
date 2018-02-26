@@ -157,7 +157,7 @@ func TestNewClientFromConfig(t *testing.T) {
 			},
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				username, password, ok := r.BasicAuth()
-				if ok == false {
+				if !ok {
 					fmt.Fprintf(w, "The Authorization header wasn't set")
 				} else if ExpectedUsername != username {
 					fmt.Fprintf(w, "The expected username (%s) differs from the obtained username (%s).", ExpectedUsername, username)
@@ -336,7 +336,7 @@ func TestBasicAuthRoundTripper(t *testing.T) {
 
 	fakeRoundTripper := testutil.NewRoundTripCheckRequest(func(req *http.Request) {
 		username, password, ok := req.BasicAuth()
-		if ok == false {
+		if !ok {
 			t.Errorf("The Authorization header wasn't set")
 		}
 		if ExpectedUsername != username {
