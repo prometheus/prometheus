@@ -65,7 +65,6 @@ func (i *fakeInformer) GetController() cache.Controller {
 }
 
 func (i *fakeInformer) Run(stopCh <-chan struct{}) {
-	return
 }
 
 func (i *fakeInformer) HasSynced() bool {

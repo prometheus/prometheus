@@ -420,10 +420,7 @@ func main() {
 				// it needs to read a valid config for each job.
 				// It depends on the config being in sync with the discovery manager so
 				// we wait until the config is fully loaded.
-				select {
-				case <-reloadReady.C:
-					break
-				}
+				<-reloadReady.C
 
 				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
@@ -445,10 +442,7 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				select {
-				case <-reloadReady.C:
-					break
-				}
+				<-reloadReady.C
 
 				for {
 					select {
@@ -573,10 +567,8 @@ func main() {
 				// it needs to read a valid config for each job.
 				// It depends on the config being in sync with the discovery manager
 				// so we wait until the config is fully loaded.
-				select {
-				case <-reloadReady.C:
-					break
-				}
+				<-reloadReady.C
+
 				notifier.Run(discoveryManagerNotify.SyncCh())
 				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
