@@ -346,10 +346,7 @@ func (h *Handler) Ready() {
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
 	ready := atomic.LoadUint32(&h.ready)
-	if ready == 0 {
-		return false
-	}
-	return true
+	return ready > 0
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.

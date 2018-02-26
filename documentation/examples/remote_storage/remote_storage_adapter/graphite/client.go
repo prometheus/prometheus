@@ -100,11 +100,7 @@ func (c *Client) Write(samples model.Samples) error {
 	}
 
 	_, err = conn.Write(buf.Bytes())
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // Name identifies the client as a Graphite client.
