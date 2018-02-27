@@ -25,5 +25,5 @@ licRes=$(check_license)
 if [ -n "${licRes}" ]; then
   echo "license header checking failed:"
   echo "${licRes}"
-  exit 255
+  exit 1
 fi
