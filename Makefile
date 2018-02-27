@@ -40,7 +40,7 @@ STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/promql/engine.go:SA6002 \
   github.com/prometheus/prometheus/web/web.go:SA1019
 
-all: format staticcheck build test
+all: format staticcheck unused build test
 
 style:
 	@echo ">> checking code style"
@@ -71,7 +71,7 @@ staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
 	@$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 
-unused:
+unused: $(GOVENDOR)
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused
 
@@ -103,4 +103,4 @@ $(FIRST_GOPATH)/bin/staticcheck:
 $(FIRST_GOPATH)/bin/govendor:
 	@GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
 
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck
+.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
