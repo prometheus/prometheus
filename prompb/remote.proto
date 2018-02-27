@@ -41,3 +41,11 @@ message QueryResult {
   // Samples within a time series must be ordered by time.
   repeated prometheus.TimeSeries timeseries = 1;
 }
+
+message LabelValuesRequest {
+  string label_name = 1;
+}
+
+message LabelValuesResponse {
+  repeated string label_values = 1;
+}

@@ -1130,6 +1130,9 @@ with this feature.
 # The URL of the endpoint to query from.
 url: <string>
 
+# An optional URL of the endpoint to query label values from.
+label_values_url: <string>
+
 # An optional list of equality matchers which have to be
 # present in a selector to query the remote read endpoint.
 required_matchers:

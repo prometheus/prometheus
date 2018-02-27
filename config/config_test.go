@@ -100,6 +100,12 @@ var expectedConf = &Config{
 			ReadRecent:       false,
 			RequiredMatchers: model.LabelSet{"job": "special"},
 		},
+		{
+			URL:            mustParseURL("http://remote4/read"),
+			RemoteTimeout:  model.Duration(1 * time.Minute),
+			ReadRecent:     false,
+			LabelValuesURL: mustParseURL("http://remote4/labelvalues"),
+		},
 	},
 
 	ScrapeConfigs: []*ScrapeConfig{

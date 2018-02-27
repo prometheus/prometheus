@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -79,5 +80,88 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		server.Close()
+	}
+}
+
+func TestReadLabelValues(t *testing.T) {
+	metaStore := map[string][]string{
+		"a": []string{"b", "c", "d"},
+	}
+	tests := []struct {
+		enable         bool
+		name           string
+		code           int
+		expectedValues []string
+		err            error
+	}{
+		{
+			enable:         true,
+			code:           200,
+			name:           "a",
+			expectedValues: metaStore["a"],
+		},
+		{
+			enable:         false,
+			name:           "a",
+			expectedValues: nil,
+		},
+		{
+			enable:         true,
+			code:           200,
+			name:           "not-exist",
+			expectedValues: nil,
+		},
+		{
+			enable: true,
+			code:   400,
+			name:   "foo",
+			err:    fmt.Errorf("server returned HTTP status 400 Bad Request"),
+		},
+	}
+
+	for i, test := range tests {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if test.err != nil {
+					http.Error(w, longErrMessage, test.code)
+					return
+				}
+				req, err := DecodeLabelValuesRequest(r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp := &prompb.LabelValuesResponse{
+					LabelValues: metaStore[req.LabelName],
+				}
+				EncodeLabelValuesResponse(resp, w)
+			}),
+		)
+		defer server.Close()
+
+		serverURL, err := url.Parse(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewClient(0, &ClientConfig{
+			LabelValuesURL: &config_util.URL{URL: serverURL},
+			Timeout:        model.Duration(time.Second),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !test.enable {
+			c.labelValuesURL = nil
+		}
+
+		labelValues, err := c.LabelValues(context.Background(), test.name)
+		if !reflect.DeepEqual(err, test.err) {
+			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
+		}
+
+		if !reflect.DeepEqual(labelValues, test.expectedValues) {
+			t.Errorf("%d. Expect label values %v, got %v", i, test.expectedValues, labelValues)
+		}
+
 	}
 }

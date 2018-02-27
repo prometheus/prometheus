@@ -707,6 +707,8 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+	// LabelValuesURL is an optional url of the endpoint to query label values from.
+	LabelValuesURL *config_util.URL `yaml:"label_values_url,omitempty"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`

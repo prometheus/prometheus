@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// DecodeReadRequest reads a remote.Request from a http.Request.
+// DecodeReadRequest reads a prompb.Request from a http.Request.
 func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 	compressed, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -48,8 +48,43 @@ func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 	return &req, nil
 }
 
-// EncodeReadResponse writes a remote.Response to a http.ResponseWriter.
+// EncodeReadResponse writes a prompb.Response to a http.ResponseWriter.
 func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error {
+	data, err := proto.Marshal(resp)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.Header().Set("Content-Encoding", "snappy")
+
+	compressed := snappy.Encode(nil, data)
+	_, err = w.Write(compressed)
+	return err
+}
+
+// DecodeLabelValuesRequest reads a prompb.LabelValuesRequest from a http.Request.
+func DecodeLabelValuesRequest(r *http.Request) (*prompb.LabelValuesRequest, error) {
+	compressed, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.LabelValuesRequest
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
+// EncodeLabelValuesResponse writes a prompb.LabelValuesResponse to a http.ResponseWriter.
+func EncodeLabelValuesResponse(resp *prompb.LabelValuesResponse, w http.ResponseWriter) error {
 	data, err := proto.Marshal(resp)
 	if err != nil {
 		return err

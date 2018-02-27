@@ -27,6 +27,9 @@ remote_read:
     read_recent: false
     required_matchers:
       job: special
+  - url: http://remote4/read
+    read_recent: false
+    label_values_url: http://remote4/labelvalues
 
 scrape_configs:
 - job_name: prometheus
