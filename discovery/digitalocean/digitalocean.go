@@ -57,6 +57,7 @@ var (
 			Help: "The duration of a DigitalOcean SD refresh in seconds.",
 		})
 
+	// DefaultSDConfig is the default DigitalOcean SD configuration.
 	DefaultSDConfig = SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(5 * time.Minute),
@@ -238,15 +239,15 @@ func buildMetadata(d *Discovery, droplets []godo.Droplet) (*targetgroup.Group, e
 	}
 
 	for _, droplet := range droplets {
-		privateIpAddr, err := droplet.PrivateIPv4()
+		privateIPAddr, err := droplet.PrivateIPv4()
 		if err != nil {
 			return nil, fmt.Errorf("could not list DigitalOcean instances: %s", err)
 		}
-		publicIpAddr, err := droplet.PublicIPv4()
+		publicIPAddr, err := droplet.PublicIPv4()
 		if err != nil {
 			return nil, fmt.Errorf("could not list DigitalOcean instances: %s", err)
 		}
-		if privateIpAddr == "" {
+		if privateIPAddr == "" {
 			continue
 		}
 
@@ -256,11 +257,11 @@ func buildMetadata(d *Discovery, droplets []godo.Droplet) (*targetgroup.Group, e
 			dropletLabelRegion:         model.LabelValue(droplet.Region.Slug),
 			dropletLabelInstanceStatus: model.LabelValue(droplet.Status),
 			dropletLabelInstanceSize:   model.LabelValue(droplet.Size.Slug),
-			dropletLabelPublicIPv4:     model.LabelValue(publicIpAddr),
-			dropletLabelPrivateIPv4:    model.LabelValue(privateIpAddr),
+			dropletLabelPublicIPv4:     model.LabelValue(publicIPAddr),
+			dropletLabelPrivateIPv4:    model.LabelValue(privateIPAddr),
 		}
 
-		addr := fmt.Sprintf("%s:%d", privateIpAddr, d.port)
+		addr := fmt.Sprintf("%s:%d", privateIPAddr, d.port)
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		if len(droplet.Tags) > 0 {
