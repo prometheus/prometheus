@@ -151,6 +151,13 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// We do not include the most recently created block. This gives users a window
+	// of a full block size to piece-wise backup new data without having to care
+	// about data overlap.
+	if len(dirs) < 1 {
+		return nil, nil
+	}
+	dirs = dirs[:len(dirs)-1]
 
 	var dms []dirMeta
 
