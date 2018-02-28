@@ -351,8 +351,9 @@ func TestDB_Snapshot(t *testing.T) {
 	// create snapshot
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
+
 	defer os.RemoveAll(snap)
-	testutil.Ok(t, db.Snapshot(snap))
+	testutil.Ok(t, db.Snapshot(snap, true))
 	testutil.Ok(t, db.Close())
 
 	// reopen DB from snapshot
@@ -417,8 +418,9 @@ Outer:
 		// create snapshot
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
+
 		defer os.RemoveAll(snap)
-		testutil.Ok(t, db.Snapshot(snap))
+		testutil.Ok(t, db.Snapshot(snap, true))
 		testutil.Ok(t, db.Close())
 
 		// reopen DB from snapshot
@@ -688,8 +690,9 @@ func TestTombstoneClean(t *testing.T) {
 		// create snapshot
 		snap, err := ioutil.TempDir("", "snap")
 		testutil.Ok(t, err)
+
 		defer os.RemoveAll(snap)
-		testutil.Ok(t, db.Snapshot(snap))
+		testutil.Ok(t, db.Snapshot(snap, true))
 		testutil.Ok(t, db.Close())
 
 		// reopen DB from snapshot
@@ -766,8 +769,9 @@ func TestDB_Retention(t *testing.T) {
 	// TODO(gouthamve): Add a method to compact headblock.
 	snap, err := ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
+
 	defer os.RemoveAll(snap)
-	testutil.Ok(t, db.Snapshot(snap))
+	testutil.Ok(t, db.Snapshot(snap, true))
 	testutil.Ok(t, db.Close())
 
 	// reopen DB from snapshot
@@ -785,7 +789,8 @@ func TestDB_Retention(t *testing.T) {
 	snap, err = ioutil.TempDir("", "snap")
 	testutil.Ok(t, err)
 	defer os.RemoveAll(snap)
-	testutil.Ok(t, db.Snapshot(snap))
+
+	testutil.Ok(t, db.Snapshot(snap, true))
 	testutil.Ok(t, db.Close())
 
 	// reopen DB from snapshot
