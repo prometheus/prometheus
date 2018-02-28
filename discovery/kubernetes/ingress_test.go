@@ -18,8 +18,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func ingressStoreKeyFunc(obj interface{}) (string, error) {
@@ -37,7 +37,7 @@ func makeTestIngressDiscovery() (*Ingress, *fakeInformer) {
 
 func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
 	return &v1beta1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
+		ObjectMeta: v1.ObjectMeta{
 			Name:        "testingress",
 			Namespace:   "default",
 			Labels:      map[string]string{"testlabel": "testvalue"},

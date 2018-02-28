@@ -23,8 +23,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -55,7 +54,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
 	var initial []*targetgroup.Group
 	for _, o := range p.store.List() {
-		tg := p.buildPod(o.(*apiv1.Pod))
+		tg := p.buildPod(o.(*v1.Pod))
 		initial = append(initial, tg)
 
 		level.Debug(p.logger).Log("msg", "initial pod", "tg", fmt.Sprintf("%#v", tg))
@@ -114,8 +113,8 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func convertToPod(o interface{}) (*apiv1.Pod, error) {
-	pod, ok := o.(*apiv1.Pod)
+func convertToPod(o interface{}) (*v1.Pod, error) {
+	pod, ok := o.(*v1.Pod)
 	if ok {
 		return pod, nil
 	}
@@ -124,7 +123,7 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 	if !ok {
 		return nil, fmt.Errorf("Received unexpected object: %v", o)
 	}
-	pod, ok = deletedState.Obj.(*apiv1.Pod)
+	pod, ok = deletedState.Obj.(*v1.Pod)
 	if !ok {
 		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Pod object: %v", deletedState.Obj)
 	}
@@ -146,7 +145,7 @@ const (
 	podUID                        = metaLabelPrefix + "pod_uid"
 )
 
-func podLabels(pod *apiv1.Pod) model.LabelSet {
+func podLabels(pod *v1.Pod) model.LabelSet {
 	ls := model.LabelSet{
 		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
@@ -169,7 +168,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	return ls
 }
 
-func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
+func (p *Pod) buildPod(pod *v1.Pod) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: podSource(pod),
 	}
@@ -211,15 +210,15 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	return tg
 }
 
-func podSource(pod *apiv1.Pod) string {
+func podSource(pod *v1.Pod) string {
 	return "pod/" + pod.Namespace + "/" + pod.Name
 }
 
-func podReady(pod *apiv1.Pod) model.LabelValue {
+func podReady(pod *v1.Pod) model.LabelValue {
 	for _, cond := range pod.Status.Conditions {
-		if cond.Type == apiv1.PodReady {
+		if cond.Type == v1.PodReady {
 			return lv(strings.ToLower(string(cond.Status)))
 		}
 	}
-	return lv(strings.ToLower(string(api.ConditionUnknown)))
+	return lv(strings.ToLower(string(v1.ConditionUnknown)))
 }

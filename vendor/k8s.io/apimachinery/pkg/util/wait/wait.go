@@ -17,8 +17,10 @@ limitations under the License.
 package wait
 
 import (
+	"context"
 	"errors"
 	"math/rand"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -35,6 +37,40 @@ var ForeverTestTimeout = time.Second * 30
 
 // NeverStop may be passed to Until to make it never stop.
 var NeverStop <-chan struct{} = make(chan struct{})
+
+// Group allows to start a group of goroutines and wait for their completion.
+type Group struct {
+	wg sync.WaitGroup
+}
+
+func (g *Group) Wait() {
+	g.wg.Wait()
+}
+
+// StartWithChannel starts f in a new goroutine in the group.
+// stopCh is passed to f as an argument. f should stop when stopCh is available.
+func (g *Group) StartWithChannel(stopCh <-chan struct{}, f func(stopCh <-chan struct{})) {
+	g.Start(func() {
+		f(stopCh)
+	})
+}
+
+// StartWithContext starts f in a new goroutine in the group.
+// ctx is passed to f as an argument. f should stop when ctx.Done() is available.
+func (g *Group) StartWithContext(ctx context.Context, f func(context.Context)) {
+	g.Start(func() {
+		f(ctx)
+	})
+}
+
+// Start starts f in a new goroutine in the group.
+func (g *Group) Start(f func()) {
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		f()
+	}()
+}
 
 // Forever calls f every period for ever.
 //
@@ -65,16 +101,18 @@ func NonSlidingUntil(f func(), period time.Duration, stopCh <-chan struct{}) {
 // JitterUntil loops until stop channel is closed, running f every period.
 //
 // If jitterFactor is positive, the period is jittered before every run of f.
-// If jitterFactor is not positive, the period is unchanged and not jitterd.
+// If jitterFactor is not positive, the period is unchanged and not jittered.
 //
-// If slidingis true, the period is computed after f runs. If it is false then
+// If sliding is true, the period is computed after f runs. If it is false then
 // period includes the runtime for f.
 //
 // Close stopCh to stop. f may not be invoked if stop channel is already
 // closed. Pass NeverStop to if you don't want it stop.
 func JitterUntil(f func(), period time.Duration, jitterFactor float64, sliding bool, stopCh <-chan struct{}) {
-	for {
+	var t *time.Timer
+	var sawTimeout bool
 
+	for {
 		select {
 		case <-stopCh:
 			return
@@ -86,9 +124,8 @@ func JitterUntil(f func(), period time.Duration, jitterFactor float64, sliding b
 			jitteredPeriod = Jitter(period, jitterFactor)
 		}
 
-		var t *time.Timer
 		if !sliding {
-			t = time.NewTimer(jitteredPeriod)
+			t = resetOrReuseTimer(t, jitteredPeriod, sawTimeout)
 		}
 
 		func() {
@@ -97,7 +134,7 @@ func JitterUntil(f func(), period time.Duration, jitterFactor float64, sliding b
 		}()
 
 		if sliding {
-			t = time.NewTimer(jitteredPeriod)
+			t = resetOrReuseTimer(t, jitteredPeriod, sawTimeout)
 		}
 
 		// NOTE: b/c there is no priority selection in golang
@@ -109,6 +146,7 @@ func JitterUntil(f func(), period time.Duration, jitterFactor float64, sliding b
 		case <-stopCh:
 			return
 		case <-t.C:
+			sawTimeout = true
 		}
 	}
 }
@@ -136,14 +174,14 @@ type ConditionFunc func() (done bool, err error)
 // Backoff holds parameters applied to a Backoff function.
 type Backoff struct {
 	Duration time.Duration // the base duration
-	Factor   float64       // Duration is multipled by factor each iteration
+	Factor   float64       // Duration is multiplied by factor each iteration
 	Jitter   float64       // The amount of jitter applied each iteration
 	Steps    int           // Exit with error after this many steps
 }
 
 // ExponentialBackoff repeats a condition check with exponential backoff.
 //
-// It checks the condition up to Steps times, increasing the wait by multipling
+// It checks the condition up to Steps times, increasing the wait by multiplying
 // the previous duration by Factor.
 //
 // If Jitter is greater than zero, a random amount of each duration is added
@@ -184,7 +222,9 @@ func Poll(interval, timeout time.Duration, condition ConditionFunc) error {
 }
 
 func pollInternal(wait WaitFunc, condition ConditionFunc) error {
-	return WaitFor(wait, condition, NeverStop)
+	done := make(chan struct{})
+	defer close(done)
+	return WaitFor(wait, condition, done)
 }
 
 // PollImmediate tries a condition func until it returns true, an error, or the timeout
@@ -329,4 +369,17 @@ func poller(interval, timeout time.Duration) WaitFunc {
 
 		return ch
 	})
+}
+
+// resetOrReuseTimer avoids allocating a new timer if one is already in use.
+// Not safe for multiple threads.
+func resetOrReuseTimer(t *time.Timer, d time.Duration, sawTimeout bool) *time.Timer {
+	if t == nil {
+		return time.NewTimer(d)
+	}
+	if !t.Stop() && !sawTimeout {
+		<-t.C
+	}
+	t.Reset(d)
+	return t
 }

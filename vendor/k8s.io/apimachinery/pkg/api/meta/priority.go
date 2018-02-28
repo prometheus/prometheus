@@ -153,7 +153,7 @@ func kindMatches(pattern schema.GroupVersionKind, kind schema.GroupVersionKind) 
 }
 
 func (m PriorityRESTMapper) RESTMapping(gk schema.GroupKind, versions ...string) (mapping *RESTMapping, err error) {
-	mappings, err := m.Delegate.RESTMappings(gk)
+	mappings, err := m.Delegate.RESTMappings(gk, versions...)
 	if err != nil {
 		return nil, err
 	}
@@ -207,10 +207,6 @@ func (m PriorityRESTMapper) RESTMapping(gk schema.GroupKind, versions ...string)
 
 func (m PriorityRESTMapper) RESTMappings(gk schema.GroupKind, versions ...string) ([]*RESTMapping, error) {
 	return m.Delegate.RESTMappings(gk, versions...)
-}
-
-func (m PriorityRESTMapper) AliasesForResource(alias string) (aliases []string, ok bool) {
-	return m.Delegate.AliasesForResource(alias)
 }
 
 func (m PriorityRESTMapper) ResourceSingularizer(resource string) (singular string, err error) {
