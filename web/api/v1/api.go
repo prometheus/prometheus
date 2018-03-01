@@ -119,7 +119,6 @@ type API struct {
 	config   func() config.Config
 	flagsMap map[string]string
 	ready    func(http.HandlerFunc) http.HandlerFunc
-	instr    func(string, http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -134,7 +133,6 @@ func NewAPI(
 	configFunc func() config.Config,
 	flagsMap map[string]string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
-	instrFunc func(handlerName string, handler http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
 ) *API {
@@ -147,7 +145,6 @@ func NewAPI(
 		config:      configFunc,
 		flagsMap:    flagsMap,
 		ready:       readyFunc,
-		instr:       instrFunc,
 		db:          db,
 		enableAdmin: enableAdmin,
 	}
@@ -155,7 +152,7 @@ func NewAPI(
 
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
-	instr := func(name string, f apiFunc) http.HandlerFunc {
+	wrap := func(f apiFunc) http.HandlerFunc {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
 			if data, err := f(r); err != nil {
@@ -166,34 +163,34 @@ func (api *API) Register(r *route.Router) {
 				w.WriteHeader(http.StatusNoContent)
 			}
 		})
-		return api.ready(api.instr(name, httputil.CompressionHandler{
+		return api.ready(httputil.CompressionHandler{
 			Handler: hf,
-		}.ServeHTTP))
+		}.ServeHTTP)
 	}
 
-	r.Options("/*path", instr("options", api.options))
+	r.Options("/*path", wrap(api.options))
 
-	r.Get("/query", instr("query", api.query))
-	r.Post("/query", instr("query", api.query))
-	r.Get("/query_range", instr("query_range", api.queryRange))
-	r.Post("/query_range", instr("query_range", api.queryRange))
+	r.Get("/query", wrap(api.query))
+	r.Post("/query", wrap(api.query))
+	r.Get("/query_range", wrap(api.queryRange))
+	r.Post("/query_range", wrap(api.queryRange))
 
-	r.Get("/label/:name/values", instr("label_values", api.labelValues))
+	r.Get("/label/:name/values", wrap(api.labelValues))
 
-	r.Get("/series", instr("series", api.series))
-	r.Del("/series", instr("drop_series", api.dropSeries))
+	r.Get("/series", wrap(api.series))
+	r.Del("/series", wrap(api.dropSeries))
 
-	r.Get("/targets", instr("targets", api.targets))
-	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
+	r.Get("/targets", wrap(api.targets))
+	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
-	r.Get("/status/config", instr("config", api.serveConfig))
-	r.Get("/status/flags", instr("flags", api.serveFlags))
-	r.Post("/read", api.ready(api.instr("read", http.HandlerFunc(api.remoteRead))))
+	r.Get("/status/config", wrap(api.serveConfig))
+	r.Get("/status/flags", wrap(api.serveFlags))
+	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 
 	// Admin APIs
-	r.Post("/admin/tsdb/delete_series", instr("delete_series", api.deleteSeries))
-	r.Post("/admin/tsdb/clean_tombstones", instr("clean_tombstones", api.cleanTombstones))
-	r.Post("/admin/tsdb/snapshot", instr("snapshot", api.snapshot))
+	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
+	r.Post("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
+	r.Post("/admin/tsdb/snapshot", wrap(api.snapshot))
 }
 
 type queryData struct {
