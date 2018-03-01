@@ -5,3 +5,17 @@
 .alert_details {
   display: none;
 }
+
+.filters button.show-annotations {
+    background-color: white;
+    border-color: #adadad;
+    border-radius: 0;
+    color: #333;
+    font-size: 0.8em;
+}
+
+.filters button.show-annotations.is-checked {
+    color: #fff;
+    background-color: #286090;
+    border-color: #204d74;
+}
