@@ -25,7 +25,7 @@ DIRS="prompb"
 
 for dir in ${DIRS}; do
 	pushd ${dir}
-		protoc --gofast_out=plugins=grpc:. -I=. \
+		protoc --gogofast_out=plugins=grpc:. -I=. \
             -I="${GOGOPROTO_PATH}" \
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
