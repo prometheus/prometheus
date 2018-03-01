@@ -1,3 +1,138 @@
+# Comparison of rate vs xrate.
+
+load 5s
+  http_requests{path="/foo"}  1 1 1 2 2 2 2 2 3 3 3
+  http_requests{path="/bar"}  1 2 3 4 5 6 7 8 9 10 11
+
+
+#
+# Timeseries starts inside range, (presumably) goes on after range end.
+#
+
+# 1. Reference eval, aligned with collection.
+eval instant at 25s rate(http_requests[50s])
+  {path="/foo"} .022
+  {path="/bar"} .12
+
+eval instant at 25s xrate(http_requests[50s])
+  {path="/foo"} .02
+  {path="/bar"} .1
+
+# 2. Eval 1 second earlier compared to (1).
+#    * path="/foo" rate should be same or fractionally higher ("shorter" sample, same actual increase);
+#    * path="/bar" rate should be same or fractionally lower (80% the increase, 80/96% range covered by sample).
+# XXX Seeing ~20% jump for path="/foo"
+eval instant at 24s rate(http_requests[50s])
+  {path="/foo"} .0265
+  {path="/bar"} .116
+
+eval instant at 24s xrate(http_requests[50s])
+  {path="/foo"} .02
+  {path="/bar"} .08
+
+# 3. Eval 1 second later compared to (1).
+#    * path="/foo" rate should be same or fractionally lower ("longer" sample, same actual increase).
+#    * path="/bar" rate should be same or fractionally lower ("longer" sample, same actual increase).
+# XXX Higher instead of lower for both.
+eval instant at 26s rate(http_requests[50s])
+  {path="/foo"} .0228
+  {path="/bar"} .124
+
+eval instant at 26s xrate(http_requests[50s])
+  {path="/foo"} .02
+  {path="/bar"} .1
+
+
+#
+# Timeseries starts before range, ends within range.
+#
+
+# 4. Reference eval, aligned with collection.
+eval instant at 75s rate(http_requests[50s])
+  {path="/foo"} .022
+  {path="/bar"} .11
+
+eval instant at 75s xrate(http_requests[50s])
+  {path="/foo"} .02
+  {path="/bar"} .1
+
+# 5. Eval 1s earlier compared to (4).
+#    * path="/foo" rate should be same or fractionally lower ("longer" sample, same actual increase).
+#    * path="/bar" rate should be same or fractionally lower ("longer" sample, same actual increase).
+# XXX Higher instead of lower for both.
+eval instant at 74s rate(http_requests[50s])
+  {path="/foo"} .0228
+  {path="/bar"} .114
+
+# XXX Higher instead of lower for {path="/bar"}.
+eval instant at 74s xrate(http_requests[50s])
+  {path="/foo"} .02
+  {path="/bar"} .12
+
+# 6. Eval 1s later compared to (4). Rate/increase (should be) fractionally smaller.
+#    * path="/foo" rate should be same or fractionally higher ("shorter" sample, same actual increase);
+#    * path="/bar" rate should be same or fractionally lower (80% the increase, 80/96% range covered by sample).
+# XXX Seeing ~20% jump for path="/foo", decrease instead of increase for path="/bar".
+eval instant at 76s rate(http_requests[50s])
+  {path="/foo"} .0265
+  {path="/bar"} .106
+
+eval instant at 76s xrate(http_requests[50s])
+  {path="/foo"} .02
+  {path="/bar"} .1
+
+#
+# Evaluation of 10 second rate every 10 seconds, not aligned with collection.
+#
+
+eval instant at 9s rate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.2
+
+eval instant at 19s rate(http_requests[10s])
+  {path="/foo"} 0.2
+  {path="/bar"} 0.2
+
+eval instant at 29s rate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.2
+
+eval instant at 39s rate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.2
+
+# XXX Missed an increase in path="/foo" between timestamps 35 and 40 (both in this eval and the one before).
+eval instant at 49s rate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.2
+
+eval instant at 9s xrate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.1
+
+eval instant at 19s xrate(http_requests[10s])
+  {path="/foo"} 0.1
+  {path="/bar"} 0.2
+
+eval instant at 29s xrate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.2
+
+eval instant at 39s xrate(http_requests[10s])
+  {path="/foo"} 0
+  {path="/bar"} 0.2
+
+# XXX Sees the increase in path="/foo" between timestamps 35 and 40.
+eval instant at 49s xrate(http_requests[10s])
+  {path="/foo"} .1
+  {path="/bar"} 0.2
+
+clear
+
+
+
+
+
 # Testdata for resets() and changes().
 load 5m
 	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
@@ -65,7 +200,7 @@ clear
 # Tests for increase()/xincrease()/xrate().
 load 5s
 	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x5
+	http_requests{path="/bar"}	0+10x5 0+10x4
 
 # Tests for increase().
 eval instant at 50s increase(http_requests[50s])
@@ -86,8 +221,8 @@ eval instant at 50s xincrease(http_requests[5s])
 	{path="/bar"} 10
 
 eval instant at 50s xincrease(http_requests[3s])
-	{path="/foo"} 10
-	{path="/bar"} 10
+	{path="/foo"} 6
+	{path="/bar"} 6
 
 eval instant at 49s xincrease(http_requests[3s])
 
@@ -157,12 +292,12 @@ eval instant at 20m xdelta(http_requests[20m])
 	{path="/bar"} -200
 
 eval instant at 20m xdelta(http_requests[19m])
-	{path="/foo"} 200
-	{path="/bar"} -200
+	{path="/foo"} 190
+	{path="/bar"} -190
 
 eval instant at 20m xdelta(http_requests[1m])
-	{path="/foo"} 50
-	{path="/bar"} -50
+	{path="/foo"} 10
+	{path="/bar"} -10
 
 clear
 
