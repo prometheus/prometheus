@@ -5,7 +5,12 @@
 
 {{define "content"}}
 <div class="container-fluid">
-  <h2>Alerts</h2>
+  <h1>Alerts</h1>
+  <div class="filters">
+     <button type="button" class="targets btn btn-primary show-annotations">
+       <i class="glyphicon glyphicon-unchecked"></i> Show annotations
+     </button>
+  </div>
   <table class="table table-bordered table-collapsed">
     <tbody>
     {{$alertStateToRowClass := .AlertStateToRowClass}}
@@ -38,6 +43,21 @@
               <td>{{.ActiveAt.UTC}}</td>
               <td>{{.Value}}</td>
             </tr>
+            {{ if .Annotations.Map}}
+            <tr style="display:none" class="alert_annotations">
+              <th colspan="4">Annotations</th>
+            </tr>
+            <tr style="display:none" class="alert_annotations">
+              <td colspan="4">
+                <dl>
+                {{range $label, $value := .Annotations.Map}}
+                  <dt>{{$label}}</dt>
+                  <dd>{{$value}}</dd>
+                {{end}}
+                </dl>
+              </td>
+            </tr>
+            {{end}}
             {{end}}
           </table>
           {{end}}
