@@ -38,20 +38,60 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-type targetRetrieverFunc func() []*retrieval.Target
+type testTargetRetriever struct{}
 
-func (f targetRetrieverFunc) Targets() []*retrieval.Target {
-	return f()
+func (t testTargetRetriever) Targets() []*scrape.Target {
+	return []*scrape.Target{
+		scrape.NewTarget(
+			labels.FromMap(map[string]string{
+				model.SchemeLabel:      "http",
+				model.AddressLabel:     "example.com:8080",
+				model.MetricsPathLabel: "/metrics",
+			}),
+			nil,
+			url.Values{},
+		),
+	}
+}
+func (t testTargetRetriever) DroppedTargets() []*scrape.Target {
+	return []*scrape.Target{
+		scrape.NewTarget(
+			nil,
+			labels.FromMap(map[string]string{
+				model.AddressLabel:     "http://dropped.example.com:9115",
+				model.MetricsPathLabel: "/probe",
+				model.SchemeLabel:      "http",
+				model.JobLabel:         "blackbox",
+			}),
+			url.Values{},
+		),
+	}
 }
 
-type alertmanagerRetrieverFunc func() []*url.URL
+type testAlertmanagerRetriever struct{}
 
-func (f alertmanagerRetrieverFunc) Alertmanagers() []*url.URL {
-	return f()
+func (t testAlertmanagerRetriever) Alertmanagers() []*url.URL {
+	return []*url.URL{
+		{
+			Scheme: "http",
+			Host:   "alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		},
+	}
+}
+
+func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
+	return []*url.URL{
+		{
+			Scheme: "http",
+			Host:   "dropped.alertmanager.example.com:8080",
+			Path:   "/api/v1/alerts",
+		},
+	}
 }
 
 var samplePrometheusCfg = config.Config{
@@ -61,6 +101,11 @@ var samplePrometheusCfg = config.Config{
 	ScrapeConfigs:      []*config.ScrapeConfig{},
 	RemoteWriteConfigs: []*config.RemoteWriteConfig{},
 	RemoteReadConfigs:  []*config.RemoteReadConfig{},
+}
+
+var sampleFlagMap = map[string]string{
+	"flag1": "value1",
+	"flag2": "value2",
 }
 
 func TestEndpoints(t *testing.T) {
@@ -81,36 +126,19 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	tr := targetRetrieverFunc(func() []*retrieval.Target {
-		return []*retrieval.Target{
-			retrieval.NewTarget(
-				labels.FromMap(map[string]string{
-					model.SchemeLabel:      "http",
-					model.AddressLabel:     "example.com:8080",
-					model.MetricsPathLabel: "/metrics",
-				}),
-				nil,
-				url.Values{},
-			),
-		}
-	})
+	var tr testTargetRetriever
 
-	ar := alertmanagerRetrieverFunc(func() []*url.URL {
-		return []*url.URL{{
-			Scheme: "http",
-			Host:   "alertmanager.example.com:8080",
-			Path:   "/api/v1/alerts",
-		}}
-	})
+	var ar testAlertmanagerRetriever
 
 	api := &API{
 		Queryable:             suite.Storage(),
 		QueryEngine:           suite.QueryEngine(),
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:    func() time.Time { return now },
-		config: func() config.Config { return samplePrometheusCfg },
-		ready:  func(f http.HandlerFunc) http.HandlerFunc { return f },
+		now:      func() time.Time { return now },
+		config:   func() config.Config { return samplePrometheusCfg },
+		flagsMap: sampleFlagMap,
+		ready:    func(f http.HandlerFunc) http.HandlerFunc { return f },
 	}
 
 	start := time.Unix(0, 0)
@@ -431,6 +459,16 @@ func TestEndpoints(t *testing.T) {
 						Health:           "unknown",
 					},
 				},
+				DroppedTargets: []*DroppedTarget{
+					{
+						DiscoveredLabels: map[string]string{
+							"__address__":      "http://dropped.example.com:9115",
+							"__metrics_path__": "/probe",
+							"__scheme__":       "http",
+							"job":              "blackbox",
+						},
+					},
+				},
 			},
 		},
 		{
@@ -441,6 +479,11 @@ func TestEndpoints(t *testing.T) {
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
 					},
 				},
+				DroppedAlertmanagers: []*AlertmanagerTarget{
+					{
+						URL: "http://dropped.alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
 			},
 		},
 		{
@@ -448,6 +491,10 @@ func TestEndpoints(t *testing.T) {
 			response: &prometheusConfig{
 				YAML: samplePrometheusCfg.String(),
 			},
+		},
+		{
+			endpoint: api.serveFlags,
+			response: sampleFlagMap,
 		},
 	}
 

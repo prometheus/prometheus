@@ -25,7 +25,9 @@ import (
 )
 
 func TestQueryConcurrency(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	concurrentQueries := 10
+
+	engine := NewEngine(nil, nil, concurrentQueries, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -38,7 +40,7 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
-	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
+	for i := 0; i < concurrentQueries; i++ {
 		q := engine.newTestQuery(f)
 		go q.Exec(ctx)
 		select {
@@ -70,16 +72,13 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
+	for i := 0; i < concurrentQueries; i++ {
 		block <- struct{}{}
 	}
 }
 
 func TestQueryTimeout(t *testing.T) {
-	engine := NewEngine(nil, &EngineOptions{
-		Timeout:              5 * time.Millisecond,
-		MaxConcurrentQueries: 20,
-	})
+	engine := NewEngine(nil, nil, 20, 5*time.Millisecond)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -98,7 +97,7 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -144,7 +143,7 @@ func TestQueryCancel(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
@@ -276,9 +275,9 @@ load 10s
 		var err error
 		var qry Query
 		if c.Interval == 0 {
-			qry, err = test.QueryEngine().NewInstantQuery(c.Query, c.Start)
+			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.Query, c.Start)
 		} else {
-			qry, err = test.QueryEngine().NewRangeQuery(c.Query, c.Start, c.End, c.Interval)
+			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
 		if err != nil {
 			t.Fatalf("unexpected error creating query: %q", err)

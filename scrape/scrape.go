@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"bufio"
@@ -148,7 +148,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		level.Error(logger).Log("msg", "Error creating HTTP client", "err", err)
 	}
 
-	buffers := pool.NewBytesPool(163, 100e6, 3)
+	buffers := pool.New(163, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
@@ -301,6 +301,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 			sp.loops[hash] = l
 
 			go l.run(interval, timeout, nil)
+		} else {
+			// Need to keep the most updated labels information
+			// for displaying it in the Service Discovery web page.
+			sp.targets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
 		}
 	}
 
@@ -332,7 +336,7 @@ func (sp *scrapePool) mutateSampleLabels(lset labels.Labels, target *Target) lab
 
 	if sp.config.HonorLabels {
 		for _, l := range target.Labels() {
-			if lv := lset.Get(l.Name); lv == "" {
+			if !lset.Has(l.Name) {
 				lb.Set(l.Name, l.Value)
 			}
 		}
@@ -343,6 +347,12 @@ func (sp *scrapePool) mutateSampleLabels(lset labels.Labels, target *Target) lab
 				lb.Set(model.ExportedLabelPrefix+l.Name, lv)
 			}
 			lb.Set(l.Name, l.Value)
+		}
+	}
+
+	for _, l := range lb.Labels() {
+		if l.Value == "" {
+			lb.Del(l.Name)
 		}
 	}
 
@@ -477,7 +487,7 @@ type scrapeLoop struct {
 	l              log.Logger
 	cache          *scrapeCache
 	lastScrapeSize int
-	buffers        *pool.BytesPool
+	buffers        *pool.Pool
 
 	appender            func() storage.Appender
 	sampleMutator       labelsMutator
@@ -592,7 +602,7 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
-	buffers *pool.BytesPool,
+	buffers *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func() storage.Appender,
@@ -601,7 +611,7 @@ func newScrapeLoop(ctx context.Context,
 		l = log.NewNopLogger()
 	}
 	if buffers == nil {
-		buffers = pool.NewBytesPool(1e3, 1e6, 3)
+		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 	}
 	sl := &scrapeLoop{
 		scraper:             sc,
@@ -658,7 +668,8 @@ mainLoop:
 				time.Since(last).Seconds(),
 			)
 		}
-		b := sl.buffers.Get(sl.lastScrapeSize)
+
+		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		buf := bytes.NewBuffer(b)
 
 		scrapeErr := sl.scraper.scrape(scrapeCtx, buf)

@@ -83,6 +83,11 @@ func (t *Test) QueryEngine() *Engine {
 	return t.queryEngine
 }
 
+// Queryable allows querying the test data.
+func (t *Test) Queryable() storage.Queryable {
+	return t.storage
+}
+
 // Context returns the test's context.
 func (t *Test) Context() context.Context {
 	return t.context
@@ -460,7 +465,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 	case *evalCmd:
-		q := t.queryEngine.newQuery(cmd.expr, cmd.start, cmd.end, cmd.interval)
+		q := t.queryEngine.newQuery(t.storage, cmd.expr, cmd.start, cmd.end, cmd.interval)
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
@@ -495,7 +500,7 @@ func (t *Test) clear() {
 	}
 	t.storage = testutil.NewStorage(t)
 
-	t.queryEngine = NewEngine(t.storage, nil)
+	t.queryEngine = NewEngine(nil, nil, 20, 10*time.Second)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

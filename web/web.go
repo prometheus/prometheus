@@ -55,8 +55,8 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -71,13 +71,13 @@ var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 type Handler struct {
 	logger log.Logger
 
-	scrapeManager *retrieval.ScrapeManager
+	scrapeManager *scrape.Manager
 	ruleManager   *rules.Manager
 	queryEngine   *promql.Engine
 	context       context.Context
 	tsdb          func() *tsdb.DB
 	storage       storage.Storage
-	notifier      *notifier.Notifier
+	notifier      *notifier.Manager
 
 	apiV1 *api_v1.API
 
@@ -125,9 +125,9 @@ type Options struct {
 	TSDB          func() *tsdb.DB
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
-	ScrapeManager *retrieval.ScrapeManager
+	ScrapeManager *scrape.Manager
 	RuleManager   *rules.Manager
-	Notifier      *notifier.Notifier
+	Notifier      *notifier.Manager
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
@@ -187,6 +187,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			defer h.mtx.RUnlock()
 			return *h.config
 		},
+		o.Flags,
 		h.testReady,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
@@ -345,10 +346,7 @@ func (h *Handler) Ready() {
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
 	ready := atomic.LoadUint32(&h.ready)
-	if ready == 0 {
-		return false
-	}
-	return true
+	return ready > 0
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
@@ -404,7 +402,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		h.options.TSDB,
 		h.options.QueryEngine,
 		h.options.Storage.Querier,
-		func() []*retrieval.Target {
+		func() []*scrape.Target {
 			return h.options.ScrapeManager.Targets()
 		},
 		func() []*url.URL {
@@ -536,7 +534,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		"__console_"+name,
 		data,
 		h.now(),
-		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine)),
+		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
 		h.options.ExternalURL,
 	)
 	filenames, err := filepath.Glob(h.options.ConsoleLibrariesPath + "/*.lib")
@@ -594,7 +592,7 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(index)
 	scrapeConfigData := struct {
 		Index   []string
-		Targets map[string][]*retrieval.Target
+		Targets map[string][]*scrape.Target
 	}{
 		Index:   index,
 		Targets: targets,
@@ -604,7 +602,7 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	// Bucket targets by job label
-	tps := map[string][]*retrieval.Target{}
+	tps := map[string][]*scrape.Target{}
 	for _, t := range h.scrapeManager.Targets() {
 		job := t.Labels().Get(model.JobLabel)
 		tps[job] = append(tps[job], t)
@@ -617,7 +615,7 @@ func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.executeTemplate(w, "targets.html", struct {
-		TargetPools map[string][]*retrieval.Target
+		TargetPools map[string][]*scrape.Target
 	}{
 		TargetPools: tps,
 	})
@@ -707,21 +705,21 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			}
 			return u
 		},
-		"numHealthy": func(pool []*retrieval.Target) int {
+		"numHealthy": func(pool []*scrape.Target) int {
 			alive := len(pool)
 			for _, p := range pool {
-				if p.Health() != retrieval.HealthGood {
+				if p.Health() != scrape.HealthGood {
 					alive--
 				}
 			}
 
 			return alive
 		},
-		"healthToClass": func(th retrieval.TargetHealth) string {
+		"healthToClass": func(th scrape.TargetHealth) string {
 			switch th {
-			case retrieval.HealthUnknown:
+			case scrape.HealthUnknown:
 				return "warning"
-			case retrieval.HealthGood:
+			case scrape.HealthGood:
 				return "success"
 			default:
 				return "danger"
@@ -766,7 +764,7 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		name,
 		data,
 		h.now(),
-		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine)),
+		template.QueryFunc(rules.EngineQueryFunc(h.queryEngine, h.storage)),
 		h.options.ExternalURL,
 	)
 	tmpl.Funcs(tmplFuncs(h.consolesPath(), h.options))

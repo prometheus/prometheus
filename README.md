@@ -4,6 +4,7 @@
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
 [![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
+[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
 
 Visit [prometheus.io](https://prometheus.io) for the full documentation,
 examples and guides.
@@ -56,7 +57,7 @@ Prometheus will now be reachable at http://localhost:9090/.
 ### Building from source
 
 To build Prometheus from the source code yourself you need to have a working
-Go environment with [version 1.9 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.10 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:

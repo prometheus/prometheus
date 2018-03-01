@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"bytes"
@@ -94,6 +94,40 @@ func TestDroppedTargetsList(t *testing.T) {
 	if sp.droppedTargets[0].DiscoveredLabels().String() != expectedLabelSetString {
 		t.Fatalf("Got %v, expected %v", sp.droppedTargets[0].DiscoveredLabels().String(), expectedLabelSetString)
 	}
+}
+
+// TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
+// even when new labels don't affect the target `hash`.
+func TestDiscoveredLabelsUpdate(t *testing.T) {
+
+	sp := &scrapePool{}
+	// These are used when syncing so need this to avoid a panic.
+	sp.config = &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(1),
+		ScrapeTimeout:  model.Duration(1),
+	}
+	sp.targets = make(map[uint64]*Target)
+	t1 := &Target{
+		discoveredLabels: labels.Labels{
+			labels.Label{
+				Name:  "label",
+				Value: "name",
+			},
+		},
+	}
+	sp.targets[t1.hash()] = t1
+
+	t2 := &Target{
+		discoveredLabels: labels.Labels{
+			labels.Label{
+				Name:  "labelNew",
+				Value: "nameNew",
+			},
+		},
+	}
+	sp.sync([]*Target{t2})
+
+	testutil.Equals(t, t2.DiscoveredLabels(), sp.targets[t1.hash()].DiscoveredLabels())
 }
 
 type testLoop struct {
@@ -626,42 +660,97 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 }
 
 func TestScrapeLoopAppend(t *testing.T) {
-	app := &collectResultAppender{}
 
-	sl := newScrapeLoop(context.Background(),
-		nil, nil, nil,
-		nopMutator,
-		nopMutator,
-		func() storage.Appender { return app },
-	)
-
-	now := time.Now()
-	_, _, err := sl.append([]byte("metric_a 1\nmetric_b NaN\n"), now)
-	if err != nil {
-		t.Fatalf("Unexpected append error: %s", err)
-	}
-
-	ingestedNaN := math.Float64bits(app.result[1].v)
-	if ingestedNaN != value.NormalNaN {
-		t.Fatalf("Appended NaN samples wasn't as expected. Wanted: %x Got: %x", value.NormalNaN, ingestedNaN)
-	}
-
-	// DeepEqual will report NaNs as being different, so replace with a different value.
-	app.result[1].v = 42
-	want := []sample{
+	tests := []struct {
+		title           string
+		honorLabels     bool
+		scrapeLabels    string
+		discoveryLabels []string
+		expLset         labels.Labels
+		expValue        float64
+	}{
 		{
-			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
-			t:      timestamp.FromTime(now),
-			v:      1,
-		},
-		{
-			metric: labels.FromStrings(model.MetricNameLabel, "metric_b"),
-			t:      timestamp.FromTime(now),
-			v:      42,
+			// When "honor_labels" is not set
+			// label name collision is handler by adding a prefix.
+			title:           "Label name collision",
+			honorLabels:     false,
+			scrapeLabels:    `metric{n="1"} 0`,
+			discoveryLabels: []string{"n", "2"},
+			expLset:         labels.FromStrings("__name__", "metric", "exported_n", "1", "n", "2"),
+			expValue:        0,
+		}, {
+			// Labels with no value need to be removed as these should not be ingested.
+			title:           "Delete Empty labels",
+			honorLabels:     false,
+			scrapeLabels:    `metric{n=""} 0`,
+			discoveryLabels: nil,
+			expLset:         labels.FromStrings("__name__", "metric"),
+			expValue:        0,
+		}, {
+			// Honor Labels should ignore labels with the same name.
+			title:           "Honor Labels",
+			honorLabels:     true,
+			scrapeLabels:    `metric{n1="1" n2="2"} 0`,
+			discoveryLabels: []string{"n1", "0"},
+			expLset:         labels.FromStrings("__name__", "metric", "n1", "1", "n2", "2"),
+			expValue:        0,
+		}, {
+			title:           "Stale - NaN",
+			honorLabels:     false,
+			scrapeLabels:    `metric NaN`,
+			discoveryLabels: nil,
+			expLset:         labels.FromStrings("__name__", "metric"),
+			expValue:        float64(value.NormalNaN),
 		},
 	}
-	if !reflect.DeepEqual(want, app.result) {
-		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
+
+	for _, test := range tests {
+		app := &collectResultAppender{}
+		sp := &scrapePool{
+			config: &config.ScrapeConfig{
+				HonorLabels: test.honorLabels,
+			},
+		}
+
+		discoveryLabels := &Target{
+			labels: labels.FromStrings(test.discoveryLabels...),
+		}
+
+		sl := newScrapeLoop(context.Background(),
+			nil, nil, nil,
+			func(l labels.Labels) labels.Labels {
+				return sp.mutateSampleLabels(l, discoveryLabels)
+			},
+			func(l labels.Labels) labels.Labels {
+				return sp.mutateReportSampleLabels(l, discoveryLabels)
+			},
+			func() storage.Appender { return app },
+		)
+
+		now := time.Now()
+
+		_, _, err := sl.append([]byte(test.scrapeLabels), now)
+		if err != nil {
+			t.Fatalf("Unexpected append error: %s", err)
+		}
+
+		expected := []sample{
+			{
+				metric: test.expLset,
+				t:      timestamp.FromTime(now),
+				v:      test.expValue,
+			},
+		}
+
+		// When the expected value is NaN
+		// DeepEqual will report NaNs as being different,
+		// so replace it with the expected one.
+		if test.expValue == float64(value.NormalNaN) {
+			app.result[0].v = expected[0].v
+		}
+
+		t.Logf("Test:%s", test.title)
+		testutil.Equals(t, expected, app.result)
 	}
 }
 
@@ -699,7 +788,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	}
 	value := metric.GetCounter().GetValue()
 	if (value - beforeMetricValue) != 1 {
-		t.Fatal("Unexpected change of sample limit metric: %f", (value - beforeMetricValue))
+		t.Fatalf("Unexpected change of sample limit metric: %f", (value - beforeMetricValue))
 	}
 
 	// And verify that we got the samples that fit under the limit.

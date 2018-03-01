@@ -42,7 +42,7 @@ func TestExternalLabelsQuerierSelect(t *testing.T) {
 		externalLabels: model.LabelSet{"region": "europe"},
 	}
 	want := newSeriesSetFilter(mockSeriesSet{}, q.externalLabels)
-	have, err := q.Select(matchers...)
+	have, err := q.Select(nil, matchers...)
 	if err != nil {
 		t.Error(err)
 	}
@@ -157,7 +157,7 @@ type mockSeriesSet struct {
 	storage.SeriesSet
 }
 
-func (mockQuerier) Select(...*labels.Matcher) (storage.SeriesSet, error) {
+func (mockQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, error) {
 	return mockSeriesSet{}, nil
 }
 
@@ -313,7 +313,7 @@ func TestRequiredLabelsQuerierSelect(t *testing.T) {
 			requiredMatchers: test.requiredMatchers,
 		}
 
-		have, err := q.Select(test.matchers...)
+		have, err := q.Select(nil, test.matchers...)
 		if err != nil {
 			t.Error(err)
 		}

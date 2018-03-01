@@ -38,7 +38,7 @@ type Function struct {
 // === time() float64 ===
 func funcTime(ev *evaluator, args Expressions) Value {
 	return Scalar{
-		V: float64(ev.Timestamp / 1000),
+		V: float64(ev.Timestamp) / 1000,
 		T: ev.Timestamp,
 	}
 }

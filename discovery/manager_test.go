@@ -655,7 +655,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for testIndex, testCase := range testCases {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		discoveryManager := NewManager(nil)
+		discoveryManager := NewManager(ctx, nil)
 
 		var totalUpdatesCount int
 
@@ -741,8 +741,8 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(nil)
-	go discoveryManager.Run(ctx)
+	discoveryManager := NewManager(ctx, nil)
+	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
 	for _, v := range cfg.ScrapeConfigs {
@@ -750,7 +750,7 @@ scrape_configs:
 	}
 	discoveryManager.ApplyConfig(c)
 
-	_ = <-discoveryManager.SyncCh()
+	<-discoveryManager.SyncCh()
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
 
@@ -769,7 +769,7 @@ scrape_configs:
 	}
 	discoveryManager.ApplyConfig(c)
 
-	_ = <-discoveryManager.SyncCh()
+	<-discoveryManager.SyncCh()
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
 }

@@ -636,6 +636,9 @@ var expectedErrors = []struct {
 		filename: "labeldrop5.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
 	}, {
+		filename: "labelmap.bad.yml",
+		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
+	}, {
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
 	}, {

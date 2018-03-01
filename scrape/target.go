@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package retrieval
+package scrape
 
 import (
 	"errors"
@@ -113,6 +113,11 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 	lset := make(labels.Labels, len(t.discoveredLabels))
 	copy(lset, t.discoveredLabels)
 	return lset
+}
+
+// SetDiscoveredLabels sets new DiscoveredLabels
+func (t *Target) SetDiscoveredLabels(l labels.Labels) {
+	t.discoveredLabels = l
 }
 
 // URL returns a copy of the target's URL.

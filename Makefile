@@ -11,6 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Ensure GOBIN is not set during build so that promu is installed to the correct path
+unexport GOBIN
+
 GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
@@ -53,7 +56,7 @@ test-short:
 
 test:
 	@echo ">> running all tests"
-	@$(GO) test $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
+	@$(GO) test -race $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
 
 format:
 	@echo ">> formatting code"
@@ -87,10 +90,7 @@ assets:
 
 promu:
 	@echo ">> fetching promu"
-	@GOOS=$(shell uname -s | tr A-Z a-z) \
-	GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
-	GO="$(GO)" \
-	$(GO) get -u github.com/prometheus/promu
+	@GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 
 $(FIRST_GOPATH)/bin/staticcheck:
 	@GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck

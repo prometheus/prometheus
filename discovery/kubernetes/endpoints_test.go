@@ -339,3 +339,32 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				eps.Update(&v1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testendpoints",
+						Namespace: "default",
+					},
+					Subsets: []v1.EndpointSubset{},
+				})
+			}()
+		},
+		expectedRes: []*targetgroup.Group{
+			{
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}

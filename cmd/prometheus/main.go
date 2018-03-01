@@ -50,8 +50,8 @@ import (
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/retrieval"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/storage/tsdb"
@@ -88,12 +88,12 @@ func main() {
 		localStoragePath string
 		notifier         notifier.Options
 		notifierTimeout  model.Duration
-		queryEngine      promql.EngineOptions
 		web              web.Options
 		tsdb             tsdb.Options
 		lookbackDelta    model.Duration
 		webTimeout       model.Duration
 		queryTimeout     model.Duration
+		queryConcurrency int
 
 		prometheusURL string
 
@@ -101,9 +101,6 @@ func main() {
 	}{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
-		},
-		queryEngine: promql.EngineOptions{
-			Metrics: prometheus.DefaultRegisterer,
 		},
 	}
 
@@ -178,7 +175,7 @@ func main() {
 		Default("2m").SetValue(&cfg.queryTimeout)
 
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
-		Default("20").IntVar(&cfg.queryEngine.MaxConcurrentQueries)
+		Default("20").IntVar(&cfg.queryConcurrency)
 
 	promlogflag.AddFlags(a, &cfg.logLevel)
 
@@ -209,8 +206,6 @@ func main() {
 
 	promql.LookbackDelta = time.Duration(cfg.lookbackDelta)
 
-	cfg.queryEngine.Timeout = time.Duration(cfg.queryTimeout)
-
 	logger := promlog.New(cfg.logLevel)
 
 	// XXX(fabxc): Kubernetes does background logging which we can only customize by modifying
@@ -233,19 +228,30 @@ func main() {
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
-	cfg.queryEngine.Logger = log.With(logger, "component", "query engine")
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifier               = notifier.New(&cfg.notifier, log.With(logger, "component", "notifier"))
-		discoveryManagerScrape = discovery.NewManager(log.With(logger, "component", "discovery manager scrape"))
-		discoveryManagerNotify = discovery.NewManager(log.With(logger, "component", "discovery manager notify"))
-		scrapeManager          = retrieval.NewScrapeManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
-		queryEngine            = promql.NewEngine(fanoutStorage, &cfg.queryEngine)
-		ruleManager            = rules.NewManager(&rules.ManagerOptions{
+		notifier = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+
+		ctxScrape, cancelScrape = context.WithCancel(context.Background())
+		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"))
+
+		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"))
+
+		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+
+		queryEngine = promql.NewEngine(
+			log.With(logger, "component", "query engine"),
+			prometheus.DefaultRegisterer,
+			cfg.queryConcurrency,
+			time.Duration(cfg.queryTimeout),
+		)
+
+		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:  fanoutStorage,
-			QueryFunc:   rules.EngineQueryFunc(queryEngine),
+			QueryFunc:   rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
 			Context:     ctxRule,
 			ExternalURL: cfg.web.ExternalURL,
@@ -272,7 +278,14 @@ func main() {
 	}
 
 	cfg.web.Flags = map[string]string{}
+
+	// Exclude kingpin default flags to expose only Prometheus ones.
+	boilerplateFlags := kingpin.New("", "").Version("")
 	for _, f := range a.Model().Flags {
+		if boilerplateFlags.GetFlag(f.Name) != nil {
+			continue
+		}
+
 		cfg.web.Flags[f.Name] = f.Value.String()
 	}
 
@@ -375,30 +388,28 @@ func main() {
 		)
 	}
 	{
-		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManagerScrape.Run(ctx)
+				err := discoveryManagerScrape.Run()
 				level.Info(logger).Log("msg", "Scrape discovery manager stopped")
 				return err
 			},
 			func(err error) {
 				level.Info(logger).Log("msg", "Stopping scrape discovery manager...")
-				cancel()
+				cancelScrape()
 			},
 		)
 	}
 	{
-		ctx, cancel := context.WithCancel(context.Background())
 		g.Add(
 			func() error {
-				err := discoveryManagerNotify.Run(ctx)
+				err := discoveryManagerNotify.Run()
 				level.Info(logger).Log("msg", "Notify discovery manager stopped")
 				return err
 			},
 			func(err error) {
 				level.Info(logger).Log("msg", "Stopping notify discovery manager...")
-				cancel()
+				cancelNotify()
 			},
 		)
 	}
@@ -409,10 +420,7 @@ func main() {
 				// it needs to read a valid config for each job.
 				// It depends on the config being in sync with the discovery manager so
 				// we wait until the config is fully loaded.
-				select {
-				case <-reloadReady.C:
-					break
-				}
+				<-reloadReady.C
 
 				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
@@ -434,10 +442,7 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
-				select {
-				case <-reloadReady.C:
-					break
-				}
+				<-reloadReady.C
 
 				for {
 					select {
@@ -562,10 +567,8 @@ func main() {
 				// it needs to read a valid config for each job.
 				// It depends on the config being in sync with the discovery manager
 				// so we wait until the config is fully loaded.
-				select {
-				case <-reloadReady.C:
-					break
-				}
+				<-reloadReady.C
+
 				notifier.Run(discoveryManagerNotify.SyncCh())
 				level.Info(logger).Log("msg", "Notifier manager stopped")
 				return nil
@@ -649,9 +652,9 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
-// sendAlerts implements a the rules.NotifyFunc for a Notifier.
+// sendAlerts implements the rules.NotifyFunc for a Notifier.
 // It filters any non-firing alerts from the input.
-func sendAlerts(n *notifier.Notifier, externalURL string) rules.NotifyFunc {
+func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
 		var res []*notifier.Alert
 
