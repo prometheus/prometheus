@@ -259,15 +259,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			elw := cache.NewListWatchFromClient(rclient, "endpoints", namespace, nil)
 			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
 			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
+			nlw := cache.NewListWatchFromClient(rclient, "nodes", api.NamespaceAll, nil)
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
 			)
 			go eps.endpointsInf.Run(ctx.Done())
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
+			go eps.nodeInf.Run(ctx.Done())
 
 			for !eps.serviceInf.HasSynced() {
 				time.Sleep(100 * time.Millisecond)
@@ -276,6 +279,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				time.Sleep(100 * time.Millisecond)
 			}
 			for !eps.podInf.HasSynced() {
+				time.Sleep(100 * time.Millisecond)
+			}
+			for !eps.nodeInf.HasSynced() {
 				time.Sleep(100 * time.Millisecond)
 			}
 			wg.Add(1)

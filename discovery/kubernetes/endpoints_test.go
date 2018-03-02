@@ -32,11 +32,12 @@ func newFakeEndpointsInformer() *fakeInformer {
 	return newFakeInformer(endpointsStoreKeyFunc)
 }
 
-func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fakeInformer) {
+func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fakeInformer, *fakeInformer) {
 	svc := newFakeServiceInformer()
 	eps := newFakeEndpointsInformer()
 	pod := newFakePodInformer()
-	return NewEndpoints(nil, svc, eps, pod), svc, eps, pod
+	node := newFakeNodeInformer()
+	return NewEndpoints(nil, svc, eps, pod, node), svc, eps, pod, node
 }
 
 func makeEndpoints() *v1.Endpoints {
@@ -84,7 +85,7 @@ func makeEndpoints() *v1.Endpoints {
 }
 
 func TestEndpointsDiscoveryInitial(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
+	n, _, eps, _, _ := makeTestEndpointsDiscovery()
 	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -122,7 +123,7 @@ func TestEndpointsDiscoveryInitial(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryAdd(t *testing.T) {
-	n, _, eps, pods := makeTestEndpointsDiscovery()
+	n, _, eps, pods, _ := makeTestEndpointsDiscovery()
 	pods.GetStore().Add(&v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -238,8 +239,75 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 	}.Run(t)
 }
 
+func TestEndpointsDiscoveryAddWithNodeTarget(t *testing.T) {
+	n, _, eps, _, nodes := makeTestEndpointsDiscovery()
+	nodes.GetStore().Add(makeNode(
+		"test",
+		"1.2.3.4",
+		map[string]string{"testlabel": "testvalue"},
+		map[string]string{"testannotation": "testannotationvalue"},
+	))
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				eps.Add(
+					&v1.Endpoints{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "testendpoints",
+							Namespace: "default",
+						},
+						Subsets: []v1.EndpointSubset{
+							{
+								Addresses: []v1.EndpointAddress{
+									{
+										IP: "4.3.2.1",
+										TargetRef: &v1.ObjectReference{
+											Kind: "Node",
+											Name: "test",
+										},
+									},
+								},
+								Ports: []v1.EndpointPort{
+									{
+										Name:     "testport",
+										Port:     9000,
+										Protocol: v1.ProtocolTCP,
+									},
+								},
+							},
+						},
+					},
+				)
+			}()
+		},
+		expectedRes: []*targetgroup.Group{
+			{
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                      "4.3.2.1:9000",
+						"__meta_kubernetes_endpoint_port_name":             "testport",
+						"__meta_kubernetes_endpoint_port_protocol":         "TCP",
+						"__meta_kubernetes_endpoint_ready":                 "true",
+						"__meta_kubernetes_node_name":                      "test",
+						"__meta_kubernetes_node_address_InternalIP":        "1.2.3.4",
+						"__meta_kubernetes_node_annotation_testannotation": "testannotationvalue",
+						"__meta_kubernetes_node_label_testlabel":           "testvalue",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+					"__meta_kubernetes_namespace":      "default",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
 func TestEndpointsDiscoveryDelete(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
+	n, _, eps, _, _ := makeTestEndpointsDiscovery()
 	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -254,7 +322,7 @@ func TestEndpointsDiscoveryDelete(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
+	n, _, eps, _, _ := makeTestEndpointsDiscovery()
 	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -269,7 +337,7 @@ func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryUpdate(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
+	n, _, eps, _, _ := makeTestEndpointsDiscovery()
 	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
