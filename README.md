@@ -74,6 +74,9 @@ You can also clone the repository yourself and build using `make`:
     $ make build
     $ ./prometheus --config.file=your_config.yml
 
+You can also build just one of the binaries in this repo by passing a name to the build function:
+    $ make build BINARIES=promtool
+
 The Makefile provides several targets:
 
   * *build*: build the `prometheus` and `promtool` binaries
