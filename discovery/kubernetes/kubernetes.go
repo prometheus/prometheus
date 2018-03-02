@@ -31,6 +31,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -256,9 +257,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		var wg sync.WaitGroup
 
 		for _, namespace := range namespaces {
-			elw := cache.NewListWatchFromClient(rclient, "endpoints", namespace, nil)
-			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
-			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
+			elw := cache.NewListWatchFromClient(rclient, "endpoints", namespace, fields.Everything())
+			slw := cache.NewListWatchFromClient(rclient, "services", namespace, fields.Everything())
+			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, fields.Everything())
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
 				cache.NewSharedInformer(slw, &v1.Service{}, resyncPeriod),
@@ -288,7 +289,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case "pod":
 		var wg sync.WaitGroup
 		for _, namespace := range namespaces {
-			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, nil)
+			plw := cache.NewListWatchFromClient(rclient, "pods", namespace, fields.Everything())
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
 				cache.NewSharedInformer(plw, &v1.Pod{}, resyncPeriod),
@@ -308,7 +309,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case "service":
 		var wg sync.WaitGroup
 		for _, namespace := range namespaces {
-			slw := cache.NewListWatchFromClient(rclient, "services", namespace, nil)
+			slw := cache.NewListWatchFromClient(rclient, "services", namespace, fields.Everything())
 			svc := NewService(
 				log.With(d.logger, "role", "service"),
 				cache.NewSharedInformer(slw, &v1.Service{}, resyncPeriod),
@@ -328,7 +329,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case "ingress":
 		var wg sync.WaitGroup
 		for _, namespace := range namespaces {
-			ilw := cache.NewListWatchFromClient(reclient, "ingresses", namespace, nil)
+			ilw := cache.NewListWatchFromClient(reclient, "ingresses", namespace, fields.Everything())
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
 				cache.NewSharedInformer(ilw, &v1beta1.Ingress{}, resyncPeriod),
@@ -346,7 +347,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 		wg.Wait()
 	case "node":
-		nlw := cache.NewListWatchFromClient(rclient, "nodes", api.NamespaceAll, nil)
+		nlw := cache.NewListWatchFromClient(rclient, "nodes", api.NamespaceAll, fields.Everything())
 		node := NewNode(
 			log.With(d.logger, "role", "node"),
 			cache.NewSharedInformer(nlw, &v1.Node{}, resyncPeriod),
