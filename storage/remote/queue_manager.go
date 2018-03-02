@@ -430,6 +430,11 @@ func (s *shards) runShard(i int) {
 	pendingSamples := model.Samples{}
 
 	timer := time.NewTimer(s.qm.cfg.BatchSendDeadline)
+	defer func() {
+		if !timer.Stop() {
+			<-timer.C
+		}
+	}()
 
 	for {
 		select {
