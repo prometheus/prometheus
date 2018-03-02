@@ -42,7 +42,7 @@ import (
 )
 
 // DefaultOptions used for the DB. They are sane for setups using
-// millisecond precision timestampdb.
+// millisecond precision timestamps.
 var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
