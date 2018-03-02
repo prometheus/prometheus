@@ -19,6 +19,7 @@ GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 PROMU        := $(FIRST_GOPATH)/bin/promu
 STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
+GOVENDOR     := $(FIRST_GOPATH)/bin/govendor
 pkgs          = $(shell $(GO) list ./... | grep -v /vendor/)
 
 PREFIX                  ?= $(shell pwd)
@@ -39,7 +40,7 @@ STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/promql/engine.go:SA6002 \
   github.com/prometheus/prometheus/web/web.go:SA1019
 
-all: format staticcheck build test
+all: format staticcheck unused build test
 
 style:
 	@echo ">> checking code style"
@@ -70,6 +71,10 @@ staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
 	@$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 
+unused: $(GOVENDOR)
+	@echo ">> running check for unused packages"
+	@$(GOVENDOR) list +unused
+
 build: promu
 	@echo ">> building binaries"
 	@$(PROMU) build --prefix $(PREFIX)
@@ -95,4 +100,7 @@ promu:
 $(FIRST_GOPATH)/bin/staticcheck:
 	@GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck
+$(FIRST_GOPATH)/bin/govendor:
+	@GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
+
+.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
