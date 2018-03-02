@@ -446,19 +446,25 @@ func (s *shards) runShard(i int) {
 			queueLength.WithLabelValues(s.qm.queueName).Dec()
 			pendingSamples = append(pendingSamples, sample)
 
+			sentSamples := len(pendingSamples) >= s.qm.cfg.MaxSamplesPerSend
+
 			for len(pendingSamples) >= s.qm.cfg.MaxSamplesPerSend {
 				s.sendSamples(pendingSamples[:s.qm.cfg.MaxSamplesPerSend])
 				pendingSamples = pendingSamples[s.qm.cfg.MaxSamplesPerSend:]
 			}
-			if !timer.Stop() {
-				<-timer.C
+			if sentSamples {
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(s.qm.cfg.BatchSendDeadline)
 			}
-			timer.Reset(s.qm.cfg.BatchSendDeadline)
 		case <-timer.C:
 			if len(pendingSamples) > 0 {
 				s.sendSamples(pendingSamples)
 				pendingSamples = pendingSamples[:0]
 			}
+
+			timer.Reset(s.qm.cfg.BatchSendDeadline)
 		}
 	}
 }
