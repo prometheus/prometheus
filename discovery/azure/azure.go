@@ -86,6 +86,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+	if c.SubscriptionID == "" {
+		return fmt.Errorf("Azure SD configuration requires a subscription_id")
+	}
 
 	return yaml_util.CheckOverflow(c.XXX, "azure_sd_config")
 }
