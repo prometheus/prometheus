@@ -396,71 +396,29 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 		return val, nil
 	}
-	numSteps := int(s.End.Sub(s.Start) / s.Interval)
-
 	// Range evaluation.
-	Seriess := map[uint64]Series{}
-	for ts := s.Start; !ts.After(s.End); ts = ts.Add(s.Interval) {
+	if err := contextDone(ctx, "range evaluation"); err != nil {
+		return nil, err
+	}
 
-		if err := contextDone(ctx, "range evaluation"); err != nil {
-			return nil, err
-		}
-
-		t := timeMilliseconds(ts)
-		evaluator := &evaluator{
-			Timestamp: t,
-			ctx:       ctx,
-			logger:    ng.logger,
-		}
-		val, err := evaluator.Eval(s.Expr)
-		if err != nil {
-			return nil, err
-		}
-
-		switch v := val.(type) {
-		case Scalar:
-			// As the expression type does not change we can safely default to 0
-			// as the fingerprint for Scalar expressions.
-			ss, ok := Seriess[0]
-			if !ok {
-				ss = Series{Points: make([]Point, 0, numSteps)}
-				Seriess[0] = ss
-			}
-			ss.Points = append(ss.Points, Point{V: v.V, T: t})
-			Seriess[0] = ss
-		case Vector:
-			for _, sample := range v {
-				h := sample.Metric.Hash()
-				ss, ok := Seriess[h]
-				if !ok {
-					ss = Series{
-						Metric: sample.Metric,
-						Points: make([]Point, 0, numSteps),
-					}
-					Seriess[h] = ss
-				}
-				sample.Point.T = t
-				ss.Points = append(ss.Points, sample.Point)
-				Seriess[h] = ss
-			}
-		default:
-			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
-		}
+	evaluator := &evaluator{
+		Timestamp:    timeMilliseconds(s.Start),
+		EndTimestamp: timeMilliseconds(s.End),
+		Interval:     s.Interval.Nanoseconds() / 1e6,
+		ctx:          ctx,
+		logger:       ng.logger,
+	}
+	val, err := evaluator.Eval(s.Expr)
+	if err != nil {
+		return nil, err
 	}
 	evalTimer.Stop()
 	ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
 
-	if err := contextDone(ctx, "expression evaluation"); err != nil {
-		return nil, err
+	mat, ok := val.(Matrix)
+	if !ok {
+		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", mat.Type()))
 	}
-
-	appendTimer := query.stats.GetTimer(stats.ResultAppendTime).Start()
-	mat := Matrix{}
-	for _, ss := range Seriess {
-		mat = append(mat, ss)
-	}
-	appendTimer.Stop()
-	ng.metrics.queryResultAppend.Observe(appendTimer.ElapsedTime().Seconds())
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -580,13 +538,17 @@ func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 	return res, it.Err()
 }
 
-// An evaluator evaluates given expressions at a fixed timestamp. It is attached to an
-// engine through which it connects to a querier and reports errors. On timeout or
-// cancellation of its context it terminates.
+// An evaluator evaluates given expressions at over given fixed timestamps. It
+// is attached to an engine through which it connects to a querier and reports
+// errors. On timeout or cancellation of its context it terminates.
 type evaluator struct {
 	ctx context.Context
 
-	Timestamp int64 // time in milliseconds
+	Timestamp int64 // Start time in milliseconds.
+
+	// These will be zero if this is an instant query.
+	EndTimestamp int64 // End time in milliseconds.
+	Interval     int64 // Interval in milliseconds.
 
 	finalizers []func()
 
@@ -705,6 +667,66 @@ func (ev *evaluator) eval(expr Expr) Value {
 	// Thus, we check for timeout/cancellation here.
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
+	}
+
+	// Range evaluation.
+	if ev.EndTimestamp != 0 {
+		numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
+		Seriess := map[uint64]Series{}
+		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+			if err := contextDone(ev.ctx, "range evaluation"); err != nil {
+				ev.error(err)
+			}
+
+			// Create instant evaulator.
+			evaluator := &evaluator{
+				Timestamp: ts,
+				ctx:       ev.ctx,
+				logger:    ev.logger,
+			}
+			val, err := evaluator.Eval(expr)
+			if err != nil {
+				ev.error(err)
+			}
+
+			switch v := val.(type) {
+			case Scalar:
+				// As the expression type does not change we can safely default to 0
+				// as the fingerprint for Scalar expressions.
+				ss, ok := Seriess[0]
+				if !ok {
+					ss = Series{Points: make([]Point, 0, numSteps)}
+					Seriess[0] = ss
+				}
+				ss.Points = append(ss.Points, Point{V: v.V, T: ts})
+				Seriess[0] = ss
+			case Vector:
+				for _, sample := range v {
+					h := sample.Metric.Hash()
+					ss, ok := Seriess[h]
+					if !ok {
+						ss = Series{
+							Metric: sample.Metric,
+							Points: make([]Point, 0, numSteps),
+						}
+						Seriess[h] = ss
+					}
+					sample.Point.T = ts
+					ss.Points = append(ss.Points, sample.Point)
+					Seriess[h] = ss
+				}
+			default:
+				panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+			}
+		}
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
+		mat := Matrix{}
+		for _, ss := range Seriess {
+			mat = append(mat, ss)
+		}
+		return mat
 	}
 
 	switch e := expr.(type) {
