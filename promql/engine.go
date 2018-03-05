@@ -784,32 +784,29 @@ func (ev *evaluator) eval(expr Expr) Value {
 		})
 
 	case *BinaryExpr:
-		lhs := ev.evalOneOf(e.LHS, ValueTypeScalar, ValueTypeVector)
-		rhs := ev.evalOneOf(e.RHS, ValueTypeScalar, ValueTypeVector)
-
-		switch lt, rt := lhs.Type(), rhs.Type(); {
+		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
 			return Scalar{
-				V: scalarBinop(e.Op, lhs.(Scalar).V, rhs.(Scalar).V),
+				V: scalarBinop(e.Op, ev.evalScalar(e.LHS).V, ev.evalScalar(e.RHS).V),
 				T: ev.Timestamp,
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case itemLAND:
-				return ev.VectorAnd(lhs.(Vector), rhs.(Vector), e.VectorMatching)
+				return ev.VectorAnd(ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching)
 			case itemLOR:
-				return ev.VectorOr(lhs.(Vector), rhs.(Vector), e.VectorMatching)
+				return ev.VectorOr(ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching)
 			case itemLUnless:
-				return ev.VectorUnless(lhs.(Vector), rhs.(Vector), e.VectorMatching)
+				return ev.VectorUnless(ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching)
 			default:
-				return ev.VectorBinop(e.Op, lhs.(Vector), rhs.(Vector), e.VectorMatching, e.ReturnBool)
+				return ev.VectorBinop(e.Op, ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching, e.ReturnBool)
 			}
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.VectorscalarBinop(e.Op, lhs.(Vector), rhs.(Scalar), false, e.ReturnBool)
+			return ev.VectorscalarBinop(e.Op, ev.evalVector(e.LHS), ev.evalScalar(e.RHS), false, e.ReturnBool)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.VectorscalarBinop(e.Op, rhs.(Vector), lhs.(Scalar), true, e.ReturnBool)
+			return ev.VectorscalarBinop(e.Op, ev.evalVector(e.RHS), ev.evalScalar(e.LHS), true, e.ReturnBool)
 		}
 
 	case *Call:
