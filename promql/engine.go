@@ -670,7 +670,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 	}
 
 	// Range evaluation.
-	if ev.EndTimestamp != 0 {
+	_, aggr := expr.(*AggregateExpr)
+	if ev.EndTimestamp != 0 && !aggr {
 		numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
 		Seriess := map[uint64]Series{}
 		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
@@ -729,10 +730,58 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return mat
 	}
 
+	rangeWrapper := func(e Expr, f func(Vector) Vector) Value {
+		if ev.EndTimestamp != 0 {
+			numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
+			m := ev.evalMatrix(e)
+			v := make(Vector, 0, len(m))
+			Seriess := map[uint64]Series{}
+			for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+				for _, series := range m {
+					for _, point := range series.Points {
+						if point.T == ts {
+							v = append(v, Sample{Metric: series.Metric, Point: point})
+						}
+						if point.T >= ts {
+							//TODO optimise here, move slice forward so we don't
+							// re-check samples we're already past
+							break
+						}
+					}
+				}
+				result := f(v)
+				for _, sample := range result {
+					h := sample.Metric.Hash()
+					ss, ok := Seriess[h]
+					if !ok {
+						ss = Series{
+							Metric: sample.Metric,
+							Points: make([]Point, 0, numSteps),
+						}
+						Seriess[h] = ss
+					}
+					sample.Point.T = ts
+					ss.Points = append(ss.Points, sample.Point)
+					Seriess[h] = ss
+				}
+
+			}
+			mat := Matrix{}
+			for _, ss := range Seriess {
+				mat = append(mat, ss)
+			}
+			return mat
+		} else {
+			v := ev.evalVector(e)
+			return f(v)
+		}
+	}
+
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		Vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, Vector)
+		return rangeWrapper(e.Expr, func(v Vector) Vector {
+			return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, v)
+		})
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, ValueTypeScalar, ValueTypeVector)
