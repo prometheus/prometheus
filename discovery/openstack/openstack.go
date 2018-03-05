@@ -103,6 +103,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Role == "" {
 		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
+	if c.Region == "" {
+		return fmt.Errorf("Openstack SD configuration requires a region")
+	}
 	return yaml_util.CheckOverflow(c.XXX, "openstack_sd_config")
 }
 
