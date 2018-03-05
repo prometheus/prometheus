@@ -393,8 +393,8 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	var (
 		m       = cmux.New(listener)
-		grpcl   = m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
 		httpl   = m.Match(cmux.HTTP1Fast())
+		grpcl   = m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
 		grpcSrv = grpc.NewServer()
 	)
 	av2 := api_v2.New(
