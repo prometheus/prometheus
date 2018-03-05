@@ -730,26 +730,34 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return mat
 	}
 
-	rangeWrapper := func(e Expr, f func(Vector) Vector) Value {
+	rangeWrapper := func(f func(...Vector) Vector, exprs ...Expr) Value {
 		if ev.EndTimestamp != 0 {
 			numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
-			m := ev.evalMatrix(e)
-			v := make(Vector, 0, len(m))
+			matrixes := make([]Matrix, len(exprs))
+			for i, e := range exprs {
+				matrixes[i] = ev.evalMatrix(e)
+			}
 			Seriess := map[uint64]Series{}
 			for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
-				for _, series := range m {
-					for _, point := range series.Points {
-						if point.T == ts {
-							v = append(v, Sample{Metric: series.Metric, Point: point})
-						}
-						if point.T >= ts {
-							//TODO optimise here, move slice forward so we don't
-							// re-check samples we're already past
-							break
+				// Gather input vectors for this timestamp.
+				vectors := make([]Vector, len(exprs))
+				for i := range exprs {
+					vectors[i] = make(Vector, 0, len(matrixes[i]))
+					for _, series := range matrixes[i] {
+						for _, point := range series.Points {
+							if point.T == ts {
+								vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
+							}
+							if point.T >= ts {
+								//TODO optimise here, move slice forward so we don't
+								// re-check samples we're already past
+								break
+							}
 						}
 					}
 				}
-				result := f(v)
+				result := f(vectors...)
+				// Add output vectors to output series.
 				for _, sample := range result {
 					h := sample.Metric.Hash()
 					ss, ok := Seriess[h]
@@ -772,16 +780,19 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 			return mat
 		} else {
-			v := ev.evalVector(e)
-			return f(v)
+			vectors := make([]Vector, len(exprs))
+			for i, e := range exprs {
+				vectors[i] = ev.evalVector(e)
+			}
+			return f(vectors...)
 		}
 	}
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		return rangeWrapper(e.Expr, func(v Vector) Vector {
-			return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, v)
-		})
+		return rangeWrapper(func(v ...Vector) Vector {
+			return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, v[0])
+		}, e.Expr)
 
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
@@ -810,7 +821,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 	case *Call:
-		return e.Func.Call(ev, e.Args)
+		return ev.callFunction(e.Func, e.Args)
 
 	case *MatrixSelector:
 		return ev.matrixSelector(e)
@@ -843,6 +854,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.vectorSelector(e)
 	}
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+}
+
+func (ev *evaluator) callFunction(f *Function, exprs Expressions) Value {
+	return f.Call(ev, exprs)
 }
 
 // vectorSelector evaluates a *VectorSelector expression.
