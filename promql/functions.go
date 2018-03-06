@@ -33,6 +33,7 @@ type Function struct {
 	Variadic   int
 	ReturnType ValueType
 	Call       func(ev *evaluator, args Expressions) Value
+	FastCall   func(args []Value) Vector
 }
 
 // === time() float64 ===
@@ -508,6 +509,18 @@ func funcAbs(ev *evaluator, args Expressions) Value {
 	return vec
 }
 
+// === abs(Vector ValueTypeVector) Vector ===
+func funcFastAbs(args []Value) Vector {
+	vec := args[0].(Vector)
+	for i := range vec {
+		el := &vec[i]
+
+		el.Metric = dropMetricName(el.Metric)
+		el.V = math.Abs(float64(el.V))
+	}
+	return vec
+}
+
 // === absent(Vector ValueTypeVector) Vector ===
 func funcAbsent(ev *evaluator, args Expressions) Value {
 	if len(ev.evalVector(args[0])) > 0 {
@@ -960,6 +973,7 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 		Call:       funcAbs,
+		FastCall:   funcFastAbs,
 	},
 	"absent": {
 		Name:       "absent",
