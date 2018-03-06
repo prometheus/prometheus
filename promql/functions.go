@@ -34,15 +34,15 @@ type Function struct {
 	Variadic   int
 	ReturnType ValueType
 	Call       func(ev *evaluator, args Expressions) Value
-	FastCall   func(vals []Value, args Expressions) Vector
+	FastCall   func(vals []Value, args Expressions, ts int64) Vector
 }
 
 // === time() float64 ===
-func funcTime(ev *evaluator, args Expressions) Value {
-	return Scalar{
-		V: float64(ev.Timestamp) / 1000,
-		T: ev.Timestamp,
-	}
+func funcTime(vals []Value, args Expressions, ts int64) Vector {
+	return Vector{Sample{Point: Point{
+		V: float64(ts) / 1000,
+		T: ts,
+	}}}
 }
 
 // extrapolatedRate is a utility function for rate/increase/delta.
@@ -499,7 +499,7 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === abs(Vector ValueTypeVector) Vector ===
-func funcAbs(vals []Value, args Expressions) Vector {
+func funcAbs(vals []Value, args Expressions, ts int64) Vector {
 	vec := vals[0].(Vector)
 	for i := range vec {
 		el := &vec[i]
@@ -754,7 +754,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 }
 
 // === changes(Matrix ValueTypeMatrix) Vector ===
-func funcChanges(vals []Value, args Expressions) Vector {
+func funcChanges(vals []Value, args Expressions, ts int64) Vector {
 	in := vals[0].(Matrix)
 	out := make(Vector, 0, len(in))
 
@@ -771,14 +771,14 @@ func funcChanges(vals []Value, args Expressions) Vector {
 
 		out = append(out, Sample{
 			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: float64(changes)},
+			Point:  Point{V: float64(changes), T: ts},
 		})
 	}
 	return out
 }
 
 // === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
-func funcLabelReplace(vals []Value, args Expressions) Vector {
+func funcLabelReplace(vals []Value, args Expressions, ts int64) Vector {
 	var (
 		vector   = vals[0].(Vector)
 		dst      = args[1].(*StringLiteral).Val
@@ -834,7 +834,7 @@ func funcVector(ev *evaluator, args Expressions) Value {
 }
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
-func funcLabelJoin(vals []Value, args Expressions) Vector {
+func funcLabelJoin(vals []Value, args Expressions, ts int64) Vector {
 	var (
 		vector    = vals[0].(Vector)
 		dst       = args[1].(*StringLiteral).Val
@@ -1220,7 +1220,7 @@ var functions = map[string]*Function{
 		Name:       "time",
 		ArgTypes:   []ValueType{},
 		ReturnType: ValueTypeScalar,
-		Call:       funcTime,
+		FastCall:   funcTime,
 	},
 	"timestamp": {
 		Name:       "timestamp",

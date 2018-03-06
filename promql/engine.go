@@ -685,7 +685,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		ev.error(err)
 	}
 
-	rangeWrapper := func(f func([]Value) Vector, exprs ...Expr) Value {
+	rangeWrapper := func(f func([]Value, int64) Vector, exprs ...Expr) Value {
 		if ev.Interval != 0 {
 			numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
 			matrixes := make([]Matrix, len(exprs))
@@ -717,7 +717,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				for i := range vectors {
 					args[i] = vectors[i]
 				}
-				result := f(args)
+				result := f(args, ts)
 				// If this could be an instant query, shortcut so as not to change sort order.
 				if ev.EndTimestamp == ev.Timestamp {
 					mat := make(Matrix, len(result))
@@ -753,7 +753,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			for i, e := range exprs {
 				vectors[i] = ev.evalVector(e)
 			}
-			resultVector := f(vectors)
+			resultVector := f(vectors, ev.Timestamp)
 			mat := make(Matrix, len(resultVector))
 			for i, s := range resultVector {
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
@@ -764,7 +764,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		return rangeWrapper(func(v []Value) Vector {
+		return rangeWrapper(func(v []Value, ts int64) Vector {
 			return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, v[0].(Vector))
 		}, e.Expr)
 
@@ -785,7 +785,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 							mint := maxt - durationMilliseconds(sel.Range)
 							points = ev.matrixIterSlice(it, maxt, mint, points[:0])
 							inMatrix := Matrix{Series{Metric: sel.series[i].Labels(), Points: points}}
-							vec := e.Func.FastCall([]Value{inMatrix}, e.Args)
+							vec := e.Func.FastCall([]Value{inMatrix}, e.Args, ts)
 							if len(vec) > 0 {
 								ss.Points = append(ss.Points, Point{V: vec[0].Point.V, T: ts})
 								if ss.Metric == nil {
@@ -802,8 +802,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 					return mat
 				}
 			}
-			return rangeWrapper(func(v []Value) Vector {
-				return e.Func.FastCall(v, e.Args)
+			return rangeWrapper(func(v []Value, ts int64) Vector {
+				return e.Func.FastCall(v, e.Args, ts)
 			}, e.Args...)
 		}
 
@@ -811,7 +811,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.eval(e.Expr)
 
 	case *UnaryExpr:
-		return rangeWrapper(func(v []Value) Vector {
+		return rangeWrapper(func(v []Value, ts int64) Vector {
 			vec := v[0].(Vector)
 			if e.Op == itemSUB {
 				for i, sv := range vec {
@@ -824,44 +824,44 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return rangeWrapper(func(v []Value) Vector {
+			return rangeWrapper(func(v []Value, ts int64) Vector {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
 				return Vector{Sample{Point: Point{V: val}}}
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case itemLAND:
-				return rangeWrapper(func(v []Value) Vector {
+				return rangeWrapper(func(v []Value, ts int64) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching)
 				}, e.LHS, e.RHS)
 			case itemLOR:
-				return rangeWrapper(func(v []Value) Vector {
+				return rangeWrapper(func(v []Value, ts int64) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching)
 				}, e.LHS, e.RHS)
 			case itemLUnless:
-				return rangeWrapper(func(v []Value) Vector {
+				return rangeWrapper(func(v []Value, ts int64) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching)
 				}, e.LHS, e.RHS)
 			default:
-				return rangeWrapper(func(v []Value) Vector {
+				return rangeWrapper(func(v []Value, ts int64) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return rangeWrapper(func(v []Value) Vector {
+			return rangeWrapper(func(v []Value, ts int64) Vector {
 				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool)
 			}, e.LHS, e.RHS)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return rangeWrapper(func(v []Value) Vector {
+			return rangeWrapper(func(v []Value, ts int64) Vector {
 				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool)
 			}, e.LHS, e.RHS)
 		}
 
 	case *NumberLiteral:
-		return rangeWrapper(func(v []Value) Vector {
-			return Vector{Sample{Point: Point{V: e.Val}}}
+		return rangeWrapper(func(v []Value, ts int64) Vector {
+			return Vector{Sample{Point: Point{V: e.Val, T: ts}}}
 		})
 	}
 
