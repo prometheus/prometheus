@@ -40,11 +40,11 @@ function init() {
   });
 
   $("#showTargets :input").change(function() {
-    const target = $(this).attr('id');
+    const target = $(this).attr("id");
 
-    if (target == 'all-targets') {
+    if (target === "all-targets") {
       $(".table-container").each(showAll);
-    } else if (target == 'unhealthy-targets') {
+    } else if (target === "unhealthy-targets") {
       $(".table-container").each(showUnhealthy);
     }
   });
