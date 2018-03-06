@@ -12,11 +12,19 @@ h2.danger a {
     background-color: white;
     border-color: #adadad;
     border-radius: 0;
-    color: #333;
+    color: red;
     font-size: 0.8em;
 }
 
-.filters button.unhealthy-targets.is-checked {
+.filters button.healthy-targets {
+    background-color: white;
+    border-color: #adadad;
+    border-radius: 0;
+    color: green;
+    font-size: 0.8em;
+}
+
+.filters button.unhealthy-targets.is-checked, button.healthy-targets.is-checked {
     color: #fff;
     background-color: #286090;
     border-color: #204d74;
