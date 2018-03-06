@@ -806,8 +806,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 				return e.Func.FastCall(v, e.Args)
 			}, e.Args...)
 		}
+
 	case *ParenExpr:
 		return ev.eval(e.Expr)
+
 	case *UnaryExpr:
 		return rangeWrapper(func(v []Value) Vector {
 			vec := v[0].(Vector)
@@ -818,6 +820,49 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 			return vec
 		}, e.Expr)
+
+	case *BinaryExpr:
+		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
+		case lt == ValueTypeScalar && rt == ValueTypeScalar:
+			return rangeWrapper(func(v []Value) Vector {
+				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
+				return Vector{Sample{Point: Point{V: val}}}
+			}, e.LHS, e.RHS)
+		case lt == ValueTypeVector && rt == ValueTypeVector:
+			switch e.Op {
+			case itemLAND:
+				return rangeWrapper(func(v []Value) Vector {
+					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching)
+				}, e.LHS, e.RHS)
+			case itemLOR:
+				return rangeWrapper(func(v []Value) Vector {
+					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching)
+				}, e.LHS, e.RHS)
+			case itemLUnless:
+				return rangeWrapper(func(v []Value) Vector {
+					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching)
+				}, e.LHS, e.RHS)
+			default:
+				return rangeWrapper(func(v []Value) Vector {
+					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool)
+				}, e.LHS, e.RHS)
+			}
+
+		case lt == ValueTypeVector && rt == ValueTypeScalar:
+			return rangeWrapper(func(v []Value) Vector {
+				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool)
+			}, e.LHS, e.RHS)
+
+		case lt == ValueTypeScalar && rt == ValueTypeVector:
+			return rangeWrapper(func(v []Value) Vector {
+				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool)
+			}, e.LHS, e.RHS)
+		}
+
+	case *NumberLiteral:
+		return rangeWrapper(func(v []Value) Vector {
+			return Vector{Sample{Point: Point{V: e.Val}}}
+		})
 	}
 
 	// Convert range evaluation into multiple instant evaluations.
@@ -891,40 +936,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 	}
 
 	switch e := expr.(type) {
-	case *BinaryExpr:
-		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
-		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return Scalar{
-				V: scalarBinop(e.Op, ev.evalScalar(e.LHS).V, ev.evalScalar(e.RHS).V),
-				T: ev.Timestamp,
-			}
-
-		case lt == ValueTypeVector && rt == ValueTypeVector:
-			switch e.Op {
-			case itemLAND:
-				return ev.VectorAnd(ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching)
-			case itemLOR:
-				return ev.VectorOr(ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching)
-			case itemLUnless:
-				return ev.VectorUnless(ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching)
-			default:
-				return ev.VectorBinop(e.Op, ev.evalVector(e.LHS), ev.evalVector(e.RHS), e.VectorMatching, e.ReturnBool)
-			}
-		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.VectorscalarBinop(e.Op, ev.evalVector(e.LHS), ev.evalScalar(e.RHS), false, e.ReturnBool)
-
-		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.VectorscalarBinop(e.Op, ev.evalVector(e.RHS), ev.evalScalar(e.LHS), true, e.ReturnBool)
-		}
-
 	case *Call:
 		return e.Func.Call(ev, e.Args)
 
 	case *MatrixSelector:
 		return ev.matrixSelector(e)
-
-	case *NumberLiteral:
-		return Scalar{V: e.Val, T: ev.Timestamp}
 
 	case *VectorSelector:
 		return ev.vectorSelector(e)
