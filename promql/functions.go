@@ -499,19 +499,7 @@ func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === abs(Vector ValueTypeVector) Vector ===
-func funcAbs(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Abs(float64(el.V))
-	}
-	return vec
-}
-
-// === abs(Vector ValueTypeVector) Vector ===
-func funcFastAbs(vals []Value, args Expressions) Vector {
+func funcAbs(vals []Value, args Expressions) Vector {
 	vec := vals[0].(Vector)
 	for i := range vec {
 		el := &vec[i]
@@ -766,8 +754,8 @@ func funcResets(ev *evaluator, args Expressions) Value {
 }
 
 // === changes(Matrix ValueTypeMatrix) Vector ===
-func funcChanges(ev *evaluator, args Expressions) Value {
-	in := ev.evalMatrix(args[0])
+func funcChanges(vals []Value, args Expressions) Vector {
+	in := vals[0].(Matrix)
 	out := make(Vector, 0, len(in))
 
 	for _, samples := range in {
@@ -783,7 +771,7 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 
 		out = append(out, Sample{
 			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: float64(changes), T: ev.Timestamp},
+			Point:  Point{V: float64(changes)},
 		})
 	}
 	return out
@@ -972,8 +960,7 @@ var functions = map[string]*Function{
 		Name:       "abs",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcAbs,
-		FastCall:   funcFastAbs,
+		FastCall:   funcAbs,
 	},
 	"absent": {
 		Name:       "absent",
@@ -997,7 +984,7 @@ var functions = map[string]*Function{
 		Name:       "changes",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcChanges,
+		FastCall:   funcChanges,
 	},
 	"clamp_max": {
 		Name:       "clamp_max",

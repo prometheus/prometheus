@@ -703,13 +703,12 @@ func (ev *evaluator) eval(expr Expr) Value {
 				for i := range exprs {
 					vectors[i] = make(Vector, 0, len(matrixes[i]))
 					for _, series := range matrixes[i] {
-						for _, point := range series.Points {
+						for pos, point := range series.Points {
 							if point.T == ts {
 								vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
 							}
 							if point.T >= ts {
-								//TODO optimise here, move slice forward so we don't
-								// re-check samples we're already past
+								series.Points = series.Points[pos:]
 								break
 							}
 						}
@@ -723,6 +722,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if ev.EndTimestamp == ev.Timestamp {
 					mat := make(Matrix, len(result))
 					for i, s := range result {
+						s.Point.T = ts
 						mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 					}
 					return mat
@@ -770,6 +770,38 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *Call:
 		if e.Func.FastCall != nil {
+			// Check if the function has a matrix argument.
+			for _, a := range e.Args {
+				sel, ok := a.(*MatrixSelector)
+				if ok {
+					mat := make(Matrix, 0, len(sel.series))
+					offset := durationMilliseconds(sel.Offset)
+					points := make([]Point, 0, 10)
+					// Process all the calls for one time series at a time.
+					for i, it := range sel.iterators {
+						ss := Series{}
+						for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+							maxt := ts - offset
+							mint := maxt - durationMilliseconds(sel.Range)
+							points = ev.matrixIterSlice(it, maxt, mint, points[:0])
+							inMatrix := Matrix{Series{Metric: sel.series[i].Labels(), Points: points}}
+							vec := e.Func.FastCall([]Value{inMatrix}, e.Args)
+							if len(vec) > 0 {
+								ss.Points = append(ss.Points, Point{V: vec[0].Point.V, T: ts})
+								if ss.Metric == nil {
+									// Output labels depend on input labels, not points,
+									// so we can use the first set of output labels we see.
+									ss.Metric = vec[0].Metric
+								}
+							}
+						}
+						if len(ss.Points) > 0 {
+							mat = append(mat, ss)
+						}
+					}
+					return mat
+				}
+			}
 			return rangeWrapper(func(v []Value) Vector {
 				return e.Func.FastCall(v, e.Args)
 			}, e.Args...)
@@ -1002,32 +1034,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 			Metric: node.series[i].Labels(),
 		}
 
-		ok := it.Seek(maxt)
-		if !ok {
-			if it.Err() != nil {
-				ev.error(it.Err())
-			}
-		}
-
-		buf := it.Buffer()
-		for buf.Next() {
-			t, v := buf.At()
-			if value.IsStaleNaN(v) {
-				continue
-			}
-			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mint {
-				allPoints = append(allPoints, Point{T: t, V: v})
-			}
-		}
-		// The seeked sample might also be in the range.
-		if ok {
-			t, v := it.Values()
-			if t == maxt && !value.IsStaleNaN(v) {
-				allPoints = append(allPoints, Point{T: t, V: v})
-			}
-		}
-
+		allPoints = ev.matrixIterSlice(it, maxt, mint, allPoints)
 		ss.Points = allPoints[start:]
 
 		if len(ss.Points) > 0 {
@@ -1035,6 +1042,35 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		}
 	}
 	return matrix
+}
+
+func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, maxt, mint int64, out []Point) []Point {
+	ok := it.Seek(maxt)
+	if !ok {
+		if it.Err() != nil {
+			ev.error(it.Err())
+		}
+	}
+
+	buf := it.Buffer()
+	for buf.Next() {
+		t, v := buf.At()
+		if value.IsStaleNaN(v) {
+			continue
+		}
+		// Values in the buffer are guaranteed to be smaller than maxt.
+		if t >= mint {
+			out = append(out, Point{T: t, V: v})
+		}
+	}
+	// The seeked sample might also be in the range.
+	if ok {
+		t, v := it.Values()
+		if t == maxt && !value.IsStaleNaN(v) {
+			out = append(out, Point{T: t, V: v})
+		}
+	}
+	return out
 }
 
 func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching) Vector {
