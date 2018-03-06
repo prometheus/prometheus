@@ -10,6 +10,20 @@ function toggleJobTable(button, shouldExpand){
   button.parents(".table-container").find("table").toggle(shouldExpand);
 }
 
+function showAll(_, container) {
+  $(container).show();
+}
+
+function showUnhealthy(_, container) {
+  const isHealthy = $(container).find("h2").attr("class").indexOf("danger") < 0;
+  if (isHealthy) { $(container).hide(); }
+}
+
+function showHealthy(_, container) {
+  const isUnhealthy = $(container).find("h2").attr("class").indexOf("danger") > 0;
+    if (isUnhealthy) { $(container).hide(); }
+}
+
 function init() {
   $("button.targets").click(function () {
     const tableTitle = $(this).closest("h2").find("a").attr("id");
@@ -59,20 +73,6 @@ function init() {
       $(".table-container").each(showAll);
     }
   });
-}
-
-function showAll(_, container) {
-  $(container).show();
-}
-
-function showUnhealthy(_, container) {
-  const isHealthy = $(container).find("h2").attr("class").indexOf("danger") < 0;
-  if (isHealthy) { $(container).hide(); }
-}
-
-function showHealthy(_, container) {
-  const isUnhealthy = $(container).find("h2").attr("class").indexOf("danger") > 0;
-    if (isUnhealthy) { $(container).hide(); }
 }
 
 $(init);
