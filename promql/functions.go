@@ -790,54 +790,7 @@ func funcChanges(ev *evaluator, args Expressions) Value {
 }
 
 // === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
-func funcLabelReplace(ev *evaluator, args Expressions) Value {
-	var (
-		vector   = ev.evalVector(args[0])
-		dst      = ev.evalString(args[1]).V
-		repl     = ev.evalString(args[2]).V
-		src      = ev.evalString(args[3]).V
-		regexStr = ev.evalString(args[4]).V
-	)
-
-	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
-	if err != nil {
-		ev.errorf("invalid regular expression in label_replace(): %s", regexStr)
-	}
-	if !model.LabelNameRE.MatchString(string(dst)) {
-		ev.errorf("invalid destination label name in label_replace(): %s", dst)
-	}
-
-	outSet := make(map[uint64]struct{}, len(vector))
-	for i := range vector {
-		el := &vector[i]
-
-		srcVal := el.Metric.Get(src)
-		indexes := regex.FindStringSubmatchIndex(srcVal)
-		// If there is no match, no replacement should take place.
-		if indexes == nil {
-			continue
-		}
-		res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
-
-		lb := labels.NewBuilder(el.Metric).Del(dst)
-		if len(res) > 0 {
-			lb.Set(dst, string(res))
-		}
-		el.Metric = lb.Labels()
-
-		h := el.Metric.Hash()
-		if _, ok := outSet[h]; ok {
-			ev.errorf("duplicated label set in output of label_replace(): %s", el.Metric)
-		} else {
-			outSet[h] = struct{}{}
-		}
-	}
-
-	return vector
-}
-
-// === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
-func funcFastLabelReplace(vals []Value, args Expressions) Vector {
+func funcLabelReplace(vals []Value, args Expressions) Vector {
 	var (
 		vector   = vals[0].(Vector)
 		dst      = args[1].(*StringLiteral).Val
@@ -893,23 +846,23 @@ func funcVector(ev *evaluator, args Expressions) Value {
 }
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
-func funcLabelJoin(ev *evaluator, args Expressions) Value {
+func funcLabelJoin(vals []Value, args Expressions) Vector {
 	var (
-		vector    = ev.evalVector(args[0])
-		dst       = ev.evalString(args[1]).V
-		sep       = ev.evalString(args[2]).V
+		vector    = vals[0].(Vector)
+		dst       = args[1].(*StringLiteral).Val
+		sep       = args[2].(*StringLiteral).Val
 		srcLabels = make([]string, len(args)-3)
 	)
 	for i := 3; i < len(args); i++ {
-		src := ev.evalString(args[i]).V
+		src := args[i].(*StringLiteral).Val
 		if !model.LabelName(src).IsValid() {
-			ev.errorf("invalid source label name in label_join(): %s", src)
+			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
 
 	if !model.LabelName(dst).IsValid() {
-		ev.errorf("invalid destination label name in label_join(): %s", dst)
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	outSet := make(map[uint64]struct{}, len(vector))
@@ -934,7 +887,7 @@ func funcLabelJoin(ev *evaluator, args Expressions) Value {
 		h := el.Metric.Hash()
 
 		if _, exists := outSet[h]; exists {
-			ev.errorf("duplicated label set in output of label_join(): %s", el.Metric)
+			panic(fmt.Errorf("duplicated label set in output of label_join(): %s", el.Metric))
 		} else {
 			outSet[h] = struct{}{}
 		}
@@ -1150,15 +1103,14 @@ var functions = map[string]*Function{
 		Name:       "label_replace",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString, ValueTypeString},
 		ReturnType: ValueTypeVector,
-		Call:       funcLabelReplace,
-		FastCall:   funcFastLabelReplace,
+		FastCall:   funcLabelReplace,
 	},
 	"label_join": {
 		Name:       "label_join",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString},
 		Variadic:   -1,
 		ReturnType: ValueTypeVector,
-		Call:       funcLabelJoin,
+		FastCall:   funcLabelJoin,
 	},
 	"ln": {
 		Name:       "ln",

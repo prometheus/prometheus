@@ -662,16 +662,6 @@ func (ev *evaluator) evalMatrix(e Expr) Matrix {
 	return mat
 }
 
-// evalString attempts to evaluate e to a string value and errors otherwise.
-func (ev *evaluator) evalString(e Expr) String {
-	val := ev.eval(e)
-	sv, ok := val.(String)
-	if !ok {
-		ev.errorf("expected string but got %s", documentedType(val.Type()))
-	}
-	return sv
-}
-
 // evalOneOf evaluates e and errors unless the result is of one of the given types.
 func (ev *evaluator) evalOneOf(e Expr, t1, t2 ValueType) Value {
 	val := ev.eval(e)
@@ -822,7 +812,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if ev.EndTimestamp == ev.Timestamp {
 					mat := make(Matrix, len(v))
 					for i, s := range v {
-            mat[i] = Series{Metric: s.Metric, Points: []Point{Point{V: s.Point.V, T: ts}}}
+						mat[i] = Series{Metric: s.Metric, Points: []Point{Point{V: s.Point.V, T: ts}}}
 					}
 					return mat
 				}
