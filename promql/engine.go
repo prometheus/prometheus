@@ -806,6 +806,18 @@ func (ev *evaluator) eval(expr Expr) Value {
 				return e.Func.FastCall(v, e.Args)
 			}, e.Args...)
 		}
+	case *ParenExpr:
+		return ev.eval(e.Expr)
+	case *UnaryExpr:
+		return rangeWrapper(func(v []Value) Vector {
+			vec := v[0].(Vector)
+			if e.Op == itemSUB {
+				for i, sv := range vec {
+					vec[i].V = -sv.V
+				}
+			}
+			return vec
+		}, e.Expr)
 	}
 
 	// Convert range evaluation into multiple instant evaluations.
@@ -913,27 +925,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *NumberLiteral:
 		return Scalar{V: e.Val, T: ev.Timestamp}
-
-	case *ParenExpr:
-		return ev.eval(e.Expr)
-
-	case *StringLiteral:
-		return String{V: e.Val, T: ev.Timestamp}
-
-	case *UnaryExpr:
-		se := ev.evalOneOf(e.Expr, ValueTypeScalar, ValueTypeVector)
-		// Only + and - are possible operators.
-		if e.Op == itemSUB {
-			switch v := se.(type) {
-			case Scalar:
-				v.V = -v.V
-			case Vector:
-				for i, sv := range v {
-					v[i].V = -sv.V
-				}
-			}
-		}
-		return se
 
 	case *VectorSelector:
 		return ev.vectorSelector(e)
