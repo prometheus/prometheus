@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -33,7 +34,7 @@ type Function struct {
 	Variadic   int
 	ReturnType ValueType
 	Call       func(ev *evaluator, args Expressions) Value
-	FastCall   func(args []Value) Vector
+	FastCall   func(vals []Value, args Expressions) Vector
 }
 
 // === time() float64 ===
@@ -510,8 +511,8 @@ func funcAbs(ev *evaluator, args Expressions) Value {
 }
 
 // === abs(Vector ValueTypeVector) Vector ===
-func funcFastAbs(args []Value) Vector {
-	vec := args[0].(Vector)
+func funcFastAbs(vals []Value, args Expressions) Vector {
+	vec := vals[0].(Vector)
 	for i := range vec {
 		el := &vec[i]
 
@@ -835,6 +836,52 @@ func funcLabelReplace(ev *evaluator, args Expressions) Value {
 	return vector
 }
 
+// === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
+func funcFastLabelReplace(vals []Value, args Expressions) Vector {
+	var (
+		vector   = vals[0].(Vector)
+		dst      = args[1].(*StringLiteral).Val
+		repl     = args[2].(*StringLiteral).Val
+		src      = args[3].(*StringLiteral).Val
+		regexStr = args[4].(*StringLiteral).Val
+	)
+
+	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
+	if err != nil {
+		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+	}
+	if !model.LabelNameRE.MatchString(string(dst)) {
+		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+	}
+
+	outSet := make(map[uint64]struct{}, len(vector))
+	for i := range vector {
+		el := &vector[i]
+
+		srcVal := el.Metric.Get(src)
+		indexes := regex.FindStringSubmatchIndex(srcVal)
+		// If there is no match, no replacement should take place.
+		if indexes == nil {
+			continue
+		}
+		res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+
+		lb := labels.NewBuilder(el.Metric).Del(dst)
+		if len(res) > 0 {
+			lb.Set(dst, string(res))
+		}
+		el.Metric = lb.Labels()
+
+		h := el.Metric.Hash()
+		if _, ok := outSet[h]; ok {
+			panic(fmt.Errorf("duplicated label set in output of label_replace(): %s", el.Metric))
+		} else {
+			outSet[h] = struct{}{}
+		}
+	}
+	return vector
+}
+
 // === Vector(s Scalar) Vector ===
 func funcVector(ev *evaluator, args Expressions) Value {
 	return Vector{
@@ -1104,6 +1151,7 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString, ValueTypeString},
 		ReturnType: ValueTypeVector,
 		Call:       funcLabelReplace,
+		FastCall:   funcFastLabelReplace,
 	},
 	"label_join": {
 		Name:       "label_join",
