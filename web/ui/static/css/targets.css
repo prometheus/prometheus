@@ -8,28 +8,6 @@ h2.danger a {
     color: rgb(242, 65, 65);
 }
 
-.filters button.unhealthy-targets {
-    background-color: white;
-    border-color: #adadad;
-    border-radius: 0;
-    color: red;
-    font-size: 0.8em;
-}
-
-.filters button.healthy-targets {
-    background-color: white;
-    border-color: #adadad;
-    border-radius: 0;
-    color: green;
-    font-size: 0.8em;
-}
-
-.filters button.unhealthy-targets.is-checked, button.healthy-targets.is-checked {
-    color: #fff;
-    background-color: #286090;
-    border-color: #204d74;
-}
-
 .table-container button.targets {
     padding: 0.3em;
     font-size: 0.6em;

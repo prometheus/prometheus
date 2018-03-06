@@ -19,11 +19,6 @@ function showUnhealthy(_, container) {
   if (isHealthy) { $(container).hide(); }
 }
 
-function showHealthy(_, container) {
-  const isUnhealthy = $(container).find("h2").attr("class").indexOf("danger") > 0;
-    if (isUnhealthy) { $(container).hide(); }
-}
-
 function init() {
   $("button.targets").click(function () {
     const tableTitle = $(this).closest("h2").find("a").attr("id");
@@ -44,33 +39,13 @@ function init() {
     }
   });
 
-  $(".filters button.unhealthy-targets, .filters button.healthy-targets").click(function(e) {
-    const button = $(e.target);
-    const icon = $(e.target).children("i");
+  $("#showTargets :input").change(function() {
+    const target = $(this).attr('id');
 
-    if (icon.hasClass("glyphicon-unchecked")) {
-      icon.removeClass("glyphicon-unchecked")
-          .addClass("glyphicon-check btn-primary");
-      button.addClass("is-checked");
-
-      if (button.hasClass("unhealthy-targets")) {
-        $(".table-container").each(showUnhealthy);
-        $(".filters button.healthy-targets").prop("disabled", true);
-      } else if (button.hasClass("healthy-targets")) {
-        $(".table-container").each(showHealthy);
-        $(".filters button.unhealthy-targets").prop("disabled", true);
-      }
-    } else if (icon.hasClass("glyphicon-check")) {
-      if (button.hasClass("unhealthy-targets")) {
-        $(".filters button.healthy-targets").prop("disabled", false);
-      } else if (button.hasClass("healthy-targets")) {
-        $(".filters button.unhealthy-targets").prop("disabled", false);
-      }
-      icon.removeClass("glyphicon-check btn-primary")
-          .addClass("glyphicon-unchecked");
-      button.removeClass("is-checked");
-
+    if (target == 'all-targets') {
       $(".table-container").each(showAll);
+    } else if (target == 'unhealthy-targets') {
+      $(".table-container").each(showUnhealthy);
     }
   });
 }
