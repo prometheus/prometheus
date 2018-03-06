@@ -366,8 +366,8 @@ func funcScalar(ev *evaluator, args Expressions) Value {
 	}
 }
 
-func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]Point) float64) Value {
-	mat := ev.evalMatrix(args[0])
+func aggrOverTime(vals []Value, ts int64, aggrFn func([]Point) float64) Vector {
+	mat := vals[0].(Matrix)
 	resultVector := Vector{}
 
 	for _, el := range mat {
@@ -377,15 +377,15 @@ func aggrOverTime(ev *evaluator, args Expressions, aggrFn func([]Point) float64)
 
 		resultVector = append(resultVector, Sample{
 			Metric: dropMetricName(el.Metric),
-			Point:  Point{V: aggrFn(el.Points), T: ev.Timestamp},
+			Point:  Point{V: aggrFn(el.Points), T: ts},
 		})
 	}
 	return resultVector
 }
 
 // === avg_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcAvgOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcAvgOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
 			sum += v.V
@@ -395,8 +395,8 @@ func funcAvgOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === count_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcCountOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcCountOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		return float64(len(values))
 	})
 }
@@ -414,8 +414,8 @@ func funcFloor(ev *evaluator, args Expressions) Value {
 }
 
 // === max_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMaxOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcMaxOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		max := math.Inf(-1)
 		for _, v := range values {
 			max = math.Max(max, float64(v.V))
@@ -425,8 +425,8 @@ func funcMaxOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === min_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMinOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcMinOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		min := math.Inf(1)
 		for _, v := range values {
 			min = math.Min(min, float64(v.V))
@@ -436,8 +436,8 @@ func funcMinOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === sum_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcSumOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcSumOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
 			sum += v.V
@@ -471,8 +471,8 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStddevOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcStddevOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
 			sum += v.V
@@ -485,8 +485,8 @@ func funcStddevOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStdvarOverTime(ev *evaluator, args Expressions) Value {
-	return aggrOverTime(ev, args, func(values []Point) float64 {
+func funcStdvarOverTime(vals []Value, args Expressions, ts int64) Vector {
+	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
 			sum += v.V
@@ -972,7 +972,7 @@ var functions = map[string]*Function{
 		Name:       "avg_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcAvgOverTime,
+		FastCall:   funcAvgOverTime,
 	},
 	"ceil": {
 		Name:       "ceil",
@@ -1002,7 +1002,7 @@ var functions = map[string]*Function{
 		Name:       "count_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcCountOverTime,
+		FastCall:   funcCountOverTime,
 	},
 	"days_in_month": {
 		Name:       "days_in_month",
@@ -1121,13 +1121,13 @@ var functions = map[string]*Function{
 		Name:       "max_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcMaxOverTime,
+		FastCall:   funcMaxOverTime,
 	},
 	"min_over_time": {
 		Name:       "min_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcMinOverTime,
+		FastCall:   funcMinOverTime,
 	},
 	"minute": {
 		Name:       "minute",
@@ -1202,19 +1202,19 @@ var functions = map[string]*Function{
 		Name:       "stddev_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcStddevOverTime,
+		FastCall:   funcStddevOverTime,
 	},
 	"stdvar_over_time": {
 		Name:       "stdvar_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcStdvarOverTime,
+		FastCall:   funcStdvarOverTime,
 	},
 	"sum_over_time": {
 		Name:       "sum_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcSumOverTime,
+		FastCall:   funcSumOverTime,
 	},
 	"time": {
 		Name:       "time",
