@@ -5,7 +5,7 @@ machine:
     DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.10-base
     REPO_PATH: github.com/prometheus/prometheus
   pre:
-    - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
+    - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.10.0-circleci'
     - sudo chmod 0755 /usr/bin/docker
     - sudo curl -L 'https://github.com/aktau/github-release/releases/download/v0.6.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C $HOME/bin
   services:
