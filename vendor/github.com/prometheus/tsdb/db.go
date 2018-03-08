@@ -42,7 +42,7 @@ import (
 )
 
 // DefaultOptions used for the DB. They are sane for setups using
-// millisecond precision timestampdb.
+// millisecond precision timestamps.
 var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
@@ -633,8 +633,9 @@ func (db *DB) EnableCompactions() {
 	level.Info(db.logger).Log("msg", "compactions enabled")
 }
 
-// Snapshot writes the current data to the directory.
-func (db *DB) Snapshot(dir string) error {
+// Snapshot writes the current data to the directory. If withHead is set to true it
+// will create a new block containing all data that's currently in the memory buffer/WAL.
+func (db *DB) Snapshot(dir string, withHead bool) error {
 	if dir == db.dir {
 		return errors.Errorf("cannot snapshot into base directory")
 	}
@@ -654,6 +655,9 @@ func (db *DB) Snapshot(dir string) error {
 		if err := b.Snapshot(dir); err != nil {
 			return errors.Wrapf(err, "error snapshotting block: %s", b.Dir())
 		}
+	}
+	if !withHead {
+		return nil
 	}
 	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
 	return errors.Wrap(err, "snapshot head block")
