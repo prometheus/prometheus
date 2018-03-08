@@ -204,6 +204,8 @@ load 10s
 	if err != nil {
 		t.Fatalf("unexpected error creating test: %q", err)
 	}
+	defer test.Close()
+
 	err = test.Run()
 	if err != nil {
 		t.Fatalf("unexpected error initializing test: %q", err)
