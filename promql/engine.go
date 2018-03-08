@@ -961,7 +961,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching) Vec
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op itemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool) Vector {
+func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool) Vector {
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
@@ -1099,7 +1099,7 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op itemType, matching *VectorMatching) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching) labels.Labels {
 	lb := labels.NewBuilder(lhs)
 
 	if shouldDropMetricName(op) {
@@ -1134,7 +1134,7 @@ func resultMetric(lhs, rhs labels.Labels, op itemType, matching *VectorMatching)
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorscalarBinop(op itemType, lhs Vector, rhs Scalar, swap, returnBool bool) Vector {
+func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool) Vector {
 	vec := make(Vector, 0, len(lhs))
 
 	for _, lhsSample := range lhs {
@@ -1169,7 +1169,7 @@ func dropMetricName(l labels.Labels) labels.Labels {
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
-func scalarBinop(op itemType, lhs, rhs float64) float64 {
+func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 	switch op {
 	case itemADD:
 		return lhs + rhs
@@ -1200,7 +1200,7 @@ func scalarBinop(op itemType, lhs, rhs float64) float64 {
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
-func vectorElemBinop(op itemType, lhs, rhs float64) (float64, bool) {
+func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 	switch op {
 	case itemADD:
 		return lhs + rhs, true
@@ -1255,7 +1255,7 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
-func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, param Expr, vec Vector) Vector {
+func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param Expr, vec Vector) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
@@ -1461,7 +1461,7 @@ func btos(b bool) float64 {
 
 // shouldDropMetricName returns whether the metric name should be dropped in the
 // result of the op operation.
-func shouldDropMetricName(op itemType) bool {
+func shouldDropMetricName(op ItemType) bool {
 	switch op {
 	case itemADD, itemSUB, itemDIV, itemMUL, itemMOD:
 		return true
