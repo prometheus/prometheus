@@ -36,6 +36,7 @@ func NewBenchmark(b *testing.B, input string) *Benchmark {
 
 // Run runs the benchmark.
 func (b *Benchmark) Run() {
+	defer b.t.Close()
 	b.b.ReportAllocs()
 	b.b.ResetTimer()
 	for i := 0; i < b.b.N; i++ {
