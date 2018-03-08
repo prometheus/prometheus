@@ -951,8 +951,10 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
   `target_label` to `replacement`, with match group references
   (`${1}`, `${2}`, ...) in `replacement` substituted by their value. If `regex`
   does not match, no replacement takes place.
-* `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
-* `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
+* `keep`: Drop targets for which the concatenated `source_labels` does not match `regex` 
+   , nor the value of `target\_label` if specified.
+* `drop`: Drop targets for which the concatenated `source_labels` match `regex`, or the value of `target\_label`
+   if specified.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
 * `labelmap`: Match `regex` against all label names. Then copy the values of the matching labels
    to label names given by `replacement` with match group references
