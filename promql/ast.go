@@ -99,7 +99,7 @@ type Expressions []Expr
 
 // AggregateExpr represents an aggregation operation on a Vector.
 type AggregateExpr struct {
-	Op       itemType // The used aggregation operation.
+	Op       ItemType // The used aggregation operation.
 	Expr     Expr     // The Vector expression over which is aggregated.
 	Param    Expr     // Parameter used by some aggregators.
 	Grouping []string // The labels by which to group the Vector.
@@ -108,7 +108,7 @@ type AggregateExpr struct {
 
 // BinaryExpr represents a binary expression between two child expressions.
 type BinaryExpr struct {
-	Op       itemType // The operation of the expression.
+	Op       ItemType // The operation of the expression.
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 
 	// The matching behavior for the operation if both operands are Vectors.
@@ -156,7 +156,7 @@ type StringLiteral struct {
 // UnaryExpr represents a unary operation on another expression.
 // Currently unary operations are only supported for Scalars.
 type UnaryExpr struct {
-	Op   itemType
+	Op   ItemType
 	Expr Expr
 }
 
