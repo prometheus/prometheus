@@ -8,6 +8,10 @@ h2.danger a {
     color: rgb(242, 65, 65);
 }
 
+div#showTargets .btn {
+    border-radius: 0px;
+}
+
 .table-container button.targets {
     padding: 0.3em;
     font-size: 0.6em;
