@@ -385,11 +385,6 @@ func (ev *evalCmd) compareResult(result Value) error {
 			return fmt.Errorf("received instant result on range evaluation")
 		}
 
-		fmt.Println("vector result", len(val), ev.expr)
-		for _, ss := range val {
-			fmt.Println("    ", ss.Metric, ss.Point)
-		}
-
 		seen := map[uint64]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Hash()
@@ -408,6 +403,10 @@ func (ev *evalCmd) compareResult(result Value) error {
 		}
 		for fp, expVals := range ev.expected {
 			if !seen[fp] {
+				fmt.Println("vector result", len(val), ev.expr)
+				for _, ss := range val {
+					fmt.Println("    ", ss.Metric, ss.Point)
+				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}
