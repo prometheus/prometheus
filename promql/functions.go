@@ -197,18 +197,15 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 // The argument "s" is the set of computed smoothed values.
 // The argument "b" is the set of computed trend factors.
 // The argument "d" is the set of raw input values.
-func calcTrendValue(i int, sf, tf float64, s, b, d []float64) float64 {
+func calcTrendValue(i int, sf, tf, s0, s1, b float64) float64 {
 	if i == 0 {
-		return b[0]
+		return b
 	}
 
-	x := tf * (s[i] - s[i-1])
-	y := (1 - tf) * b[i-1]
+	x := tf * (s1 - s0)
+	y := (1 - tf) * b
 
-	// Cache the computed value.
-	b[i] = x + y
-
-	return b[i]
+	return x + y
 }
 
 // Holt-Winters is similar to a weighted moving average, where historical data has exponentially less influence on the current data.
@@ -233,9 +230,6 @@ func funcHoltWinters(vals []Value, args Expressions, ts int64, out Vector) Vecto
 		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1 goT: %f", sf))
 	}
 
-	// Create scratch values.
-	var s, b, d []float64
-
 	var l int
 	for _, samples := range mat {
 		l = len(samples.Points)
@@ -245,37 +239,27 @@ func funcHoltWinters(vals []Value, args Expressions, ts int64, out Vector) Vecto
 			continue
 		}
 
-		// Resize scratch values.
-		if l != len(s) {
-			s = make([]float64, l)
-			b = make([]float64, l)
-			d = make([]float64, l)
-		}
-
-		// Fill in the d values with the raw values from the input.
-		for i, v := range samples.Points {
-			d[i] = v.V
-		}
-
+		var s0, s1, b float64
 		// Set initial values.
-		s[0] = d[0]
-		b[0] = d[1] - d[0]
+		s1 = samples.Points[0].V
+		b = samples.Points[1].V - samples.Points[0].V
 
 		// Run the smoothing operation.
 		var x, y float64
-		for i := 1; i < len(d); i++ {
+		for i := 1; i < l; i++ {
 
 			// Scale the raw value against the smoothing factor.
-			x = sf * d[i]
+			x = sf * samples.Points[i].V
 
 			// Scale the last smoothed value with the trend at this point.
-			y = (1 - sf) * (s[i-1] + calcTrendValue(i-1, sf, tf, s, b, d))
+			b = calcTrendValue(i-1, sf, tf, s0, s1, b)
+			y = (1 - sf) * (s1 + b)
 
-			s[i] = x + y
+			s0, s1 = s1, x+y
 		}
 
 		out = append(out, Sample{
-			Point: Point{V: s[len(s)-1]}, // The last value in the Vector is the smoothed result.
+			Point: Point{V: s1}, // The last value in the Vector is the smoothed result.
 		})
 	}
 
