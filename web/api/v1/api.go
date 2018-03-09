@@ -657,6 +657,8 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError) {
 	if !api.enableAdmin {
 		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}
 	}
+	skipHead, _ := strconv.ParseBool(r.FormValue("skip_head"))
+
 	db := api.db()
 	if db == nil {
 		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}
@@ -672,7 +674,7 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %s", err)}
 	}
-	if err := db.Snapshot(dir); err != nil {
+	if err := db.Snapshot(dir, !skipHead); err != nil {
 		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot: %s", err)}
 	}
 

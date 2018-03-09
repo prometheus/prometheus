@@ -28,6 +28,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -346,10 +347,7 @@ func (h *Handler) Ready() {
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
 	ready := atomic.LoadUint32(&h.ready)
-	if ready == 0 {
-		return false
-	}
-	return true
+	return ready > 0
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
@@ -559,15 +557,21 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "status.html", struct {
-		Birth         time.Time
-		CWD           string
-		Version       *PrometheusVersion
-		Alertmanagers []*url.URL
+		Birth          time.Time
+		CWD            string
+		Version        *PrometheusVersion
+		Alertmanagers  []*url.URL
+		GoroutineCount int
+		GOMAXPROCS     int
+		GOGC           string
 	}{
-		Birth:         h.birth,
-		CWD:           h.cwd,
-		Version:       h.versionInfo,
-		Alertmanagers: h.notifier.Alertmanagers(),
+		Birth:          h.birth,
+		CWD:            h.cwd,
+		Version:        h.versionInfo,
+		Alertmanagers:  h.notifier.Alertmanagers(),
+		GoroutineCount: runtime.NumGoroutine(),
+		GOMAXPROCS:     runtime.GOMAXPROCS(0),
+		GOGC:           os.Getenv("GOGC"),
 	})
 }
 
