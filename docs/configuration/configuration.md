@@ -670,6 +670,8 @@ Available meta labels:
   * `__meta_kubernetes_endpoint_ready`: Set to `true` or `false` for the endpoint's ready state.
   * `__meta_kubernetes_endpoint_port_name`: Name of the endpoint port.
   * `__meta_kubernetes_endpoint_port_protocol`: Protocol of the endpoint port.
+  * `__meta_kubernetes_endpoint_address_target_kind`: Kind of the endpoint address target.
+  * `__meta_kubernetes_endpoint_address_target_name`: Name of the endpoint address target.
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 

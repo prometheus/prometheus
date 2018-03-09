@@ -178,10 +178,12 @@ func endpointsSource(ep *apiv1.Endpoints) string {
 }
 
 const (
-	endpointsNameLabel        = metaLabelPrefix + "endpoints_name"
-	endpointReadyLabel        = metaLabelPrefix + "endpoint_ready"
-	endpointPortNameLabel     = metaLabelPrefix + "endpoint_port_name"
-	endpointPortProtocolLabel = metaLabelPrefix + "endpoint_port_protocol"
+	endpointsNameLabel             = metaLabelPrefix + "endpoints_name"
+	endpointReadyLabel             = metaLabelPrefix + "endpoint_ready"
+	endpointPortNameLabel          = metaLabelPrefix + "endpoint_port_name"
+	endpointPortProtocolLabel      = metaLabelPrefix + "endpoint_port_protocol"
+	endpointAddressTargetKindLabel = metaLabelPrefix + "endpoint_address_target_kind"
+	endpointAddressTargetNameLabel = metaLabelPrefix + "endpoint_address_target_name"
 )
 
 func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
@@ -208,6 +210,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 			endpointPortNameLabel:     lv(port.Name),
 			endpointPortProtocolLabel: lv(string(port.Protocol)),
 			endpointReadyLabel:        lv(ready),
+		}
+
+		if addr.TargetRef != nil {
+			target[model.LabelName(endpointAddressTargetKindLabel)] = lv(addr.TargetRef.Kind)
+			target[model.LabelName(endpointAddressTargetNameLabel)] = lv(addr.TargetRef.Name)
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
