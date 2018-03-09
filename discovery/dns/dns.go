@@ -295,7 +295,7 @@ func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logg
 
 	for _, server := range conf.Servers {
 		servAddr := net.JoinHostPort(server, conf.Port)
-		msg, err := askServerForName(name, qtype, client, servAddr, false)
+		msg, err := askServerForName(name, qtype, client, servAddr, true)
 		if err != nil {
 			level.Warn(logger).Log("msg", "DNS resolution failed", "server", server, "name", name, "err", err)
 			continue
@@ -311,8 +311,8 @@ func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logg
 }
 
 // askServerForName makes a request to a specific DNS server for a specific
-// name (and qtype).  Retries in the event of response truncation, but
-// otherwise just sends back whatever the server gave, whether that be a
+// name (and qtype).  Retries with TCP in the event of response truncation,
+// but otherwise just sends back whatever the server gave, whether that be a
 // valid-looking response, or an error.
 func askServerForName(name string, queryType uint16, client *dns.Client, servAddr string, edns bool) (*dns.Msg, error) {
 	msg := &dns.Msg{}
@@ -327,10 +327,9 @@ func askServerForName(name string, queryType uint16, client *dns.Client, servAdd
 		if client.Net == "tcp" {
 			return nil, fmt.Errorf("got truncated message on TCP (64kiB limit exceeded?)")
 		}
-		if edns { // Truncated even though EDNS is used
-			client.Net = "tcp"
-		}
-		return askServerForName(name, queryType, client, servAddr, !edns)
+
+		client.Net = "tcp"
+		return askServerForName(name, queryType, client, servAddr, false)
 	}
 	if err != nil {
 		return nil, err
