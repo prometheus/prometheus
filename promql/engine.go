@@ -799,7 +799,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 							mat = append(mat, ss)
 						}
 					}
-          putPointSlice(points)
+					putPointSlice(points)
 					return mat
 				}
 			}
