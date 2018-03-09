@@ -216,25 +216,22 @@ func calcTrendValue(i int, sf, tf float64, s, b, d []float64) float64 {
 // data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
 // how trends in historical data will affect the current data. A higher trend factor increases the influence.
 // of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
-func funcHoltWinters(ev *evaluator, args Expressions) Value {
-	mat := ev.evalMatrix(args[0])
+func funcHoltWinters(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	mat := vals[0].(Matrix)
 
 	// The smoothing factor argument.
-	sf := ev.evalFloat(args[1])
+	sf := vals[1].(Vector)[0].V
 
 	// The trend factor argument.
-	tf := ev.evalFloat(args[2])
+	tf := vals[2].(Vector)[0].V
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
-		ev.errorf("invalid smoothing factor. Expected: 0 < sf < 1 goT: %f", sf)
+		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1 goT: %f", sf))
 	}
 	if tf <= 0 || tf >= 1 {
-		ev.errorf("invalid trend factor. Expected: 0 < tf < 1 goT: %f", sf)
+		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1 goT: %f", sf))
 	}
-
-	// Make an output Vector large enough to hold the entire result.
-	resultVector := make(Vector, 0, len(mat))
 
 	// Create scratch values.
 	var s, b, d []float64
@@ -277,13 +274,12 @@ func funcHoltWinters(ev *evaluator, args Expressions) Value {
 			s[i] = x + y
 		}
 
-		resultVector = append(resultVector, Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: s[len(s)-1], T: ev.Timestamp}, // The last value in the Vector is the smoothed result.
+		out = append(out, Sample{
+			Point: Point{V: s[len(s)-1]}, // The last value in the Vector is the smoothed result.
 		})
 	}
 
-	return resultVector
+	return out
 }
 
 // === sort(node ValueTypeVector) Vector ===
@@ -447,27 +443,24 @@ func funcSumOverTime(vals []Value, args Expressions, ts int64, out Vector) Vecto
 }
 
 // === quantile_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
-	q := ev.evalFloat(args[0])
-	mat := ev.evalMatrix(args[1])
-	resultVector := Vector{}
+func funcQuantileOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	q := vals[0].(Vector)[0].V
+	mat := vals[1].(Matrix)
 
 	for _, el := range mat {
 		if len(el.Points) == 0 {
 			continue
 		}
 
-		el.Metric = dropMetricName(el.Metric)
 		values := make(vectorByValueHeap, 0, len(el.Points))
 		for _, v := range el.Points {
 			values = append(values, Sample{Point: Point{V: v.V}})
 		}
-		resultVector = append(resultVector, Sample{
-			Metric: el.Metric,
-			Point:  Point{V: quantile(q, values), T: ev.Timestamp},
+		out = append(out, Sample{
+			Point: Point{V: quantile(q, values)},
 		})
 	}
-	return resultVector
+	return out
 }
 
 // === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
@@ -668,10 +661,9 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 }
 
 // === predict_linear(node ValueTypeMatrix, k ValueTypeScalar) Vector ===
-func funcPredictLinear(ev *evaluator, args Expressions) Value {
-	mat := ev.evalMatrix(args[0])
-	resultVector := make(Vector, 0, len(mat))
-	duration := ev.evalFloat(args[1])
+func funcPredictLinear(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	mat := vals[0].(Matrix)
+	duration := vals[1].(Vector)[0].V
 
 	for _, samples := range mat {
 		// No sense in trying to predict anything without at least two points.
@@ -679,14 +671,13 @@ func funcPredictLinear(ev *evaluator, args Expressions) Value {
 		if len(samples.Points) < 2 {
 			continue
 		}
-		slope, intercept := linearRegression(samples.Points, ev.Timestamp)
+		slope, intercept := linearRegression(samples.Points, ts)
 
-		resultVector = append(resultVector, Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: slope*duration + intercept, T: ev.Timestamp},
+		out = append(out, Sample{
+			Point: Point{V: slope*duration + intercept},
 		})
 	}
-	return resultVector
+	return out
 }
 
 // === histogram_quantile(k ValueTypeScalar, Vector ValueTypeVector) Vector ===
@@ -1057,7 +1048,7 @@ var functions = map[string]*Function{
 		Name:       "holt_winters",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
-		Call:       funcHoltWinters,
+		FastCall:   funcHoltWinters,
 	},
 	"hour": {
 		Name:       "hour",
@@ -1145,13 +1136,13 @@ var functions = map[string]*Function{
 		Name:       "predict_linear",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
-		Call:       funcPredictLinear,
+		FastCall:   funcPredictLinear,
 	},
 	"quantile_over_time": {
 		Name:       "quantile_over_time",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcQuantileOverTime,
+		FastCall:   funcQuantileOverTime,
 	},
 	"rate": {
 		Name:       "rate",
