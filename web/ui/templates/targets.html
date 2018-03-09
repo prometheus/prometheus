@@ -7,11 +7,14 @@
 {{define "content"}}
   <div class="container-fluid">
     <h1>Targets</h1>
-    <div class="filters">
-     <button type="button" class="targets btn btn-primary unhealthy-targets">
-        <i class="glyphicon glyphicon-unchecked"></i> Only unhealthy jobs
-      </button>
-    </div>
+    <div id="showTargets" class="btn-group" data-toggle="buttons">
+      <label class="btn btn-primary active">
+        <input type="radio" name="targets" id="all-targets" autocomplete="off" checked> All
+      </label>
+      <label class="btn btn-primary">
+        <input type="radio" name="targets" id="unhealthy-targets" autocomplete="off"> Unhealthy
+      </label>
+  </div>
 
     {{range $job, $pool := .TargetPools}}
     {{$healthy := numHealthy $pool}}
