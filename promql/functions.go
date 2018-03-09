@@ -34,11 +34,11 @@ type Function struct {
 	Variadic   int
 	ReturnType ValueType
 	Call       func(ev *evaluator, args Expressions) Value
-	FastCall   func(vals []Value, args Expressions, ts int64) Vector
+	FastCall   func(vals []Value, args Expressions, ts int64, out Vector) Vector
 }
 
 // === time() float64 ===
-func funcTime(vals []Value, args Expressions, ts int64) Vector {
+func funcTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return Vector{Sample{Point: Point{
 		V: float64(ts) / 1000,
 		T: ts,
@@ -384,7 +384,7 @@ func aggrOverTime(vals []Value, ts int64, aggrFn func([]Point) float64) Vector {
 }
 
 // === avg_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcAvgOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcAvgOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
@@ -395,7 +395,7 @@ func funcAvgOverTime(vals []Value, args Expressions, ts int64) Vector {
 }
 
 // === count_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcCountOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcCountOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		return float64(len(values))
 	})
@@ -414,7 +414,7 @@ func funcFloor(ev *evaluator, args Expressions) Value {
 }
 
 // === max_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMaxOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcMaxOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		max := math.Inf(-1)
 		for _, v := range values {
@@ -425,7 +425,7 @@ func funcMaxOverTime(vals []Value, args Expressions, ts int64) Vector {
 }
 
 // === min_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMinOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcMinOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		min := math.Inf(1)
 		for _, v := range values {
@@ -436,7 +436,7 @@ func funcMinOverTime(vals []Value, args Expressions, ts int64) Vector {
 }
 
 // === sum_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcSumOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcSumOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
@@ -471,7 +471,7 @@ func funcQuantileOverTime(ev *evaluator, args Expressions) Value {
 }
 
 // === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStddevOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcStddevOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
@@ -485,7 +485,7 @@ func funcStddevOverTime(vals []Value, args Expressions, ts int64) Vector {
 }
 
 // === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStdvarOverTime(vals []Value, args Expressions, ts int64) Vector {
+func funcStdvarOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
@@ -499,7 +499,7 @@ func funcStdvarOverTime(vals []Value, args Expressions, ts int64) Vector {
 }
 
 // === abs(Vector ValueTypeVector) Vector ===
-func funcAbs(vals []Value, args Expressions, ts int64) Vector {
+func funcAbs(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	vec := vals[0].(Vector)
 	for i := range vec {
 		el := &vec[i]
@@ -754,9 +754,8 @@ func funcResets(ev *evaluator, args Expressions) Value {
 }
 
 // === changes(Matrix ValueTypeMatrix) Vector ===
-func funcChanges(vals []Value, args Expressions, ts int64) Vector {
+func funcChanges(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	in := vals[0].(Matrix)
-	out := make(Vector, 0, len(in))
 
 	for _, samples := range in {
 		changes := 0
@@ -770,15 +769,14 @@ func funcChanges(vals []Value, args Expressions, ts int64) Vector {
 		}
 
 		out = append(out, Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: float64(changes), T: ts},
+			Point: Point{V: float64(changes), T: ts},
 		})
 	}
 	return out
 }
 
 // === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
-func funcLabelReplace(vals []Value, args Expressions, ts int64) Vector {
+func funcLabelReplace(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	var (
 		vector   = vals[0].(Vector)
 		dst      = args[1].(*StringLiteral).Val
@@ -834,7 +832,7 @@ func funcVector(ev *evaluator, args Expressions) Value {
 }
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
-func funcLabelJoin(vals []Value, args Expressions, ts int64) Vector {
+func funcLabelJoin(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	var (
 		vector    = vals[0].(Vector)
 		dst       = args[1].(*StringLiteral).Val

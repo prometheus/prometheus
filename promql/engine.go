@@ -780,23 +780,24 @@ func (ev *evaluator) eval(expr Expr) Value {
 					points := getPointSlice(16)
 					inMatrix := make(Matrix, 1)
 					inValue := []Value{inMatrix}
+					outVec := make(Vector, 0, 1)
 					// Process all the calls for one time series at a time.
 					for i, it := range sel.iterators {
-						ss := Series{}
+						ss := Series{
+							// For all range vector functions, the only change to the
+							// output labels is dropping the metric name so just do it once.
+							// and just drop the metric name once.
+							Metric: dropMetricName(sel.series[i].Labels()),
+						}
 						inMatrix[0].Metric = sel.series[i].Labels()
 						for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
 							maxt := ts - offset
 							mint := maxt - durationMilliseconds(sel.Range)
 							points = ev.matrixIterSlice(it, maxt, mint, points[:0])
 							inMatrix[0].Points = points
-							vec := e.Func.FastCall(inValue, e.Args, ts)
-							if len(vec) > 0 {
-								ss.Points = append(ss.Points, Point{V: vec[0].Point.V, T: ts})
-								if ss.Metric == nil {
-									// Output labels depend on input labels, not points,
-									// so we can use the first set of output labels we see.
-									ss.Metric = vec[0].Metric
-								}
+							outVec := e.Func.FastCall(inValue, e.Args, ts, outVec[:0])
+							if len(outVec) > 0 {
+								ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
 							}
 						}
 						if len(ss.Points) > 0 {
@@ -808,7 +809,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 			}
 			return rangeWrapper(func(v []Value, ts int64) Vector {
-				return e.Func.FastCall(v, e.Args, ts)
+				return e.Func.FastCall(v, e.Args, ts, nil)
 			}, e.Args...)
 		}
 
