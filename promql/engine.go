@@ -776,16 +776,20 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if ok {
 					mat := make(Matrix, 0, len(sel.series))
 					offset := durationMilliseconds(sel.Offset)
-					points := getPointSlice(10)
+					// Reuse objects to save memory allocations.
+					points := getPointSlice(16)
+					inMatrix := make(Matrix, 1)
+					inValue := []Value{inMatrix}
 					// Process all the calls for one time series at a time.
 					for i, it := range sel.iterators {
 						ss := Series{}
+						inMatrix[0].Metric = sel.series[i].Labels()
 						for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
 							maxt := ts - offset
 							mint := maxt - durationMilliseconds(sel.Range)
 							points = ev.matrixIterSlice(it, maxt, mint, points[:0])
-							inMatrix := Matrix{Series{Metric: sel.series[i].Labels(), Points: points}}
-							vec := e.Func.FastCall([]Value{inMatrix}, e.Args, ts)
+							inMatrix[0].Points = points
+							vec := e.Func.FastCall(inValue, e.Args, ts)
 							if len(vec) > 0 {
 								ss.Points = append(ss.Points, Point{V: vec[0].Point.V, T: ts})
 								if ss.Metric == nil {
