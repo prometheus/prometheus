@@ -195,6 +195,87 @@ func TestRelabel(t *testing.T) {
 			}),
 		},
 		{
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "bar",
+			}),
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Regex:        config.MustNewRegexp(""),
+					Action:       config.RelabelKeep,
+				},
+			},
+			output: nil,
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "foo",
+			}),
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Regex:        config.MustNewRegexp(""),
+					Action:       config.RelabelKeep,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "foo",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "foo",
+			}),
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Regex:        config.MustNewRegexp(""),
+					Action:       config.RelabelDrop,
+				},
+			},
+			output: nil,
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "bar",
+			}),
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Regex:        config.MustNewRegexp(""),
+					Action:       config.RelabelDrop,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "bar",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "foo",
+			}),
+			relabel: []*config.RelabelConfig{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Regex:        config.MustNewRegexp("x.+"),
+					Action:       config.RelabelDrop,
+				},
+			},
+			output: nil,
+		},
+		{
 			// No replacement must be applied if there is no match.
 			input: labels.FromMap(map[string]string{
 				"a": "boo",

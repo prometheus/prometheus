@@ -45,17 +45,23 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 	}
 	val := strings.Join(values, cfg.Separator)
 
+	targetVal := ""
+	if lset.Has(cfg.TargetLabel) {
+		targetVal = lset.Get(cfg.TargetLabel)
+	}
+
 	lb := labels.NewBuilder(lset)
 
 	switch cfg.Action {
 	case config.RelabelDrop:
-		if cfg.Regex.MatchString(val) {
+		if (cfg.TargetLabel != "" && val == targetVal) || cfg.Regex.MatchString(val) {
 			return nil
 		}
 	case config.RelabelKeep:
-		if !cfg.Regex.MatchString(val) {
-			return nil
+		if (cfg.TargetLabel != "" && val == targetVal) || cfg.Regex.MatchString(val) {
+			return lb.Labels()
 		}
+		return nil
 	case config.RelabelReplace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
