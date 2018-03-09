@@ -10,24 +10,20 @@ function init() {
     $(this).next().toggle();
   });
 
-  $(".filters button.show-annotations").click(function(e) {
-    const button = $(e.target);
-    const icon = $(e.target).children("i");
+  $("div.show-annotations").click(function() {
+    const targetEl = $('div.show-annotations');
+    const icon = $(targetEl).children('i');
 
-    if (icon.hasClass("glyphicon-unchecked")) {
-      icon.removeClass("glyphicon-unchecked")
-          .addClass("glyphicon-check btn-primary");
-      button.addClass("is-checked");
-
-      $(".alert_annotations").show();
-      $(".alert_annotations_header").show();
-    } else if (icon.hasClass("glyphicon-check")) {
-      icon.removeClass("glyphicon-check btn-primary")
-          .addClass("glyphicon-unchecked");
-      button.removeClass("is-checked");
-
-      $(".alert_annotations").hide();
-      $(".alert_annotations_header").hide();
+    if (icon.hasClass('glyphicon-unchecked')) {
+        $(".alert_annotations").show();
+        $(".alert_annotations_header").show();
+        $(targetEl).children('i').removeClass('glyphicon-unchecked').addClass('glyphicon-check');
+        targetEl.addClass('is-checked');
+    } else if (icon.hasClass('glyphicon-check')) {
+        $(".alert_annotations").hide();
+        $(".alert_annotations_header").hide();
+        $(targetEl).children('i').removeClass('glyphicon-check').addClass('glyphicon-unchecked');
+        targetEl.removeClass('is-checked');
     }
   });
 }
