@@ -26,6 +26,8 @@ PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_NAME       ?= prometheus
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+MACH                    ?= $(shell uname -m)
+DOCKERFILE              ?= Dockerfile
 
 ifdef DEBUG
 	bindata_flags = -debug
@@ -84,8 +86,11 @@ tarball: promu
 	@$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
 docker:
-	@echo ">> building docker image"
-	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+ifeq ($(MACH), ppc64le)
+	$(eval DOCKERFILE=Dockerfile.ppc64le)
+endif
+	@echo ">> building docker image from $(DOCKERFILE)"
+	@docker build --file $(DOCKERFILE) -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
 assets:
 	@echo ">> writing assets"
