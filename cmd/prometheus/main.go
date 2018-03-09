@@ -134,10 +134,10 @@ func main() {
 	a.Flag("web.user-assets", "Path to static asset directory, available at /user.").
 		PlaceHolder("<path>").StringVar(&cfg.web.UserAssetsPath)
 
-	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request.").
+	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request. Defaults to false.").
 		Default("false").BoolVar(&cfg.web.EnableLifecycle)
 
-	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions.").
+	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions. Defaults to false.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
@@ -159,7 +159,7 @@ func main() {
 	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
-	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
+	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory. By default creates and consider lockfile.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending alert manager notifications.").
