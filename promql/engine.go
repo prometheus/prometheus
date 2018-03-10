@@ -769,6 +769,17 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}, e.Expr)
 
 	case *Call:
+		if e.Func.Name == "timestamp" {
+			// Matrix evaluation always returns the evaluation time,
+			// so this function needs special handling when given
+			// a vector selector.
+			vs, ok := e.Args[0].(*VectorSelector)
+			if ok {
+				return rangeWrapper(func(v []Value, ts int64) Vector {
+					return e.Func.FastCall([]Value{ev.vectorSelector(vs, ts)}, e.Args, ts, nil)
+				})
+			}
+		}
 		if e.Func.FastCall != nil {
 			// Check if the function has a matrix argument.
 			for matrixArgIndex, a := range e.Args {
@@ -977,16 +988,16 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.matrixSelector(e)
 
 	case *VectorSelector:
-		return ev.vectorSelector(e)
+		return ev.vectorSelector(e, ev.Timestamp)
 	}
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
 // vectorSelector evaluates a *VectorSelector expression.
-func (ev *evaluator) vectorSelector(node *VectorSelector) Vector {
+func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 	var (
 		vec     = make(Vector, 0, len(node.series))
-		refTime = ev.Timestamp - durationMilliseconds(node.Offset)
+		refTime = ts - durationMilliseconds(node.Offset)
 	)
 
 	for i, it := range node.iterators {
