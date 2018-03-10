@@ -389,17 +389,6 @@ func funcCountOverTime(vals []Value, args Expressions, ts int64, out Vector) Vec
 }
 
 // === floor(Vector ValueTypeVector) Vector ===
-func funcFloor(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Floor(float64(el.V))
-	}
-	return vec
-}
-
 // === max_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	return aggrOverTime(vals, ts, func(values []Point) float64 {
@@ -482,18 +471,6 @@ func funcStdvarOverTime(vals []Value, args Expressions, ts int64, out Vector) Ve
 	})
 }
 
-// === abs(Vector ValueTypeVector) Vector ===
-func funcAbs(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	vec := vals[0].(Vector)
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Abs(float64(el.V))
-	}
-	return vec
-}
-
 // === absent(Vector ValueTypeVector) Vector ===
 func funcAbsent(ev *evaluator, args Expressions) Value {
 	if len(ev.evalVector(args[0])) > 0 {
@@ -516,76 +493,54 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 	}
 }
 
-// === ceil(Vector ValueTypeVector) Vector ===
-func funcCeil(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Ceil(float64(el.V))
+func simpleFunc(vals []Value, out Vector, f func(float64) float64) Vector {
+	for _, el := range vals[0].(Vector) {
+		out = append(out, Sample{
+			Metric: dropMetricName(el.Metric),
+			Point:  Point{V: f(el.V)},
+		})
 	}
-	return vec
+	return out
+}
+
+// === abs(Vector ValueTypeVector) Vector ===
+func funcAbs(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Abs)
+}
+
+// === ceil(Vector ValueTypeVector) Vector ===
+func funcCeil(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Ceil)
+}
+
+// === floor(Vector ValueTypeVector) Vector ===
+func funcFloor(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Floor)
 }
 
 // === exp(Vector ValueTypeVector) Vector ===
-func funcExp(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Exp(float64(el.V))
-	}
-	return vec
+func funcExp(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Exp)
 }
 
 // === sqrt(Vector VectorNode) Vector ===
-func funcSqrt(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Sqrt(float64(el.V))
-	}
-	return vec
+func funcSqrt(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Sqrt)
 }
 
 // === ln(Vector ValueTypeVector) Vector ===
-func funcLn(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Log(float64(el.V))
-	}
-	return vec
+func funcLn(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Log)
 }
 
 // === log2(Vector ValueTypeVector) Vector ===
-func funcLog2(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Log2(float64(el.V))
-	}
-	return vec
+func funcLog2(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Log2)
 }
 
 // === log10(Vector ValueTypeVector) Vector ===
-func funcLog10(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Log10(float64(el.V))
-	}
-	return vec
+func funcLog10(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return simpleFunc(vals, out, math.Log10)
 }
 
 // === timestamp(Vector ValueTypeVector) Vector ===
@@ -955,7 +910,7 @@ var functions = map[string]*Function{
 		Name:       "ceil",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcCeil,
+		FastCall:   funcCeil,
 	},
 	"changes": {
 		Name:       "changes",
@@ -1018,13 +973,13 @@ var functions = map[string]*Function{
 		Name:       "exp",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcExp,
+		FastCall:   funcExp,
 	},
 	"floor": {
 		Name:       "floor",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcFloor,
+		FastCall:   funcFloor,
 	},
 	"histogram_quantile": {
 		Name:       "histogram_quantile",
@@ -1080,19 +1035,19 @@ var functions = map[string]*Function{
 		Name:       "ln",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcLn,
+		FastCall:   funcLn,
 	},
 	"log10": {
 		Name:       "log10",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcLog10,
+		FastCall:   funcLog10,
 	},
 	"log2": {
 		Name:       "log2",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcLog2,
+		FastCall:   funcLog2,
 	},
 	"max_over_time": {
 		Name:       "max_over_time",
@@ -1173,7 +1128,7 @@ var functions = map[string]*Function{
 		Name:       "sqrt",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcSqrt,
+		FastCall:   funcSqrt,
 	},
 	"stddev_over_time": {
 		Name:       "stddev_over_time",
