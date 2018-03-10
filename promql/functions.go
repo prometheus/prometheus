@@ -44,6 +44,10 @@ type Function struct {
 	// ts is the evaluation timestamp.
 	// out is a pre-allocated empty vector that you may use to accumulate
 	//    output before returning it. The vectors in vals should not be returned.a
+	// Range vector functions need only return a vector with the right value,
+	//     the metric and timestamp are not neded.
+	// Range vector functions need only return a vector with the right value and
+	//     metric, the timestamp is not needed.
 	// Scalar results should be returned as the value of a sample in a Vector.
 	FastCall func(vals []Value, args Expressions, ts int64, out Vector) Vector
 }
@@ -318,24 +322,25 @@ func funcClampMin(vals []Value, args Expressions, ts int64, out Vector) Vector {
 }
 
 // === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
-func funcRound(ev *evaluator, args Expressions) Value {
+func funcRound(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	vec := vals[0].(Vector)
 	// round returns a number rounded to toNearest.
 	// Ties are solved by rounding up.
 	toNearest := float64(1)
 	if len(args) >= 2 {
-		toNearest = ev.evalFloat(args[1])
+		toNearest = vals[1].(Vector)[0].Point.V
 	}
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
 
-	vec := ev.evalVector(args[0])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
+	for _, el := range vec {
+		v := math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
+		out = append(out, Sample{
+			Metric: dropMetricName(el.Metric),
+			Point:  Point{V: v},
+		})
 	}
-	return vec
+	return out
 }
 
 // === Scalar(node ValueTypeVector) Scalar ===
@@ -581,9 +586,8 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 }
 
 // === deriv(node ValueTypeMatrix) Vector ===
-func funcDeriv(ev *evaluator, args Expressions) Value {
-	mat := ev.evalMatrix(args[0])
-	resultVector := make(Vector, 0, len(mat))
+func funcDeriv(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	mat := vals[0].(Matrix)
 
 	for _, samples := range mat {
 		// No sense in trying to compute a derivative without at least two points.
@@ -596,14 +600,11 @@ func funcDeriv(ev *evaluator, args Expressions) Value {
 		// to avoid floating point accuracy issues, see
 		// https://github.com/prometheus/prometheus/issues/2674
 		slope, _ := linearRegression(samples.Points, samples.Points[0].T)
-		resultSample := Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: slope, T: ev.Timestamp},
-		}
-
-		resultVector = append(resultVector, resultSample)
+		out = append(out, Sample{
+			Point: Point{V: slope},
+		})
 	}
-	return resultVector
+	return out
 }
 
 // === predict_linear(node ValueTypeMatrix, k ValueTypeScalar) Vector ===
@@ -627,11 +628,10 @@ func funcPredictLinear(vals []Value, args Expressions, ts int64, out Vector) Vec
 }
 
 // === histogram_quantile(k ValueTypeScalar, Vector ValueTypeVector) Vector ===
-func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
-	q := ev.evalFloat(args[0])
-	inVec := ev.evalVector(args[1])
+func funcHistogramQuantile(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	q := vals[0].(Vector)[0].V
+	inVec := vals[1].(Vector)
 
-	outVec := Vector{}
 	signatureToMetricWithBuckets := map[uint64]*metricWithBuckets{}
 	for _, el := range inVec {
 		upperBound, err := strconv.ParseFloat(
@@ -657,19 +657,18 @@ func funcHistogramQuantile(ev *evaluator, args Expressions) Value {
 	}
 
 	for _, mb := range signatureToMetricWithBuckets {
-		outVec = append(outVec, Sample{
+		out = append(out, Sample{
 			Metric: mb.metric,
-			Point:  Point{V: bucketQuantile(q, mb.buckets), T: ev.Timestamp},
+			Point:  Point{V: bucketQuantile(q, mb.buckets)},
 		})
 	}
 
-	return outVec
+	return out
 }
 
 // === resets(Matrix ValueTypeMatrix) Vector ===
-func funcResets(ev *evaluator, args Expressions) Value {
-	in := ev.evalMatrix(args[0])
-	out := make(Vector, 0, len(in))
+func funcResets(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	in := vals[0].(Matrix)
 
 	for _, samples := range in {
 		resets := 0
@@ -683,8 +682,7 @@ func funcResets(ev *evaluator, args Expressions) Value {
 		}
 
 		out = append(out, Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: float64(resets), T: ev.Timestamp},
+			Point: Point{V: float64(resets)},
 		})
 	}
 	return out
@@ -967,7 +965,7 @@ var functions = map[string]*Function{
 		Name:       "deriv",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcDeriv,
+		FastCall:   funcDeriv,
 	},
 	"exp": {
 		Name:       "exp",
@@ -985,7 +983,7 @@ var functions = map[string]*Function{
 		Name:       "histogram_quantile",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcHistogramQuantile,
+		FastCall:   funcHistogramQuantile,
 	},
 	"holt_winters": {
 		Name:       "holt_winters",
@@ -1097,14 +1095,14 @@ var functions = map[string]*Function{
 		Name:       "resets",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcResets,
+		FastCall:   funcResets,
 	},
 	"round": {
 		Name:       "round",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcRound,
+		FastCall:   funcRound,
 	},
 	"scalar": {
 		Name:       "scalar",
