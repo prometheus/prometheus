@@ -864,73 +864,70 @@ func funcLabelJoin(vals []Value, args Expressions, ts int64, out Vector) Vector 
 }
 
 // Common code for date related functions.
-func dateWrapper(ev *evaluator, args Expressions, f func(time.Time) float64) Value {
-	var v Vector
-	if len(args) == 0 {
-		v = Vector{
+func dateWrapper(vals []Value, ts int64, out Vector, f func(time.Time) float64) Vector {
+	if len(vals) == 0 {
+		return append(out,
 			Sample{
 				Metric: labels.Labels{},
-				Point:  Point{V: float64(ev.Timestamp) / 1000, T: ev.Timestamp},
-			},
-		}
-	} else {
-		v = ev.evalVector(args[0])
+				Point:  Point{V: f(time.Unix(ts/1000, 0).UTC())},
+			})
 	}
-	for i := range v {
-		el := &v[i]
 
-		el.Metric = dropMetricName(el.Metric)
+	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
-		el.V = f(t)
+		out = append(out, Sample{
+			Metric: dropMetricName(el.Metric),
+			Point:  Point{V: f(t)},
+		})
 	}
-	return v
+	return out
 }
 
 // === days_in_month(v Vector) Scalar ===
-func funcDaysInMonth(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcDaysInMonth(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	})
 }
 
 // === day_of_month(v Vector) Scalar ===
-func funcDayOfMonth(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcDayOfMonth(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(t.Day())
 	})
 }
 
 // === day_of_week(v Vector) Scalar ===
-func funcDayOfWeek(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcDayOfWeek(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	})
 }
 
 // === hour(v Vector) Scalar ===
-func funcHour(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcHour(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(t.Hour())
 	})
 }
 
 // === minute(v Vector) Scalar ===
-func funcMinute(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcMinute(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(t.Minute())
 	})
 }
 
 // === month(v Vector) Scalar ===
-func funcMonth(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcMonth(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(t.Month())
 	})
 }
 
 // === year(v Vector) Scalar ===
-func funcYear(ev *evaluator, args Expressions) Value {
-	return dateWrapper(ev, args, func(t time.Time) float64 {
+func funcYear(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
 		return float64(t.Year())
 	})
 }
@@ -989,21 +986,21 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcDaysInMonth,
+		FastCall:   funcDaysInMonth,
 	},
 	"day_of_month": {
 		Name:       "day_of_month",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcDayOfMonth,
+		FastCall:   funcDayOfMonth,
 	},
 	"day_of_week": {
 		Name:       "day_of_week",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcDayOfWeek,
+		FastCall:   funcDayOfWeek,
 	},
 	"delta": {
 		Name:       "delta",
@@ -1046,7 +1043,7 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcHour,
+		FastCall:   funcHour,
 	},
 	"idelta": {
 		Name:       "idelta",
@@ -1114,14 +1111,14 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcMinute,
+		FastCall:   funcMinute,
 	},
 	"month": {
 		Name:       "month",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcMonth,
+		FastCall:   funcMonth,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
@@ -1219,7 +1216,7 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
-		Call:       funcYear,
+		FastCall:   funcYear,
 	},
 }
 
