@@ -602,44 +602,6 @@ func (ev *evaluator) recover(errp *error) {
 	}
 }
 
-// evalScalar attempts to evaluate e to a Scalar value and errors otherwise.
-func (ev *evaluator) evalScalar(e Expr) Scalar {
-	val := ev.eval(e)
-	sv, ok := val.(Scalar)
-	if !ok {
-		mat, ok := val.(Matrix)
-		if !ok {
-			ev.errorf("expected Scalar but got %s", documentedType(val.Type()))
-		}
-		return Scalar{V: mat[0].Points[0].V, T: mat[0].Points[0].T}
-	}
-	return sv
-}
-
-// evalInt attempts to evaluate e into an integer and errors otherwise.
-func (ev *evaluator) evalInt(e Expr) int64 {
-	sc := ev.evalScalar(e)
-	if !convertibleToInt64(sc.V) {
-		ev.errorf("Scalar value %v overflows int64", sc.V)
-	}
-	return int64(sc.V)
-}
-
-// evalFloat attempts to evaluate e into a float and errors otherwise.
-func (ev *evaluator) evalFloat(e Expr) float64 {
-	sc := ev.evalScalar(e)
-	return float64(sc.V)
-}
-
-// evalOneOf evaluates e and errors unless the result is of one of the given types.
-func (ev *evaluator) evalOneOf(e Expr, t1, t2 ValueType) Value {
-	val := ev.eval(e)
-	if val.Type() != t1 && val.Type() != t2 {
-		ev.errorf("expected %s or %s but got %s", documentedType(t1), documentedType(t2), documentedType(val.Type()))
-	}
-	return val
-}
-
 func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
 	defer ev.close()
@@ -659,7 +621,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		matrixes := make([]Matrix, len(exprs))
 		for i, e := range exprs {
 			// Functions will take string arguments from the expressions, not the values.
-			if e.Type() != ValueTypeString {
+			if e != nil && e.Type() != ValueTypeString {
 				matrixes[i] = ev.eval(e).(Matrix)
 			}
 		}
@@ -720,9 +682,18 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
+		if s, ok := e.Param.(*StringLiteral); ok {
+			return rangeWrapper(func(v []Value, ts int64) Vector {
+				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector))
+			}, e.Expr)
+		}
 		return rangeWrapper(func(v []Value, ts int64) Vector {
-			return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, v[0].(Vector))
-		}, e.Expr)
+			var param float64
+			if e.Param != nil {
+				param = v[0].(Vector)[0].V
+			}
+			return ev.aggregation(e.Op, e.Grouping, e.Without, param, v[1].(Vector))
+		}, e.Param, e.Expr)
 
 	case *Call:
 		if e.Func.Name == "timestamp" {
@@ -1364,23 +1335,27 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
-func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param Expr, vec Vector) Vector {
+func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param interface{}, vec Vector) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
 	if op == itemTopK || op == itemBottomK {
-		k = ev.evalInt(param)
+		f := param.(float64)
+		if !convertibleToInt64(f) {
+			ev.errorf("Scalar value %v overflows int64", f)
+		}
+		k = int64(f)
 		if k < 1 {
 			return Vector{}
 		}
 	}
 	var q float64
 	if op == itemQuantile {
-		q = ev.evalFloat(param)
+		q = param.(float64)
 	}
 	var valueLabel string
 	if op == itemCountValues {
-		valueLabel = param.(*StringLiteral).Val
+		valueLabel = param.(string)
 		if !without {
 			grouping = append(grouping, valueLabel)
 		}
