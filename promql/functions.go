@@ -344,18 +344,16 @@ func funcRound(vals []Value, args Expressions, ts int64, out Vector) Vector {
 }
 
 // === Scalar(node ValueTypeVector) Scalar ===
-func funcScalar(ev *evaluator, args Expressions) Value {
-	v := ev.evalVector(args[0])
+func funcScalar(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	v := vals[0].(Vector)
 	if len(v) != 1 {
-		return Scalar{
-			V: math.NaN(),
-			T: ev.Timestamp,
-		}
+		return append(out, Sample{
+			Point: Point{V: math.NaN()},
+		})
 	}
-	return Scalar{
-		V: v[0].V,
-		T: ev.Timestamp,
-	}
+	return append(out, Sample{
+		Point: Point{V: v[0].V},
+	})
 }
 
 func aggrOverTime(vals []Value, ts int64, aggrFn func([]Point) float64) Vector {
@@ -477,9 +475,9 @@ func funcStdvarOverTime(vals []Value, args Expressions, ts int64, out Vector) Ve
 }
 
 // === absent(Vector ValueTypeVector) Vector ===
-func funcAbsent(ev *evaluator, args Expressions) Value {
-	if len(ev.evalVector(args[0])) > 0 {
-		return Vector{}
+func funcAbsent(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	if len(vals[0].(Vector)) > 0 {
+		return out
 	}
 	m := []labels.Label{}
 
@@ -490,12 +488,11 @@ func funcAbsent(ev *evaluator, args Expressions) Value {
 			}
 		}
 	}
-	return Vector{
+	return append(out,
 		Sample{
 			Metric: labels.New(m...),
-			Point:  Point{V: 1, T: ev.Timestamp},
-		},
-	}
+			Point:  Point{V: 1},
+		})
 }
 
 func simpleFunc(vals []Value, out Vector, f func(float64) float64) Vector {
@@ -757,13 +754,12 @@ func funcLabelReplace(vals []Value, args Expressions, ts int64, out Vector) Vect
 }
 
 // === Vector(s Scalar) Vector ===
-func funcVector(ev *evaluator, args Expressions) Value {
-	return Vector{
+func funcVector(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return append(out,
 		Sample{
 			Metric: labels.Labels{},
-			Point:  Point{V: ev.evalFloat(args[0]), T: ev.Timestamp},
-		},
-	}
+			Point:  Point{V: vals[0].(Vector)[0].V},
+		})
 }
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
@@ -896,7 +892,7 @@ var functions = map[string]*Function{
 		Name:       "absent",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcAbsent,
+		FastCall:   funcAbsent,
 	},
 	"avg_over_time": {
 		Name:       "avg_over_time",
@@ -1108,7 +1104,7 @@ var functions = map[string]*Function{
 		Name:       "scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
-		Call:       funcScalar,
+		FastCall:   funcScalar,
 	},
 	"sort": {
 		Name:       "sort",
@@ -1162,7 +1158,7 @@ var functions = map[string]*Function{
 		Name:       "vector",
 		ArgTypes:   []ValueType{ValueTypeScalar},
 		ReturnType: ValueTypeVector,
-		Call:       funcVector,
+		FastCall:   funcVector,
 	},
 	"year": {
 		Name:       "year",
