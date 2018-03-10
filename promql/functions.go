@@ -49,14 +49,13 @@ func funcTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
-	ms := arg.(*MatrixSelector)
+func extrapolatedRate(vals []Value, args Expressions, ts int64, out Vector, isCounter bool, isRate bool) Vector {
+	ms := args[0].(*MatrixSelector)
 
 	var (
-		matrix       = ev.evalMatrix(ms)
-		rangeStart   = ev.Timestamp - durationMilliseconds(ms.Range+ms.Offset)
-		rangeEnd     = ev.Timestamp - durationMilliseconds(ms.Offset)
-		resultVector = make(Vector, 0, len(matrix))
+		matrix     = vals[0].(Matrix)
+		rangeStart = ts - durationMilliseconds(ms.Range+ms.Offset)
+		rangeEnd   = ts - durationMilliseconds(ms.Offset)
 	)
 
 	for _, samples := range matrix {
@@ -120,27 +119,26 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 			resultValue = resultValue / ms.Range.Seconds()
 		}
 
-		resultVector = append(resultVector, Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: resultValue, T: ev.Timestamp},
+		out = append(out, Sample{
+			Point: Point{V: resultValue},
 		})
 	}
-	return resultVector
+	return out
 }
 
 // === delta(Matrix ValueTypeMatrix) Vector ===
-func funcDelta(ev *evaluator, args Expressions) Value {
-	return extrapolatedRate(ev, args[0], false, false)
+func funcDelta(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return extrapolatedRate(vals, args, ts, out, false, false)
 }
 
 // === rate(node ValueTypeMatrix) Vector ===
-func funcRate(ev *evaluator, args Expressions) Value {
-	return extrapolatedRate(ev, args[0], true, true)
+func funcRate(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return extrapolatedRate(vals, args, ts, out, true, true)
 }
 
 // === increase(node ValueTypeMatrix) Vector ===
-func funcIncrease(ev *evaluator, args Expressions) Value {
-	return extrapolatedRate(ev, args[0], true, false)
+func funcIncrease(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return extrapolatedRate(vals, args, ts, out, true, false)
 }
 
 // === irate(node ValueTypeMatrix) Vector ===
@@ -1002,7 +1000,7 @@ var functions = map[string]*Function{
 		Name:       "delta",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcDelta,
+		FastCall:   funcDelta,
 	},
 	"deriv": {
 		Name:       "deriv",
@@ -1051,7 +1049,7 @@ var functions = map[string]*Function{
 		Name:       "increase",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcIncrease,
+		FastCall:   funcIncrease,
 	},
 	"irate": {
 		Name:       "irate",
@@ -1132,7 +1130,7 @@ var functions = map[string]*Function{
 		Name:       "rate",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcRate,
+		FastCall:   funcRate,
 	},
 	"resets": {
 		Name:       "resets",

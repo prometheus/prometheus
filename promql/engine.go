@@ -802,7 +802,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 							Metric: dropMetricName(sel.series[i].Labels()),
 						}
 						inMatrix[0].Metric = sel.series[i].Labels()
-						for ts, step := ev.Timestamp, -1; ts <= ev.EndTimestamp; ts += ev.Interval {
+						endTs := ev.EndTimestamp
+						interval := ev.Interval
+						if ev.Interval == 0 {
+							// Instant evaluation - TODO remove this
+							endTs = ev.Timestamp
+							interval = 1
+						}
+						for ts, step := ev.Timestamp, -1; ts <= endTs; ts += interval {
 							step++
 							// Set the non-matrix arguments.
 							// They are scalar, so it is safe to use the step number
