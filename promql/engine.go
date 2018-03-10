@@ -812,14 +812,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 						Metric: dropMetricName(sel.series[i].Labels()),
 					}
 					inMatrix[0].Metric = sel.series[i].Labels()
-					endTs := ev.EndTimestamp
-					interval := ev.Interval
-					if ev.Interval == 0 {
-						// Instant evaluation - TODO remove this
-						endTs = ev.Timestamp
-						interval = 1
-					}
-					for ts, step := ev.Timestamp, -1; ts <= endTs; ts += interval {
+					for ts, step := ev.Timestamp, -1; ts <= ev.EndTimestamp; ts += ev.Interval {
 						step++
 						// Set the non-matrix arguments.
 						// They are scalar, so it is safe to use the step number
@@ -907,85 +900,19 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return rangeWrapper(func(v []Value, ts int64) Vector {
 			return Vector{Sample{Point: Point{V: e.Val, T: ts}}}
 		})
-	}
-
-	// Convert range evaluation into multiple instant evaluations.
-	if ev.Interval != 0 {
-		numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
-		Seriess := map[uint64]Series{}
-		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
-			if err := contextDone(ev.ctx, "range evaluation"); err != nil {
-				ev.error(err)
-			}
-
-			// Create instant evaulator.
-			evaluator := &evaluator{
-				Timestamp: ts,
-				ctx:       ev.ctx,
-				logger:    ev.logger,
-			}
-			val, err := evaluator.Eval(expr)
-			if err != nil {
-				ev.error(err)
-			}
-
-			switch v := val.(type) {
-			case Scalar:
-				// As the expression type does not change we can safely default to 0
-				// as the fingerprint for Scalar expressions.
-				ss, ok := Seriess[0]
-				if !ok {
-					ss = Series{Points: make([]Point, 0, numSteps)}
-					Seriess[0] = ss
-				}
-				ss.Points = append(ss.Points, Point{V: v.V, T: ts})
-				Seriess[0] = ss
-			case Vector:
-				// If this could be an instant query, shortcut so as not to change sort order.
-				if ev.EndTimestamp == ev.Timestamp {
-					mat := make(Matrix, len(v))
-					for i, s := range v {
-						mat[i] = Series{Metric: s.Metric, Points: []Point{Point{V: s.Point.V, T: ts}}}
-					}
-					return mat
-				}
-				for _, sample := range v {
-					h := sample.Metric.Hash()
-					ss, ok := Seriess[h]
-					if !ok {
-						ss = Series{
-							Metric: sample.Metric,
-							Points: make([]Point, 0, numSteps),
-						}
-						Seriess[h] = ss
-					}
-					sample.Point.T = ts
-					ss.Points = append(ss.Points, sample.Point)
-					Seriess[h] = ss
-				}
-			case Matrix:
-				return val
-			default:
-				panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
-			}
-		}
-		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
-			ev.error(err)
-		}
-		mat := Matrix{}
-		for _, ss := range Seriess {
-			mat = append(mat, ss)
-		}
-		return mat
-	}
-
-	switch e := expr.(type) {
-	case *MatrixSelector:
-		return ev.matrixSelector(e)
 
 	case *VectorSelector:
-		return ev.vectorSelector(e, ev.Timestamp)
+		return rangeWrapper(func(v []Value, ts int64) Vector {
+			return ev.vectorSelector(e, ts)
+		})
+
+	case *MatrixSelector:
+		if ev.Timestamp != ev.EndTimestamp && ev.Interval != 0 {
+			panic(fmt.Errorf("cannot do range evaluatoin of matrix selector"))
+		}
+		return ev.matrixSelector(e)
 	}
+
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
