@@ -616,25 +616,6 @@ func (ev *evaluator) evalScalar(e Expr) Scalar {
 	return sv
 }
 
-// evalVector attempts to evaluate e to a Vector value and errors otherwise.
-func (ev *evaluator) evalVector(e Expr) Vector {
-	val := ev.eval(e)
-	vec, ok := val.(Vector)
-	if !ok {
-		mat, ok := val.(Matrix)
-		if !ok {
-			ev.errorf("expected instant Vector but got %s", documentedType(val.Type()))
-		}
-		// Convert matrix with one value per series into vector.
-		vector := make(Vector, len(mat))
-		for i, s := range mat {
-			vector[i] = Sample{Metric: s.Metric, Point: s.Points[0]}
-		}
-		return vector
-	}
-	return vec
-}
-
 // evalInt attempts to evaluate e into an integer and errors otherwise.
 func (ev *evaluator) evalInt(e Expr) int64 {
 	sc := ev.evalScalar(e)
@@ -648,18 +629,6 @@ func (ev *evaluator) evalInt(e Expr) int64 {
 func (ev *evaluator) evalFloat(e Expr) float64 {
 	sc := ev.evalScalar(e)
 	return float64(sc.V)
-}
-
-// evalMatrix attempts to evaluate e into a Matrix and errors otherwise.
-// The error message uses the term "range Vector" to match the user facing
-// documentation.
-func (ev *evaluator) evalMatrix(e Expr) Matrix {
-	val := ev.eval(e)
-	mat, ok := val.(Matrix)
-	if !ok {
-		ev.errorf("expected range Vector but got %s", documentedType(val.Type()))
-	}
-	return mat
 }
 
 // evalOneOf evaluates e and errors unless the result is of one of the given types.
@@ -686,80 +655,67 @@ func (ev *evaluator) eval(expr Expr) Value {
 	}
 
 	rangeWrapper := func(f func([]Value, int64) Vector, exprs ...Expr) Value {
-		if ev.Interval != 0 {
-			numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
-			matrixes := make([]Matrix, len(exprs))
-			for i, e := range exprs {
-				// Functions will take string arguments from the expressions, not the values.
-				if e.Type() != ValueTypeString {
-					matrixes[i] = ev.evalMatrix(e)
+		numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
+		matrixes := make([]Matrix, len(exprs))
+		for i, e := range exprs {
+			// Functions will take string arguments from the expressions, not the values.
+			if e.Type() != ValueTypeString {
+				matrixes[i] = ev.eval(e).(Matrix)
+			}
+		}
+		Seriess := map[uint64]Series{}
+		args := make([]Value, len(exprs))
+		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+			// Gather input vectors for this timestamp.
+			vectors := make([]Vector, len(exprs))
+			for i := range exprs {
+				vectors[i] = make(Vector, 0, len(matrixes[i]))
+				for _, series := range matrixes[i] {
+					for pos, point := range series.Points {
+						if point.T == ts {
+							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
+						}
+						if point.T >= ts {
+							series.Points = series.Points[pos:]
+							break
+						}
+					}
 				}
 			}
-			Seriess := map[uint64]Series{}
-			args := make([]Value, len(exprs))
-			for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
-				// Gather input vectors for this timestamp.
-				vectors := make([]Vector, len(exprs))
-				for i := range exprs {
-					vectors[i] = make(Vector, 0, len(matrixes[i]))
-					for _, series := range matrixes[i] {
-						for pos, point := range series.Points {
-							if point.T == ts {
-								vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
-							}
-							if point.T >= ts {
-								series.Points = series.Points[pos:]
-								break
-							}
-						}
-					}
+			for i := range vectors {
+				args[i] = vectors[i]
+			}
+			result := f(args, ts)
+			// If this could be an instant query, shortcut so as not to change sort order.
+			if ev.EndTimestamp == ev.Timestamp {
+				mat := make(Matrix, len(result))
+				for i, s := range result {
+					s.Point.T = ts
+					mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 				}
-				for i := range vectors {
-					args[i] = vectors[i]
-				}
-				result := f(args, ts)
-				// If this could be an instant query, shortcut so as not to change sort order.
-				if ev.EndTimestamp == ev.Timestamp {
-					mat := make(Matrix, len(result))
-					for i, s := range result {
-						s.Point.T = ts
-						mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
+				return mat
+			}
+			// Add output vectors to output series.
+			for _, sample := range result {
+				h := sample.Metric.Hash()
+				ss, ok := Seriess[h]
+				if !ok {
+					ss = Series{
+						Metric: sample.Metric,
+						Points: make([]Point, 0, numSteps),
 					}
-					return mat
-				}
-				// Add output vectors to output series.
-				for _, sample := range result {
-					h := sample.Metric.Hash()
-					ss, ok := Seriess[h]
-					if !ok {
-						ss = Series{
-							Metric: sample.Metric,
-							Points: make([]Point, 0, numSteps),
-						}
-						Seriess[h] = ss
-					}
-					sample.Point.T = ts
-					ss.Points = append(ss.Points, sample.Point)
 					Seriess[h] = ss
 				}
+				sample.Point.T = ts
+				ss.Points = append(ss.Points, sample.Point)
+				Seriess[h] = ss
 			}
-			mat := Matrix{}
-			for _, ss := range Seriess {
-				mat = append(mat, ss)
-			}
-			return mat
-		} else {
-			vectors := make([]Value, len(exprs))
-			for i, e := range exprs {
-				vectors[i] = ev.evalVector(e)
-			}
-			resultVector := f(vectors, ev.Timestamp)
-			mat := make(Matrix, len(resultVector))
-			for i, s := range resultVector {
-				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
-			}
-			return mat
 		}
+		mat := Matrix{}
+		for _, ss := range Seriess {
+			mat = append(mat, ss)
+		}
+		return mat
 	}
 
 	switch e := expr.(type) {
@@ -790,7 +746,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				otherArgsIn := make([]Vector, len(e.Args))
 				for i, e := range e.Args {
 					if i != matrixArgIndex {
-						otherArgs[i] = ev.evalMatrix(e)
+						otherArgs[i] = ev.eval(e).(Matrix)
 						otherArgsIn[i] = Vector{Sample{}}
 						inArgs[i] = otherArgsIn[i]
 					}
