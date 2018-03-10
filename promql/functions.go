@@ -34,7 +34,18 @@ type Function struct {
 	Variadic   int
 	ReturnType ValueType
 	Call       func(ev *evaluator, args Expressions) Value
-	FastCall   func(vals []Value, args Expressions, ts int64, out Vector) Vector
+
+	// vals is a list of the evaluated arguments for the function call.
+	//    For range vectors it will be a Matrix with one series, instant vectors a
+	//    Vector, scalars a Vector with one series whose value is the scalar
+	//    value,and nil for strings.
+	// args are the original arguments to the function, where you can access
+	//    matrixSelectors, vectorSelectors, and StringLiterals.
+	// ts is the evaluation timestamp.
+	// out is a pre-allocated empty vector that you may use to accumulate
+	//    output before returning it. The vectors in vals should not be returned.a
+	// Scalar results should be returned as the value of a sample in a Vector.
+	FastCall func(vals []Value, args Expressions, ts int64, out Vector) Vector
 }
 
 // === time() float64 ===
@@ -142,18 +153,17 @@ func funcIncrease(vals []Value, args Expressions, ts int64, out Vector) Vector {
 }
 
 // === irate(node ValueTypeMatrix) Vector ===
-func funcIrate(ev *evaluator, args Expressions) Value {
-	return instantValue(ev, args[0], true)
+func funcIrate(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return instantValue(vals, out, true)
 }
 
 // === idelta(node model.ValMatric) Vector ===
-func funcIdelta(ev *evaluator, args Expressions) Value {
-	return instantValue(ev, args[0], false)
+func funcIdelta(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	return instantValue(vals, out, false)
 }
 
-func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
-	resultVector := Vector{}
-	for _, samples := range ev.evalMatrix(arg) {
+func instantValue(vals []Value, out Vector, isRate bool) Vector {
+	for _, samples := range vals[0].(Matrix) {
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
 		if len(samples.Points) < 2 {
@@ -182,12 +192,11 @@ func instantValue(ev *evaluator, arg Expr, isRate bool) Value {
 			resultValue /= float64(sampledInterval) / 1000
 		}
 
-		resultVector = append(resultVector, Sample{
-			Metric: dropMetricName(samples.Metric),
-			Point:  Point{V: resultValue, T: ev.Timestamp},
+		out = append(out, Sample{
+			Point: Point{V: resultValue},
 		})
 	}
-	return resultVector
+	return out
 }
 
 // Calculate the trend value at the given index i in raw data d.
@@ -265,47 +274,47 @@ func funcHoltWinters(vals []Value, args Expressions, ts int64, out Vector) Vecto
 }
 
 // === sort(node ValueTypeVector) Vector ===
-func funcSort(ev *evaluator, args Expressions) Value {
+func funcSort(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByReverseValueHeap(ev.evalVector(args[0]))
+	byValueSorter := vectorByReverseValueHeap(vals[0].(Vector))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter)
 }
 
 // === sortDesc(node ValueTypeVector) Vector ===
-func funcSortDesc(ev *evaluator, args Expressions) Value {
+func funcSortDesc(vals []Value, args Expressions, ts int64, out Vector) Vector {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByValueHeap(ev.evalVector(args[0]))
+	byValueSorter := vectorByValueHeap(vals[0].(Vector))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter)
 }
 
 // === clamp_max(Vector ValueTypeVector, max Scalar) Vector ===
-func funcClampMax(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	max := ev.evalFloat(args[1])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Min(max, float64(el.V))
+func funcClampMax(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	vec := vals[0].(Vector)
+	max := vals[1].(Vector)[0].Point.V
+	for _, el := range vec {
+		out = append(out, Sample{
+			Metric: dropMetricName(el.Metric),
+			Point:  Point{V: math.Min(max, float64(el.V))},
+		})
 	}
-	return vec
+	return out
 }
 
 // === clamp_min(Vector ValueTypeVector, min Scalar) Vector ===
-func funcClampMin(ev *evaluator, args Expressions) Value {
-	vec := ev.evalVector(args[0])
-	min := ev.evalFloat(args[1])
-	for i := range vec {
-		el := &vec[i]
-
-		el.Metric = dropMetricName(el.Metric)
-		el.V = math.Max(min, float64(el.V))
+func funcClampMin(vals []Value, args Expressions, ts int64, out Vector) Vector {
+	vec := vals[0].(Vector)
+	min := vals[1].(Vector)[0].Point.V
+	for _, el := range vec {
+		out = append(out, Sample{
+			Metric: dropMetricName(el.Metric),
+			Point:  Point{V: math.Max(min, float64(el.V))},
+		})
 	}
-	return vec
+	return out
 }
 
 // === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
@@ -961,13 +970,13 @@ var functions = map[string]*Function{
 		Name:       "clamp_max",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
-		Call:       funcClampMax,
+		FastCall:   funcClampMax,
 	},
 	"clamp_min": {
 		Name:       "clamp_min",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
-		Call:       funcClampMin,
+		FastCall:   funcClampMin,
 	},
 	"count_over_time": {
 		Name:       "count_over_time",
@@ -1043,7 +1052,7 @@ var functions = map[string]*Function{
 		Name:       "idelta",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcIdelta,
+		FastCall:   funcIdelta,
 	},
 	"increase": {
 		Name:       "increase",
@@ -1055,7 +1064,7 @@ var functions = map[string]*Function{
 		Name:       "irate",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
-		Call:       funcIrate,
+		FastCall:   funcIrate,
 	},
 	"label_replace": {
 		Name:       "label_replace",
@@ -1155,13 +1164,13 @@ var functions = map[string]*Function{
 		Name:       "sort",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcSort,
+		FastCall:   funcSort,
 	},
 	"sort_desc": {
 		Name:       "sort_desc",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
-		Call:       funcSortDesc,
+		FastCall:   funcSortDesc,
 	},
 	"sqrt": {
 		Name:       "sqrt",
