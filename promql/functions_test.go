@@ -80,35 +80,6 @@ eval instant at 1d changes(http_requests[1d])
 	bench.Run()
 }
 
-func BenchmarkChanges5MinRange(b *testing.B) {
-	input := `
-clear
-load 1m
-    http_requests{path="/foo"}    0+10x1440
-  `
-	t, err := NewTest(b, input)
-	if err != nil {
-		b.Fatalf("Unable to run benchmark: %s", err)
-	}
-	defer t.Close()
-	err = t.Run()
-	if err != nil {
-		b.Fatalf("Unable to run benchmark: %s", err)
-	}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		expr, err := ParseExpr("changes(http_requests[5m])")
-		if err != nil {
-			b.Fatalf("Unable to parse query: %s", err)
-		}
-		qry := t.queryEngine.newQuery(t.storage, expr, time.Unix(0, 0), time.Unix(86400, 0), time.Minute)
-		b.StartTimer()
-		qry.Exec(t.context)
-	}
-}
-
 func TestDeriv(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/2674#issuecomment-315439393
 	// This requires more precision than the usual test system offers,
