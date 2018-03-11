@@ -78,8 +78,10 @@ func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was cancele
 // A Query is derived from an a raw query string and can be run against an engine
 // it is associated with.
 type Query interface {
-	// Exec processes the query and
+	// Exec processes the query. Can only be called once.
 	Exec(ctx context.Context) *Result
+	// Close recovers memory used by the query result.
+	Close()
 	// Statement returns the parsed statement of the query.
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
@@ -98,6 +100,8 @@ type query struct {
 	stmt Statement
 	// Timer stats for the query execution.
 	stats *stats.TimerGroup
+	// Result matrix for reuse.
+	mat Matrix
 	// Cancellation function for the query.
 	cancel func()
 
@@ -119,6 +123,13 @@ func (q *query) Stats() *stats.TimerGroup {
 func (q *query) Cancel() {
 	if q.cancel != nil {
 		q.cancel()
+	}
+}
+
+// Close implements the Query interface.
+func (q *query) Close() {
+	for _, s := range q.mat {
+		putPointSlice(s.Points)
 	}
 }
 
@@ -390,6 +401,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		if !ok {
 			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
+		query.mat = mat
 		switch s.Expr.Type() {
 		case ValueTypeVector:
 			// Convert matrix with one value per series into vector.
@@ -432,6 +444,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if !ok {
 		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 	}
+	query.mat = mat
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -606,9 +619,12 @@ func (ev *evaluator) eval(expr Expr) Value {
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
+	numSteps := int((ev.EndTimestamp - ev.Timestamp) / ev.Interval)
+	if ev.Timestamp == ev.EndTimestamp {
+		numSteps += 1
+	}
 
 	rangeWrapper := func(f func([]Value, int64) Vector, exprs ...Expr) Value {
-		numSteps := (ev.EndTimestamp - ev.Timestamp) / ev.Interval
 		matrixes := make([]Matrix, len(exprs))
 		for i, e := range exprs {
 			// Functions will take string arguments from the expressions, not the values.
@@ -728,6 +744,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 						// output labels is dropping the metric name so just do
 						// it once here.
 						Metric: dropMetricName(sel.series[i].Labels()),
+						Points: getPointSlice(numSteps),
 					}
 					inMatrix[0].Metric = sel.series[i].Labels()
 					for ts, step := ev.Timestamp, -1; ts <= ev.EndTimestamp; ts += ev.Interval {
@@ -900,19 +917,14 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		maxt   = ev.Timestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = make(Matrix, 0, len(node.series))
-		// Write all points into a single slice to avoid lots of tiny allocations.
-		allPoints = getPointSlice(5 * len(matrix))
 	)
 
 	for i, it := range node.iterators {
-		start := len(allPoints)
-
 		ss := Series{
 			Metric: node.series[i].Labels(),
 		}
 
-		allPoints = ev.matrixIterSlice(it, maxt, mint, allPoints)
-		ss.Points = allPoints[start:]
+		ss.Points = ev.matrixIterSlice(it, maxt, mint, getPointSlice(16))
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)

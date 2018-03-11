@@ -439,6 +439,7 @@ func (t *Test) exec(tc testCommand) error {
 			}
 			return fmt.Errorf("error evaluating query %q: %s", cmd.expr, res.Err)
 		}
+		defer q.Close()
 		if res.Err == nil && cmd.fail {
 			return fmt.Errorf("expected error evaluating query but got none")
 		}
@@ -455,10 +456,7 @@ func (t *Test) exec(tc testCommand) error {
 		if rangeRes.Err != nil {
 			return fmt.Errorf("error evaluating query %q in range mode: %s", cmd.expr, rangeRes.Err)
 		}
-		if cmd.ordered {
-			// Ordering isn't defined for range queries.
-			return nil
-		}
+		defer q.Close()
 		if cmd.ordered {
 			// Ordering isn't defined for range queries.
 			return nil

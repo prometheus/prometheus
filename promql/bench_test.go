@@ -96,12 +96,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr:     "rate(a_ten[1m])",
 			interval: time.Second * 10,
-			steps:    100,
+			steps:    10,
 		},
 		{
 			expr:     "rate(a_ten[1m])",
 			interval: time.Second * 10,
-			steps:    10,
+			steps:    100,
 		},
 		{
 			expr:     "rate(a_ten[1m])",
@@ -188,6 +188,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
+				qry.Close()
 			}
 		})
 	}
