@@ -788,15 +788,16 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return ev.eval(e.Expr)
 
 	case *UnaryExpr:
-		return rangeWrapper(func(v []Value, ts int64) Vector {
-			vec := v[0].(Vector)
-			if e.Op == itemSUB {
-				for i, sv := range vec {
-					vec[i].V = -sv.V
+		mat := ev.eval(e.Expr).(Matrix)
+		if e.Op == itemSUB {
+			for i := range mat {
+				mat[i].Metric = dropMetricName(mat[i].Metric)
+				for j := range mat[i].Points {
+					mat[i].Points[j].V = -mat[i].Points[j].V
 				}
 			}
-			return vec
-		}, e.Expr)
+		}
+		return mat
 
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
