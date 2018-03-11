@@ -24,38 +24,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// A Benchmark holds context for running a unit test as a benchmark.
-type Benchmark struct {
-	b         *testing.B
-	t         *Test
-	iterCount int
-}
-
-// NewBenchmark returns an initialized empty Benchmark.
-func NewBenchmark(b *testing.B, input string) *Benchmark {
-	t, err := NewTest(b, input)
-	if err != nil {
-		b.Fatalf("Unable to run benchmark: %s", err)
-	}
-	return &Benchmark{
-		b: b,
-		t: t,
-	}
-}
-
-// Run runs the benchmark.
-func (b *Benchmark) Run() {
-	defer b.t.Close()
-	b.b.ReportAllocs()
-	b.b.ResetTimer()
-	for i := 0; i < b.b.N; i++ {
-		if err := b.t.RunAsBenchmark(b); err != nil {
-			b.b.Error(err)
-		}
-		b.iterCount++
-	}
-}
-
 func BenchmarkRangeQuery(b *testing.B) {
 	storage := testutil.NewStorage(b)
 	defer storage.Close()
@@ -139,6 +107,26 @@ func BenchmarkRangeQuery(b *testing.B) {
 			interval: time.Second * 10,
 			steps:    1000,
 		},
+		{
+			expr:     "holt_winters(a_one[1h], 0.3, 0.3)",
+			interval: time.Second * 10,
+			steps:    1,
+		},
+		{
+			expr:     "holt_winters(a_one[6h], 0.3, 0.3)",
+			interval: time.Second * 10,
+			steps:    1,
+		},
+		{
+			expr:     "holt_winters(a_one[1d], 0.3, 0.3)",
+			interval: time.Second * 10,
+			steps:    1,
+		},
+		{
+			expr:     "changes(a_one[1d])",
+			interval: time.Second * 10,
+			steps:    1,
+		},
 	}
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,interval=%s,steps=%d", c.expr, c.interval, c.steps)
@@ -146,7 +134,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				end := c.steps*int64(c.interval.Seconds()) - 1
-				qry, err := engine.NewRangeQuery(storage, c.expr, time.Unix(0, 0), time.Unix(end, 0), c.interval)
+				qry, err := engine.NewRangeQuery(storage, c.expr, time.Unix(86400, 0), time.Unix(86400 + end, 0), c.interval)
 				if err != nil {
 					b.Fatal(err)
 				}
