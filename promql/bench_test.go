@@ -52,6 +52,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 			metric = labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i))
 			a.Add(metric, ts, float64(s))
 		}
+		for i := 0; i < 1000; i++ {
+			metric = labels.FromStrings("__name__", "a_thousand", "l", strconv.Itoa(i))
+			a.Add(metric, ts, float64(s))
+			metric = labels.FromStrings("__name__", "b_thousand", "l", strconv.Itoa(i))
+			a.Add(metric, ts, float64(s))
+		}
 	}
 	if err := a.Commit(); err != nil {
 		b.Fatal(err)
@@ -75,12 +81,22 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr:     "rate(a_one[1m])",
 			interval: time.Second * 10,
+			steps:    100,
+		},
+		{
+			expr:     "rate(a_one[1m])",
+			interval: time.Second * 10,
 			steps:    1000,
 		},
 		{
 			expr:     "rate(a_ten[1m])",
 			interval: time.Second * 10,
 			steps:    1,
+		},
+		{
+			expr:     "rate(a_ten[1m])",
+			interval: time.Second * 10,
+			steps:    100,
 		},
 		{
 			expr:     "rate(a_ten[1m])",
@@ -100,10 +116,35 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr:     "rate(a_hundred[1m])",
 			interval: time.Second * 10,
+			steps:    10,
+		},
+		{
+			expr:     "rate(a_hundred[1m])",
+			interval: time.Second * 10,
 			steps:    100,
 		},
 		{
 			expr:     "rate(a_hundred[1m])",
+			interval: time.Second * 10,
+			steps:    1000,
+		},
+		{
+			expr:     "rate(a_thousand[1m])",
+			interval: time.Second * 10,
+			steps:    1,
+		},
+		{
+			expr:     "rate(a_thousand[1m])",
+			interval: time.Second * 10,
+			steps:    10,
+		},
+		{
+			expr:     "rate(a_thousand[1m])",
+			interval: time.Second * 10,
+			steps:    100,
+		},
+		{
+			expr:     "rate(a_thousand[1m])",
 			interval: time.Second * 10,
 			steps:    1000,
 		},
@@ -127,6 +168,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 			interval: time.Second * 10,
 			steps:    1,
 		},
+		{
+			expr:     "rate(a_one[1d])",
+			interval: time.Second * 10,
+			steps:    1,
+		},
 	}
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,interval=%s,steps=%d", c.expr, c.interval, c.steps)
@@ -134,7 +180,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				end := c.steps*int64(c.interval.Seconds()) - 1
-				qry, err := engine.NewRangeQuery(storage, c.expr, time.Unix(86400, 0), time.Unix(86400 + end, 0), c.interval)
+				qry, err := engine.NewRangeQuery(storage, c.expr, time.Unix(86400, 0), time.Unix(86400+end, 0), c.interval)
 				if err != nil {
 					b.Fatal(err)
 				}
