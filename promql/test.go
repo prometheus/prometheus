@@ -448,6 +448,40 @@ func (t *Test) exec(tc testCommand) error {
 			return fmt.Errorf("error in %s %s: %s", cmd, cmd.expr, err)
 		}
 
+		// Check query returns same result in range mode,
+		/// by checking against the middle step.
+		q, _ = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
+		rangeRes := q.Exec(t.context)
+		if rangeRes.Err != nil {
+			return fmt.Errorf("error evaluating query %q in range mode: %s", cmd.expr, rangeRes.Err)
+		}
+		if cmd.ordered {
+			// Ordering isn't defined for range queries.
+			return nil
+		}
+		if cmd.ordered {
+			// Ordering isn't defined for range queries.
+			return nil
+		}
+		mat := rangeRes.Value.(Matrix)
+		vec := make(Vector, 0, len(mat))
+		for _, series := range mat {
+			for _, point := range series.Points {
+				if point.T == timeMilliseconds(cmd.start) {
+					vec = append(vec, Sample{Metric: series.Metric, Point: point})
+					break
+				}
+			}
+		}
+		if _, ok := res.Value.(Scalar); ok {
+			err = cmd.compareResult(Scalar{V: vec[0].Point.V})
+		} else {
+			err = cmd.compareResult(vec)
+		}
+		if err != nil {
+			return fmt.Errorf("error in %s %s rande mode: %s", cmd, cmd.expr, err)
+		}
+
 	default:
 		panic("promql.Test.exec: unknown test command type")
 	}

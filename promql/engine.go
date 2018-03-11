@@ -582,13 +582,13 @@ func (ev *evaluator) recover(errp *error) {
 	if e == nil {
 		return
 	}
-	if _, ok := e.(runtime.Error); ok {
+	if err, ok := e.(runtime.Error); ok {
 		// Print the stack trace but do not inhibit the running application.
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
-		*errp = fmt.Errorf("unexpected error")
+		*errp = fmt.Errorf("unexpected error: %s", err)
 	} else {
 		*errp = e.(error)
 	}
@@ -743,6 +743,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 						maxt := ts - offset
 						mint := maxt - durationMilliseconds(sel.Range)
 						points = ev.matrixIterSlice(it, maxt, mint, points[:0])
+						if len(points) == 0 {
+							continue
+						}
 						inMatrix[0].Points = points
 						outVec := e.Func.Call(inArgs, e.Args, ts, outVec[:0])
 						if len(outVec) > 0 {
@@ -888,20 +891,6 @@ func getPointSlice(sz int) []Point {
 
 func putPointSlice(p []Point) {
 	pointPool.Put(p[:0])
-}
-
-var matrixPool = sync.Pool{}
-
-func getMatrix(sz int) Matrix {
-	m := matrixPool.Get()
-	if m != nil {
-		return m.(Matrix)
-	}
-	return make(Matrix, 0, sz)
-}
-
-func putMatrix(m Matrix) {
-	matrixPool.Put(m[:0])
 }
 
 // matrixSelector evaluates a *MatrixSelector expression.
