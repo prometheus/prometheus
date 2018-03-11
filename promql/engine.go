@@ -563,15 +563,7 @@ type evaluator struct {
 	EndTimestamp int64 // End time in milliseconds.
 	Interval     int64 // Interval in milliseconds.
 
-	finalizers []func()
-
 	logger log.Logger
-}
-
-func (ev *evaluator) close() {
-	for _, f := range ev.finalizers {
-		f()
-	}
 }
 
 // fatalf causes a panic with the input formatted into an error.
@@ -604,7 +596,6 @@ func (ev *evaluator) recover(errp *error) {
 
 func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	defer ev.recover(&err)
-	defer ev.close()
 	return ev.eval(expr), nil
 }
 
@@ -919,14 +910,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		offset = durationMilliseconds(node.Offset)
 		maxt   = ev.Timestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = getMatrix(len(node.series))
+		matrix = make(Matrix, 0, len(node.series))
 		// Write all points into a single slice to avoid lots of tiny allocations.
 		allPoints = getPointSlice(5 * len(matrix))
-	)
-
-	ev.finalizers = append(ev.finalizers,
-		func() { putPointSlice(allPoints) },
-		func() { putMatrix(matrix) },
 	)
 
 	for i, it := range node.iterators {
