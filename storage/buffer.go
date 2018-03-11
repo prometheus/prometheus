@@ -30,14 +30,20 @@ type BufferedSeriesIterator struct {
 // of the current element and the duration of delta before.
 func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
-		it:       it,
-		buf:      newSampleRing(delta, 16),
-		lastTime: math.MinInt64,
-		ok:       true,
+		buf: newSampleRing(delta, 16),
 	}
-	it.Next()
+	bit.Reset(it)
 
 	return bit
+}
+
+// Reset re-uses the buffer with a new iterator.
+func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
+	b.it = it
+	b.lastTime = math.MinInt64
+	b.ok = true
+	b.buf.reset()
+	it.Next()
 }
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,

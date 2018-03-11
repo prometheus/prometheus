@@ -528,10 +528,6 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false
 			}
-			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
-				n.iterators = append(n.iterators, it)
-			}
 		}
 		return true
 	})
@@ -738,7 +734,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 				inArgs[matrixArgIndex] = inMatrix
 				outVec := make(Vector, 0, 1)
 				// Process all the calls for one time series at a time.
-				for i, it := range sel.iterators {
+				var it *storage.BufferedSeriesIterator
+				for i, s := range sel.series {
+					if it == nil {
+						it = storage.NewBuffer(s.Iterator(), durationMilliseconds(sel.Range))
+					} else {
+						it.Reset(s.Iterator())
+					}
 					ss := Series{
 						// For all range vector functions, the only change to the
 						// output labels is dropping the metric name so just do
@@ -752,9 +754,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 						// Set the non-matrix arguments.
 						// They are scalar, so it is safe to use the step number
 						// when looking up the argument, as there will be no gaps.
-						for i := range e.Args {
-							if i != matrixArgIndex {
-								otherArgsIn[i][0].V = otherArgs[i][0].Points[step].V
+						for j := range e.Args {
+							if j != matrixArgIndex {
+								otherArgsIn[j][0].V = otherArgs[j][0].Points[step].V
 							}
 						}
 						maxt := ts - offset
@@ -919,7 +921,13 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		matrix = make(Matrix, 0, len(node.series))
 	)
 
-	for i, it := range node.iterators {
+	var it *storage.BufferedSeriesIterator
+	for i, s := range node.series {
+		if it == nil {
+			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
+		} else {
+			it.Reset(s.Iterator())
+		}
 		ss := Series{
 			Metric: node.series[i].Labels(),
 		}
