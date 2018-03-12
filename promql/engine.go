@@ -429,7 +429,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	evaluator := &evaluator{
 		Timestamp:    timeMilliseconds(s.Start),
 		EndTimestamp: timeMilliseconds(s.End),
-		Interval:     s.Interval.Nanoseconds() / 1e6,
+		Interval:     durationMilliseconds(s.Interval),
 		ctx:          ctx,
 		logger:       ng.logger,
 	}
@@ -509,10 +509,6 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false
-			}
-			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-				n.iterators = append(n.iterators, it)
 			}
 
 		case *MatrixSelector:
@@ -843,9 +839,31 @@ func (ev *evaluator) eval(expr Expr) Value {
 		})
 
 	case *VectorSelector:
-		return rangeWrapper(func(v []Value, ts int64) Vector {
-			return ev.vectorSelector(e, ts)
-		})
+		mat := make(Matrix, 0, len(e.series))
+		var it *storage.BufferedSeriesIterator
+		for i, s := range e.series {
+			if it == nil {
+				it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
+			} else {
+				it.Reset(s.Iterator())
+			}
+			ss := Series{
+				Metric: e.series[i].Labels(),
+				Points: getPointSlice(numSteps),
+			}
+
+			for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
+				if ok {
+					ss.Points = append(ss.Points, Point{V: v, T: ts})
+				}
+			}
+
+			if len(ss.Points) > 0 {
+				mat = append(mat, ss)
+			}
+		}
+		return mat
 
 	case *MatrixSelector:
 		if ev.Timestamp != ev.EndTimestamp && ev.Interval != 0 {
@@ -860,43 +878,57 @@ func (ev *evaluator) eval(expr Expr) Value {
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 	var (
-		vec     = make(Vector, 0, len(node.series))
-		refTime = ts - durationMilliseconds(node.Offset)
+		vec = make(Vector, 0, len(node.series))
 	)
 
-	for i, it := range node.iterators {
-		var t int64
-		var v float64
-
-		ok := it.Seek(refTime)
-		if !ok {
-			if it.Err() != nil {
-				ev.error(it.Err())
-			}
+	var it *storage.BufferedSeriesIterator
+	for i, s := range node.series {
+		if it == nil {
+			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
+		} else {
+			it.Reset(s.Iterator())
 		}
 
+		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
-			t, v = it.Values()
+			vec = append(vec, Sample{
+				Metric: node.series[i].Labels(),
+				Point:  Point{V: v, T: t},
+			})
 		}
 
-		peek := 1
-		if !ok || t > refTime {
-			t, v, ok = it.PeekBack(peek)
-			peek++
-			if !ok || t < refTime-durationMilliseconds(LookbackDelta) {
-				continue
-			}
-		}
-		if value.IsStaleNaN(v) {
-			continue
-		}
-
-		vec = append(vec, Sample{
-			Metric: node.series[i].Labels(),
-			Point:  Point{V: v, T: t},
-		})
 	}
 	return vec
+}
+
+func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *VectorSelector, ts int64) (int64, float64, bool) {
+	refTime := ts - durationMilliseconds(node.Offset)
+	var t int64
+	var v float64
+
+	ok := it.Seek(refTime)
+	if !ok {
+		if it.Err() != nil {
+			ev.error(it.Err())
+		}
+	}
+
+	if ok {
+		t, v = it.Values()
+	}
+
+	peek := 1
+	if !ok || t > refTime {
+		t, v, ok = it.PeekBack(peek)
+		peek++
+		if !ok || t < refTime-durationMilliseconds(LookbackDelta) {
+			return 0, 0, false
+		}
+	}
+	if value.IsStaleNaN(v) {
+		return 0, 0, false
+	}
+	return t, v, true
 }
 
 var pointPool = sync.Pool{}
