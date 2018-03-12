@@ -178,6 +178,7 @@ func (r *sampleRing) add(t int64, v float64) {
 		r.buf = buf
 		r.i = r.f
 		r.f += l
+		l = 2 * l
 	} else {
 		r.i++
 		if r.i >= l {
