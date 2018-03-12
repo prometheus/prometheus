@@ -176,9 +176,17 @@ func checkOverflow(m map[string]interface{}, ctx string) error {
 
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleGroups, []error) {
+	return parse(content, "")
+}
+
+func parse(content []byte, filename string) (*RuleGroups, []error) {
 	var groups RuleGroups
 	if err := yaml.Unmarshal(content, &groups); err != nil {
-		return nil, []error{err}
+		errors := []error{err}
+		if filename != "" {
+			errors = append(errors, fmt.Errorf("filename=%s", filename))
+		}
+		return nil, errors
 	}
 	return &groups, groups.Validate()
 }
@@ -187,7 +195,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 func ParseFile(file string) (*RuleGroups, []error) {
 	b, err := ioutil.ReadFile(file)
 	if err != nil {
-		return nil, []error{err}
+		return nil, []error{fmt.Errorf("filename=%s, err=%v", file, err)}
 	}
-	return Parse(b)
+	return parse(b, file)
 }
