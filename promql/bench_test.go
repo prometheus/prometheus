@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,71 +58,18 @@ func BenchmarkRangeQuery(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	cases := []struct {
+	type benchCase struct {
 		expr     string
 		interval time.Duration
 		steps    int64
-	}{
+	}
+	cases := []benchCase{
+		// Simple rate.
 		{
-			expr:     "rate(a_one[1m])",
+			expr:     "rate(a_X[1m])",
 			interval: time.Second * 10,
-			steps:    1,
 		},
-		{
-			expr:     "rate(a_one[1m])",
-			interval: time.Second * 10,
-			steps:    10,
-		},
-		{
-			expr:     "rate(a_one[1m])",
-			interval: time.Second * 10,
-			steps:    100,
-		},
-		{
-			expr:     "rate(a_one[1m])",
-			interval: time.Second * 10,
-			steps:    1000,
-		},
-		{
-			expr:     "rate(a_ten[1m])",
-			interval: time.Second * 10,
-			steps:    1,
-		},
-		{
-			expr:     "rate(a_ten[1m])",
-			interval: time.Second * 10,
-			steps:    10,
-		},
-		{
-			expr:     "rate(a_ten[1m])",
-			interval: time.Second * 10,
-			steps:    100,
-		},
-		{
-			expr:     "rate(a_ten[1m])",
-			interval: time.Second * 10,
-			steps:    1000,
-		},
-		{
-			expr:     "rate(a_hundred[1m])",
-			interval: time.Second * 10,
-			steps:    1,
-		},
-		{
-			expr:     "rate(a_hundred[1m])",
-			interval: time.Second * 10,
-			steps:    10,
-		},
-		{
-			expr:     "rate(a_hundred[1m])",
-			interval: time.Second * 10,
-			steps:    100,
-		},
-		{
-			expr:     "rate(a_hundred[1m])",
-			interval: time.Second * 10,
-			steps:    1000,
-		},
+		// Holt-Winters and long ranges.
 		{
 			expr:     "holt_winters(a_one[1h], 0.3, 0.3)",
 			interval: time.Second * 10,
@@ -147,37 +95,43 @@ func BenchmarkRangeQuery(b *testing.B) {
 			interval: time.Second * 10,
 			steps:    1,
 		},
+		// Unary operators.
 		{
-			expr:     "-a_one",
+			expr:     "-a_X",
 			interval: time.Second * 10,
-			steps:    1,
 		},
+		// Binary operators.
 		{
-			expr:     "-a_one",
+			expr:     "a_X - b_X",
 			interval: time.Second * 10,
-			steps:    10,
-		},
-		{
-			expr:     "-a_one",
-			interval: time.Second * 10,
-			steps:    100,
-		},
-		{
-			expr:     "-a_ten",
-			interval: time.Second * 10,
-			steps:    1,
-		},
-		{
-			expr:     "-a_ten",
-			interval: time.Second * 10,
-			steps:    10,
-		},
-		{
-			expr:     "-a_ten",
-			interval: time.Second * 10,
-			steps:    100,
 		},
 	}
+
+	// X in an expr will be replaced by different metric sizes.
+	tmp := []benchCase{}
+	for _, c := range cases {
+		if !strings.Contains(c.expr, "X") {
+			tmp = append(tmp, c)
+		} else {
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), interval: c.interval, steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), interval: c.interval, steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), interval: c.interval, steps: c.steps})
+		}
+	}
+	cases = tmp
+
+	// No step will be replaced by cases with the standard step.
+	tmp = []benchCase{}
+	for _, c := range cases {
+		if c.steps != 0 {
+			tmp = append(tmp, c)
+		} else {
+			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 1})
+			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 10})
+			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 100})
+		}
+	}
+	cases = tmp
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,interval=%s,steps=%d", c.expr, c.interval, c.steps)
 		b.Run(name, func(b *testing.B) {
