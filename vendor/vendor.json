@@ -788,10 +788,10 @@
 			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
-			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",
+			"checksumSHA1": "h6H+CjfOU6FfHV8cLWHN1VhAqp8=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
-			"revisionTime": "2017-11-04T09:59:07Z"
+			"revision": "e4aa40a9169a88835b849a6efb71e05dc04b88f0",
+			"revisionTime": "2018-03-12T11:28:59Z"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
