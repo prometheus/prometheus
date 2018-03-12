@@ -126,7 +126,7 @@ func TestSampleDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	// Let's send on less sample than batch size, and wait the timeout duration
+	// Let's send one less sample than batch size, and wait the timeout duration
 	n := config.DefaultQueueConfig.Capacity - 1
 
 	samples := make(model.Samples, 0, n)
