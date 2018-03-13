@@ -800,40 +800,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "zVgXlbZ1J8GhBN7tZji7M/SuiAU=",
+			"checksumSHA1": "JfxP001vgt0P+hEDk/if0bxa8xU=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "16b2bf1b45ce3e3536c78ebec5116ea09a69786e",
-			"revisionTime": "2018-03-02T11:51:49Z"
+			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
+			"revisionTime": "2018-03-13T20:20:03Z"
 		},
 		{
 			"checksumSHA1": "S7F4yWxVLhxQNHMdgoOo6plmOOs=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
-			"revisionTime": "2018-02-15T11:29:47Z"
+			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
+			"revisionTime": "2018-03-13T20:20:03Z"
 		},
 		{
 			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
-			"revisionTime": "2018-02-15T11:29:47Z"
+			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
+			"revisionTime": "2018-03-13T20:20:03Z"
 		},
 		{
 			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
-			"revisionTime": "2018-02-15T11:29:47Z"
+			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
+			"revisionTime": "2018-03-13T20:20:03Z"
 		},
 		{
-			"checksumSHA1": "UlvN+ZhTu52S8f9niySQpPC+dvQ=",
+			"checksumSHA1": "4ebzIE2Jvj6+SG6yGFSXN8scgfo=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
-			"revisionTime": "2018-02-15T11:29:47Z"
+			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
+			"revisionTime": "2018-03-13T20:20:03Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "494acd307058387ced7646f9996b0f7372eaa558",
-			"revisionTime": "2018-02-15T11:29:47Z"
+			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
+			"revisionTime": "2018-03-13T20:20:03Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
