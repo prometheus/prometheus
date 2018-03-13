@@ -41,21 +41,20 @@ type Function struct {
 	// args are the original arguments to the function, where you can access
 	//    matrixSelectors, vectorSelectors, and StringLiterals.
 	// ts is the evaluation timestamp.
-	// out is a pre-allocated empty vector that you may use to accumulate
+	// enh.out is a pre-allocated empty vector that you may use to accumulate
 	//    output before returning it. The vectors in vals should not be returned.a
 	// Range vector functions need only return a vector with the right value,
 	//     the metric and timestamp are not neded.
 	// Range vector functions need only return a vector with the right value and
 	//     metric, the timestamp is not needed.
 	// Scalar results should be returned as the value of a sample in a Vector.
-	Call func(vals []Value, args Expressions, ts int64, out Vector) Vector
+	Call func(vals []Value, args Expressions, enh *evalNodeHelper) Vector
 }
 
 // === time() float64 ===
-func funcTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	return Vector{Sample{Point: Point{
-		V: float64(ts) / 1000,
-		T: ts,
+		V: float64(enh.ts) / 1000,
 	}}}
 }
 
@@ -63,13 +62,13 @@ func funcTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(vals []Value, args Expressions, ts int64, out Vector, isCounter bool, isRate bool) Vector {
+func extrapolatedRate(vals []Value, args Expressions, enh *evalNodeHelper, isCounter bool, isRate bool) Vector {
 	ms := args[0].(*MatrixSelector)
 
 	var (
 		matrix     = vals[0].(Matrix)
-		rangeStart = ts - durationMilliseconds(ms.Range+ms.Offset)
-		rangeEnd   = ts - durationMilliseconds(ms.Offset)
+		rangeStart = enh.ts - durationMilliseconds(ms.Range+ms.Offset)
+		rangeEnd   = enh.ts - durationMilliseconds(ms.Offset)
 	)
 
 	for _, samples := range matrix {
@@ -133,36 +132,36 @@ func extrapolatedRate(vals []Value, args Expressions, ts int64, out Vector, isCo
 			resultValue = resultValue / ms.Range.Seconds()
 		}
 
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Point: Point{V: resultValue},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === delta(Matrix ValueTypeMatrix) Vector ===
-func funcDelta(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return extrapolatedRate(vals, args, ts, out, false, false)
+func funcDelta(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return extrapolatedRate(vals, args, enh, false, false)
 }
 
 // === rate(node ValueTypeMatrix) Vector ===
-func funcRate(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return extrapolatedRate(vals, args, ts, out, true, true)
+func funcRate(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return extrapolatedRate(vals, args, enh, true, true)
 }
 
 // === increase(node ValueTypeMatrix) Vector ===
-func funcIncrease(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return extrapolatedRate(vals, args, ts, out, true, false)
+func funcIncrease(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return extrapolatedRate(vals, args, enh, true, false)
 }
 
 // === irate(node ValueTypeMatrix) Vector ===
-func funcIrate(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return instantValue(vals, out, true)
+func funcIrate(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return instantValue(vals, enh.out, true)
 }
 
 // === idelta(node model.ValMatric) Vector ===
-func funcIdelta(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return instantValue(vals, out, false)
+func funcIdelta(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return instantValue(vals, enh.out, false)
 }
 
 func instantValue(vals []Value, out Vector, isRate bool) Vector {
@@ -223,7 +222,7 @@ func calcTrendValue(i int, sf, tf, s0, s1, b float64) float64 {
 // data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
 // how trends in historical data will affect the current data. A higher trend factor increases the influence.
 // of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
-func funcHoltWinters(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcHoltWinters(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	mat := vals[0].(Matrix)
 
 	// The smoothing factor argument.
@@ -268,16 +267,16 @@ func funcHoltWinters(vals []Value, args Expressions, ts int64, out Vector) Vecto
 			s0, s1 = s1, x+y
 		}
 
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Point: Point{V: s1}, // The last value in the Vector is the smoothed result.
 		})
 	}
 
-	return out
+	return enh.out
 }
 
 // === sort(node ValueTypeVector) Vector ===
-func funcSort(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcSort(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
 	byValueSorter := vectorByReverseValueHeap(vals[0].(Vector))
@@ -286,7 +285,7 @@ func funcSort(vals []Value, args Expressions, ts int64, out Vector) Vector {
 }
 
 // === sortDesc(node ValueTypeVector) Vector ===
-func funcSortDesc(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcSortDesc(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
 	byValueSorter := vectorByValueHeap(vals[0].(Vector))
@@ -295,33 +294,33 @@ func funcSortDesc(vals []Value, args Expressions, ts int64, out Vector) Vector {
 }
 
 // === clamp_max(Vector ValueTypeVector, max Scalar) Vector ===
-func funcClampMax(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcClampMax(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	max := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: dropMetricName(el.Metric),
 			Point:  Point{V: math.Min(max, float64(el.V))},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === clamp_min(Vector ValueTypeVector, min Scalar) Vector ===
-func funcClampMin(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcClampMin(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	min := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: dropMetricName(el.Metric),
 			Point:  Point{V: math.Max(min, float64(el.V))},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
-func funcRound(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcRound(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	// round returns a number rounded to toNearest.
 	// Ties are solved by rounding up.
@@ -334,47 +333,45 @@ func funcRound(vals []Value, args Expressions, ts int64, out Vector) Vector {
 
 	for _, el := range vec {
 		v := math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: dropMetricName(el.Metric),
 			Point:  Point{V: v},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === Scalar(node ValueTypeVector) Scalar ===
-func funcScalar(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcScalar(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	v := vals[0].(Vector)
 	if len(v) != 1 {
-		return append(out, Sample{
+		return append(enh.out, Sample{
 			Point: Point{V: math.NaN()},
 		})
 	}
-	return append(out, Sample{
+	return append(enh.out, Sample{
 		Point: Point{V: v[0].V},
 	})
 }
 
-func aggrOverTime(vals []Value, ts int64, aggrFn func([]Point) float64) Vector {
+func aggrOverTime(vals []Value, enh *evalNodeHelper, aggrFn func([]Point) float64) Vector {
 	mat := vals[0].(Matrix)
-	resultVector := Vector{}
 
 	for _, el := range mat {
 		if len(el.Points) == 0 {
 			continue
 		}
 
-		resultVector = append(resultVector, Sample{
-			Metric: dropMetricName(el.Metric),
-			Point:  Point{V: aggrFn(el.Points), T: ts},
+		enh.out = append(enh.out, Sample{
+			Point: Point{V: aggrFn(el.Points)},
 		})
 	}
-	return resultVector
+	return enh.out
 }
 
 // === avg_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcAvgOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcAvgOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
 			sum += v.V
@@ -384,16 +381,16 @@ func funcAvgOverTime(vals []Value, args Expressions, ts int64, out Vector) Vecto
 }
 
 // === count_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcCountOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcCountOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		return float64(len(values))
 	})
 }
 
 // === floor(Vector ValueTypeVector) Vector ===
 // === max_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMaxOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcMaxOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		max := math.Inf(-1)
 		for _, v := range values {
 			max = math.Max(max, float64(v.V))
@@ -403,8 +400,8 @@ func funcMaxOverTime(vals []Value, args Expressions, ts int64, out Vector) Vecto
 }
 
 // === min_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcMinOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcMinOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		min := math.Inf(1)
 		for _, v := range values {
 			min = math.Min(min, float64(v.V))
@@ -414,8 +411,8 @@ func funcMinOverTime(vals []Value, args Expressions, ts int64, out Vector) Vecto
 }
 
 // === sum_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcSumOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcSumOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum float64
 		for _, v := range values {
 			sum += v.V
@@ -425,7 +422,7 @@ func funcSumOverTime(vals []Value, args Expressions, ts int64, out Vector) Vecto
 }
 
 // === quantile_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcQuantileOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcQuantileOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	mat := vals[1].(Matrix)
 
@@ -438,16 +435,16 @@ func funcQuantileOverTime(vals []Value, args Expressions, ts int64, out Vector) 
 		for _, v := range el.Points {
 			values = append(values, Sample{Point: Point{V: v.V}})
 		}
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Point: Point{V: quantile(q, values)},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStddevOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcStddevOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
 			sum += v.V
@@ -460,8 +457,8 @@ func funcStddevOverTime(vals []Value, args Expressions, ts int64, out Vector) Ve
 }
 
 // === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
-func funcStdvarOverTime(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return aggrOverTime(vals, ts, func(values []Point) float64 {
+func funcStdvarOverTime(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum, squaredSum, count float64
 		for _, v := range values {
 			sum += v.V
@@ -474,9 +471,9 @@ func funcStdvarOverTime(vals []Value, args Expressions, ts int64, out Vector) Ve
 }
 
 // === absent(Vector ValueTypeVector) Vector ===
-func funcAbsent(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcAbsent(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	if len(vals[0].(Vector)) > 0 {
-		return out
+		return enh.out
 	}
 	m := []labels.Label{}
 
@@ -487,7 +484,7 @@ func funcAbsent(vals []Value, args Expressions, ts int64, out Vector) Vector {
 			}
 		}
 	}
-	return append(out,
+	return append(enh.out,
 		Sample{
 			Metric: labels.New(m...),
 			Point:  Point{V: 1},
@@ -505,55 +502,55 @@ func simpleFunc(vals []Value, out Vector, f func(float64) float64) Vector {
 }
 
 // === abs(Vector ValueTypeVector) Vector ===
-func funcAbs(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Abs)
+func funcAbs(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Abs)
 }
 
 // === ceil(Vector ValueTypeVector) Vector ===
-func funcCeil(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Ceil)
+func funcCeil(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Ceil)
 }
 
 // === floor(Vector ValueTypeVector) Vector ===
-func funcFloor(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Floor)
+func funcFloor(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Floor)
 }
 
 // === exp(Vector ValueTypeVector) Vector ===
-func funcExp(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Exp)
+func funcExp(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Exp)
 }
 
 // === sqrt(Vector VectorNode) Vector ===
-func funcSqrt(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Sqrt)
+func funcSqrt(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Sqrt)
 }
 
 // === ln(Vector ValueTypeVector) Vector ===
-func funcLn(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Log)
+func funcLn(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Log)
 }
 
 // === log2(Vector ValueTypeVector) Vector ===
-func funcLog2(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Log2)
+func funcLog2(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Log2)
 }
 
 // === log10(Vector ValueTypeVector) Vector ===
-func funcLog10(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return simpleFunc(vals, out, math.Log10)
+func funcLog10(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return simpleFunc(vals, enh.out, math.Log10)
 }
 
 // === timestamp(Vector ValueTypeVector) Vector ===
-func funcTimestamp(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcTimestamp(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: dropMetricName(el.Metric),
 			Point:  Point{V: float64(el.T) / 1000},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // linearRegression performs a least-square linear regression analysis on the
@@ -582,7 +579,7 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 }
 
 // === deriv(node ValueTypeMatrix) Vector ===
-func funcDeriv(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcDeriv(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	mat := vals[0].(Matrix)
 
 	for _, samples := range mat {
@@ -596,15 +593,15 @@ func funcDeriv(vals []Value, args Expressions, ts int64, out Vector) Vector {
 		// to avoid floating point accuracy issues, see
 		// https://github.com/prometheus/prometheus/issues/2674
 		slope, _ := linearRegression(samples.Points, samples.Points[0].T)
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Point: Point{V: slope},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === predict_linear(node ValueTypeMatrix, k ValueTypeScalar) Vector ===
-func funcPredictLinear(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcPredictLinear(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	mat := vals[0].(Matrix)
 	duration := vals[1].(Vector)[0].V
 
@@ -614,17 +611,17 @@ func funcPredictLinear(vals []Value, args Expressions, ts int64, out Vector) Vec
 		if len(samples.Points) < 2 {
 			continue
 		}
-		slope, intercept := linearRegression(samples.Points, ts)
+		slope, intercept := linearRegression(samples.Points, enh.ts)
 
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Point: Point{V: slope*duration + intercept},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === histogram_quantile(k ValueTypeScalar, Vector ValueTypeVector) Vector ===
-func funcHistogramQuantile(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcHistogramQuantile(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
 
@@ -653,17 +650,17 @@ func funcHistogramQuantile(vals []Value, args Expressions, ts int64, out Vector)
 	}
 
 	for _, mb := range signatureToMetricWithBuckets {
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: mb.metric,
 			Point:  Point{V: bucketQuantile(q, mb.buckets)},
 		})
 	}
 
-	return out
+	return enh.out
 }
 
 // === resets(Matrix ValueTypeMatrix) Vector ===
-func funcResets(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcResets(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	in := vals[0].(Matrix)
 
 	for _, samples := range in {
@@ -677,15 +674,15 @@ func funcResets(vals []Value, args Expressions, ts int64, out Vector) Vector {
 			prev = current
 		}
 
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Point: Point{V: float64(resets)},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === changes(Matrix ValueTypeMatrix) Vector ===
-func funcChanges(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcChanges(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	in := vals[0].(Matrix)
 
 	for _, samples := range in {
@@ -699,15 +696,15 @@ func funcChanges(vals []Value, args Expressions, ts int64, out Vector) Vector {
 			prev = current
 		}
 
-		out = append(out, Sample{
-			Point: Point{V: float64(changes), T: ts},
+		enh.out = append(enh.out, Sample{
+			Point: Point{V: float64(changes)},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
-func funcLabelReplace(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcLabelReplace(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
 		dst      = args[1].(*StringLiteral).Val
@@ -753,8 +750,8 @@ func funcLabelReplace(vals []Value, args Expressions, ts int64, out Vector) Vect
 }
 
 // === Vector(s Scalar) Vector ===
-func funcVector(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return append(out,
+func funcVector(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return append(enh.out,
 		Sample{
 			Metric: labels.Labels{},
 			Point:  Point{V: vals[0].(Vector)[0].V},
@@ -762,7 +759,7 @@ func funcVector(vals []Value, args Expressions, ts int64, out Vector) Vector {
 }
 
 // === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) Vector ===
-func funcLabelJoin(vals []Value, args Expressions, ts int64, out Vector) Vector {
+func funcLabelJoin(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	var (
 		vector    = vals[0].(Vector)
 		dst       = args[1].(*StringLiteral).Val
@@ -812,70 +809,70 @@ func funcLabelJoin(vals []Value, args Expressions, ts int64, out Vector) Vector 
 }
 
 // Common code for date related functions.
-func dateWrapper(vals []Value, ts int64, out Vector, f func(time.Time) float64) Vector {
+func dateWrapper(vals []Value, enh *evalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vals) == 0 {
-		return append(out,
+		return append(enh.out,
 			Sample{
 				Metric: labels.Labels{},
-				Point:  Point{V: f(time.Unix(ts/1000, 0).UTC())},
+				Point:  Point{V: f(time.Unix(enh.ts/1000, 0).UTC())},
 			})
 	}
 
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
-		out = append(out, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: dropMetricName(el.Metric),
 			Point:  Point{V: f(t)},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === days_in_month(v Vector) Scalar ===
-func funcDaysInMonth(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcDaysInMonth(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	})
 }
 
 // === day_of_month(v Vector) Scalar ===
-func funcDayOfMonth(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcDayOfMonth(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Day())
 	})
 }
 
 // === day_of_week(v Vector) Scalar ===
-func funcDayOfWeek(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcDayOfWeek(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	})
 }
 
 // === hour(v Vector) Scalar ===
-func funcHour(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcHour(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Hour())
 	})
 }
 
 // === minute(v Vector) Scalar ===
-func funcMinute(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcMinute(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Minute())
 	})
 }
 
 // === month(v Vector) Scalar ===
-func funcMonth(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcMonth(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Month())
 	})
 }
 
 // === year(v Vector) Scalar ===
-func funcYear(vals []Value, args Expressions, ts int64, out Vector) Vector {
-	return dateWrapper(vals, ts, out, func(t time.Time) float64 {
+func funcYear(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
 		return float64(t.Year())
 	})
 }

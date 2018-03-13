@@ -626,15 +626,19 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Value {
 		matrixes := make([]Matrix, len(exprs))
+		biggestLen := 1
 		for i, e := range exprs {
 			// Functions will take string arguments from the expressions, not the values.
 			if e != nil && e.Type() != ValueTypeString {
 				matrixes[i] = ev.eval(e).(Matrix)
+				if len(matrixes[i]) > biggestLen {
+					biggestLen = len(matrixes[i])
+				}
 			}
 		}
 		Seriess := map[uint64]Series{}
 		args := make([]Value, len(exprs))
-		enh := &evalNodeHelper{out: Vector{}}
+		enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
 		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
 			// Gather input vectors for this timestamp.
 			vectors := make([]Vector, len(exprs))
@@ -713,7 +717,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			vs, ok := e.Args[0].(*VectorSelector)
 			if ok {
 				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
-					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh.ts, nil)
+					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
 				})
 			}
 		}
@@ -739,7 +743,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				points := getPointSlice(16)
 				inMatrix := make(Matrix, 1)
 				inArgs[matrixArgIndex] = inMatrix
-				outVec := make(Vector, 0, 1)
+				enh := &evalNodeHelper{out: make(Vector, 0, 1)}
 				// Process all the calls for one time series at a time.
 				var it *storage.BufferedSeriesIterator
 				for i, s := range sel.series {
@@ -773,7 +777,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 							continue
 						}
 						inMatrix[0].Points = points
-						outVec := e.Func.Call(inArgs, e.Args, ts, outVec[:0])
+						enh.ts = ts
+						outVec := e.Func.Call(inArgs, e.Args, enh)
+						enh.out = outVec[:0]
 						if len(outVec) > 0 {
 							ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
 						}
@@ -788,7 +794,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		// Does not have a matrix argument.
 		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
-			return e.Func.Call(v, e.Args, enh.ts, nil)
+			return e.Func.Call(v, e.Args, enh)
 		}, e.Args...)
 
 	case *ParenExpr:
