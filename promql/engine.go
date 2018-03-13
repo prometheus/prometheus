@@ -612,7 +612,13 @@ type evalNodeHelper struct {
 	out Vector
 
 	// Caches.
-	dmn map[uint64]labels.Labels // dropMetricName.
+	dmn  map[uint64]labels.Labels // dropMetricName.
+	sigf map[uint64]uint64        // signatureFunc.
+
+	// For binary vector matching.
+	rightSigs    map[uint64]Sample
+	matchedSigs  map[uint64]map[uint64]struct{}
+	resultMetric map[uint64]map[uint64]labels.Labels
 }
 
 // dropMetricName is a cached version of dropMetricName.
@@ -628,7 +634,24 @@ func (enh *evalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	ret = dropMetricName(l)
 	enh.dmn[h] = ret
 	return ret
+}
 
+// signatureFunc is a cached version of signatureFunc.
+func (enh *evalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
+	if enh.sigf == nil {
+		enh.sigf = make(map[uint64]uint64, len(enh.out))
+	}
+	f := signatureFunc(on, names...)
+	return func(l labels.Labels) uint64 {
+		h := l.Hash()
+		ret, ok := enh.sigf[h]
+		if ok {
+			return ret
+		}
+		ret = f(l)
+		enh.sigf[h] = ret
+		return ret
+	}
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
@@ -1057,7 +1080,7 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *e
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
+	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	// The set of signatures for the right-hand side Vector.
 	rightSigs := map[uint64]struct{}{}
@@ -1079,7 +1102,7 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *ev
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
+	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	leftSigs := map[uint64]struct{}{}
 	// Add everything from the left-hand-side Vector.
@@ -1100,7 +1123,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
+	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	rightSigs := map[uint64]struct{}{}
 	for _, rs := range rhs {
@@ -1120,7 +1143,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
+	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
@@ -1130,7 +1153,14 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	}
 
 	// All samples from the rhs hashed by the matching label/values.
-	rightSigs := map[uint64]Sample{}
+	if enh.rightSigs == nil {
+		enh.rightSigs = make(map[uint64]Sample, len(enh.out))
+	} else {
+		for k := range enh.rightSigs {
+			delete(enh.rightSigs, k)
+		}
+	}
+	rightSigs := enh.rightSigs
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for _, rs := range rhs {
@@ -1146,7 +1176,14 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 
 	// Tracks the match-signature. For one-to-one operations the value is nil. For many-to-one
 	// the value is a set of signatures to detect duplicated result elements.
-	matchedSigs := map[uint64]map[uint64]struct{}{}
+	if enh.matchedSigs == nil {
+		enh.matchedSigs = make(map[uint64]map[uint64]struct{}, len(rightSigs))
+	} else {
+		for k := range enh.matchedSigs {
+			delete(enh.matchedSigs, k)
+		}
+	}
+	matchedSigs := enh.matchedSigs
 
 	// For all lhs samples find a respective rhs sample and perform
 	// the binary operation.
@@ -1173,7 +1210,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 		} else if !keep {
 			continue
 		}
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching)
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
 
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == CardOneToOne {
@@ -1251,7 +1288,20 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching, enh *evalNodeHelper) labels.Labels {
+	if enh.resultMetric == nil {
+		enh.resultMetric = map[uint64]map[uint64]labels.Labels{}
+	}
+	lh := lhs.Hash()
+	rh := rhs.Hash()
+	if a, ok := enh.resultMetric[lh]; ok {
+		if ret, ok := a[rh]; ok {
+			return ret
+		}
+	} else {
+		enh.resultMetric[lh] = map[uint64]labels.Labels{}
+	}
+
 	lb := labels.NewBuilder(lhs)
 
 	if shouldDropMetricName(op) {
@@ -1282,7 +1332,9 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching)
 		}
 	}
 
-	return lb.Labels()
+	ret := lb.Labels()
+	enh.resultMetric[lh][rh] = ret
+	return ret
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
