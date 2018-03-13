@@ -30,32 +30,30 @@ func BenchmarkRangeQuery(b *testing.B) {
 	defer storage.Close()
 	engine := NewEngine(nil, nil, 10, 10*time.Second)
 
-	a, err := storage.Appender()
-	if err != nil {
-		b.Fatal(err)
+	metrics := make([]labels.Labels, 0, 2000)
+	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
+	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
+	for i := 0; i < 10; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
+		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
 	}
-	for s := 0; s < 10000; s += 1 {
-		ts := int64(s * 10000) // 10s interval.
-		metric := labels.FromStrings("__name__", "a_one")
-		a.Add(metric, ts, float64(s))
-		metric = labels.FromStrings("__name__", "b_one")
-		a.Add(metric, ts, float64(s))
+	for i := 0; i < 100; i++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
+		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
+	}
 
-		for i := 0; i < 10; i++ {
-			metric = labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i))
-			a.Add(metric, ts, float64(s))
-			metric = labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i))
+	for s := 0; s < 10000; s += 1 {
+		a, err := storage.Appender()
+		if err != nil {
+			b.Fatal(err)
+		}
+		ts := int64(s * 10000) // 10s interval.
+		for _, metric := range metrics {
 			a.Add(metric, ts, float64(s))
 		}
-		for i := 0; i < 100; i++ {
-			metric = labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i))
-			a.Add(metric, ts, float64(s))
-			metric = labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i))
-			a.Add(metric, ts, float64(s))
+		if err := a.Commit(); err != nil {
+			b.Fatal(err)
 		}
-	}
-	if err := a.Commit(); err != nil {
-		b.Fatal(err)
 	}
 
 	type benchCase struct {
