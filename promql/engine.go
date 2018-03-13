@@ -645,24 +645,28 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Value {
 		matrixes := make([]Matrix, len(exprs))
-		biggestLen := 1
 		for i, e := range exprs {
 			// Functions will take string arguments from the expressions, not the values.
 			if e != nil && e.Type() != ValueTypeString {
 				matrixes[i] = ev.eval(e).(Matrix)
-				if len(matrixes[i]) > biggestLen {
-					biggestLen = len(matrixes[i])
-				}
 			}
 		}
+
 		Seriess := map[uint64]Series{}
+		vectors := make([]Vector, len(exprs))
 		args := make([]Value, len(exprs))
+		biggestLen := 1
+		for i := range exprs {
+			vectors[i] = make(Vector, 0, len(matrixes[i]))
+			if len(matrixes[i]) > biggestLen {
+				biggestLen = len(matrixes[i])
+			}
+		}
 		enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
 		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
 			// Gather input vectors for this timestamp.
-			vectors := make([]Vector, len(exprs))
 			for i := range exprs {
-				vectors[i] = make(Vector, 0, len(matrixes[i]))
+				vectors[i] = vectors[i][:0]
 				for _, series := range matrixes[i] {
 					for pos, point := range series.Points {
 						if point.T == ts {
@@ -674,10 +678,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 						}
 					}
 				}
-			}
-			for i := range vectors {
 				args[i] = vectors[i]
 			}
+			// Make the call.
 			enh.ts = ts
 			result := f(args, enh)
 			enh.out = result[:0] // Reuse result vector.
