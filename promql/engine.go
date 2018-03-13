@@ -618,7 +618,7 @@ type evalNodeHelper struct {
 	// For binary vector matching.
 	rightSigs    map[uint64]Sample
 	matchedSigs  map[uint64]map[uint64]struct{}
-	resultMetric map[uint64]map[uint64]labels.Labels
+	resultMetric map[uint64]labels.Labels
 }
 
 // dropMetricName is a cached version of dropMetricName.
@@ -1290,16 +1290,16 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 // binary operation and the matching options.
 func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching, enh *evalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
-		enh.resultMetric = map[uint64]map[uint64]labels.Labels{}
+		enh.resultMetric = make(map[uint64]labels.Labels, len(enh.out))
 	}
+	// op and matching are always the same for a given node, so
+	// there's no need to include them in the hash key.
+	// If the lhs and rhs are the same then the xor would be 0,
+	// so add in one side to protect against that.
 	lh := lhs.Hash()
-	rh := rhs.Hash()
-	if a, ok := enh.resultMetric[lh]; ok {
-		if ret, ok := a[rh]; ok {
-			return ret
-		}
-	} else {
-		enh.resultMetric[lh] = map[uint64]labels.Labels{}
+	h := (lh ^ rhs.Hash()) + lh
+	if ret, ok := enh.resultMetric[h]; ok {
+		return ret
 	}
 
 	lb := labels.NewBuilder(lhs)
@@ -1333,7 +1333,7 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 	}
 
 	ret := lb.Labels()
-	enh.resultMetric[lh][rh] = ret
+	enh.resultMetric[h] = ret
 	return ret
 }
 
