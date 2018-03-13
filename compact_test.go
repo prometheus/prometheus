@@ -172,12 +172,21 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// We should wait for a third block of size 20 to appear before compacting
-		// the existing ones.
+		// We should wait for four blocks of size 20 to appear before compacting.
 		{
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
+			},
+			expected: nil,
+		},
+		// We should wait for a next block of size 20 to appear before compacting
+		// the existing ones. We have three, but we ignore the fresh one with shortest range.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 40, 60, nil),
 			},
 			expected: nil,
 		},
@@ -187,20 +196,33 @@ func TestLeveledCompactor_plan(t *testing.T) {
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
 				metaRange("3", 40, 60, nil),
+				metaRange("4", 60, 80, nil),
 			},
 			expected: []string{"1", "2", "3"},
 		},
-		// Block for the next parent range appeared. Nothing will happen in the first one
-		// anymore and we should compact it.
+		// Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
+		// anymore but we ignore fresh one still, so no compaction.
 		{
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
 				metaRange("3", 60, 80, nil),
 			},
+			expected: nil,
+		},
+		// Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
+		// We will not get this missed gap anymore and we should compact just these two.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 20, nil),
+				metaRange("2", 20, 40, nil),
+				metaRange("3", 60, 80, nil),
+				metaRange("4", 80, 100, nil),
+			},
 			expected: []string{"1", "2"},
 		},
 		{
+			// We have 20, 20, 20, 60, 60 range blocks. "3" is marked as fresh one, so we ignore it during compaction.
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -208,27 +230,54 @@ func TestLeveledCompactor_plan(t *testing.T) {
 				metaRange("4", 60, 120, nil),
 				metaRange("5", 120, 180, nil),
 			},
-			expected: []string{"1", "2", "3"},
+			expected: []string{"1", "2"},
 		},
 		{
+			// We have 20, 60, 60, 240 range blocks. We can compact 60 + 60 only, because the newest one with the
+			// shortest range is not included in planning (4).
 			metas: []dirMeta{
 				metaRange("2", 20, 40, nil),
 				metaRange("4", 60, 120, nil),
 				metaRange("5", 120, 180, nil),
 				metaRange("6", 720, 960, nil),
 			},
+			expected: []string{"4", "5"},
+		},
+		{
+			// We got fresh block if size 20. We can compact 20 + 60 + 60.
+			metas: []dirMeta{
+				metaRange("2", 20, 40, nil),
+				metaRange("4", 60, 120, nil),
+				metaRange("5", 120, 180, nil),
+				metaRange("6", 720, 960, nil),
+				metaRange("7", 960, 980, nil),
+			},
 			expected: []string{"2", "4", "5"},
 		},
 		{
+			// We have 60, 20, 20, 20 range blocks.
+			// Fresh block with shortest range block is ignored (6), so nothing can be compacted.
 			metas: []dirMeta{
 				metaRange("1", 0, 60, nil),
 				metaRange("4", 60, 80, nil),
 				metaRange("5", 80, 100, nil),
 				metaRange("6", 100, 120, nil),
 			},
+			expected: nil,
+		},
+		{
+			// We have 60, 20, 20, 20, 20 range blocks.
+			// Fresh block with shortest range block is ignored but compaction 20 + 20 + 20 is possible.
+			metas: []dirMeta{
+				metaRange("1", 0, 60, nil),
+				metaRange("4", 60, 80, nil),
+				metaRange("5", 80, 100, nil),
+				metaRange("6", 100, 120, nil),
+				metaRange("6", 120, 140, nil),
+			},
 			expected: []string{"4", "5", "6"},
 		},
-		// Select large blocks that have many tombstones.
+		// Do not select large blocks that have many tombstones when there is no fresh block.
 		{
 			metas: []dirMeta{
 				metaRange("1", 0, 720, &BlockStats{
@@ -236,15 +285,27 @@ func TestLeveledCompactor_plan(t *testing.T) {
 					NumTombstones: 3,
 				}),
 			},
+			expected: nil,
+		},
+		// Select large blocks that have many tombstones when fresh appears.
+		{
+			metas: []dirMeta{
+				metaRange("1", 0, 720, &BlockStats{
+					NumSeries:     10,
+					NumTombstones: 3,
+				}),
+				metaRange("2", 720, 740, nil),
+			},
 			expected: []string{"1"},
 		},
-		// For small blocks, do not compact tombstones.
+		// For small blocks, do not compact tombstones, even when fresh appears.
 		{
 			metas: []dirMeta{
 				metaRange("1", 0, 30, &BlockStats{
 					NumSeries:     10,
 					NumTombstones: 3,
 				}),
+				metaRange("2", 720, 740, nil),
 			},
 			expected: nil,
 		},
@@ -256,16 +317,21 @@ func TestLeveledCompactor_plan(t *testing.T) {
 					NumSeries:     0,
 					NumTombstones: 0,
 				}),
+				metaRange("2", 720, 740, nil),
 			},
 			expected: nil,
 		},
 	}
 
 	for _, c := range cases {
-		res, err := compactor.plan(c.metas)
-		testutil.Ok(t, err)
+		if !t.Run("", func(t *testing.T) {
+			res, err := compactor.plan(c.metas)
+			testutil.Ok(t, err)
 
-		testutil.Equals(t, c.expected, res)
+			testutil.Equals(t, c.expected, res)
+		}) {
+			return
+		}
 	}
 }
 

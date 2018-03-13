@@ -151,16 +151,11 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	// We do not include the most recently created block. This gives users a window
-	// of a full block size to piece-wise backup new data without having to care
-	// about data overlap.
 	if len(dirs) < 1 {
 		return nil, nil
 	}
-	dirs = dirs[:len(dirs)-1]
 
 	var dms []dirMeta
-
 	for _, dir := range dirs {
 		meta, err := readMetaFile(dir)
 		if err != nil {
@@ -172,6 +167,10 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
+	// We do not include the most recently created block with the shortest range (the block which was just created from WAL).
+	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
+	dms = excludeFreshMeta(dms)
+
 	sort.Slice(dms, func(i, j int) bool {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
@@ -197,6 +196,20 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	}
 
 	return nil, nil
+}
+
+// excludeFreshMeta removes newest block with the shortest range from given meta files.
+func excludeFreshMeta(dms []dirMeta) []dirMeta {
+	sort.Slice(dms, func(i, j int) bool {
+		leftRange := dms[i].meta.MaxTime - dms[i].meta.MinTime
+		rightRange := dms[j].meta.MaxTime - dms[j].meta.MinTime
+		if leftRange == rightRange {
+			return dms[i].meta.MinTime < dms[j].meta.MinTime
+		}
+
+		return leftRange > rightRange
+	})
+	return dms[:len(dms)-1]
 }
 
 // selectDirs returns the dir metas that should be compacted into a single new block.
