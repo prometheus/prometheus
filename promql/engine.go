@@ -645,10 +645,15 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Value {
 		matrixes := make([]Matrix, len(exprs))
+		origMatrixes := make([]Matrix, len(exprs))
 		for i, e := range exprs {
 			// Functions will take string arguments from the expressions, not the values.
 			if e != nil && e.Type() != ValueTypeString {
 				matrixes[i] = ev.eval(e).(Matrix)
+
+				// Keep a copy of the original point slices.
+				origMatrixes[i] = make(Matrix, len(matrixes[i]))
+				copy(origMatrixes[i], matrixes[i])
 			}
 		}
 
@@ -700,13 +705,19 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if !ok {
 					ss = Series{
 						Metric: sample.Metric,
-						Points: make([]Point, 0, numSteps),
+						Points: getPointSlice(numSteps),
 					}
 					Seriess[h] = ss
 				}
 				sample.Point.T = ts
 				ss.Points = append(ss.Points, sample.Point)
 				Seriess[h] = ss
+			}
+		}
+		// Reuse the original point slices.
+		for _, m := range origMatrixes {
+			for _, s := range m {
+				putPointSlice(s.Points)
 			}
 		}
 		mat := Matrix{}

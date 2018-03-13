@@ -108,6 +108,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 			expr:     "abs(a_X)",
 			interval: time.Second * 10,
 		},
+		// Combinations.
+		{
+			expr:     "rate(a_X[5m]) + rate(b_X[5m])",
+			interval: time.Second * 10,
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
