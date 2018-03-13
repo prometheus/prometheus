@@ -610,6 +610,25 @@ type evalNodeHelper struct {
 	ts int64
 	// Vector that can be used for output.
 	out Vector
+
+	// Caches.
+	dmn map[uint64]labels.Labels // dropMetricName.
+}
+
+// dropMetricName is a cached version of dropMetricName.
+func (enh *evalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
+	if enh.dmn == nil {
+		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+	}
+	h := l.Hash()
+	ret, ok := enh.dmn[h]
+	if ok {
+		return ret
+	}
+	ret = dropMetricName(l)
+	enh.dmn[h] = ret
+	return ret
+
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
@@ -1273,7 +1292,7 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 		if keep {
 			lhsSample.V = value
 			if shouldDropMetricName(op) || returnBool {
-				lhsSample.Metric = dropMetricName(lhsSample.Metric)
+				lhsSample.Metric = enh.dropMetricName(lhsSample.Metric)
 			}
 			enh.out = append(enh.out, lhsSample)
 		}

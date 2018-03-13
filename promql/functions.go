@@ -299,7 +299,7 @@ func funcClampMax(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	max := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
-			Metric: dropMetricName(el.Metric),
+			Metric: enh.dropMetricName(el.Metric),
 			Point:  Point{V: math.Min(max, float64(el.V))},
 		})
 	}
@@ -312,7 +312,7 @@ func funcClampMin(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	min := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
-			Metric: dropMetricName(el.Metric),
+			Metric: enh.dropMetricName(el.Metric),
 			Point:  Point{V: math.Max(min, float64(el.V))},
 		})
 	}
@@ -334,7 +334,7 @@ func funcRound(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	for _, el := range vec {
 		v := math.Floor(float64(el.V)*toNearestInverse+0.5) / toNearestInverse
 		enh.out = append(enh.out, Sample{
-			Metric: dropMetricName(el.Metric),
+			Metric: enh.dropMetricName(el.Metric),
 			Point:  Point{V: v},
 		})
 	}
@@ -491,54 +491,54 @@ func funcAbsent(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 		})
 }
 
-func simpleFunc(vals []Value, out Vector, f func(float64) float64) Vector {
+func simpleFunc(vals []Value, enh *evalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
-		out = append(out, Sample{
-			Metric: dropMetricName(el.Metric),
+		enh.out = append(enh.out, Sample{
+			Metric: enh.dropMetricName(el.Metric),
 			Point:  Point{V: f(el.V)},
 		})
 	}
-	return out
+	return enh.out
 }
 
 // === abs(Vector ValueTypeVector) Vector ===
 func funcAbs(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Abs)
+	return simpleFunc(vals, enh, math.Abs)
 }
 
 // === ceil(Vector ValueTypeVector) Vector ===
 func funcCeil(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Ceil)
+	return simpleFunc(vals, enh, math.Ceil)
 }
 
 // === floor(Vector ValueTypeVector) Vector ===
 func funcFloor(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Floor)
+	return simpleFunc(vals, enh, math.Floor)
 }
 
 // === exp(Vector ValueTypeVector) Vector ===
 func funcExp(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Exp)
+	return simpleFunc(vals, enh, math.Exp)
 }
 
 // === sqrt(Vector VectorNode) Vector ===
 func funcSqrt(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Sqrt)
+	return simpleFunc(vals, enh, math.Sqrt)
 }
 
 // === ln(Vector ValueTypeVector) Vector ===
 func funcLn(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Log)
+	return simpleFunc(vals, enh, math.Log)
 }
 
 // === log2(Vector ValueTypeVector) Vector ===
 func funcLog2(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Log2)
+	return simpleFunc(vals, enh, math.Log2)
 }
 
 // === log10(Vector ValueTypeVector) Vector ===
 func funcLog10(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
-	return simpleFunc(vals, enh.out, math.Log10)
+	return simpleFunc(vals, enh, math.Log10)
 }
 
 // === timestamp(Vector ValueTypeVector) Vector ===
@@ -546,7 +546,7 @@ func funcTimestamp(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
-			Metric: dropMetricName(el.Metric),
+			Metric: enh.dropMetricName(el.Metric),
 			Point:  Point{V: float64(el.T) / 1000},
 		})
 	}
@@ -821,7 +821,7 @@ func dateWrapper(vals []Value, enh *evalNodeHelper, f func(time.Time) float64) V
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
 		enh.out = append(enh.out, Sample{
-			Metric: dropMetricName(el.Metric),
+			Metric: enh.dropMetricName(el.Metric),
 			Point:  Point{V: f(t)},
 		})
 	}
