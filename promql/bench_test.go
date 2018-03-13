@@ -68,54 +68,33 @@ func BenchmarkRangeQuery(b *testing.B) {
 	cases := []benchCase{
 		// Simple rate.
 		{
-			expr:     "rate(a_X[1m])",
-			interval: time.Second * 10,
+			expr: "rate(a_X[1m])",
 		},
 		// Holt-Winters and long ranges.
 		{
-			expr:     "holt_winters(a_one[1h], 0.3, 0.3)",
-			interval: time.Second * 10,
-			steps:    1,
+			expr: "holt_winters(a_X[1d], 0.3, 0.3)",
 		},
 		{
-			expr:     "holt_winters(a_one[6h], 0.3, 0.3)",
-			interval: time.Second * 10,
-			steps:    1,
+			expr: "changes(a_X[1d])",
 		},
 		{
-			expr:     "holt_winters(a_one[1d], 0.3, 0.3)",
-			interval: time.Second * 10,
-			steps:    1,
-		},
-		{
-			expr:     "changes(a_one[1d])",
-			interval: time.Second * 10,
-			steps:    1,
-		},
-		{
-			expr:     "rate(a_one[1d])",
-			interval: time.Second * 10,
-			steps:    1,
+			expr: "rate(a_X[1d])",
 		},
 		// Unary operators.
 		{
-			expr:     "-a_X",
-			interval: time.Second * 10,
+			expr: "-a_X",
 		},
 		// Binary operators.
 		{
-			expr:     "a_X - b_X",
-			interval: time.Second * 10,
+			expr: "a_X - b_X",
 		},
 		// Simple functions.
 		{
-			expr:     "abs(a_X)",
-			interval: time.Second * 10,
+			expr: "abs(a_X)",
 		},
 		// Combinations.
 		{
-			expr:     "rate(a_X[5m]) + rate(b_X[5m])",
-			interval: time.Second * 10,
+			expr: "rate(a_X[1m]) + rate(b_X[1m])",
 		},
 	}
 
@@ -149,8 +128,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				end := c.steps*int64(c.interval.Seconds()) - 1
-				qry, err := engine.NewRangeQuery(storage, c.expr, time.Unix(86400, 0), time.Unix(86400+end, 0), c.interval)
+				interval := time.Second * 10
+				end := c.steps*int64(interval.Seconds()) - 1
+				qry, err := engine.NewRangeQuery(storage, c.expr, time.Unix(86400, 0), time.Unix(86400+end, 0), interval)
 				if err != nil {
 					b.Fatal(err)
 				}
