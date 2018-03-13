@@ -153,12 +153,13 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 }
 
 func TestLeveledCompactor_plan(t *testing.T) {
+	// This mimicks our default ExponentialBlockRanges with min block size 20.
 	compactor, err := NewLeveledCompactor(nil, nil, []int64{
 		20,
 		60,
-		240,
-		720,
-		2160,
+		180,
+		540,
+		1620,
 	}, nil)
 	testutil.Ok(t, err)
 
@@ -181,7 +182,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			expected: nil,
 		},
 		// We should wait for a next block of size 20 to appear before compacting
-		// the existing ones. We have three, but we ignore the fresh one with shortest range.
+		// the existing ones. We have three, but we ignore the fresh one from WAl.
 		{
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
@@ -222,7 +223,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			expected: []string{"1", "2"},
 		},
 		{
-			// We have 20, 20, 20, 60, 60 range blocks. "3" is marked as fresh one, so we ignore it during compaction.
+			// We have 20, 20, 20, 60, 60 range blocks. "5" is marked as fresh one.
 			metas: []dirMeta{
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
@@ -230,57 +231,23 @@ func TestLeveledCompactor_plan(t *testing.T) {
 				metaRange("4", 60, 120, nil),
 				metaRange("5", 120, 180, nil),
 			},
-			expected: []string{"1", "2"},
+			expected: []string{"1", "2", "3"},
 		},
 		{
-			// We have 20, 60, 60, 240 range blocks. We can compact 60 + 60 only, because the newest one with the
-			// shortest range is not included in planning (4).
+			// We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60.
 			metas: []dirMeta{
 				metaRange("2", 20, 40, nil),
 				metaRange("4", 60, 120, nil),
-				metaRange("5", 120, 180, nil),
-				metaRange("6", 720, 960, nil),
+				metaRange("5", 960, 980, nil), // Fresh one.
+				metaRange("6", 120, 180, nil),
+				metaRange("7", 720, 960, nil),
 			},
-			expected: []string{"4", "5"},
-		},
-		{
-			// We got fresh block if size 20. We can compact 20 + 60 + 60.
-			metas: []dirMeta{
-				metaRange("2", 20, 40, nil),
-				metaRange("4", 60, 120, nil),
-				metaRange("5", 120, 180, nil),
-				metaRange("6", 720, 960, nil),
-				metaRange("7", 960, 980, nil),
-			},
-			expected: []string{"2", "4", "5"},
-		},
-		{
-			// We have 60, 20, 20, 20 range blocks.
-			// Fresh block with shortest range block is ignored (6), so nothing can be compacted.
-			metas: []dirMeta{
-				metaRange("1", 0, 60, nil),
-				metaRange("4", 60, 80, nil),
-				metaRange("5", 80, 100, nil),
-				metaRange("6", 100, 120, nil),
-			},
-			expected: nil,
-		},
-		{
-			// We have 60, 20, 20, 20, 20 range blocks.
-			// Fresh block with shortest range block is ignored but compaction 20 + 20 + 20 is possible.
-			metas: []dirMeta{
-				metaRange("1", 0, 60, nil),
-				metaRange("4", 60, 80, nil),
-				metaRange("5", 80, 100, nil),
-				metaRange("6", 100, 120, nil),
-				metaRange("6", 120, 140, nil),
-			},
-			expected: []string{"4", "5", "6"},
+			expected: []string{"2", "4", "6"},
 		},
 		// Do not select large blocks that have many tombstones when there is no fresh block.
 		{
 			metas: []dirMeta{
-				metaRange("1", 0, 720, &BlockStats{
+				metaRange("1", 0, 540, &BlockStats{
 					NumSeries:     10,
 					NumTombstones: 3,
 				}),
@@ -290,22 +257,22 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		// Select large blocks that have many tombstones when fresh appears.
 		{
 			metas: []dirMeta{
-				metaRange("1", 0, 720, &BlockStats{
+				metaRange("1", 0, 540, &BlockStats{
 					NumSeries:     10,
 					NumTombstones: 3,
 				}),
-				metaRange("2", 720, 740, nil),
+				metaRange("2", 540, 560, nil),
 			},
 			expected: []string{"1"},
 		},
 		// For small blocks, do not compact tombstones, even when fresh appears.
 		{
 			metas: []dirMeta{
-				metaRange("1", 0, 30, &BlockStats{
+				metaRange("1", 0, 60, &BlockStats{
 					NumSeries:     10,
 					NumTombstones: 3,
 				}),
-				metaRange("2", 720, 740, nil),
+				metaRange("2", 60, 80, nil),
 			},
 			expected: nil,
 		},
@@ -313,13 +280,27 @@ func TestLeveledCompactor_plan(t *testing.T) {
 		// the same block when tombstones and series counts were zero.
 		{
 			metas: []dirMeta{
-				metaRange("1", 0, 720, &BlockStats{
+				metaRange("1", 0, 540, &BlockStats{
 					NumSeries:     0,
 					NumTombstones: 0,
 				}),
-				metaRange("2", 720, 740, nil),
+				metaRange("2", 540, 560, nil),
 			},
 			expected: nil,
+		},
+		// Regression test: we were wrongly assuming that new block is fresh from WAL when it's ULID is newest.
+		// We need to actually look on max time instead.
+		//
+		// With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
+		// block overlaps.
+		{
+			metas: []dirMeta{
+				metaRange("5", 0, 360, nil),
+				metaRange("6", 540, 560, nil), // Fresh one.
+				metaRange("7", 360, 420, nil),
+				metaRange("8", 420, 540, nil),
+			},
+			expected: []string{"7", "8"},
 		},
 	}
 
@@ -353,6 +334,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
 				metaRange("3", 40, 60, nil),
+				metaRange("4", 60, 80, nil),
 			},
 		},
 		{
@@ -360,6 +342,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 				metaRange("1", 0, 20, nil),
 				metaRange("2", 20, 40, nil),
 				metaRange("3", 60, 80, nil),
+				metaRange("4", 80, 100, nil),
 			},
 		},
 		{
@@ -369,6 +352,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 				metaRange("3", 40, 60, nil),
 				metaRange("4", 60, 120, nil),
 				metaRange("5", 120, 180, nil),
+				metaRange("6", 180, 200, nil),
 			},
 		},
 	}
