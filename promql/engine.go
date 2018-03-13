@@ -604,6 +604,14 @@ func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	return ev.eval(expr), nil
 }
 
+// Extra information and caches for evaluating a single node across steps.
+type evalNodeHelper struct {
+	// Evaluation timestamp.
+	ts int64
+	// Vector that can be used for output.
+	out Vector
+}
+
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(expr Expr) Value {
 	// This is the top-level evaluation method.
@@ -616,7 +624,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		numSteps += 1
 	}
 
-	rangeWrapper := func(f func([]Value, int64) Vector, exprs ...Expr) Value {
+	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Value {
 		matrixes := make([]Matrix, len(exprs))
 		for i, e := range exprs {
 			// Functions will take string arguments from the expressions, not the values.
@@ -626,6 +634,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		Seriess := map[uint64]Series{}
 		args := make([]Value, len(exprs))
+		enh := &evalNodeHelper{out: Vector{}}
 		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
 			// Gather input vectors for this timestamp.
 			vectors := make([]Vector, len(exprs))
@@ -646,7 +655,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 			for i := range vectors {
 				args[i] = vectors[i]
 			}
-			result := f(args, ts)
+			enh.ts = ts
+			result := f(args, enh)
+			enh.out = result[:0] // Reuse result vector.
 			// If this could be an instant query, shortcut so as not to change sort order.
 			if ev.EndTimestamp == ev.Timestamp {
 				mat := make(Matrix, len(result))
@@ -682,16 +693,16 @@ func (ev *evaluator) eval(expr Expr) Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		if s, ok := e.Param.(*StringLiteral); ok {
-			return rangeWrapper(func(v []Value, ts int64) Vector {
-				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector))
+			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
-		return rangeWrapper(func(v []Value, ts int64) Vector {
+		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
 			var param float64
 			if e.Param != nil {
 				param = v[0].(Vector)[0].V
 			}
-			return ev.aggregation(e.Op, e.Grouping, e.Without, param, v[1].(Vector))
+			return ev.aggregation(e.Op, e.Grouping, e.Without, param, v[1].(Vector), enh)
 		}, e.Param, e.Expr)
 
 	case *Call:
@@ -701,8 +712,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// a vector selector.
 			vs, ok := e.Args[0].(*VectorSelector)
 			if ok {
-				return rangeWrapper(func(v []Value, ts int64) Vector {
-					return e.Func.Call([]Value{ev.vectorSelector(vs, ts)}, e.Args, ts, nil)
+				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh.ts, nil)
 				})
 			}
 		}
@@ -776,8 +787,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 		// Does not have a matrix argument.
-		return rangeWrapper(func(v []Value, ts int64) Vector {
-			return e.Func.Call(v, e.Args, ts, nil)
+		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return e.Func.Call(v, e.Args, enh.ts, nil)
 		}, e.Args...)
 
 	case *ParenExpr:
@@ -798,44 +809,44 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return rangeWrapper(func(v []Value, ts int64) Vector {
+			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
-				return Vector{Sample{Point: Point{V: val}}}
+				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case itemLAND:
-				return rangeWrapper(func(v []Value, ts int64) Vector {
-					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching)
+				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case itemLOR:
-				return rangeWrapper(func(v []Value, ts int64) Vector {
-					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching)
+				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case itemLUnless:
-				return rangeWrapper(func(v []Value, ts int64) Vector {
-					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching)
+				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				return rangeWrapper(func(v []Value, ts int64) Vector {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool)
+				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return rangeWrapper(func(v []Value, ts int64) Vector {
-				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool)
+			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return rangeWrapper(func(v []Value, ts int64) Vector {
-				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool)
+			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 		}
 
 	case *NumberLiteral:
-		return rangeWrapper(func(v []Value, ts int64) Vector {
-			return Vector{Sample{Point: Point{V: e.Val, T: ts}}}
+		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return append(enh.out, Sample{Point: Point{V: e.Val}})
 		})
 
 	case *VectorSelector:
@@ -1003,13 +1014,12 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, maxt, m
 	return out
 }
 
-func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching) Vector {
+func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *evalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
 	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
-	var result Vector
 	// The set of signatures for the right-hand side Vector.
 	rightSigs := map[uint64]struct{}{}
 	// Add all rhs samples to a map so we can easily find matches later.
@@ -1020,35 +1030,34 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching) Vector
 	for _, ls := range lhs {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if _, ok := rightSigs[sigf(ls.Metric)]; ok {
-			result = append(result, ls)
+			enh.out = append(enh.out, ls)
 		}
 	}
-	return result
+	return enh.out
 }
 
-func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching) Vector {
+func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *evalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
 	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
-	var result Vector
 	leftSigs := map[uint64]struct{}{}
 	// Add everything from the left-hand-side Vector.
 	for _, ls := range lhs {
 		leftSigs[sigf(ls.Metric)] = struct{}{}
-		result = append(result, ls)
+		enh.out = append(enh.out, ls)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for _, rs := range rhs {
 		if _, ok := leftSigs[sigf(rs.Metric)]; !ok {
-			result = append(result, rs)
+			enh.out = append(enh.out, rs)
 		}
 	}
-	return result
+	return enh.out
 }
 
-func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching) Vector {
+func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh *evalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1059,24 +1068,20 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching) Vec
 		rightSigs[sigf(rs.Metric)] = struct{}{}
 	}
 
-	var result Vector
 	for _, ls := range lhs {
 		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
-			result = append(result, ls)
+			enh.out = append(enh.out, ls)
 		}
 	}
-	return result
+	return enh.out
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool) Vector {
+func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool, enh *evalNodeHelper) Vector {
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	var (
-		result = Vector{}
-		sigf   = signatureFunc(matching.On, matching.MatchingLabels...)
-	)
+	sigf := signatureFunc(matching.On, matching.MatchingLabels...)
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
@@ -1152,12 +1157,12 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 			insertedSigs[insertSig] = struct{}{}
 		}
 
-		result = append(result, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: metric,
-			Point:  Point{V: value, T: ev.Timestamp},
+			Point:  Point{V: value},
 		})
 	}
-	return result
+	return enh.out
 }
 
 func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
@@ -1242,9 +1247,7 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching)
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool) Vector {
-	vec := make(Vector, 0, len(lhs))
-
+func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *evalNodeHelper) Vector {
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.V, rhs.V
 		// lhs always contains the Vector. If the original position was different
@@ -1266,10 +1269,10 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 			if shouldDropMetricName(op) || returnBool {
 				lhsSample.Metric = dropMetricName(lhsSample.Metric)
 			}
-			vec = append(vec, lhsSample)
+			enh.out = append(enh.out, lhsSample)
 		}
 	}
-	return vec
+	return enh.out
 }
 
 func dropMetricName(l labels.Labels) labels.Labels {
@@ -1363,7 +1366,7 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
-func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param interface{}, vec Vector) Vector {
+func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *evalNodeHelper) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
@@ -1513,8 +1516,6 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	}
 
 	// Construct the result Vector from the aggregated groups.
-	resultVector := make(Vector, 0, len(result))
-
 	for _, aggr := range result {
 		switch op {
 		case itemAvg:
@@ -1535,9 +1536,9 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
-				resultVector = append(resultVector, Sample{
+				enh.out = append(enh.out, Sample{
 					Metric: v.Metric,
-					Point:  Point{V: v.V, T: ev.Timestamp},
+					Point:  Point{V: v.V},
 				})
 			}
 			continue // Bypass default append.
@@ -1546,9 +1547,9 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
-				resultVector = append(resultVector, Sample{
+				enh.out = append(enh.out, Sample{
 					Metric: v.Metric,
-					Point:  Point{V: v.V, T: ev.Timestamp},
+					Point:  Point{V: v.V},
 				})
 			}
 			continue // Bypass default append.
@@ -1560,12 +1561,12 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			// For other aggregations, we already have the right value.
 		}
 
-		resultVector = append(resultVector, Sample{
+		enh.out = append(enh.out, Sample{
 			Metric: aggr.labels,
-			Point:  Point{V: aggr.value, T: ev.Timestamp},
+			Point:  Point{V: aggr.value},
 		})
 	}
-	return resultVector
+	return enh.out
 }
 
 // btos returns 1 if b is true, 0 otherwise.
