@@ -30,7 +30,8 @@ func BenchmarkRangeQuery(b *testing.B) {
 	defer storage.Close()
 	engine := NewEngine(nil, nil, 10, 100*time.Second)
 
-	metrics := make([]labels.Labels, 0, 2000)
+	metrics := make([]labels.Labels, 0, 10000)
+	refs := make([]uint64, 10000)
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
 	for i := 0; i < 10; i++ {
@@ -48,8 +49,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 			b.Fatal(err)
 		}
 		ts := int64(s * 10000) // 10s interval.
-		for _, metric := range metrics {
-			a.Add(metric, ts, float64(s))
+		for i, metric := range metrics {
+			err := a.AddFast(metric, refs[i], ts, float64(s))
+			if err != nil {
+				refs[i], _ = a.Add(metric, ts, float64(s))
+			}
 		}
 		if err := a.Commit(); err != nil {
 			b.Fatal(err)
