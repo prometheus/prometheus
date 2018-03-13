@@ -1,3 +1,11 @@
+## 2.2.1 / 2018-03-13
+
+* [BUGFIX] Fix data loss in TSDB on compaction
+* [BUGFIX] Correctly stop timer in remote-write path
+* [BUGFIX] Fix deadlock triggerd by loading targets page
+* [BUGFIX] Fix incorrect buffering of samples on range selection queries
+* [BUGFIX] Handle large index files on windows properly
+
 ## 2.2.0 / 2018-03-08
 
 * [CHANGE] Rename file SD mtime metric.
