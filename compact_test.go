@@ -153,7 +153,7 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 }
 
 func TestLeveledCompactor_plan(t *testing.T) {
-	// This mimicks our default ExponentialBlockRanges with min block size 20.
+	// This mimicks our default ExponentialBlockRanges with min block size equals to 20.
 	compactor, err := NewLeveledCompactor(nil, nil, []int64{
 		20,
 		60,
@@ -288,7 +288,7 @@ func TestLeveledCompactor_plan(t *testing.T) {
 			},
 			expected: nil,
 		},
-		// Regression test: we were wrongly assuming that new block is fresh from WAL when it's ULID is newest.
+		// Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
 		// We need to actually look on max time instead.
 		//
 		// With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
