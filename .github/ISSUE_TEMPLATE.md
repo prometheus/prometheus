@@ -1,6 +1,8 @@
 <!--
 
     Please do *NOT* ask usage questions in Github issues.
+    
+    Read the https://github.com/prometheus/prometheus/wiki/FAQ for most common pitfalls.
 
     If your issue is not a feature request or bug report use:
     https://groups.google.com/forum/#!forum/prometheus-users. If
