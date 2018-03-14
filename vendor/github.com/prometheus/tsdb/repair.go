@@ -61,6 +61,9 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		if err := repl.Close(); err != nil {
 			return err
 		}
+		if err := broken.Close(); err != nil {
+			return err
+		}
 		if err := renameFile(repl.Name(), broken.Name()); err != nil {
 			return err
 		}
