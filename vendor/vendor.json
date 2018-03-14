@@ -800,40 +800,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "JfxP001vgt0P+hEDk/if0bxa8xU=",
+			"checksumSHA1": "vNslgGjRBqauFmVIBTkvEWwvURg=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
-			"revisionTime": "2018-03-13T20:20:03Z"
+			"revision": "902e1ffad4b053d18178e67fff227b0678dfc0b3",
+			"revisionTime": "2018-03-14T12:47:08Z"
 		},
 		{
-			"checksumSHA1": "S7F4yWxVLhxQNHMdgoOo6plmOOs=",
+			"checksumSHA1": "4X26TfLh8M4WuCFo/5a+Qk+ieSw=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
-			"revisionTime": "2018-03-13T20:20:03Z"
+			"revision": "902e1ffad4b053d18178e67fff227b0678dfc0b3",
+			"revisionTime": "2018-03-14T12:47:08Z"
 		},
 		{
 			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
-			"revisionTime": "2018-03-13T20:20:03Z"
+			"revision": "902e1ffad4b053d18178e67fff227b0678dfc0b3",
+			"revisionTime": "2018-03-14T12:47:08Z"
 		},
 		{
-			"checksumSHA1": "h49AAcJ5+iRBwCgbfQf+2T1E1ZE=",
+			"checksumSHA1": "YZVMIe5RTwVe/HjUns60On/1oug=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
-			"revisionTime": "2018-03-13T20:20:03Z"
+			"revision": "902e1ffad4b053d18178e67fff227b0678dfc0b3",
+			"revisionTime": "2018-03-14T12:47:08Z"
 		},
 		{
 			"checksumSHA1": "4ebzIE2Jvj6+SG6yGFSXN8scgfo=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
-			"revisionTime": "2018-03-13T20:20:03Z"
+			"revision": "902e1ffad4b053d18178e67fff227b0678dfc0b3",
+			"revisionTime": "2018-03-14T12:47:08Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "00404ae5ab578bb550377a17aab5511deb0592c5",
-			"revisionTime": "2018-03-13T20:20:03Z"
+			"revision": "902e1ffad4b053d18178e67fff227b0678dfc0b3",
+			"revisionTime": "2018-03-14T12:47:08Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
