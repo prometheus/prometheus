@@ -19,8 +19,6 @@ import (
 	"unsafe"
 )
 
-const maxMapSize = 0xFFFFFFFFFFFF // 256TB
-
 func mmap(f *os.File, size int) ([]byte, error) {
 	low, high := uint32(size), uint32(size>>32)
 	h, errno := syscall.CreateFileMapping(syscall.Handle(f.Fd()), nil, syscall.PAGE_READONLY, high, low, nil)
