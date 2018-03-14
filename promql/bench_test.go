@@ -78,8 +78,8 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 
 	type benchCase struct {
-		expr     string
-		steps    int
+		expr  string
+		steps int
 	}
 	cases := []benchCase{
 		// Simple rate.
@@ -106,7 +106,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		// Binary operators.
 		{
-			expr: "a_X - b_X",
+			expr:  "a_X - b_X",
 			steps: 10000,
 		},
 		// Simple functions.
@@ -134,9 +134,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1),  steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1),  steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1),  steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
 		}
 	}
 	cases = tmp

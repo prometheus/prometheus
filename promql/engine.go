@@ -696,13 +696,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// Gather input vectors for this timestamp.
 			for i := range exprs {
 				vectors[i] = vectors[i][:0]
-				for _, series := range matrixes[i] {
+				for si, series := range matrixes[i] {
 					for pos, point := range series.Points {
 						if point.T == ts {
 							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
 						}
 						if point.T >= ts {
-							series.Points = series.Points[pos:]
+							matrixes[i][si].Points = series.Points[pos:]
 							break
 						}
 					}
