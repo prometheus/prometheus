@@ -624,8 +624,15 @@ func funcPredictLinear(vals []Value, args Expressions, enh *evalNodeHelper) Vect
 func funcHistogramQuantile(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
+	sigf := enh.signatureFunc(false, excludedLabels...)
 
-	signatureToMetricWithBuckets := map[uint64]*metricWithBuckets{}
+	if enh.signatureToMetricWithBuckets == nil {
+		enh.signatureToMetricWithBuckets = map[uint64]*metricWithBuckets{}
+	} else {
+		for _, v := range enh.signatureToMetricWithBuckets {
+			v.buckets = v.buckets[:0]
+		}
+	}
 	for _, el := range inVec {
 		upperBound, err := strconv.ParseFloat(
 			el.Metric.Get(model.BucketLabel), 64,
@@ -635,25 +642,27 @@ func funcHistogramQuantile(vals []Value, args Expressions, enh *evalNodeHelper) 
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		hash := hashWithoutLabels(el.Metric, excludedLabels...)
+		hash := sigf(el.Metric)
 
-		mb, ok := signatureToMetricWithBuckets[hash]
+		mb, ok := enh.signatureToMetricWithBuckets[hash]
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
 				Del(labels.BucketLabel, labels.MetricName).
 				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}
-			signatureToMetricWithBuckets[hash] = mb
+			enh.signatureToMetricWithBuckets[hash] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, el.V})
 	}
 
-	for _, mb := range signatureToMetricWithBuckets {
-		enh.out = append(enh.out, Sample{
-			Metric: mb.metric,
-			Point:  Point{V: bucketQuantile(q, mb.buckets)},
-		})
+	for _, mb := range enh.signatureToMetricWithBuckets {
+		if len(mb.buckets) > 0 {
+			enh.out = append(enh.out, Sample{
+				Metric: mb.metric,
+				Point:  Point{V: bucketQuantile(q, mb.buckets)},
+			})
+		}
 	}
 
 	return enh.out

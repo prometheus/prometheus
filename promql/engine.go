@@ -612,8 +612,9 @@ type evalNodeHelper struct {
 	out Vector
 
 	// Caches.
-	dmn  map[uint64]labels.Labels // dropMetricName.
-	sigf map[uint64]uint64        // signatureFunc.
+	dmn                          map[uint64]labels.Labels      // dropMetricName.
+	sigf                         map[uint64]uint64             // signatureFunc.
+	signatureToMetricWithBuckets map[uint64]*metricWithBuckets // funcHistogramQuantile.
 
 	// For binary vector matching.
 	rightSigs    map[uint64]Sample

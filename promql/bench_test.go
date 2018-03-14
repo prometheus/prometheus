@@ -30,18 +30,32 @@ func BenchmarkRangeQuery(b *testing.B) {
 	defer storage.Close()
 	engine := NewEngine(nil, nil, 10, 100*time.Second)
 
-	metrics := make([]labels.Labels, 0, 10000)
-	refs := make([]uint64, 10000)
+	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
+	for j := 0; j < 10; j++ {
+		metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", strconv.Itoa(j)))
+	}
+	metrics = append(metrics, labels.FromStrings("__name__", "h_one", "le", "+Inf"))
+
 	for i := 0; i < 10; i++ {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_ten", "l", strconv.Itoa(i)))
 		metrics = append(metrics, labels.FromStrings("__name__", "b_ten", "l", strconv.Itoa(i)))
+		for j := 0; j < 10; j++ {
+			metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+		}
+		metrics = append(metrics, labels.FromStrings("__name__", "h_ten", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
+
 	for i := 0; i < 100; i++ {
 		metrics = append(metrics, labels.FromStrings("__name__", "a_hundred", "l", strconv.Itoa(i)))
 		metrics = append(metrics, labels.FromStrings("__name__", "b_hundred", "l", strconv.Itoa(i)))
+		for j := 0; j < 10; j++ {
+			metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", strconv.Itoa(j)))
+		}
+		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
+	refs := make([]uint64, len(metrics))
 
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
@@ -65,7 +79,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 
 	type benchCase struct {
 		expr     string
-		interval time.Duration
 		steps    int
 	}
 	cases := []benchCase{
@@ -94,6 +107,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		// Binary operators.
 		{
 			expr: "a_X - b_X",
+			steps: 10000,
 		},
 		// Simple functions.
 		{
@@ -103,6 +117,15 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "rate(a_X[1m]) + rate(b_X[1m])",
 		},
+		{
+			expr: "sum without (l)(rate(a_X[1m]))",
+		},
+		{
+			expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
+		},
+		{
+			expr: "histogram_quantile(0.9, rate(h_X[5m]))",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
@@ -111,9 +134,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), interval: c.interval, steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), interval: c.interval, steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), interval: c.interval, steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1),  steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1),  steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1),  steps: c.steps})
 		}
 	}
 	cases = tmp
@@ -124,15 +147,15 @@ func BenchmarkRangeQuery(b *testing.B) {
 		if c.steps != 0 {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 10})
-			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 100})
-			tmp = append(tmp, benchCase{expr: c.expr, interval: c.interval, steps: 1000})
+			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
+			tmp = append(tmp, benchCase{expr: c.expr, steps: 10})
+			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
+			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
 	}
 	cases = tmp
 	for _, c := range cases {
-		name := fmt.Sprintf("expr=%s,interval=%s,steps=%d", c.expr, c.interval, c.steps)
+		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
