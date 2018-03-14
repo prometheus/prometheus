@@ -653,6 +653,11 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	return r, nil
 }
 
+// Version returns the file format version of the underlying index.
+func (r *Reader) Version() int {
+	return r.version
+}
+
 // Range marks a byte range.
 type Range struct {
 	Start, End int64
