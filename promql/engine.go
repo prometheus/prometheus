@@ -616,7 +616,7 @@ type evalNodeHelper struct {
 	dmn                          map[uint64]labels.Labels      // dropMetricName and label_*.
 	sigf                         map[uint64]uint64             // signatureFunc.
 	signatureToMetricWithBuckets map[uint64]*metricWithBuckets // funcHistogramQuantile.
-	regex                        *regexp.Regexp                // label_*.
+	regex                        *regexp.Regexp                // label_replace.
 
 	// For binary vector matching.
 	rightSigs    map[uint64]Sample
@@ -664,10 +664,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
-	numSteps := int((ev.EndTimestamp - ev.Timestamp) / ev.Interval)
-	if ev.Timestamp == ev.EndTimestamp {
-		numSteps += 1
-	}
+	// The +1 isn't always needed, but it is simpler this way.
+	numSteps := int((ev.EndTimestamp-ev.Timestamp)/ev.Interval) + 1
 
 	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Value {
 		matrixes := make([]Matrix, len(exprs))

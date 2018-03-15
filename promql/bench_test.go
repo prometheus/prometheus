@@ -106,8 +106,20 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		// Binary operators.
 		{
+			expr: "a_X - b_X",
+		},
+		{
 			expr:  "a_X - b_X",
 			steps: 10000,
+		},
+		{
+			expr: "a_X and b_X{l=~'.*[0-4]$'}",
+		},
+		{
+			expr: "a_X or b_X{l=~'.*[0-4]$'}",
+		},
+		{
+			expr: "a_X unless b_X{l=~'.*[0-4]$'}",
 		},
 		// Simple functions.
 		{
