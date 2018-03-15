@@ -722,40 +722,56 @@ func funcLabelReplace(vals []Value, args Expressions, enh *evalNodeHelper) Vecto
 		regexStr = args[4].(*StringLiteral).Val
 	)
 
-	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
-	if err != nil {
-		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
-	}
-	if !model.LabelNameRE.MatchString(string(dst)) {
-		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+	if enh.regex == nil {
+		var err error
+		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
+		if err != nil {
+			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+		}
+		if !model.LabelNameRE.MatchString(string(dst)) {
+			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+		}
+		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
 	}
 
 	outSet := make(map[uint64]struct{}, len(vector))
-	for i := range vector {
-		el := &vector[i]
-
-		srcVal := el.Metric.Get(src)
-		indexes := regex.FindStringSubmatchIndex(srcVal)
-		// If there is no match, no replacement should take place.
-		if indexes == nil {
-			continue
-		}
-		res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
-
-		lb := labels.NewBuilder(el.Metric).Del(dst)
-		if len(res) > 0 {
-			lb.Set(dst, string(res))
-		}
-		el.Metric = lb.Labels()
-
+	for _, el := range vector {
 		h := el.Metric.Hash()
-		if _, ok := outSet[h]; ok {
+		var outMetric labels.Labels
+		if l, ok := enh.dmn[h]; ok {
+			outMetric = l
+		} else {
+			srcVal := el.Metric.Get(src)
+			indexes := enh.regex.FindStringSubmatchIndex(srcVal)
+			if indexes == nil {
+				// If there is no match, no replacement should take place.
+				outMetric = el.Metric
+				enh.dmn[h] = outMetric
+			} else {
+				res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
+
+				lb := labels.NewBuilder(el.Metric).Del(dst)
+				if len(res) > 0 {
+					lb.Set(dst, string(res))
+				}
+				outMetric = lb.Labels()
+				enh.dmn[h] = outMetric
+			}
+		}
+
+		outHash := outMetric.Hash()
+		if _, ok := outSet[outHash]; ok {
 			panic(fmt.Errorf("duplicated label set in output of label_replace(): %s", el.Metric))
 		} else {
-			outSet[h] = struct{}{}
+			enh.out = append(enh.out,
+				Sample{
+					Metric: outMetric,
+					Point:  Point{V: el.Point.V},
+				})
+			outSet[outHash] = struct{}{}
 		}
 	}
-	return vector
+	return enh.out
 }
 
 // === Vector(s Scalar) Vector ===

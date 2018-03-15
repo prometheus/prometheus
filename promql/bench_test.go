@@ -113,6 +113,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "abs(a_X)",
 		},
+		{
+			expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
+		},
 		// Combinations.
 		{
 			expr: "rate(a_X[1m]) + rate(b_X[1m])",

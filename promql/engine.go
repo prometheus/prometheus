@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -612,9 +613,10 @@ type evalNodeHelper struct {
 	out Vector
 
 	// Caches.
-	dmn                          map[uint64]labels.Labels      // dropMetricName.
+	dmn                          map[uint64]labels.Labels      // dropMetricName and label_*.
 	sigf                         map[uint64]uint64             // signatureFunc.
 	signatureToMetricWithBuckets map[uint64]*metricWithBuckets // funcHistogramQuantile.
+	regex                        *regexp.Regexp                // label_*.
 
 	// For binary vector matching.
 	rightSigs    map[uint64]Sample
