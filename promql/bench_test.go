@@ -116,6 +116,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
 		},
+		{
+			expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
+		},
 		// Combinations.
 		{
 			expr: "rate(a_X[1m]) + rate(b_X[1m])",

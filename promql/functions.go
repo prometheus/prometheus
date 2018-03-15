@@ -791,6 +791,11 @@ func funcLabelJoin(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 		sep       = args[2].(*StringLiteral).Val
 		srcLabels = make([]string, len(args)-3)
 	)
+
+	if enh.dmn == nil {
+		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+	}
+
 	for i := 3; i < len(args); i++ {
 		src := args[i].(*StringLiteral).Val
 		if !model.LabelName(src).IsValid() {
@@ -804,33 +809,43 @@ func funcLabelJoin(vals []Value, args Expressions, enh *evalNodeHelper) Vector {
 	}
 
 	outSet := make(map[uint64]struct{}, len(vector))
-	for i := range vector {
-		el := &vector[i]
-
-		srcVals := make([]string, len(srcLabels))
-		for i, src := range srcLabels {
-			srcVals[i] = el.Metric.Get(src)
-		}
-
-		lb := labels.NewBuilder(el.Metric)
-
-		strval := strings.Join(srcVals, sep)
-		if strval == "" {
-			lb.Del(dst)
-		} else {
-			lb.Set(dst, strval)
-		}
-
-		el.Metric = lb.Labels()
+	srcVals := make([]string, len(srcLabels))
+	for _, el := range vector {
 		h := el.Metric.Hash()
+		var outMetric labels.Labels
+		if l, ok := enh.dmn[h]; ok {
+			outMetric = l
+		} else {
 
-		if _, exists := outSet[h]; exists {
+			for i, src := range srcLabels {
+				srcVals[i] = el.Metric.Get(src)
+			}
+
+			lb := labels.NewBuilder(el.Metric)
+
+			strval := strings.Join(srcVals, sep)
+			if strval == "" {
+				lb.Del(dst)
+			} else {
+				lb.Set(dst, strval)
+			}
+
+			outMetric = lb.Labels()
+			enh.dmn[h] = outMetric
+		}
+		outHash := outMetric.Hash()
+
+		if _, exists := outSet[outHash]; exists {
 			panic(fmt.Errorf("duplicated label set in output of label_join(): %s", el.Metric))
 		} else {
-			outSet[h] = struct{}{}
+			enh.out = append(enh.out, Sample{
+				Metric: outMetric,
+				Point:  Point{V: el.Point.V},
+			})
+			outSet[outHash] = struct{}{}
 		}
 	}
-	return vector
+	return enh.out
 }
 
 // Common code for date related functions.
