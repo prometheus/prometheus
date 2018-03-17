@@ -1769,7 +1769,7 @@ func TestParseSeries(t *testing.T) {
 			}
 			t.Errorf("error in input: \n\n%s\n", test.input)
 			t.Fatalf("failure expected, but passed")
-		}else{
+		} else {
 			if err != nil {
 				t.Errorf("error in input: \n\n%s\n", test.input)
 				t.Fatalf("could not parse: %s", err)
