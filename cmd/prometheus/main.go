@@ -137,7 +137,7 @@ func main() {
 	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request.").
 		Default("false").BoolVar(&cfg.web.EnableLifecycle)
 
-	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions.").
+	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
