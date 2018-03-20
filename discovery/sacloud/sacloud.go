@@ -39,7 +39,6 @@ const (
 	sacloudLabelResourceID    = sacloudLabel + "resource_id"
 	sacloudLabelName          = sacloudLabel + "name"
 	sacloudLabelInstanceState = sacloudLabel + "instance_state"
-	sacloudLabelInstanceType  = sacloudLabel + "instance_type"
 	sacloudLabelIP            = sacloudLabel + "ip"
 	sacloudLabelTag           = sacloudLabel + "instances_tags"
 )
