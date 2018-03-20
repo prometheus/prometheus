@@ -836,6 +836,30 @@
 			"revisionTime": "2018-02-15T11:29:47Z"
 		},
 		{
+			"checksumSHA1": "hrqa4ikjhJ2SCDDgkpYbLFkQiAY=",
+			"path": "github.com/sacloud/libsacloud",
+			"revision": "a37bf448911bbcaaa1f53d0624a6f4171629c7fe",
+			"revisionTime": "2018-03-20T06:19:23Z"
+		},
+		{
+			"checksumSHA1": "Ij4msq71ls1SH9BfTKV2JNJsLJ4=",
+			"path": "github.com/sacloud/libsacloud/api",
+			"revision": "a37bf448911bbcaaa1f53d0624a6f4171629c7fe",
+			"revisionTime": "2018-03-20T06:19:23Z"
+		},
+		{
+			"checksumSHA1": "DVz0XvUgDb1FkCDIxVe5KWBIIEU=",
+			"path": "github.com/sacloud/libsacloud/sacloud",
+			"revision": "a37bf448911bbcaaa1f53d0624a6f4171629c7fe",
+			"revisionTime": "2018-03-20T06:19:23Z"
+		},
+		{
+			"checksumSHA1": "xFjyZ3OaKKGcEk7A809HKwNxDs4=",
+			"path": "github.com/sacloud/libsacloud/sacloud/ostype",
+			"revision": "a37bf448911bbcaaa1f53d0624a6f4171629c7fe",
+			"revisionTime": "2018-03-20T06:19:23Z"
+		},
+		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
 			"path": "github.com/samuel/go-zookeeper/zk",
 			"revision": "1d7be4effb13d2d908342d349d71a284a7542693",
