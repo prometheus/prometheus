@@ -195,7 +195,7 @@ func listServers(d *Discovery) ([]sacloud.Server, error) {
 		return nil, err
 	}
 
-	return list, nil
+	return res.Servers, nil
 }
 
 // buildMetadata maps instance information retrieved from the
