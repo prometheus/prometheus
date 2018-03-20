@@ -139,7 +139,8 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "-some_metric", expected: &UnaryExpr{
+		input: "-some_metric",
+		expected: &UnaryExpr{
 			Op: itemSUB,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -149,7 +150,8 @@ var testExpr = []struct {
 			},
 		},
 	}, {
-		input: "+some_metric", expected: &UnaryExpr{
+		input: "+some_metric",
+		expected: &UnaryExpr{
 			Op: itemADD,
 			Expr: &VectorSelector{
 				Name: "some_metric",
@@ -1396,9 +1398,7 @@ var testExpr = []struct {
 
 func TestParseExpressions(t *testing.T) {
 	for _, test := range testExpr {
-		parser := newParser(test.input)
-
-		expr, err := parser.parseExpr()
+		expr, err := ParseExpr(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		if err == errUnexpected {
@@ -1409,30 +1409,13 @@ func TestParseExpressions(t *testing.T) {
 			t.Errorf("error in input '%s'", test.input)
 			t.Fatalf("could not parse: %s", err)
 		}
+
 		if test.fail && err != nil {
 			if !strings.Contains(err.Error(), test.errMsg) {
 				t.Errorf("unexpected error on input '%s'", test.input)
 				t.Fatalf("expected error to contain %q but got %q", test.errMsg, err)
 			}
 			continue
-		}
-
-		err = parser.typecheck(expr)
-		if !test.fail && err != nil {
-			t.Errorf("error on input '%s'", test.input)
-			t.Fatalf("typecheck failed: %s", err)
-		}
-
-		if test.fail {
-			if err != nil {
-				if !strings.Contains(err.Error(), test.errMsg) {
-					t.Errorf("unexpected error on input '%s'", test.input)
-					t.Fatalf("expected error to contain %q but got %q", test.errMsg, err)
-				}
-				continue
-			}
-			t.Errorf("error on input '%s'", test.input)
-			t.Fatalf("failure expected, but passed with result: %q", expr)
 		}
 
 		if !reflect.DeepEqual(expr, test.expected) {
@@ -1444,9 +1427,7 @@ func TestParseExpressions(t *testing.T) {
 
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
-	parser := newParser("NaN")
-
-	expr, err := parser.parseExpr()
+	expr, err := ParseExpr("NaN")
 	if err != nil {
 		t.Errorf("error on input 'NaN'")
 		t.Fatalf("coud not parse: %s", err)
@@ -1677,9 +1658,7 @@ var testStatement = []struct {
 
 func TestParseStatements(t *testing.T) {
 	for _, test := range testStatement {
-		parser := newParser(test.input)
-
-		stmts, err := parser.parseStmts()
+		stmts, err := ParseStmts(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		if err == errUnexpected {
@@ -1692,20 +1671,6 @@ func TestParseStatements(t *testing.T) {
 		}
 		if test.fail && err != nil {
 			continue
-		}
-
-		err = parser.typecheck(stmts)
-		if !test.fail && err != nil {
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("typecheck failed: %s", err)
-		}
-
-		if test.fail {
-			if err != nil {
-				continue
-			}
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("failure expected, but passed")
 		}
 
 		if !reflect.DeepEqual(stmts, test.expected) {
@@ -1791,22 +1756,11 @@ func newSeq(vals ...float64) (res []sequenceValue) {
 
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-		parser := newParser(test.input)
-		parser.lex.seriesDesc = true
-
-		metric, vals, err := parser.parseSeriesDesc()
+		metric, vals, err := parseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		if err == errUnexpected {
 			t.Fatalf("unexpected error occurred")
-		}
-
-		if !test.fail && err != nil {
-			t.Errorf("error in input: \n\n%s\n", test.input)
-			t.Fatalf("could not parse: %s", err)
-		}
-		if test.fail && err != nil {
-			continue
 		}
 
 		if test.fail {
@@ -1815,6 +1769,11 @@ func TestParseSeries(t *testing.T) {
 			}
 			t.Errorf("error in input: \n\n%s\n", test.input)
 			t.Fatalf("failure expected, but passed")
+		} else {
+			if err != nil {
+				t.Errorf("error in input: \n\n%s\n", test.input)
+				t.Fatalf("could not parse: %s", err)
+			}
 		}
 
 		require.Equal(t, test.expectedMetric, metric)
