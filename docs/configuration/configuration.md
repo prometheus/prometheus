@@ -331,6 +331,41 @@ Consul setups, the relevant address is in `__meta_consul_service_address`.
 In those cases, you can use the [relabel](#relabel_config)
 feature to replace the special `__address__` label.
 
+### `<digitalocean_sd_config>`
+
+DigitalOcean SD configurations allow retrieving scrape targets from
+DigitalOcean Droplets. Only Droplets in the specified region with private
+networking enabled will be registered.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_digitalocean_instance_id`: The Droplet's unique ID
+* `__meta_digitalocean_instance_name`: The Droplet's name
+* `__meta_digitalocean_instance_status`: The Droplet's status (e.g. active)
+* `__meta_digitalocean_instance_size`: A DigitalOcean size slug representing the Droplet's instance type
+* `__meta_digitalocean_region`: A DigitalOcean region slug representing the region where the Droplet is located
+* `__meta_digitalocean_public_ipv4`: The Droplet's public IPv4 address
+* `__meta_digitalocean_private_ipv4`: The Droplet's private IPv4 address
+* `__meta_digitalocean_instance_tags`: A comma separated list of the tags applied to the Droplet
+
+See below for the configuration options for DigitalOcean discovery:
+
+```yaml
+# The information to access the DigitalOcean API.
+# A DigitalOcean region slug (e.g. nyc3)
+region: <string>
+# A (read-only) DigitalOcean API token
+token: <secret>
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 5m ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+```
+
+
 ### `<dns_sd_config>`
 
 A DNS-based service discovery configuration allows specifying a set of DNS

@@ -206,7 +206,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	if len(d.filter) > 0 {
 		ilc = ilc.Filter(d.filter)
 	}
-	err = ilc.Pages(nil, func(l *compute.InstanceList) error {
+	err = ilc.Pages(context.TODO(), func(l *compute.InstanceList) error {
 		for _, inst := range l.Items {
 			if len(inst.NetworkInterfaces) == 0 {
 				continue
