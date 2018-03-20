@@ -191,6 +191,10 @@ file_sd_configs:
 gce_sd_configs:
   [ - <gce_sd_config> ... ]
 
+# List of sacloud service discovery configurations.
+sacloud_sd_configs:
+  [ - <sacloud_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -589,6 +593,43 @@ If Prometheus is running within GCE, the service account associated with the
 instance it is running on should have at least read-only permissions to the
 compute resources. If running outside of GCE make sure to create an appropriate
 service account and place the credential file in one of the expected locations.
+
+### `<sacloud_sd_config>`
+
+[SAKURA Cloud](https://cloud.sakura.ad.jp/) SD configurations allow retrieving scrape targets from instances.
+The First interface IPAddress is used by default, but may be changed to the other Interface with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_sacloud_zone`: the name of the zone
+* `__meta_sacloud_resourceid`: the resource_id of the instance
+* `__meta_sacloud_name`: the name of the instance
+* `__meta_sacloud_instance_state`: state of the instance
+* `__meta_sacloud_ip`: the IP address (first interface) of the instance
+* `__meta_sacloud_instances_tags`: the tags of the instance
+
+See below for the configuration options for sacloud discovery:
+
+```yaml
+# The information to access the sacloud API.
+# A sacloud zone slug (e.g. is1b)
+zone: <string>
+# A (read-only) sacloud API token
+token: <string>
+# A (read-only) sacloud API secret
+secret: <secret>
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the not reachable IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+
+# filter scrape target instance.
+# default is all instances.
+[ filter_tag: <string> | default = ""]
+```
 
 ### `<kubernetes_sd_config>`
 
