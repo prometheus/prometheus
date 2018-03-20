@@ -1,0 +1,25 @@
+version: '2'
+
+services:
+  test:
+    build: .
+    environment:
+      - SAKURACLOUD_ACCESS_TOKEN
+      - SAKURACLOUD_ACCESS_TOKEN_SECRET
+      - SAKURACLOUD_REGION
+    volumes:
+      - .:/go/src/github.com/sacloud/libsacloud
+
+  godoc:
+    build: .
+    entrypoint:
+      - godoc
+    command: -http=":6060"
+    ports:
+      - 6060:6060
+    environment:
+      - SAKURACLOUD_ACCESS_TOKEN
+      - SAKURACLOUD_ACCESS_TOKEN_SECRET
+      - SAKURACLOUD_REGION
+    volumes:
+      - .:/go/src/github.com/sacloud/libsacloud
