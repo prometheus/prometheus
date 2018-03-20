@@ -109,6 +109,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	secret := string(conf.Secret)
 	c := api.NewClient(conf.Token, secret, conf.Zone)
 
+	// [TODO] set UserAgent
+
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -188,23 +190,10 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 // listServers return a list of sacloud.Server
 func listServers(d *Discovery) ([]sacloud.Server, error) {
-	res, err := d.client.Server.Find()
+	// if set SDConfig.FilterTag, monitoring only tagged server.
+	res, err := d.client.Server.WithTag(d.filterTag).Find()
 	if err != nil {
 		return nil, err
-	}
-
-	// if set SDConfig.FilterTag, monitoring only tagged server.
-	if d.filterTag == "" {
-		return res.Servers, nil // return all server
-	}
-
-	list := []sacloud.Server{}
-	for _, s := range res.Servers {
-		for _, tag := range s.Tags {
-			if d.filterTag == tag {
-				list = append(list, s)
-			}
-		}
 	}
 
 	return list, nil
