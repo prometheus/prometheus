@@ -156,13 +156,13 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
+	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending alert manager notifications.").
+	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
