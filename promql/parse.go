@@ -104,14 +104,6 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	return vs.LabelMatchers, nil
 }
 
-// parseSeriesDesc parses the description of a time series.
-func parseSeriesDesc(input string) (labels.Labels, []sequenceValue, error) {
-	p := newParser(input)
-	p.lex.seriesDesc = true
-
-	return p.parseSeriesDesc()
-}
-
 // newParser returns a new parser.
 func newParser(input string) *parser {
 	p := &parser{
@@ -165,6 +157,14 @@ func (v sequenceValue) String() string {
 		return "_"
 	}
 	return fmt.Sprintf("%f", v.value)
+}
+
+// parseSeriesDesc parses the description of a time series.
+func parseSeriesDesc(input string) (labels.Labels, []sequenceValue, error) {
+	p := newParser(input)
+	p.lex.seriesDesc = true
+
+	return p.parseSeriesDesc()
 }
 
 // parseSeriesDesc parses a description of a time series into its metric and value sequence.
