@@ -133,7 +133,7 @@ func (w *Writer) finalizeTail() error {
 		return err
 	}
 	// As the file was pre-allocated, we truncate any superfluous zero bytes.
-	off, err := tf.Seek(0, os.SEEK_CUR)
+	off, err := tf.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err
 	}

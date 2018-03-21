@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"encoding/binary"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -305,7 +306,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				testutil.Ok(t, err)
 				defer f.Close()
 
-				off, err := f.Seek(0, os.SEEK_END)
+				off, err := f.Seek(0, io.SeekEnd)
 				testutil.Ok(t, err)
 
 				testutil.Ok(t, f.Truncate(off-1))
@@ -318,7 +319,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				testutil.Ok(t, err)
 				defer f.Close()
 
-				off, err := f.Seek(0, os.SEEK_END)
+				off, err := f.Seek(0, io.SeekEnd)
 				testutil.Ok(t, err)
 
 				testutil.Ok(t, f.Truncate(off-8))
@@ -331,7 +332,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				testutil.Ok(t, err)
 				defer f.Close()
 
-				off, err := f.Seek(0, os.SEEK_END)
+				off, err := f.Seek(0, io.SeekEnd)
 				testutil.Ok(t, err)
 
 				// Write junk before checksum starts.
@@ -346,7 +347,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 				testutil.Ok(t, err)
 				defer f.Close()
 
-				off, err := f.Seek(0, os.SEEK_END)
+				off, err := f.Seek(0, io.SeekEnd)
 				testutil.Ok(t, err)
 
 				// Write junk into checksum

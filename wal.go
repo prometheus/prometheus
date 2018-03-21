@@ -290,7 +290,7 @@ func (w *SegmentWAL) truncate(err error, file int, lastOffset int64) error {
 	w.files = w.files[:file+1]
 
 	// Seek the current file to the last valid offset where we continue writing from.
-	_, err = w.files[file].Seek(lastOffset, os.SEEK_SET)
+	_, err = w.files[file].Seek(lastOffset, io.SeekStart)
 	return err
 }
 
@@ -393,7 +393,7 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 		return errors.Wrap(r.Err(), "read candidate WAL files")
 	}
 
-	off, err := csf.Seek(0, os.SEEK_CUR)
+	off, err := csf.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err
 	}
@@ -583,7 +583,7 @@ func (w *SegmentWAL) cut() error {
 		// in the new segment.
 		go func() {
 			w.actorc <- func() error {
-				off, err := hf.Seek(0, os.SEEK_CUR)
+				off, err := hf.Seek(0, io.SeekCurrent)
 				if err != nil {
 					return errors.Wrapf(err, "finish old segment %s", hf.Name())
 				}
@@ -1024,7 +1024,7 @@ func (r *walReader) next() bool {
 
 	// Remember the offset after the last correctly read entry. If the next one
 	// is corrupted, this is where we can safely truncate.
-	r.lastOffset, r.err = cf.Seek(0, os.SEEK_CUR)
+	r.lastOffset, r.err = cf.Seek(0, io.SeekCurrent)
 	if r.err != nil {
 		return false
 	}
