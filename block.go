@@ -474,7 +474,7 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (bool, error) {
 	numStones := 0
 
 	pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
-		for _ = range ivs {
+		for range ivs {
 			numStones++
 		}
 
