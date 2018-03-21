@@ -1273,8 +1273,8 @@
 			"revisionTime": "2017-07-27T04:22:29Z"
 		},
 		{
-			"checksumSHA1": "JfVmsMwyeeepbdw4q4wpN07BuFg=",
-			"path": "gopkg.in/fsnotify.v1",
+			"checksumSHA1": "0ks+iNxFZmKu2nBuEmCGJqdiYgs=",
+			"path": "gopkg.in/fsnotify/fsnotify.v1",
 			"revision": "30411dbcefb7a1da7e84f75530ad3abe4011b4f8",
 			"revisionTime": "2016-04-12T13:37:56Z"
 		},
