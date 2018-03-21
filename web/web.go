@@ -161,7 +161,6 @@ type Options struct {
 	MaxConnections       int
 	ExternalURL          *url.URL
 	RoutePrefix          string
-	MetricsPath          string
 	UseLocalAssets       bool
 	UserAssetsPath       string
 	ConsoleTemplatesPath string
