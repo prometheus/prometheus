@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/ioutil"
 	stdlog "log"
+	"math"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -48,6 +49,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -587,14 +589,19 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	h.executeTemplate(w, "status.html", struct {
-		Birth          time.Time
-		CWD            string
-		Version        *PrometheusVersion
-		Alertmanagers  []*url.URL
-		GoroutineCount int
-		GOMAXPROCS     int
-		GOGC           string
+	status := struct {
+		Birth               time.Time
+		CWD                 string
+		Version             *PrometheusVersion
+		Alertmanagers       []*url.URL
+		GoroutineCount      int
+		GOMAXPROCS          int
+		GOGC                string
+		CorruptionCount     int64
+		ChunkCount          int64
+		TimeSeriesCount     int64
+		LastConfigTime      time.Time
+		ReloadConfigSuccess bool
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -603,7 +610,41 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
-	})
+	}
+	metrics, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error gathering runtime status: %s", err), http.StatusInternalServerError)
+		return
+	}
+	for _, mF := range metrics {
+		switch *mF.Name {
+		case "prometheus_tsdb_head_chunks":
+			status.ChunkCount = int64(toFloat64(mF))
+		case "prometheus_tsdb_head_series":
+			status.TimeSeriesCount = int64(toFloat64(mF))
+		case "prometheus_tsdb_wal_corruptions_total":
+			status.CorruptionCount = int64(toFloat64(mF))
+		case "prometheus_config_last_reload_successful":
+			status.ReloadConfigSuccess = toFloat64(mF) != 0
+		case "prometheus_config_last_reload_success_timestamp_seconds":
+			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
+		}
+	}
+	h.executeTemplate(w, "status.html", status)
+}
+
+func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
+	m := *f.Metric[0]
+	if m.Gauge != nil {
+		return m.Gauge.GetValue()
+	}
+	if m.Counter != nil {
+		return m.Counter.GetValue()
+	}
+	if m.Untyped != nil {
+		return m.Untyped.GetValue()
+	}
+	return math.NaN()
 }
 
 func (h *Handler) flags(w http.ResponseWriter, r *http.Request) {
