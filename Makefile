@@ -37,8 +37,7 @@ STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/main.go:SA1019 \
   github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \
   github.com/prometheus/prometheus/pkg/pool/pool.go:SA6002 \
-  github.com/prometheus/prometheus/promql/engine.go:SA6002 \
-  github.com/prometheus/prometheus/web/web.go:SA1019
+  github.com/prometheus/prometheus/promql/engine.go:SA6002
 
 all: format staticcheck unused build test
 
