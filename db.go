@@ -737,7 +737,7 @@ func (db *DB) CleanTombstones() error {
 	defer db.cmtx.Unlock()
 
 	start := time.Now()
-	defer db.metrics.tombCleanTimer.Observe(float64(time.Since(start).Seconds()))
+	defer db.metrics.tombCleanTimer.Observe(time.Since(start).Seconds())
 
 	db.mtx.RLock()
 	blocks := db.blocks[:]

@@ -349,7 +349,7 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	}
 	b := s.bs[seq]
 
-	if int(off) >= b.Len() {
+	if off >= b.Len() {
 		return nil, errors.Errorf("offset %d beyond data size %d", off, b.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
