@@ -72,7 +72,7 @@ dropped from the result, while the others are propagated into a result vector
 with their original (left-hand side) metric names and label values.
 If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
-the value `1` with the left-hand side metric names and label values.
+the value `1` with the left-hand side label values.
 
 ### Logical/set binary operators
 

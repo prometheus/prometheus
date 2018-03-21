@@ -31,6 +31,7 @@ const (
 	lstateTimestamp
 	lstateLabels
 	lstateLName
+	lstateLEq
 	lstateLValue
 	lstateLValueIn
 )
@@ -67,10 +68,12 @@ yystate0:
 		goto yystart21
 	case 5: // start condition: lstateLName
 		goto yystart26
-	case 6: // start condition: lstateLValue
-		goto yystart30
-	case 7: // start condition: lstateLValueIn
-		goto yystart33
+	case 6: // start condition: lstateLEq
+		goto yystart28
+	case 7: // start condition: lstateLValue
+		goto yystart31
+	case 8: // start condition: lstateLValueIn
+		goto yystart34
 	}
 
 	goto yystate0 // silence unused label error
@@ -323,103 +326,112 @@ yystart26:
 	switch {
 	default:
 		goto yyabort
-	case c == '=':
-		goto yystate28
-	case c == '\t' || c == ' ':
-		goto yystate27
 	case c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
-		goto yystate29
+		goto yystate27
 	}
 
 yystate27:
 	c = l.next()
 	switch {
 	default:
-		goto yyabort
-	case c == '=':
-		goto yystate28
-	case c == '\t' || c == ' ':
+		goto yyrule10
+	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
 		goto yystate27
 	}
 
+	goto yystate28 // silence unused label error
 yystate28:
 	c = l.next()
-	goto yyrule11
+yystart28:
+	switch {
+	default:
+		goto yyabort
+	case c == '=':
+		goto yystate30
+	case c == '\t' || c == ' ':
+		goto yystate29
+	}
 
 yystate29:
 	c = l.next()
 	switch {
 	default:
-		goto yyrule10
-	case c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c == '_' || c >= 'a' && c <= 'z':
+		goto yyabort
+	case c == '=':
+		goto yystate30
+	case c == '\t' || c == ' ':
 		goto yystate29
 	}
 
-	goto yystate30 // silence unused label error
 yystate30:
 	c = l.next()
-yystart30:
+	goto yyrule11
+
+	goto yystate31 // silence unused label error
+yystate31:
+	c = l.next()
+yystart31:
 	switch {
 	default:
 		goto yyabort
 	case c == '"':
-		goto yystate32
+		goto yystate33
 	case c == '\t' || c == ' ':
-		goto yystate31
+		goto yystate32
 	}
 
-yystate31:
+yystate32:
 	c = l.next()
 	switch {
 	default:
 		goto yyrule12
 	case c == '\t' || c == ' ':
-		goto yystate31
+		goto yystate32
 	}
 
-yystate32:
+yystate33:
 	c = l.next()
 	goto yyrule13
 
-	goto yystate33 // silence unused label error
-yystate33:
-	c = l.next()
-yystart33:
-	switch {
-	default:
-		goto yyabort
-	case c == '"':
-		goto yystate35
-	case c == '\\':
-		goto yystate36
-	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
-		goto yystate34
-	}
-
+	goto yystate34 // silence unused label error
 yystate34:
 	c = l.next()
+yystart34:
 	switch {
 	default:
 		goto yyabort
 	case c == '"':
-		goto yystate35
-	case c == '\\':
 		goto yystate36
+	case c == '\\':
+		goto yystate37
 	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
-		goto yystate34
+		goto yystate35
 	}
 
 yystate35:
 	c = l.next()
-	goto yyrule14
+	switch {
+	default:
+		goto yyabort
+	case c == '"':
+		goto yystate36
+	case c == '\\':
+		goto yystate37
+	case c >= '\x01' && c <= '!' || c >= '#' && c <= '[' || c >= ']' && c <= 'ÿ':
+		goto yystate35
+	}
 
 yystate36:
+	c = l.next()
+	goto yyrule14
+
+yystate37:
 	c = l.next()
 	switch {
 	default:
 		goto yyabort
 	case c >= '\x01' && c <= '\t' || c >= '\v' && c <= 'ÿ':
-		goto yystate34
+		goto yystate35
 	}
 
 yyrule1: // \0
@@ -471,6 +483,7 @@ yyrule9: // (,?[ \t]*)
 	}
 yyrule10: // {L}({L}|{D})*
 	{
+		l.state = lstateLEq
 		l.offsets = append(l.offsets, l.i)
 		goto yystate0
 	}

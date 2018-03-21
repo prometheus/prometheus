@@ -20,11 +20,7 @@ func ErrorEqual(left, right error) bool {
 	}
 
 	if left != nil && right != nil {
-		if left.Error() == right.Error() {
-			return true
-		}
-
-		return false
+		return left.Error() == right.Error()
 	}
 
 	return false

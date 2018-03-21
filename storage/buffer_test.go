@@ -48,6 +48,11 @@ func TestSampleRing(t *testing.T) {
 			delta: 7,
 			size:  1,
 		},
+		{
+			input: []int64{1, 2, 3, 4, 6},
+			delta: 4,
+			size:  4,
+		},
 	}
 	for _, c := range cases {
 		r := newSampleRing(c.delta, c.size)
@@ -199,6 +204,17 @@ func (m *mockSeriesIterator) Err() error           { return m.err() }
 type mockSeries struct {
 	labels   func() labels.Labels
 	iterator func() SeriesIterator
+}
+
+func newMockSeries(lset labels.Labels, samples []sample) Series {
+	return &mockSeries{
+		labels: func() labels.Labels {
+			return lset
+		},
+		iterator: func() SeriesIterator {
+			return newListSeriesIterator(samples)
+		},
+	}
 }
 
 func (m *mockSeries) Labels() labels.Labels    { return m.labels() }

@@ -96,9 +96,11 @@ func (t *TimestampCollector) Collect(ch chan<- prometheus.Metric) {
 	uniqueFiles := make(map[string]float64)
 	t.lock.RLock()
 	for fileSD := range t.discoverers {
+		fileSD.lock.RLock()
 		for filename, timestamp := range fileSD.timestamps {
 			uniqueFiles[filename] = timestamp
 		}
+		fileSD.lock.RUnlock()
 	}
 	t.lock.RUnlock()
 	for filename, timestamp := range uniqueFiles {
@@ -387,7 +389,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	default:
-		panic(fmt.Errorf("retrieval.FileDiscovery.readFile: unhandled file extension %q", ext))
+		panic(fmt.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
 	}
 
 	for i, tg := range targetGroups {

@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"testing"
@@ -144,7 +143,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine()), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
 		testutil.Ok(t, err)
 
 		for i := range test.result {
@@ -163,20 +162,12 @@ func TestAlertingRule(t *testing.T) {
 	}
 }
 
-func annotateWithTime(lines []string, ts time.Time) []string {
-	annotatedLines := []string{}
-	for _, line := range lines {
-		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp.FromTime(ts)))
-	}
-	return annotatedLines
-}
-
 func TestStaleness(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(storage, nil)
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine),
+		QueryFunc:  EngineQueryFunc(engine, storage),
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
@@ -210,7 +201,7 @@ func TestStaleness(t *testing.T) {
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	testutil.Ok(t, err)
 
-	set, err := querier.Select(matcher)
+	set, err := querier.Select(nil, matcher)
 	testutil.Ok(t, err)
 
 	samples, err := readSeriesSet(set)

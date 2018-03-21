@@ -159,7 +159,7 @@ func (a adapter) StartTime() (int64, error) {
 	if len(a.db.Blocks()) > 0 {
 		startTime = a.db.Blocks()[0].Meta().MinTime
 	} else {
-		startTime = int64(time.Now().Unix() * 1000)
+		startTime = time.Now().Unix() * 1000
 	}
 
 	// Add a safety margin as it may take a few minutes for everything to spin up.
@@ -188,7 +188,7 @@ type querier struct {
 	q tsdb.Querier
 }
 
-func (q querier) Select(oms ...*labels.Matcher) (storage.SeriesSet, error) {
+func (q querier) Select(_ *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, error) {
 	ms := make([]tsdbLabels.Matcher, 0, len(oms))
 
 	for _, om := range oms {

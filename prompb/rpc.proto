@@ -53,6 +53,7 @@ service Admin {
 
 
 message TSDBSnapshotRequest {
+  bool skip_head = 1;
 }
 
 message TSDBSnapshotResponse {

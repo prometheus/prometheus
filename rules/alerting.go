@@ -207,7 +207,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(
 				ctx,
-				defs+string(text),
+				defs+text,
 				"__alert_"+r.Name(),
 				tmplData,
 				model.Time(timestamp.FromTime(ts)),
@@ -266,7 +266,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
-				a.FiredAt = time.Time{}
 			}
 			continue
 		}

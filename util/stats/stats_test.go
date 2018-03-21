@@ -45,8 +45,7 @@ func TestQueryStatsWithTimers(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
 
-	var qs *QueryStats
-	qs = NewQueryStats(tg)
+	qs := NewQueryStats(tg)
 	actual, err := json.Marshal(qs)
 	if err != nil {
 		t.Fatalf("Unexpected error during serialization: %v", err)

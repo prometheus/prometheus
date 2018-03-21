@@ -71,7 +71,7 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
-	h := New(&Options{}, nil)
+	h := NewManager(&Options{}, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
@@ -168,7 +168,7 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := New(&Options{}, nil)
+	h := NewManager(&Options{}, nil)
 
 	authClient, _ := httputil.NewClientFromConfig(config_util.HTTPClientConfig{
 		BasicAuth: &config_util.BasicAuth{
@@ -233,7 +233,7 @@ func TestCustomDo(t *testing.T) {
 	const testBody = "testbody"
 
 	var received bool
-	h := New(&Options{
+	h := NewManager(&Options{
 		Do: func(ctx old_ctx.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := ioutil.ReadAll(req.Body)
@@ -260,7 +260,7 @@ func TestCustomDo(t *testing.T) {
 }
 
 func TestExternalLabels(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
 		ExternalLabels: model.LabelSet{"a": "b"},
 		RelabelConfigs: []*config.RelabelConfig{
@@ -296,7 +296,7 @@ func TestExternalLabels(t *testing.T) {
 }
 
 func TestHandlerRelabel(t *testing.T) {
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 		RelabelConfigs: []*config.RelabelConfig{
 			{
@@ -356,7 +356,7 @@ func TestHandlerQueueing(t *testing.T) {
 		}
 	}))
 
-	h := New(&Options{
+	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 	},
 		nil,
@@ -442,7 +442,7 @@ func (a alertmanagerMock) url() *url.URL {
 
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
-	_, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +469,7 @@ func TestReload(t *testing.T) {
 		},
 	}
 
-	n := New(&Options{}, nil)
+	n := NewManager(&Options{}, nil)
 
 	cfg := &config.Config{}
 	s := `
@@ -497,6 +497,61 @@ alerting:
 		}
 		n.reload(tgs)
 		res := n.Alertmanagers()[0].String()
+
+		testutil.Equals(t, res, tt.out)
+	}
+
+}
+
+func TestDroppedAlertmanagers(t *testing.T) {
+	var tests = []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v1/alerts",
+		},
+	}
+
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+    relabel_configs:
+      - source_labels: ['__address__']
+        regex: 'alertmanager:9093'
+        action: drop
+`
+	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+
+	if err := n.ApplyConfig(cfg); err != nil {
+		t.Fatalf("Error Applying the config:%v", err)
+	}
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+
+		b, err := json.Marshal(cfg.AlertingConfig.AlertmanagerConfigs[0])
+		if err != nil {
+			t.Fatalf("Error creating config hash:%v", err)
+		}
+		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
+			tt.in,
+		}
+		n.reload(tgs)
+		res := n.DroppedAlertmanagers()[0].String()
 
 		testutil.Equals(t, res, tt.out)
 	}

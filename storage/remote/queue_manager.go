@@ -196,8 +196,7 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 // sample on the floor if the queue is full.
 // Always returns nil.
 func (t *QueueManager) Append(s *model.Sample) error {
-	var snew model.Sample
-	snew = *s
+	snew := *s
 	snew.Metric = s.Metric.Clone()
 
 	for ln, lv := range t.externalLabels {
@@ -430,6 +429,17 @@ func (s *shards) runShard(i int) {
 	// anyways.
 	pendingSamples := model.Samples{}
 
+	timer := time.NewTimer(s.qm.cfg.BatchSendDeadline)
+	stop := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}
+	defer stop()
+
 	for {
 		select {
 		case sample, ok := <-queue:
@@ -445,15 +455,20 @@ func (s *shards) runShard(i int) {
 			queueLength.WithLabelValues(s.qm.queueName).Dec()
 			pendingSamples = append(pendingSamples, sample)
 
-			for len(pendingSamples) >= s.qm.cfg.MaxSamplesPerSend {
+			if len(pendingSamples) >= s.qm.cfg.MaxSamplesPerSend {
 				s.sendSamples(pendingSamples[:s.qm.cfg.MaxSamplesPerSend])
 				pendingSamples = pendingSamples[s.qm.cfg.MaxSamplesPerSend:]
+
+				stop()
+				timer.Reset(s.qm.cfg.BatchSendDeadline)
 			}
-		case <-time.After(s.qm.cfg.BatchSendDeadline):
+
+		case <-timer.C:
 			if len(pendingSamples) > 0 {
 				s.sendSamples(pendingSamples)
 				pendingSamples = pendingSamples[:0]
 			}
+			timer.Reset(s.qm.cfg.BatchSendDeadline)
 		}
 	}
 }

@@ -569,6 +569,9 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Action == RelabelReplace && !relabelTarget.MatchString(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
+	if c.Action == RelabelLabelMap && !relabelTarget.MatchString(c.Replacement) {
+		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
+	}
 	if c.Action == RelabelHashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}

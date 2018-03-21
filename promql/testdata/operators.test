@@ -236,6 +236,9 @@ eval instant at 50m 0 == bool 1
 eval instant at 50m 1 == bool 1
 	1
 
+eval instant at 50m http_requests{job="api-server", instance="0", group="production"} == bool 100
+	{job="api-server", instance="0", group="production"} 1
+
 # group_left/group_right.
 
 clear

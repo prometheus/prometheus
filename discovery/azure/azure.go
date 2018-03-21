@@ -40,6 +40,7 @@ const (
 	azureLabelMachineID            = azureLabel + "machine_id"
 	azureLabelMachineResourceGroup = azureLabel + "machine_resource_group"
 	azureLabelMachineName          = azureLabel + "machine_name"
+	azureLabelMachineOSType        = azureLabel + "machine_os_type"
 	azureLabelMachineLocation      = azureLabel + "machine_location"
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
@@ -84,6 +85,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
+	}
+	if c.SubscriptionID == "" {
+		return fmt.Errorf("Azure SD configuration requires a subscription_id")
 	}
 
 	return yaml_util.CheckOverflow(c.XXX, "azure_sd_config")
@@ -247,6 +251,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			labels := model.LabelSet{
 				azureLabelMachineID:            model.LabelValue(*vm.ID),
 				azureLabelMachineName:          model.LabelValue(*vm.Name),
+				azureLabelMachineOSType:        model.LabelValue(vm.Properties.StorageProfile.OsDisk.OsType),
 				azureLabelMachineLocation:      model.LabelValue(*vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
 			}

@@ -199,20 +199,22 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 			{
 				Targets: []model.LabelSet{
 					{
-						"__address__":                                   "4.3.2.1:9000",
-						"__meta_kubernetes_endpoint_port_name":          "testport",
-						"__meta_kubernetes_endpoint_port_protocol":      "TCP",
-						"__meta_kubernetes_endpoint_ready":              "true",
-						"__meta_kubernetes_pod_name":                    "testpod",
-						"__meta_kubernetes_pod_ip":                      "1.2.3.4",
-						"__meta_kubernetes_pod_ready":                   "unknown",
-						"__meta_kubernetes_pod_node_name":               "testnode",
-						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
-						"__meta_kubernetes_pod_container_name":          "c1",
-						"__meta_kubernetes_pod_container_port_name":     "mainport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-						"__meta_kubernetes_pod_uid":                     "deadbeef",
+						"__address__":                                    "4.3.2.1:9000",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_endpoint_address_target_kind": "Pod",
+						"__meta_kubernetes_endpoint_address_target_name": "testpod",
+						"__meta_kubernetes_pod_name":                     "testpod",
+						"__meta_kubernetes_pod_ip":                       "1.2.3.4",
+						"__meta_kubernetes_pod_ready":                    "unknown",
+						"__meta_kubernetes_pod_node_name":                "testnode",
+						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
+						"__meta_kubernetes_pod_container_name":           "c1",
+						"__meta_kubernetes_pod_container_port_name":      "mainport",
+						"__meta_kubernetes_pod_container_port_number":    "9000",
+						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
+						"__meta_kubernetes_pod_uid":                      "deadbeef",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -330,6 +332,35 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpoint_ready":         "true",
 					},
 				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
+	n, _, eps, _ := makeTestEndpointsDiscovery()
+	eps.GetStore().Add(makeEndpoints())
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				eps.Update(&v1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testendpoints",
+						Namespace: "default",
+					},
+					Subsets: []v1.EndpointSubset{},
+				})
+			}()
+		},
+		expectedRes: []*targetgroup.Group{
+			{
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":      "default",
 					"__meta_kubernetes_endpoints_name": "testendpoints",

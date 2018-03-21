@@ -42,7 +42,7 @@ import (
 )
 
 // DefaultOptions used for the DB. They are sane for setups using
-// millisecond precision timestampdb.
+// millisecond precision timestamps.
 var DefaultOptions = &Options{
 	WALFlushInterval:  5 * time.Second,
 	RetentionDuration: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
@@ -122,6 +122,8 @@ type dbMetrics struct {
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
+	cutoffs              prometheus.Counter
+	cutoffsFailed        prometheus.Counter
 	tombCleanTimer       prometheus.Histogram
 }
 
@@ -148,6 +150,14 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
+	m.cutoffs = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_retention_cutoffs_total",
+		Help: "Number of times the database cut off block data from disk.",
+	})
+	m.cutoffsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_retention_cutoffs_failures_total",
+		Help: "Number of times the database failed to cut off block data from disk.",
+	})
 	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
 		Help: "The time taken to recompact blocks to remove tombstones.",
@@ -158,6 +168,8 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.loadedBlocks,
 			m.reloads,
 			m.reloadsFailed,
+			m.cutoffs,
+			m.cutoffsFailed,
 			m.compactionsTriggered,
 			m.tombCleanTimer,
 		)
@@ -175,6 +187,10 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 	if opts == nil {
 		opts = DefaultOptions
+	}
+	// Fixup bad format written by Prometheus 2.1.
+	if err := repairBadIndexVersion(l, dir); err != nil {
+		return nil, err
 	}
 
 	db = &DB{
@@ -277,7 +293,17 @@ func (db *DB) run() {
 	}
 }
 
-func (db *DB) retentionCutoff() (bool, error) {
+func (db *DB) retentionCutoff() (b bool, err error) {
+	defer func() {
+		if !b && err == nil {
+			// no data had to be cut off.
+			return
+		}
+		db.metrics.cutoffs.Inc()
+		if err != nil {
+			db.metrics.cutoffsFailed.Inc()
+		}
+	}()
 	if db.opts.RetentionDuration == 0 {
 		return false, nil
 	}
@@ -299,7 +325,11 @@ func (db *DB) retentionCutoff() (bool, error) {
 	}
 
 	// This will close the dirs and then delete the dirs.
-	return len(dirs) > 0, db.reload(dirs...)
+	if len(dirs) > 0 {
+		return true, db.reload(dirs...)
+	}
+
+	return false, nil
 }
 
 // Appender opens a new appender against the database.
@@ -603,8 +633,9 @@ func (db *DB) EnableCompactions() {
 	level.Info(db.logger).Log("msg", "compactions enabled")
 }
 
-// Snapshot writes the current data to the directory.
-func (db *DB) Snapshot(dir string) error {
+// Snapshot writes the current data to the directory. If withHead is set to true it
+// will create a new block containing all data that's currently in the memory buffer/WAL.
+func (db *DB) Snapshot(dir string, withHead bool) error {
 	if dir == db.dir {
 		return errors.Errorf("cannot snapshot into base directory")
 	}
@@ -624,6 +655,9 @@ func (db *DB) Snapshot(dir string) error {
 		if err := b.Snapshot(dir); err != nil {
 			return errors.Wrapf(err, "error snapshotting block: %s", b.Dir())
 		}
+	}
+	if !withHead {
+		return nil
 	}
 	_, err := db.compactor.Write(dir, db.head, db.head.MinTime(), db.head.MaxTime())
 	return errors.Wrap(err, "snapshot head block")

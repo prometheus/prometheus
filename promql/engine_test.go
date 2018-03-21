@@ -22,10 +22,13 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 func TestQueryConcurrency(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	concurrentQueries := 10
+
+	engine := NewEngine(nil, nil, concurrentQueries, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -38,7 +41,7 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
-	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
+	for i := 0; i < concurrentQueries; i++ {
 		q := engine.newTestQuery(f)
 		go q.Exec(ctx)
 		select {
@@ -70,16 +73,13 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < DefaultEngineOptions.MaxConcurrentQueries; i++ {
+	for i := 0; i < concurrentQueries; i++ {
 		block <- struct{}{}
 	}
 }
 
 func TestQueryTimeout(t *testing.T) {
-	engine := NewEngine(nil, &EngineOptions{
-		Timeout:              5 * time.Millisecond,
-		MaxConcurrentQueries: 20,
-	})
+	engine := NewEngine(nil, nil, 20, 5*time.Millisecond)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -98,7 +98,7 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -143,8 +143,62 @@ func TestQueryCancel(t *testing.T) {
 	}
 }
 
+// errQuerier implements storage.Querier which always returns error.
+type errQuerier struct {
+	err error
+}
+
+func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, error) {
+	return errSeriesSet{err: q.err}, q.err
+}
+func (*errQuerier) LabelValues(name string) ([]string, error) { return nil, nil }
+func (*errQuerier) Close() error                              { return nil }
+
+// errSeriesSet implements storage.SeriesSet which always returns error.
+type errSeriesSet struct {
+	err error
+}
+
+func (errSeriesSet) Next() bool         { return false }
+func (errSeriesSet) At() storage.Series { return nil }
+func (e errSeriesSet) Err() error       { return e.err }
+
+func TestQueryError(t *testing.T) {
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	errStorage := ErrStorage(fmt.Errorf("storage error"))
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return &errQuerier{err: errStorage}, nil
+	})
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	vectorQuery, err := engine.NewInstantQuery(queryable, "foo", time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("unexpected error creating query: %q", err)
+	}
+	res := vectorQuery.Exec(ctx)
+	if res.Err == nil {
+		t.Fatalf("expected error on failed select but got none")
+	}
+	if res.Err != errStorage {
+		t.Fatalf("expected error %q, got %q", errStorage, res.Err)
+	}
+
+	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("unexpected error creating query: %q", err)
+	}
+	res = matrixQuery.Exec(ctx)
+	if res.Err == nil {
+		t.Fatalf("expected error on failed select but got none")
+	}
+	if res.Err != errStorage {
+		t.Fatalf("expected error %q, got %q", errStorage, res.Err)
+	}
+}
+
 func TestEngineShutdown(t *testing.T) {
-	engine := NewEngine(nil, nil)
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
@@ -205,6 +259,8 @@ load 10s
 	if err != nil {
 		t.Fatalf("unexpected error creating test: %q", err)
 	}
+	defer test.Close()
+
 	err = test.Run()
 	if err != nil {
 		t.Fatalf("unexpected error initializing test: %q", err)
@@ -276,9 +332,9 @@ load 10s
 		var err error
 		var qry Query
 		if c.Interval == 0 {
-			qry, err = test.QueryEngine().NewInstantQuery(c.Query, c.Start)
+			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.Query, c.Start)
 		} else {
-			qry, err = test.QueryEngine().NewRangeQuery(c.Query, c.Start, c.End, c.Interval)
+			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
 		if err != nil {
 			t.Fatalf("unexpected error creating query: %q", err)

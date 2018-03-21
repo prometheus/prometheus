@@ -83,6 +83,11 @@ func (t *Test) QueryEngine() *Engine {
 	return t.queryEngine
 }
 
+// Queryable allows querying the test data.
+func (t *Test) Queryable() storage.Queryable {
+	return t.storage
+}
+
 // Context returns the test's context.
 func (t *Test) Context() context.Context {
 	return t.context
@@ -136,15 +141,15 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	}
 	parts := patEvalInstant.FindStringSubmatch(lines[i])
 	var (
-		mod = parts[1]
-		at  = parts[2]
-		qry = parts[3]
+		mod  = parts[1]
+		at   = parts[2]
+		expr = parts[3]
 	)
-	expr, err := ParseExpr(qry)
+	_, err := ParseExpr(expr)
 	if err != nil {
 		if perr, ok := err.(*ParseErr); ok {
 			perr.Line = i + 1
-			perr.Pos += strings.Index(lines[i], qry)
+			perr.Pos += strings.Index(lines[i], expr)
 		}
 		return i, nil, err
 	}
@@ -296,7 +301,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 // evalCmd is a command that evaluates an expression for the given time (range)
 // and expects a specific result.
 type evalCmd struct {
-	expr       Expr
+	expr       string
 	start, end time.Time
 	interval   time.Duration
 
@@ -316,7 +321,7 @@ func (e entry) String() string {
 	return fmt.Sprintf("%d: %s", e.pos, e.vals)
 }
 
-func newEvalCmd(expr Expr, start, end time.Time, interval time.Duration) *evalCmd {
+func newEvalCmd(expr string, start, end time.Time, interval time.Duration) *evalCmd {
 	return &evalCmd{
 		expr:     expr,
 		start:    start,
@@ -380,11 +385,6 @@ func (ev *evalCmd) compareResult(result Value) error {
 			return fmt.Errorf("received instant result on range evaluation")
 		}
 
-		fmt.Println("vector result", len(val), ev.expr)
-		for _, ss := range val {
-			fmt.Println("    ", ss.Metric, ss.Point)
-		}
-
 		seen := map[uint64]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Hash()
@@ -403,6 +403,10 @@ func (ev *evalCmd) compareResult(result Value) error {
 		}
 		for fp, expVals := range ev.expected {
 			if !seen[fp] {
+				fmt.Println("vector result", len(val), ev.expr)
+				for _, ss := range val {
+					fmt.Println("    ", ss.Metric, ss.Point)
+				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}
@@ -460,7 +464,8 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 	case *evalCmd:
-		q := t.queryEngine.newQuery(cmd.expr, cmd.start, cmd.end, cmd.interval)
+		qry, _ := ParseExpr(cmd.expr)
+		q := t.queryEngine.newQuery(t.storage, qry, cmd.start, cmd.end, cmd.interval)
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
@@ -495,7 +500,7 @@ func (t *Test) clear() {
 	}
 	t.storage = testutil.NewStorage(t)
 
-	t.queryEngine = NewEngine(t.storage, nil)
+	t.queryEngine = NewEngine(nil, nil, 20, 10*time.Second)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

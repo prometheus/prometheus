@@ -60,6 +60,9 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	// Send target groups for service updates.
 	send := func(tg *targetgroup.Group) {
+		if tg == nil {
+			return
+		}
 		select {
 		case <-ctx.Done():
 		case ch <- []*targetgroup.Group{tg}:

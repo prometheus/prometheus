@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -85,7 +86,7 @@ func TestDeriv(t *testing.T) {
 	// so we test it by hand.
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := NewEngine(storage, nil)
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
 
 	a, err := storage.Appender()
 	if err != nil {
@@ -100,7 +101,7 @@ func TestDeriv(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	query, err := engine.NewInstantQuery("deriv(foo[30m])", timestamp.Time(1493712846939))
+	query, err := engine.NewInstantQuery(storage, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	if err != nil {
 		t.Fatalf("Error parsing query: %s", err)
 	}

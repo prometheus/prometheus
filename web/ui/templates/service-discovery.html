@@ -32,7 +32,7 @@
     {{range $job := .Index}}
 
     <div class="table-container">
-      <h2 id="job-{{$job}}">
+      <h2 class="job_header" id="job-{{$job}}">
         {{$job}}
         <button type="button" class="targets collapsed-table btn btn-primary">show more</button>
       </h2>
@@ -49,7 +49,7 @@
           <tr>
             <td class="labels">
                 {{$labels := .DiscoveredLabels.Map }}
-                <ul style="list-style-type:none">
+                <ul class="list-inline" style="list-style-type:none">
                   {{range $label, $value := $labels}}
                     <li>
                       <span class="label label-primary">{{$label}}="{{$value}}"</span>
@@ -63,7 +63,7 @@
             </td>
             <td class="labels">
                 {{$labels := .Labels.Map }}
-                <ul style="list-style-type:none">
+                <ul class="list-inline" style="list-style-type:none">
                   {{range $label, $value := $labels}}
                     <li>
                       <span class="label label-primary">{{$label}}="{{$value}}"</span>

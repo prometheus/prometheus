@@ -1,4 +1,32 @@
-## 2.1.0 / 2018-1-19
+## 2.2.0 / 2018-03-08
+
+* [CHANGE] Rename file SD mtime metric.
+* [CHANGE] Send target update on empty pod IP in Kubernetes SD.
+* [FEATURE] Add API endpoint for flags.
+* [FEATURE] Add API endpoint for dropped targets.
+* [FEATURE] Display annotations on alerts page.
+* [FEATURE] Add option to skip head data when taking snapshots.
+* [ENHANCEMENT] Federation performance improvement.
+* [ENHANCEMENT] Read bearer token file on every scrape.
+* [ENHANCEMENT] Improve typeahead on `/graph` page.
+* [ENHANCEMENT] Change rule file formatting.
+* [ENHANCEMENT] Set consul server default to `localhost:8500`.
+* [ENHANCEMENT] Add dropped Alertmanagers to API info endpoint.
+* [ENHANCEMENT] Add OS type meta label to Azure SD.
+* [ENHANCEMENT] Validate required fields in SD configuration.
+* [BUGFIX] Prevent stack overflow on deep recursion in TSDB.
+* [BUGFIX] Correctly read offsets in index files that are greater than 4GB.
+* [BUGFIX] Fix scraping behavior for empty labels.
+* [BUGFIX] Drop metric name for bool modifier.
+* [BUGFIX] Fix races in discovery.
+* [BUGFIX] Fix Kubernetes endpoints SD for empty subsets.
+* [BUGFIX] Throttle updates from SD providers, which caused increased CPU usage and allocations.
+* [BUGFIX] Fix TSDB block reload issue.
+* [BUGFIX] Fix PromQL printing of empty `without()`.
+* [BUGFIX] Don't reset FiredAt for inactive alerts.
+* [BUGFIX] Fix erroneous file version changes and repair existing data.
+
+## 2.1.0 / 2018-01-19
 
 * [FEATURE] New Service Discovery UI showing labels before and after relabelling.
 * [FEATURE] New Admin APIs added to v1 to delete, snapshot and remove tombstones.
