@@ -283,7 +283,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Watched services and their cancellation functions.
 	services := map[string]func(){}
 
-	var lastIndex uint64
 	for {
 		// We have to check the context at least once. The checks during channel sends
 		// do not guarantee that.
@@ -299,26 +298,34 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			time.Sleep(retryInterval)
 			continue
 		}
+	}
 
-		if len(d.watchedServices) == 0 || d.watchedTag != "" {
-			// We need to watch the catalog.
-			d.watchServices(ctx, ch, &lastIndex, services)
-		} else {
-			// We only have fully defined services.
-			for _, name := range d.watchedServices {
-				d.watchService(ctx, name, ch)
+	ticker := time.NewTicker(d.refreshInterval)
+
+	if len(d.watchedServices) == 0 || d.watchedTag != "" {
+		// We need to watch the catalog.
+		go func() {
+			var lastIndex uint64
+			for range ticker.C {
+				d.watchServices(ctx, ch, ticker, &lastIndex, services)
 			}
-			// Wait for cancellation.
-			<-ctx.Done()
-			break
+		}()
+	} else {
+		// We only have fully defined services.
+		for _, name := range d.watchedServices {
+			d.watchService(ctx, ch, ticker, name)
 		}
 	}
+
+	// Wait for cancellation.
+	<-ctx.Done()
+	ticker.Stop()
 }
 
 // Watch the catalog for new services we would like to watch. This is called only
 // when we don't know yet the names of the services and need to ask Consul the
 // entire list of services.
-func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) error {
+func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, ticker *time.Ticker, lastIndex *uint64, services map[string]func()) error {
 	catalog := d.client.Catalog()
 	level.Debug(d.logger).Log("msg", "Watching services", "tag", d.watchedTag)
 
@@ -358,7 +365,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 		}
 
 		wctx, cancel := context.WithCancel(ctx)
-		d.watchService(wctx, name, ch)
+		d.watchService(wctx, ch, ticker, name)
 		services[name] = cancel
 	}
 
@@ -377,9 +384,6 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 			}
 		}
 	}
-	if elapsed < d.refreshInterval {
-		time.Sleep(d.refreshInterval - elapsed)
-	}
 	return nil
 }
 
@@ -395,7 +399,7 @@ type consulService struct {
 }
 
 // Start watching a service.
-func (d *Discovery) watchService(ctx context.Context, name string, ch chan<- []*targetgroup.Group) {
+func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.Group, ticker *time.Ticker, name string) {
 	srv := &consulService{
 		discovery: d,
 		client:    d.client,
@@ -409,11 +413,16 @@ func (d *Discovery) watchService(ctx context.Context, name string, ch chan<- []*
 		logger:       d.logger,
 	}
 
-	go srv.watch(ctx, ch)
+	go func() {
+		var lastIndex uint64
+		for range ticker.C {
+			srv.watch(ctx, ch, &lastIndex)
+		}
+	}
 }
 
 // Continuously watch one service.
-func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group) {
+func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64) {
 	catalog := srv.client.Catalog()
 
 	lastIndex := uint64(0)
