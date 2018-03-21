@@ -1,8 +1,18 @@
-FROM        quay.io/prometheus/busybox:latest
+FROM quay.io/prometheus/golang-builder:1.9.0-base AS sbuilder
 LABEL maintainer "The Prometheus Authors <prometheus-developers@googlegroups.com>"
 
-COPY prometheus                             /bin/prometheus
-COPY promtool                               /bin/promtool
+WORKDIR /go/src/github.com/prometheus/prometheus
+
+ADD . .
+RUN make build
+RUN mv prometheus /prometheus && mv promtool /promtool
+
+
+FROM  quay.io/prometheus/busybox:latest
+LABEL maintainer "The Prometheus Authors <prometheus-developers@googlegroups.com>"
+
+COPY --from=sbuilder /prometheus            /bin/prometheus
+COPY --from=sbuilder /promtool              /bin/promtool
 COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
 COPY console_libraries/                     /usr/share/prometheus/console_libraries/
 COPY consoles/                              /usr/share/prometheus/consoles/
