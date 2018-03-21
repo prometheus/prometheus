@@ -135,16 +135,16 @@ func (t *Target) URL() *url.URL {
 		ks := l.Name[len(model.ParamLabelPrefix):]
 
 		if len(params[ks]) > 0 {
-			params[ks][0] = string(l.Value)
+			params[ks][0] = l.Value
 		} else {
 			params[ks] = []string{l.Value}
 		}
 	}
 
 	return &url.URL{
-		Scheme:   string(t.labels.Get(model.SchemeLabel)),
-		Host:     string(t.labels.Get(model.AddressLabel)),
-		Path:     string(t.labels.Get(model.MetricsPathLabel)),
+		Scheme:   t.labels.Get(model.SchemeLabel),
+		Host:     t.labels.Get(model.AddressLabel),
+		Path:     t.labels.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
 }
