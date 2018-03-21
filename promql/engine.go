@@ -469,22 +469,22 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
+
 	Inspect(s.Expr, func(node Node, _ []Node) bool {
+		nodeOffset := LookbackDelta
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < LookbackDelta {
-				maxOffset = LookbackDelta
-			}
-			if n.Offset+LookbackDelta > maxOffset {
-				maxOffset = n.Offset + LookbackDelta
+			if n.Offset > 0 {
+				nodeOffset += n.Offset
 			}
 		case *MatrixSelector:
-			if maxOffset < n.Range {
-				maxOffset = n.Range
+			nodeOffset += n.Range
+			if n.Offset > 0 {
+				nodeOffset += n.Offset
 			}
-			if n.Offset+n.Range > maxOffset {
-				maxOffset = n.Offset + n.Range
-			}
+		}
+		if maxOffset < nodeOffset {
+			maxOffset = nodeOffset
 		}
 		return true
 	})
@@ -536,7 +536,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 				return false
 			}
 			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
+				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range+LookbackDelta))
 				n.iterators = append(n.iterators, it)
 			}
 		}
