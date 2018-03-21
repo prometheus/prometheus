@@ -133,9 +133,9 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	// configured maximum block duration.
 	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
 
-	for i, v := range rngs {
+	for i, v := range rngs[1:] {
 		if v > int64(time.Duration(opts.MaxBlockDuration).Seconds()*1000) {
-			rngs = rngs[:i]
+			rngs = rngs[:i+1]
 			break
 		}
 	}
