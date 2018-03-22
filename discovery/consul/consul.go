@@ -296,7 +296,7 @@ func (d *Discovery) initialize(ctx context.Context) {
 			time.Sleep(retryInterval)
 			continue
 		}
-		// We are  good to go.
+		// We are good to go.
 		return
 	}
 }
@@ -504,12 +504,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 		tgroup.Targets = append(tgroup.Targets, labels)
 	}
-	// Check context twice to ensure we always catch cancellation.
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
