@@ -146,6 +146,8 @@ func (m *Manager) DroppedTargets() []*Target {
 }
 
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]
 		if !ok {
