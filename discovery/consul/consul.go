@@ -278,11 +278,9 @@ func (d *Discovery) getDatacenter() error {
 	return nil
 }
 
-// Run implements the Discoverer interface.
-func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Watched services and their cancellation functions.
-	services := map[string]func(){}
-
+// Initialize the Discoverer run.
+func (d *Discovery) initialize(ctx context.Context) {
+	// Loop until we manage to get the local datacenter.
 	for {
 		// We have to check the context at least once. The checks during channel sends
 		// do not guarantee that.
@@ -298,34 +296,42 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			time.Sleep(retryInterval)
 			continue
 		}
+		// We are  good to go.
+		return
 	}
+}
 
-	ticker := time.NewTicker(d.refreshInterval)
+// Run implements the Discoverer interface.
+func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+	d.initialize(ctx)
 
 	if len(d.watchedServices) == 0 || d.watchedTag != "" {
 		// We need to watch the catalog.
+		ticker := time.NewTicker(d.refreshInterval)
 		go func() {
+			// Watched services and their cancellation functions.
+			services := make(map[string]func())
 			var lastIndex uint64
-			for range ticker.C {
-				d.watchServices(ctx, ch, ticker, &lastIndex, services)
+
+			for ; true; <-ticker.C {
+				d.watchServices(ctx, ch, &lastIndex, services)
 			}
 		}()
+		<-ctx.Done()
+		ticker.Stop()
 	} else {
 		// We only have fully defined services.
 		for _, name := range d.watchedServices {
-			d.watchService(ctx, ch, ticker, name)
+			d.watchService(ctx, ch, name)
 		}
+		<-ctx.Done()
 	}
-
-	// Wait for cancellation.
-	<-ctx.Done()
-	ticker.Stop()
 }
 
 // Watch the catalog for new services we would like to watch. This is called only
 // when we don't know yet the names of the services and need to ask Consul the
 // entire list of services.
-func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, ticker *time.Ticker, lastIndex *uint64, services map[string]func()) error {
+func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) error {
 	catalog := d.client.Catalog()
 	level.Debug(d.logger).Log("msg", "Watching services", "tag", d.watchedTag)
 
@@ -365,7 +371,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 		}
 
 		wctx, cancel := context.WithCancel(ctx)
-		d.watchService(wctx, ch, ticker, name)
+		d.watchService(wctx, ch, name)
 		services[name] = cancel
 	}
 
@@ -399,7 +405,7 @@ type consulService struct {
 }
 
 // Start watching a service.
-func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.Group, ticker *time.Ticker, name string) {
+func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.Group, name string) {
 	srv := &consulService{
 		discovery: d,
 		client:    d.client,
@@ -414,103 +420,100 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 	}
 
 	go func() {
+		ticker := time.NewTicker(d.refreshInterval)
 		var lastIndex uint64
-		for range ticker.C {
-			srv.watch(ctx, ch, &lastIndex)
+		catalog := srv.client.Catalog()
+		for ; true; <-ticker.C {
+			srv.watch(ctx, ch, catalog, &lastIndex)
 		}
-	}
+		<-ctx.Done()
+		ticker.Stop()
+	}()
 }
 
-// Continuously watch one service.
-func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64) {
-	catalog := srv.client.Catalog()
+// Get updates for a service.
+func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, catalog *consul.Catalog, lastIndex *uint64) error {
+	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tag", srv.tag)
 
-	lastIndex := uint64(0)
-	for {
-		level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tag", srv.tag)
+	t0 := time.Now()
+	nodes, meta, err := catalog.Service(srv.name, srv.tag, &consul.QueryOptions{
+		WaitIndex:  *lastIndex,
+		WaitTime:   watchTimeout,
+		AllowStale: srv.discovery.allowStale,
+		NodeMeta:   srv.discovery.watchedNodeMeta,
+	})
+	elapsed := time.Since(t0)
+	rpcDuration.WithLabelValues("catalog", "service").Observe(elapsed.Seconds())
 
-		t0 := time.Now()
-		nodes, meta, err := catalog.Service(srv.name, srv.tag, &consul.QueryOptions{
-			WaitIndex:  lastIndex,
-			WaitTime:   watchTimeout,
-			AllowStale: srv.discovery.allowStale,
-			NodeMeta:   srv.discovery.watchedNodeMeta,
-		})
-		elapsed := time.Since(t0)
-		rpcDuration.WithLabelValues("catalog", "service").Observe(elapsed.Seconds())
-
-		// Check the context before potentially falling in a continue-loop.
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			// Continue.
-		}
-
-		if err != nil {
-			level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tag", srv.tag, "err", err)
-			rpcFailuresCount.Inc()
-			time.Sleep(retryInterval)
-			continue
-		}
-		// If the index equals the previous one, the watch timed out with no update.
-		if meta.LastIndex == lastIndex {
-			continue
-		}
-		lastIndex = meta.LastIndex
-
-		tgroup := targetgroup.Group{
-			Source:  srv.name,
-			Labels:  srv.labels,
-			Targets: make([]model.LabelSet, 0, len(nodes)),
-		}
-
-		for _, node := range nodes {
-
-			// We surround the separated list with the separator as well. This way regular expressions
-			// in relabeling rules don't have to consider tag positions.
-			var tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
-
-			// If the service address is not empty it should be used instead of the node address
-			// since the service may be registered remotely through a different node
-			var addr string
-			if node.ServiceAddress != "" {
-				addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
-			} else {
-				addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
-			}
-
-			labels := model.LabelSet{
-				model.AddressLabel:  model.LabelValue(addr),
-				addressLabel:        model.LabelValue(node.Address),
-				nodeLabel:           model.LabelValue(node.Node),
-				tagsLabel:           model.LabelValue(tags),
-				serviceAddressLabel: model.LabelValue(node.ServiceAddress),
-				servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
-				serviceIDLabel:      model.LabelValue(node.ServiceID),
-			}
-
-			// Add all key/value pairs from the node's metadata as their own labels
-			for k, v := range node.NodeMeta {
-				name := strutil.SanitizeLabelName(k)
-				labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
-			}
-
-			tgroup.Targets = append(tgroup.Targets, labels)
-		}
-		// Check context twice to ensure we always catch cancellation.
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case ch <- []*targetgroup.Group{&tgroup}:
-		}
-		if elapsed < srv.discovery.refreshInterval {
-			time.Sleep(srv.discovery.refreshInterval - elapsed)
-		}
+	// Check the context before in order to exit early.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue.
 	}
+
+	if err != nil {
+		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tag", srv.tag, "err", err)
+		rpcFailuresCount.Inc()
+		time.Sleep(retryInterval)
+		return err
+	}
+	// If the index equals the previous one, the watch timed out with no update.
+	if meta.LastIndex == *lastIndex {
+		return nil
+	}
+	*lastIndex = meta.LastIndex
+
+	tgroup := targetgroup.Group{
+		Source:  srv.name,
+		Labels:  srv.labels,
+		Targets: make([]model.LabelSet, 0, len(nodes)),
+	}
+
+	for _, node := range nodes {
+
+		// We surround the separated list with the separator as well. This way regular expressions
+		// in relabeling rules don't have to consider tag positions.
+		var tags = srv.tagSeparator + strings.Join(node.ServiceTags, srv.tagSeparator) + srv.tagSeparator
+
+		// If the service address is not empty it should be used instead of the node address
+		// since the service may be registered remotely through a different node
+		var addr string
+		if node.ServiceAddress != "" {
+			addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
+		} else {
+			addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
+		}
+
+		labels := model.LabelSet{
+			model.AddressLabel:  model.LabelValue(addr),
+			addressLabel:        model.LabelValue(node.Address),
+			nodeLabel:           model.LabelValue(node.Node),
+			tagsLabel:           model.LabelValue(tags),
+			serviceAddressLabel: model.LabelValue(node.ServiceAddress),
+			servicePortLabel:    model.LabelValue(strconv.Itoa(node.ServicePort)),
+			serviceIDLabel:      model.LabelValue(node.ServiceID),
+		}
+
+		// Add all key/value pairs from the node's metadata as their own labels
+		for k, v := range node.NodeMeta {
+			name := strutil.SanitizeLabelName(k)
+			labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
+		}
+
+		tgroup.Targets = append(tgroup.Targets, labels)
+	}
+	// Check context twice to ensure we always catch cancellation.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case ch <- []*targetgroup.Group{&tgroup}:
+	}
+	return nil
 }
