@@ -68,6 +68,8 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 
 // Stop cancels all running scrape pools and blocks until all have exited.
 func (m *Manager) Stop() {
+	m.RLock()
+	defer m.RUnlock()
 	for _, sp := range m.scrapePools {
 		sp.stop()
 	}
