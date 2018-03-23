@@ -122,6 +122,10 @@ scrape_configs:
   - server: 'localhost:1234'
     token: mysecret
     services: ['nginx', 'cache', 'mysql']
+    tag: "canary"
+    node_meta:
+      rack: "123"
+    allow_stale: true
     scheme: https
     tls_config:
       ca_file: valid_ca_file
