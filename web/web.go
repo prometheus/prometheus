@@ -484,18 +484,13 @@ func (h *Handler) Run(ctx context.Context) error {
 		ReadTimeout: h.options.ReadTimeout,
 	}
 
-	go func() {
-		if err := httpSrv.Serve(httpl); err != nil {
-			level.Warn(h.logger).Log("msg", "error serving HTTP", "err", err)
-		}
-	}()
-	go func() {
-		if err := grpcSrv.Serve(grpcl); err != nil {
-			level.Warn(h.logger).Log("msg", "error serving gRPC", "err", err)
-		}
-	}()
-
 	errCh := make(chan error)
+	go func() {
+		errCh <- httpSrv.Serve(httpl)
+	}()
+	go func() {
+		errCh <- grpcSrv.Serve(grpcl)
+	}()
 	go func() {
 		errCh <- m.Serve()
 	}()
