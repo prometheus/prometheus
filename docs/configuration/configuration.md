@@ -295,7 +295,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
-* `__meta_consul_metadata_<key>`: each metadata key value of the target
+* `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
@@ -321,8 +321,25 @@ tls_config:
 services:
   [ - <string> ]
 
+# See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
+# about the possible filters that can be used.
+
+# An optional tag used to filter nodes for a given service.
+[ tag: <string> ]
+
+# Node metadata used to filter nodes for a given service.
+[ node_meta:
+  [ <name>: <value> ... ] ]
+
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
+
+# Allow stale Consul results (see https://www.consul.io/api/index.html#consistency-modes). Will reduce load on Consul.
+[ allow_stale: <bool> ]
+
+# The time after which the provided names are refreshed.
+# On large setup it might be a good idea to increase this value because the catalog will change all the time.
+[ refresh_interval: <duration> | default = 30s ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
@@ -330,6 +347,12 @@ Note that the IP number and port used to scrape the targets is assembled as
 Consul setups, the relevant address is in `__meta_consul_service_address`.
 In those cases, you can use the [relabel](#relabel_config)
 feature to replace the special `__address__` label.
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter services or nodes for a service based on arbitrary labels. For
+users with thousands of services it can be more efficient to use the Consul API
+directly which has basic support for filtering nodes (currently by node
+metadata and a single tag).
 
 ### `<dns_sd_config>`
 
