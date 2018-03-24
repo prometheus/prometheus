@@ -2024,6 +2024,12 @@
 			"path": "k8s.io/client-go/util/integer",
 			"revision": "3627aeb7d4f6ade38f995d2c923e459146493c7e",
 			"revisionTime": "2017-03-31T20:34:26Z"
+		},
+		{
+			"checksumSHA1": "cy88zyzH3VJWVaIb41DDBlv+mmU=",
+			"path": "k8s.io/client-go/util/workqueue",
+			"revision": "3627aeb7d4f6ade38f995d2c923e459146493c7e",
+			"revisionTime": "2017-03-31T20:34:26Z"
 		}
 	],
 	"rootPath": "github.com/prometheus/prometheus"

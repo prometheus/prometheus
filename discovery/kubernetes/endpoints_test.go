@@ -24,12 +24,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-func endpointsStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1.Endpoints).ObjectMeta.Name, nil
-}
-
 func newFakeEndpointsInformer() *fakeInformer {
-	return newFakeInformer(endpointsStoreKeyFunc)
+	return newFakeInformer(cache.DeletionHandlingMetaNamespaceKeyFunc)
 }
 
 func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fakeInformer) {
@@ -81,44 +77,6 @@ func makeEndpoints() *v1.Endpoints {
 			},
 		},
 	}
-}
-
-func TestEndpointsDiscoveryInitial(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
-	eps.GetStore().Add(makeEndpoints())
-
-	k8sDiscoveryTest{
-		discovery: n,
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                              "1.2.3.4:9000",
-						"__meta_kubernetes_endpoint_port_name":     "testport",
-						"__meta_kubernetes_endpoint_port_protocol": "TCP",
-						"__meta_kubernetes_endpoint_ready":         "true",
-					},
-					{
-						"__address__":                              "2.3.4.5:9001",
-						"__meta_kubernetes_endpoint_port_name":     "testport",
-						"__meta_kubernetes_endpoint_port_protocol": "TCP",
-						"__meta_kubernetes_endpoint_ready":         "true",
-					},
-					{
-						"__address__":                              "2.3.4.5:9001",
-						"__meta_kubernetes_endpoint_port_name":     "testport",
-						"__meta_kubernetes_endpoint_port_protocol": "TCP",
-						"__meta_kubernetes_endpoint_ready":         "false",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":      "default",
-					"__meta_kubernetes_endpoints_name": "testendpoints",
-				},
-				Source: "endpoints/default/testendpoints",
-			},
-		},
-	}.Run(t)
 }
 
 func TestEndpointsDiscoveryAdd(t *testing.T) {
@@ -260,8 +218,17 @@ func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
 	eps.GetStore().Add(makeEndpoints())
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { eps.Delete(cache.DeletedFinalStateUnknown{Obj: makeEndpoints()}) }() },
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				obj := makeEndpoints()
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err != nil {
+					t.Errorf("failed to get key for %v: %v", obj, err)
+				}
+				eps.Delete(cache.DeletedFinalStateUnknown{Key: key, Obj: obj})
+			}()
+		},
 		expectedRes: []*targetgroup.Group{
 			{
 				Source: "endpoints/default/testendpoints",

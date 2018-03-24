@@ -16,7 +16,6 @@ package kubernetes
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -145,20 +144,18 @@ func (c *kubernetesSharedCache) Count() int {
 	return len(c.shared)
 }
 
+// Start runs all informers. This is called after all discovery instances are
+// configured, no need to lock.
 func (c *kubernetesSharedCache) Start(stopCh <-chan struct{}) {
 	for _, shared := range c.shared {
 		for key, informer := range shared.informers {
 			go informer.Run(stopCh)
-			for !informer.HasSynced() {
-				time.Sleep(100 * time.Millisecond)
-			}
-			level.Info(c.logger).Log("msg", "Kubernetes informer synced", "key", key)
+			level.Info(c.logger).Log("msg", "Kubernetes informer started", "key", key)
 		}
 	}
 }
 
 func NewKubernetesSharedCache(l log.Logger) KubernetesSharedCache {
-
 	return &kubernetesSharedCache{
 		logger: l,
 		shared: make(map[string]*kubernetesShared),
