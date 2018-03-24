@@ -54,9 +54,12 @@ func (r *Router) handle(handlerName string, h http.HandlerFunc) httprouter.Handl
 			ctx = context.WithValue(ctx, param(p.Key), p.Value)
 		}
 		if r.instrh != nil {
-			h = r.instrh(handlerName, h)
+			hh := r.instrh(handlerName, h)
+			hh(w, req.WithContext(ctx))
+
+		} else {
+			h(w, req.WithContext(ctx))
 		}
-		h(w, req.WithContext(ctx))
 	}
 }
 
