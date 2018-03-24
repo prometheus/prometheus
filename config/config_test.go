@@ -384,11 +384,12 @@ var expectedConf = &Config{
 						Servers: []string{
 							"https://marathon.example.com:443",
 						},
-						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
-						TLSConfig: config_util.TLSConfig{
-							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
-							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+						HTTPClientConfig: config_util.HTTPClientConfig{
+							TLSConfig: config_util.TLSConfig{
+								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+							},
 						},
 					},
 				},

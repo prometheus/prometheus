@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -77,19 +76,15 @@ var (
 		})
 	// DefaultSDConfig is the default Marathon SD configuration.
 	DefaultSDConfig = SDConfig{
-		Timeout:         model.Duration(30 * time.Second),
 		RefreshInterval: model.Duration(30 * time.Second),
 	}
 )
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
-	Servers         []string              `yaml:"servers,omitempty"`
-	Timeout         model.Duration        `yaml:"timeout,omitempty"`
-	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
-	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
-	BearerToken     config_util.Secret    `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string                `yaml:"bearer_token_file,omitempty"`
+	Servers          []string                     `yaml:"servers,omitempty"`
+	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -109,8 +104,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
 	}
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	if err := c.HTTPClientConfig.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -130,7 +125,7 @@ type Discovery struct {
 	refreshInterval time.Duration
 	lastRefresh     map[string]*targetgroup.Group
 	appsClient      AppListClient
-	token           string
+	token           config_util.Secret
 	logger          log.Logger
 }
 
@@ -140,29 +135,20 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
+	client, err := httputil.NewClientFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
 	}
 
-	token := string(conf.BearerToken)
-	if conf.BearerTokenFile != "" {
-		bf, err := ioutil.ReadFile(conf.BearerTokenFile)
+	// Unfortunately, we have to do this part ourselves because Marathon uses a
+	// non-standard authorization header
+	bearerToken := conf.HTTPClientConfig.BearerToken
+	if len(bearerToken) == 0 && len(conf.HTTPClientConfig.BearerTokenFile) > 0 {
+		b, err := ioutil.ReadFile(conf.HTTPClientConfig.BearerTokenFile)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to read bearer token file %s: %s", conf.HTTPClientConfig.BearerTokenFile, err)
 		}
-		token = strings.TrimSpace(string(bf))
-	}
-
-	client := &http.Client{
-		Timeout: time.Duration(conf.Timeout),
-		Transport: &http.Transport{
-			TLSClientConfig: tls,
-			DialContext: conntrack.NewDialContextFunc(
-				conntrack.DialWithTracing(),
-				conntrack.DialWithName("marathon_sd"),
-			),
-		},
+		bearerToken = config_util.Secret(strings.TrimSpace(string(b)))
 	}
 
 	return &Discovery{
@@ -170,7 +156,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
-		token:           token,
+		token:           bearerToken,
 		logger:          logger,
 	}, nil
 }
@@ -288,10 +274,10 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url, token string) (*AppList, error)
+type AppListClient func(client *http.Client, url string, token config_util.Secret) (*AppList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url, token string) (*AppList, error) {
+func fetchApps(client *http.Client, url string, token config_util.Secret) (*AppList, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -301,7 +287,7 @@ func fetchApps(client *http.Client, url, token string) (*AppList, error) {
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
 	// so we set this implicitly here
 	if token != "" {
-		request.Header.Set("Authorization", "token="+token)
+		request.Header.Set("Authorization", "token="+string(token))
 	}
 
 	resp, err := client.Do(request)
