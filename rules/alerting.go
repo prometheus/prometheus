@@ -131,6 +131,41 @@ func (r *AlertingRule) Name() string {
 	return r.name
 }
 
+// Query returns the query expression of the alert.
+func (r *AlertingRule) Query() promql.Expr {
+	return r.vector
+}
+
+// Duration returns the hold duration of the alert.
+func (r *AlertingRule) Duration() time.Duration {
+	return r.holdDuration
+}
+
+// Labels returns the labels of the alert.
+func (r *AlertingRule) Labels() labels.Labels {
+	return r.labels
+}
+
+// Annotations returns the annotations of the alert.
+func (r *AlertingRule) Annotations() labels.Labels {
+	return r.annotations
+}
+
+// Alertinfo return an array of alerts
+func (r *AlertingRule) Alertinfo() []*Alert {
+	activealerts := &r.active
+	alertsarr := make([]*Alert, 0)
+	if len(*activealerts) > 0 {
+		for _, a := range *activealerts {
+			if a.ResolvedAt.IsZero() {
+				alertsarr = append(alertsarr, a)
+			}
+		}
+		return alertsarr
+	}
+	return nil
+}
+
 func (r *AlertingRule) equal(o *AlertingRule) bool {
 	return r.name == o.name && labels.Equal(r.labels, o.labels)
 }
