@@ -20,14 +20,11 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	"k8s.io/client-go/tools/cache"
 )
 
-func ingressStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1beta1.Ingress).ObjectMeta.Name, nil
-}
-
 func newFakeIngressInformer() *fakeInformer {
-	return newFakeInformer(ingressStoreKeyFunc)
+	return newFakeInformer(cache.DeletionHandlingMetaNamespaceKeyFunc)
 }
 
 func makeTestIngressDiscovery() (*Ingress, *fakeInformer) {
@@ -115,22 +112,30 @@ func expectedTargetGroups(tls bool) []*targetgroup.Group {
 	}
 }
 
-func TestIngressDiscoveryInitial(t *testing.T) {
+func TestIngressDiscoveryAdd(t *testing.T) {
 	n, i := makeTestIngressDiscovery()
-	i.GetStore().Add(makeIngress(nil))
 
 	k8sDiscoveryTest{
-		discovery:       n,
-		expectedInitial: expectedTargetGroups(false),
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				i.Add(makeIngress(nil))
+			}()
+		},
+		expectedRes: expectedTargetGroups(false),
 	}.Run(t)
 }
 
-func TestIngressDiscoveryInitialTLS(t *testing.T) {
+func TestIngressDiscoveryAddTLS(t *testing.T) {
 	n, i := makeTestIngressDiscovery()
-	i.GetStore().Add(makeIngress([]v1beta1.IngressTLS{{}}))
 
 	k8sDiscoveryTest{
-		discovery:       n,
-		expectedInitial: expectedTargetGroups(true),
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				i.Add(makeIngress([]v1beta1.IngressTLS{{}}))
+			}()
+		},
+		expectedRes: expectedTargetGroups(true),
 	}.Run(t)
 }

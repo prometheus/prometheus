@@ -24,12 +24,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-func podStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1.Pod).ObjectMeta.Name, nil
-}
-
 func newFakePodInformer() *fakeInformer {
-	return newFakeInformer(podStoreKeyFunc)
+	return newFakeInformer(cache.DeletionHandlingMetaNamespaceKeyFunc)
 }
 
 func makeTestPodDiscovery() (*Pod, *fakeInformer) {
@@ -117,51 +113,6 @@ func makePod() *v1.Pod {
 	}
 }
 
-func TestPodDiscoveryInitial(t *testing.T) {
-	n, i := makeTestPodDiscovery()
-	i.GetStore().Add(makeMultiPortPod())
-
-	k8sDiscoveryTest{
-		discovery: n,
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer0",
-						"__meta_kubernetes_pod_container_port_name":     "testport0",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-					{
-						"__address__":                                   "1.2.3.4:9001",
-						"__meta_kubernetes_pod_container_name":          "testcontainer0",
-						"__meta_kubernetes_pod_container_port_name":     "testport1",
-						"__meta_kubernetes_pod_container_port_number":   "9001",
-						"__meta_kubernetes_pod_container_port_protocol": "UDP",
-					},
-					{
-						"__address__":                          "1.2.3.4",
-						"__meta_kubernetes_pod_container_name": "testcontainer1",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":                      "testpod",
-					"__meta_kubernetes_namespace":                     "default",
-					"__meta_kubernetes_pod_label_testlabel":           "testvalue",
-					"__meta_kubernetes_pod_annotation_testannotation": "testannotationvalue",
-					"__meta_kubernetes_pod_node_name":                 "testnode",
-					"__meta_kubernetes_pod_ip":                        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":                   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":                     "true",
-					"__meta_kubernetes_pod_uid":                       "abc123",
-				},
-				Source: "pod/default/testpod",
-			},
-		},
-	}.Run(t)
-}
-
 func TestPodDiscoveryAdd(t *testing.T) {
 	n, i := makeTestPodDiscovery()
 
@@ -201,29 +152,6 @@ func TestPodDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { i.Delete(makePod()) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-					"__meta_kubernetes_pod_uid":       "abc123",
-				},
-				Source: "pod/default/testpod",
-			},
-		},
 		expectedRes: []*targetgroup.Group{
 			{
 				Source: "pod/default/testpod",
@@ -237,30 +165,16 @@ func TestPodDiscoveryDeleteUnknownCacheState(t *testing.T) {
 	i.GetStore().Add(makePod())
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makePod()}) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-					"__meta_kubernetes_pod_uid":       "abc123",
-				},
-				Source: "pod/default/testpod",
-			},
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				obj := makePod()
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err != nil {
+					t.Errorf("failed to get key for %v: %v", obj, err)
+				}
+				i.Delete(cache.DeletedFinalStateUnknown{Key: key, Obj: obj})
+			}()
 		},
 		expectedRes: []*targetgroup.Group{
 			{
@@ -302,29 +216,6 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { i.Update(makePod()) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "unknown",
-					"__meta_kubernetes_pod_uid":       "xyz321",
-				},
-				Source: "pod/default/testpod",
-			},
-		},
 		expectedRes: []*targetgroup.Group{
 			{
 				Targets: []model.LabelSet{

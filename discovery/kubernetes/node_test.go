@@ -79,6 +79,7 @@ func (i *fakeInformer) Add(obj interface{}) {
 	i.blockDeltas.Lock()
 	defer i.blockDeltas.Unlock()
 
+	i.store.Add(obj)
 	for _, h := range i.handlers {
 		h.OnAdd(obj)
 	}
@@ -88,6 +89,7 @@ func (i *fakeInformer) Delete(obj interface{}) {
 	i.blockDeltas.Lock()
 	defer i.blockDeltas.Unlock()
 
+	i.store.Delete(obj)
 	for _, h := range i.handlers {
 		h.OnDelete(obj)
 	}
@@ -97,6 +99,7 @@ func (i *fakeInformer) Update(obj interface{}) {
 	i.blockDeltas.Lock()
 	defer i.blockDeltas.Unlock()
 
+	i.store.Update(obj)
 	for _, h := range i.handlers {
 		h.OnUpdate(nil, obj)
 	}
@@ -115,16 +118,11 @@ type k8sDiscoveryTest struct {
 
 func (d k8sDiscoveryTest) Run(t *testing.T) {
 	ch := make(chan []*targetgroup.Group)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
 		d.discovery.Run(ctx, ch)
 	}()
-
-	initialRes := <-ch
-	if d.expectedInitial != nil {
-		requireTargetGroups(t, d.expectedInitial, initialRes)
-	}
 
 	if d.afterStart != nil && d.expectedRes != nil {
 		d.afterStart()
@@ -147,12 +145,8 @@ func requireTargetGroups(t *testing.T, expected, res []*targetgroup.Group) {
 	require.JSONEq(t, string(b1), string(b2))
 }
 
-func nodeStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1.Node).ObjectMeta.Name, nil
-}
-
 func newFakeNodeInformer() *fakeInformer {
-	return newFakeInformer(nodeStoreKeyFunc)
+	return newFakeInformer(cache.DeletionHandlingMetaNamespaceKeyFunc)
 }
 
 func makeTestNodeDiscovery() (*Node, *fakeInformer) {
@@ -187,37 +181,6 @@ func makeEnumeratedNode(i int) *v1.Node {
 	return makeNode(fmt.Sprintf("test%d", i), "1.2.3.4", map[string]string{}, map[string]string{})
 }
 
-func TestNodeDiscoveryInitial(t *testing.T) {
-	n, i := makeTestNodeDiscovery()
-	i.GetStore().Add(makeNode(
-		"test",
-		"1.2.3.4",
-		map[string]string{"testlabel": "testvalue"},
-		map[string]string{"testannotation": "testannotationvalue"},
-	))
-
-	k8sDiscoveryTest{
-		discovery: n,
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name":                      "test",
-					"__meta_kubernetes_node_label_testlabel":           "testvalue",
-					"__meta_kubernetes_node_annotation_testannotation": "testannotationvalue",
-				},
-				Source: "node/test",
-			},
-		},
-	}.Run(t)
-}
-
 func TestNodeDiscoveryAdd(t *testing.T) {
 	n, i := makeTestNodeDiscovery()
 
@@ -249,21 +212,6 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery:  n,
 		afterStart: func() { go func() { i.Delete(makeEnumeratedNode(0)) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test0",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name": "test0",
-				},
-				Source: "node/test0",
-			},
-		},
 		expectedRes: []*targetgroup.Group{
 			{
 				Source: "node/test0",
@@ -277,22 +225,16 @@ func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
 	i.GetStore().Add(makeEnumeratedNode(0))
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makeEnumeratedNode(0)}) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test0",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name": "test0",
-				},
-				Source: "node/test0",
-			},
+		discovery: n,
+		afterStart: func() {
+			go func() {
+				obj := makeEnumeratedNode(0)
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err != nil {
+					t.Errorf("failed to get key for %v: %v", obj, err)
+				}
+				i.Delete(cache.DeletedFinalStateUnknown{Key: key, Obj: obj})
+			}()
 		},
 		expectedRes: []*targetgroup.Group{
 			{
@@ -304,12 +246,12 @@ func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
 
 func TestNodeDiscoveryUpdate(t *testing.T) {
 	n, i := makeTestNodeDiscovery()
-	i.GetStore().Add(makeEnumeratedNode(0))
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			go func() {
+				i.GetStore().Add(makeEnumeratedNode(0))
 				i.Update(
 					makeNode(
 						"test0",
@@ -319,21 +261,6 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 					),
 				)
 			}()
-		},
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test0",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name": "test0",
-				},
-				Source: "node/test0",
-			},
 		},
 		expectedRes: []*targetgroup.Group{
 			{
