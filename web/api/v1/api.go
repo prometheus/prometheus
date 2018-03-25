@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -91,6 +92,19 @@ type alertmanagerRetriever interface {
 	DroppedAlertmanagers() []*url.URL
 }
 
+type alertRetreiver interface {
+	AlertingRules() []*rules.AlertingRule
+}
+
+type rulesRetreiver interface {
+	RuleGroups() []*rules.Group
+}
+
+type alertsrulesRetreiver interface {
+	alertRetreiver
+	rulesRetreiver
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -115,11 +129,11 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
-
-	now      func() time.Time
-	config   func() config.Config
-	flagsMap map[string]string
-	ready    func(http.HandlerFunc) http.HandlerFunc
+	alertsrulesRetreiver  alertsrulesRetreiver
+	now                   func() time.Time
+	config                func() config.Config
+	flagsMap              map[string]string
+	ready                 func(http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -136,18 +150,20 @@ func NewAPI(
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
+	al alertsrulesRetreiver,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:         time.Now,
-		config:      configFunc,
-		flagsMap:    flagsMap,
-		ready:       readyFunc,
-		db:          db,
-		enableAdmin: enableAdmin,
+		now:                  time.Now,
+		config:               configFunc,
+		flagsMap:             flagsMap,
+		ready:                readyFunc,
+		db:                   db,
+		enableAdmin:          enableAdmin,
+		alertsrulesRetreiver: al,
 	}
 }
 
@@ -187,6 +203,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+
+	r.Get("/alerts", wrap(api.alerts))
+	r.Get("/rules", wrap(api.rules))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -504,6 +523,94 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 		ams.DroppedAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
 	}
 	return ams, nil
+}
+
+// AlertDiscovery has info for all alerts
+type AlertDiscovery struct {
+	Alertgrps []*Alertgrp `json:"alertgrp"`
+}
+
+// Alert has info for a alert
+type Alert struct {
+	Labels      labels.Labels `json:"labels"`
+	Status      string        `json:"status"`
+	Activesince *time.Time    `json:"activesince,omitempty"`
+}
+
+// Alertgrp has info for alerts part of a group
+type Alertgrp struct {
+	Name        string        `json:"name"`
+	Query       string        `json:"query"`
+	Duration    string        `json:"duration"`
+	Annotations labels.Labels `json:"annotations,omitempty"`
+	Alerts      []*Alert      `json:"alerts"`
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError) {
+	alertingrules := api.alertsrulesRetreiver.AlertingRules()
+	var alertgrps []*Alertgrp
+	res := &AlertDiscovery{Alertgrps: alertgrps}
+	for _, activerule := range alertingrules {
+		t := &Alertgrp{
+			Name:        activerule.Name(),
+			Query:       fmt.Sprintf("%v", activerule.Query()),
+			Duration:    activerule.Duration().String(),
+			Annotations: activerule.Annotations(),
+		}
+		alerts := activerule.Alertinfo()
+		var activealerts []*Alert
+		for _, alert := range alerts {
+			q := &Alert{
+				Labels:      alert.Labels,
+				Status:      alert.State.String(),
+				Activesince: &alert.ActiveAt,
+			}
+
+			activealerts = append(activealerts, q)
+		}
+		t.Alerts = activealerts
+		res.Alertgrps = append(res.Alertgrps, t)
+	}
+
+	return res, nil
+}
+
+// GroupDiscovery has info for all rules
+type GroupDiscovery struct {
+	Rulegrps []*Rulegrp `json:"groups"`
+}
+
+// Rulegrp has info for rules which are part of a group
+type Rulegrp struct {
+	Name  string      `json:"name"`
+	File  string      `json:"file"`
+	Rules []*Ruleinfo `json:"rules"`
+}
+
+// Ruleinfo has rule in human readable format using \n as line separators
+type Ruleinfo struct {
+	Rule string `json:"rule"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError) {
+	grps := api.alertsrulesRetreiver.RuleGroups()
+	res := &GroupDiscovery{Rulegrps: make([]*Rulegrp, len(grps))}
+	for i, grp := range grps {
+		t := &Rulegrp{
+			Name: grp.Name(),
+			File: grp.File(),
+		}
+		var rulearr []*Ruleinfo
+		for _, rule := range grp.Rules() {
+			q := &Ruleinfo{
+				Rule: rule.String(),
+			}
+			rulearr = append(rulearr, q)
+		}
+		t.Rules = rulearr
+		res.Rulegrps[i] = t
+	}
+	return res, nil
 }
 
 type prometheusConfig struct {

@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
+	stdlog "log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -39,8 +41,10 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTargetRetriever struct{}
@@ -95,6 +99,68 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 	}
 }
 
+type testalertsrulesfunc struct {
+	test *testing.T
+}
+
+func (t testalertsrulesfunc) AlertingRules() []*rules.AlertingRule {
+	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	if err != nil {
+		stdlog.Fatalf("Unable to parse alert expression: %s", err)
+	}
+	expr2, err := promql.ParseExpr(`up == 1`)
+	if err != nil {
+		stdlog.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	rule1 := rules.NewAlertingRule(
+		"test_metric3",
+		expr1,
+		time.Second,
+		labels.Labels{},
+		labels.Labels{},
+		log.NewNopLogger(),
+	)
+	rule2 := rules.NewAlertingRule(
+		"test_metric4",
+		expr2,
+		time.Second,
+		labels.Labels{},
+		labels.Labels{},
+		log.NewNopLogger(),
+	)
+	var r []*rules.AlertingRule
+	r = append(r, rule1)
+	r = append(r, rule2)
+	return r
+}
+
+func (t testalertsrulesfunc) RuleGroups() []*rules.Group {
+	var ar testalertsrulesfunc
+	arules := ar.AlertingRules()
+	storage := testutil.NewStorage(t.test)
+	defer storage.Close()
+
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	opts := &rules.ManagerOptions{
+		QueryFunc:  rules.EngineQueryFunc(engine, storage),
+		Appendable: storage,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	var r []rules.Rule
+
+	for _, alertrule := range arules {
+		r = append(r, alertrule)
+	}
+
+	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, opts)
+	fmt.Println(group)
+	return []*rules.Group{group}
+
+}
+
 var samplePrometheusCfg = config.Config{
 	GlobalConfig:       config.GlobalConfig{},
 	AlertingConfig:     config.AlertingConfig{},
@@ -131,15 +197,23 @@ func TestEndpoints(t *testing.T) {
 
 	var ar testAlertmanagerRetriever
 
+	var algr testalertsrulesfunc
+	algr.test = t
+
+	algr.AlertingRules()
+
+	algr.RuleGroups()
+
 	api := &API{
 		Queryable:             suite.Storage(),
 		QueryEngine:           suite.QueryEngine(),
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:      func() time.Time { return now },
-		config:   func() config.Config { return samplePrometheusCfg },
-		flagsMap: sampleFlagMap,
-		ready:    func(f http.HandlerFunc) http.HandlerFunc { return f },
+		now:                  func() time.Time { return now },
+		config:               func() config.Config { return samplePrometheusCfg },
+		flagsMap:             sampleFlagMap,
+		ready:                func(f http.HandlerFunc) http.HandlerFunc { return f },
+		alertsrulesRetreiver: algr,
 	}
 
 	start := time.Unix(0, 0)
@@ -496,6 +570,46 @@ func TestEndpoints(t *testing.T) {
 		{
 			endpoint: api.serveFlags,
 			response: sampleFlagMap,
+		},
+		{
+			endpoint: api.alerts,
+			response: &AlertDiscovery{
+				Alertgrps: []*Alertgrp{
+					{
+						Name:        "test_metric3",
+						Query:       "absent(test_metric3) != 1",
+						Duration:    "1s",
+						Alerts:      nil,
+						Annotations: labels.Labels{},
+					},
+					{
+						Name:        "test_metric4",
+						Query:       "up == 1",
+						Duration:    "1s",
+						Alerts:      nil,
+						Annotations: labels.Labels{},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			response: &GroupDiscovery{
+				Rulegrps: []*Rulegrp{
+					{
+						Name: "grp",
+						File: "/path/to/file",
+						Rules: []*Ruleinfo{
+							{
+								Rule: "alert: test_metric3\nexpr: absent(test_metric3) != 1\nfor: 1s\n",
+							},
+							{
+								Rule: "alert: test_metric4\nexpr: up == 1\nfor: 1s\n",
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 
