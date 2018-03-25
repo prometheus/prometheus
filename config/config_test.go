@@ -412,6 +412,16 @@ var expectedConf = &Config{
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
+						Filters: []*ec2.Filter{
+							{
+								Name:   "tag:environment",
+								Values: []string{"prod"},
+							},
+							{
+								Name:   "tag:service",
+								Values: []string{"web", "db"},
+							},
+						},
 					},
 				},
 			},

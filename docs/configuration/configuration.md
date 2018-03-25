@@ -429,6 +429,13 @@ region: <string>
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# Filters can be used optionally to filter the instance list by other criteria.
+# Available filter criteria can be found here:
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+filters:
+  [ - name: <string>, values: [ - <string> ] ... ]
 ```
 
 ### `<openstack_sd_config>`
