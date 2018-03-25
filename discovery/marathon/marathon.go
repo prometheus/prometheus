@@ -84,6 +84,8 @@ var (
 type SDConfig struct {
 	Servers          []string                     `yaml:"servers,omitempty"`
 	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
+	AuthToken        config_util.Secret           `yaml:"auth_token,omitempty"`
+	AuthTokenFile    string                       `yaml:"auth_token_file,omitempty"`
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 
 	// Catches all undefined fields and must be empty after parsing.
@@ -140,15 +142,13 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 
-	// Unfortunately, we have to do this part ourselves because Marathon uses a
-	// non-standard authorization header
-	bearerToken := conf.HTTPClientConfig.BearerToken
-	if len(bearerToken) == 0 && len(conf.HTTPClientConfig.BearerTokenFile) > 0 {
-		b, err := ioutil.ReadFile(conf.HTTPClientConfig.BearerTokenFile)
+	authToken := conf.AuthToken
+	if len(authToken) == 0 && len(conf.AuthTokenFile) > 0 {
+		b, err := ioutil.ReadFile(conf.AuthTokenFile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read bearer token file %s: %s", conf.HTTPClientConfig.BearerTokenFile, err)
+			return nil, fmt.Errorf("unable to read auth token file %s: %s", conf.AuthTokenFile, err)
 		}
-		bearerToken = config_util.Secret(strings.TrimSpace(string(b)))
+		authToken = config_util.Secret(strings.TrimSpace(string(b)))
 	}
 
 	return &Discovery{
@@ -156,7 +156,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
-		token:           bearerToken,
+		token:           authToken,
 		logger:          logger,
 	}, nil
 }
@@ -283,7 +283,7 @@ func fetchApps(client *http.Client, url string, token config_util.Secret) (*AppL
 		return nil, err
 	}
 
-	// According to  https://dcos.io/docs/1.8/administration/id-and-access-mgt/managing-authentication
+	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
 	// so we set this implicitly here
 	if token != "" {

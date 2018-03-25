@@ -385,6 +385,7 @@ var expectedConf = &Config{
 							"https://marathon.example.com:443",
 						},
 						RefreshInterval: model.Duration(30 * time.Second),
+						AuthToken:       config_util.Secret("mysecret"),
 						HTTPClientConfig: config_util.HTTPClientConfig{
 							TLSConfig: config_util.TLSConfig{
 								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
@@ -571,7 +572,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	testutil.Assert(t, len(matches) == 6, "wrong number of secret matches found")
+	testutil.Assert(t, len(matches) == 7, "wrong number of secret matches found")
 	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
 		"yaml marshal reveals authentication credentials.")
 }

@@ -176,6 +176,7 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
 		}
 		for _, mcfg := range cfg.MarathonSDConfigs {
+			mcfg.AuthTokenFile = join(mcfg.AuthTokenFile)
 			mcfg.HTTPClientConfig.BearerTokenFile = join(mcfg.HTTPClientConfig.BearerTokenFile)
 			mcfg.HTTPClientConfig.TLSConfig.CAFile = join(mcfg.HTTPClientConfig.TLSConfig.CAFile)
 			mcfg.HTTPClientConfig.TLSConfig.CertFile = join(mcfg.HTTPClientConfig.TLSConfig.CertFile)
