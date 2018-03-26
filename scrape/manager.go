@@ -148,27 +148,29 @@ func (m *Manager) DroppedTargets() []*Target {
 }
 
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
-	for tsetName, tgroup := range t {
-		scrapeConfig, ok := m.scrapeConfigs[tsetName]
-		if !ok {
-			level.Error(m.logger).Log("msg", "error reloading target set", "err", fmt.Sprintf("invalid config id:%v", tsetName))
-			continue
+	toSync := make(map[string]*scrapePool)
+	m.mtx.Lock()
+	for tsetName := range t {
+		if existing, ok := m.scrapePools[tsetName]; !ok {
+			scrapeConfig, ok := m.scrapeConfigs[tsetName]
+			if !ok {
+				level.Error(m.logger).Log("msg", "error reloading target set", "err", fmt.Sprintf("invalid config id:%v", tsetName))
+				continue
+			}
+
+			newSp := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
+			m.scrapePools[tsetName] = newSp
+			toSync[tsetName] = newSp
+		} else {
+			toSync[tsetName] = existing
 		}
 
-		// Scrape pool doesn't exist so start a new one.
-		m.mtx.RLock()
-		existing, ok := m.scrapePools[tsetName]
-		m.mtx.RUnlock()
+	}
+	m.mtx.Unlock()
 
-		if !ok {
-			sp := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
-			m.mtx.Lock()
-			m.scrapePools[tsetName] = sp
-			m.mtx.Unlock()
+	for tsetName, tgroup := range t {
+		if sp, ok := toSync[tsetName]; ok {
 			sp.Sync(tgroup)
-
-		} else {
-			existing.Sync(tgroup)
 		}
 	}
 }
