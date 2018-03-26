@@ -148,8 +148,6 @@ func (m *Manager) DroppedTargets() []*Target {
 }
 
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
 	for tsetName, tgroup := range t {
 		scrapeConfig, ok := m.scrapeConfigs[tsetName]
 		if !ok {
@@ -158,10 +156,15 @@ func (m *Manager) reload(t map[string][]*targetgroup.Group) {
 		}
 
 		// Scrape pool doesn't exist so start a new one.
+		m.mtx.RLock()
 		existing, ok := m.scrapePools[tsetName]
+		m.mtx.RUnlock()
+
 		if !ok {
 			sp := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
+			m.mtx.Lock()
 			m.scrapePools[tsetName] = sp
+			m.mtx.Unlock()
 			sp.Sync(tgroup)
 
 		} else {
