@@ -68,8 +68,8 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 
 // Stop cancels all running scrape pools and blocks until all have exited.
 func (m *Manager) Stop() {
-	m.RLock()
-	defer m.RUnlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 	for _, sp := range m.scrapePools {
 		sp.stop()
 	}
@@ -101,8 +101,8 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 // TargetMap returns map of active and dropped targets and their corresponding scrape config job name.
 func (m *Manager) TargetMap() map[string][]*Target {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 
 	targets := make(map[string][]*Target)
 	for jobName, sp := range m.scrapePools {
@@ -119,8 +119,8 @@ func (m *Manager) TargetMap() map[string][]*Target {
 
 // Targets returns the targets currently being scraped.
 func (m *Manager) Targets() []*Target {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 
 	var targets []*Target
 	for _, p := range m.scrapePools {
@@ -136,8 +136,8 @@ func (m *Manager) Targets() []*Target {
 
 // DroppedTargets returns the targets dropped during relabelling.
 func (m *Manager) DroppedTargets() []*Target {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 	var droppedTargets []*Target
 	for _, p := range m.scrapePools {
 		p.mtx.RLock()
