@@ -434,9 +434,23 @@ region: <string>
 # Available filter criteria can be found here:
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 # Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+# For example if we need to filter instances with tags environment=production and team=backend,
+# we can use the following filters:
+# filters:
+# - name: tag:environment
+#   values:
+#   - production
+# - name: tag:team
+#   values:
+#   - backend
 filters:
   [ - name: <string>, values: [ - <string> ] ... ]
+
 ```
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter targets based on arbitrary labels. For users with thousands of
+instances it can be more efficient to use the EC2 API directly which has
+support for filtering instances.
 
 ### `<openstack_sd_config>`
 

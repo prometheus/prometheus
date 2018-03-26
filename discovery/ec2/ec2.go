@@ -114,6 +114,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		c.Region = region
 	}
+	for _, f := range c.Filters {
+		if len(f.Values) == 0 {
+			return fmt.Errorf("EC2 SD configuration filter values cannot be empty")
+		}
+	}
 	return nil
 }
 
@@ -222,19 +227,16 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		Source: *d.aws.Region,
 	}
 
-	var input *ec2.DescribeInstancesInput
+	var filters []*ec2.Filter
 
-	if len(d.filters) > 0 {
-		var filters []*ec2.Filter
-		for _, f := range d.filters {
-			filters = append(filters, &ec2.Filter{
-				Name:   aws.String(f.Name),
-				Values: aws.StringSlice(f.Values),
-			})
-		}
-
-		input = &ec2.DescribeInstancesInput{Filters: filters}
+	for _, f := range d.filters {
+		filters = append(filters, &ec2.Filter{
+			Name:   aws.String(f.Name),
+			Values: aws.StringSlice(f.Values),
+		})
 	}
+
+	input := &ec2.DescribeInstancesInput{Filters: filters}
 
 	if err = ec2s.DescribeInstancesPages(input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
