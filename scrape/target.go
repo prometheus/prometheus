@@ -110,8 +110,6 @@ func (t *Target) Labels() labels.Labels {
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels() labels.Labels {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
 	lset := make(labels.Labels, len(t.discoveredLabels))
 	copy(lset, t.discoveredLabels)
 	return lset
@@ -119,8 +117,6 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 
 // SetDiscoveredLabels sets new DiscoveredLabels
 func (t *Target) SetDiscoveredLabels(l labels.Labels) {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
 	t.discoveredLabels = l
 }
 
