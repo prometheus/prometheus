@@ -46,15 +46,16 @@ func (r *Router) WithPrefix(prefix string) *Router {
 
 // handle turns a HandlerFunc into an httprouter.Handle.
 func (r *Router) handle(handlerName string, h http.HandlerFunc) httprouter.Handle {
+	if r.instrh != nil {
+		// This needs to be outside the closure to avoid data race when reading and writing to 'h'.
+		h = r.instrh(handlerName, h)
+	}
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 
 		for _, p := range params {
 			ctx = context.WithValue(ctx, param(p.Key), p.Value)
-		}
-		if r.instrh != nil {
-			h = r.instrh(handlerName, h)
 		}
 		h(w, req.WithContext(ctx))
 	}
