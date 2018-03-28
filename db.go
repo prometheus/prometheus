@@ -26,7 +26,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sync/errgroup"
 
@@ -560,14 +559,35 @@ func validateBlockSequence(bs []*Block) error {
 	if len(bs) == 0 {
 		return nil
 	}
-	sort.Slice(bs, func(i, j int) bool {
-		return bs[i].Meta().MinTime < bs[j].Meta().MinTime
+
+	var metas []BlockMeta
+	for _, b := range bs {
+		metas = append(metas, b.meta)
+	}
+
+	overlappedBlocks := ValidateBlockSequence(metas)
+	if len(overlappedBlocks) == 0 {
+		return nil
+	}
+
+	return errors.Errorf("block time ranges overlap (%v)", overlappedBlocks)
+}
+
+// ValidateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
+func ValidateBlockSequence(bm []BlockMeta) [][]BlockMeta {
+	if len(bm) == 0 {
+		return nil
+	}
+	sort.Slice(bm, func(i, j int) bool {
+		return bm[i].MinTime < bm[j].MinTime
 	})
-	prev := bs[0]
-	for _, b := range bs[1:] {
-		if b.Meta().MinTime < prev.Meta().MaxTime {
-			return errors.Errorf("block time ranges overlap (%d, %d)", b.Meta().MinTime, prev.Meta().MaxTime)
+
+	prev := bm[0]
+	for _, b := range bm[1:] {
+		if b.MinTime < prev.MaxTime {
+			return [][]BlockMeta{{b, prev}}
 		}
+		//prev = b
 	}
 	return nil
 }
@@ -767,10 +787,6 @@ func intervalOverlap(amin, amax, bmin, bmax int64) bool {
 	return amin <= bmax && bmin <= amax
 }
 
-func intervalContains(min, max, t int64) bool {
-	return t >= min && t <= max
-}
-
 func isBlockDir(fi os.FileInfo) bool {
 	if !fi.IsDir() {
 		return false
@@ -868,9 +884,6 @@ func (es MultiError) Err() error {
 	}
 	return es
 }
-
-func yoloString(b []byte) string { return *((*string)(unsafe.Pointer(&b))) }
-func yoloBytes(s string) []byte  { return *((*[]byte)(unsafe.Pointer(&s))) }
 
 func closeAll(cs ...io.Closer) error {
 	var merr MultiError

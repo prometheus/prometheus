@@ -892,3 +892,47 @@ func expandSeriesSet(ss SeriesSet) ([]labels.Labels, error) {
 
 	return result, ss.Err()
 }
+
+func TestValidateBlockSequenceDetectsAllOverlaps(t *testing.T) {
+	var metas []BlockMeta
+
+	// Create 10 blocks that does not overlap (0-10, 10-20, ..., 90-100)
+	for i := 0; i < 10; i++ {
+		metas = append(metas, BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)})
+	}
+
+	overlappedBlocks := ValidateBlockSequence(metas)
+	testutil.Assert(t, len(overlappedBlocks) == 0, "we found unexpected overlaps")
+
+	// Add overlaping blocks.
+
+	// o1 overlaps with 10-20.
+	o1 := BlockMeta{MinTime: 15, MaxTime: 17}
+
+	overlappedBlocks = ValidateBlockSequence(append(metas, o1))
+	expectedOverlaps := [][]BlockMeta{
+		{metas[1], o1},
+	}
+	testutil.Equals(t, expectedOverlaps, overlappedBlocks)
+
+	//// o2 overlaps with 20-30 and 30-40.
+	//o2 := BlockMeta{MinTime: 21, MaxTime: 31}
+	//
+	//// o3a and o3b overlaps with 30-40 and each other.
+	//o3a := BlockMeta{MinTime: 33, MaxTime: 39}
+	//o3b := BlockMeta{MinTime: 34, MaxTime: 36}
+	//
+	//// o4 is 1:1 overlap with 50-60
+	//o4 := BlockMeta{MinTime: 50, MaxTime: 60}
+	//
+	//// o5 overlaps with 50-60, 60-70 and 70,80
+	//o5 := BlockMeta{MinTime: 60, MaxTime: 80}
+	//
+
+	//expectedOverlaps := [][]block.Meta{
+	//	{metas[1], o1},
+	//	{metas[2], o2},
+	//	{metas[3], o2},
+	//	{metas[3], o3, o3b},
+	//}
+}
