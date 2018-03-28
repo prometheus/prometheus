@@ -106,6 +106,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.Servers) == 0 {
 		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
 	}
+	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
+		return fmt.Errorf("at most one of auth_token & auth_token_file must be configured")
+	}
+	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
+		return fmt.Errorf("at most one of basic_auth, auth_token & auth_token_file must be configured")
+	}
+	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
+		return fmt.Errorf("at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+	}
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
