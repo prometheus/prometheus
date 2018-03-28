@@ -21,6 +21,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
@@ -893,46 +894,47 @@ func expandSeriesSet(ss SeriesSet) ([]labels.Labels, error) {
 	return result, ss.Err()
 }
 
-func TestValidateBlockSequenceDetectsAllOverlaps(t *testing.T) {
-	var metas []BlockMeta
-
-	// Create 10 blocks that does not overlap (0-10, 10-20, ..., 90-100)
-	for i := 0; i < 10; i++ {
-		metas = append(metas, BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)})
+func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
+	u := uint64(0)
+	newULID := func() ulid.ULID {
+		u++
+		return ulid.MustNew(u, nil)
 	}
 
-	overlappedBlocks := ValidateBlockSequence(metas)
-	testutil.Assert(t, len(overlappedBlocks) == 0, "we found unexpected overlaps")
+	// Create 10 blocks that does not overlap (0-10, 10-20, ..., 100-110) but in reverse order to ensure our algorithm
+	// will handle that.
+	var metas = make([]BlockMeta, 11)
+	for i := 10; i >= 0; i-- {
+		metas[i] = BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10), ULID: newULID()}
+	}
 
-	// Add overlaping blocks.
+	testutil.Assert(t, len(OverlappingBlocks(metas)) == 0, "we found unexpected overlaps")
+
+	// Add overlapping blocks.
 
 	// o1 overlaps with 10-20.
-	o1 := BlockMeta{MinTime: 15, MaxTime: 17}
+	o1 := BlockMeta{MinTime: 15, MaxTime: 17, ULID: newULID()}
+	testutil.Equals(t, [][]BlockMeta{{metas[1], o1}}, OverlappingBlocks(append(metas, o1)))
 
-	overlappedBlocks = ValidateBlockSequence(append(metas, o1))
-	expectedOverlaps := [][]BlockMeta{
-		{metas[1], o1},
-	}
-	testutil.Equals(t, expectedOverlaps, overlappedBlocks)
+	// o2 overlaps with 20-30 and 30-40.
+	o2 := BlockMeta{MinTime: 21, MaxTime: 31, ULID: newULID()}
+	testutil.Equals(t, [][]BlockMeta{{metas[2], o2}, {o2, metas[3]}}, OverlappingBlocks(append(metas, o2)))
 
-	//// o2 overlaps with 20-30 and 30-40.
-	//o2 := BlockMeta{MinTime: 21, MaxTime: 31}
-	//
-	//// o3a and o3b overlaps with 30-40 and each other.
-	//o3a := BlockMeta{MinTime: 33, MaxTime: 39}
-	//o3b := BlockMeta{MinTime: 34, MaxTime: 36}
-	//
-	//// o4 is 1:1 overlap with 50-60
-	//o4 := BlockMeta{MinTime: 50, MaxTime: 60}
-	//
-	//// o5 overlaps with 50-60, 60-70 and 70,80
-	//o5 := BlockMeta{MinTime: 60, MaxTime: 80}
-	//
+	// o3a and o3b overlaps with 30-40 and each other.
+	o3a := BlockMeta{MinTime: 33, MaxTime: 39, ULID: newULID()}
+	o3b := BlockMeta{MinTime: 34, MaxTime: 36, ULID: newULID()}
+	testutil.Equals(t, [][]BlockMeta{{metas[3], o3a, o3b}}, OverlappingBlocks(append(metas, o3a, o3b)))
 
-	//expectedOverlaps := [][]block.Meta{
-	//	{metas[1], o1},
-	//	{metas[2], o2},
-	//	{metas[3], o2},
-	//	{metas[3], o3, o3b},
-	//}
+	// o4 is 1:1 overlap with 50-60.
+	o4 := BlockMeta{MinTime: 50, MaxTime: 60, ULID: newULID()}
+	testutil.Equals(t, [][]BlockMeta{{metas[5], o4}}, OverlappingBlocks(append(metas, o4)))
+
+	// o5 overlaps with 60-70, 70-80 and 80-90.
+	o5 := BlockMeta{MinTime: 61, MaxTime: 85, ULID: newULID()}
+	testutil.Equals(t, [][]BlockMeta{{metas[6], o5}, {o5, metas[7]}, {o5, metas[8]}}, OverlappingBlocks(append(metas, o5)))
+
+	// o6a overlaps with 90-100, 100-110 and o6b, o6b overlaps with 90-100 and o6a.
+	o6a := BlockMeta{MinTime: 92, MaxTime: 105, ULID: newULID()}
+	o6b := BlockMeta{MinTime: 94, MaxTime: 99, ULID: newULID()}
+	testutil.Equals(t, [][]BlockMeta{{metas[9], o6a, o6b}, {o6a, metas[10]}}, OverlappingBlocks(append(metas, o6a, o6b)))
 }

@@ -555,8 +555,9 @@ func (db *DB) reload(deleteable ...string) (err error) {
 	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
 }
 
+// ValidateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
 func validateBlockSequence(bs []*Block) error {
-	if len(bs) == 0 {
+	if len(bs) <= 1 {
 		return nil
 	}
 
@@ -565,31 +566,82 @@ func validateBlockSequence(bs []*Block) error {
 		metas = append(metas, b.meta)
 	}
 
-	overlappedBlocks := ValidateBlockSequence(metas)
-	if len(overlappedBlocks) == 0 {
+	overlaps := OverlappingBlocks(metas)
+	if len(overlaps) == 0 {
 		return nil
 	}
 
-	return errors.Errorf("block time ranges overlap (%v)", overlappedBlocks)
+	return errors.Errorf("block time ranges overlap (%v)", overlaps)
 }
 
-// ValidateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
-func ValidateBlockSequence(bm []BlockMeta) [][]BlockMeta {
-	if len(bm) == 0 {
+// OverlappingBlocks returns all overlapping blocks from given meta files.
+func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
+	if len(bm) <= 1 {
 		return nil
 	}
 	sort.Slice(bm, func(i, j int) bool {
 		return bm[i].MinTime < bm[j].MinTime
 	})
 
-	prev := bm[0]
-	for _, b := range bm[1:] {
-		if b.MinTime < prev.MaxTime {
-			return [][]BlockMeta{{b, prev}}
+	for i, b := range bm[1:] {
+		prev := bm[i]
+		if b.MinTime >= prev.MaxTime {
+			continue
 		}
-		//prev = b
+		// prev overlaps with b.
+
+		overlap := []BlockMeta{prev}
+
+		// Check if prev overlaps with something else.
+		for j, fb := range bm[i+1:] {
+			if fb.MinTime >= prev.MaxTime {
+				break
+			}
+
+			if fb.MinTime >= bm[i+j].MaxTime {
+				// fb overlaps with prev, but fb does not overlap with previous block. Pack in separate group.
+				overlaps = append(overlaps, overlap)
+				overlap = []BlockMeta{prev}
+			}
+
+			overlap = append(overlap, fb)
+		}
+		overlaps = append(overlaps, overlap)
 	}
-	return nil
+
+	if len(overlaps) < 2 {
+		return overlaps
+	}
+
+	// Deduplicate cases like {a, b, c} {b, c} into just {a, b, c}
+	newOverlaps := [][]BlockMeta{overlaps[0]}
+	for i, overlap := range overlaps[1:] {
+		prev := overlaps[i]
+
+		// Check if prev contains all overlap elements.
+		found := false
+		for _, o := range overlap {
+			found = false
+			for _, p := range prev {
+				if p.ULID.Compare(o.ULID) == 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				break
+			}
+		}
+
+		if found {
+			// We can ignore this overlap.
+			continue
+		}
+
+		newOverlaps = append(newOverlaps, overlap)
+	}
+
+	return newOverlaps
 }
 
 func (db *DB) String() string {
