@@ -1,3 +1,8 @@
+## next release
+
+* [CHANGE] `marathon_sd`: (**breaking**) use `auth_token` and `auth_token_file` for token-based authentication instead of `bearer_token` and `bearer_token_file` respectively.
+* [ENHANCEMENT] `marathon_sd`: adds support for basic authentication.
+
 ## 2.2.0 / 2018-03-08
 
 * [CHANGE] Rename file SD mtime metric.
