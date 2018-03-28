@@ -930,4 +930,14 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	o6a := BlockMeta{MinTime: 92, MaxTime: 105}
 	o6b := BlockMeta{MinTime: 94, MaxTime: 99}
 	testutil.Equals(t, [][]BlockMeta{{metas[9], o6a, o6b}, {o6a, metas[10]}}, OverlappingBlocks(append(metas, o6a, o6b)))
+
+	// All together.
+	testutil.Equals(t, [][]BlockMeta{
+		{metas[1], o1},
+		{metas[2], o2}, {o2, metas[3]},
+		{metas[3], o3a, o3b},
+		{metas[5], o4},
+		{metas[6], o5}, {o5, metas[7]}, {o5, metas[8]},
+		{metas[9], o6a, o6b}, {o6a, metas[10]},
+	}, OverlappingBlocks(append(metas, o1, o2, o3a, o3b, o4, o5, o6a, o6b)))
 }

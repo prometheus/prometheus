@@ -29,6 +29,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"strings"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/nightlyone/lockfile"
@@ -567,11 +569,11 @@ func validateBlockSequence(bs []*Block) error {
 	}
 
 	overlaps := OverlappingBlocks(metas)
-	if len(overlaps) == 0 {
-		return nil
+	if len(overlaps) > 0 {
+		return errors.Errorf("block time ranges overlap: %s", PrintOverlappedBlocks(overlaps))
 	}
 
-	return errors.Errorf("block time ranges overlap (%v)", overlaps)
+	return nil
 }
 
 // OverlappingBlocks returns all overlapping blocks from given meta files.
@@ -587,14 +589,17 @@ func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
 		return bm[i].MinTime < bm[j].MinTime
 	})
 
-	pending := []BlockMeta{bm[0]}
+	var (
+		// pending contains not ended blocks in regards to "current" timestamp.
+		pending = []BlockMeta{bm[0]}
+		// Same pending helps to aggregate same overlaps to single group.
+		samePendings = true
+	)
 	for _, b := range bm[1:] {
-		var (
-			newPending   []BlockMeta
-			samePendings = true
-		)
+		var newPending []BlockMeta
 
 		for _, p := range pending {
+			// "b.MinTime" is our current time.
 			if b.MinTime >= p.MaxTime {
 				samePendings = false
 				continue
@@ -603,10 +608,11 @@ func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
 			// "p" overlaps with "b" and "p" is still pending.
 			newPending = append(newPending, p)
 		}
+
 		// Our block "b" is now pending.
 		pending = append(newPending, b)
-
 		if len(newPending) == 0 {
+			// No overlaps.
 			continue
 		}
 
@@ -615,9 +621,28 @@ func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
 			continue
 		}
 		overlaps = append(overlaps, append(newPending, b))
-
+		samePendings = true
 	}
 	return overlaps
+}
+
+// PrintOverlappedBlocks returns human readable string form of overlapped blocks.
+func PrintOverlappedBlocks(overlaps [][]BlockMeta) string {
+	var res []string
+	for _, o := range overlaps {
+		var groups []string
+		for _, m := range o {
+			groups = append(groups, fmt.Sprintf(
+				"[id: %s mint: %d maxt: %d range: %s]",
+				m.ULID.String(),
+				m.MinTime,
+				m.MaxTime,
+				(time.Duration((m.MaxTime-m.MinTime)/1000)*time.Second).String(),
+			))
+		}
+		res = append(res, fmt.Sprintf("<%s>", strings.Join(groups, "")))
+	}
+	return strings.Join(res, "")
 }
 
 func (db *DB) String() string {
