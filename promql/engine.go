@@ -270,6 +270,11 @@ func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time,
 	return qry
 }
 
+// NewQuery returns a Query. Most users should use NewRangeQuery or NewInstantQuery.
+func (ng *Engine) NewQuery(q storage.Queryable, expr Expr, start, end time.Time, interval time.Duration) Query {
+	return ng.newQuery(q, expr, start, end, interval)
+}
+
 // testStmt is an internal helper statement that allows execution
 // of an arbitrary function during handling. It is used to test the Engine.
 type testStmt func(context.Context) error

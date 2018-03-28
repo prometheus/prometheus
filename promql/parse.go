@@ -53,7 +53,7 @@ func (e *ParseErr) Error() string {
 
 // ParseStmts parses the input and returns the resulting statements or any occurring error.
 func ParseStmts(input string) (Statements, error) {
-	p := newParser(input)
+	p := newParser(input, false)
 
 	stmts, err := p.parseStmts()
 	if err != nil {
@@ -65,7 +65,20 @@ func ParseStmts(input string) (Statements, error) {
 
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (Expr, error) {
-	p := newParser(input)
+	p := newParser(input, false)
+
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	err = p.typecheck(expr)
+	return expr, err
+}
+
+// ParseExprDotNamed returns the expression parsed from the input while allowing
+// dots in the name.
+func ParseExprDotNamed(input string) (Expr, error) {
+	p := newParser(input, true)
 
 	expr, err := p.parseExpr()
 	if err != nil {
@@ -77,7 +90,7 @@ func ParseExpr(input string) (Expr, error) {
 
 // ParseMetric parses the input into a metric
 func ParseMetric(input string) (m labels.Labels, err error) {
-	p := newParser(input)
+	p := newParser(input, false)
 	defer p.recover(&err)
 
 	m = p.metric()
@@ -90,7 +103,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 // ParseMetricSelector parses the provided textual metric selector into a list of
 // label matchers.
 func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
-	p := newParser(input)
+	p := newParser(input, false)
 	defer p.recover(&err)
 
 	name := ""
@@ -105,9 +118,9 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 }
 
 // newParser returns a new parser.
-func newParser(input string) *parser {
+func newParser(input string, allowDotInName bool) *parser {
 	p := &parser{
-		lex: lex(input),
+		lex: lex(input, allowDotInName),
 	}
 	return p
 }
@@ -161,7 +174,7 @@ func (v sequenceValue) String() string {
 
 // parseSeriesDesc parses the description of a time series.
 func parseSeriesDesc(input string) (labels.Labels, []sequenceValue, error) {
-	p := newParser(input)
+	p := newParser(input, false)
 	p.lex.seriesDesc = true
 
 	return p.parseSeriesDesc()
