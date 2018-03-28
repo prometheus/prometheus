@@ -339,6 +339,9 @@ type lexer struct {
 	// seriesDesc is set when a series description for the testing
 	// language is lexed.
 	seriesDesc bool
+
+	// allowDotInName is set when we want to allow dots in the name.
+	allowDotInName bool
 }
 
 // next returns the next rune in the input.
@@ -425,10 +428,11 @@ func (l *lexer) nextItem() item {
 }
 
 // lex creates a new scanner for the input string.
-func lex(input string) *lexer {
+func lex(input string, allowDotInName bool) *lexer {
 	l := &lexer{
-		input: input,
-		items: make(chan item),
+		input:          input,
+		items:          make(chan item),
+		allowDotInName: allowDotInName,
 	}
 	go l.run()
 	return l
@@ -847,12 +851,14 @@ Loop:
 		switch r := l.next(); {
 		case isAlphaNumeric(r) || r == ':':
 			// absorb.
+		case r == '.' && l.allowDotInName:
+			// absorb
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
 			if kw, ok := key[strings.ToLower(word)]; ok {
 				l.emit(kw)
-			} else if !strings.Contains(word, ":") {
+			} else if !strings.Contains(word, ":") && !strings.Contains(word, ".") {
 				l.emit(itemIdentifier)
 			} else {
 				l.emit(itemMetricIdentifier)
