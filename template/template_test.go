@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTemplatesScenario struct {
@@ -256,7 +257,7 @@ func TestTemplateExpansion(t *testing.T) {
 		panic(err)
 	}
 
-	for i, s := range scenarios {
+	for _, s := range scenarios {
 		queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
 			return s.queryResult, nil
 		}
@@ -269,21 +270,14 @@ func TestTemplateExpansion(t *testing.T) {
 			result, err = expander.Expand()
 		}
 		if s.shouldFail {
-			if err == nil {
-				t.Fatalf("%d. Error not returned from %v", i, s.text)
-			}
-			if err.Error() != s.errorMsg {
-				t.Fatalf("%d. Error message returned is wrong:\n returned: %v\n expected: %v", i, err.Error(), s.errorMsg)
-			}
+			testutil.NotOk(t, err, "%v", s.text)
 			continue
 		}
-		if err != nil {
-			t.Fatalf("%d. Error returned from %v: %v", i, s.text, err)
-			continue
-		}
-		if result != s.output {
-			t.Fatalf("%d. Error in result from %v: Expected '%v' Got '%v'", i, s.text, s.output, result)
-			continue
+
+		testutil.Ok(t, err)
+
+		if err == nil {
+			testutil.Equals(t, result, s.output)
 		}
 	}
 }
