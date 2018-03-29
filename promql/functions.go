@@ -268,7 +268,7 @@ func funcHoltWinters(vals []Value, args Expressions, enh *evalNodeHelper) Vector
 		}
 
 		enh.out = append(enh.out, Sample{
-			Point: Point{V: s1}, // The last value in the Vector is the smoothed result.
+			Point: Point{V: s1},
 		})
 	}
 

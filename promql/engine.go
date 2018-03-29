@@ -667,7 +667,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 	// The +1 isn't always needed, but it is simpler this way.
 	numSteps := int((ev.EndTimestamp-ev.Timestamp)/ev.Interval) + 1
 
-	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Value {
+	// rangeWrapper evaluates the given expressions as matrixes, and then for
+	// each step calls the given function with the expressions for that step.
+	// The return value is the combination of all the function call results.
+	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Matrix {
 		matrixes := make([]Matrix, len(exprs))
 		origMatrixes := make([]Matrix, len(exprs))
 		for i, e := range exprs {
@@ -675,15 +678,18 @@ func (ev *evaluator) eval(expr Expr) Value {
 			if e != nil && e.Type() != ValueTypeString {
 				matrixes[i] = ev.eval(e).(Matrix)
 
-				// Keep a copy of the original point slices.
+				// Keep a copy of the original point slices so that they
+				// can be returned to the pool.
 				origMatrixes[i] = make(Matrix, len(matrixes[i]))
 				copy(origMatrixes[i], matrixes[i])
 			}
 		}
 
-		Seriess := map[uint64]Series{}
-		vectors := make([]Vector, len(exprs))
-		args := make([]Value, len(exprs))
+		Seriess := map[uint64]Series{}        // Output series by series hash.
+		vectors := make([]Vector, len(exprs)) // Input vectors for the function.
+		args := make([]Value, len(exprs))     // Argument to function.
+		// Create an output vector that is as big as the input matrix with
+		// the most time series.
 		biggestLen := 1
 		for i := range exprs {
 			vectors[i] = make(Vector, 0, len(matrixes[i]))
@@ -702,6 +708,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
 						}
 						if point.T >= ts {
+							// Move input vectors forward so we don't have to re-scan the same
+							// past points at the next step.
 							matrixes[i][si].Points = series.Points[pos:]
 							break
 						}
@@ -709,7 +717,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 				args[i] = vectors[i]
 			}
-			// Make the call.
+			// Make the function call.
 			enh.ts = ts
 			result := f(args, enh)
 			enh.out = result[:0] // Reuse result vector.
@@ -722,7 +730,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 				return mat
 			}
-			// Add output vectors to output series.
+			// Add samples in output vector to output series.
 			for _, sample := range result {
 				h := sample.Metric.Hash()
 				ss, ok := Seriess[h]
@@ -744,6 +752,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				putPointSlice(s.Points)
 			}
 		}
+		// Assemble the output matrix.
 		mat := Matrix{}
 		for _, ss := range Seriess {
 			mat = append(mat, ss)
@@ -794,9 +803,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 					}
 				}
 
-				mat := make(Matrix, 0, len(sel.series))
+				mat := make(Matrix, 0, len(sel.series)) // Output matrix.
 				offset := durationMilliseconds(sel.Offset)
-				// Reuse objects to save memory allocations.
+				// Reuse objects across steps to save memory allocations.
 				points := getPointSlice(16)
 				inMatrix := make(Matrix, 1)
 				inArgs[matrixArgIndex] = inMatrix
@@ -829,12 +838,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 						}
 						maxt := ts - offset
 						mint := maxt - durationMilliseconds(sel.Range)
+						// Evaluate the matrix selector for this series for this step.
 						points = ev.matrixIterSlice(it, maxt, mint, points[:0])
 						if len(points) == 0 {
 							continue
 						}
 						inMatrix[0].Points = points
 						enh.ts = ts
+						// Make the function call.
 						outVec := e.Func.Call(inArgs, e.Args, enh)
 						enh.out = outVec[:0]
 						if len(outVec) > 0 {
@@ -941,7 +952,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *MatrixSelector:
 		if ev.Timestamp != ev.EndTimestamp && ev.Interval != 0 {
-			panic(fmt.Errorf("cannot do range evaluatoin of matrix selector"))
+			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
 	}
@@ -975,6 +986,7 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 	return vec
 }
 
+// vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
 func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, node *VectorSelector, ts int64) (int64, float64, bool) {
 	refTime := ts - durationMilliseconds(node.Offset)
 	var t int64
@@ -991,10 +1003,8 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 		t, v = it.Values()
 	}
 
-	peek := 1
 	if !ok || t > refTime {
-		t, v, ok = it.PeekBack(peek)
-		peek++
+		t, v, ok = it.PeekBack(1)
 		if !ok || t < refTime-durationMilliseconds(LookbackDelta) {
 			return 0, 0, false
 		}
@@ -1048,6 +1058,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	return matrix
 }
 
+// matrixIterSlice evaluates a matrix vector for the iterator of one time series.
 func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, maxt, mint int64, out []Point) []Point {
 	ok := it.Seek(maxt)
 	if !ok {
