@@ -576,6 +576,9 @@ func validateBlockSequence(bs []*Block) error {
 	return nil
 }
 
+type TimeRange struct {
+	MaxTime, MinTime int64
+}
 // OverlappingBlocks returns all overlapping blocks from given meta files.
 // We sort blocks by minTime. Then we iterate over each block minTime and treat it as our "current" timestamp.
 // We check all the pending blocks (blocks that we have seen their minTimes, but their maxTime was still ahead current
@@ -592,8 +595,8 @@ func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
 	var (
 		// pending contains not ended blocks in regards to "current" timestamp.
 		pending = []BlockMeta{bm[0]}
-		// Same pending helps to aggregate same overlaps to single group.
-		samePendings = true
+		// continuousPending helps to aggregate same overlaps to single group.
+		continuousPending = true
 	)
 	for _, b := range bm[1:] {
 		var newPending []BlockMeta
@@ -601,7 +604,7 @@ func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
 		for _, p := range pending {
 			// "b.MinTime" is our current time.
 			if b.MinTime >= p.MaxTime {
-				samePendings = false
+				continuousPending = false
 				continue
 			}
 
@@ -616,12 +619,13 @@ func OverlappingBlocks(bm []BlockMeta) (overlaps [][]BlockMeta) {
 			continue
 		}
 
-		if samePendings && len(overlaps) > 0 {
+		if continuousPending && len(overlaps) > 0 {
 			overlaps[len(overlaps)-1] = append(overlaps[len(overlaps)-1], b)
 			continue
 		}
 		overlaps = append(overlaps, append(newPending, b))
-		samePendings = true
+		// Start new pendings.
+		continuousPending = true
 	}
 	return overlaps
 }

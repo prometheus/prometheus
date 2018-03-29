@@ -940,4 +940,29 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 		{metas[6], o5}, {o5, metas[7]}, {o5, metas[8]},
 		{metas[9], o6a, o6b}, {o6a, metas[10]},
 	}, OverlappingBlocks(append(metas, o1, o2, o3a, o3b, o4, o5, o6a, o6b)))
+
+	// Additional cases.
+	a1 := BlockMeta{MinTime: 1, MaxTime: 5}
+	a2 := BlockMeta{MinTime: 1, MaxTime: 2}
+	a3 := BlockMeta{MinTime: 3, MaxTime: 4}
+	a4 := BlockMeta{MinTime: 3, MaxTime: 4}
+	testutil.Equals(t, [][]BlockMeta{{a1, a2}, {a1, a3, a4}}, OverlappingBlocks(append([]BlockMeta{a1}, a2, a3, a4)))
+
+	var nc1 []BlockMeta
+	nc1 = append(nc1, BlockMeta{MinTime: 1, MaxTime: 5})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 6})
+	nc1 = append(nc1, BlockMeta{MinTime: 3, MaxTime: 5})
+	nc1 = append(nc1, BlockMeta{MinTime: 5, MaxTime: 7})
+	nc1 = append(nc1, BlockMeta{MinTime: 7, MaxTime: 10})
+	nc1 = append(nc1, BlockMeta{MinTime: 8, MaxTime: 9})
+	testutil.Equals(t, [][]BlockMeta{
+		{nc1[0], nc1[1], nc1[2], nc1[3], nc1[4], nc1[5]}, // 1-5, 2-3, 2-3, 2-3, 2-3, 2,6
+		{nc1[0], nc1[5], nc1[6]}, // 1-5, 2-6, 3-5
+		{nc1[5], nc1[7]}, // 2-6, 5-7
+		{nc1[8], nc1[9]}, // 7-10, 8-9
+	}, OverlappingBlocks(nc1))
 }
