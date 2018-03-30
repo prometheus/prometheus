@@ -136,7 +136,6 @@ type Discovery struct {
 	refreshInterval time.Duration
 	lastRefresh     map[string]*targetgroup.Group
 	appsClient      AppListClient
-	token           config_util.Secret
 	logger          log.Logger
 }
 
@@ -146,28 +145,75 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	client, err := httputil.NewClientFromConfig(conf.HTTPClientConfig, "marathon_sd")
+	rt, err := httputil.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
 	}
 
-	authToken := conf.AuthToken
-	if len(authToken) == 0 && len(conf.AuthTokenFile) > 0 {
-		b, err := ioutil.ReadFile(conf.AuthTokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read auth token file %s: %s", conf.AuthTokenFile, err)
-		}
-		authToken = config_util.Secret(strings.TrimSpace(string(b)))
+	if len(conf.AuthToken) > 0 {
+		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
+	} else if len(conf.AuthTokenFile) > 0 {
+		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return &Discovery{
-		client:          client,
+		client:          &http.Client{Transport: rt},
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
-		token:           authToken,
 		logger:          logger,
 	}, nil
+}
+
+type authTokenRoundTripper struct {
+	authToken config_util.Secret
+	rt        http.RoundTripper
+}
+
+// newAuthTokenRoundTripper adds the provided auth token to a request
+func newAuthTokenRoundTripper(token config_util.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
+	return &authTokenRoundTripper{token, rt}, nil
+}
+
+func (rt *authTokenRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this explicitly here
+	request.Header.Set("Authorization", "token="+string(rt.authToken))
+
+	return rt.rt.RoundTrip(request)
+}
+
+type authTokenFileRoundTripper struct {
+	authTokenFile string
+	rt            http.RoundTripper
+}
+
+// newAuthTokenFileRoundTripper adds the auth token read from the file to a request
+func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
+	// fail-fast if we can't read the file
+	_, err := ioutil.ReadFile(tokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read auth token file %s: %s", tokenFile, err)
+	}
+	return &authTokenFileRoundTripper{tokenFile, rt}, nil
+}
+
+func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	b, err := ioutil.ReadFile(rt.authTokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read auth token file %s: %s", rt.authTokenFile, err)
+	}
+	authToken := strings.TrimSpace(string(b))
+
+	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this explicitly here
+	request.Header.Set("Authorization", "token="+authToken)
+	return rt.rt.RoundTrip(request)
 }
 
 // Run implements the Discoverer interface.
@@ -229,7 +275,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup
 
 func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
 	url := RandomAppsURL(d.servers)
-	apps, err := d.appsClient(d.client, url, d.token)
+	apps, err := d.appsClient(d.client, url)
 	if err != nil {
 		return nil, err
 	}
@@ -283,20 +329,13 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url string, token config_util.Secret) (*AppList, error)
+type AppListClient func(client *http.Client, url string) (*AppList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url string, token config_util.Secret) (*AppList, error) {
+func fetchApps(client *http.Client, url string) (*AppList, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
-	}
-
-	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
-	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
-	// so we set this explicitly here
-	if token != "" {
-		request.Header.Set("Authorization", "token="+string(token))
 	}
 
 	resp, err := client.Do(request)
