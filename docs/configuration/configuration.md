@@ -435,10 +435,10 @@ region: <string>
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 # Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
 filters:
-  [ - name: <string>,
+  [ - name: <string>
       values: <string>, [...] ]
-
 ```
+
 The [relabeling phase](#relabel_config) is the preferred and more powerful
 way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
