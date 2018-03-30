@@ -55,8 +55,8 @@ type Manager struct {
 	targetsDropped []*Target
 	targetsAll     map[string][]*Target
 	graceShut      chan struct{}
-	mtxTargets     sync.RWMutex // For scrapped targets when access from the web handler.
-	mtx            sync.Mutex   // For all the other struct fields.
+	mtxTargets     sync.Mutex // For scrapped targets when access from the web handler.
+	mtx            sync.Mutex // For all the other struct fields.
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
@@ -108,22 +108,22 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 // TargetsAll returns active and dropped targets.
 func (m *Manager) TargetsAll() map[string][]*Target {
-	m.mtxTargets.RLock()
-	defer m.mtxTargets.RUnlock()
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
 	return m.targetsAll
 }
 
 // TargetsActive returns the active targets currently being scraped.
 func (m *Manager) TargetsActive() []*Target {
-	m.mtxTargets.RLock()
-	defer m.mtxTargets.RUnlock()
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
 	return m.targetsActive
 }
 
 // TargetsDropped returns the dropped targets during relabelling.
 func (m *Manager) TargetsDropped() []*Target {
-	m.mtxTargets.RLock()
-	defer m.mtxTargets.RUnlock()
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
 	return m.targetsDropped
 }
 
