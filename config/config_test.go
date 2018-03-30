@@ -670,7 +670,16 @@ var expectedErrors = []struct {
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
-		errMsg:   "Marathon SD config must contain at least one Marathon server",
+		errMsg:   "marathon_sd: must contain at least one Marathon server",
+	}, {
+		filename: "marathon_authtoken_authtokenfile.bad.yml",
+		errMsg:   "marathon_sd: at most one of auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_basicauth.bad.yml",
+		errMsg:   "marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_bearertoken.bad.yml",
+		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
 	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",

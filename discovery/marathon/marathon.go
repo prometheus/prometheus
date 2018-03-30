@@ -104,16 +104,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Servers) == 0 {
-		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+		return fmt.Errorf("marathon_sd: must contain at least one Marathon server")
 	}
 	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
-		return fmt.Errorf("at most one of auth_token & auth_token_file must be configured")
+		return fmt.Errorf("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
 	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return fmt.Errorf("at most one of basic_auth, auth_token & auth_token_file must be configured")
+		return fmt.Errorf("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
 	}
 	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return fmt.Errorf("at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+		return fmt.Errorf("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
@@ -294,7 +294,7 @@ func fetchApps(client *http.Client, url string, token config_util.Secret) (*AppL
 
 	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
-	// so we set this implicitly here
+	// so we set this explicitly here
 	if token != "" {
 		request.Header.Set("Authorization", "token="+string(token))
 	}
