@@ -325,16 +325,16 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
+			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
+			sp.SetTag("name", rule.Name())
 			defer func(t time.Time) {
+				sp.Finish()
 				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationTime(time.Since(t))
 			}(time.Now())
 
 			evalTotal.Inc()
 
-			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
-			sp.SetTag("name", rule.Name())
-			defer sp.Finish()
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
