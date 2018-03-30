@@ -55,8 +55,8 @@ type Manager struct {
 	targetsDropped []*Target
 	targetsAll     map[string][]*Target
 	graceShut      chan struct{}
-	mtxTargets     sync.RWMutex
-	mtx            sync.RWMutex
+	mtxTargets     sync.RWMutex // For scrapped targets when access from the web handler.
+	mtx            sync.Mutex   // For all the other struct fields.
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
