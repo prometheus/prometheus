@@ -666,7 +666,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
 		"consolesPath": func() string { return consolesPath },
-		"pathPrefix":   func() string { 
+		"pathPrefix": func() string {
 			if opts.RoutePrefix == "/" {
 				return ""
 			} else {
