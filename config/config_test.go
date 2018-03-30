@@ -698,6 +698,10 @@ var expectedErrors = []struct {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
 	},
+	{
+		filename: "ec2_filters_empty_values.bad.yml",
+		errMsg:   `EC2 SD configuration filter values cannot be empty`,
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

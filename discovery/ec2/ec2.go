@@ -228,7 +228,6 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	}
 
 	var filters []*ec2.Filter
-
 	for _, f := range d.filters {
 		filters = append(filters, &ec2.Filter{
 			Name:   aws.String(f.Name),
