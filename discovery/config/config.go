@@ -61,5 +61,5 @@ type ServiceDiscoveryConfig struct {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain ServiceDiscoveryConfig
-    return unmarshal((*plain)(c))
+	return unmarshal((*plain)(c))
 }

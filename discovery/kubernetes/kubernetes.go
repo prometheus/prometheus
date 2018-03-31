@@ -125,7 +125,7 @@ type NamespaceDiscovery struct {
 func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = NamespaceDiscovery{}
 	type plain NamespaceDiscovery
-    return unmarshal((*plain)(c))
+	return unmarshal((*plain)(c))
 }
 
 func init() {

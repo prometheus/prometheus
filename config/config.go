@@ -218,7 +218,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-    // If a global block was open but empty the default global config is overwritten.
+	// If a global block was open but empty the default global config is overwritten.
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
 		c.GlobalConfig = DefaultGlobalConfig
@@ -279,7 +279,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-    // First set the correct scrape interval, then check that the timeout
+	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
 	if gc.ScrapeInterval == 0 {
 		gc.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
@@ -611,9 +611,9 @@ type RemoteWriteConfig struct {
 func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultRemoteWriteConfig
 	type plain RemoteWriteConfig
-    if err := unmarshal((*plain)(c)); err != nil {
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
-    }
+	}
 	if c.URL == nil {
 		return fmt.Errorf("url for remote_write is empty")
 	}
@@ -624,7 +624,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
-    return nil
+	return nil
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -668,9 +668,9 @@ type RemoteReadConfig struct {
 func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultRemoteReadConfig
 	type plain RemoteReadConfig
-    if err := unmarshal((*plain)(c)); err != nil {
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
-    }
+	}
 	if c.URL == nil {
 		return fmt.Errorf("url for remote_read is empty")
 	}
@@ -681,5 +681,5 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 
-    return nil
+	return nil
 }
