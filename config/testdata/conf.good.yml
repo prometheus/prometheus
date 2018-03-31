@@ -182,6 +182,15 @@ scrape_configs:
       access_key: access
       secret_key: mysecret
       profile: profile
+      filters:
+        - name: tag:environment
+          values:
+            - prod
+
+        - name: tag:service
+          values:
+            - web
+            - db
 
 - job_name: service-azure
   azure_sd_configs:
