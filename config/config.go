@@ -41,7 +41,7 @@ func Load(s string) (*Config, error) {
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.Unmarshal([]byte(s), cfg)
+	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
