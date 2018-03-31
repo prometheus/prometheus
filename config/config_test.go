@@ -412,6 +412,16 @@ var expectedConf = &Config{
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
+						Filters: []*ec2.Filter{
+							{
+								Name:   "tag:environment",
+								Values: []string{"prod"},
+							},
+							{
+								Name:   "tag:service",
+								Values: []string{"web", "db"},
+							},
+						},
 					},
 				},
 			},
@@ -687,6 +697,10 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	},
+	{
+		filename: "ec2_filters_empty_values.bad.yml",
+		errMsg:   `EC2 SD configuration filter values cannot be empty`,
 	},
 }
 
