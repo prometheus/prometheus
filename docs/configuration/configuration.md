@@ -564,6 +564,7 @@ address with relabeling.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_gce_instance_name`: the name of the instance
+* `__meta_gce_machine_type`: the machine type URL of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
 * `__meta_gce_private_ip`: the private IP address of the instance
