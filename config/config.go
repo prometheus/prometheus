@@ -624,7 +624,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -681,5 +681,5 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 		return err
 	}
 
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
