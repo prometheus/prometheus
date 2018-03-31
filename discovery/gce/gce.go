@@ -45,6 +45,7 @@ const (
 	gceLabelInstanceStatus = gceLabel + "instance_status"
 	gceLabelTags           = gceLabel + "tags"
 	gceLabelMetadata       = gceLabel + "metadata_"
+	gceLabelMachineType    = gceLabel + "machine_type"
 )
 
 var (
@@ -216,6 +217,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				gceLabelZone:           model.LabelValue(inst.Zone),
 				gceLabelInstanceName:   model.LabelValue(inst.Name),
 				gceLabelInstanceStatus: model.LabelValue(inst.Status),
+				gceLabelMachineType:    model.LabelValue(inst.MachineType),
 			}
 			priIface := inst.NetworkInterfaces[0]
 			labels[gceLabelNetwork] = model.LabelValue(priIface.Network)
