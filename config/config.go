@@ -344,8 +344,8 @@ type ScrapeConfig struct {
 func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultScrapeConfig
 	type plain ScrapeConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
+
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {

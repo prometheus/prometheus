@@ -94,8 +94,7 @@ type SDConfig struct {
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = SDConfig{}
 	type plain SDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 	if c.Role == "" {
