@@ -92,8 +92,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 	if c.Role == "" {
