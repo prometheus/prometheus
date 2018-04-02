@@ -344,8 +344,8 @@ type ScrapeConfig struct {
 func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultScrapeConfig
 	type plain ScrapeConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
+
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
 	if len(c.JobName) == 0 {
@@ -621,9 +621,6 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -677,9 +674,5 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
-
 	return c.HTTPClientConfig.Validate()
 }
