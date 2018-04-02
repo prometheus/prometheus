@@ -702,6 +702,10 @@ var expectedErrors = []struct {
 		filename: "ec2_filters_empty_values.bad.yml",
 		errMsg:   `EC2 SD configuration filter values cannot be empty`,
 	},
+	{
+		filename: "section_key_dup.bad.yml",
+		errMsg:   "field scrape_configs already set in type config.plain",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
