@@ -49,16 +49,14 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 type Manager struct {
 	logger         log.Logger
 	append         Appendable
-	scrapeConfigs  map[string]*config.ScrapeConfig
-	scrapePools    map[string]*scrapePool
-	targetsActive  []*Target
-	targetsDropped []*Target
-	targetsAll     map[string][]*Target
+	scrapeConfigs  map[string]*config.ScrapeConfig // Guarded by `mtx`
+	scrapePools    map[string]*scrapePool          // Guarded by `mtx`
+	targetsActive  []*Target                       // Guarded by `mtxTargets`
+	targetsDropped []*Target                       // Guarded by `mtxTargets`
+	targetsAll     map[string][]*Target            // Guarded by `mtxTargets`
 	graceShut      chan struct{}
 	mtx            sync.Mutex
-	// Mutex for `targetsActive`,`targetsDropped` and `targetsAll`.
-	// We don't use the  global `mtx` to avoid blocking while reloading the scrape pools.
-	mtxTargets sync.Mutex
+	mtxTargets     sync.Mutex
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
