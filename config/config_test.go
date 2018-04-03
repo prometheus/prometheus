@@ -717,11 +717,19 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadStaticConfigs(t *testing.T) {
+func TestBadStaticConfigsJSON(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	testutil.Ok(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
+	testutil.NotOk(t, err, "")
+}
+
+func TestBadStaticConfigsYML(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	testutil.Ok(t, err)
+	var tg targetgroup.Group
+	err = yaml.UnmarshalStrict(content, &tg)
 	testutil.NotOk(t, err, "")
 }
 
