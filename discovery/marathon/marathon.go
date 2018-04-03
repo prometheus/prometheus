@@ -95,7 +95,8 @@ type SDConfig struct {
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
-	if err := unmarshal((*plain)(c)); err != nil {
+	err := unmarshal((*plain)(c))
+	if err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {

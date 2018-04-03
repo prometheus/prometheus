@@ -53,7 +53,8 @@ type ServersetSDConfig struct {
 func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultServersetSDConfig
 	type plain ServersetSDConfig
-	if err := unmarshal((*plain)(c)); err != nil {
+	err := unmarshal((*plain)(c))
+	if err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {
@@ -81,8 +82,8 @@ type NerveSDConfig struct {
 func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultNerveSDConfig
 	type plain NerveSDConfig
-
-	if err := unmarshal((*plain)(c)); err != nil {
+	err := unmarshal((*plain)(c))
+	if err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {
