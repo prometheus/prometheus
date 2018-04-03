@@ -78,7 +78,7 @@ func NewRoundTripperFromConfig(cfg config_util.HTTPClientConfig, name string) (h
 		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, string(cfg.BasicAuth.Password), rt)
 	}
 
-	// Return a new configured RoundTripper
+	// Return a new configured RoundTripper.
 	return rt, nil
 }
 

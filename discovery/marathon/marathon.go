@@ -173,7 +173,7 @@ type authTokenRoundTripper struct {
 	rt        http.RoundTripper
 }
 
-// newAuthTokenRoundTripper adds the provided auth token to a request
+// newAuthTokenRoundTripper adds the provided auth token to a request.
 func newAuthTokenRoundTripper(token config_util.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
 	return &authTokenRoundTripper{token, rt}, nil
 }
@@ -181,7 +181,7 @@ func newAuthTokenRoundTripper(token config_util.Secret, rt http.RoundTripper) (h
 func (rt *authTokenRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
-	// so we set this explicitly here
+	// so we set this explicitly here.
 	request.Header.Set("Authorization", "token="+string(rt.authToken))
 
 	return rt.rt.RoundTrip(request)
@@ -192,9 +192,9 @@ type authTokenFileRoundTripper struct {
 	rt            http.RoundTripper
 }
 
-// newAuthTokenFileRoundTripper adds the auth token read from the file to a request
+// newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
 func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
-	// fail-fast if we can't read the file
+	// fail-fast if we can't read the file.
 	_, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read auth token file %s: %s", tokenFile, err)
@@ -211,7 +211,7 @@ func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Res
 
 	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
 	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
-	// so we set this explicitly here
+	// so we set this explicitly here.
 	request.Header.Set("Authorization", "token="+authToken)
 	return rt.rt.RoundTrip(request)
 }
