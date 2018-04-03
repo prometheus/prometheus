@@ -587,8 +587,12 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	for p.Next() {
 		series := h.series.getByID(p.At())
 
+		t0, t1 := series.minTime(), series.maxTime()
+		if t0 == math.MinInt64 || t1 == math.MinInt64 {
+			continue
+		}
 		// Delete only until the current values and not beyond.
-		t0, t1 := clampInterval(mint, maxt, series.minTime(), series.maxTime())
+		t0, t1 = clampInterval(mint, maxt, t0, t1)
 		stones = append(stones, Stone{p.At(), Intervals{{t0, t1}}})
 	}
 
@@ -1106,11 +1110,18 @@ type memSeries struct {
 }
 
 func (s *memSeries) minTime() int64 {
+	if len(s.chunks) == 0 {
+		return math.MinInt64
+	}
 	return s.chunks[0].minTime
 }
 
 func (s *memSeries) maxTime() int64 {
-	return s.head().maxTime
+	c := s.head()
+	if c == nil {
+		return math.MinInt64
+	}
+	return c.maxTime
 }
 
 func (s *memSeries) cut(mint int64) *memChunk {

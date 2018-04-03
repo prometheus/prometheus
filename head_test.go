@@ -230,6 +230,31 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	testutil.Assert(t, ok == false, "non-last chunk incorrectly wrapped with sample buffer")
 }
 
+func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
+	entries := []interface{}{
+		[]RefSeries{
+			{Ref: 10, Labels: labels.FromStrings("a", "1")},
+		},
+		[]RefSample{},
+		[]RefSeries{
+			{Ref: 50, Labels: labels.FromStrings("a", "2")},
+		},
+		[]RefSample{
+			{Ref: 50, T: 80, V: 1},
+			{Ref: 50, T: 90, V: 1},
+		},
+	}
+	wal := &memoryWAL{entries: entries}
+
+	head, err := NewHead(nil, nil, wal, 1000)
+	testutil.Ok(t, err)
+	defer head.Close()
+
+	testutil.Ok(t, head.ReadWAL())
+
+	testutil.Ok(t, head.Delete(0, 100, labels.NewEqualMatcher("a", "1")))
+}
+
 func TestHeadDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
