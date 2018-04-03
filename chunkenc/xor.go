@@ -259,7 +259,7 @@ func (it *xorIterator) Next() bool {
 			it.err = err
 			return false
 		}
-		it.t = int64(t)
+		it.t = t
 		it.val = math.Float64frombits(v)
 
 		it.numRead++

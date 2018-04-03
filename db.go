@@ -725,10 +725,7 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	g.Go(func() error {
 		return db.head.Delete(mint, maxt, ms...)
 	})
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
+	return g.Wait()
 }
 
 // CleanTombstones re-writes any blocks with tombstones.
@@ -737,7 +734,7 @@ func (db *DB) CleanTombstones() error {
 	defer db.cmtx.Unlock()
 
 	start := time.Now()
-	defer db.metrics.tombCleanTimer.Observe(float64(time.Since(start).Seconds()))
+	defer db.metrics.tombCleanTimer.Observe(time.Since(start).Seconds())
 
 	db.mtx.RLock()
 	blocks := db.blocks[:]
