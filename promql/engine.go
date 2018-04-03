@@ -497,6 +497,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 	}
 
 	Inspect(s.Expr, func(node Node, path []Node) bool {
+		var set storage.SeriesSet
 		params := &storage.SelectParams{
 			Step: int64(s.Interval / time.Millisecond),
 		}
@@ -505,7 +506,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 		case *VectorSelector:
 			params.Func = extractFuncFromPath(path)
 
-			set, err := querier.Select(params, n.LabelMatchers...)
+			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return false
@@ -524,7 +525,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
 
-			set, err := querier.Select(params, n.LabelMatchers...)
+			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return false
