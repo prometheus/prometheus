@@ -54,7 +54,7 @@ Strings are referenced by sequential indexing. The strings are sorted in lexicog
 │ ├──────────────────────┴───────────────┤ │
 │ │                . . .                 │ │
 │ ├──────────────────────┬───────────────┤ │
-│ │ len(str_n) <uvarint> │ str_1 <bytes> │ │
+│ │ len(str_n) <uvarint> │ str_n <bytes> │ │
 │ └──────────────────────┴───────────────┘ │
 ├──────────────────────────────────────────┤
 │ CRC32 <4b>                               │
@@ -119,8 +119,8 @@ After the labels, the number of indexed chunks is encoded, followed by a sequenc
 
 ### Label Index
 
-A label index section indexes the existing (combined) values for one or more label names.  
-The `#names` field determines the number indexed label names, followed by the total number of entries in the `#entries` field. The body holds `#entries` symbol table reference tuples of length of length `#names`. The value tuples are sorted in lexicographically increasing order.
+A label index section indexes the existing (combined) values for one or more label names.
+The `#names` field determines the number of indexed label names, followed by the total number of entries in the `#entries` field. The body holds #entries / #names tuples of symbol table references, each tuple being of #names length. The value tuples are sorted in lexicographically increasing order.
 
 ```
 ┌───────────────┬────────────────┬────────────────┐
@@ -139,11 +139,19 @@ The `#names` field determines the number indexed label names, followed by the to
 └─────────────────────────────────────────────────┘
 ```
 
-The sequence of label index sections is finalized by an offset table pointing to the beginning of each label index section for a given set of label names.
+For instance, a single label name with 4 different values will be encoded as:
+
+```
+┌────┬───┬───┬──────────────┬──────────────┬──────────────┬──────────────┬───────┐
+│ 24 │ 1 │ 4 │ ref(value_0) | ref(value_1) | ref(value_2) | ref(value_3) | CRC32 |
+└────┴───┴───┴──────────────┴──────────────┴──────────────┴──────────────┴───────┘
+```
+
+The sequence of label index sections is finalized by an [offset table](#offset-table) pointing to the beginning of each label index section for a given set of label names.
 
 ### Postings
 
-Postings sections store monotonically increasing lists of series references that contain a given label pair associated with the list.  
+Postings sections store monotonically increasing lists of series references that contain a given label pair associated with the list.
 
 ```
 ┌────────────────────┬────────────────────┐
@@ -161,7 +169,7 @@ Postings sections store monotonically increasing lists of series references that
 └─────────────────────────────────────────┘
 ```
 
-The sequence of postings sections is finalized by an offset table pointing to the beginning of each postings section for a given set of label names.
+The sequence of postings sections is finalized by an [offset table](#offset-table) pointing to the beginning of each postings section for a given set of label names.
 
 ### Offset Table
 
