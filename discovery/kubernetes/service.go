@@ -22,7 +22,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -49,7 +49,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Send full initial set of pod targets.
 	var initial []*targetgroup.Group
 	for _, o := range s.store.List() {
-		tg := s.buildService(o.(*apiv1.Service))
+		tg := s.buildService(o.(*v1.Service))
 		initial = append(initial, tg)
 	}
 	select {
@@ -102,8 +102,8 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func convertToService(o interface{}) (*apiv1.Service, error) {
-	service, ok := o.(*apiv1.Service)
+func convertToService(o interface{}) (*v1.Service, error) {
+	service, ok := o.(*v1.Service)
 	if ok {
 		return service, nil
 	}
@@ -111,14 +111,14 @@ func convertToService(o interface{}) (*apiv1.Service, error) {
 	if !ok {
 		return nil, fmt.Errorf("Received unexpected object: %v", o)
 	}
-	service, ok = deletedState.Obj.(*apiv1.Service)
+	service, ok = deletedState.Obj.(*v1.Service)
 	if !ok {
 		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
 	}
 	return service, nil
 }
 
-func serviceSource(s *apiv1.Service) string {
+func serviceSource(s *v1.Service) string {
 	return "svc/" + s.Namespace + "/" + s.Name
 }
 
@@ -130,7 +130,7 @@ const (
 	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
 )
 
-func serviceLabels(svc *apiv1.Service) model.LabelSet {
+func serviceLabels(svc *v1.Service) model.LabelSet {
 	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
 
 	ls[serviceNameLabel] = lv(svc.Name)
@@ -148,7 +148,7 @@ func serviceLabels(svc *apiv1.Service) model.LabelSet {
 	return ls
 }
 
-func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
+func (s *Service) buildService(svc *v1.Service) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: serviceSource(svc),
 	}

@@ -23,7 +23,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -64,7 +64,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	var initial []*targetgroup.Group
 
 	for _, o := range e.endpointsStore.List() {
-		tg := e.buildEndpoints(o.(*apiv1.Endpoints))
+		tg := e.buildEndpoints(o.(*v1.Endpoints))
 		initial = append(initial, tg)
 	}
 	select {
@@ -124,12 +124,12 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			return
 		}
 
-		ep := &apiv1.Endpoints{}
+		ep := &v1.Endpoints{}
 		ep.Namespace = svc.Namespace
 		ep.Name = svc.Name
 		obj, exists, err := e.endpointsStore.Get(ep)
 		if exists && err != nil {
-			send(e.buildEndpoints(obj.(*apiv1.Endpoints)))
+			send(e.buildEndpoints(obj.(*v1.Endpoints)))
 		}
 		if err != nil {
 			level.Error(e.logger).Log("msg", "retrieving endpoints failed", "err", err)
@@ -156,8 +156,8 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
-	endpoints, ok := o.(*apiv1.Endpoints)
+func convertToEndpoints(o interface{}) (*v1.Endpoints, error) {
+	endpoints, ok := o.(*v1.Endpoints)
 	if ok {
 		return endpoints, nil
 	}
@@ -166,14 +166,14 @@ func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
 	if !ok {
 		return nil, fmt.Errorf("Received unexpected object: %v", o)
 	}
-	endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
+	endpoints, ok = deletedState.Obj.(*v1.Endpoints)
 	if !ok {
 		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
 	}
 	return endpoints, nil
 }
 
-func endpointsSource(ep *apiv1.Endpoints) string {
+func endpointsSource(ep *v1.Endpoints) string {
 	return "endpoints/" + ep.ObjectMeta.Namespace + "/" + ep.ObjectMeta.Name
 }
 
@@ -186,7 +186,7 @@ const (
 	endpointAddressTargetNameLabel = metaLabelPrefix + "endpoint_address_target_name"
 )
 
-func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
+func (e *Endpoints) buildEndpoints(eps *v1.Endpoints) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: endpointsSource(eps),
 	}
@@ -197,12 +197,12 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	e.addServiceLabels(eps.Namespace, eps.Name, tg)
 
 	type podEntry struct {
-		pod          *apiv1.Pod
-		servicePorts []apiv1.EndpointPort
+		pod          *v1.Pod
+		servicePorts []v1.EndpointPort
 	}
 	seenPods := map[string]*podEntry{}
 
-	add := func(addr apiv1.EndpointAddress, port apiv1.EndpointPort, ready string) {
+	add := func(addr v1.EndpointAddress, port v1.EndpointPort, ready string) {
 		a := net.JoinHostPort(addr.IP, strconv.FormatUint(uint64(port.Port), 10))
 
 		target := model.LabelSet{
@@ -303,11 +303,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	return tg
 }
 
-func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
+func (e *Endpoints) resolvePodRef(ref *v1.ObjectReference) *v1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
-	p := &apiv1.Pod{}
+	p := &v1.Pod{}
 	p.Namespace = ref.Namespace
 	p.Name = ref.Name
 
@@ -318,11 +318,11 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if err != nil {
 		level.Error(e.logger).Log("msg", "resolving pod ref failed", "err", err)
 	}
-	return obj.(*apiv1.Pod)
+	return obj.(*v1.Pod)
 }
 
 func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
-	svc := &apiv1.Service{}
+	svc := &v1.Service{}
 	svc.Namespace = ns
 	svc.Name = name
 
@@ -333,7 +333,7 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	if err != nil {
 		level.Error(e.logger).Log("msg", "retrieving service failed", "err", err)
 	}
-	svc = obj.(*apiv1.Service)
+	svc = obj.(*v1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }
