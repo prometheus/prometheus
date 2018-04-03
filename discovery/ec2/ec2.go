@@ -22,7 +22,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -71,6 +70,12 @@ var (
 	}
 )
 
+// Filter is the configuration for filtering EC2 instances.
+type Filter struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
+}
+
 // SDConfig is the configuration for EC2 based service discovery.
 type SDConfig struct {
 	Region          string             `yaml:"region"`
@@ -80,6 +85,7 @@ type SDConfig struct {
 	RoleARN         string             `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
 	Port            int                `yaml:"port"`
+	Filters         []*Filter          `yaml:"filters"`
 
 	// Catches all undefined fields and must be empty after parsing.
 	XXX map[string]interface{} `yaml:",inline"`
@@ -108,6 +114,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		c.Region = region
 	}
+	for _, f := range c.Filters {
+		if len(f.Values) == 0 {
+			return fmt.Errorf("EC2 SD configuration filter values cannot be empty")
+		}
+	}
 	return nil
 }
 
@@ -124,6 +135,7 @@ type Discovery struct {
 	profile  string
 	roleARN  string
 	port     int
+	filters  []*Filter
 	logger   log.Logger
 }
 
@@ -143,6 +155,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 		},
 		profile:  conf.Profile,
 		roleARN:  conf.RoleARN,
+		filters:  conf.Filters,
 		interval: time.Duration(conf.RefreshInterval),
 		port:     conf.Port,
 		logger:   logger,
@@ -186,16 +199,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) ec2MetadataAvailable(sess *session.Session) (isAvailable bool) {
-	svc := ec2metadata.New(sess, &aws.Config{
-		MaxRetries: aws.Int(0),
-	})
-
-	isAvailable = svc.Available()
-
-	return isAvailable
-}
-
 func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
@@ -218,17 +221,23 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		creds := stscreds.NewCredentials(sess, d.roleARN)
 		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
 	} else {
-		if d.aws.Credentials == nil && d.ec2MetadataAvailable(sess) {
-			creds := ec2rolecreds.NewCredentials(sess)
-			ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
-		} else {
-			ec2s = ec2.New(sess)
-		}
+		ec2s = ec2.New(sess)
 	}
 	tg = &targetgroup.Group{
 		Source: *d.aws.Region,
 	}
-	if err = ec2s.DescribeInstancesPages(nil, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+
+	var filters []*ec2.Filter
+	for _, f := range d.filters {
+		filters = append(filters, &ec2.Filter{
+			Name:   aws.String(f.Name),
+			Values: aws.StringSlice(f.Values),
+		})
+	}
+
+	input := &ec2.DescribeInstancesInput{Filters: filters}
+
+	if err = ec2s.DescribeInstancesPages(input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {

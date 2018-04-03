@@ -11,10 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package prometheus provides metrics primitives to instrument code for
-// monitoring. It also offers a registry for metrics. Sub-packages allow to
-// expose the registered metrics via HTTP (package promhttp) or push them to a
-// Pushgateway (package push).
+// Package prometheus is the core instrumentation package. It provides metrics
+// primitives to instrument code for monitoring. It also offers a registry for
+// metrics. Sub-packages allow to expose the registered metrics via HTTP
+// (package promhttp) or push them to a Pushgateway (package push). There is
+// also a sub-package promauto, which provides metrics constructors with
+// automatic registration.
 //
 // All exported functions and methods are safe to be used concurrently unless
 // specified otherwise.
@@ -26,6 +28,7 @@
 //    package main
 //
 //    import (
+//    	"log"
 //    	"net/http"
 //
 //    	"github.com/prometheus/client_golang/prometheus"
@@ -59,7 +62,7 @@
 //    	// The Handler function provides a default handler to expose metrics
 //    	// via an HTTP server. "/metrics" is the usual endpoint for that.
 //    	http.Handle("/metrics", promhttp.Handler())
-//      log.Fatal(http.ListenAndServe(":8080", nil))
+//    	log.Fatal(http.ListenAndServe(":8080", nil))
 //    }
 //
 //
@@ -71,7 +74,10 @@
 // The number of exported identifiers in this package might appear a bit
 // overwhelming. However, in addition to the basic plumbing shown in the example
 // above, you only need to understand the different metric types and their
-// vector versions for basic usage.
+// vector versions for basic usage. Furthermore, if you are not concerned with
+// fine-grained control of when and how to register metrics with the registry,
+// have a look at the promauto package, which will effectively allow you to
+// ignore registration altogether in simple cases.
 //
 // Above, you have already touched the Counter and the Gauge. There are two more
 // advanced metric types: the Summary and Histogram. A more thorough description
@@ -144,7 +150,7 @@
 // registry.
 //
 // So far, everything we did operated on the so-called default registry, as it
-// can be found in the global DefaultRegistry variable. With NewRegistry, you
+// can be found in the global DefaultRegisterer variable. With NewRegistry, you
 // can create a custom registry, or you can even implement the Registerer or
 // Gatherer interfaces yourself. The methods Register and Unregister work in the
 // same way on a custom registry as the global functions Register and Unregister
@@ -152,11 +158,11 @@
 //
 // There are a number of uses for custom registries: You can use registries with
 // special properties, see NewPedanticRegistry. You can avoid global state, as
-// it is imposed by the DefaultRegistry. You can use multiple registries at the
-// same time to expose different metrics in different ways. You can use separate
-// registries for testing purposes.
+// it is imposed by the DefaultRegisterer. You can use multiple registries at
+// the same time to expose different metrics in different ways.  You can use
+// separate registries for testing purposes.
 //
-// Also note that the DefaultRegistry comes registered with a Collector for Go
+// Also note that the DefaultRegisterer comes registered with a Collector for Go
 // runtime metrics (via NewGoCollector) and a Collector for process metrics (via
 // NewProcessCollector). With a custom registry, you are in control and decide
 // yourself about the Collectors to register.

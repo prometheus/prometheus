@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"testing"
@@ -161,14 +160,6 @@ func TestAlertingRule(t *testing.T) {
 			testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
 		}
 	}
-}
-
-func annotateWithTime(lines []string, ts time.Time) []string {
-	annotatedLines := []string{}
-	for _, line := range lines {
-		annotatedLines = append(annotatedLines, fmt.Sprintf(line, timestamp.FromTime(ts)))
-	}
-	return annotatedLines
 }
 
 func TestStaleness(t *testing.T) {

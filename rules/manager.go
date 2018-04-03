@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -324,7 +325,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
+			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
+			sp.SetTag("name", rule.Name())
 			defer func(t time.Time) {
+				sp.Finish()
 				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationTime(time.Since(t))
 			}(time.Now())

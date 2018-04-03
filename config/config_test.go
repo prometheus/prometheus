@@ -275,11 +275,15 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 				ConsulSDConfigs: []*consul.SDConfig{
 					{
-						Server:       "localhost:1234",
-						Token:        "mysecret",
-						Services:     []string{"nginx", "cache", "mysql"},
-						TagSeparator: consul.DefaultSDConfig.TagSeparator,
-						Scheme:       "https",
+						Server:          "localhost:1234",
+						Token:           "mysecret",
+						Services:        []string{"nginx", "cache", "mysql"},
+						ServiceTag:      "canary",
+						NodeMeta:        map[string]string{"rack": "123"},
+						TagSeparator:    consul.DefaultSDConfig.TagSeparator,
+						Scheme:          "https",
+						RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
+						AllowStale:      true,
 						TLSConfig: config_util.TLSConfig{
 							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
@@ -408,6 +412,16 @@ var expectedConf = &Config{
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
+						Filters: []*ec2.Filter{
+							{
+								Name:   "tag:environment",
+								Values: []string{"prod"},
+							},
+							{
+								Name:   "tag:service",
+								Values: []string{"web", "db"},
+							},
+						},
 					},
 				},
 			},
@@ -683,6 +697,10 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	},
+	{
+		filename: "ec2_filters_empty_values.bad.yml",
+		errMsg:   `EC2 SD configuration filter values cannot be empty`,
 	},
 }
 

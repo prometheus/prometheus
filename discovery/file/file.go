@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	yaml_util "github.com/prometheus/prometheus/util/yaml"
-	"gopkg.in/fsnotify.v1"
+	"gopkg.in/fsnotify/fsnotify.v1"
 	"gopkg.in/yaml.v2"
 )
 

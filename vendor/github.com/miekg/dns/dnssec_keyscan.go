@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/dsa"
 	"crypto/ecdsa"
@@ -9,6 +10,8 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/ed25519"
 )
 
 // NewPrivateKey returns a PrivateKey by parsing the string s.
@@ -36,7 +39,7 @@ func (k *DNSKEY) ReadPrivateKey(q io.Reader, file string) (crypto.PrivateKey, er
 		return nil, ErrPrivKey
 	}
 	// TODO(mg): check if the pubkey matches the private key
-	algo, err := strconv.Atoi(strings.SplitN(m["algorithm"], " ", 2)[0])
+	algo, err := strconv.ParseUint(strings.SplitN(m["algorithm"], " ", 2)[0], 10, 8)
 	if err != nil {
 		return nil, ErrPrivKey
 	}
@@ -86,6 +89,8 @@ func (k *DNSKEY) ReadPrivateKey(q io.Reader, file string) (crypto.PrivateKey, er
 		}
 		priv.PublicKey = *pub
 		return priv, nil
+	case ED25519:
+		return readPrivateKeyED25519(m)
 	default:
 		return nil, ErrPrivKey
 	}
@@ -166,13 +171,56 @@ func readPrivateKeyECDSA(m map[string]string) (*ecdsa.PrivateKey, error) {
 	return p, nil
 }
 
+func readPrivateKeyED25519(m map[string]string) (ed25519.PrivateKey, error) {
+	var p ed25519.PrivateKey
+	// TODO: validate that the required flags are present
+	for k, v := range m {
+		switch k {
+		case "privatekey":
+			p1, err := fromBase64([]byte(v))
+			if err != nil {
+				return nil, err
+			}
+			if len(p1) != 32 {
+				return nil, ErrPrivKey
+			}
+			// RFC 8080 and Golang's x/crypto/ed25519 differ as to how the
+			// private keys are represented. RFC 8080 specifies that private
+			// keys be stored solely as the seed value (p1 above) while the
+			// ed25519 package represents them as the seed value concatenated
+			// to the public key, which is derived from the seed value.
+			//
+			// ed25519.GenerateKey reads exactly 32 bytes from the passed in
+			// io.Reader and uses them as the seed. It also derives the
+			// public key and produces a compatible private key.
+			_, p, err = ed25519.GenerateKey(bytes.NewReader(p1))
+			if err != nil {
+				return nil, err
+			}
+		case "created", "publish", "activate":
+			/* not used in Go (yet) */
+		}
+	}
+	return p, nil
+}
+
 // parseKey reads a private key from r. It returns a map[string]string,
 // with the key-value pairs, or an error when the file is not correct.
 func parseKey(r io.Reader, file string) (map[string]string, error) {
-	s := scanInit(r)
+	s, cancel := scanInit(r)
 	m := make(map[string]string)
 	c := make(chan lex)
 	k := ""
+	defer func() {
+		cancel()
+		// zlexer can send up to two tokens, the next one and possibly 1 remainders.
+		// Do a non-blocking read.
+		_, ok := <-c
+		_, ok = <-c
+		if !ok {
+			// too bad
+		}
+	}()
 	// Start the lexer
 	go klexer(s, c)
 	for l := range c {
