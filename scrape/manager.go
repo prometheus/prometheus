@@ -106,7 +106,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	return nil
 }
 
-// TargetsAll returns active and dropped targets.
+// TargetsAll returns active and dropped targets grouped by job_name.
 func (m *Manager) TargetsAll() map[string][]*Target {
 	m.mtxTargets.Lock()
 	defer m.mtxTargets.Unlock()
@@ -145,6 +145,7 @@ func (m *Manager) targetsUpdate(active, dropped map[string][]*Target) {
 	}
 }
 
+// Should not be called concurently.
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
 	tDropped := make(map[string][]*Target)
 	tActive := make(map[string][]*Target)
