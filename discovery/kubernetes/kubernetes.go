@@ -26,7 +26,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
@@ -89,9 +88,6 @@ type SDConfig struct {
 	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
 	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
 	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -100,9 +96,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "kubernetes_sd_config"); err != nil {
 		return err
 	}
 	if c.Role == "" {
@@ -126,19 +119,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // Kubernetes namespaces.
 type NamespaceDiscovery struct {
 	Names []string `yaml:"names"`
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *NamespaceDiscovery) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = NamespaceDiscovery{}
 	type plain NamespaceDiscovery
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	return yaml_util.CheckOverflow(c.XXX, "namespaces")
+	return unmarshal((*plain)(c))
 }
 
 func init() {
