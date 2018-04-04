@@ -26,8 +26,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
-
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
@@ -58,16 +56,10 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain ServiceDiscoveryConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	return yaml_util.CheckOverflow(c.XXX, "service discovery config")
+	return unmarshal((*plain)(c))
 }

@@ -148,7 +148,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		level.Error(logger).Log("msg", "Error creating HTTP client", "err", err)
 	}
 
-	buffers := pool.New(163, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
+	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
