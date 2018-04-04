@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -118,8 +117,6 @@ type SDConfig struct {
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
 	TLSConfig config_util.TLSConfig `yaml:"tls_config,omitempty"`
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -128,9 +125,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "consul_sd_config"); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Server) == "" {

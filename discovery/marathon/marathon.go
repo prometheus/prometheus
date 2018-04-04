@@ -34,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -90,9 +89,6 @@ type SDConfig struct {
 	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
 	BearerToken     config_util.Secret    `yaml:"bearer_token,omitempty"`
 	BearerTokenFile string                `yaml:"bearer_token_file,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -101,9 +97,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "marathon_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Servers) == 0 {

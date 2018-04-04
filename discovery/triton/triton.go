@@ -30,7 +30,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/httputil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -71,8 +70,6 @@ type SDConfig struct {
 	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
 	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
 	Version         int                   `yaml:"version"`
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -95,7 +92,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.RefreshInterval <= 0 {
 		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
 	}
-	return yaml_util.CheckOverflow(c.XXX, "triton_sd_config")
+	return nil
 }
 
 func init() {

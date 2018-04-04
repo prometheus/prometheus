@@ -657,7 +657,7 @@ var expectedErrors = []struct {
 		errMsg:   "invalid rule file path",
 	}, {
 		filename: "unknown_attr.bad.yml",
-		errMsg:   "unknown fields in scrape_config: consult_sd_configs",
+		errMsg:   "field consult_sd_configs not found in type config.plain",
 	}, {
 		filename: "bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
@@ -672,7 +672,7 @@ var expectedErrors = []struct {
 		errMsg:   "role",
 	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
-		errMsg:   "unknown fields in namespaces",
+		errMsg:   "field foo not found in type kubernetes.plain",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
@@ -690,7 +690,7 @@ var expectedErrors = []struct {
 		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
 	}, {
 		filename: "unknown_global_attr.bad.yml",
-		errMsg:   "unknown fields in global config: nonexistent_field",
+		errMsg:   "field nonexistent_field not found in type config.plain",
 	}, {
 		filename: "remote_read_url_missing.bad.yml",
 		errMsg:   `url for remote_read is empty`,
@@ -701,6 +701,10 @@ var expectedErrors = []struct {
 	{
 		filename: "ec2_filters_empty_values.bad.yml",
 		errMsg:   `EC2 SD configuration filter values cannot be empty`,
+	},
+	{
+		filename: "section_key_dup.bad.yml",
+		errMsg:   "field scrape_configs already set in type config.plain",
 	},
 }
 
@@ -713,11 +717,19 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadStaticConfigs(t *testing.T) {
+func TestBadStaticConfigsJSON(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	testutil.Ok(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
+	testutil.NotOk(t, err, "")
+}
+
+func TestBadStaticConfigsYML(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	testutil.Ok(t, err)
+	var tg targetgroup.Group
+	err = yaml.UnmarshalStrict(content, &tg)
 	testutil.NotOk(t, err, "")
 }
 
