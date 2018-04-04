@@ -252,7 +252,7 @@ func main() {
 		)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:  fanoutStorage,
+			Storage:     fanoutStorage,
 			QueryFunc:   rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
 			Context:     ctxRule,

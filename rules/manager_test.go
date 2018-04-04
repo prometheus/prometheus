@@ -167,10 +167,10 @@ func TestStaleness(t *testing.T) {
 	defer storage.Close()
 	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, storage),
-		Appendable: storage,
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		QueryFunc: EngineQueryFunc(engine, storage),
+		Storage:   storage,
+		Context:   context.Background(),
+		Logger:    log.NewNopLogger(),
 	}
 
 	expr, err := promql.ParseExpr("a + 1")

@@ -62,16 +62,6 @@ const (
 	StateFiring
 )
 
-// AlertForState denotes the 'for' state of an active alert.
-type AlertForState float64
-
-const (
-	// ForStateInactive is the state when alert expression is false.
-	ForStateInactive AlertForState = iota
-	// ForStateActive is the state when alert expression is true.
-	ForStateActive
-)
-
 func (s AlertState) String() string {
 	switch s {
 	case StateInactive:
@@ -190,13 +180,10 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 
 	for _, l := range alert.Labels {
 		lb.Set(l.Name, l.Value)
-		fmt.Println("-->", l.Name, l.Value)
 	}
 
 	lb.Set(labels.MetricName, alertForStateMetricName)
-	fmt.Println("-->", labels.MetricName, alertForStateMetricName)
 	lb.Set(labels.AlertName, r.name)
-	fmt.Println("-->", labels.AlertName, r.name)
 
 	s := promql.Sample{
 		Metric: lb.Labels(),
@@ -319,7 +306,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
-				fmt.Println("Not Active added")
 				vec = append(vec, r.forStateSample(a, ts, 0))
 			}
 			continue
@@ -331,7 +317,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		vec = append(vec, r.sample(a, ts))
-		fmt.Printf("Active added %f\n", float64(a.ActiveAt.UnixNano()))
 		vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.UnixNano())))
 	}
 
@@ -377,6 +362,19 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 		alerts = append(alerts, &anew)
 	}
 	return alerts
+}
+
+// ForEachActiveAlert runs the given function on each alert.
+// This should be used when you want to use the actual alerts from the AlertingRule
+// and not on its copy.
+// If you want to run on a copy of alerts then don't use this, get the alerts from 'ActiveAlerts()'.
+func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	for _, a := range r.active {
+		f(a)
+	}
 }
 
 func (r *AlertingRule) String() string {
@@ -430,7 +428,7 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	return html_template.HTML(byt)
 }
 
-// SubtractHoldDuration  TODO: add proper comment
+// SubtractHoldDuration subtracts holdDuration from given ts.
 func (r *AlertingRule) SubtractHoldDuration(ts time.Time) time.Time {
 	return ts.Add(-r.holdDuration)
 }

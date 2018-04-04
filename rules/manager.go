@@ -30,6 +30,7 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -357,7 +358,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				numDuplicates = 0
 			)
 
-			app, err := g.opts.Appendable.Appender()
+			app, err := g.opts.Storage.Appender()
 			if err != nil {
 				level.Warn(g.logger).Log("msg", "creating appender failed", "err", err)
 				return
@@ -434,7 +435,7 @@ type ManagerOptions struct {
 	QueryFunc   QueryFunc
 	NotifyFunc  NotifyFunc
 	Context     context.Context
-	Appendable  Appendable
+	Storage     storage.Storage
 	Logger      log.Logger
 	Registerer  prometheus.Registerer
 }
@@ -522,7 +523,76 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	wg.Wait()
 	m.groups = groups
 
+	m.restoreForState()
+
 	return nil
+}
+
+// restoreForState restores the 'for' state of the alerts
+// by looking up last ActiveAt from storage.
+func (m *Manager) restoreForState() {
+
+	maxt := time.Now()
+	maxtMS := int64(model.TimeFromUnixNano(maxt.UnixNano()))
+	for _, newg := range m.groups {
+		for _, rule := range newg.Rules() {
+			if alertRule, ok := rule.(*AlertingRule); ok {
+
+				_, err := alertRule.Eval(m.opts.Context, maxt, newg.opts.QueryFunc, newg.opts.ExternalURL)
+				if err == nil {
+					mint := alertRule.SubtractHoldDuration(maxt)
+					mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
+
+					alertFunc := func(a *Alert) {
+						q, err := m.opts.Storage.Querier(m.opts.Context, mintMS, maxtMS)
+						if err != nil {
+							return
+						}
+
+						var matchers []*labels.Matcher
+						for _, l := range alertRule.labels {
+							mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+							matchers = append(matchers, mt)
+						}
+						for _, l := range a.Labels {
+							mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+							matchers = append(matchers, mt)
+						}
+						mt, _ := labels.NewMatcher(labels.MatchEqual, labels.MetricName, alertForStateMetricName)
+						matchers = append(matchers, mt)
+						mt, _ = labels.NewMatcher(labels.MatchEqual, labels.AlertName, alertRule.name)
+						matchers = append(matchers, mt)
+
+						sset, err := q.Select(nil, matchers...)
+						if err == nil && sset.Next() {
+							// Series found for the 'for' state.
+							var (
+								t int64
+								v float64
+							)
+							s := sset.At()
+							it := s.Iterator()
+							for it.Next() {
+								t, v = it.At()
+							}
+
+							if t > 0 && v > 0 {
+								restoredTime := model.TimeFromUnixNano(int64(v))
+								a.ActiveAt = restoredTime.Time()
+								level.Info(m.logger).Log("msg", "'for' state restored",
+									labels.AlertName, alertRule.name, "restored_time_ms", int64(restoredTime))
+							}
+						}
+					}
+
+					alertRule.ForEachActiveAlert(alertFunc)
+
+				}
+
+			}
+		}
+	}
+
 }
 
 // loadGroups reads groups from a list of files.
