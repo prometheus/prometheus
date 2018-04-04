@@ -39,6 +39,8 @@ import (
 const (
 	// AlertMetricName is the metric name for synthetic alert timeseries.
 	alertMetricName = "ALERTS"
+	// AlertForStateMetricName is the metric name for 'for' state of alert.
+	alertForStateMetricName = "ALERTS_FOR_STATE"
 
 	// AlertNameLabel is the label name indicating the name of an alert.
 	alertNameLabel = "alertname"
@@ -58,6 +60,16 @@ const (
 	// StateFiring is the state of an alert that has been active for longer than
 	// the configured threshold duration.
 	StateFiring
+)
+
+// AlertForState denotes the 'for' state of an active alert.
+type AlertForState float64
+
+const (
+	// ForStateInactive is the state when alert expression is false.
+	ForStateInactive AlertForState = iota
+	// ForStateActive is the state when alert expression is true.
+	ForStateActive
 )
 
 func (s AlertState) String() string {
@@ -173,6 +185,26 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	return s
 }
 
+func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) promql.Sample {
+	lb := labels.NewBuilder(r.labels)
+
+	for _, l := range alert.Labels {
+		lb.Set(l.Name, l.Value)
+		fmt.Println("-->", l.Name, l.Value)
+	}
+
+	lb.Set(labels.MetricName, alertForStateMetricName)
+	fmt.Println("-->", labels.MetricName, alertForStateMetricName)
+	lb.Set(labels.AlertName, r.name)
+	fmt.Println("-->", labels.AlertName, r.name)
+
+	s := promql.Sample{
+		Metric: lb.Labels(),
+		Point:  promql.Point{T: timestamp.FromTime(ts), V: v},
+	}
+	return s
+}
+
 // SetEvaluationDuration updates evaluationDuration to the duration it took to evaluate the rule on its last evaluation.
 func (r *AlertingRule) SetEvaluationDuration(dur time.Duration) {
 	r.mtx.Lock()
@@ -206,6 +238,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	// or update the expression value for existing elements.
 	resultFPs := map[uint64]struct{}{}
 
+	var vec promql.Vector
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := make(map[string]string, len(smpl.Metric))
@@ -259,6 +292,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 		// Check whether we already have alerting state for the identifying label set.
 		// Update the last value and annotations if so, create a new alert entry otherwise.
+
 		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
 			alert.Value = smpl.V
 			alert.Annotations = annotations
@@ -274,7 +308,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
-	var vec promql.Vector
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
@@ -286,6 +319,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
+				fmt.Println("Not Active added")
+				vec = append(vec, r.forStateSample(a, ts, 0))
 			}
 			continue
 		}
@@ -296,6 +331,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		vec = append(vec, r.sample(a, ts))
+		fmt.Printf("Active added %f\n", float64(a.ActiveAt.UnixNano()))
+		vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.UnixNano())))
 	}
 
 	return vec, nil
@@ -391,4 +428,9 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		return html_template.HTML(fmt.Sprintf("error marshalling alerting rule: %q", err.Error()))
 	}
 	return html_template.HTML(byt)
+}
+
+// SubtractHoldDuration  TODO: add proper comment
+func (r *AlertingRule) SubtractHoldDuration(ts time.Time) time.Time {
+	return ts.Add(-r.holdDuration)
 }
