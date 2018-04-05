@@ -492,8 +492,8 @@ Not mentioning both start and end times would clear all the data for the matched
 Example:
 
 ```json
-$ curl -X DELETE \                                                              
-  -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -X POST \
+  -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 *New in v2.1*
 
