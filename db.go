@@ -590,7 +590,7 @@ func (o Overlaps) String() string {
 		var groups []string
 		for _, m := range overlaps {
 			groups = append(groups, fmt.Sprintf(
-				"%s %d-%d <%s>",
+				"<ulid: %s, mint: %d, maxt: %d, range: %s>",
 				m.ULID.String(),
 				m.MinTime,
 				m.MaxTime,
@@ -598,11 +598,11 @@ func (o Overlaps) String() string {
 			))
 		}
 		res = append(res, fmt.Sprintf(
-			"[%d-%d <%s>](%d): %s",
+			"[mint: %d, maxt: %d, range: %s, blocks: %d]: %s",
 			r.Min, r.Max,
 			(time.Duration((r.Max-r.Min)/1000)*time.Second).String(),
 			len(overlaps),
-			strings.Join(groups, "; ")),
+			strings.Join(groups, ", ")),
 		)
 	}
 	return strings.Join(res, "\n")
