@@ -892,3 +892,87 @@ func expandSeriesSet(ss SeriesSet) ([]labels.Labels, error) {
 
 	return result, ss.Err()
 }
+
+func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
+	// Create 10 blocks that does not overlap (0-10, 10-20, ..., 100-110) but in reverse order to ensure our algorithm
+	// will handle that.
+	var metas = make([]BlockMeta, 11)
+	for i := 10; i >= 0; i-- {
+		metas[i] = BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)}
+	}
+
+	testutil.Assert(t, len(OverlappingBlocks(metas)) == 0, "we found unexpected overlaps")
+
+	// Add overlapping blocks.
+
+	// o1 overlaps with 10-20.
+	o1 := BlockMeta{MinTime: 15, MaxTime: 17}
+	testutil.Equals(t, Overlaps{
+		{Min: 15, Max: 17}: {metas[1], o1},
+	}, OverlappingBlocks(append(metas, o1)))
+
+	// o2 overlaps with 20-30 and 30-40.
+	o2 := BlockMeta{MinTime: 21, MaxTime: 31}
+	testutil.Equals(t, Overlaps{
+		{Min: 21, Max: 30}: {metas[2], o2},
+		{Min: 30, Max: 31}: {o2, metas[3]},
+	}, OverlappingBlocks(append(metas, o2)))
+
+	// o3a and o3b overlaps with 30-40 and each other.
+	o3a := BlockMeta{MinTime: 33, MaxTime: 39}
+	o3b := BlockMeta{MinTime: 34, MaxTime: 36}
+	testutil.Equals(t, Overlaps{
+		{Min: 34, Max: 36}: {metas[3], o3a, o3b},
+	}, OverlappingBlocks(append(metas, o3a, o3b)))
+
+	// o4 is 1:1 overlap with 50-60.
+	o4 := BlockMeta{MinTime: 50, MaxTime: 60}
+	testutil.Equals(t, Overlaps{
+		{Min: 50, Max: 60}: {metas[5], o4},
+	}, OverlappingBlocks(append(metas, o4)))
+
+	// o5 overlaps with 60-70, 70-80 and 80-90.
+	o5 := BlockMeta{MinTime: 61, MaxTime: 85}
+	testutil.Equals(t, Overlaps{
+		{Min: 61, Max: 70}: {metas[6], o5},
+		{Min: 70, Max: 80}: {o5, metas[7]},
+		{Min: 80, Max: 85}: {o5, metas[8]},
+	}, OverlappingBlocks(append(metas, o5)))
+
+	// o6a overlaps with 90-100, 100-110 and o6b, o6b overlaps with 90-100 and o6a.
+	o6a := BlockMeta{MinTime: 92, MaxTime: 105}
+	o6b := BlockMeta{MinTime: 94, MaxTime: 99}
+	testutil.Equals(t, Overlaps{
+		{Min: 94, Max: 99}:   {metas[9], o6a, o6b},
+		{Min: 100, Max: 105}: {o6a, metas[10]},
+	}, OverlappingBlocks(append(metas, o6a, o6b)))
+
+	// All together.
+	testutil.Equals(t, Overlaps{
+		{Min: 15, Max: 17}: {metas[1], o1},
+		{Min: 21, Max: 30}: {metas[2], o2}, {Min: 30, Max: 31}: {o2, metas[3]},
+		{Min: 34, Max: 36}: {metas[3], o3a, o3b},
+		{Min: 50, Max: 60}: {metas[5], o4},
+		{Min: 61, Max: 70}: {metas[6], o5}, {Min: 70, Max: 80}: {o5, metas[7]}, {Min: 80, Max: 85}: {o5, metas[8]},
+		{Min: 94, Max: 99}: {metas[9], o6a, o6b}, {Min: 100, Max: 105}: {o6a, metas[10]},
+	}, OverlappingBlocks(append(metas, o1, o2, o3a, o3b, o4, o5, o6a, o6b)))
+
+	// Additional case.
+	var nc1 []BlockMeta
+	nc1 = append(nc1, BlockMeta{MinTime: 1, MaxTime: 5})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 3})
+	nc1 = append(nc1, BlockMeta{MinTime: 2, MaxTime: 6})
+	nc1 = append(nc1, BlockMeta{MinTime: 3, MaxTime: 5})
+	nc1 = append(nc1, BlockMeta{MinTime: 5, MaxTime: 7})
+	nc1 = append(nc1, BlockMeta{MinTime: 7, MaxTime: 10})
+	nc1 = append(nc1, BlockMeta{MinTime: 8, MaxTime: 9})
+	testutil.Equals(t, Overlaps{
+		{Min: 2, Max: 3}: {nc1[0], nc1[1], nc1[2], nc1[3], nc1[4], nc1[5]}, // 1-5, 2-3, 2-3, 2-3, 2-3, 2,6
+		{Min: 3, Max: 5}: {nc1[0], nc1[5], nc1[6]},                         // 1-5, 2-6, 3-5
+		{Min: 5, Max: 6}: {nc1[5], nc1[7]},                                 // 2-6, 5-7
+		{Min: 8, Max: 9}: {nc1[8], nc1[9]},                                 // 7-10, 8-9
+	}, OverlappingBlocks(nc1))
+}
