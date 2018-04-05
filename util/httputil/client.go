@@ -34,6 +34,16 @@ func newClient(rt http.RoundTripper) *http.Client {
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
 func NewClientFromConfig(cfg config_util.HTTPClientConfig, name string) (*http.Client, error) {
+	rt, err := NewRoundTripperFromConfig(cfg, name)
+	if err != nil {
+		return nil, err
+	}
+	return newClient(rt), nil
+}
+
+// NewRoundTripperFromConfig returns a new HTTP RoundTripper configured for the
+// given config.HTTPClientConfig. The name is used as go-conntrack metric label.
+func NewRoundTripperFromConfig(cfg config_util.HTTPClientConfig, name string) (http.RoundTripper, error) {
 	tlsConfig, err := NewTLSConfig(cfg.TLSConfig)
 	if err != nil {
 		return nil, err
@@ -68,8 +78,8 @@ func NewClientFromConfig(cfg config_util.HTTPClientConfig, name string) (*http.C
 		rt = NewBasicAuthRoundTripper(cfg.BasicAuth.Username, string(cfg.BasicAuth.Password), rt)
 	}
 
-	// Return a new client with the configured round tripper.
-	return newClient(rt), nil
+	// Return a new configured RoundTripper.
+	return rt, nil
 }
 
 type bearerAuthRoundTripper struct {
