@@ -312,8 +312,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			case <-ctx.Done():
 				ticker.Stop()
 				return
-			case <-ticker.C:
+			default:
 				d.watchServices(ctx, ch, &lastIndex, services)
+				<-ticker.C
 			}
 		}
 
@@ -426,8 +427,9 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 			case <-ctx.Done():
 				ticker.Stop()
 				return
-			case <-ticker.C:
+			default:
 				srv.watch(ctx, ch, catalog, &lastIndex)
+				<-ticker.C
 			}
 		}
 	}()
