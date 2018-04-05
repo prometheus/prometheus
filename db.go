@@ -569,22 +569,41 @@ func validateBlockSequence(bs []*Block) error {
 
 	overlaps := OverlappingBlocks(metas)
 	if len(overlaps) > 0 {
-		return errors.Errorf("block time ranges overlap: %s", SprintOverlappedBlocks(overlaps))
+		return errors.Errorf("block time ranges overlap: %s", overlaps)
 	}
 
 	return nil
 }
 
+// TimeRange specifies minTime and maxTime range.
 type TimeRange struct {
 	Min, Max int64
 }
 
-// OverlappingBlocks returns all overlapping blocks from given meta files aggregated by overlaping range.
-// We sort blocks by minTime. Then we iterate over each block minTime and treat it as our "current" timestamp.
-// We check all the pending blocks (blocks that we have seen their minTimes, but their maxTime was still ahead current
-// timestamp) if they finish. If not, it means they overlap with our current b. In the same time b is assumed as
-// pending.
-func OverlappingBlocks(bm []BlockMeta) map[TimeRange][]BlockMeta {
+// Overlaps contains overlapping blocks aggregated by overlapping range.
+type Overlaps map[TimeRange][]BlockMeta
+
+// String returns human readable string form of overlapped blocks.
+func (o Overlaps) String() string {
+	var res []string
+	for r, overlaps := range o {
+		var groups []string
+		for _, m := range overlaps {
+			groups = append(groups, fmt.Sprintf(
+				"[id: %s mint: %d maxt: %d range: %s]",
+				m.ULID.String(),
+				m.MinTime,
+				m.MaxTime,
+				(time.Duration((m.MaxTime-m.MinTime)/1000)*time.Second).String(),
+			))
+		}
+		res = append(res, fmt.Sprintf("[%d %d]: <%s> ", r.Min, r.Max, strings.Join(groups, "")))
+	}
+	return strings.Join(res, "")
+}
+
+// OverlappingBlocks returns all overlapping blocks from given meta files.
+func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	if len(bm) <= 1 {
 		return nil
 	}
@@ -600,6 +619,10 @@ func OverlappingBlocks(bm []BlockMeta) map[TimeRange][]BlockMeta {
 		// continuousPending helps to aggregate same overlaps to single group.
 		continuousPending = true
 	)
+
+	// We have here blocks sorted by minTime. We iterate over each block and treat its minTime as our "current" timestamp.
+	// We check if any of the pending block finished (blocks that we have seen before, but their maxTime was still ahead current
+	// timestamp). If not, it means they overlap with our current block. In the same time current block is assumed pending.
 	for _, b := range bm[1:] {
 		var newPending []BlockMeta
 
@@ -631,7 +654,7 @@ func OverlappingBlocks(bm []BlockMeta) map[TimeRange][]BlockMeta {
 	}
 
 	// Fetch the critical overlapped time range foreach overlap groups.
-	overlapGroups := map[TimeRange][]BlockMeta{}
+	overlapGroups := Overlaps{}
 	for _, overlap := range overlaps {
 
 		minRange := TimeRange{Min: 0, Max: math.MaxInt64}
@@ -648,25 +671,6 @@ func OverlappingBlocks(bm []BlockMeta) map[TimeRange][]BlockMeta {
 	}
 
 	return overlapGroups
-}
-
-// SprintOverlappedBlocks returns human readable string form of overlapped blocks.
-func SprintOverlappedBlocks(overlaps map[TimeRange][]BlockMeta) string {
-	var res []string
-	for r, o := range overlaps {
-		var groups []string
-		for _, m := range o {
-			groups = append(groups, fmt.Sprintf(
-				"[id: %s mint: %d maxt: %d range: %s]",
-				m.ULID.String(),
-				m.MinTime,
-				m.MaxTime,
-				(time.Duration((m.MaxTime-m.MinTime)/1000)*time.Second).String(),
-			))
-		}
-		res = append(res, fmt.Sprintf("[%d %d]: <%s> ", r.Min, r.Max, strings.Join(groups, "")))
-	}
-	return strings.Join(res, "")
 }
 
 func (db *DB) String() string {
