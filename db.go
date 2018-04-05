@@ -590,16 +590,22 @@ func (o Overlaps) String() string {
 		var groups []string
 		for _, m := range overlaps {
 			groups = append(groups, fmt.Sprintf(
-				"[id: %s mint: %d maxt: %d range: %s]",
+				"<ulid: %s, mint: %d, maxt: %d, range: %s>",
 				m.ULID.String(),
 				m.MinTime,
 				m.MaxTime,
 				(time.Duration((m.MaxTime-m.MinTime)/1000)*time.Second).String(),
 			))
 		}
-		res = append(res, fmt.Sprintf("[%d %d]: <%s> ", r.Min, r.Max, strings.Join(groups, "")))
+		res = append(res, fmt.Sprintf(
+			"[mint: %d, maxt: %d, range: %s, blocks: %d]: %s",
+			r.Min, r.Max,
+			(time.Duration((r.Max-r.Min)/1000)*time.Second).String(),
+			len(overlaps),
+			strings.Join(groups, ", ")),
+		)
 	}
-	return strings.Join(res, "")
+	return strings.Join(res, "\n")
 }
 
 // OverlappingBlocks returns all overlapping blocks from given meta files.
