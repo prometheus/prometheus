@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -76,19 +75,17 @@ var (
 		})
 	// DefaultSDConfig is the default Marathon SD configuration.
 	DefaultSDConfig = SDConfig{
-		Timeout:         model.Duration(30 * time.Second),
 		RefreshInterval: model.Duration(30 * time.Second),
 	}
 )
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
-	Servers         []string              `yaml:"servers,omitempty"`
-	Timeout         model.Duration        `yaml:"timeout,omitempty"`
-	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
-	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
-	BearerToken     config_util.Secret    `yaml:"bearer_token,omitempty"`
-	BearerTokenFile string                `yaml:"bearer_token_file,omitempty"`
+	Servers          []string                     `yaml:"servers,omitempty"`
+	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
+	AuthToken        config_util.Secret           `yaml:"auth_token,omitempty"`
+	AuthTokenFile    string                       `yaml:"auth_token_file,omitempty"`
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -100,10 +97,19 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if len(c.Servers) == 0 {
-		return fmt.Errorf("Marathon SD config must contain at least one Marathon server")
+		return fmt.Errorf("marathon_sd: must contain at least one Marathon server")
 	}
-	if len(c.BearerToken) > 0 && len(c.BearerTokenFile) > 0 {
-		return fmt.Errorf("at most one of bearer_token & bearer_token_file must be configured")
+	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
+		return fmt.Errorf("marathon_sd: at most one of auth_token & auth_token_file must be configured")
+	}
+	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
+		return fmt.Errorf("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
+	}
+	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
+		return fmt.Errorf("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+	}
+	if err := c.HTTPClientConfig.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -123,7 +129,6 @@ type Discovery struct {
 	refreshInterval time.Duration
 	lastRefresh     map[string]*targetgroup.Group
 	appsClient      AppListClient
-	token           string
 	logger          log.Logger
 }
 
@@ -133,39 +138,75 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
+	rt, err := httputil.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
 	}
 
-	token := string(conf.BearerToken)
-	if conf.BearerTokenFile != "" {
-		bf, err := ioutil.ReadFile(conf.BearerTokenFile)
-		if err != nil {
-			return nil, err
-		}
-		token = strings.TrimSpace(string(bf))
+	if len(conf.AuthToken) > 0 {
+		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
+	} else if len(conf.AuthTokenFile) > 0 {
+		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
 	}
-
-	client := &http.Client{
-		Timeout: time.Duration(conf.Timeout),
-		Transport: &http.Transport{
-			TLSClientConfig: tls,
-			DialContext: conntrack.NewDialContextFunc(
-				conntrack.DialWithTracing(),
-				conntrack.DialWithName("marathon_sd"),
-			),
-		},
+	if err != nil {
+		return nil, err
 	}
 
 	return &Discovery{
-		client:          client,
+		client:          &http.Client{Transport: rt},
 		servers:         conf.Servers,
 		refreshInterval: time.Duration(conf.RefreshInterval),
 		appsClient:      fetchApps,
-		token:           token,
 		logger:          logger,
 	}, nil
+}
+
+type authTokenRoundTripper struct {
+	authToken config_util.Secret
+	rt        http.RoundTripper
+}
+
+// newAuthTokenRoundTripper adds the provided auth token to a request.
+func newAuthTokenRoundTripper(token config_util.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
+	return &authTokenRoundTripper{token, rt}, nil
+}
+
+func (rt *authTokenRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this explicitly here.
+	request.Header.Set("Authorization", "token="+string(rt.authToken))
+
+	return rt.rt.RoundTrip(request)
+}
+
+type authTokenFileRoundTripper struct {
+	authTokenFile string
+	rt            http.RoundTripper
+}
+
+// newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
+func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
+	// fail-fast if we can't read the file.
+	_, err := ioutil.ReadFile(tokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read auth token file %s: %s", tokenFile, err)
+	}
+	return &authTokenFileRoundTripper{tokenFile, rt}, nil
+}
+
+func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	b, err := ioutil.ReadFile(rt.authTokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read auth token file %s: %s", rt.authTokenFile, err)
+	}
+	authToken := strings.TrimSpace(string(b))
+
+	// According to https://docs.mesosphere.com/1.11/security/oss/managing-authentication/
+	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
+	// so we set this explicitly here.
+	request.Header.Set("Authorization", "token="+authToken)
+	return rt.rt.RoundTrip(request)
 }
 
 // Run implements the Discoverer interface.
@@ -227,7 +268,7 @@ func (d *Discovery) updateServices(ctx context.Context, ch chan<- []*targetgroup
 
 func (d *Discovery) fetchTargetGroups() (map[string]*targetgroup.Group, error) {
 	url := RandomAppsURL(d.servers)
-	apps, err := d.appsClient(d.client, url, d.token)
+	apps, err := d.appsClient(d.client, url)
 	if err != nil {
 		return nil, err
 	}
@@ -281,20 +322,13 @@ type AppList struct {
 }
 
 // AppListClient defines a function that can be used to get an application list from marathon.
-type AppListClient func(client *http.Client, url, token string) (*AppList, error)
+type AppListClient func(client *http.Client, url string) (*AppList, error)
 
 // fetchApps requests a list of applications from a marathon server.
-func fetchApps(client *http.Client, url, token string) (*AppList, error) {
+func fetchApps(client *http.Client, url string) (*AppList, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
-	}
-
-	// According to  https://dcos.io/docs/1.8/administration/id-and-access-mgt/managing-authentication
-	// DC/OS wants with "token=" a different Authorization header than implemented in httputil/client.go
-	// so we set this implicitly here
-	if token != "" {
-		request.Header.Set("Authorization", "token="+token)
 	}
 
 	resp, err := client.Do(request)
