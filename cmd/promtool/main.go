@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -351,9 +352,15 @@ func QueryInstant(url *url.URL) int {
 	}
 
 	// create new Client
-	api.NewClient()
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Println(os.Stderr, "invalid config", err)
+		return 1
+	}
 
+	ctx := context.Background()
 	// run query against client
+	c.Do(ctx)
 
 	// print results
 	return 0
