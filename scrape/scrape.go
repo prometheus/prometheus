@@ -275,9 +275,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) (tActive []*Target, tDroppe
 	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
 
 	sp.mtx.RLock()
-	for _, t := range sp.targets {
-		tActive = append(tActive, t)
-	}
+	tActive = append(tActive, sp.targets...)
 	tDropped = sp.droppedTargets
 	sp.mtx.RUnlock()
 
