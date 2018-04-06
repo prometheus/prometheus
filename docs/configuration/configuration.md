@@ -694,6 +694,8 @@ Available meta labels:
 * `__meta_kubernetes_pod_node_name`: The name of the node the pod is scheduled onto.
 * `__meta_kubernetes_pod_host_ip`: The current host IP of the pod object.
 * `__meta_kubernetes_pod_uid`: The UID of the pod object.
+* `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
+* `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
 
 #### `endpoints`
 

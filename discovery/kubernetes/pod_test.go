@@ -23,6 +23,10 @@ import (
 	"k8s.io/client-go/pkg/api/v1"
 )
 
+func makeOptionalBool(v bool) *bool {
+	return &v
+}
+
 func makeMultiPortPods() *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -31,6 +35,13 @@ func makeMultiPortPods() *v1.Pod {
 			Labels:      map[string]string{"testlabel": "testvalue"},
 			Annotations: map[string]string{"testannotation": "testannotationvalue"},
 			UID:         types.UID("abc123"),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "testcontrollerkind",
+					Name:       "testcontrollername",
+					Controller: makeOptionalBool(true),
+				},
+			},
 		},
 		Spec: v1.PodSpec{
 			NodeName: "testnode",
@@ -146,6 +157,8 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 					"__meta_kubernetes_pod_host_ip":                   "2.3.4.5",
 					"__meta_kubernetes_pod_ready":                     "true",
 					"__meta_kubernetes_pod_uid":                       "abc123",
+					"__meta_kubernetes_pod_controller_kind":           "testcontrollerkind",
+					"__meta_kubernetes_pod_controller_name":           "testcontrollername",
 				},
 				Source: "pod/default/testpod",
 			},
