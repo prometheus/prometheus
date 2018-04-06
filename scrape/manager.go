@@ -47,16 +47,18 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
 type Manager struct {
-	logger         log.Logger
-	append         Appendable
-	scrapeConfigs  map[string]*config.ScrapeConfig // Guarded by `mtx`
-	scrapePools    map[string]*scrapePool          // Guarded by `mtx`
-	targetsActive  []*Target                       // Guarded by `mtxTargets`
-	targetsDropped []*Target                       // Guarded by `mtxTargets`
-	targetsAll     map[string][]*Target            // Guarded by `mtxTargets`
-	graceShut      chan struct{}
-	mtx            sync.Mutex
-	mtxTargets     sync.Mutex
+	logger    log.Logger
+	append    Appendable
+	graceShut chan struct{}
+
+	mtxTargets     sync.Mutex // Guards the fields below.
+	targetsActive  []*Target
+	targetsDropped []*Target
+	targetsAll     map[string][]*Target
+
+	mtxScrape     sync.Mutex // Guards the fields below.
+	scrapeConfigs map[string]*config.ScrapeConfig
+	scrapePools   map[string]*scrapePool
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
@@ -73,8 +75,8 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 
 // Stop cancels all running scrape pools and blocks until all have exited.
 func (m *Manager) Stop() {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
 
 	for _, sp := range m.scrapePools {
 		sp.stop()
@@ -84,8 +86,8 @@ func (m *Manager) Stop() {
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
 
 	c := make(map[string]*config.ScrapeConfig)
 	for _, scfg := range cfg.ScrapeConfigs {
@@ -151,7 +153,7 @@ func (m *Manager) reload(t map[string][]*targetgroup.Group) {
 	tActive := make(map[string][]*Target)
 	for tsetName, tgroup := range t {
 		var sp *scrapePool
-		m.mtx.Lock()
+		m.mtxScrape.Lock()
 		if existing, ok := m.scrapePools[tsetName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[tsetName]
 			if !ok {
@@ -163,7 +165,7 @@ func (m *Manager) reload(t map[string][]*targetgroup.Group) {
 		} else {
 			sp = existing
 		}
-		m.mtx.Unlock()
+		m.mtxScrape.Unlock()
 
 		tActive[tsetName], tDropped[tsetName] = sp.Sync(tgroup)
 	}
