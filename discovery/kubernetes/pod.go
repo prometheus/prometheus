@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
@@ -147,7 +148,20 @@ const (
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
 	podUID                        = metaLabelPrefix + "pod_uid"
+	podControllerKind             = metaLabelPrefix + "pod_controller_kind"
+	podControllerName             = metaLabelPrefix + "pod_controller_name"
 )
+
+// GetControllerOf returns a pointer to a copy of the controllerRef if controllee has a controller
+// https://github.com/kubernetes/apimachinery/blob/cd2cae2b39fa57e8063fa1f5f13cfe9862db3d41/pkg/apis/meta/v1/controller_ref.go
+func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
+	for _, ref := range controllee.GetOwnerReferences() {
+		if ref.Controller != nil && *ref.Controller {
+			return &ref
+		}
+	}
+	return nil
+}
 
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
@@ -157,6 +171,16 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.ObjectMeta.UID)),
+	}
+
+	createdBy := GetControllerOf(pod)
+	if createdBy != nil {
+		if createdBy.Kind != "" {
+			ls[podControllerKind] = lv(createdBy.Kind)
+		}
+		if createdBy.Name != "" {
+			ls[podControllerName] = lv(createdBy.Name)
+		}
 	}
 
 	for k, v := range pod.Labels {
