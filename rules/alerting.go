@@ -306,7 +306,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
-				vec = append(vec, r.forStateSample(a, ts, 0))
+				vec = append(vec, r.forStateSample(a, ts, -1))
 			}
 			continue
 		}

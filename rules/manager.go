@@ -523,31 +523,32 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	wg.Wait()
 	m.groups = groups
 
-	m.restoreForState()
+	ts := time.Now()
+	m.restoreForState(ts)
 
 	return nil
 }
 
 // restoreForState restores the 'for' state of the alerts
 // by looking up last ActiveAt from storage.
-func (m *Manager) restoreForState() {
+func (m *Manager) restoreForState(ts time.Time) {
 
-	maxt := time.Now()
-	maxtMS := int64(model.TimeFromUnixNano(maxt.UnixNano()))
+	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
 	for _, newg := range m.groups {
 		for _, rule := range newg.Rules() {
 			if alertRule, ok := rule.(*AlertingRule); ok {
 
-				_, err := alertRule.Eval(m.opts.Context, maxt, newg.opts.QueryFunc, newg.opts.ExternalURL)
+				_, err := alertRule.Eval(m.opts.Context, ts, newg.opts.QueryFunc, newg.opts.ExternalURL)
 				if err == nil {
-					mint := alertRule.SubtractHoldDuration(maxt)
+					mint := alertRule.SubtractHoldDuration(ts)
 					mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
 
+					q, err := m.opts.Storage.Querier(m.opts.Context, mintMS, maxtMS)
+					if err != nil {
+						continue
+					}
+
 					alertFunc := func(a *Alert) {
-						q, err := m.opts.Storage.Querier(m.opts.Context, mintMS, maxtMS)
-						if err != nil {
-							return
-						}
 
 						var matchers []*labels.Matcher
 						for _, l := range alertRule.labels {
@@ -566,17 +567,14 @@ func (m *Manager) restoreForState() {
 						sset, err := q.Select(nil, matchers...)
 						if err == nil && sset.Next() {
 							// Series found for the 'for' state.
-							var (
-								t int64
-								v float64
-							)
+							var v float64
 							s := sset.At()
 							it := s.Iterator()
 							for it.Next() {
-								t, v = it.At()
+								_, v = it.At()
 							}
 
-							if t > 0 && v > 0 {
+							if v >= 0 {
 								restoredTime := model.TimeFromUnixNano(int64(v))
 								a.ActiveAt = restoredTime.Time()
 								level.Info(m.logger).Log("msg", "'for' state restored",

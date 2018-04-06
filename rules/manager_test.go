@@ -146,15 +146,25 @@ func TestAlertingRule(t *testing.T) {
 		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
 		testutil.Ok(t, err)
 
+		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+		for _, smpl := range res {
+			smplName := smpl.Metric.Get("__name__")
+			if smplName == "ALERTS" {
+				filteredRes = append(filteredRes, smpl)
+			} else {
+				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+				testutil.Equals(t, smplName, "ALERTS_FOR_STATE")
+			}
+		}
 		for i := range test.result {
 			test.result[i].T = timestamp.FromTime(evalTime)
 		}
-		testutil.Assert(t, len(test.result) == len(res), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+		testutil.Assert(t, len(test.result) == len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
-		sort.Slice(res, func(i, j int) bool {
-			return labels.Compare(res[i].Metric, res[j].Metric) < 0
+		sort.Slice(filteredRes, func(i, j int) bool {
+			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
 		})
-		testutil.Equals(t, test.result, res)
+		testutil.Equals(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
 			testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
