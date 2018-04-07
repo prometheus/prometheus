@@ -172,6 +172,285 @@ func TestAlertingRule(t *testing.T) {
 	}
 }
 
+func TestForStateAddSamples(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
+			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	testutil.Ok(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		time.Minute,
+		labels.FromStrings("severity", "{{\"c\"}}ritical"),
+		nil, nil,
+	)
+	result := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS_FOR_STATE",
+				"alertname", "HTTPRequestRateLow",
+				"group", "canary",
+				"instance", "0",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS_FOR_STATE",
+				"alertname", "HTTPRequestRateLow",
+				"group", "canary",
+				"instance", "1",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS_FOR_STATE",
+				"alertname", "HTTPRequestRateLow",
+				"group", "canary",
+				"instance", "0",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS_FOR_STATE",
+				"alertname", "HTTPRequestRateLow",
+				"group", "canary",
+				"instance", "1",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: 1},
+		},
+	}
+
+	// This is for state = StateInactive.
+	additionalResult := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS_FOR_STATE",
+				"alertname", "HTTPRequestRateLow",
+				"group", "canary",
+				"instance", "0",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: -1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS_FOR_STATE",
+				"alertname", "HTTPRequestRateLow",
+				"group", "canary",
+				"instance", "1",
+				"job", "app-server",
+				"severity", "critical",
+			),
+			Point: promql.Point{V: -1},
+		},
+	}
+
+	baseTime := time.Unix(0, 0)
+
+	var tests = []struct {
+		time            time.Duration
+		result          promql.Vector
+		persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
+	}{
+		{
+			time:            0,
+			result:          append(promql.Vector{}, result[:2]...),
+			persistThisTime: true,
+		},
+		{
+			time:   5 * time.Minute,
+			result: append(promql.Vector{}, result[2:]...),
+		},
+		{
+			time:   10 * time.Minute,
+			result: append(promql.Vector{}, append(result[2:3], additionalResult[1:2]...)...),
+		},
+		{
+			time:   15 * time.Minute,
+			result: append(promql.Vector{}, additionalResult[0:1]...),
+		},
+		{
+			time:   20 * time.Minute,
+			result: nil,
+		},
+		{
+			time:            25 * time.Minute,
+			result:          append(promql.Vector{}, result[:1]...),
+			persistThisTime: true,
+		},
+		{
+			time:   30 * time.Minute,
+			result: append(promql.Vector{}, result[2:3]...),
+		},
+	}
+
+	var forState float64
+	for i, test := range tests {
+		t.Logf("case %d", i)
+		evalTime := baseTime.Add(test.time)
+
+		if test.persistThisTime {
+			forState = float64(evalTime.UnixNano())
+		}
+		if test.result == nil {
+			forState = -1
+		}
+
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		testutil.Ok(t, err)
+
+		var filteredRes promql.Vector // After removing 'ALERTS' samples.
+		for _, smpl := range res {
+			smplName := smpl.Metric.Get("__name__")
+			if smplName == "ALERTS_FOR_STATE" {
+				filteredRes = append(filteredRes, smpl)
+			} else {
+				// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
+				testutil.Equals(t, smplName, "ALERTS")
+			}
+		}
+		for i := range test.result {
+			test.result[i].T = timestamp.FromTime(evalTime)
+			// Updating the expected 'for' state.
+			if test.result[i].V >= 0 {
+				test.result[i].V = forState
+			}
+		}
+		testutil.Assert(t, len(test.result) == len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+
+		sort.Slice(filteredRes, func(i, j int) bool {
+			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+		})
+		testutil.Equals(t, test.result, filteredRes)
+
+		for _, aa := range rule.ActiveAlerts() {
+			testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+		}
+
+	}
+}
+
+func TestForStateRestore(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50
+		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60
+	`)
+	testutil.Ok(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	testutil.Ok(t, err)
+
+	expr, err := promql.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	testutil.Ok(t, err)
+
+	opts := &ManagerOptions{
+		QueryFunc: EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Storage:   suite.Storage(),
+		Context:   context.Background(),
+		Logger:    log.NewNopLogger(),
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*Alert) error {
+			return nil
+		},
+	}
+
+	// Initial run before prometheus goes down.
+	rule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		30*time.Minute,
+		labels.FromStrings("severity", "critical"),
+		nil, nil,
+	)
+	group := NewGroup("default", "", time.Second, []Rule{rule}, opts)
+
+	groups := make(map[string]*Group)
+	groups["default;"] = group
+
+	initialRuns := []time.Duration{0, 5 * time.Minute}
+
+	baseTime := time.Unix(0, 0)
+	for _, duration := range initialRuns {
+		evalTime := baseTime.Add(duration)
+		group.Eval(suite.Context(), evalTime)
+	}
+
+	exp := rule.ActiveAlerts()
+	for _, aa := range exp {
+		testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+	}
+	sort.Slice(exp, func(i, j int) bool {
+		return labels.Compare(exp[i].Labels, exp[j].Labels) < 0
+	})
+
+	// Prometheus goes down here. We create new rules and groups.
+
+	newRule := NewAlertingRule(
+		"HTTPRequestRateLow",
+		expr,
+		30*time.Minute,
+		labels.FromStrings("severity", "critical"),
+		nil, nil,
+	)
+	newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, opts)
+
+	newGroups := make(map[string]*Group)
+	newGroups["default;"] = newGroup
+
+	m := NewManager(opts)
+	m.mtx.Lock()
+	m.groups = newGroups
+	m.mtx.Unlock()
+
+	// Restore happens here.
+	restoreTime := baseTime.Add(10 * time.Minute)
+	m.restoreForState(restoreTime)
+
+	got := newRule.ActiveAlerts()
+	for _, aa := range got {
+		testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+	}
+	sort.Slice(got, func(i, j int) bool {
+		return labels.Compare(got[i].Labels, got[j].Labels) < 0
+	})
+
+	// Checking if we have restored it correctly.
+
+	testutil.Equals(t, len(exp), len(got))
+	for i, e := range exp {
+		testutil.Equals(t, e.Labels, got[i].Labels)
+
+		// Difference in time should be within 1e6 ns, i.e. 1ms
+		// (due to conversion between ns & ms, float64 & int64).
+		activeAtDiff := float64(e.ActiveAt.UnixNano() - got[i].ActiveAt.UnixNano())
+		testutil.Assert(t, math.Abs(activeAtDiff) < 1e6, "'for' state restored time is wrong")
+	}
+
+}
+
 func TestStaleness(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()

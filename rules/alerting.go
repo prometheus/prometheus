@@ -175,6 +175,8 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	return s
 }
 
+// forStateSample returns the sample for ALERTS_FOR_STATE.
+// v should be -1 for StateInactive, UnixNano for StatePending and StateFiring.
 func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 

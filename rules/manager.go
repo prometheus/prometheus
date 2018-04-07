@@ -539,53 +539,67 @@ func (m *Manager) restoreForState(ts time.Time) {
 			if alertRule, ok := rule.(*AlertingRule); ok {
 
 				_, err := alertRule.Eval(m.opts.Context, ts, newg.opts.QueryFunc, newg.opts.ExternalURL)
-				if err == nil {
-					mint := alertRule.SubtractHoldDuration(ts)
-					mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
-
-					q, err := m.opts.Storage.Querier(m.opts.Context, mintMS, maxtMS)
-					if err != nil {
-						continue
-					}
-
-					alertFunc := func(a *Alert) {
-
-						var matchers []*labels.Matcher
-						for _, l := range alertRule.labels {
-							mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
-							matchers = append(matchers, mt)
-						}
-						for _, l := range a.Labels {
-							mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
-							matchers = append(matchers, mt)
-						}
-						mt, _ := labels.NewMatcher(labels.MatchEqual, labels.MetricName, alertForStateMetricName)
-						matchers = append(matchers, mt)
-						mt, _ = labels.NewMatcher(labels.MatchEqual, labels.AlertName, alertRule.name)
-						matchers = append(matchers, mt)
-
-						sset, err := q.Select(nil, matchers...)
-						if err == nil && sset.Next() {
-							// Series found for the 'for' state.
-							var v float64
-							s := sset.At()
-							it := s.Iterator()
-							for it.Next() {
-								_, v = it.At()
-							}
-
-							if v >= 0 {
-								restoredTime := model.TimeFromUnixNano(int64(v))
-								a.ActiveAt = restoredTime.Time()
-								level.Info(m.logger).Log("msg", "'for' state restored",
-									labels.AlertName, alertRule.name, "restored_time_ms", int64(restoredTime))
-							}
-						}
-					}
-
-					alertRule.ForEachActiveAlert(alertFunc)
-
+				if err != nil {
+					level.Error(m.logger).Log("msg", "Failed to restore 'for' state",
+						"stage", "Eval", "err", err)
+					continue
 				}
+
+				mint := alertRule.SubtractHoldDuration(ts)
+				mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
+
+				q, err := m.opts.Storage.Querier(m.opts.Context, mintMS, maxtMS)
+				if err != nil {
+					level.Error(m.logger).Log("msg", "Failed to restore 'for' state",
+						"stage", "Querier", "err", err)
+					continue
+				}
+
+				alertFunc := func(a *Alert) {
+
+					var matchers []*labels.Matcher
+					for _, l := range alertRule.labels {
+						mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+						matchers = append(matchers, mt)
+					}
+					for _, l := range a.Labels {
+						mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+						matchers = append(matchers, mt)
+					}
+					mt, _ := labels.NewMatcher(labels.MatchEqual, labels.MetricName, alertForStateMetricName)
+					matchers = append(matchers, mt)
+					mt, _ = labels.NewMatcher(labels.MatchEqual, labels.AlertName, alertRule.name)
+					matchers = append(matchers, mt)
+
+					sset, err := q.Select(nil, matchers...)
+					if err != nil {
+						level.Error(m.logger).Log("msg", "Failed to restore 'for' state",
+							"stage", "Select", "err", err)
+						return
+					} else if !sset.Next() {
+						// No series found for the 'for' state,
+						// hence getting active for the first time.
+						return
+					}
+
+					// Series found for the 'for' state.
+					var v float64
+					s := sset.At()
+					it := s.Iterator()
+					for it.Next() {
+						_, v = it.At()
+					}
+					if v < 0 { // Alert was not active.
+						return
+					}
+
+					restoredTime := model.TimeFromUnixNano(int64(v))
+					a.ActiveAt = restoredTime.Time()
+					level.Info(m.logger).Log("msg", "'for' state restored",
+						labels.AlertName, alertRule.name, "restored_time_ms", int64(restoredTime))
+				}
+
+				alertRule.ForEachActiveAlert(alertFunc)
 
 			}
 		}
