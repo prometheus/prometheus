@@ -81,7 +81,7 @@ var (
 	})
 	lastDuration = prometheus.NewDesc(
 		prometheus.BuildFQName(namespace, "", "rule_group_last_duration_seconds"),
-		"The duration of the last rule group evaulation.",
+		"The duration of the last rule group evaluation.",
 		[]string{"rule_group"},
 		nil,
 	)
