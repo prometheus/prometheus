@@ -135,7 +135,7 @@ func labelsToProto(lset labels.Labels) pb.Labels {
 }
 
 // AdminDisabled implements the administration interface that informs
-// that the API endpoints are disbaled.
+// that the API endpoints are disabled.
 type AdminDisabled struct {
 }
 
