@@ -631,7 +631,7 @@ func TestComputeChunkEndTime(t *testing.T) {
 			max:   1000,
 			res:   1000,
 		},
-		// Catch divison by zero for cur == start. Strictly not a possible case.
+		// Catch division by zero for cur == start. Strictly not a possible case.
 		{
 			start: 100,
 			cur:   100,

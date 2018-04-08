@@ -418,7 +418,7 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	}
 
 	// The file object of csf still holds the name before rename. Recreate it so
-	// subsequent truncations do not look at a non-existant file name.
+	// subsequent truncations do not look at a non-existent file name.
 	csf.File, err = w.openSegmentFile(candidates[0].Name())
 	if err != nil {
 		return err
@@ -1015,7 +1015,7 @@ func (r *walReader) at() (WALEntryType, byte, []byte) {
 }
 
 // next returns decodes the next entry pair and returns true
-// if it was succesful.
+// if it was successful.
 func (r *walReader) next() bool {
 	if r.cur >= len(r.files) {
 		return false

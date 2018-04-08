@@ -13,7 +13,7 @@
 
 // The code in this file was largely written by Damian Gryski as part of
 // https://github.com/dgryski/go-tsz and published under the license below.
-// It was modified to accomodate reading from byte slices without modifying
+// It was modified to accommodate reading from byte slices without modifying
 // the underlying bytes, which would panic when reading from mmaped
 // read-only byte slices.
 
