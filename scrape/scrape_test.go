@@ -434,7 +434,7 @@ func TestScrapeLoopStop(t *testing.T) {
 	if len(appender.result) < 5*3 || len(appender.result)%5 != 0 {
 		t.Fatalf("Expected at least 3 scrapes with 4 samples each, got %d samples", len(appender.result))
 	}
-	// All samples in a scrape must have the same timestmap.
+	// All samples in a scrape must have the same timestamp.
 	var ts int64
 	for i, s := range appender.result {
 		if i%5 == 0 {
