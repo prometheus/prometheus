@@ -600,8 +600,8 @@ func postPath(pre string) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagersFromGroup extracts a list of alertmanagers from a target group and an associcated
-// AlertmanagerConfig.
+// alertmanagersFromGroup extracts a list of alertmanagers from a target group
+// and an associated AlertmanagerConfig.
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
