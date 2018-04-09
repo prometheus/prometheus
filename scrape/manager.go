@@ -147,7 +147,6 @@ func (m *Manager) targetsUpdate(active, dropped map[string][]*Target) {
 	}
 }
 
-// Should not be called concurrently.
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
 	tDropped := make(map[string][]*Target)
 	tActive := make(map[string][]*Target)
