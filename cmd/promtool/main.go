@@ -21,11 +21,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
 	api "github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -61,10 +63,10 @@ func main() {
 	ruleFilesUp := updateRulesCmd.Arg("rule-files", "The rule files to update.").Required().ExistingFiles()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
-	prometheusServer := queryCmd.Arg("server", "Prometheus server to query").Required().URL()
-	// timeout
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	// timestamp
+	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query").Required().URL()
+	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	// resolution step parameter - range vector
 	// timerange - 2 timestamps
@@ -83,10 +85,10 @@ func main() {
 		os.Exit(UpdateRules(*ruleFilesUp...))
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*prometheusServer))
+		os.Exit(QueryInstant(*queryServer, *queryExpr))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*prometheusServer))
+		os.Exit(QueryRange(*queryServer))
 	}
 
 }
@@ -345,24 +347,31 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against prometheus server.
-func QueryInstant(url *url.URL) int {
-	// validate query using checkConfig
+func QueryInstant(url *url.URL, query string) int {
 	config := api.Config{
 		Address: url.String(),
 	}
 
-	// create new Client
+	// Create new client.
 	c, err := api.NewClient(config)
 	if err != nil {
-		fmt.Println(os.Stderr, "invalid config", err)
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return 1
 	}
 
-	ctx := context.Background()
-	// run query against client
-	c.Do(ctx)
+	// Run query against client.
+	api := v1.NewAPI(c)
 
-	// print results
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.Query(ctx, query, time.Now())
+	cancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	fmt.Println(val.String())
+
 	return 0
 }
 
