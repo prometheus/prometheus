@@ -105,6 +105,9 @@ type AlertingRule struct {
 	annotations labels.Labels
 	// Time in seconds taken to evaluate rule.
 	evaluationDuration time.Duration
+	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
+	// only after the restoration.
+	restored bool
 
 	// Protects the below.
 	mtx sync.Mutex
@@ -116,7 +119,7 @@ type AlertingRule struct {
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, logger log.Logger) *AlertingRule {
+func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
 	return &AlertingRule{
 		name:         name,
 		vector:       vec,
@@ -125,6 +128,7 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 		annotations:  anns,
 		active:       map[uint64]*Alert{},
 		logger:       logger,
+		restored:     restored,
 	}
 }
 
@@ -176,7 +180,6 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 }
 
 // forStateSample returns the sample for ALERTS_FOR_STATE.
-// v should be -1 for StateInactive, UnixNano for StatePending and StateFiring.
 func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
@@ -206,6 +209,11 @@ func (r *AlertingRule) GetEvaluationDuration() time.Duration {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	return r.evaluationDuration
+}
+
+// SetRestored updates the restoration state of the alerting rule.
+func (r *AlertingRule) SetRestored(restored bool) {
+	r.restored = restored
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
@@ -281,7 +289,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 		// Check whether we already have alerting state for the identifying label set.
 		// Update the last value and annotations if so, create a new alert entry otherwise.
-
 		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
 			alert.Value = smpl.V
 			alert.Annotations = annotations
@@ -308,7 +315,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
-				vec = append(vec, r.forStateSample(a, ts, -1))
 			}
 			continue
 		}
@@ -318,8 +324,10 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			a.FiredAt = ts
 		}
 
-		vec = append(vec, r.sample(a, ts))
-		vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.UnixNano())))
+		if r.restored {
+			vec = append(vec, r.sample(a, ts))
+			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+		}
 	}
 
 	return vec, nil
@@ -430,7 +438,7 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	return html_template.HTML(byt)
 }
 
-// SubtractHoldDuration subtracts holdDuration from given ts.
-func (r *AlertingRule) SubtractHoldDuration(ts time.Time) time.Time {
-	return ts.Add(-r.holdDuration)
+// HoldDuration returns the holdDuration of the alerting rule.
+func (r *AlertingRule) HoldDuration() time.Duration {
+	return r.holdDuration
 }

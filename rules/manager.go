@@ -159,6 +159,8 @@ type Group struct {
 	evaluationDuration   time.Duration
 	mtx                  sync.Mutex
 
+	shouldRestore bool
+
 	done       chan struct{}
 	terminated chan struct{}
 
@@ -166,12 +168,13 @@ type Group struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
-func NewGroup(name, file string, interval time.Duration, rules []Rule, opts *ManagerOptions) *Group {
+func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRestore bool, opts *ManagerOptions) *Group {
 	return &Group{
 		name:                 name,
 		file:                 file,
 		interval:             interval,
 		rules:                rules,
+		shouldRestore:        shouldRestore,
 		opts:                 opts,
 		seriesInPreviousEval: make([]map[string]labels.Labels, len(rules)),
 		done:                 make(chan struct{}),
@@ -213,6 +216,12 @@ func (g *Group) run(ctx context.Context) {
 		iterationDuration.Observe(timeSinceStart.Seconds())
 		g.SetEvaluationDuration(timeSinceStart)
 	}
+	lastTriggered := time.Now()
+	iter()
+	if g.shouldRestore {
+		g.RestoreForState(time.Now())
+		g.shouldRestore = false
+	}
 
 	// The assumption here is that since the ticker was started after having
 	// waited for `evalTimestamp` to pass, the ticks will trigger soon
@@ -221,6 +230,28 @@ func (g *Group) run(ctx context.Context) {
 	defer tick.Stop()
 
 	iter()
+	if g.shouldRestore {
+		// If we have to restore, we wait for another Eval to finish.
+		// The reason behind this is, during first eval (or before it)
+		// we might not have enough data scraped, and recording rules would not
+		// have updated the latest values, on which some alerts might depend.
+		select {
+		case <-g.done:
+			return
+		case <-tick.C:
+			missed := (time.Since(evalTimestamp) / g.interval) - 1
+			if missed > 0 {
+				iterationsMissed.Add(float64(missed))
+				iterationsScheduled.Add(float64(missed))
+			}
+			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+			iter()
+		}
+
+		g.RestoreForState(time.Now())
+		g.shouldRestore = false
+	}
+
 	for {
 		select {
 		case <-g.done:
@@ -358,7 +389,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				numDuplicates = 0
 			)
 
-			app, err := g.opts.Storage.Appender()
+			app, err := g.opts.Appendable.Appender()
 			if err != nil {
 				level.Warn(g.logger).Log("msg", "creating appender failed", "err", err)
 				return
@@ -411,12 +442,128 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	}
 }
 
+// RestoreForState restores the 'for' state of the alerts
+// by looking up last ActiveAt from storage.
+func (g *Group) RestoreForState(ts time.Time) {
+	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
+	// We allow restoration only if alerts were active before after certain time.
+	mint := ts.Add(-g.opts.OutageTolerance)
+	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
+	q, err := g.opts.TSDB.Querier(g.opts.Context, mintMS, maxtMS)
+	if err != nil {
+		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
+		return
+	}
+
+	for _, rule := range g.Rules() {
+		alertRule, ok := rule.(*AlertingRule)
+		if !ok {
+			continue
+		}
+
+		alertHoldDuration := alertRule.HoldDuration()
+		if alertHoldDuration < g.opts.ForGracePeriod {
+			// If alertHoldDuration is already less than grace period, we would not
+			// like to make it wait for `g.opts.ForGracePeriod` time before firing.
+			// Hence we skip restoration, which will make it wait for alertHoldDuration.
+			alertRule.SetRestored(true)
+			continue
+		}
+
+		alertRule.ForEachActiveAlert(func(a *Alert) {
+			smpl := alertRule.forStateSample(a, time.Now(), 0)
+			var matchers []*labels.Matcher
+			for _, l := range smpl.Metric {
+				mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+				matchers = append(matchers, mt)
+			}
+
+			sset, err := q.Select(nil, matchers...)
+			if err != nil {
+				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
+					labels.AlertName, alertRule.Name(), "stage", "Select", "err", err)
+				return
+			}
+
+			seriesFound := false
+			var s storage.Series
+			for sset.Next() {
+				// Query assures that smpl.Metric is included in sset.At().Labels(),
+				// hence just checking the length would act like equality.
+				// (This is faster than calling labels.Compare again as we already have some info).
+				if len(sset.At().Labels()) == len(smpl.Metric) {
+					s = sset.At()
+					seriesFound = true
+					break
+				}
+			}
+
+			if !seriesFound {
+				return
+			}
+
+			// Series found for the 'for' state.
+			var t int64
+			var v float64
+			it := s.Iterator()
+			for it.Next() {
+				t, v = it.At()
+			}
+			if value.IsStaleNaN(v) { // Alert was not active.
+				return
+			}
+
+			downAt := time.Unix(t/1000, 0)
+			restoredActiveAt := time.Unix(int64(v), 0)
+			timeSpentPending := downAt.Sub(restoredActiveAt)
+			timeRemainingPending := alertHoldDuration - timeSpentPending
+
+			if timeRemainingPending <= 0 {
+				// It means that alert was firing when prometheus went down.
+				// In the next Eval, the state of this alert will be set back to
+				// firing again if it's still firing in that Eval.
+				// Nothing to be done in this case.
+			} else if timeRemainingPending < g.opts.ForGracePeriod {
+				// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
+				//                            /* new firing time */      /* moving back by hold duration */
+				//
+				// Proof of correctness:
+				// firingTime = restoredActiveAt.Add(alertHoldDuration)
+				//            = ts + m.opts.ForGracePeriod - alertHoldDuration + alertHoldDuration
+				//            = ts + m.opts.ForGracePeriod
+				//
+				// Time remaining to fire = firingTime.Sub(ts)
+				//                        = (ts + m.opts.ForGracePeriod) - ts
+				//                        = m.opts.ForGracePeriod
+				restoredActiveAt = ts.Add(g.opts.ForGracePeriod).Add(-alertHoldDuration)
+			} else {
+				// By shifting ActiveAt to the future (ActiveAt + some_duration),
+				// the total pending time from the original ActiveAt
+				// would be `alertHoldDuration + some_duration`.
+				// Here, some_duration = downDuration.
+				downDuration := ts.Sub(downAt)
+				restoredActiveAt = restoredActiveAt.Add(downDuration)
+			}
+
+			a.ActiveAt = restoredActiveAt
+			level.Debug(g.logger).Log("msg", "'for' state restored",
+				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
+				"labels", a.Labels.String())
+
+		})
+
+		alertRule.SetRestored(true)
+	}
+
+}
+
 // The Manager manages recording and alerting rules.
 type Manager struct {
-	opts   *ManagerOptions
-	groups map[string]*Group
-	mtx    sync.RWMutex
-	block  chan struct{}
+	opts     *ManagerOptions
+	groups   map[string]*Group
+	mtx      sync.RWMutex
+	block    chan struct{}
+	restored bool
 
 	logger log.Logger
 }
@@ -431,13 +578,16 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert) error
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL *url.URL
-	QueryFunc   QueryFunc
-	NotifyFunc  NotifyFunc
-	Context     context.Context
-	Storage     storage.Storage
-	Logger      log.Logger
-	Registerer  prometheus.Registerer
+	ExternalURL     *url.URL
+	QueryFunc       QueryFunc
+	NotifyFunc      NotifyFunc
+	Context         context.Context
+	Appendable      Appendable
+	TSDB            storage.Storage
+	Logger          log.Logger
+	Registerer      prometheus.Registerer
+	OutageTolerance time.Duration
+	ForGracePeriod  time.Duration
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -487,6 +637,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 		}
 		return errors.New("error loading rules, previous rule set restored")
 	}
+	m.restored = true
 
 	var wg sync.WaitGroup
 
@@ -523,88 +674,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	wg.Wait()
 	m.groups = groups
 
-	ts := time.Now()
-	m.restoreForState(ts)
-
 	return nil
-}
-
-// restoreForState restores the 'for' state of the alerts
-// by looking up last ActiveAt from storage.
-func (m *Manager) restoreForState(ts time.Time) {
-
-	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
-	for _, newg := range m.groups {
-		for _, rule := range newg.Rules() {
-			if alertRule, ok := rule.(*AlertingRule); ok {
-
-				_, err := alertRule.Eval(m.opts.Context, ts, newg.opts.QueryFunc, newg.opts.ExternalURL)
-				if err != nil {
-					level.Error(m.logger).Log("msg", "Failed to restore 'for' state",
-						"stage", "Eval", "err", err)
-					continue
-				}
-
-				mint := alertRule.SubtractHoldDuration(ts)
-				mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
-
-				q, err := m.opts.Storage.Querier(m.opts.Context, mintMS, maxtMS)
-				if err != nil {
-					level.Error(m.logger).Log("msg", "Failed to restore 'for' state",
-						"stage", "Querier", "err", err)
-					continue
-				}
-
-				alertFunc := func(a *Alert) {
-
-					var matchers []*labels.Matcher
-					for _, l := range alertRule.labels {
-						mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
-						matchers = append(matchers, mt)
-					}
-					for _, l := range a.Labels {
-						mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
-						matchers = append(matchers, mt)
-					}
-					mt, _ := labels.NewMatcher(labels.MatchEqual, labels.MetricName, alertForStateMetricName)
-					matchers = append(matchers, mt)
-					mt, _ = labels.NewMatcher(labels.MatchEqual, labels.AlertName, alertRule.name)
-					matchers = append(matchers, mt)
-
-					sset, err := q.Select(nil, matchers...)
-					if err != nil {
-						level.Error(m.logger).Log("msg", "Failed to restore 'for' state",
-							"stage", "Select", "err", err)
-						return
-					} else if !sset.Next() {
-						// No series found for the 'for' state,
-						// hence getting active for the first time.
-						return
-					}
-
-					// Series found for the 'for' state.
-					var v float64
-					s := sset.At()
-					it := s.Iterator()
-					for it.Next() {
-						_, v = it.At()
-					}
-					if v < 0 { // Alert was not active.
-						return
-					}
-
-					restoredTime := model.TimeFromUnixNano(int64(v))
-					a.ActiveAt = restoredTime.Time()
-					level.Info(m.logger).Log("msg", "'for' state restored",
-						labels.AlertName, alertRule.name, "restored_time_ms", int64(restoredTime))
-				}
-
-				alertRule.ForEachActiveAlert(alertFunc)
-
-			}
-		}
-	}
-
 }
 
 // loadGroups reads groups from a list of files.
@@ -612,6 +682,8 @@ func (m *Manager) restoreForState(ts time.Time) {
 // all rules will be returned.
 func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
+
+	shouldRestore := !m.restored
 
 	for _, fn := range filenames {
 		rgs, errs := rulefmt.ParseFile(fn)
@@ -639,6 +711,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 						time.Duration(r.For),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
+						m.restored,
 						log.With(m.logger, "alert", r.Alert),
 					))
 					continue
@@ -650,7 +723,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				))
 			}
 
-			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, m.opts)
+			groups[groupKey(rg.Name, fn)] = NewGroup(rg.Name, fn, itv, rules, shouldRestore, m.opts)
 		}
 	}
 

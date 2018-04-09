@@ -51,7 +51,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil,
+		nil, true, nil,
 	)
 	result := promql.Vector{
 		{
@@ -192,7 +192,7 @@ func TestForStateAddSamples(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil,
+		nil, true, nil,
 	)
 	result := promql.Vector{
 		{
@@ -241,32 +241,6 @@ func TestForStateAddSamples(t *testing.T) {
 		},
 	}
 
-	// This is for state = StateInactive.
-	additionalResult := promql.Vector{
-		{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			Point: promql.Point{V: -1},
-		},
-		{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			Point: promql.Point{V: -1},
-		},
-	}
-
 	baseTime := time.Unix(0, 0)
 
 	var tests = []struct {
@@ -285,11 +259,11 @@ func TestForStateAddSamples(t *testing.T) {
 		},
 		{
 			time:   10 * time.Minute,
-			result: append(promql.Vector{}, append(result[2:3], additionalResult[1:2]...)...),
+			result: append(promql.Vector{}, result[2:3]...),
 		},
 		{
 			time:   15 * time.Minute,
-			result: append(promql.Vector{}, additionalResult[0:1]...),
+			result: nil,
 		},
 		{
 			time:   20 * time.Minute,
@@ -312,10 +286,10 @@ func TestForStateAddSamples(t *testing.T) {
 		evalTime := baseTime.Add(test.time)
 
 		if test.persistThisTime {
-			forState = float64(evalTime.UnixNano())
+			forState = float64(evalTime.Unix())
 		}
 		if test.result == nil {
-			forState = -1
+			forState = float64(value.StaleNaN)
 		}
 
 		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
@@ -353,10 +327,11 @@ func TestForStateAddSamples(t *testing.T) {
 }
 
 func TestForStateRestore(t *testing.T) {
+
 	suite, err := promql.NewTest(t, `
 		load 5m
-		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50
-		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60
+		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
+		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60 0 0 25 0 0 40 0 130
 	`)
 	testutil.Ok(t, err)
 	defer suite.Close()
@@ -368,24 +343,29 @@ func TestForStateRestore(t *testing.T) {
 	testutil.Ok(t, err)
 
 	opts := &ManagerOptions{
-		QueryFunc: EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-		Storage:   suite.Storage(),
-		Context:   context.Background(),
-		Logger:    log.NewNopLogger(),
+		QueryFunc:  EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable: suite.Storage(),
+		TSDB:       suite.Storage(),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*Alert) error {
 			return nil
 		},
+		OutageTolerance: 30 * time.Minute,
+		ForGracePeriod:  10 * time.Minute,
 	}
 
+	alertForDuration := 25 * time.Minute
 	// Initial run before prometheus goes down.
 	rule := NewAlertingRule(
 		"HTTPRequestRateLow",
 		expr,
-		30*time.Minute,
+		alertForDuration,
 		labels.FromStrings("severity", "critical"),
-		nil, nil,
+		nil, true, nil,
 	)
-	group := NewGroup("default", "", time.Second, []Rule{rule}, opts)
+
+	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
 
 	groups := make(map[string]*Group)
 	groups["default;"] = group
@@ -408,47 +388,109 @@ func TestForStateRestore(t *testing.T) {
 
 	// Prometheus goes down here. We create new rules and groups.
 
-	newRule := NewAlertingRule(
-		"HTTPRequestRateLow",
-		expr,
-		30*time.Minute,
-		labels.FromStrings("severity", "critical"),
-		nil, nil,
-	)
-	newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, opts)
+	type testInput struct {
+		restoreDuration time.Duration
+		alerts          []*Alert
 
-	newGroups := make(map[string]*Group)
-	newGroups["default;"] = newGroup
-
-	m := NewManager(opts)
-	m.mtx.Lock()
-	m.groups = newGroups
-	m.mtx.Unlock()
-
-	// Restore happens here.
-	restoreTime := baseTime.Add(10 * time.Minute)
-	m.restoreForState(restoreTime)
-
-	got := newRule.ActiveAlerts()
-	for _, aa := range got {
-		testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+		num          int
+		noRestore    bool
+		gracePeriod  bool
+		downDuration time.Duration
 	}
-	sort.Slice(got, func(i, j int) bool {
-		return labels.Compare(got[i].Labels, got[j].Labels) < 0
+
+	tests := []testInput{
+		{
+			// Normal restore (alerts were not firing).
+			restoreDuration: 10 * time.Minute,
+			alerts:          rule.ActiveAlerts(),
+			downDuration:    5 * time.Minute,
+		},
+		{
+			// Testing Outage Tolerance.
+			restoreDuration: 40 * time.Minute,
+			noRestore:       true,
+			num:             2,
+		},
+		{
+			// No active alerts.
+			restoreDuration: 50 * time.Minute,
+			alerts:          []*Alert{},
+		},
+	}
+
+	testFunc := func(tst testInput) {
+		newRule := NewAlertingRule(
+			"HTTPRequestRateLow",
+			expr,
+			alertForDuration,
+			labels.FromStrings("severity", "critical"),
+			nil, false, nil,
+		)
+		newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, true, opts)
+
+		newGroups := make(map[string]*Group)
+		newGroups["default;"] = newGroup
+
+		m := NewManager(opts)
+		m.mtx.Lock()
+		m.groups = newGroups
+		m.mtx.Unlock()
+
+		restoreTime := baseTime.Add(tst.restoreDuration)
+		// First eval before restoration.
+		newGroup.Eval(suite.Context(), restoreTime)
+		// Restore happens here.
+		newGroup.RestoreForState(restoreTime)
+
+		got := newRule.ActiveAlerts()
+		for _, aa := range got {
+			testutil.Assert(t, aa.Labels.Get(model.MetricNameLabel) == "", "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+		}
+		sort.Slice(got, func(i, j int) bool {
+			return labels.Compare(got[i].Labels, got[j].Labels) < 0
+		})
+
+		// Checking if we have restored it correctly.
+
+		if tst.noRestore {
+			testutil.Equals(t, tst.num, len(got))
+			for _, e := range got {
+				testutil.Equals(t, e.ActiveAt, restoreTime)
+			}
+		} else if tst.gracePeriod {
+			testutil.Equals(t, tst.num, len(got))
+			for _, e := range got {
+				testutil.Equals(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
+			}
+		} else {
+			exp := tst.alerts
+			testutil.Equals(t, len(exp), len(got))
+			for i, e := range exp {
+				testutil.Equals(t, e.Labels, got[i].Labels)
+
+				// Difference in time should be within 1e6 ns, i.e. 1ms
+				// (due to conversion between ns & ms, float64 & int64).
+				activeAtDiff := float64(e.ActiveAt.Unix() + int64(tst.downDuration/time.Second) - got[i].ActiveAt.Unix())
+				testutil.Assert(t, math.Abs(activeAtDiff) == 0, "'for' state restored time is wrong")
+			}
+		}
+	}
+
+	for _, tst := range tests {
+		testFunc(tst)
+	}
+
+	// Testing the grace period.
+	for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
+		evalTime := baseTime.Add(duration)
+		group.Eval(suite.Context(), evalTime)
+	}
+	testFunc(testInput{
+		restoreDuration: 25 * time.Minute,
+		alerts:          []*Alert{},
+		gracePeriod:     true,
+		num:             2,
 	})
-
-	// Checking if we have restored it correctly.
-
-	testutil.Equals(t, len(exp), len(got))
-	for i, e := range exp {
-		testutil.Equals(t, e.Labels, got[i].Labels)
-
-		// Difference in time should be within 1e6 ns, i.e. 1ms
-		// (due to conversion between ns & ms, float64 & int64).
-		activeAtDiff := float64(e.ActiveAt.UnixNano() - got[i].ActiveAt.UnixNano())
-		testutil.Assert(t, math.Abs(activeAtDiff) < 1e6, "'for' state restored time is wrong")
-	}
-
 }
 
 func TestStaleness(t *testing.T) {
@@ -456,16 +498,17 @@ func TestStaleness(t *testing.T) {
 	defer storage.Close()
 	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
 	opts := &ManagerOptions{
-		QueryFunc: EngineQueryFunc(engine, storage),
-		Storage:   storage,
-		Context:   context.Background(),
-		Logger:    log.NewNopLogger(),
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Appendable: storage,
+		TSDB:       storage,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	}
 
 	expr, err := promql.ParseExpr("a + 1")
 	testutil.Ok(t, err)
 	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup("default", "", time.Second, []Rule{rule}, opts)
+	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
 
 	// A time series that has two samples and then goes stale.
 	app, _ := storage.Appender()
@@ -533,7 +576,7 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule2", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
@@ -554,7 +597,7 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
-			NewAlertingRule("alert", nil, 0, nil, nil, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule4", nil, nil),
 		},
