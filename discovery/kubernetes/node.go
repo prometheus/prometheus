@@ -39,7 +39,6 @@ type Node struct {
 }
 
 var _ discoverer = &Node{}
-var _ hasSynced = &Node{}
 
 // NewNode returns a new node discovery.
 func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
@@ -71,10 +70,6 @@ func (e *Node) enqueue(obj interface{}) {
 	}
 
 	e.queue.Add(key)
-}
-
-func (n *Node) hasSynced() bool {
-	return n.informer.HasSynced()
 }
 
 // Run implements the Discoverer interface.
