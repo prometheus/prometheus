@@ -782,10 +782,10 @@
 			"revisionTime": "2017-11-04T09:59:07Z"
 		},
 		{
-			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",
+			"checksumSHA1": "9doPk0x0LONG/idxK61JnZYcxBs=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "e3fb1a1acd7605367a2b378bc2e2f893c05174b7",
-			"revisionTime": "2017-11-04T09:59:07Z"
+			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
+			"revisionTime": "2018-03-26T16:04:09Z"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
