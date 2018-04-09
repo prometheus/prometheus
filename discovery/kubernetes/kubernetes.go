@@ -243,27 +243,6 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 
 const resyncPeriod = 10 * time.Minute
 
-type hasSynced interface {
-	// hasSynced returns true if all informers' store has synced.
-	// This is only used in testing to determine when the cache stores have synced.
-	hasSynced() bool
-}
-
-var _ hasSynced = &Discovery{}
-
-func (d *Discovery) hasSynced() bool {
-	d.RLock()
-	defer d.RUnlock()
-	for _, discoverer := range d.discoverers {
-		if hasSynceddiscoverer, ok := discoverer.(hasSynced); ok {
-			if !hasSynceddiscoverer.hasSynced() {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // Run implements the discoverer interface.
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
