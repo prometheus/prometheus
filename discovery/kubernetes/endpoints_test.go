@@ -21,23 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/tools/cache"
 )
-
-func endpointsStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1.Endpoints).ObjectMeta.Name, nil
-}
-
-func newFakeEndpointsInformer() *fakeInformer {
-	return newFakeInformer(endpointsStoreKeyFunc)
-}
-
-func makeTestEndpointsDiscovery() (*Endpoints, *fakeInformer, *fakeInformer, *fakeInformer) {
-	svc := newFakeServiceInformer()
-	eps := newFakeEndpointsInformer()
-	pod := newFakePodInformer()
-	return NewEndpoints(nil, svc, eps, pod), svc, eps, pod
-}
 
 func makeEndpoints() *v1.Endpoints {
 	return &v1.Endpoints{
@@ -83,14 +67,19 @@ func makeEndpoints() *v1.Endpoints {
 	}
 }
 
-func TestEndpointsDiscoveryInitial(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
-	eps.GetStore().Add(makeEndpoints())
+func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
-		expectedInitial: []*targetgroup.Group{
-			{
+		beforeRun: func() {
+			obj := makeEndpoints()
+			c.CoreV1().Endpoints(obj.Namespace).Create(obj)
+			w.Endpoints().Add(obj)
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                              "1.2.3.4:9000",
@@ -122,8 +111,7 @@ func TestEndpointsDiscoveryInitial(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryAdd(t *testing.T) {
-	n, _, eps, pods := makeTestEndpointsDiscovery()
-	pods.GetStore().Add(&v1.Pod{
+	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
 			Namespace: "default",
@@ -158,45 +146,45 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 			HostIP: "2.3.4.5",
 			PodIP:  "1.2.3.4",
 		},
-	})
+	}
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			go func() {
-				eps.Add(
-					&v1.Endpoints{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "testendpoints",
-							Namespace: "default",
-						},
-						Subsets: []v1.EndpointSubset{
+			obj := &v1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testendpoints",
+					Namespace: "default",
+				},
+				Subsets: []v1.EndpointSubset{
+					{
+						Addresses: []v1.EndpointAddress{
 							{
-								Addresses: []v1.EndpointAddress{
-									{
-										IP: "4.3.2.1",
-										TargetRef: &v1.ObjectReference{
-											Kind:      "Pod",
-											Name:      "testpod",
-											Namespace: "default",
-										},
-									},
-								},
-								Ports: []v1.EndpointPort{
-									{
-										Name:     "testport",
-										Port:     9000,
-										Protocol: v1.ProtocolTCP,
-									},
+								IP: "4.3.2.1",
+								TargetRef: &v1.ObjectReference{
+									Kind:      "Pod",
+									Name:      "testpod",
+									Namespace: "default",
 								},
 							},
 						},
+						Ports: []v1.EndpointPort{
+							{
+								Name:     "testport",
+								Port:     9000,
+								Protocol: v1.ProtocolTCP,
+							},
+						},
 					},
-				)
-			}()
+				},
+			}
+			c.CoreV1().Endpoints(obj.Namespace).Create(obj)
+			w.Endpoints().Add(obj)
 		},
-		expectedRes: []*targetgroup.Group{
-			{
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                                    "4.3.2.1:9000",
@@ -241,29 +229,18 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryDelete(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
-	eps.GetStore().Add(makeEndpoints())
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { eps.Delete(makeEndpoints()) }() },
-		expectedRes: []*targetgroup.Group{
-			{
-				Source: "endpoints/default/testendpoints",
-			},
+		discovery: n,
+		afterStart: func() {
+			obj := makeEndpoints()
+			c.CoreV1().Endpoints(obj.Namespace).Delete(obj.Name, &metav1.DeleteOptions{})
+			w.Endpoints().Delete(obj)
 		},
-	}.Run(t)
-}
-
-func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
-	eps.GetStore().Add(makeEndpoints())
-
-	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { eps.Delete(cache.DeletedFinalStateUnknown{Obj: makeEndpoints()}) }() },
-		expectedRes: []*targetgroup.Group{
-			{
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
 				Source: "endpoints/default/testendpoints",
 			},
 		},
@@ -271,53 +248,53 @@ func TestEndpointsDiscoveryDeleteUnknownCacheState(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryUpdate(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
-	eps.GetStore().Add(makeEndpoints())
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			go func() {
-				eps.Update(&v1.Endpoints{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "testendpoints",
-						Namespace: "default",
-					},
-					Subsets: []v1.EndpointSubset{
-						{
-							Addresses: []v1.EndpointAddress{
-								{
-									IP: "1.2.3.4",
-								},
-							},
-							Ports: []v1.EndpointPort{
-								{
-									Name:     "testport",
-									Port:     9000,
-									Protocol: v1.ProtocolTCP,
-								},
+			obj := &v1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testendpoints",
+					Namespace: "default",
+				},
+				Subsets: []v1.EndpointSubset{
+					{
+						Addresses: []v1.EndpointAddress{
+							{
+								IP: "1.2.3.4",
 							},
 						},
-						{
-							Addresses: []v1.EndpointAddress{
-								{
-									IP: "2.3.4.5",
-								},
-							},
-							Ports: []v1.EndpointPort{
-								{
-									Name:     "testport",
-									Port:     9001,
-									Protocol: v1.ProtocolTCP,
-								},
+						Ports: []v1.EndpointPort{
+							{
+								Name:     "testport",
+								Port:     9000,
+								Protocol: v1.ProtocolTCP,
 							},
 						},
 					},
-				})
-			}()
+					{
+						Addresses: []v1.EndpointAddress{
+							{
+								IP: "2.3.4.5",
+							},
+						},
+						Ports: []v1.EndpointPort{
+							{
+								Name:     "testport",
+								Port:     9001,
+								Protocol: v1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			}
+			c.CoreV1().Endpoints(obj.Namespace).Update(obj)
+			w.Endpoints().Modify(obj)
 		},
-		expectedRes: []*targetgroup.Group{
-			{
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
 				Targets: []model.LabelSet{
 					{
 						"__address__":                              "1.2.3.4:9000",
@@ -343,27 +320,148 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
-	n, _, eps, _ := makeTestEndpointsDiscovery()
-	eps.GetStore().Add(makeEndpoints())
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			go func() {
-				eps.Update(&v1.Endpoints{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "testendpoints",
-						Namespace: "default",
-					},
-					Subsets: []v1.EndpointSubset{},
-				})
-			}()
+			obj := &v1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testendpoints",
+					Namespace: "default",
+				},
+				Subsets: []v1.EndpointSubset{},
+			}
+			c.CoreV1().Endpoints(obj.Namespace).Update(obj)
+			w.Endpoints().Modify(obj)
 		},
-		expectedRes: []*targetgroup.Group{
-			{
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":      "default",
 					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryWithService(t *testing.T) {
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			obj := &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testendpoints",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "test",
+					},
+				},
+			}
+			c.CoreV1().Services(obj.Namespace).Create(obj)
+			w.Services().Add(obj)
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":         "default",
+					"__meta_kubernetes_endpoints_name":    "testendpoints",
+					"__meta_kubernetes_service_label_app": "test",
+					"__meta_kubernetes_service_name":      "testendpoints",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
+	n, c, w := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			obj := &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testendpoints",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "test",
+					},
+				},
+			}
+			c.CoreV1().Services(obj.Namespace).Create(obj)
+			w.Services().Add(obj)
+		},
+		afterStart: func() {
+			obj := &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testendpoints",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app":       "svc",
+						"component": "testing",
+					},
+				},
+			}
+			c.CoreV1().Services(obj.Namespace).Update(obj)
+			w.Services().Modify(obj)
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":               "default",
+					"__meta_kubernetes_endpoints_name":          "testendpoints",
+					"__meta_kubernetes_service_label_app":       "svc",
+					"__meta_kubernetes_service_name":            "testendpoints",
+					"__meta_kubernetes_service_label_component": "testing",
 				},
 				Source: "endpoints/default/testendpoints",
 			},
