@@ -148,10 +148,12 @@ func (m *Manager) targetsUpdate(active, dropped map[string][]*Target) {
 }
 
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
 	tDropped := make(map[string][]*Target)
 	tActive := make(map[string][]*Target)
 
-	m.mtxScrape.Lock()
 	for tsetName, tgroup := range t {
 		var sp *scrapePool
 		if existing, ok := m.scrapePools[tsetName]; !ok {
@@ -167,7 +169,5 @@ func (m *Manager) reload(t map[string][]*targetgroup.Group) {
 		}
 		tActive[tsetName], tDropped[tsetName] = sp.Sync(tgroup)
 	}
-	m.mtxScrape.Unlock()
-
 	m.targetsUpdate(tActive, tDropped)
 }
