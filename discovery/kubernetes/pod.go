@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -36,6 +37,7 @@ type Pod struct {
 	informer cache.SharedInformer
 	store    cache.Store
 	logger   log.Logger
+	queue    *workqueue.Type
 }
 
 // NewPod creates a new pod discovery.
@@ -43,27 +45,45 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Pod{
+	p := &Pod{
 		informer: pods,
 		store:    pods.GetStore(),
 		logger:   l,
+		queue:    workqueue.NewNamed("pod"),
 	}
+	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("pod", "add").Inc()
+			p.enqueue(o)
+		},
+		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("pod", "delete").Inc()
+			p.enqueue(o)
+		},
+		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("pod", "update").Inc()
+			p.enqueue(o)
+		},
+	})
+	return p
+}
+
+func (e *Pod) enqueue(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	e.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.
 func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Send full initial set of pod targets.
-	var initial []*targetgroup.Group
-	for _, o := range p.store.List() {
-		tg := p.buildPod(o.(*apiv1.Pod))
-		initial = append(initial, tg)
+	defer p.queue.ShutDown()
 
-		level.Debug(p.logger).Log("msg", "initial pod", "tg", fmt.Sprintf("%#v", tg))
-	}
-	select {
-	case <-ctx.Done():
+	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {
+		level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
 		return
-	case ch <- initial:
 	}
 
 	// Send target groups for pod updates.
@@ -77,41 +97,44 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case ch <- []*targetgroup.Group{tg}:
 		}
 	}
-	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "add").Inc()
 
-			pod, err := convertToPod(o)
-			if err != nil {
-				level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
-				return
-			}
-			send(p.buildPod(pod))
-		},
-		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "delete").Inc()
-
-			pod, err := convertToPod(o)
-			if err != nil {
-				level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
-				return
-			}
-			send(&targetgroup.Group{Source: podSource(pod)})
-		},
-		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("pod", "update").Inc()
-
-			pod, err := convertToPod(o)
-			if err != nil {
-				level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
-				return
-			}
-			send(p.buildPod(pod))
-		},
-	})
+	go func() {
+		for p.process(send) {
+		}
+	}()
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func (p *Pod) process(send func(tg *targetgroup.Group)) bool {
+	keyObj, quit := p.queue.Get()
+	if quit {
+		return false
+	}
+	defer p.queue.Done(keyObj)
+	key := keyObj.(string)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return true
+	}
+
+	o, exists, err := p.store.GetByKey(key)
+	if err != nil {
+		return true
+	}
+	if !exists {
+		send(&targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
+		return true
+	}
+	eps, err := convertToPod(o)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
+		return true
+	}
+	send(p.buildPod(eps))
+	return true
 }
 
 func convertToPod(o interface{}) (*apiv1.Pod, error) {
@@ -120,15 +143,7 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 		return pod, nil
 	}
 
-	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-	if !ok {
-		return nil, fmt.Errorf("Received unexpected object: %v", o)
-	}
-	pod, ok = deletedState.Obj.(*apiv1.Pod)
-	if !ok {
-		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Pod object: %v", deletedState.Obj)
-	}
-	return pod, nil
+	return nil, fmt.Errorf("Received unexpected object: %v", o)
 }
 
 const (
@@ -213,6 +228,10 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 
 func podSource(pod *apiv1.Pod) string {
 	return "pod/" + pod.Namespace + "/" + pod.Name
+}
+
+func podSourceFromNamespaceAndName(namespace, name string) string {
+	return "pod/" + namespace + "/" + name
 }
 
 func podReady(pod *apiv1.Pod) model.LabelValue {
