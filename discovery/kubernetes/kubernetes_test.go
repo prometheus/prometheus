@@ -119,11 +119,14 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	resChan := make(chan map[string]*targetgroup.Group)
 	go readResultWithoutTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
 
-	if dd, ok := d.discovery.(hasSynced); ok {
-		if !cache.WaitForCacheSync(ctx.Done(), dd.hasSynced) {
-			t.Errorf("discoverer failed to sync: %v", dd)
-			return
-		}
+	dd, ok := d.discovery.(hasSynced)
+	if !ok {
+		t.Errorf("discoverer does not implement hasSynced interface")
+		return
+	}
+	if !cache.WaitForCacheSync(ctx.Done(), dd.hasSynced) {
+		t.Errorf("discoverer failed to sync: %v", dd)
+		return
 	}
 
 	if d.afterStart != nil {
@@ -183,4 +186,50 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 	}
 
 	require.JSONEq(t, string(b1), string(b2))
+}
+
+type hasSynced interface {
+	// hasSynced returns true if all informers' store has synced.
+	// This is only used in testing to determine when the cache stores have synced.
+	hasSynced() bool
+}
+
+var _ hasSynced = &Discovery{}
+var _ hasSynced = &Node{}
+var _ hasSynced = &Endpoints{}
+var _ hasSynced = &Ingress{}
+var _ hasSynced = &Pod{}
+var _ hasSynced = &Service{}
+
+func (d *Discovery) hasSynced() bool {
+	d.RLock()
+	defer d.RUnlock()
+	for _, discoverer := range d.discoverers {
+		if hasSynceddiscoverer, ok := discoverer.(hasSynced); ok {
+			if !hasSynceddiscoverer.hasSynced() {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (n *Node) hasSynced() bool {
+	return n.informer.HasSynced()
+}
+
+func (e *Endpoints) hasSynced() bool {
+	return e.endpointsInf.HasSynced() && e.serviceInf.HasSynced() && e.podInf.HasSynced()
+}
+
+func (i *Ingress) hasSynced() bool {
+	return i.informer.HasSynced()
+}
+
+func (p *Pod) hasSynced() bool {
+	return p.informer.HasSynced()
+}
+
+func (s *Service) hasSynced() bool {
+	return s.informer.HasSynced()
 }
