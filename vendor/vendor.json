@@ -1998,6 +1998,12 @@
 			"revisionTime": "2017-03-31T20:34:26Z"
 		},
 		{
+			"checksumSHA1": "y8RjCuBi8XrHvvVsguI7E97Fh6M=",
+			"path": "k8s.io/client-go/tools/clientcmd",
+			"revision": "3627aeb7d4f6ade38f995d2c923e459146493c7e",
+			"revisionTime": "2017-03-31T20:34:26Z"
+		},
+		{
 			"checksumSHA1": "1jUQmUDroNs5XYhsQna4kNTzMik=",
 			"path": "k8s.io/client-go/tools/clientcmd/api",
 			"revision": "3627aeb7d4f6ade38f995d2c923e459146493c7e",
