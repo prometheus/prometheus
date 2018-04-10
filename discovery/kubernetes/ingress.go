@@ -73,16 +73,8 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		return
 	}
 
-	// Send target groups for ingress updates.
-	send := func(tg *targetgroup.Group) {
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
-	}
-
 	go func() {
-		for s.process(send) {
+		for s.process(ctx, ch) {
 		}
 	}()
 
@@ -90,8 +82,7 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func (s *Ingress) process(send func(tg *targetgroup.Group)) bool {
-
+func (s *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
 	keyObj, quit := s.queue.Get()
 	if quit {
 		return false
@@ -109,7 +100,7 @@ func (s *Ingress) process(send func(tg *targetgroup.Group)) bool {
 		return true
 	}
 	if !exists {
-		send(&targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, s.logger, RoleIngress, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToIngress(o)
@@ -117,7 +108,7 @@ func (s *Ingress) process(send func(tg *targetgroup.Group)) bool {
 		level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err)
 		return true
 	}
-	send(s.buildIngress(eps))
+	send(ctx, s.logger, RoleIngress, ch, s.buildIngress(eps))
 	return true
 }
 
