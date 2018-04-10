@@ -736,7 +736,7 @@ scrape_configs:
    - targets: ["foo:9090"]
    - targets: ["bar:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sOne), cfg); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -760,7 +760,7 @@ scrape_configs:
    static_configs:
    - targets: ["foo:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sTwo), cfg); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	c = make(map[string]sd_config.ServiceDiscoveryConfig)

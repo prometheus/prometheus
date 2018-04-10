@@ -800,16 +800,42 @@ See below for the configuration options for Marathon discovery:
 servers:
   - <string>
 
-# Optional bearer token authentication information.
-# It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <secret> ]
-
-# Optional bearer token file authentication information.
-# It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
-
 # Polling interval
 [ refresh_interval: <duration> | default = 30s ]
+
+# Optional authentication information for token-based authentication
+# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# It is mutually exclusive with `auth_token_file` and other authentication mechanisms.
+[ auth_token: <secret> ]
+
+# Optional authentication information for token-based authentication
+# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# It is mutually exclusive with `auth_token` and other authentication mechanisms.
+[ auth_token_file: <filename> ]
+
+# Sets the `Authorization` header on every request with the
+# configured username and password.
+# This is mutually exclusive with other authentication mechanisms.
+basic_auth:
+  [ username: <string> ]
+  [ password: <string> ]
+
+# Sets the `Authorization` header on every request with
+# the configured bearer token. It is mutually exclusive with `bearer_token_file` and other authentication mechanisms.
+# NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token` instead.
+[ bearer_token: <string> ]
+
+# Sets the `Authorization` header on every request with the bearer token
+# read from the configured file. It is mutually exclusive with `bearer_token` and other authentication mechanisms.
+# NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token_file` instead.
+[ bearer_token_file: /path/to/bearer/token/file ]
+
+# TLS configuration for connecting to marathon servers
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
 ```
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all

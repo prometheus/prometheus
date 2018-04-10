@@ -200,7 +200,7 @@ func (c *concreteSeriesSet) Err() error {
 	return nil
 }
 
-// concreteSeries implementes storage.Series.
+// concreteSeries implements storage.Series.
 type concreteSeries struct {
 	labels  labels.Labels
 	samples []*prompb.Sample

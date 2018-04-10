@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/strutil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -118,8 +117,6 @@ type SDConfig struct {
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
 	TLSConfig config_util.TLSConfig `yaml:"tls_config,omitempty"`
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -128,9 +125,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "consul_sd_config"); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Server) == "" {
@@ -308,17 +302,22 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	if len(d.watchedServices) == 0 || d.watchedTag != "" {
 		// We need to watch the catalog.
 		ticker := time.NewTicker(d.refreshInterval)
-		go func() {
-			// Watched services and their cancellation functions.
-			services := make(map[string]func())
-			var lastIndex uint64
 
-			for ; true; <-ticker.C {
+		// Watched services and their cancellation functions.
+		services := make(map[string]func())
+		var lastIndex uint64
+
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			default:
 				d.watchServices(ctx, ch, &lastIndex, services)
+				<-ticker.C
 			}
-		}()
-		<-ctx.Done()
-		ticker.Stop()
+		}
+
 	} else {
 		// We only have fully defined services.
 		for _, name := range d.watchedServices {
@@ -423,11 +422,16 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 		ticker := time.NewTicker(d.refreshInterval)
 		var lastIndex uint64
 		catalog := srv.client.Catalog()
-		for ; true; <-ticker.C {
-			srv.watch(ctx, ch, catalog, &lastIndex)
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			default:
+				srv.watch(ctx, ch, catalog, &lastIndex)
+				<-ticker.C
+			}
 		}
-		<-ctx.Done()
-		ticker.Stop()
 	}()
 }
 
