@@ -442,7 +442,7 @@ alerting:
   alertmanagers:
   - static_configs:
 `
-	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 
@@ -497,7 +497,7 @@ alerting:
         regex: 'alertmanager:9093'
         action: drop
 `
-	if err := yaml.Unmarshal([]byte(s), cfg); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config: %s", err)
 	}
 

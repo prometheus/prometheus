@@ -26,8 +26,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
-
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"github.com/prometheus/prometheus/discovery/webhook"
 )
 
@@ -69,8 +67,5 @@ type ServiceDiscoveryConfig struct {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *ServiceDiscoveryConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain ServiceDiscoveryConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	return yaml_util.CheckOverflow(c.XXX, "service discovery config")
+	return unmarshal((*plain)(c))
 }

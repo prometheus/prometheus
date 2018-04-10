@@ -59,7 +59,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-// As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a gracefull shutdown.
+// As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a graceful shutdown.
 func TestStartupInterrupt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")

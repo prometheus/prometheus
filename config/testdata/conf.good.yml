@@ -172,6 +172,7 @@ scrape_configs:
   - servers:
     - 'https://marathon.example.com:443'
 
+    auth_token: "mysecret"
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file

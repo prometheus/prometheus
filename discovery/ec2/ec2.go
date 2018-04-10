@@ -34,7 +34,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -86,9 +85,6 @@ type SDConfig struct {
 	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
 	Port            int                `yaml:"port"`
 	Filters         []*Filter          `yaml:"filters"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -97,9 +93,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "ec2_sd_config"); err != nil {
 		return err
 	}
 	if c.Region == "" {
