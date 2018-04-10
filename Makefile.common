@@ -45,7 +45,7 @@ style:
 
 check_license:
 	@echo ">> checking license header"
-	@for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
+	for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
 		awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo "license header checking failed for:" $$file  ; \
 	done
 
