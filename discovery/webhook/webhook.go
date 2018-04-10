@@ -16,7 +16,6 @@ package webhook
 import (
 	"github.com/prometheus/common/model"
 	"time"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"context"
 	"fmt"
@@ -61,9 +60,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "webhook_sd_config"); err != nil {
 		return err
 	}
 	return nil
