@@ -81,19 +81,8 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		return
 	}
 
-	// Send target groups for service updates.
-	send := func(tg *targetgroup.Group) {
-		if tg == nil {
-			return
-		}
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
-	}
-
 	go func() {
-		for n.process(send) {
+		for n.process(ctx, ch) {
 		}
 	}()
 
@@ -101,7 +90,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func (n *Node) process(send func(tg *targetgroup.Group)) bool {
+func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
 	keyObj, quit := n.queue.Get()
 	if quit {
 		return false
@@ -119,7 +108,7 @@ func (n *Node) process(send func(tg *targetgroup.Group)) bool {
 		return true
 	}
 	if !exists {
-		send(&targetgroup.Group{Source: nodeSourceFromName(name)})
+		send(ctx, n.logger, RoleNode, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
 		return true
 	}
 	node, err := convertToNode(o)
@@ -127,7 +116,7 @@ func (n *Node) process(send func(tg *targetgroup.Group)) bool {
 		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
 		return true
 	}
-	send(n.buildNode(node))
+	send(ctx, n.logger, RoleNode, ch, n.buildNode(node))
 	return true
 }
 

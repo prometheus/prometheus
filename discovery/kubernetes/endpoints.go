@@ -126,30 +126,13 @@ func (e *Endpoints) enqueue(obj interface{}) {
 func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer e.queue.ShutDown()
 
-	cacheSyncs := []cache.InformerSynced{
-		e.endpointsInf.HasSynced,
-		e.serviceInf.HasSynced,
-		e.podInf.HasSynced,
-	}
-	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
+	if !cache.WaitForCacheSync(ctx.Done(), e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {
 		level.Error(e.logger).Log("msg", "endpoints informer unable to sync cache")
 		return
 	}
 
-	// Send target groups for pod updates.
-	send := func(tg *targetgroup.Group) {
-		if tg == nil {
-			return
-		}
-		level.Debug(e.logger).Log("msg", "endpoints update", "tg", fmt.Sprintf("%#v", tg))
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
-	}
-
 	go func() {
-		for e.process(send) {
+		for e.process(ctx, ch) {
 		}
 	}()
 
@@ -157,7 +140,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func (e *Endpoints) process(send func(tg *targetgroup.Group)) bool {
+func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
 	keyObj, quit := e.queue.Get()
 	if quit {
 		return false
@@ -177,7 +160,7 @@ func (e *Endpoints) process(send func(tg *targetgroup.Group)) bool {
 		return true
 	}
 	if !exists {
-		send(&targetgroup.Group{Source: endpointsSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, e.logger, RoleEndpoint, ch, &targetgroup.Group{Source: endpointsSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToEndpoints(o)
@@ -185,7 +168,7 @@ func (e *Endpoints) process(send func(tg *targetgroup.Group)) bool {
 		level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
 		return true
 	}
-	send(e.buildEndpoints(eps))
+	send(ctx, e.logger, RoleEndpoint, ch, e.buildEndpoints(eps))
 	return true
 }
 
