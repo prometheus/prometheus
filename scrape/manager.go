@@ -40,18 +40,25 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
 		scrapePools:   make(map[string]*scrapePool),
 		graceShut:     make(chan struct{}),
+		targetsAll:    make(map[string][]*Target),
 	}
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
 type Manager struct {
-	logger        log.Logger
-	append        Appendable
+	logger    log.Logger
+	append    Appendable
+	graceShut chan struct{}
+
+	mtxTargets     sync.Mutex // Guards the fields below.
+	targetsActive  []*Target
+	targetsDropped []*Target
+	targetsAll     map[string][]*Target
+
+	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
-	mtx           sync.RWMutex
-	graceShut     chan struct{}
 }
 
 // Run starts background processing to handle target updates and reload the scraping loops.
@@ -68,6 +75,9 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 
 // Stop cancels all running scrape pools and blocks until all have exited.
 func (m *Manager) Stop() {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
 	for _, sp := range m.scrapePools {
 		sp.stop()
 	}
@@ -76,8 +86,9 @@ func (m *Manager) Stop() {
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
 	c := make(map[string]*config.ScrapeConfig)
 	for _, scfg := range cfg.ScrapeConfigs {
 		c[scfg.JobName] = scfg
@@ -97,71 +108,66 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	return nil
 }
 
-// TargetMap returns map of active and dropped targets and their corresponding scrape config job name.
-func (m *Manager) TargetMap() map[string][]*Target {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	targets := make(map[string][]*Target)
-	for jobName, sp := range m.scrapePools {
-		sp.mtx.RLock()
-		for _, t := range sp.targets {
-			targets[jobName] = append(targets[jobName], t)
-		}
-		targets[jobName] = append(targets[jobName], sp.droppedTargets...)
-		sp.mtx.RUnlock()
-	}
-
-	return targets
+// TargetsAll returns active and dropped targets grouped by job_name.
+func (m *Manager) TargetsAll() map[string][]*Target {
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
+	return m.targetsAll
 }
 
-// Targets returns the targets currently being scraped.
-func (m *Manager) Targets() []*Target {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	var targets []*Target
-	for _, p := range m.scrapePools {
-		p.mtx.RLock()
-		for _, tt := range p.targets {
-			targets = append(targets, tt)
-		}
-		p.mtx.RUnlock()
-	}
-
-	return targets
+// TargetsActive returns the active targets currently being scraped.
+func (m *Manager) TargetsActive() []*Target {
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
+	return m.targetsActive
 }
 
-// DroppedTargets returns the targets dropped during relabelling.
-func (m *Manager) DroppedTargets() []*Target {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	var droppedTargets []*Target
-	for _, p := range m.scrapePools {
-		p.mtx.RLock()
-		droppedTargets = append(droppedTargets, p.droppedTargets...)
-		p.mtx.RUnlock()
+// TargetsDropped returns the dropped targets during relabelling.
+func (m *Manager) TargetsDropped() []*Target {
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
+	return m.targetsDropped
+}
+
+func (m *Manager) targetsUpdate(active, dropped map[string][]*Target) {
+	m.mtxTargets.Lock()
+	defer m.mtxTargets.Unlock()
+
+	m.targetsAll = make(map[string][]*Target)
+	m.targetsActive = nil
+	m.targetsDropped = nil
+	for jobName, targets := range active {
+		m.targetsAll[jobName] = append(m.targetsAll[jobName], targets...)
+		m.targetsActive = append(m.targetsActive, targets...)
+
 	}
-	return droppedTargets
+	for jobName, targets := range dropped {
+		m.targetsAll[jobName] = append(m.targetsAll[jobName], targets...)
+		m.targetsDropped = append(m.targetsDropped, targets...)
+	}
 }
 
 func (m *Manager) reload(t map[string][]*targetgroup.Group) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	tDropped := make(map[string][]*Target)
+	tActive := make(map[string][]*Target)
+
 	for tsetName, tgroup := range t {
-		scrapeConfig, ok := m.scrapeConfigs[tsetName]
-		if !ok {
-			level.Error(m.logger).Log("msg", "error reloading target set", "err", fmt.Sprintf("invalid config id:%v", tsetName))
-			continue
-		}
-
-		// Scrape pool doesn't exist so start a new one.
-		existing, ok := m.scrapePools[tsetName]
-		if !ok {
-			sp := newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
+		var sp *scrapePool
+		if existing, ok := m.scrapePools[tsetName]; !ok {
+			scrapeConfig, ok := m.scrapeConfigs[tsetName]
+			if !ok {
+				level.Error(m.logger).Log("msg", "error reloading target set", "err", fmt.Sprintf("invalid config id:%v", tsetName))
+				continue
+			}
+			sp = newScrapePool(scrapeConfig, m.append, log.With(m.logger, "scrape_pool", tsetName))
 			m.scrapePools[tsetName] = sp
-			sp.Sync(tgroup)
-
 		} else {
-			existing.Sync(tgroup)
+			sp = existing
 		}
+		tActive[tsetName], tDropped[tsetName] = sp.Sync(tgroup)
 	}
+	m.targetsUpdate(tActive, tDropped)
 }
