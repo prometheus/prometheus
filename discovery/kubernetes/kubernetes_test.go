@@ -189,8 +189,9 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 }
 
 type hasSynced interface {
-	// hasSynced returns true if all informers' store has synced.
-	// This is only used in testing to determine when the cache stores have synced.
+	// hasSynced returns true if all informers synced.
+	// This is only used in testing to determine when discoverer synced to
+	// kubernetes apiserver.
 	hasSynced() bool
 }
 
