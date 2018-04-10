@@ -79,16 +79,8 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		return
 	}
 
-	// Send target groups for service updates.
-	send := func(tg *targetgroup.Group) {
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
-	}
-
 	go func() {
-		for s.process(send) {
+		for s.process(ctx, ch) {
 		}
 	}()
 
@@ -96,7 +88,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func (s *Service) process(send func(tg *targetgroup.Group)) bool {
+func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
 	keyObj, quit := s.queue.Get()
 	if quit {
 		return false
@@ -114,7 +106,7 @@ func (s *Service) process(send func(tg *targetgroup.Group)) bool {
 		return true
 	}
 	if !exists {
-		send(&targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, s.logger, RoleService, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToService(o)
@@ -122,7 +114,7 @@ func (s *Service) process(send func(tg *targetgroup.Group)) bool {
 		level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
 		return true
 	}
-	send(s.buildService(eps))
+	send(ctx, s.logger, RoleService, ch, s.buildService(eps))
 	return true
 }
 
