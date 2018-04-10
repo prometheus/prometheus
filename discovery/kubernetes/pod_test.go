@@ -163,6 +163,7 @@ func TestPodDiscoveryAdd(t *testing.T) {
 			c.CoreV1().Pods(obj.Namespace).Create(obj)
 			w.Pods().Add(obj)
 		},
+		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
 			"pod/default/testpod": {
 				Targets: []model.LabelSet{
@@ -200,6 +201,7 @@ func TestPodDiscoveryDelete(t *testing.T) {
 			c.CoreV1().Pods(obj.Namespace).Delete(obj.Name, &metav1.DeleteOptions{})
 			w.Pods().Delete(obj)
 		},
+		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
 			"pod/default/testpod": {
 				Source: "pod/default/testpod",
@@ -244,6 +246,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 			c.CoreV1().Pods(obj.Namespace).Create(obj)
 			w.Pods().Modify(obj)
 		},
+		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
 			"pod/default/testpod": {
 				Targets: []model.LabelSet{
