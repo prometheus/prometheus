@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -155,7 +154,7 @@ func TestHandlerSendAll(t *testing.T) {
 
 	h := NewManager(&Options{}, nil)
 
-	authClient, _ := httputil.NewClientFromConfig(config_util.HTTPClientConfig{
+	authClient, _ := config_util.NewClientFromConfig(config_util.HTTPClientConfig{
 		BasicAuth: &config_util.BasicAuth{
 			Username: "prometheus",
 			Password: "testing_password",

@@ -29,7 +29,6 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -126,7 +125,7 @@ func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := httputil.NewTLSConfig(conf.TLSConfig)
+	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
