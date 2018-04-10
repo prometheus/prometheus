@@ -262,7 +262,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	namespaces := d.getNamespaces()
 
 	switch d.role {
-	case "endpoints":
+	case RoleEndpoint:
 		for _, namespace := range namespaces {
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -299,7 +299,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
 		}
-	case "pod":
+	case RolePod:
 		for _, namespace := range namespaces {
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -316,7 +316,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			d.discoverers = append(d.discoverers, pod)
 			go pod.informer.Run(ctx.Done())
 		}
-	case "service":
+	case RoleService:
 		for _, namespace := range namespaces {
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -333,7 +333,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
 		}
-	case "ingress":
+	case RoleIngress:
 		for _, namespace := range namespaces {
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -350,7 +350,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
 		}
-	case "node":
+	case RoleNode:
 		nlw := &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				return d.client.CoreV1().Nodes().List(options)
@@ -384,4 +384,15 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 func lv(s string) model.LabelValue {
 	return model.LabelValue(s)
+}
+
+func send(ctx context.Context, l log.Logger, role Role, ch chan<- []*targetgroup.Group, tg *targetgroup.Group) {
+	if tg == nil {
+		return
+	}
+	level.Debug(l).Log("msg", "kubernetes discovery update", "role", string(role), "tg", fmt.Sprintf("%#v", tg))
+	select {
+	case <-ctx.Done():
+	case ch <- []*targetgroup.Group{tg}:
+	}
 }

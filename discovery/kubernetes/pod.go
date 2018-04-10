@@ -86,20 +86,8 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		return
 	}
 
-	// Send target groups for pod updates.
-	send := func(tg *targetgroup.Group) {
-		if tg == nil {
-			return
-		}
-		level.Debug(p.logger).Log("msg", "pod update", "tg", fmt.Sprintf("%#v", tg))
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
-	}
-
 	go func() {
-		for p.process(send) {
+		for p.process(ctx, ch) {
 		}
 	}()
 
@@ -107,7 +95,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func (p *Pod) process(send func(tg *targetgroup.Group)) bool {
+func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
 	keyObj, quit := p.queue.Get()
 	if quit {
 		return false
@@ -125,7 +113,7 @@ func (p *Pod) process(send func(tg *targetgroup.Group)) bool {
 		return true
 	}
 	if !exists {
-		send(&targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, p.logger, RolePod, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToPod(o)
@@ -133,7 +121,7 @@ func (p *Pod) process(send func(tg *targetgroup.Group)) bool {
 		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
 		return true
 	}
-	send(p.buildPod(eps))
+	send(ctx, p.logger, RolePod, ch, p.buildPod(eps))
 	return true
 }
 
