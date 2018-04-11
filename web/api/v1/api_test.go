@@ -45,7 +45,7 @@ import (
 
 type testTargetRetriever struct{}
 
-func (t testTargetRetriever) Targets() []*scrape.Target {
+func (t testTargetRetriever) TargetsActive() []*scrape.Target {
 	return []*scrape.Target{
 		scrape.NewTarget(
 			labels.FromMap(map[string]string{
@@ -58,7 +58,7 @@ func (t testTargetRetriever) Targets() []*scrape.Target {
 		),
 	}
 }
-func (t testTargetRetriever) DroppedTargets() []*scrape.Target {
+func (t testTargetRetriever) TargetsDropped() []*scrape.Target {
 	return []*scrape.Target{
 		scrape.NewTarget(
 			nil,
