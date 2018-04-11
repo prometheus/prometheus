@@ -43,8 +43,10 @@ import (
 
 type config struct {
 	graphiteAddress         string
+	graphiteWebAddress      string
 	graphiteTransport       string
 	graphitePrefix          string
+	graphiteEnableTags      bool
 	opentsdbURL             string
 	influxdbURL             string
 	influxdbRetentionPolicy string
@@ -113,13 +115,19 @@ func parseFlags() *config {
 	}
 
 	flag.StringVar(&cfg.graphiteAddress, "graphite-address", "",
-		"The host:port of the Graphite server to send samples to. None, if empty.",
+		"The host:port of the Graphite carbon server to send samples to. None, if empty.",
+	)
+	flag.StringVar(&cfg.graphiteWebAddress, "graphite-web-address", "",
+		"The host:port of the Graphite web server to read samples from. None, if empty.",
 	)
 	flag.StringVar(&cfg.graphiteTransport, "graphite-transport", "tcp",
-		"Transport protocol to use to communicate with Graphite. 'tcp', if empty.",
+		"Transport protocol to use when sending samples to Graphite carbon. 'tcp', if empty.",
 	)
 	flag.StringVar(&cfg.graphitePrefix, "graphite-prefix", "",
 		"The prefix to prepend to all metrics exported to Graphite. None, if empty.",
+	)
+	flag.BoolVar(&cfg.graphiteEnableTags, "graphite-enable-tags", false,
+		"Enable writes/reads in graphite's tagging format",
 	)
 	flag.StringVar(&cfg.opentsdbURL, "opentsdb-url", "",
 		"The URL of the remote OpenTSDB server to send samples to. None, if empty.",
@@ -163,9 +171,14 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 	if cfg.graphiteAddress != "" {
 		c := graphite.NewClient(
 			log.With(logger, "storage", "Graphite"),
-			cfg.graphiteAddress, cfg.graphiteTransport,
-			cfg.remoteTimeout, cfg.graphitePrefix)
+			cfg.graphiteAddress, cfg.graphiteWebAddress,
+			cfg.graphiteTransport, cfg.remoteTimeout,
+			cfg.graphitePrefix, cfg.graphiteEnableTags,
+		)
 		writers = append(writers, c)
+		if cfg.graphiteEnableTags && cfg.graphiteWebAddress != "" {
+			readers = append(readers, c)
+		}
 	}
 	if cfg.opentsdbURL != "" {
 		c := opentsdb.NewClient(

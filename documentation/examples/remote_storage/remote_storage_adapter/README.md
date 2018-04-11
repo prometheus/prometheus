@@ -5,8 +5,7 @@ protocol and stores them in Graphite, InfluxDB, or OpenTSDB. It is meant as a
 replacement for the built-in specific remote storage implementations that have
 been removed from Prometheus.
 
-For InfluxDB, this binary is also a read adapter that supports reading back
-data through Prometheus via Prometheus's remote read protocol.
+For Graphite and InfluxDB, this binary is also a read adapter that supports reading back data through Prometheus via Prometheus's remote read protocol.
 
 ## Building
 
@@ -19,7 +18,7 @@ go build
 Graphite example:
 
 ```
-./remote_storage_adapter -graphite-address=localhost:8080
+./remote_storage_adapter -graphite-address=localhost:2003 -graphite-web-address=localhost:8080 -graphite-enable-tags true
 ```
 
 OpenTSDB example:
@@ -49,7 +48,7 @@ To configure Prometheus to send samples to this binary, add the following to you
 remote_write:
   - url: "http://localhost:9201/write"
 
-# Remote read configuration (for InfluxDB only at the moment).
+# Remote read configuration (for Graphite, and InfluxDB).
 remote_read:
   - url: "http://localhost:9201/read"
 ```
