@@ -272,6 +272,41 @@ func TestRoutePrefix(t *testing.T) {
 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
 }
 
+func TestPathPrefix(t *testing.T) {
+
+	tests := []struct {
+		routePrefix string
+		pathPrefix  string
+	}{
+		{
+			routePrefix: "/",
+			// If we have pathPrefix as "/", URL in UI gets "//"" as prefix,
+			// hence doesn't remain relative path anymore.
+			pathPrefix: "",
+		},
+		{
+			routePrefix: "/prometheus",
+			pathPrefix:  "/prometheus",
+		},
+		{
+			routePrefix: "/p1/p2/p3/p4",
+			pathPrefix:  "/p1/p2/p3/p4",
+		},
+	}
+
+	for _, test := range tests {
+		opts := &Options{
+			RoutePrefix: test.routePrefix,
+		}
+
+		pathPrefix := tmplFuncs("", opts)["pathPrefix"].(func() string)
+		pp := pathPrefix()
+
+		testutil.Equals(t, test.pathPrefix, pp)
+	}
+
+}
+
 func TestDebugHandler(t *testing.T) {
 	for _, tc := range []struct {
 		prefix, url string
