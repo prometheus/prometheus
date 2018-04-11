@@ -23,8 +23,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -221,5 +220,5 @@ func podReady(pod *apiv1.Pod) model.LabelValue {
 			return lv(strings.ToLower(string(cond.Status)))
 		}
 	}
-	return lv(strings.ToLower(string(api.ConditionUnknown)))
+	return lv(strings.ToLower(string(apiv1.ConditionUnknown)))
 }

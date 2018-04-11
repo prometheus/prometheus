@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"sync"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -50,6 +49,7 @@ func NewRESTMapper(groupResources []*APIGroupResources, versionInterfaces meta.V
 	for _, group := range groupResources {
 		groupPriority = append(groupPriority, group.Group.Name)
 
+		// Make sure the preferred version comes first
 		if len(group.Group.PreferredVersion.Version) != 0 {
 			preferred := group.Group.PreferredVersion.Version
 			if _, ok := group.VersionedResources[preferred]; ok {
@@ -73,6 +73,21 @@ func NewRESTMapper(groupResources []*APIGroupResources, versionInterfaces meta.V
 				continue
 			}
 
+			// Add non-preferred versions after the preferred version, in case there are resources that only exist in those versions
+			if discoveryVersion.Version != group.Group.PreferredVersion.Version {
+				resourcePriority = append(resourcePriority, schema.GroupVersionResource{
+					Group:    group.Group.Name,
+					Version:  discoveryVersion.Version,
+					Resource: meta.AnyResource,
+				})
+
+				kindPriority = append(kindPriority, schema.GroupVersionKind{
+					Group:   group.Group.Name,
+					Version: discoveryVersion.Version,
+					Kind:    meta.AnyKind,
+				})
+			}
+
 			gv := schema.GroupVersion{Group: group.Group.Name, Version: discoveryVersion.Version}
 			versionMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{gv}, versionInterfaces)
 
@@ -81,8 +96,19 @@ func NewRESTMapper(groupResources []*APIGroupResources, versionInterfaces meta.V
 				if !resource.Namespaced {
 					scope = meta.RESTScopeRoot
 				}
-				versionMapper.Add(gv.WithKind(resource.Kind), scope)
-				// TODO only do this if it supports listing
+
+				// this is for legacy resources and servers which don't list singular forms.  For those we must still guess.
+				if len(resource.SingularName) == 0 {
+					versionMapper.Add(gv.WithKind(resource.Kind), scope)
+					// TODO this is producing unsafe guesses that don't actually work, but it matches previous behavior
+					versionMapper.Add(gv.WithKind(resource.Kind+"List"), scope)
+					continue
+				}
+
+				plural := gv.WithResource(resource.Name)
+				singular := gv.WithResource(resource.SingularName)
+				versionMapper.AddSpecific(gv.WithKind(resource.Kind), plural, singular, scope)
+				// TODO this is producing unsafe guesses that don't actually work, but it matches previous behavior
 				versionMapper.Add(gv.WithKind(resource.Kind+"List"), scope)
 			}
 			// TODO why is this type not in discovery (at least for "v1")
@@ -127,10 +153,9 @@ func GetAPIGroupResources(cl DiscoveryInterface) ([]*APIGroupResources, error) {
 		for _, version := range group.Versions {
 			resources, err := cl.ServerResourcesForGroupVersion(version.GroupVersion)
 			if err != nil {
-				if errors.IsNotFound(err) {
-					continue // ignore as this can race with deletion of 3rd party APIs
-				}
-				return nil, err
+				// continue as best we can
+				// TODO track the errors and update callers to handle partial errors.
+				continue
 			}
 			groupResources.VersionedResources[version.Version] = resources.APIResources
 		}
@@ -275,20 +300,6 @@ func (d *DeferredDiscoveryRESTMapper) RESTMappings(gk schema.GroupKind, versions
 	if len(ms) == 0 && !d.cl.Fresh() {
 		d.Reset()
 		ms, err = d.RESTMappings(gk, versions...)
-	}
-	return
-}
-
-// AliasesForResource returns whether a resource has an alias or not.
-func (d *DeferredDiscoveryRESTMapper) AliasesForResource(resource string) (as []string, ok bool) {
-	del, err := d.getDelegate()
-	if err != nil {
-		return nil, false
-	}
-	as, ok = del.AliasesForResource(resource)
-	if len(as) == 0 && !d.cl.Fresh() {
-		d.Reset()
-		as, ok = d.AliasesForResource(resource)
 	}
 	return
 }
