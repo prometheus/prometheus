@@ -218,7 +218,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
-	newLoop := func(_ *Target, s scraper) loop {
+	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
 		l := &testLoop{}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			if interval != 3*time.Second {
@@ -306,7 +306,12 @@ func TestScrapePoolAppender(t *testing.T) {
 	app := &nopAppendable{}
 	sp := newScrapePool(cfg, app, nil)
 
-	wrapped := sp.appender()
+	loop := sp.newLoop(nil, nil, 0, false, nil)
+	appl, ok := loop.(*scrapeLoop)
+	if !ok {
+		t.Fatalf("Expected scrapeLoop but got %T", loop)
+	}
+	wrapped := appl.appender()
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	if !ok {
@@ -316,9 +321,12 @@ func TestScrapePoolAppender(t *testing.T) {
 		t.Fatalf("Expected base appender but got %T", tl.Appender)
 	}
 
-	cfg.SampleLimit = 100
-
-	wrapped = sp.appender()
+	loop = sp.newLoop(nil, nil, 100, false, nil)
+	appl, ok = loop.(*scrapeLoop)
+	if !ok {
+		t.Fatalf("Expected scrapeLoop but got %T", loop)
+	}
+	wrapped = appl.appender()
 
 	sl, ok := wrapped.(*limitAppender)
 	if !ok {
@@ -744,11 +752,6 @@ func TestScrapeLoopAppend(t *testing.T) {
 
 	for _, test := range tests {
 		app := &collectResultAppender{}
-		sp := &scrapePool{
-			config: &config.ScrapeConfig{
-				HonorLabels: test.honorLabels,
-			},
-		}
 
 		discoveryLabels := &Target{
 			labels: labels.FromStrings(test.discoveryLabels...),
@@ -757,10 +760,10 @@ func TestScrapeLoopAppend(t *testing.T) {
 		sl := newScrapeLoop(context.Background(),
 			nil, nil, nil,
 			func(l labels.Labels) labels.Labels {
-				return sp.mutateSampleLabels(l, discoveryLabels)
+				return mutateSampleLabels(l, discoveryLabels, test.honorLabels, nil)
 			},
 			func(l labels.Labels) labels.Labels {
-				return sp.mutateReportSampleLabels(l, discoveryLabels)
+				return mutateReportSampleLabels(l, discoveryLabels)
 			},
 			func() storage.Appender { return app },
 		)
