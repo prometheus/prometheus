@@ -333,6 +333,44 @@ func TestScrapePoolAppender(t *testing.T) {
 	}
 }
 
+func TestScrapePoolRaces(t *testing.T) {
+	interval, _ := model.ParseDuration("500ms")
+	timeout, _ := model.ParseDuration("1s")
+	newConfig := func() *config.ScrapeConfig {
+		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
+	}
+	sp := newScrapePool(newConfig(), &nopAppendable{}, nil)
+	tgts := []*targetgroup.Group{
+		&targetgroup.Group{
+			Targets: []model.LabelSet{
+				model.LabelSet{model.AddressLabel: "127.0.0.1:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.2:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.3:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.4:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.5:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.6:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.7:9090"},
+				model.LabelSet{model.AddressLabel: "127.0.0.8:9090"},
+			},
+		},
+	}
+
+	active, dropped := sp.Sync(tgts)
+	expectedActive, expectedDropped := len(tgts[0].Targets), 0
+	if len(active) != expectedActive {
+		t.Fatalf("Invalid number of active targets: expected %v, got %v", expectedActive, len(active))
+	}
+	if len(dropped) != expectedDropped {
+		t.Fatalf("Invalid number of dropped targets: expected %v, got %v", expectedDropped, len(dropped))
+	}
+
+	for i := 0; i < 20; i++ {
+		time.Sleep(time.Duration(10 * time.Millisecond))
+		sp.reload(newConfig())
+	}
+	sp.stop()
+}
+
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
 	scraper := &testScraper{}
 
