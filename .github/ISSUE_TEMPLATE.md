@@ -10,7 +10,12 @@
     You can find more information at: https://prometheus.io/community/
 
 -->
+## Proposal
+**Use case. Why is this important?**
 
+*Nice to have' is not a good use case :)*
+
+## Bug Report
 **What did you do?**
 
 **What did you expect to see?**
@@ -40,6 +45,9 @@ insert configuration here
 ```
 insert configuration here (if relevant to the issue)
 ```
+
+
+
 
 * Logs:
 ```

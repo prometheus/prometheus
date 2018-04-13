@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -66,8 +65,6 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Type            string         `yaml:"type"`
 	Port            int            `yaml:"port"` // Ignored for SRV records
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -76,9 +73,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "dns_sd_config"); err != nil {
 		return err
 	}
 	if len(c.Names) == 0 {
@@ -295,7 +289,7 @@ func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logg
 
 	for _, server := range conf.Servers {
 		servAddr := net.JoinHostPort(server, conf.Port)
-		msg, err := askServerForName(name, qtype, client, servAddr, false)
+		msg, err := askServerForName(name, qtype, client, servAddr, true)
 		if err != nil {
 			level.Warn(logger).Log("msg", "DNS resolution failed", "server", server, "name", name, "err", err)
 			continue
@@ -311,8 +305,8 @@ func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logg
 }
 
 // askServerForName makes a request to a specific DNS server for a specific
-// name (and qtype).  Retries in the event of response truncation, but
-// otherwise just sends back whatever the server gave, whether that be a
+// name (and qtype).  Retries with TCP in the event of response truncation,
+// but otherwise just sends back whatever the server gave, whether that be a
 // valid-looking response, or an error.
 func askServerForName(name string, queryType uint16, client *dns.Client, servAddr string, edns bool) (*dns.Msg, error) {
 	msg := &dns.Msg{}
@@ -327,10 +321,9 @@ func askServerForName(name string, queryType uint16, client *dns.Client, servAdd
 		if client.Net == "tcp" {
 			return nil, fmt.Errorf("got truncated message on TCP (64kiB limit exceeded?)")
 		}
-		if edns { // Truncated even though EDNS is used
-			client.Net = "tcp"
-		}
-		return askServerForName(name, queryType, client, servAddr, !edns)
+
+		client.Net = "tcp"
+		return askServerForName(name, queryType, client, servAddr, false)
 	}
 	if err != nil {
 		return nil, err

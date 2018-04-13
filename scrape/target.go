@@ -110,6 +110,8 @@ func (t *Target) Labels() labels.Labels {
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels() labels.Labels {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	lset := make(labels.Labels, len(t.discoveredLabels))
 	copy(lset, t.discoveredLabels)
 	return lset
@@ -117,6 +119,8 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 
 // SetDiscoveredLabels sets new DiscoveredLabels
 func (t *Target) SetDiscoveredLabels(l labels.Labels) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	t.discoveredLabels = l
 }
 
@@ -135,16 +139,16 @@ func (t *Target) URL() *url.URL {
 		ks := l.Name[len(model.ParamLabelPrefix):]
 
 		if len(params[ks]) > 0 {
-			params[ks][0] = string(l.Value)
+			params[ks][0] = l.Value
 		} else {
 			params[ks] = []string{l.Value}
 		}
 	}
 
 	return &url.URL{
-		Scheme:   string(t.labels.Get(model.SchemeLabel)),
-		Host:     string(t.labels.Get(model.AddressLabel)),
-		Path:     string(t.labels.Get(model.MetricsPathLabel)),
+		Scheme:   t.labels.Get(model.SchemeLabel),
+		Host:     t.labels.Get(model.AddressLabel),
+		Path:     t.labels.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
 }

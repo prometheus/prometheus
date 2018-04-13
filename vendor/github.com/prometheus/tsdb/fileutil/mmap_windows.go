@@ -19,14 +19,14 @@ import (
 	"unsafe"
 )
 
-func mmap(f *os.File, sz int) ([]byte, error) {
-	low, high := uint32(sz), uint32(sz>>32)
+func mmap(f *os.File, size int) ([]byte, error) {
+	low, high := uint32(size), uint32(size>>32)
 	h, errno := syscall.CreateFileMapping(syscall.Handle(f.Fd()), nil, syscall.PAGE_READONLY, high, low, nil)
 	if h == 0 {
 		return nil, os.NewSyscallError("CreateFileMapping", errno)
 	}
 
-	addr, errno := syscall.MapViewOfFile(h, syscall.FILE_MAP_READ, 0, 0, uintptr(sz))
+	addr, errno := syscall.MapViewOfFile(h, syscall.FILE_MAP_READ, 0, 0, uintptr(size))
 	if addr == 0 {
 		return nil, os.NewSyscallError("MapViewOfFile", errno)
 	}
@@ -35,7 +35,7 @@ func mmap(f *os.File, sz int) ([]byte, error) {
 		return nil, os.NewSyscallError("CloseHandle", err)
 	}
 
-	return (*[1 << 30]byte)(unsafe.Pointer(addr))[:sz], nil
+	return (*[maxMapSize]byte)(unsafe.Pointer(addr))[:size], nil
 }
 
 func munmap(b []byte) error {

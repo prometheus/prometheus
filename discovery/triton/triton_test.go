@@ -86,7 +86,11 @@ func TestTritonSDRun(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, td)
 
-	go td.Run(ctx, ch)
+	wait := make(chan struct{})
+	go func() {
+		td.Run(ctx, ch)
+		close(wait)
+	}()
 
 	select {
 	case <-time.After(60 * time.Millisecond):
@@ -96,6 +100,7 @@ func TestTritonSDRun(t *testing.T) {
 	}
 
 	cancel()
+	<-wait
 }
 
 func TestTritonSDRefreshNoTargets(t *testing.T) {

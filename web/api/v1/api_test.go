@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -44,7 +45,7 @@ import (
 
 type testTargetRetriever struct{}
 
-func (t testTargetRetriever) Targets() []*scrape.Target {
+func (t testTargetRetriever) TargetsActive() []*scrape.Target {
 	return []*scrape.Target{
 		scrape.NewTarget(
 			labels.FromMap(map[string]string{
@@ -57,7 +58,7 @@ func (t testTargetRetriever) Targets() []*scrape.Target {
 		),
 	}
 }
-func (t testTargetRetriever) DroppedTargets() []*scrape.Target {
+func (t testTargetRetriever) TargetsDropped() []*scrape.Target {
 	return []*scrape.Target{
 		scrape.NewTarget(
 			nil,
@@ -851,5 +852,130 @@ func TestOptionsMethod(t *testing.T) {
 		if resp.Header.Get(h) != v {
 			t.Fatalf("Expected %q for header %q, got %q", v, h, resp.Header.Get(h))
 		}
+	}
+}
+
+func TestRespond(t *testing.T) {
+	cases := []struct {
+		response interface{}
+		expected string
+	}{
+		{
+			response: &queryData{
+				ResultType: promql.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Points: []promql.Point{{V: 1, T: 1000}},
+						Metric: labels.FromStrings("__name__", "foo"),
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
+		},
+		{
+			response: promql.Point{V: 0, T: 0},
+			expected: `{"status":"success","data":[0,"0"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 1},
+			expected: `{"status":"success","data":[0.001,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 10},
+			expected: `{"status":"success","data":[0.010,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 100},
+			expected: `{"status":"success","data":[0.100,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 1001},
+			expected: `{"status":"success","data":[1.001,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 1010},
+			expected: `{"status":"success","data":[1.010,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 1100},
+			expected: `{"status":"success","data":[1.100,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: 12345678123456555},
+			expected: `{"status":"success","data":[12345678123456.555,"20"]}`,
+		},
+		{
+			response: promql.Point{V: 20, T: -1},
+			expected: `{"status":"success","data":[-0.001,"20"]}`,
+		},
+		{
+			response: promql.Point{V: math.NaN(), T: 0},
+			expected: `{"status":"success","data":[0,"NaN"]}`,
+		},
+		{
+			response: promql.Point{V: math.Inf(1), T: 0},
+			expected: `{"status":"success","data":[0,"+Inf"]}`,
+		},
+		{
+			response: promql.Point{V: math.Inf(-1), T: 0},
+			expected: `{"status":"success","data":[0,"-Inf"]}`,
+		},
+		{
+			response: promql.Point{V: 1.2345678e6, T: 0},
+			expected: `{"status":"success","data":[0,"1234567.8"]}`,
+		},
+		{
+			response: promql.Point{V: 1.2345678e-6, T: 0},
+			expected: `{"status":"success","data":[0,"0.0000012345678"]}`,
+		},
+		{
+			response: promql.Point{V: 1.2345678e-67, T: 0},
+			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
+		},
+	}
+
+	for _, c := range cases {
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			respond(w, c.response)
+		}))
+		defer s.Close()
+
+		resp, err := http.Get(s.URL)
+		if err != nil {
+			t.Fatalf("Error on test request: %s", err)
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		if err != nil {
+			t.Fatalf("Error reading response body: %s", err)
+		}
+
+		if string(body) != c.expected {
+			t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
+		}
+	}
+}
+
+// This is a global to avoid the benchmark being optimized away.
+var testResponseWriter = httptest.ResponseRecorder{}
+
+func BenchmarkRespond(b *testing.B) {
+	b.ReportAllocs()
+	points := []promql.Point{}
+	for i := 0; i < 10000; i++ {
+		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
+	}
+	response := &queryData{
+		ResultType: promql.ValueTypeMatrix,
+		Result: promql.Matrix{
+			promql.Series{
+				Points: points,
+				Metric: nil,
+			},
+		},
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		respond(&testResponseWriter, response)
 	}
 }

@@ -275,11 +275,15 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 				ConsulSDConfigs: []*consul.SDConfig{
 					{
-						Server:       "localhost:1234",
-						Token:        "mysecret",
-						Services:     []string{"nginx", "cache", "mysql"},
-						TagSeparator: consul.DefaultSDConfig.TagSeparator,
-						Scheme:       "https",
+						Server:          "localhost:1234",
+						Token:           "mysecret",
+						Services:        []string{"nginx", "cache", "mysql"},
+						ServiceTag:      "canary",
+						NodeMeta:        map[string]string{"rack": "123"},
+						TagSeparator:    consul.DefaultSDConfig.TagSeparator,
+						Scheme:          "https",
+						RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
+						AllowStale:      true,
 						TLSConfig: config_util.TLSConfig{
 							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
@@ -380,11 +384,13 @@ var expectedConf = &Config{
 						Servers: []string{
 							"https://marathon.example.com:443",
 						},
-						Timeout:         model.Duration(30 * time.Second),
 						RefreshInterval: model.Duration(30 * time.Second),
-						TLSConfig: config_util.TLSConfig{
-							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
-							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+						AuthToken:       config_util.Secret("mysecret"),
+						HTTPClientConfig: config_util.HTTPClientConfig{
+							TLSConfig: config_util.TLSConfig{
+								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+							},
 						},
 					},
 				},
@@ -408,6 +414,16 @@ var expectedConf = &Config{
 						Profile:         "profile",
 						RefreshInterval: model.Duration(60 * time.Second),
 						Port:            80,
+						Filters: []*ec2.Filter{
+							{
+								Name:   "tag:environment",
+								Values: []string{"prod"},
+							},
+							{
+								Name:   "tag:service",
+								Values: []string{"web", "db"},
+							},
+						},
 					},
 				},
 			},
@@ -566,7 +582,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	testutil.Assert(t, len(matches) == 6, "wrong number of secret matches found")
+	testutil.Assert(t, len(matches) == 7, "wrong number of secret matches found")
 	testutil.Assert(t, !strings.Contains(yamlConfig, "mysecret"),
 		"yaml marshal reveals authentication credentials.")
 }
@@ -643,7 +659,7 @@ var expectedErrors = []struct {
 		errMsg:   "invalid rule file path",
 	}, {
 		filename: "unknown_attr.bad.yml",
-		errMsg:   "unknown fields in scrape_config: consult_sd_configs",
+		errMsg:   "field consult_sd_configs not found in type config.plain",
 	}, {
 		filename: "bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
@@ -658,13 +674,22 @@ var expectedErrors = []struct {
 		errMsg:   "role",
 	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
-		errMsg:   "unknown fields in namespaces",
+		errMsg:   "field foo not found in type kubernetes.plain",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
-		errMsg:   "Marathon SD config must contain at least one Marathon server",
+		errMsg:   "marathon_sd: must contain at least one Marathon server",
+	}, {
+		filename: "marathon_authtoken_authtokenfile.bad.yml",
+		errMsg:   "marathon_sd: at most one of auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_basicauth.bad.yml",
+		errMsg:   "marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_bearertoken.bad.yml",
+		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
 	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
@@ -676,13 +701,21 @@ var expectedErrors = []struct {
 		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
 	}, {
 		filename: "unknown_global_attr.bad.yml",
-		errMsg:   "unknown fields in global config: nonexistent_field",
+		errMsg:   "field nonexistent_field not found in type config.plain",
 	}, {
 		filename: "remote_read_url_missing.bad.yml",
 		errMsg:   `url for remote_read is empty`,
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	},
+	{
+		filename: "ec2_filters_empty_values.bad.yml",
+		errMsg:   `EC2 SD configuration filter values cannot be empty`,
+	},
+	{
+		filename: "section_key_dup.bad.yml",
+		errMsg:   "field scrape_configs already set in type config.plain",
 	},
 }
 
@@ -695,11 +728,19 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadStaticConfigs(t *testing.T) {
+func TestBadStaticConfigsJSON(t *testing.T) {
 	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
 	testutil.Ok(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
+	testutil.NotOk(t, err, "")
+}
+
+func TestBadStaticConfigsYML(t *testing.T) {
+	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	testutil.Ok(t, err)
+	var tg targetgroup.Group
+	err = yaml.UnmarshalStrict(content, &tg)
 	testutil.NotOk(t, err, "")
 }
 

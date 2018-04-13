@@ -25,19 +25,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// reservedLabelPrefix is a prefix which is not legal in user-supplied
-// label names.
-const reservedLabelPrefix = "__"
-
-// Labels represents a collection of label name -> value mappings. This type is
-// commonly used with the With(Labels) and GetMetricWith(Labels) methods of
-// metric vector Collectors, e.g.:
-//     myVec.With(Labels{"code": "404", "method": "GET"}).Add(42)
-//
-// The other use-case is the specification of constant label pairs in Opts or to
-// create a Desc.
-type Labels map[string]string
-
 // Desc is the descriptor used by every Prometheus Metric. It is essentially
 // the immutable meta-data of a Metric. The normal Metric implementations
 // included in this package manage their Desc under the hood. Users only have to
@@ -86,8 +73,7 @@ type Desc struct {
 // and therefore not part of the Desc. (They are managed within the Metric.)
 //
 // For constLabels, the label values are constant. Therefore, they are fully
-// specified in the Desc. See the Opts documentation for the implications of
-// constant labels.
+// specified in the Desc. See the Collector example for a usage pattern.
 func NewDesc(fqName, help string, variableLabels []string, constLabels Labels) *Desc {
 	d := &Desc{
 		fqName:         fqName,
@@ -122,6 +108,12 @@ func NewDesc(fqName, help string, variableLabels []string, constLabels Labels) *
 	for _, labelName := range labelNames {
 		labelValues = append(labelValues, constLabels[labelName])
 	}
+	// Validate the const label values. They can't have a wrong cardinality, so
+	// use in len(labelValues) as expectedNumberOfValues.
+	if err := validateLabelValues(labelValues, len(labelValues)); err != nil {
+		d.err = err
+		return d
+	}
 	// Now add the variable label names, but prefix them with something that
 	// cannot be in a regular label name. That prevents matching the label
 	// dimension with a different mix between preset and variable labels.
@@ -137,6 +129,7 @@ func NewDesc(fqName, help string, variableLabels []string, constLabels Labels) *
 		d.err = errors.New("duplicate label names")
 		return d
 	}
+
 	vh := hashNew()
 	for _, val := range labelValues {
 		vh = hashAdd(vh, val)
@@ -192,9 +185,4 @@ func (d *Desc) String() string {
 		strings.Join(lpStrings, ","),
 		d.variableLabels,
 	)
-}
-
-func checkLabelName(l string) bool {
-	return model.LabelName(l).IsValid() &&
-		!strings.HasPrefix(l, reservedLabelPrefix)
 }
