@@ -100,12 +100,7 @@ func main() {
 	http.Handle(cfg.telemetryPath, prometheus.Handler())
 
 	logLevel := promlog.AllowedLevel{}
-	if cfg.logLevel != "info" && cfg.logLevel != "debug" && cfg.logLevel != "error" && cfg.logLevel != "warn" {
-		logLevel.Set("debug")
-	} else {
-		logLevel.Set(cfg.logLevel)
-	}
-
+	logLevel.Set(cfg.logLevel)
 	logger := promlog.New(logLevel)
 
 	writers, readers := buildClients(logger, cfg)
@@ -146,9 +141,7 @@ func parseFlags() *config {
 	)
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
-	flag.StringVar(&cfg.logLevel, "log.level", "",
-		"The log level to be set for promlog",
-	)
+	flag.StringVar(&cfg.logLevel, "log.level", "debug", "The log level(error/warn/info/debug) to be set for promlog")
 
 	flag.Parse()
 
