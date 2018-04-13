@@ -151,9 +151,11 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(dirs) < 1 {
+		return nil, nil
+	}
 
 	var dms []dirMeta
-
 	for _, dir := range dirs {
 		meta, err := readMetaFile(dir)
 		if err != nil {
@@ -168,6 +170,10 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	sort.Slice(dms, func(i, j int) bool {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
+
+	// We do not include a recently created block with max(minTime), so the block which was just created from WAL.
+	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
+	dms = dms[:len(dms)-1]
 
 	var res []string
 	for _, dm := range c.selectDirs(dms) {

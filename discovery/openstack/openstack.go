@@ -26,7 +26,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 var (
@@ -61,9 +60,6 @@ type SDConfig struct {
 	Region           string             `yaml:"region"`
 	RefreshInterval  model.Duration     `yaml:"refresh_interval,omitempty"`
 	Port             int                `yaml:"port"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // OpenStackRole is role of the target in OpenStack.
@@ -103,7 +99,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Role == "" {
 		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
-	return yaml_util.CheckOverflow(c.XXX, "openstack_sd_config")
+	if c.Region == "" {
+		return fmt.Errorf("Openstack SD configuration requires a region")
+	}
+	return nil
 }
 
 func init() {

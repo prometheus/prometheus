@@ -25,7 +25,6 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 	"gopkg.in/yaml.v2"
 )
 
@@ -42,7 +41,7 @@ func Load(s string) (*Config, error) {
 	// point as well.
 	*cfg = DefaultConfig
 
-	err := yaml.Unmarshal([]byte(s), cfg)
+	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -141,9 +140,6 @@ type Config struct {
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
-
 	// original is the input from which the config was parsed.
 	original string
 }
@@ -176,10 +172,11 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 			kcfg.TLSConfig.KeyFile = join(kcfg.TLSConfig.KeyFile)
 		}
 		for _, mcfg := range cfg.MarathonSDConfigs {
-			mcfg.BearerTokenFile = join(mcfg.BearerTokenFile)
-			mcfg.TLSConfig.CAFile = join(mcfg.TLSConfig.CAFile)
-			mcfg.TLSConfig.CertFile = join(mcfg.TLSConfig.CertFile)
-			mcfg.TLSConfig.KeyFile = join(mcfg.TLSConfig.KeyFile)
+			mcfg.AuthTokenFile = join(mcfg.AuthTokenFile)
+			mcfg.HTTPClientConfig.BearerTokenFile = join(mcfg.HTTPClientConfig.BearerTokenFile)
+			mcfg.HTTPClientConfig.TLSConfig.CAFile = join(mcfg.HTTPClientConfig.TLSConfig.CAFile)
+			mcfg.HTTPClientConfig.TLSConfig.CertFile = join(mcfg.HTTPClientConfig.TLSConfig.CertFile)
+			mcfg.HTTPClientConfig.TLSConfig.KeyFile = join(mcfg.HTTPClientConfig.TLSConfig.KeyFile)
 		}
 		for _, consulcfg := range cfg.ConsulSDConfigs {
 			consulcfg.TLSConfig.CAFile = join(consulcfg.TLSConfig.CAFile)
@@ -221,9 +218,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if err := yaml_util.CheckOverflow(c.XXX, "config"); err != nil {
-		return err
-	}
+
 	// If a global block was open but empty the default global config is overwritten.
 	// We have to restore it here.
 	if c.GlobalConfig.isZero() {
@@ -273,9 +268,6 @@ type GlobalConfig struct {
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels model.LabelSet `yaml:"external_labels,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -287,9 +279,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(gc)); err != nil {
 		return err
 	}
-	if err := yaml_util.CheckOverflow(gc.XXX, "global config"); err != nil {
-		return err
-	}
+
 	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
 	if gc.ScrapeInterval == 0 {
@@ -349,9 +339,6 @@ type ScrapeConfig struct {
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*RelabelConfig `yaml:"metric_relabel_configs,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -362,9 +349,6 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if err = yaml_util.CheckOverflow(c.XXX, "scrape_config"); err != nil {
-		return err
-	}
 	if len(c.JobName) == 0 {
 		return fmt.Errorf("job_name is empty")
 	}
@@ -372,7 +356,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err = c.HTTPClientConfig.Validate(); err != nil {
+	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
 	}
 
@@ -380,7 +364,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.RelabelConfigs) == 0 {
 		for _, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
 			for _, t := range tg.Targets {
-				if err = CheckTargetAddress(t[model.AddressLabel]); err != nil {
+				if err := CheckTargetAddress(t[model.AddressLabel]); err != nil {
 					return err
 				}
 			}
@@ -393,9 +377,6 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type AlertingConfig struct {
 	AlertRelabelConfigs []*RelabelConfig      `yaml:"alert_relabel_configs,omitempty"`
 	AlertmanagerConfigs []*AlertmanagerConfig `yaml:"alertmanagers,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -404,10 +385,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	// by the default due to the YAML parser behavior for empty blocks.
 	*c = AlertingConfig{}
 	type plain AlertingConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	return yaml_util.CheckOverflow(c.XXX, "alerting config")
+	return unmarshal((*plain)(c))
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
@@ -427,9 +405,6 @@ type AlertmanagerConfig struct {
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -437,9 +412,6 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	*c = DefaultAlertmanagerConfig
 	type plain AlertmanagerConfig
 	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "alertmanager config"); err != nil {
 		return err
 	}
 
@@ -476,18 +448,12 @@ func CheckTargetAddress(address model.LabelValue) error {
 type ClientCert struct {
 	Cert string             `yaml:"cert"`
 	Key  config_util.Secret `yaml:"key"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // FileSDConfig is the configuration for file based discovery.
 type FileSDConfig struct {
 	Files           []string       `yaml:"files"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // RelabelAction is the action to be performed on relabeling.
@@ -542,9 +508,6 @@ type RelabelConfig struct {
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action RelabelAction `yaml:"action,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -552,9 +515,6 @@ func (c *RelabelConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultRelabelConfig
 	type plain RelabelConfig
 	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "relabel_config"); err != nil {
 		return err
 	}
 	if c.Regex.Regexp == nil {
@@ -646,9 +606,6 @@ type RemoteWriteConfig struct {
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig                  `yaml:"queue_config,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -665,11 +622,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
-
-	return yaml_util.CheckOverflow(c.XXX, "remote_write")
+	return c.HTTPClientConfig.Validate()
 }
 
 // QueueConfig is the configuration for the queue used to write to remote
@@ -707,9 +660,6 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -722,13 +672,8 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	if c.URL == nil {
 		return fmt.Errorf("url for remote_read is empty")
 	}
-
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
-
-	return yaml_util.CheckOverflow(c.XXX, "remote_read")
+	return c.HTTPClientConfig.Validate()
 }
