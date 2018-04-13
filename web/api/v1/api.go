@@ -483,7 +483,7 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 			DiscoveredLabels: t.DiscoveredLabels().Map(),
 		}
 	}
-	return res, nil
+	return res, nil, nil
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.

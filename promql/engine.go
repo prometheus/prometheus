@@ -380,7 +380,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
-	// Instant evaluation. This is executed as a range evaulation with one step.
+	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
@@ -557,7 +557,7 @@ func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 	return res, it.Err()
 }
 
-// An evaluator evaluates given expressions at over given fixed timestamps. It
+// An evaluator evaluates given expressions over given fixed timestamps. It
 // is attached to an engine through which it connects to a querier and reports
 // errors. On timeout or cancellation of its context it terminates.
 type evaluator struct {
@@ -565,7 +565,6 @@ type evaluator struct {
 
 	Timestamp int64 // Start time in milliseconds.
 
-	// These will be zero if this is an instant query.
 	EndTimestamp int64 // End time in milliseconds.
 	Interval     int64 // Interval in milliseconds.
 
@@ -664,7 +663,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
-	// The +1 isn't always needed, but it is simpler this way.
 	numSteps := int((ev.EndTimestamp-ev.Timestamp)/ev.Interval) + 1
 
 	// rangeWrapper evaluates the given expressions as matrixes, and then for
@@ -951,7 +949,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return mat
 
 	case *MatrixSelector:
-		if ev.Timestamp != ev.EndTimestamp && ev.Interval != 0 {
+		if ev.Timestamp != ev.EndTimestamp {
 			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
