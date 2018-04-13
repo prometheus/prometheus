@@ -556,7 +556,7 @@ func (db *DB) reload(deleteable ...string) (err error) {
 	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
 }
 
-// ValidateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
+// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
 func validateBlockSequence(bs []*Block) error {
 	if len(bs) <= 1 {
 		return nil
