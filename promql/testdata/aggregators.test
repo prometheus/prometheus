@@ -184,6 +184,16 @@ eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="pro
 	http_requests{job="api-server", instance="1", group="production"}	200
 	http_requests{job="api-server", instance="2", group="production"}	NaN
 
+# Test topk and bottomk allocate min(k, input_vector) for results vector
+eval_ordered instant at 50m bottomk(9999999999, http_requests{job="app-server",group="canary"})
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="app-server"} 800
+
+eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",group="production"})
+	http_requests{job="api-server", instance="1", group="production"}	200
+	http_requests{job="api-server", instance="0", group="production"}	100
+	http_requests{job="api-server", instance="2", group="production"}	NaN
+
 clear
 
 # Tests for count_values.

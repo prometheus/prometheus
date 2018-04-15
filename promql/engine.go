@@ -1333,14 +1333,19 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				valuesSquaredSum: s.V * s.V,
 				groupCount:       1,
 			}
+			input_vec_len := int64(len(vec))
+			result_size := k
+			if k > input_vec_len {
+				result_size = input_vec_len
+			}
 			if op == itemTopK || op == itemQuantile {
-				result[groupingKey].heap = make(vectorByValueHeap, 0, k)
+				result[groupingKey].heap = make(vectorByValueHeap, 0, result_size)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			} else if op == itemBottomK {
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, k)
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, result_size)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
