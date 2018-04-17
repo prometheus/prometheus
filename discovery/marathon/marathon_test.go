@@ -16,7 +16,9 @@ package marathon
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -323,6 +325,33 @@ func TestMarathonZeroTaskPorts(t *testing.T) {
 		}
 	default:
 		t.Fatal("Did not get a target group.")
+	}
+}
+
+func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
+	var (
+		ch     = make(chan []*targetgroup.Group, 1)
+		client = fetchApps
+	)
+	// Simulate 500 error with a valid JSON response.
+	respHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{}`)
+	}
+	// Create a test server with mock HTTP handler.
+	ts := httptest.NewServer(http.HandlerFunc(respHandler))
+	defer ts.Close()
+	// Backup conf for future tests.
+	backupConf := conf
+	defer func() {
+		conf = backupConf
+	}()
+	// Setup conf for the test case.
+	conf = SDConfig{Servers: []string{ts.URL}}
+	// Execute test case and validate behaviour.
+	if err := testUpdateServices(client, ch); err == nil {
+		t.Fatalf("Expected error for 5xx HTTP response from marathon server")
 	}
 }
 
