@@ -185,6 +185,11 @@ func newTest(t testutil.T, input string) (*test, error) {
 	return test, err
 }
 
+// SetStorage sets test's storage
+func (t *test) SetStorage(s storage.Storage) {
+	t.storage = s
+}
+
 //go:embed testdata
 var testsFs embed.FS
 
