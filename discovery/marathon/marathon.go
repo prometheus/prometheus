@@ -336,6 +336,10 @@ func fetchApps(client *http.Client, url string) (*AppList, error) {
 		return nil, err
 	}
 
+	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
+		return nil, fmt.Errorf("Non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
