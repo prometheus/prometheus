@@ -45,9 +45,13 @@ style:
 
 check_license:
 	@echo ">> checking license header"
-	for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
-		awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo "license header checking failed for:" $$file  ; \
-	done
+	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
+               awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo $$file; \
+       done); \
+       if [ -n "$${licRes}" ]; then \
+               echo "license header checking failed:"; echo "$${licRes}"; \
+               exit 1; \
+       fi
 
 test-short:
 	@echo ">> running short tests"
