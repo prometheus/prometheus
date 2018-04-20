@@ -37,7 +37,7 @@ PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 
-all: format staticcheck unused build test
+all: style staticcheck unused build test
 
 style:
 	@echo ">> checking code style"
