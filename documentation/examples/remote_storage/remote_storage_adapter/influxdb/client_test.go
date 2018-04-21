@@ -74,6 +74,11 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/query" { // Ignore the create DB query.
+				w.Write([]byte("{}")) // send a fake JSON response
+				return
+			}
+
 			if r.Method != "POST" {
 				t.Fatalf("Unexpected method; expected POST, got %s", r.Method)
 			}
