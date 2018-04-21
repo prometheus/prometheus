@@ -65,7 +65,8 @@ func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) 
 			},
 		),
 	}
-	client.ensureDatabase()
+	// It might take a long time for the database to be created, so don't block on it.
+	go client.ensureDatabase()
 	return client
 }
 
@@ -87,11 +88,14 @@ func (c *Client) ensureDatabase() {
 	}
 	tk := time.NewTicker(5 * time.Second)
 	defer tk.Stop()
+	// Creating database is an idempotent operation, so it's safe to do it repeatively.
 	for range tk.C {
-		_, err := c.client.Query(q)
+	_, err := c.client.Query(q)
 		if err == nil {
 			return
 		}
+		// TODO: check the error code, once they are available.
+		// See https://github.com/influxdata/influxdb/issues/9702 for more detials.
 		level.Warn(c.logger).Log("msg", "failed to create database", "err", err)
 	}
 }
