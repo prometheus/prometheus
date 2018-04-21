@@ -65,8 +65,7 @@ func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) 
 			},
 		),
 	}
-	// It might take a long time for the database to be created, so don't block on it.
-	go client.ensureDatabase()
+	client.ensureDatabase()
 	return client
 }
 

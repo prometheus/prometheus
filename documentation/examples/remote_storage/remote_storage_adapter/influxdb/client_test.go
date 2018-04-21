@@ -68,15 +68,27 @@ func TestClient(t *testing.T) {
 		},
 	}
 
+	expectedQuery := `CREATE DATABASE test_db`
 	expectedBody := `testmetric,test_label=test_label_value1 value=1.23 123456789123
 testmetric,test_label=test_label_value2 value=5.1234 123456789123
 `
 
 	server := httptest.NewServer(http.HandlerFunc(
+		// TODO: t.Fatalf doesn't work inside httptest.NewServer
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != "POST" {
 				t.Fatalf("Unexpected method; expected POST, got %s", r.Method)
 			}
+
+			if r.URL.Path == "/query" {
+				q := r.FormValue("q")
+				if q != expectedQuery {
+					t.Fatalf("Unexpected query; expected:\n\n%s\n\ngot:\n\n%s", expectedQuery, q)
+				}
+				w.Write([]byte("{}")) // send a fake JSON response
+				return
+			}
+
 			if r.URL.Path != "/write" {
 				t.Fatalf("Unexpected path; expected %s, got %s", "/write", r.URL.Path)
 			}
