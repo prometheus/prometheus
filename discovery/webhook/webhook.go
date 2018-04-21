@@ -87,6 +87,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	th := time.NewTicker(d.interval)
+	defer th.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -94,7 +95,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-th.C:
 			tg, err := fetchTargets(d.url)
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Error reading url", "url", d.url, "err", err)
+				level.Error(d.logger).Log("msg", "Error reading url", "err", err)
 			} else {
 				ch <- tg
 			}
