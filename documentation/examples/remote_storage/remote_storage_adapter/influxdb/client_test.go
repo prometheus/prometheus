@@ -75,7 +75,7 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/query" { // Ignore the create DB query.
-				w.Write([]byte("{}")) // send a fake JSON response
+				w.Write([]byte("{}")) // Send a fake JSON response.
 				return
 			}
 
@@ -128,7 +128,7 @@ func TestClientEnsureDB(t *testing.T) {
 			if gotQuery == expectedQuery {
 				requestMatches = true
 			}
-			w.Write([]byte("{}")) // send a fake JSON response
+			w.Write([]byte("{}")) // Send a fake JSON response.
 		},
 	))
 	defer server.Close()
