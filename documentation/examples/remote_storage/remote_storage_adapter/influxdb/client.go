@@ -89,7 +89,7 @@ func (c *Client) ensureDatabase() {
 	defer tk.Stop()
 	// Creating database is an idempotent operation, so it's safe to do it repeatively.
 	for range tk.C {
-	_, err := c.client.Query(q)
+		_, err := c.client.Query(q)
 		if err == nil {
 			return
 		}
