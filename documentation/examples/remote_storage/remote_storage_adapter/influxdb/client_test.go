@@ -15,6 +15,7 @@ package influxdb
 
 import (
 	"io/ioutil"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -74,7 +75,6 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 `
 
 	server := httptest.NewServer(http.HandlerFunc(
-		// TODO: t.Fatalf doesn't work inside httptest.NewServer
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != "POST" {
 				t.Fatalf("Unexpected method; expected POST, got %s", r.Method)
@@ -83,7 +83,8 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 			if r.URL.Path == "/query" {
 				q := r.FormValue("q")
 				if q != expectedQuery {
-					t.Fatalf("Unexpected query; expected:\n\n%s\n\ngot:\n\n%s", expectedQuery, q)
+					// TODO: t.Fatalf can't cause httptest.NewServer to exit immediately.
+					log.Fatalf("Unexpected query; expected:\n\n%s\n\ngot:\n\n%s", expectedQuery, q)
 				}
 				w.Write([]byte("{}")) // send a fake JSON response
 				return
