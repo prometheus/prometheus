@@ -101,7 +101,9 @@ type response struct {
 // Enables cross-site script calls.
 func setCORS(w http.ResponseWriter) {
 	for h, v := range corsHeaders {
-		w.Header().Set(h, v)
+		if _, ok := w.Header()[h]; !ok {
+			w.Header().Set(h, v)
+		}
 	}
 }
 
