@@ -15,7 +15,6 @@ package influxdb
 
 import (
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +68,6 @@ func TestClient(t *testing.T) {
 		},
 	}
 
-	expectedQuery := `CREATE DATABASE test_db`
 	expectedBody := `testmetric,test_label=test_label_value1 value=1.23 123456789123
 testmetric,test_label=test_label_value2 value=5.1234 123456789123
 `
@@ -79,17 +77,6 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 			if r.Method != "POST" {
 				t.Fatalf("Unexpected method; expected POST, got %s", r.Method)
 			}
-
-			if r.URL.Path == "/query" {
-				q := r.FormValue("q")
-				if q != expectedQuery {
-					// TODO: t.Fatalf can't cause httptest.NewServer to exit immediately.
-					log.Fatalf("Unexpected query; expected:\n\n%s\n\ngot:\n\n%s", expectedQuery, q)
-				}
-				w.Write([]byte("{}")) // send a fake JSON response
-				return
-			}
-
 			if r.URL.Path != "/write" {
 				t.Fatalf("Unexpected path; expected %s, got %s", "/write", r.URL.Path)
 			}
@@ -121,4 +108,52 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 	if err := c.Write(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)
 	}
+}
+
+// TestClientEnsureDB checks that the client tries to create the DB as its initialization.
+func TestClientEnsureDB(t *testing.T) {
+
+	expectedQuery := `CREATE DATABASE test_db`
+	var gotQuery string
+	var requestMatches bool
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			gotQuery := r.FormValue("q")
+			if gotQuery == expectedQuery {
+				requestMatches = true
+			}
+			w.Write([]byte("{}")) // send a fake JSON response
+		},
+	))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("Unable to parse server URL %s: %s", server.URL, err)
+	}
+
+	conf := influx.HTTPConfig{
+		Addr: serverURL.String(),
+	}
+
+	wait := make(chan struct{})
+
+	go func() {
+		NewClient(nil, conf, "test_db", "default")
+		close(wait)
+	}()
+	select {
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("Client didn't complete initialization within the set timeout!")
+	case <-wait:
+	}
+
+	if !requestMatches {
+		t.Fatalf(`
+Unexpected query!
+expected:%s
+got:%s`, expectedQuery, gotQuery)
+	}
+
 }
