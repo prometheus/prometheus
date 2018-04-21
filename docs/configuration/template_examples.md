@@ -20,8 +20,8 @@ for: 5m
 labels:
   - severity: page
 annotations:
-  - summary: "Instance {{$labels.instance}} down"
-  - description: "{{$labels.instance}} of job {{$labels.job}} has been down for more than 5 minutes."
+  summary: "Instance {{$labels.instance}} down"
+  description: "{{$labels.instance}} of job {{$labels.job}} has been down for more than 5 minutes."
 ```
 
 Alert field templates will be executed during every rule iteration for each

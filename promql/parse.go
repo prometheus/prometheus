@@ -104,14 +104,6 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	return vs.LabelMatchers, nil
 }
 
-// parseSeriesDesc parses the description of a time series.
-func parseSeriesDesc(input string) (labels.Labels, []sequenceValue, error) {
-	p := newParser(input)
-	p.lex.seriesDesc = true
-
-	return p.parseSeriesDesc()
-}
-
 // newParser returns a new parser.
 func newParser(input string) *parser {
 	p := &parser{
@@ -165,6 +157,14 @@ func (v sequenceValue) String() string {
 		return "_"
 	}
 	return fmt.Sprintf("%f", v.value)
+}
+
+// parseSeriesDesc parses the description of a time series.
+func parseSeriesDesc(input string) (labels.Labels, []sequenceValue, error) {
+	p := newParser(input)
+	p.lex.seriesDesc = true
+
+	return p.parseSeriesDesc()
 }
 
 // parseSeriesDesc parses a description of a time series into its metric and value sequence.
@@ -314,7 +314,7 @@ func (p *parser) error(err error) {
 }
 
 // expect consumes the next token and guarantees it has the required type.
-func (p *parser) expect(exp itemType, context string) item {
+func (p *parser) expect(exp ItemType, context string) item {
 	token := p.next()
 	if token.typ != exp {
 		p.errorf("unexpected %s in %s, expected %s", token.desc(), context, exp.desc())
@@ -323,7 +323,7 @@ func (p *parser) expect(exp itemType, context string) item {
 }
 
 // expectOneOf consumes the next token and guarantees it has one of the required types.
-func (p *parser) expectOneOf(exp1, exp2 itemType, context string) item {
+func (p *parser) expectOneOf(exp1, exp2 ItemType, context string) item {
 	token := p.next()
 	if token.typ != exp1 && token.typ != exp2 {
 		p.errorf("unexpected %s in %s, expected %s or %s", token.desc(), context, exp1.desc(), exp2.desc())
@@ -348,7 +348,6 @@ func (p *parser) recover(errp *error) {
 			*errp = e.(error)
 		}
 	}
-	return
 }
 
 // stmt parses any statement.
@@ -510,7 +509,7 @@ func (p *parser) expr() Expr {
 	}
 }
 
-func (p *parser) balance(lhs Expr, op itemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
+func (p *parser) balance(lhs Expr, op ItemType, rhs Expr, vecMatching *VectorMatching, returnBool bool) *BinaryExpr {
 	if lhsBE, ok := lhs.(*BinaryExpr); ok {
 		precd := lhsBE.Op.precedence() - op.precedence()
 		if (precd < 0) || (precd == 0 && op.isRightAssociative()) {
@@ -811,7 +810,7 @@ func (p *parser) labelSet() labels.Labels {
 //
 //		'{' [ <labelname> <match_op> <match_string>, ... ] '}'
 //
-func (p *parser) labelMatchers(operators ...itemType) []*labels.Matcher {
+func (p *parser) labelMatchers(operators ...ItemType) []*labels.Matcher {
 	const ctx = "label matching"
 
 	matchers := []*labels.Matcher{}

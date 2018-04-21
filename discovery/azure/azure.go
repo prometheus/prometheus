@@ -32,7 +32,6 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -73,9 +72,6 @@ type SDConfig struct {
 	ClientID        string             `yaml:"client_id,omitempty"`
 	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -86,8 +82,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-
-	return yaml_util.CheckOverflow(c.XXX, "azure_sd_config")
+	if c.SubscriptionID == "" {
+		return fmt.Errorf("Azure SD configuration requires a subscription_id")
+	}
+	return nil
 }
 
 func init() {

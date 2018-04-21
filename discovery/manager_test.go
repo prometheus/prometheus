@@ -736,7 +736,7 @@ scrape_configs:
    - targets: ["foo:9090"]
    - targets: ["bar:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sOne), cfg); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -750,7 +750,7 @@ scrape_configs:
 	}
 	discoveryManager.ApplyConfig(c)
 
-	_ = <-discoveryManager.SyncCh()
+	<-discoveryManager.SyncCh()
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
 
@@ -760,7 +760,7 @@ scrape_configs:
    static_configs:
    - targets: ["foo:9090"]
 `
-	if err := yaml.Unmarshal([]byte(sTwo), cfg); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
 		t.Fatalf("Unable to load YAML config sOne: %s", err)
 	}
 	c = make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -769,7 +769,7 @@ scrape_configs:
 	}
 	discoveryManager.ApplyConfig(c)
 
-	_ = <-discoveryManager.SyncCh()
+	<-discoveryManager.SyncCh()
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
 }

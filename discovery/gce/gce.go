@@ -30,7 +30,6 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	yaml_util "github.com/prometheus/prometheus/util/yaml"
 )
 
 const (
@@ -45,6 +44,7 @@ const (
 	gceLabelInstanceStatus = gceLabel + "instance_status"
 	gceLabelTags           = gceLabel + "tags"
 	gceLabelMetadata       = gceLabel + "metadata_"
+	gceLabelMachineType    = gceLabel + "machine_type"
 )
 
 var (
@@ -83,9 +83,6 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 	TagSeparator    string         `yaml:"tag_separator,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -94,9 +91,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
-		return err
-	}
-	if err := yaml_util.CheckOverflow(c.XXX, "gce_sd_config"); err != nil {
 		return err
 	}
 	if c.Project == "" {
@@ -206,7 +200,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	if len(d.filter) > 0 {
 		ilc = ilc.Filter(d.filter)
 	}
-	err = ilc.Pages(nil, func(l *compute.InstanceList) error {
+	err = ilc.Pages(context.TODO(), func(l *compute.InstanceList) error {
 		for _, inst := range l.Items {
 			if len(inst.NetworkInterfaces) == 0 {
 				continue
@@ -216,6 +210,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				gceLabelZone:           model.LabelValue(inst.Zone),
 				gceLabelInstanceName:   model.LabelValue(inst.Name),
 				gceLabelInstanceStatus: model.LabelValue(inst.Status),
+				gceLabelMachineType:    model.LabelValue(inst.MachineType),
 			}
 			priIface := inst.NetworkInterfaces[0]
 			labels[gceLabelNetwork] = model.LabelValue(priIface.Network)

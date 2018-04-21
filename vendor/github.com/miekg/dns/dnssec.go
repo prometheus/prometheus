@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ed25519"
 )
 
 // DNSSEC encryption algorithm codes.
@@ -38,12 +40,14 @@ const (
 	ECCGOST
 	ECDSAP256SHA256
 	ECDSAP384SHA384
+	ED25519
+	ED448
 	INDIRECT   uint8 = 252
 	PRIVATEDNS uint8 = 253 // Private (experimental keys)
 	PRIVATEOID uint8 = 254
 )
 
-// Map for algorithm names.
+// AlgorithmToString is a map of algorithm IDs to algorithm names.
 var AlgorithmToString = map[uint8]string{
 	RSAMD5:           "RSAMD5",
 	DH:               "DH",
@@ -56,15 +60,17 @@ var AlgorithmToString = map[uint8]string{
 	ECCGOST:          "ECC-GOST",
 	ECDSAP256SHA256:  "ECDSAP256SHA256",
 	ECDSAP384SHA384:  "ECDSAP384SHA384",
+	ED25519:          "ED25519",
+	ED448:            "ED448",
 	INDIRECT:         "INDIRECT",
 	PRIVATEDNS:       "PRIVATEDNS",
 	PRIVATEOID:       "PRIVATEOID",
 }
 
-// Map of algorithm strings.
+// StringToAlgorithm is the reverse of AlgorithmToString.
 var StringToAlgorithm = reverseInt8(AlgorithmToString)
 
-// Map of algorithm crypto hashes.
+// AlgorithmToHash is a map of algorithm crypto hash IDs to crypto.Hash's.
 var AlgorithmToHash = map[uint8]crypto.Hash{
 	RSAMD5:           crypto.MD5, // Deprecated in RFC 6725
 	RSASHA1:          crypto.SHA1,
@@ -73,6 +79,7 @@ var AlgorithmToHash = map[uint8]crypto.Hash{
 	ECDSAP256SHA256:  crypto.SHA256,
 	ECDSAP384SHA384:  crypto.SHA384,
 	RSASHA512:        crypto.SHA512,
+	ED25519:          crypto.Hash(0),
 }
 
 // DNSSEC hashing algorithm codes.
@@ -85,7 +92,7 @@ const (
 	SHA512       // Experimental
 )
 
-// Map for hash names.
+// HashToString is a map of hash IDs to names.
 var HashToString = map[uint8]string{
 	SHA1:   "SHA1",
 	SHA256: "SHA256",
@@ -94,7 +101,7 @@ var HashToString = map[uint8]string{
 	SHA512: "SHA512",
 }
 
-// Map of hash strings.
+// StringToHash is a map of names to hash IDs.
 var StringToHash = reverseInt8(HashToString)
 
 // DNSKEY flag values.
@@ -301,16 +308,32 @@ func (rr *RRSIG) Sign(k crypto.Signer, rrset []RR) error {
 		return ErrAlg
 	}
 
-	h := hash.New()
-	h.Write(signdata)
-	h.Write(wire)
+	switch rr.Algorithm {
+	case ED25519:
+		// ed25519 signs the raw message and performs hashing internally.
+		// All other supported signature schemes operate over the pre-hashed
+		// message, and thus ed25519 must be handled separately here.
+		//
+		// The raw message is passed directly into sign and crypto.Hash(0) is
+		// used to signal to the crypto.Signer that the data has not been hashed.
+		signature, err := sign(k, append(signdata, wire...), crypto.Hash(0), rr.Algorithm)
+		if err != nil {
+			return err
+		}
 
-	signature, err := sign(k, h.Sum(nil), hash, rr.Algorithm)
-	if err != nil {
-		return err
+		rr.Signature = toBase64(signature)
+	default:
+		h := hash.New()
+		h.Write(signdata)
+		h.Write(wire)
+
+		signature, err := sign(k, h.Sum(nil), hash, rr.Algorithm)
+		if err != nil {
+			return err
+		}
+
+		rr.Signature = toBase64(signature)
 	}
-
-	rr.Signature = toBase64(signature)
 
 	return nil
 }
@@ -352,6 +375,9 @@ func sign(k crypto.Signer, hashed []byte, hash crypto.Hash, alg uint8) ([]byte, 
 		// 	signature = append(signature, intToBytes(r1, 20)...)
 		// 	signature = append(signature, intToBytes(s1, 20)...)
 		// 	rr.Signature = signature
+
+	case ED25519:
+		return signature, nil
 	}
 
 	return nil, ErrAlg
@@ -456,6 +482,17 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 		}
 		return ErrSig
 
+	case ED25519:
+		pubkey := k.publicKeyED25519()
+		if pubkey == nil {
+			return ErrKey
+		}
+
+		if ed25519.Verify(pubkey, append(signeddata, wire...), sigbuf) {
+			return nil
+		}
+		return ErrSig
+
 	default:
 		return ErrAlg
 	}
@@ -515,7 +552,7 @@ func (k *DNSKEY) publicKeyRSA() *rsa.PublicKey {
 	}
 	// Remainder
 	expo += uint64(keybuf[keyoff])
-	if expo > 2<<31 {
+	if expo > (2<<31)+1 {
 		// Larger expo than supported.
 		// println("dns: F5 primes (or larger) are not supported")
 		return nil
@@ -578,6 +615,17 @@ func (k *DNSKEY) publicKeyDSA() *dsa.PublicKey {
 	return pubkey
 }
 
+func (k *DNSKEY) publicKeyED25519() ed25519.PublicKey {
+	keybuf, err := fromBase64([]byte(k.PublicKey))
+	if err != nil {
+		return nil
+	}
+	if len(keybuf) != ed25519.PublicKeySize {
+		return nil
+	}
+	return keybuf
+}
+
 type wireSlice [][]byte
 
 func (p wireSlice) Len() int      { return len(p) }
@@ -615,6 +663,10 @@ func rawSignatureData(rrset []RR, s *RRSIG) (buf []byte, err error) {
 		switch x := r1.(type) {
 		case *NS:
 			x.Ns = strings.ToLower(x.Ns)
+		case *MD:
+			x.Md = strings.ToLower(x.Md)
+		case *MF:
+			x.Mf = strings.ToLower(x.Mf)
 		case *CNAME:
 			x.Target = strings.ToLower(x.Target)
 		case *SOA:
@@ -633,6 +685,18 @@ func rawSignatureData(rrset []RR, s *RRSIG) (buf []byte, err error) {
 			x.Email = strings.ToLower(x.Email)
 		case *MX:
 			x.Mx = strings.ToLower(x.Mx)
+		case *RP:
+			x.Mbox = strings.ToLower(x.Mbox)
+			x.Txt = strings.ToLower(x.Txt)
+		case *AFSDB:
+			x.Hostname = strings.ToLower(x.Hostname)
+		case *RT:
+			x.Host = strings.ToLower(x.Host)
+		case *SIG:
+			x.SignerName = strings.ToLower(x.SignerName)
+		case *PX:
+			x.Map822 = strings.ToLower(x.Map822)
+			x.Mapx400 = strings.ToLower(x.Mapx400)
 		case *NAPTR:
 			x.Replacement = strings.ToLower(x.Replacement)
 		case *KX:

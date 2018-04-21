@@ -452,9 +452,10 @@ We also expose a gRPC API whose definition can be found [here](https://github.co
 
 ### Snapshot
 Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response.
+It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
 
 ```
-POST /api/v1/admin/tsdb/snapshot
+POST /api/v1/admin/tsdb/snapshot?skip_head=<bool>
 ```
 
 ```json
@@ -491,8 +492,8 @@ Not mentioning both start and end times would clear all the data for the matched
 Example:
 
 ```json
-$ curl -X DELETE \                                                              
-  -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -X POST \
+  -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 *New in v2.1*
 
