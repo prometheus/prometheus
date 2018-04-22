@@ -88,7 +88,7 @@ func (c *Client) ensureDatabase() {
 	tk := time.NewTicker(5 * time.Second)
 	defer tk.Stop()
 	// Creating database is an idempotent operation, so it's safe to do it repeatively.
-	for range tk.C {
+	for ; true; <-tk.C {
 		_, err := c.client.Query(q)
 		if err == nil {
 			return
