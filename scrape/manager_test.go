@@ -249,7 +249,7 @@ func TestManagerReloadNoChange(t *testing.T) {
 	scrapeManager := NewManager(nil, nil)
 	scrapeManager.scrapeConfigs[tsetName] = reloadCfg.ScrapeConfigs[0]
 	// As reload never happens, new loop should never be called.
-	newLoop := func(_ *Target, s scraper) loop {
+	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
 		t.Fatal("reload happened")
 		return nil
 	}
