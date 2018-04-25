@@ -772,10 +772,10 @@
 			"revisionTime": "2015-02-12T10:17:44Z"
 		},
 		{
-			"checksumSHA1": "i+0TxE6bOpJdPNOeNHpO0vMzFh4=",
+			"checksumSHA1": "bgmAaHIDapEUVLIWaqpxG9t4mYQ=",
 			"path": "github.com/prometheus/common/config",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "e5b036cc37a466a0af27d604d1ee500211d16d6a",
+			"revisionTime": "2018-04-23T14:05:01Z"
 		},
 		{
 			"checksumSHA1": "+wZ+Pa6NX+NOxUvayXBXGOcqFe8=",

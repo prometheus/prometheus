@@ -144,9 +144,11 @@ params:
 
 # Sets the `Authorization` header on every scrape request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every scrape request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -744,11 +746,13 @@ role: <role>
 # Optional authentication information used to authenticate to the API server.
 # Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
 # mutually exclusive.
+# password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Optional bearer token authentication information.
 [ bearer_token: <secret> ]
@@ -816,9 +820,11 @@ servers:
 # Sets the `Authorization` header on every request with the
 # configured username and password.
 # This is mutually exclusive with other authentication mechanisms.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
   [ password: <string> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file` and other authentication mechanisms.
@@ -1071,9 +1077,11 @@ through the `__alerts_path__` label.
 
 # Sets the `Authorization` header on every request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
   [ password: <string> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -1165,9 +1173,11 @@ write_relabel_configs:
 
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
   [ password: <string> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote write request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.
@@ -1209,9 +1219,11 @@ required_matchers:
 
 # Sets the `Authorization` header on every remote read request with the
 # configured username and password.
+# password and password_file are mutually exclusive.
 basic_auth:
   [ username: <string> ]
   [ password: <string> ]
+  [ password_file: <string> ]
 
 # Sets the `Authorization` header on every remote read request with
 # the configured bearer token. It is mutually exclusive with `bearer_token_file`.

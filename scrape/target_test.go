@@ -30,7 +30,6 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -151,7 +150,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +177,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +206,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +234,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +268,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +297,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +326,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := httputil.NewClientFromConfig(cfg, "test")
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +365,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := httputil.NewClientFromConfig(cfg, "test")
+	_, err := config_util.NewClientFromConfig(cfg, "test")
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}
