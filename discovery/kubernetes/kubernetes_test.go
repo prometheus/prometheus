@@ -117,7 +117,7 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	// Run discoverer and start a goroutine to read results.
 	go d.discovery.Run(ctx, ch)
 	resChan := make(chan map[string]*targetgroup.Group)
-	go readResultWithoutTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
+	go readResultWithTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
 
 	dd, ok := d.discovery.(hasSynced)
 	if !ok {
@@ -139,9 +139,9 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	}
 }
 
-// readResultWithoutTimeout reads all targegroups from channel with timeout.
+// readResultWithTimeout reads all targegroups from channel with timeout.
 // It merges targegroups by source and sends the result to result channel.
-func readResultWithoutTimeout(t *testing.T, ch <-chan []*targetgroup.Group, max int, timeout time.Duration, resChan chan<- map[string]*targetgroup.Group) {
+func readResultWithTimeout(t *testing.T, ch <-chan []*targetgroup.Group, max int, timeout time.Duration, resChan chan<- map[string]*targetgroup.Group) {
 	allTgs := make([][]*targetgroup.Group, 0)
 
 Loop:
