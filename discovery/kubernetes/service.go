@@ -127,7 +127,7 @@ func convertToService(o interface{}) (*apiv1.Service, error) {
 }
 
 func serviceSource(s *apiv1.Service) string {
-	return "svc/" + s.Namespace + "/" + s.Name
+	return serviceSourceFromNamespaceAndName(s.Namespace, s.Name)
 }
 
 func serviceSourceFromNamespaceAndName(namespace, name string) string {

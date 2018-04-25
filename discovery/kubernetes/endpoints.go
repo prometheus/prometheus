@@ -182,7 +182,7 @@ func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
 }
 
 func endpointsSource(ep *apiv1.Endpoints) string {
-	return "endpoints/" + ep.ObjectMeta.Namespace + "/" + ep.ObjectMeta.Name
+	return endpointsSourceFromNamespaceAndName(ep.Namespace, ep.Name)
 }
 
 func endpointsSourceFromNamespaceAndName(namespace, name string) string {
