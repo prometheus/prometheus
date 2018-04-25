@@ -215,7 +215,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 }
 
 func podSource(pod *apiv1.Pod) string {
-	return "pod/" + pod.Namespace + "/" + pod.Name
+	return podSourceFromNamespaceAndName(pod.Namespace, pod.Name)
 }
 
 func podSourceFromNamespaceAndName(namespace, name string) string {

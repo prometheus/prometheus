@@ -38,8 +38,6 @@ type Node struct {
 	queue    *workqueue.Type
 }
 
-var _ discoverer = &Node{}
-
 // NewNode returns a new node discovery.
 func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	if l == nil {
@@ -130,7 +128,7 @@ func convertToNode(o interface{}) (*apiv1.Node, error) {
 }
 
 func nodeSource(n *apiv1.Node) string {
-	return "node/" + n.Name
+	return nodeSourceFromName(n.Name)
 }
 
 func nodeSourceFromName(name string) string {

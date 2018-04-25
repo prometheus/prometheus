@@ -142,7 +142,6 @@ func init() {
 	}
 }
 
-// Copy of discovery.Discoverer to avoid import cycle.
 // This is only for internal use.
 type discoverer interface {
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)

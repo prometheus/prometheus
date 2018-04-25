@@ -122,7 +122,7 @@ func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
 }
 
 func ingressSource(s *v1beta1.Ingress) string {
-	return "ingress/" + s.Namespace + "/" + s.Name
+	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
 }
 
 func ingressSourceFromNamespaceAndName(namespace, name string) string {
