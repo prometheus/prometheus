@@ -18,6 +18,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -51,7 +52,11 @@ func (q *querier) Select(_ *storage.SelectParams, matchers ...*labels.Matcher) (
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
-		return nil, err
+		if q.client.ignoreError {
+			res = &prompb.QueryResult{}
+		} else {
+			return nil, err
+		}
 	}
 
 	return FromQueryResult(res), nil

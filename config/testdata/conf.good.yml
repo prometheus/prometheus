@@ -23,8 +23,10 @@ remote_write:
 remote_read:
   - url: http://remote1/read
     read_recent: true
+    ignore_error: true
   - url: http://remote3/read
     read_recent: false
+    ignore_error: false
     required_matchers:
       job: special
 
