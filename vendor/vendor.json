@@ -744,14 +744,14 @@
 		{
 			"checksumSHA1": "4VppKBbzCSmoFfQxGNUm0TYiFCA=",
 			"path": "github.com/prometheus/client_golang/api",
-			"revision": "f504d69affe11ec1ccb2e5948127f86878c9fd57",
-			"revisionTime": "2018-03-28T13:04:30Z"
+			"revision": "82f5ff156b29e276022b1a958f7d385870fb9814",
+			"revisionTime": "2018-04-16T23:38:56Z"
 		},
 		{
-			"checksumSHA1": "Wx0+7w3ixPtrkY4l9oamePO4V8A=",
+			"checksumSHA1": "b+vg1vscoxR9FbKlKBR+2/HmWfA=",
 			"path": "github.com/prometheus/client_golang/api/prometheus/v1",
-			"revision": "f504d69affe11ec1ccb2e5948127f86878c9fd57",
-			"revisionTime": "2018-03-28T13:04:30Z"
+			"revision": "82f5ff156b29e276022b1a958f7d385870fb9814",
+			"revisionTime": "2018-04-16T23:38:56Z"
 		},
 		{
 			"checksumSHA1": "I87tkF1e/hrl4d/XIKFfkPRq1ww=",
