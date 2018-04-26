@@ -86,9 +86,8 @@ label sets for which each defined alert is currently active.
 For pending and firing alerts, Prometheus also stores synthetic time series of
 the form `ALERTS{alertname="<alert name>", alertstate="pending|firing", <additional alert labels>}`.
 The sample value is set to `1` as long as the alert is in the indicated active
-(pending or firing) state, and a single `0` value gets written out when an alert
-transitions from active to inactive state. Once inactive, the time series does
-not get further updates.
+(pending or firing) state, and the series is marked stale when this is no
+longer the case.
 
 ### Sending alert notifications
 
