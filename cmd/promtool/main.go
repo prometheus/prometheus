@@ -28,8 +28,8 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
-	api "github.com/prometheus/client_golang/api"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/api"
+	"github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -350,7 +350,7 @@ func CheckMetrics() int {
 	return 0
 }
 
-// QueryInstant performs an instant query against prometheus server.
+// QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url *url.URL, query string) int {
 	config := api.Config{
 		Address: url.String(),
@@ -379,7 +379,7 @@ func QueryInstant(url *url.URL, query string) int {
 	return 0
 }
 
-// QueryRange performs a range query against a prometheus server.
+// QueryRange performs a range query against a Prometheus server.
 func QueryRange(url *url.URL, query string, start string, end string) int {
 	config := api.Config{
 		Address: url.String(),
@@ -419,7 +419,7 @@ func QueryRange(url *url.URL, query string, start string, end string) int {
 
 	resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
 	// Convert seconds to nanoseconds such that time.Duration parses correctly.
-	step := time.Duration(resolution * math.Pow(10, 9))
+	step := time.Duration(resolution * 1e9)
 
 	// Run query against client.
 	api := v1.NewAPI(c)
