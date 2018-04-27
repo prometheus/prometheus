@@ -1430,7 +1430,7 @@ func TestNaNExpression(t *testing.T) {
 	expr, err := ParseExpr("NaN")
 	if err != nil {
 		t.Errorf("error on input 'NaN'")
-		t.Fatalf("coud not parse: %s", err)
+		t.Fatalf("could not parse: %s", err)
 	}
 
 	nl, ok := expr.(*NumberLiteral)

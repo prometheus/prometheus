@@ -75,7 +75,7 @@ https://prometheus.io/docs/prometheus/2.0/migration/
 * [CHANGE] Removed `count_scalar`, `drop_common_labels` functions and `keep_common` modifier from PromQL.
 * [CHANGE] Rewritten exposition format parser with much higher performance. The Protobuf exposition format is no longer supported.
 * [CHANGE] Example console templates updated for new storage and metrics names. Examples other than node exporter and Prometheus removed.
-* [CHANGE] Admin and lifecycle APIs now disabled by default, can be reenabled via flags
+* [CHANGE] Admin and lifecycle APIs now disabled by default, can be re-enabled via flags
 * [CHANGE] Flags switched to using Kingpin, all flags are now --flagname rather than -flagname.
 * [FEATURE/CHANGE] Remote read can be configured to not read data which is available locally. This is enabled by default.
 * [FEATURE] Rules can be grouped now. Rules within a rule group are executed sequentially.
@@ -930,9 +930,9 @@ All changes:
 * [BUGFIX] Fixed special value handling in division and modulo of the query
   language.
 * [BUGFIX] Fix embed-static.sh.
-* [CLEANUP] Added intial HTTP API tests.
+* [CLEANUP] Added initial HTTP API tests.
 * [CLEANUP] Misc. other code cleanups.
-* [MAINTENANCE] Updated vendored dependcies to their newest versions.
+* [MAINTENANCE] Updated vendored dependencies to their newest versions.
 
 ## 0.12.0 / 2015-03-04
 * [CHANGE] Use client_golang v0.3.1. THIS CHANGES FINGERPRINTING AND INVALIDATES

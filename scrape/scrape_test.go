@@ -1202,7 +1202,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 		}
 	}
 	// If this is closed in a defer above the function the test server
-	// does not terminate and the test doens't complete.
+	// doesn't terminate and the test doesn't complete.
 	close(block)
 }
 
