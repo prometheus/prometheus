@@ -50,7 +50,7 @@ message LabelMatcher {
   string value = 3;
 }
 
-message ReadParams {
-  int64 step = 1;
-  string func = 2;
+message ReadHints {
+  int64 step_ms = 1; // Query step size in milliseconds.
+  string func = 2;   // String representation of surrounding function or aggregation.
 }

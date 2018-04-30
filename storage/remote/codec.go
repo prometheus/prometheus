@@ -92,16 +92,16 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 		return nil, err
 	}
 
-	rp := &prompb.ReadParams{
-		Step: p.Step,
-		Func: p.Func,
+	rp := &prompb.ReadHints{
+		StepMs: p.Step,
+		Func:   p.Func,
 	}
 
 	return &prompb.Query{
 		StartTimestampMs: from,
 		EndTimestampMs:   to,
 		Matchers:         ms,
-		Params:           rp,
+		Hints:            rp,
 	}, nil
 }
 
