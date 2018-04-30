@@ -49,3 +49,8 @@ message LabelMatcher {
   string name  = 2;
   string value = 3;
 }
+
+message ReadParams {
+  int64 step = 1;
+  string func = 2;
+}

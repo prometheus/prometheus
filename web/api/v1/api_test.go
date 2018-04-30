@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
@@ -588,7 +589,7 @@ func TestReadEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2})
+	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
 	if err != nil {
 		t.Fatal(err)
 	}

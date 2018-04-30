@@ -86,16 +86,22 @@ func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
 }
 
 // ToQuery builds a Query proto.
-func ToQuery(from, to int64, matchers []*labels.Matcher) (*prompb.Query, error) {
+func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
+	}
+
+	rp := &prompb.ReadParams{
+		Step: p.Step,
+		Func: p.Func,
 	}
 
 	return &prompb.Query{
 		StartTimestampMs: from,
 		EndTimestampMs:   to,
 		Matchers:         ms,
+		Params:           rp,
 	}, nil
 }
 
