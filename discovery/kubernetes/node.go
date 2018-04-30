@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/pkg/api"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
 
 // Node discovers Kubernetes nodes.
@@ -34,6 +35,7 @@ type Node struct {
 	logger   log.Logger
 	informer cache.SharedInformer
 	store    cache.Store
+	queue    *workqueue.Type
 }
 
 // NewNode returns a new node discovery.
@@ -41,68 +43,79 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Node{logger: l, informer: inf, store: inf.GetStore()}
+	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
+	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("node", "add").Inc()
+			n.enqueue(o)
+		},
+		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("node", "delete").Inc()
+			n.enqueue(o)
+		},
+		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("node", "update").Inc()
+			n.enqueue(o)
+		},
+	})
+	return n
+}
+
+func (e *Node) enqueue(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	e.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.
 func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Send full initial set of pod targets.
-	var initial []*targetgroup.Group
-	for _, o := range n.store.List() {
-		tg := n.buildNode(o.(*apiv1.Node))
-		initial = append(initial, tg)
-	}
-	select {
-	case <-ctx.Done():
+	defer n.queue.ShutDown()
+
+	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
+		level.Error(n.logger).Log("msg", "node informer unable to sync cache")
 		return
-	case ch <- initial:
 	}
 
-	// Send target groups for service updates.
-	send := func(tg *targetgroup.Group) {
-		if tg == nil {
-			return
+	go func() {
+		for n.process(ctx, ch) {
 		}
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
-	}
-	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "add").Inc()
-
-			node, err := convertToNode(o)
-			if err != nil {
-				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
-				return
-			}
-			send(n.buildNode(node))
-		},
-		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "delete").Inc()
-
-			node, err := convertToNode(o)
-			if err != nil {
-				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
-				return
-			}
-			send(&targetgroup.Group{Source: nodeSource(node)})
-		},
-		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("node", "update").Inc()
-
-			node, err := convertToNode(o)
-			if err != nil {
-				level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
-				return
-			}
-			send(n.buildNode(node))
-		},
-	})
+	}()
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	keyObj, quit := n.queue.Get()
+	if quit {
+		return false
+	}
+	defer n.queue.Done(keyObj)
+	key := keyObj.(string)
+
+	_, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return true
+	}
+
+	o, exists, err := n.store.GetByKey(key)
+	if err != nil {
+		return true
+	}
+	if !exists {
+		send(ctx, n.logger, RoleNode, ch, &targetgroup.Group{Source: nodeSourceFromName(name)})
+		return true
+	}
+	node, err := convertToNode(o)
+	if err != nil {
+		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
+		return true
+	}
+	send(ctx, n.logger, RoleNode, ch, n.buildNode(node))
+	return true
 }
 
 func convertToNode(o interface{}) (*apiv1.Node, error) {
@@ -111,19 +124,15 @@ func convertToNode(o interface{}) (*apiv1.Node, error) {
 		return node, nil
 	}
 
-	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-	if !ok {
-		return nil, fmt.Errorf("Received unexpected object: %v", o)
-	}
-	node, ok = deletedState.Obj.(*apiv1.Node)
-	if !ok {
-		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Node object: %v", deletedState.Obj)
-	}
-	return node, nil
+	return nil, fmt.Errorf("Received unexpected object: %v", o)
 }
 
 func nodeSource(n *apiv1.Node) string {
-	return "node/" + n.Name
+	return nodeSourceFromName(n.Name)
+}
+
+func nodeSourceFromName(name string) string {
+	return "node/" + name
 }
 
 const (

@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -34,6 +35,7 @@ type Service struct {
 	logger   log.Logger
 	informer cache.SharedInformer
 	store    cache.Store
+	queue    *workqueue.Type
 }
 
 // NewService returns a new service discovery.
@@ -41,65 +43,79 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Service{logger: l, informer: inf, store: inf.GetStore()}
+	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
+	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "add").Inc()
+			s.enqueue(o)
+		},
+		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("service", "delete").Inc()
+			s.enqueue(o)
+		},
+		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("service", "update").Inc()
+			s.enqueue(o)
+		},
+	})
+	return s
+}
+
+func (e *Service) enqueue(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	e.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.
 func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Send full initial set of pod targets.
-	var initial []*targetgroup.Group
-	for _, o := range s.store.List() {
-		tg := s.buildService(o.(*apiv1.Service))
-		initial = append(initial, tg)
-	}
-	select {
-	case <-ctx.Done():
+	defer s.queue.ShutDown()
+
+	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
+		level.Error(s.logger).Log("msg", "service informer unable to sync cache")
 		return
-	case ch <- initial:
 	}
 
-	// Send target groups for service updates.
-	send := func(tg *targetgroup.Group) {
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
+	go func() {
+		for s.process(ctx, ch) {
 		}
-	}
-	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "add").Inc()
-
-			svc, err := convertToService(o)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
-				return
-			}
-			send(s.buildService(svc))
-		},
-		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "delete").Inc()
-
-			svc, err := convertToService(o)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
-				return
-			}
-			send(&targetgroup.Group{Source: serviceSource(svc)})
-		},
-		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("service", "update").Inc()
-
-			svc, err := convertToService(o)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
-				return
-			}
-			send(s.buildService(svc))
-		},
-	})
+	}()
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	keyObj, quit := s.queue.Get()
+	if quit {
+		return false
+	}
+	defer s.queue.Done(keyObj)
+	key := keyObj.(string)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return true
+	}
+
+	o, exists, err := s.store.GetByKey(key)
+	if err != nil {
+		return true
+	}
+	if !exists {
+		send(ctx, s.logger, RoleService, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
+		return true
+	}
+	eps, err := convertToService(o)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
+		return true
+	}
+	send(ctx, s.logger, RoleService, ch, s.buildService(eps))
+	return true
 }
 
 func convertToService(o interface{}) (*apiv1.Service, error) {
@@ -107,19 +123,15 @@ func convertToService(o interface{}) (*apiv1.Service, error) {
 	if ok {
 		return service, nil
 	}
-	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-	if !ok {
-		return nil, fmt.Errorf("Received unexpected object: %v", o)
-	}
-	service, ok = deletedState.Obj.(*apiv1.Service)
-	if !ok {
-		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Service object: %v", deletedState.Obj)
-	}
-	return service, nil
+	return nil, fmt.Errorf("Received unexpected object: %v", o)
 }
 
 func serviceSource(s *apiv1.Service) string {
-	return "svc/" + s.Namespace + "/" + s.Name
+	return serviceSourceFromNamespaceAndName(s.Namespace, s.Name)
+}
+
+func serviceSourceFromNamespaceAndName(namespace, name string) string {
+	return "svc/" + namespace + "/" + name
 }
 
 const (
