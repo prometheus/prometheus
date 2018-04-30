@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
 
 // Endpoints discovers new endpoint targets.
@@ -38,6 +39,8 @@ type Endpoints struct {
 	podStore       cache.Store
 	endpointsStore cache.Store
 	serviceStore   cache.Store
+
+	queue *workqueue.Type
 }
 
 // NewEndpoints returns a new endpoints discovery.
@@ -45,7 +48,7 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	ep := &Endpoints{
+	e := &Endpoints{
 		logger:         l,
 		endpointsInf:   eps,
 		endpointsStore: eps.GetStore(),
@@ -53,67 +56,21 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 		serviceStore:   svc.GetStore(),
 		podInf:         pod,
 		podStore:       pod.GetStore(),
-	}
-
-	return ep
-}
-
-// Run implements the Discoverer interface.
-func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Send full initial set of endpoint targets.
-	var initial []*targetgroup.Group
-
-	for _, o := range e.endpointsStore.List() {
-		tg := e.buildEndpoints(o.(*apiv1.Endpoints))
-		initial = append(initial, tg)
-	}
-	select {
-	case <-ctx.Done():
-		return
-	case ch <- initial:
-	}
-	// Send target groups for pod updates.
-	send := func(tg *targetgroup.Group) {
-		if tg == nil {
-			return
-		}
-		level.Debug(e.logger).Log("msg", "endpoints update", "tg", fmt.Sprintf("%#v", tg))
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
-		}
+		queue:          workqueue.NewNamed("endpoints"),
 	}
 
 	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			eventCount.WithLabelValues("endpoints", "add").Inc()
-
-			eps, err := convertToEndpoints(o)
-			if err != nil {
-				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
-				return
-			}
-			send(e.buildEndpoints(eps))
+			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
 			eventCount.WithLabelValues("endpoints", "update").Inc()
-
-			eps, err := convertToEndpoints(o)
-			if err != nil {
-				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
-				return
-			}
-			send(e.buildEndpoints(eps))
+			e.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
 			eventCount.WithLabelValues("endpoints", "delete").Inc()
-
-			eps, err := convertToEndpoints(o)
-			if err != nil {
-				level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
-				return
-			}
-			send(&targetgroup.Group{Source: endpointsSource(eps)})
+			e.enqueue(o)
 		},
 	})
 
@@ -128,9 +85,10 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		ep.Namespace = svc.Namespace
 		ep.Name = svc.Name
 		obj, exists, err := e.endpointsStore.Get(ep)
-		if exists && err != nil {
-			send(e.buildEndpoints(obj.(*apiv1.Endpoints)))
+		if exists && err == nil {
+			e.enqueue(obj.(*apiv1.Endpoints))
 		}
+
 		if err != nil {
 			level.Error(e.logger).Log("msg", "retrieving endpoints failed", "err", err)
 		}
@@ -152,8 +110,66 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		},
 	})
 
+	return e
+}
+
+func (e *Endpoints) enqueue(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	e.queue.Add(key)
+}
+
+// Run implements the Discoverer interface.
+func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+	defer e.queue.ShutDown()
+
+	if !cache.WaitForCacheSync(ctx.Done(), e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {
+		level.Error(e.logger).Log("msg", "endpoints informer unable to sync cache")
+		return
+	}
+
+	go func() {
+		for e.process(ctx, ch) {
+		}
+	}()
+
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	keyObj, quit := e.queue.Get()
+	if quit {
+		return false
+	}
+	defer e.queue.Done(keyObj)
+	key := keyObj.(string)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		level.Error(e.logger).Log("msg", "spliting key failed", "key", key)
+		return true
+	}
+
+	o, exists, err := e.endpointsStore.GetByKey(key)
+	if err != nil {
+		level.Error(e.logger).Log("msg", "getting object from store failed", "key", key)
+		return true
+	}
+	if !exists {
+		send(ctx, e.logger, RoleEndpoint, ch, &targetgroup.Group{Source: endpointsSourceFromNamespaceAndName(namespace, name)})
+		return true
+	}
+	eps, err := convertToEndpoints(o)
+	if err != nil {
+		level.Error(e.logger).Log("msg", "converting to Endpoints object failed", "err", err)
+		return true
+	}
+	send(ctx, e.logger, RoleEndpoint, ch, e.buildEndpoints(eps))
+	return true
 }
 
 func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
@@ -162,19 +178,15 @@ func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
 		return endpoints, nil
 	}
 
-	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-	if !ok {
-		return nil, fmt.Errorf("Received unexpected object: %v", o)
-	}
-	endpoints, ok = deletedState.Obj.(*apiv1.Endpoints)
-	if !ok {
-		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Endpoints object: %v", deletedState.Obj)
-	}
-	return endpoints, nil
+	return nil, fmt.Errorf("Received unexpected object: %v", o)
 }
 
 func endpointsSource(ep *apiv1.Endpoints) string {
-	return "endpoints/" + ep.ObjectMeta.Namespace + "/" + ep.ObjectMeta.Name
+	return endpointsSourceFromNamespaceAndName(ep.Namespace, ep.Name)
+}
+
+func endpointsSourceFromNamespaceAndName(namespace, name string) string {
+	return "endpoints/" + namespace + "/" + name
 }
 
 const (
