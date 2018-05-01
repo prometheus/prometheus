@@ -674,6 +674,12 @@
 			"versionExact": "v1.0.4"
 		},
 		{
+			"checksumSHA1": "824wNPzNLYXCMhEPBEKdvvKbFVU=",
+			"path": "github.com/miton18/go-warp10/base",
+			"revision": "5c2e00e60262d96d1b49f6a3ddbeb59806718b27",
+			"revisionTime": "2018-03-20T16:35:37Z"
+		},
+		{
 			"checksumSHA1": "ZYfqG6bNE3cRlbsvpJBL0bF6DSc=",
 			"path": "github.com/mwitkow/go-conntrack",
 			"revision": "cc309e4a22231782e8893f3c35ced0967807a33e",
