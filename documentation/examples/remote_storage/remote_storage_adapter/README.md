@@ -1,7 +1,7 @@
 # Remote storage adapter
 
 This is a write adapter that receives samples via Prometheus's remote write
-protocol and stores them in Graphite, InfluxDB, or OpenTSDB. It is meant as a
+protocol and stores them in Graphite, InfluxDB, OpenTSDB or Warp10. It is meant as a
 replacement for the built-in specific remote storage implementations that have
 been removed from Prometheus.
 
@@ -32,6 +32,13 @@ InfluxDB example:
 
 ```
 ./remote_storage_adapter -influxdb-url=http://localhost:8086/ -influxdb.database=prometheus -influxdb.retention-policy=autogen
+```
+
+Warp10 example:
+
+```
+./remote_storage_adapter -warp10.host=http://localhost:8080
+-warp10.token=write_token
 ```
 
 To show all flags:

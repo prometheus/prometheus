@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/warp10"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -51,6 +52,8 @@ type config struct {
 	influxdbUsername        string
 	influxdbDatabase        string
 	influxdbPassword        string
+	warp10Host              string
+	warp10Token             string
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
@@ -139,6 +142,12 @@ func parseFlags() *config {
 	flag.DurationVar(&cfg.remoteTimeout, "send-timeout", 30*time.Second,
 		"The timeout to use when sending samples to the remote storage.",
 	)
+	flag.StringVar(&cfg.warp10Host, "warp10.host", "",
+		"The Warp10 endpoint",
+	)
+	flag.StringVar(&cfg.warp10Token, "warp10.token", "",
+		"The Warp10 Write token",
+	)
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
 
@@ -196,6 +205,15 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		prometheus.MustRegister(c)
 		writers = append(writers, c)
 		readers = append(readers, c)
+	}
+	if cfg.warp10Host != "" {
+		c := warp10.NewClient(
+			log.With(logger, "storage", "Warp10"),
+			cfg.warp10Host,
+			cfg.warp10Token,
+			cfg.remoteTimeout,
+		)
+		writers = append(writers, c)
 	}
 	level.Info(logger).Log("Starting up...")
 	return writers, readers
