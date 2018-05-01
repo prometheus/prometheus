@@ -121,13 +121,9 @@ func TestEndpointHeaders(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	webHandler.Ready()
-
 	resp, err := http.Get("http://localhost:9095/version")
 
 	testutil.Ok(t, err)
-	testutil.Equals(t, http.StatusOK, resp.StatusCode)
-
 	testutil.Equals(t, "1; mode=block", resp.Header.Get("X-XSS-Protection"))
 	testutil.Equals(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 	testutil.Equals(t, "SAMEORIGIN", resp.Header.Get("X-Frame-Options"))
