@@ -102,7 +102,7 @@ type query struct {
 	// Timer stats for the query execution.
 	stats *stats.TimerGroup
 	// Result matrix for reuse.
-	mat Matrix
+	matrix Matrix
 	// Cancellation function for the query.
 	cancel func()
 
@@ -129,7 +129,7 @@ func (q *query) Cancel() {
 
 // Close implements the Query interface.
 func (q *query) Close() {
-	for _, s := range q.mat {
+	for _, s := range q.matrix {
 		putPointSlice(s.Points)
 	}
 }
@@ -384,9 +384,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			Timestamp:    start,
-			EndTimestamp: start,
-			Interval:     1,
+			timestamp:    start,
+			endTimestamp: start,
+			interval:     1,
 			ctx:          ctx,
 			logger:       ng.logger,
 		}
@@ -402,7 +402,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		if !ok {
 			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
-		query.mat = mat
+		query.matrix = mat
 		switch s.Expr.Type() {
 		case ValueTypeVector:
 			// Convert matrix with one value per series into vector.
@@ -428,9 +428,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 
 	evaluator := &evaluator{
-		Timestamp:    timeMilliseconds(s.Start),
-		EndTimestamp: timeMilliseconds(s.End),
-		Interval:     durationMilliseconds(s.Interval),
+		timestamp:    timeMilliseconds(s.Start),
+		endTimestamp: timeMilliseconds(s.End),
+		interval:     durationMilliseconds(s.Interval),
 		ctx:          ctx,
 		logger:       ng.logger,
 	}
@@ -445,7 +445,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if !ok {
 		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 	}
-	query.mat = mat
+	query.matrix = mat
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, err
@@ -563,10 +563,10 @@ func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 type evaluator struct {
 	ctx context.Context
 
-	Timestamp int64 // Start time in milliseconds.
+	timestamp int64 // Start time in milliseconds.
 
-	EndTimestamp int64 // End time in milliseconds.
-	Interval     int64 // Interval in milliseconds.
+	endTimestamp int64 // End time in milliseconds.
+	interval     int64 // Interval in milliseconds.
 
 	logger log.Logger
 }
@@ -663,7 +663,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
-	numSteps := int((ev.EndTimestamp-ev.Timestamp)/ev.Interval) + 1
+	numSteps := int((ev.endTimestamp-ev.timestamp)/ev.interval) + 1
 
 	// rangeWrapper evaluates the given expressions as matrixes, and then for
 	// each step calls the given function with the expressions for that step.
@@ -683,7 +683,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 
-		Seriess := map[uint64]Series{}        // Output series by series hash.
+		seriess := map[uint64]Series{}        // Output series by series hash.
 		vectors := make([]Vector, len(exprs)) // Input vectors for the function.
 		args := make([]Value, len(exprs))     // Argument to function.
 		// Create an output vector that is as big as the input matrix with
@@ -696,7 +696,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 		enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
-		for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+		for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
 			// Gather input vectors for this timestamp.
 			for i := range exprs {
 				vectors[i] = vectors[i][:0]
@@ -720,7 +720,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			result := f(args, enh)
 			enh.out = result[:0] // Reuse result vector.
 			// If this could be an instant query, shortcut so as not to change sort order.
-			if ev.EndTimestamp == ev.Timestamp {
+			if ev.endTimestamp == ev.timestamp {
 				mat := make(Matrix, len(result))
 				for i, s := range result {
 					s.Point.T = ts
@@ -731,17 +731,17 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// Add samples in output vector to output series.
 			for _, sample := range result {
 				h := sample.Metric.Hash()
-				ss, ok := Seriess[h]
+				ss, ok := seriess[h]
 				if !ok {
 					ss = Series{
 						Metric: sample.Metric,
 						Points: getPointSlice(numSteps),
 					}
-					Seriess[h] = ss
+					seriess[h] = ss
 				}
 				sample.Point.T = ts
 				ss.Points = append(ss.Points, sample.Point)
-				Seriess[h] = ss
+				seriess[h] = ss
 			}
 		}
 		// Reuse the original point slices.
@@ -752,7 +752,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		// Assemble the output matrix.
 		mat := Matrix{}
-		for _, ss := range Seriess {
+		for _, ss := range seriess {
 			mat = append(mat, ss)
 		}
 		return mat
@@ -824,7 +824,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 						Points: getPointSlice(numSteps),
 					}
 					inMatrix[0].Metric = sel.series[i].Labels()
-					for ts, step := ev.Timestamp, -1; ts <= ev.EndTimestamp; ts += ev.Interval {
+					for ts, step := ev.timestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 						step++
 						// Set the non-matrix arguments.
 						// They are scalar, so it is safe to use the step number
@@ -935,7 +935,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				Points: getPointSlice(numSteps),
 			}
 
-			for ts := ev.Timestamp; ts <= ev.EndTimestamp; ts += ev.Interval {
+			for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					ss.Points = append(ss.Points, Point{V: v, T: ts})
@@ -949,7 +949,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return mat
 
 	case *MatrixSelector:
-		if ev.Timestamp != ev.EndTimestamp {
+		if ev.timestamp != ev.endTimestamp {
 			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
@@ -1031,7 +1031,7 @@ func putPointSlice(p []Point) {
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	var (
 		offset = durationMilliseconds(node.Offset)
-		maxt   = ev.Timestamp - offset
+		maxt   = ev.timestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = make(Matrix, 0, len(node.series))
 	)
