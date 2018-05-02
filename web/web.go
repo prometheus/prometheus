@@ -71,7 +71,7 @@ import (
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
-// SecureHeaders adds secure headers to the responses
+// secureHeadersMiddleware adds common HTTP security headers to responses.
 func secureHeadersMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("X-XSS-Protection", "1; mode=block")
