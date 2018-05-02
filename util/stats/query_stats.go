@@ -23,7 +23,6 @@ const (
 	ResultSortTime
 	QueryPreparationTime
 	InnerEvalTime
-	ResultAppendTime
 	ExecQueueTime
 	ExecTotalTime
 )
@@ -39,8 +38,6 @@ func (s QueryTiming) String() string {
 		return "Query preparation time"
 	case InnerEvalTime:
 		return "Inner eval time"
-	case ResultAppendTime:
-		return "Result append time"
 	case ExecQueueTime:
 		return "Exec queue wait time"
 	case ExecTotalTime:
@@ -56,7 +53,6 @@ type queryTimings struct {
 	ResultSortTime       float64 `json:"resultSortTime"`
 	QueryPreparationTime float64 `json:"queryPreparationTime"`
 	InnerEvalTime        float64 `json:"innerEvalTime"`
-	ResultAppendTime     float64 `json:"resultAppendTime"`
 	ExecQueueTime        float64 `json:"execQueueTime"`
 	ExecTotalTime        float64 `json:"execTotalTime"`
 }
@@ -81,8 +77,6 @@ func NewQueryStats(tg *TimerGroup) *QueryStats {
 			qt.QueryPreparationTime = timer.Duration()
 		case InnerEvalTime:
 			qt.InnerEvalTime = timer.Duration()
-		case ResultAppendTime:
-			qt.ResultAppendTime = timer.Duration()
 		case ExecQueueTime:
 			qt.ExecQueueTime = timer.Duration()
 		case ExecTotalTime:

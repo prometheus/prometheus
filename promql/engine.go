@@ -54,7 +54,6 @@ type engineMetrics struct {
 	queryQueueTime       prometheus.Summary
 	queryPrepareTime     prometheus.Summary
 	queryInnerEval       prometheus.Summary
-	queryResultAppend    prometheus.Summary
 	queryResultSort      prometheus.Summary
 }
 
@@ -211,13 +210,6 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
 		}),
-		queryResultAppend: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "query_duration_seconds",
-			Help:        "Query timings",
-			ConstLabels: prometheus.Labels{"slice": "result_append"},
-		}),
 		queryResultSort: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
@@ -234,7 +226,6 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 			metrics.maxConcurrentQueries,
 			metrics.queryInnerEval,
 			metrics.queryPrepareTime,
-			metrics.queryResultAppend,
 			metrics.queryResultSort,
 		)
 	}
