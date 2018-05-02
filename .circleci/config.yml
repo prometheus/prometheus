@@ -18,12 +18,6 @@ jobs:
     machine: true
     working_directory: /home/circleci/.go_workspace/src/github.com/prometheus/prometheus
 
-    environment:
-      DOCKER_IMAGE_NAME: prom/prometheus
-      QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
-      DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.10-base
-      REPO_PATH: github.com/prometheus/prometheus
-
     steps:
     - checkout
     - run: make promu
@@ -41,8 +35,6 @@ jobs:
     environment:
       DOCKER_IMAGE_NAME: prom/prometheus
       QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
-      DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.10-base
-      REPO_PATH: github.com/prometheus/prometheus
 
     steps:
     - checkout
@@ -66,8 +58,6 @@ jobs:
     environment:
       DOCKER_IMAGE_NAME: prom/prometheus
       QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
-      DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.10-base
-      REPO_PATH: github.com/prometheus/prometheus
 
     steps:
     - checkout
@@ -75,8 +65,6 @@ jobs:
     - run: mkdir -v -p ${HOME}/bin
     - run: curl -L 'https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C ${HOME}/bin
     - run: echo 'export PATH=${HOME}/bin:${PATH}' >> ${BASH_ENV}
-    - attach_workspace:
-        at: .
     - run: make promu
     - run: promu crossbuild tarballs
     - run: promu checksum .tarballs
@@ -85,15 +73,8 @@ jobs:
         path: .tarballs
         destination: releases
     - run: ln -s .build/linux-amd64/prometheus prometheus
-    - run:
-        command: |
-          if [ -n "$CIRCLE_TAG" ]; then
-            make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
-            make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
-          else
-            make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME
-            make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME
-          fi
+    - run: make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
+    - run: make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
     - run: docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
     - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
     - run: |
