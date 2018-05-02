@@ -14,15 +14,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/client_golang/api"
+	"github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -57,6 +64,17 @@ func main() {
 	updateRulesCmd := updateCmd.Command("rules", "Update rules from the 1.x to 2.x format.")
 	ruleFilesUp := updateRulesCmd.Arg("rule-files", "The rule files to update.").Required().ExistingFiles()
 
+	queryCmd := app.Command("query", "Run query against a Prometheus server.")
+	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
+	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+
+	queryRangeCmd := queryCmd.Command("range", "Run range query.")
+	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
+	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
@@ -70,6 +88,11 @@ func main() {
 	case updateRulesCmd.FullCommand():
 		os.Exit(UpdateRules(*ruleFilesUp...))
 
+	case queryInstantCmd.FullCommand():
+		os.Exit(QueryInstant(*queryServer, *queryExpr))
+
+	case queryRangeCmd.FullCommand():
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 	}
 
 }
@@ -325,4 +348,102 @@ func CheckMetrics() int {
 	}
 
 	return 0
+}
+
+// QueryInstant performs an instant query against a Prometheus server.
+func QueryInstant(url *url.URL, query string) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.Query(ctx, query, time.Now())
+	cancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	fmt.Println(val.String())
+
+	return 0
+}
+
+// QueryRange performs a range query against a Prometheus server.
+func QueryRange(url *url.URL, query string, start string, end string) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	var stime, etime time.Time
+
+	if end == "" {
+		etime = time.Now()
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+			return 1
+		}
+	}
+
+	if start == "" {
+		stime = etime.Add(-5 * time.Minute)
+	} else {
+		stime, err = parseTime(start)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+		}
+	}
+
+	if !stime.Before(etime) {
+		fmt.Fprintln(os.Stderr, "start time is not before end time")
+	}
+
+	resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
+	// Convert seconds to nanoseconds such that time.Duration parses correctly.
+	step := time.Duration(resolution * 1e9)
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	r := v1.Range{Start: stime, End: etime, Step: step}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.QueryRange(ctx, query, r)
+	cancel()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	fmt.Println(val.String())
+	return 0
+}
+
+func parseTime(s string) (time.Time, error) {
+	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		s, ns := math.Modf(t)
+		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }

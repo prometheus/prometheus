@@ -15,7 +15,6 @@ package scrape
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func mustNewRegexp(s string) config.Regexp {
@@ -214,22 +214,14 @@ func TestPopulateLabels(t *testing.T) {
 			err:     fmt.Errorf("invalid label value for \"custom\": \"\\xbd\""),
 		},
 	}
-	for i, c := range cases {
+	for _, c := range cases {
 		in := c.in.Copy()
 
 		res, orig, err := populateLabels(c.in, c.cfg)
-		if !reflect.DeepEqual(err, c.err) {
-			t.Fatalf("case %d: wanted %v error, got %v", i, c.err, err)
-		}
-		if !reflect.DeepEqual(c.in, in) {
-			t.Errorf("case %d: input lset was changed was\n\t%+v\n now\n\t%+v", i, in, c.in)
-		}
-		if !reflect.DeepEqual(res, c.res) {
-			t.Errorf("case %d: expected res\n\t%+v\n got\n\t%+v", i, c.res, res)
-		}
-		if !reflect.DeepEqual(orig, c.resOrig) {
-			t.Errorf("case %d: expected resOrig\n\t%+v\n got\n\t%+v", i, c.resOrig, orig)
-		}
+		testutil.Equals(t, c.err, err)
+		testutil.Equals(t, c.in, in)
+		testutil.Equals(t, c.res, res)
+		testutil.Equals(t, c.resOrig, orig)
 	}
 }
 
@@ -249,7 +241,7 @@ func TestManagerReloadNoChange(t *testing.T) {
 	scrapeManager := NewManager(nil, nil)
 	scrapeManager.scrapeConfigs[tsetName] = reloadCfg.ScrapeConfigs[0]
 	// As reload never happens, new loop should never be called.
-	newLoop := func(_ *Target, s scraper) loop {
+	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
 		t.Fatal("reload happened")
 		return nil
 	}

@@ -14,13 +14,13 @@
 package relabel
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -413,11 +413,8 @@ func TestRelabel(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
+	for _, test := range tests {
 		res := Process(test.input, test.relabel...)
-
-		if !reflect.DeepEqual(res, test.output) {
-			t.Errorf("Test %d: relabel output mismatch: expected %#v, got %#v", i+1, test.output, res)
-		}
+		testutil.Equals(t, test.output, res)
 	}
 }

@@ -30,7 +30,6 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const maxErrMsgLen = 256
@@ -52,7 +51,7 @@ type ClientConfig struct {
 
 // NewClient creates a new Client.
 func NewClient(index int, conf *ClientConfig) (*Client, error) {
-	httpClient, err := httputil.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage")
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage")
 	if err != nil {
 		return nil, err
 	}

@@ -14,18 +14,18 @@
 package consul
 
 import (
+	"context"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 
-	"context"
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"time"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestConfiguredService(t *testing.T) {
@@ -127,11 +127,11 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		w.Header().Add("X-Consul-Index", "1")
 		w.Write([]byte(response))
 	}))
-	url, err := url.Parse(stub.URL)
-	require.NoError(t, err)
+	stuburl, err := url.Parse(stub.URL)
+	testutil.Ok(t, err)
 
 	config := &SDConfig{
-		Server:          url.Host,
+		Server:          stuburl.Host,
 		Token:           "fake-token",
 		RefreshInterval: model.Duration(1 * time.Second),
 	}
@@ -141,18 +141,18 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
 	d, err := NewDiscovery(config, logger)
-	require.NoError(t, err)
+	testutil.Ok(t, err)
 	return d
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	require.Equal(t, 1, len(tg))
+	testutil.Equals(t, 1, len(tg))
 	target := tg[0]
-	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
-	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
+	testutil.Equals(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
+	testutil.Equals(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		require.NotEmpty(t, target.Targets)
+		testutil.Assert(t, len(target.Targets) > 0, "Test service should have one node")
 	}
 }
 
