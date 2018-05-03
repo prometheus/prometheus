@@ -71,6 +71,17 @@ import (
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
+// secureHeadersMiddleware adds common HTTP security headers to responses.
+func secureHeadersMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-XSS-Protection", "1; mode=block")
+		w.Header().Add("X-Content-Type-Options", "nosniff")
+		w.Header().Add("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Add("Content-Security-Policy", "frame-ancestors 'self'")
+		h.ServeHTTP(w, r)
+	})
+}
+
 var (
 	requestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -478,8 +489,10 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
+	withSecureHeaders := nethttp.Middleware(opentracing.GlobalTracer(), secureHeadersMiddleware(mux), operationName)
+
 	httpSrv := &http.Server{
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
+		Handler:     withSecureHeaders,
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
