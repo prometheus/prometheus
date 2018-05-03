@@ -89,31 +89,22 @@ func TestDeriv(t *testing.T) {
 	engine := NewEngine(nil, nil, 10, 10*time.Second)
 
 	a, err := storage.Appender()
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 
 	metric := labels.FromStrings("__name__", "foo")
 	a.Add(metric, 1493712816939, 1.0)
 	a.Add(metric, 1493712846939, 1.0)
 
-	if err := a.Commit(); err != nil {
-		t.Fatal(err)
-	}
+	err = a.Commit()
+	testutil.Ok(t, err)
 
 	query, err := engine.NewInstantQuery(storage, "deriv(foo[30m])", timestamp.Time(1493712846939))
-	if err != nil {
-		t.Fatalf("Error parsing query: %s", err)
-	}
+	testutil.Ok(t, err)
+
 	result := query.Exec(context.Background())
-	if result.Err != nil {
-		t.Fatalf("Error running query: %s", result.Err)
-	}
+	testutil.Ok(t, result.Err)
+
 	vec, _ := result.Vector()
-	if len(vec) != 1 {
-		t.Fatalf("Expected 1 result, got %d", len(vec))
-	}
-	if vec[0].V != 0.0 {
-		t.Fatalf("Expected 0.0 as value, got %f", vec[0].V)
-	}
+	testutil.Assert(t, len(vec) == 1, "Expected 1 result, got %d", len(vec))
+	testutil.Assert(t, vec[0].V == 0.0, "Expected 0.0 as value, got %f", vec[0].V)
 }

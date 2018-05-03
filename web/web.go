@@ -71,6 +71,17 @@ import (
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
+// secureHeadersMiddleware adds common HTTP security headers to responses.
+func secureHeadersMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-XSS-Protection", "1; mode=block")
+		w.Header().Add("X-Content-Type-Options", "nosniff")
+		w.Header().Add("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Add("Content-Security-Policy", "frame-ancestors 'self'")
+		h.ServeHTTP(w, r)
+	})
+}
+
 var (
 	requestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -437,7 +448,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		h.options.QueryEngine,
 		h.options.Storage.Querier,
 		func() []*scrape.Target {
-			return h.options.ScrapeManager.Targets()
+			return h.options.ScrapeManager.TargetsActive()
 		},
 		func() []*url.URL {
 			return h.options.Notifier.Alertmanagers()
@@ -478,8 +489,10 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
+	withSecureHeaders := nethttp.Middleware(opentracing.GlobalTracer(), secureHeadersMiddleware(mux), operationName)
+
 	httpSrv := &http.Server{
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
+		Handler:     withSecureHeaders,
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -659,7 +672,7 @@ func (h *Handler) rules(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 	var index []string
-	targets := h.scrapeManager.TargetMap()
+	targets := h.scrapeManager.TargetsAll()
 	for job := range targets {
 		index = append(index, job)
 	}
@@ -677,7 +690,7 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
 	// Bucket targets by job label
 	tps := map[string][]*scrape.Target{}
-	for _, t := range h.scrapeManager.Targets() {
+	for _, t := range h.scrapeManager.TargetsActive() {
 		job := t.Labels().Get(model.JobLabel)
 		tps[job] = append(tps[job], t)
 	}
@@ -733,7 +746,13 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
 		"consolesPath": func() string { return consolesPath },
-		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"pathPrefix": func() string {
+			if opts.RoutePrefix == "/" {
+				return ""
+			} else {
+				return opts.RoutePrefix
+			}
+		},
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {

@@ -31,6 +31,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	old_ctx "golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
@@ -39,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/util/httputil"
 )
 
 const (
@@ -545,7 +545,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
-	client, err := httputil.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
 	}
@@ -600,8 +600,8 @@ func postPath(pre string) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagersFromGroup extracts a list of alertmanagers from a target group and an associcated
-// AlertmanagerConfig.
+// alertmanagersFromGroup extracts a list of alertmanagers from a target group
+// and an associated AlertmanagerConfig.
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager

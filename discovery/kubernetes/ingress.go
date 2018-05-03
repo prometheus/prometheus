@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 )
 
 // Ingress implements discovery of Kubernetes ingresss.
@@ -31,69 +32,84 @@ type Ingress struct {
 	logger   log.Logger
 	informer cache.SharedInformer
 	store    cache.Store
+	queue    *workqueue.Type
 }
 
 // NewIngress returns a new ingress discovery.
 func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
-	return &Ingress{logger: l, informer: inf, store: inf.GetStore()}
+	s := &Ingress{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
+	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o interface{}) {
+			eventCount.WithLabelValues("ingress", "add").Inc()
+			s.enqueue(o)
+		},
+		DeleteFunc: func(o interface{}) {
+			eventCount.WithLabelValues("ingress", "delete").Inc()
+			s.enqueue(o)
+		},
+		UpdateFunc: func(_, o interface{}) {
+			eventCount.WithLabelValues("ingress", "update").Inc()
+			s.enqueue(o)
+		},
+	})
+	return s
+}
+
+func (e *Ingress) enqueue(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	e.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.
 func (s *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	// Send full initial set of pod targets.
-	var initial []*targetgroup.Group
-	for _, o := range s.store.List() {
-		tg := s.buildIngress(o.(*v1beta1.Ingress))
-		initial = append(initial, tg)
-	}
-	select {
-	case <-ctx.Done():
+	defer s.queue.ShutDown()
+
+	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
+		level.Error(s.logger).Log("msg", "ingress informer unable to sync cache")
 		return
-	case ch <- initial:
 	}
 
-	// Send target groups for ingress updates.
-	send := func(tg *targetgroup.Group) {
-		select {
-		case <-ctx.Done():
-		case ch <- []*targetgroup.Group{tg}:
+	go func() {
+		for s.process(ctx, ch) {
 		}
-	}
-	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("ingress", "add").Inc()
-
-			ingress, err := convertToIngress(o)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
-				return
-			}
-			send(s.buildIngress(ingress))
-		},
-		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("ingress", "delete").Inc()
-
-			ingress, err := convertToIngress(o)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
-				return
-			}
-			send(&targetgroup.Group{Source: ingressSource(ingress)})
-		},
-		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("ingress", "update").Inc()
-
-			ingress, err := convertToIngress(o)
-			if err != nil {
-				level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err.Error())
-				return
-			}
-			send(s.buildIngress(ingress))
-		},
-	})
+	}()
 
 	// Block until the target provider is explicitly canceled.
 	<-ctx.Done()
+}
+
+func (s *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	keyObj, quit := s.queue.Get()
+	if quit {
+		return false
+	}
+	defer s.queue.Done(keyObj)
+	key := keyObj.(string)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return true
+	}
+
+	o, exists, err := s.store.GetByKey(key)
+	if err != nil {
+		return true
+	}
+	if !exists {
+		send(ctx, s.logger, RoleIngress, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
+		return true
+	}
+	eps, err := convertToIngress(o)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err)
+		return true
+	}
+	send(ctx, s.logger, RoleIngress, ch, s.buildIngress(eps))
+	return true
 }
 
 func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
@@ -102,19 +118,15 @@ func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
 		return ingress, nil
 	}
 
-	deletedState, ok := o.(cache.DeletedFinalStateUnknown)
-	if !ok {
-		return nil, fmt.Errorf("Received unexpected object: %v", o)
-	}
-	ingress, ok = deletedState.Obj.(*v1beta1.Ingress)
-	if !ok {
-		return nil, fmt.Errorf("DeletedFinalStateUnknown contained non-Ingress object: %v", deletedState.Obj)
-	}
-	return ingress, nil
+	return nil, fmt.Errorf("Received unexpected object: %v", o)
 }
 
 func ingressSource(s *v1beta1.Ingress) string {
-	return "ingress/" + s.Namespace + "/" + s.Name
+	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
+}
+
+func ingressSourceFromNamespaceAndName(namespace, name string) string {
+	return "ingress/" + namespace + "/" + name
 }
 
 const (

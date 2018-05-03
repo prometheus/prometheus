@@ -14,151 +14,14 @@
 package kubernetes
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/tools/cache"
 )
-
-type fakeInformer struct {
-	store    cache.Store
-	handlers []cache.ResourceEventHandler
-
-	blockDeltas sync.Mutex
-}
-
-func newFakeInformer(f func(obj interface{}) (string, error)) *fakeInformer {
-	i := &fakeInformer{
-		store: cache.NewStore(f),
-	}
-	// We want to make sure that all delta events (Add/Update/Delete) are blocked
-	// until our handlers to test have been added.
-	i.blockDeltas.Lock()
-	return i
-}
-
-func (i *fakeInformer) AddEventHandler(h cache.ResourceEventHandler) {
-	i.handlers = append(i.handlers, h)
-	// Only now that there is a registered handler, we are able to handle deltas.
-	i.blockDeltas.Unlock()
-}
-
-func (i *fakeInformer) AddEventHandlerWithResyncPeriod(h cache.ResourceEventHandler, _ time.Duration) {
-	i.AddEventHandler(h)
-}
-
-func (i *fakeInformer) GetStore() cache.Store {
-	return i.store
-}
-
-func (i *fakeInformer) GetController() cache.Controller {
-	return nil
-}
-
-func (i *fakeInformer) Run(stopCh <-chan struct{}) {
-}
-
-func (i *fakeInformer) HasSynced() bool {
-	return true
-}
-
-func (i *fakeInformer) LastSyncResourceVersion() string {
-	return "0"
-}
-
-func (i *fakeInformer) Add(obj interface{}) {
-	i.blockDeltas.Lock()
-	defer i.blockDeltas.Unlock()
-
-	for _, h := range i.handlers {
-		h.OnAdd(obj)
-	}
-}
-
-func (i *fakeInformer) Delete(obj interface{}) {
-	i.blockDeltas.Lock()
-	defer i.blockDeltas.Unlock()
-
-	for _, h := range i.handlers {
-		h.OnDelete(obj)
-	}
-}
-
-func (i *fakeInformer) Update(obj interface{}) {
-	i.blockDeltas.Lock()
-	defer i.blockDeltas.Unlock()
-
-	for _, h := range i.handlers {
-		h.OnUpdate(nil, obj)
-	}
-}
-
-type discoverer interface {
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
-}
-
-type k8sDiscoveryTest struct {
-	discovery       discoverer
-	afterStart      func()
-	expectedInitial []*targetgroup.Group
-	expectedRes     []*targetgroup.Group
-}
-
-func (d k8sDiscoveryTest) Run(t *testing.T) {
-	ch := make(chan []*targetgroup.Group)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
-	defer cancel()
-	go func() {
-		d.discovery.Run(ctx, ch)
-	}()
-
-	initialRes := <-ch
-	if d.expectedInitial != nil {
-		requireTargetGroups(t, d.expectedInitial, initialRes)
-	}
-
-	if d.afterStart != nil && d.expectedRes != nil {
-		d.afterStart()
-		res := <-ch
-
-		requireTargetGroups(t, d.expectedRes, res)
-	}
-}
-
-func requireTargetGroups(t *testing.T, expected, res []*targetgroup.Group) {
-	b1, err := json.Marshal(expected)
-	if err != nil {
-		panic(err)
-	}
-	b2, err := json.Marshal(res)
-	if err != nil {
-		panic(err)
-	}
-
-	require.JSONEq(t, string(b1), string(b2))
-}
-
-func nodeStoreKeyFunc(obj interface{}) (string, error) {
-	return obj.(*v1.Node).ObjectMeta.Name, nil
-}
-
-func newFakeNodeInformer() *fakeInformer {
-	return newFakeInformer(nodeStoreKeyFunc)
-}
-
-func makeTestNodeDiscovery() (*Node, *fakeInformer) {
-	i := newFakeNodeInformer()
-	return NewNode(nil, i), i
-}
 
 func makeNode(name, address string, labels map[string]string, annotations map[string]string) *v1.Node {
 	return &v1.Node{
@@ -187,19 +50,24 @@ func makeEnumeratedNode(i int) *v1.Node {
 	return makeNode(fmt.Sprintf("test%d", i), "1.2.3.4", map[string]string{}, map[string]string{})
 }
 
-func TestNodeDiscoveryInitial(t *testing.T) {
-	n, i := makeTestNodeDiscovery()
-	i.GetStore().Add(makeNode(
-		"test",
-		"1.2.3.4",
-		map[string]string{"testlabel": "testvalue"},
-		map[string]string{"testannotation": "testannotationvalue"},
-	))
+func TestNodeDiscoveryBeforeStart(t *testing.T) {
+	n, c, w := makeDiscovery(RoleNode, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
-		expectedInitial: []*targetgroup.Group{
-			{
+		beforeRun: func() {
+			obj := makeNode(
+				"test",
+				"1.2.3.4",
+				map[string]string{"testlabel": "testvalue"},
+				map[string]string{"testannotation": "testannotationvalue"},
+			)
+			c.CoreV1().Nodes().Create(obj)
+			w.Nodes().Add(obj)
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"node/test": {
 				Targets: []model.LabelSet{
 					{
 						"__address__": "1.2.3.4:10250",
@@ -219,13 +87,18 @@ func TestNodeDiscoveryInitial(t *testing.T) {
 }
 
 func TestNodeDiscoveryAdd(t *testing.T) {
-	n, i := makeTestNodeDiscovery()
+	n, c, w := makeDiscovery(RoleNode, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Add(makeEnumeratedNode(1)) }() },
-		expectedRes: []*targetgroup.Group{
-			{
+		discovery: n,
+		afterStart: func() {
+			obj := makeEnumeratedNode(1)
+			c.CoreV1().Nodes().Create(obj)
+			w.Nodes().Add(obj)
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"node/test1": {
 				Targets: []model.LabelSet{
 					{
 						"__address__": "1.2.3.4:10250",
@@ -243,59 +116,18 @@ func TestNodeDiscoveryAdd(t *testing.T) {
 }
 
 func TestNodeDiscoveryDelete(t *testing.T) {
-	n, i := makeTestNodeDiscovery()
-	i.GetStore().Add(makeEnumeratedNode(0))
+	obj := makeEnumeratedNode(0)
+	n, c, w := makeDiscovery(RoleNode, NamespaceDiscovery{}, obj)
 
 	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Delete(makeEnumeratedNode(0)) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test0",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name": "test0",
-				},
-				Source: "node/test0",
-			},
+		discovery: n,
+		afterStart: func() {
+			c.CoreV1().Nodes().Delete(obj.Name, &metav1.DeleteOptions{})
+			w.Nodes().Delete(obj)
 		},
-		expectedRes: []*targetgroup.Group{
-			{
-				Source: "node/test0",
-			},
-		},
-	}.Run(t)
-}
-
-func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
-	n, i := makeTestNodeDiscovery()
-	i.GetStore().Add(makeEnumeratedNode(0))
-
-	k8sDiscoveryTest{
-		discovery:  n,
-		afterStart: func() { go func() { i.Delete(cache.DeletedFinalStateUnknown{Obj: makeEnumeratedNode(0)}) }() },
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test0",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name": "test0",
-				},
-				Source: "node/test0",
-			},
-		},
-		expectedRes: []*targetgroup.Group{
-			{
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"node/test0": {
 				Source: "node/test0",
 			},
 		},
@@ -303,40 +135,26 @@ func TestNodeDiscoveryDeleteUnknownCacheState(t *testing.T) {
 }
 
 func TestNodeDiscoveryUpdate(t *testing.T) {
-	n, i := makeTestNodeDiscovery()
-	i.GetStore().Add(makeEnumeratedNode(0))
+	n, c, w := makeDiscovery(RoleNode, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			go func() {
-				i.Update(
-					makeNode(
-						"test0",
-						"1.2.3.4",
-						map[string]string{"Unschedulable": "true"},
-						map[string]string{},
-					),
-				)
-			}()
+			obj1 := makeEnumeratedNode(0)
+			c.CoreV1().Nodes().Create(obj1)
+			w.Nodes().Add(obj1)
+			obj2 := makeNode(
+				"test0",
+				"1.2.3.4",
+				map[string]string{"Unschedulable": "true"},
+				map[string]string{},
+			)
+			c.CoreV1().Nodes().Update(obj2)
+			w.Nodes().Modify(obj2)
 		},
-		expectedInitial: []*targetgroup.Group{
-			{
-				Targets: []model.LabelSet{
-					{
-						"__address__": "1.2.3.4:10250",
-						"instance":    "test0",
-						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_node_name": "test0",
-				},
-				Source: "node/test0",
-			},
-		},
-		expectedRes: []*targetgroup.Group{
-			{
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"node/test0": {
 				Targets: []model.LabelSet{
 					{
 						"__address__": "1.2.3.4:10250",
