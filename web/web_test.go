@@ -83,6 +83,54 @@ func TestGlobalURL(t *testing.T) {
 	}
 }
 
+func TestEndpointHeaders(t *testing.T) {
+	t.Parallel()
+	dbDir, err := ioutil.TempDir("", "tsdb-ready")
+
+	testutil.Ok(t, err)
+
+	defer os.RemoveAll(dbDir)
+
+	db, err := libtsdb.Open(dbDir, nil, nil, nil)
+
+	testutil.Ok(t, err)
+
+	opts := &Options{
+		ListenAddress:  ":9095",
+		ReadTimeout:    30 * time.Second,
+		MaxConnections: 512,
+		Context:        nil,
+		Storage:        &tsdb.ReadyStorage{},
+		QueryEngine:    nil,
+		RuleManager:    nil,
+		Notifier:       nil,
+		RoutePrefix:    "/",
+		EnableAdminAPI: true,
+		TSDB:           func() *libtsdb.DB { return db },
+	}
+
+	opts.Flags = map[string]string{}
+
+	webHandler := New(nil, opts)
+	go func() {
+		err := webHandler.Run(context.Background())
+		if err != nil {
+			panic(fmt.Sprintf("Can't start webhandler error %s", err))
+		}
+	}()
+
+	time.Sleep(5 * time.Second)
+
+	resp, err := http.Get("http://localhost:9095/version")
+
+	testutil.Ok(t, err)
+	testutil.Equals(t, "1; mode=block", resp.Header.Get("X-XSS-Protection"))
+	testutil.Equals(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
+	testutil.Equals(t, "SAMEORIGIN", resp.Header.Get("X-Frame-Options"))
+	testutil.Equals(t, "frame-ancestors 'self'", resp.Header.Get("Content-Security-Policy"))
+
+}
+
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
