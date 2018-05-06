@@ -7,7 +7,7 @@ sort_rank: 4
 # Query examples
 
 Most of these examples will work on a standard installation of Prometheus.
-Once these examples start using metric names starting with `instance_`, you
+Once these examples start using metric names starting with `node`, you
 will also need a working a working node_exporter running and configured for
 these examples to work.
 
