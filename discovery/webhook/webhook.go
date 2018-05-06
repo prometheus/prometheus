@@ -37,32 +37,21 @@ var (
 	client = http.Client{
 		Transport: &tr,
 	}
-)
 
-var (
-	// DefaultSDConfig is the default webhook SD configuration.
 	DefaultSDConfig = SDConfig{
 		RefreshInterval: model.Duration(5 * time.Second),
 	}
 )
 
-// SDConfig is the configuration for file based discovery.
 type SDConfig struct {
 	Url             string         `yaml:"url"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
-		return err
-	}
-	return nil
+	return unmarshal((*plain)(c))
 }
 
 type Discovery struct {
@@ -86,6 +75,17 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
+	discover := func(url string, ch chan<- []*targetgroup.Group) {
+		tg, err := fetchTargets(d.url)
+		if err != nil {
+			level.Error(d.logger).Log("msg", "Error fetching targets from url", "err", err)
+		} else {
+			ch <- tg
+		}
+	}
+
+	discover(d.url, ch)
+
 	th := time.NewTicker(d.interval)
 	defer th.Stop()
 	for {
@@ -93,12 +93,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ctx.Done():
 			return
 		case <-th.C:
-			tg, err := fetchTargets(d.url)
-			if err != nil {
-				level.Error(d.logger).Log("msg", "Error reading url", "err", err)
-			} else {
-				ch <- tg
-			}
+			discover(d.url, ch)
 		}
 	}
 }
@@ -124,7 +119,7 @@ func fetchTargets(url string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 
-		tg.Source = fileSource(url, i)
+		tg.Source = urlSource(url, i)
 		if tg.Labels == nil {
 			tg.Labels = model.LabelSet{}
 		}
@@ -133,6 +128,6 @@ func fetchTargets(url string) ([]*targetgroup.Group, error) {
 	return tg, nil
 }
 
-func fileSource(url string, i int) string {
+func urlSource(url string, i int) string {
 	return fmt.Sprintf("%s:%d", url, i)
 }
