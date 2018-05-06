@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
+	"github.com/prometheus/prometheus/discovery/url"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
@@ -216,6 +217,11 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 	for i, c := range cfg.FileSDConfigs {
 		app("file", i, file.NewDiscovery(c, log.With(m.logger, "discovery", "file")))
 	}
+
+	for i, c := range cfg.UrlSDConfig {
+		app("url", i, url.NewDiscovery(c, log.With(m.logger, "discovery", "url")))
+	}
+
 	for i, c := range cfg.ConsulSDConfigs {
 		k, err := consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
 		if err != nil {
