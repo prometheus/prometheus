@@ -82,7 +82,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	discover := func(url string, ch chan<- []*targetgroup.Group) {
-		tg, err := fetchTargets(d.url)
+		tg, err := d.getTargetGroups()
 		if err != nil {
 			urlSDFetchSuccessful.WithLabelValues(d.url).Set(0)
 			level.Error(d.logger).Log("msg", "Error fetching targets from url", "err", err)
@@ -106,14 +106,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func fetchTargets(url string) ([]*targetgroup.Group, error) {
+func (d *Discovery) getTargetGroups() ([]*targetgroup.Group, error) {
 
 	start := time.Now()
 	defer func() {
-		urlSDFetchDuration.WithLabelValues(url).Observe(time.Since(start).Seconds())
+		urlSDFetchDuration.WithLabelValues(d.url).Observe(time.Since(start).Seconds())
 	}()
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(d.url)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,9 @@ func fetchTargets(url string) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 	tg := make([]*targetgroup.Group, 0)
-	json.Unmarshal(body, &tg)
+	if err := json.Unmarshal(body, &tg); err != nil {
+		return nil, err
+	}
 
 	for i, tg := range tg {
 		if tg == nil {
@@ -132,7 +134,7 @@ func fetchTargets(url string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 
-		tg.Source = urlSource(url, i)
+		tg.Source = urlSource(d.url, i)
 		if tg.Labels == nil {
 			tg.Labels = model.LabelSet{}
 		}
