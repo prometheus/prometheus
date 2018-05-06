@@ -59,9 +59,6 @@ type ServiceDiscoveryConfig struct {
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
 	// List of web hook service discovery configurations.
 	WebHookSDConfig []*webhook.SDConfig `yaml:"webhook_sd_configs,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
