@@ -29,16 +29,6 @@ import (
 )
 
 var (
-	tr = http.Transport{
-		MaxIdleConns:       10,
-		IdleConnTimeout:    30 * time.Second,
-		DisableCompression: false,
-		DisableKeepAlives:  false,
-	}
-	client = http.Client{
-		Transport: &tr,
-	}
-
 	DefaultSDConfig = SDConfig{
 		RefreshInterval: model.Duration(5 * time.Second),
 	}
@@ -47,10 +37,16 @@ var (
 		Name: "prometheus_sd_url_last_fetch_successful",
 		Help: "Last url service discovery successful",
 	}, []string{"url"})
+
+	urlSDFetchDuration = prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		Name: "prometheus_sd_url_fetch_duration_seconds",
+		Help: "Url service discovery duration in seconds",
+	}, []string{"url"})
 )
 
 func init() {
 	prometheus.MustRegister(urlSDFetchSuccessful)
+	prometheus.MustRegister(urlSDFetchDuration)
 }
 
 type SDConfig struct {
@@ -112,7 +108,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 func fetchTargets(url string) ([]*targetgroup.Group, error) {
 
-	resp, err := client.Get(url)
+	start := time.Now()
+	defer func() {
+		urlSDFetchDuration.WithLabelValues(url).Observe(time.Since(start).Seconds())
+	}()
+
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
