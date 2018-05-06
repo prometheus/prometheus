@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -41,7 +42,16 @@ var (
 	DefaultSDConfig = SDConfig{
 		RefreshInterval: model.Duration(5 * time.Second),
 	}
+
+	webhookSDFetchSuccessful = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "prometheus_sd_webhook_last_fetch_successful",
+		Help: "Last webhook service discovery successful",
+	}, []string{"url"})
 )
+
+func init() {
+	prometheus.MustRegister(webhookSDFetchSuccessful)
+}
 
 type SDConfig struct {
 	Url             string         `yaml:"url"`
@@ -78,9 +88,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	discover := func(url string, ch chan<- []*targetgroup.Group) {
 		tg, err := fetchTargets(d.url)
 		if err != nil {
+			webhookSDFetchSuccessful.WithLabelValues(d.url).Set(0)
 			level.Error(d.logger).Log("msg", "Error fetching targets from url", "err", err)
 		} else {
 			ch <- tg
+			webhookSDFetchSuccessful.WithLabelValues(d.url).Set(1)
 		}
 	}
 
