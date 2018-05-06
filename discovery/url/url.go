@@ -33,20 +33,20 @@ var (
 		RefreshInterval: model.Duration(5 * time.Second),
 	}
 
-	urlSDFetchSuccessful = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "prometheus_sd_url_last_fetch_successful",
+	urlSDReadSuccessful = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "prometheus_sd_url_last_read_successful",
 		Help: "Last url service discovery successful",
 	}, []string{"url"})
 
-	urlSDFetchDuration = prometheus.NewSummaryVec(prometheus.SummaryOpts{
-		Name: "prometheus_sd_url_fetch_duration_seconds",
+	urlSDReadDuration = prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		Name: "prometheus_sd_url_read_duration_seconds",
 		Help: "Url service discovery duration in seconds",
 	}, []string{"url"})
 )
 
 func init() {
-	prometheus.MustRegister(urlSDFetchSuccessful)
-	prometheus.MustRegister(urlSDFetchDuration)
+	prometheus.MustRegister(urlSDReadSuccessful)
+	prometheus.MustRegister(urlSDReadDuration)
 }
 
 type SDConfig struct {
@@ -81,18 +81,18 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
-	discover := func(url string, ch chan<- []*targetgroup.Group) {
-		tg, err := d.getTargetGroups()
+	refresh := func() {
+		tg, err := d.readTargetGroups()
 		if err != nil {
-			urlSDFetchSuccessful.WithLabelValues(d.url).Set(0)
-			level.Error(d.logger).Log("msg", "Error fetching targets from url", "err", err)
+			urlSDReadSuccessful.WithLabelValues(d.url).Set(0)
+			level.Error(d.logger).Log("msg", "Error reading targets from url", "url", d.url, "err", err)
 		} else {
 			ch <- tg
-			urlSDFetchSuccessful.WithLabelValues(d.url).Set(1)
+			urlSDReadSuccessful.WithLabelValues(d.url).Set(1)
 		}
 	}
 
-	discover(d.url, ch)
+	refresh()
 
 	th := time.NewTicker(d.interval)
 	defer th.Stop()
@@ -101,16 +101,16 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ctx.Done():
 			return
 		case <-th.C:
-			discover(d.url, ch)
+			refresh()
 		}
 	}
 }
 
-func (d *Discovery) getTargetGroups() ([]*targetgroup.Group, error) {
+func (d *Discovery) readTargetGroups() ([]*targetgroup.Group, error) {
 
 	start := time.Now()
 	defer func() {
-		urlSDFetchDuration.WithLabelValues(d.url).Observe(time.Since(start).Seconds())
+		urlSDReadDuration.WithLabelValues(d.url).Observe(time.Since(start).Seconds())
 	}()
 
 	resp, err := http.Get(d.url)
