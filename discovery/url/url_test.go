@@ -14,17 +14,17 @@
 package url
 
 import (
-	"testing"
-	"net/http/httptest"
-	"net/http"
-	"os"
-	"io"
-	"time"
+	"context"
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
-	"context"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+	"time"
 )
 
 func TestValidDiscovery(t *testing.T) {

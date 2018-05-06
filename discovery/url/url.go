@@ -14,18 +14,18 @@
 package url
 
 import (
-	"github.com/prometheus/common/model"
-	"time"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"context"
-	"fmt"
-	"github.com/go-kit/kit/log"
-	"io/ioutil"
-	"net/http"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"io/ioutil"
+	"net/http"
+	"time"
 )
 
 var (

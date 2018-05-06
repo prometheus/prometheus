@@ -35,8 +35,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/discovery/url"
+	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
 // Discoverer provides information about target groups. It maintains a set
