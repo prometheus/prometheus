@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package webhook
+package url
 
 import (
 	"github.com/prometheus/common/model"
@@ -43,14 +43,14 @@ var (
 		RefreshInterval: model.Duration(5 * time.Second),
 	}
 
-	webhookSDFetchSuccessful = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "prometheus_sd_webhook_last_fetch_successful",
-		Help: "Last webhook service discovery successful",
+	urlSDFetchSuccessful = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "prometheus_sd_url_last_fetch_successful",
+		Help: "Last url service discovery successful",
 	}, []string{"url"})
 )
 
 func init() {
-	prometheus.MustRegister(webhookSDFetchSuccessful)
+	prometheus.MustRegister(urlSDFetchSuccessful)
 }
 
 type SDConfig struct {
@@ -88,11 +88,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	discover := func(url string, ch chan<- []*targetgroup.Group) {
 		tg, err := fetchTargets(d.url)
 		if err != nil {
-			webhookSDFetchSuccessful.WithLabelValues(d.url).Set(0)
+			urlSDFetchSuccessful.WithLabelValues(d.url).Set(0)
 			level.Error(d.logger).Log("msg", "Error fetching targets from url", "err", err)
 		} else {
 			ch <- tg
-			webhookSDFetchSuccessful.WithLabelValues(d.url).Set(1)
+			urlSDFetchSuccessful.WithLabelValues(d.url).Set(1)
 		}
 	}
 

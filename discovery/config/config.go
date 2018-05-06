@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
-	"github.com/prometheus/prometheus/discovery/webhook"
+	"github.com/prometheus/prometheus/discovery/url"
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
@@ -57,8 +57,8 @@ type ServiceDiscoveryConfig struct {
 	AzureSDConfigs []*azure.SDConfig `yaml:"azure_sd_configs,omitempty"`
 	// List of Triton service discovery configurations.
 	TritonSDConfigs []*triton.SDConfig `yaml:"triton_sd_configs,omitempty"`
-	// List of web hook service discovery configurations.
-	WebHookSDConfig []*webhook.SDConfig `yaml:"webhook_sd_configs,omitempty"`
+	// List of url service discovery configurations.
+	UrlSDConfig []*url.SDConfig `yaml:"url_sd_configs,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
