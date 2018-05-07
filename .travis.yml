@@ -4,10 +4,9 @@ language: go
 
 go:
 - 1.9.x
+- 1.10.x
 
 go_import_path: github.com/prometheus/tsdb
 
 script:
 - go test -timeout 5m ./...
-
-
