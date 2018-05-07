@@ -89,7 +89,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
-	testutil.Equals(t, seriesSet, map[string][]sample{`{foo="bar"}`: []sample{{t: 0, v: 0}}})
+	testutil.Equals(t, seriesSet, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}})
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
@@ -156,7 +156,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	res := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	testutil.Equals(t, map[string][]sample{
-		labels.FromStrings("a", "b").String(): []sample{
+		labels.FromStrings("a", "b").String(): {
 			{t: 123, v: 0},
 			{t: 124, v: 1},
 			{t: 125, v: 0},
@@ -310,7 +310,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap := query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	testutil.Equals(t, map[string][]sample{
-		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}},
+		labels.New(labels.Label{"a", "b"}).String(): {{0, 1}},
 	}, ssMap)
 
 	testutil.Ok(t, q.Close())
@@ -329,7 +329,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap = query(t, q, labels.NewEqualMatcher("a", "b"))
 
 	testutil.Equals(t, map[string][]sample{
-		labels.New(labels.Label{"a", "b"}).String(): []sample{{0, 1}, {10, 3}},
+		labels.New(labels.Label{"a", "b"}).String(): {{0, 1}, {10, 3}},
 	}, ssMap)
 	testutil.Ok(t, q.Close())
 }

@@ -179,17 +179,17 @@ func TestHead_Truncate(t *testing.T) {
 	testutil.Assert(t, postingsC1 == nil, "")
 
 	testutil.Equals(t, map[string]struct{}{
-		"":  struct{}{}, // from 'all' postings list
-		"a": struct{}{},
-		"b": struct{}{},
-		"1": struct{}{},
-		"2": struct{}{},
+		"":  {}, // from 'all' postings list
+		"a": {},
+		"b": {},
+		"1": {},
+		"2": {},
 	}, h.symbols)
 
 	testutil.Equals(t, map[string]stringset{
-		"a": stringset{"1": struct{}{}, "2": struct{}{}},
-		"b": stringset{"1": struct{}{}},
-		"":  stringset{"": struct{}{}},
+		"a": {"1": struct{}{}, "2": struct{}{}},
+		"b": {"1": struct{}{}},
+		"":  {"": struct{}{}},
 	}, h.values)
 }
 

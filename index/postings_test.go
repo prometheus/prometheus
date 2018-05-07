@@ -371,7 +371,7 @@ func TestRemovedNextStackoverflow(t *testing.T) {
 	for rp.Next() {
 		gotElem = true
 	}
-	
+
 	testutil.Ok(t, rp.Err())
 	testutil.Assert(t, !gotElem, "")
 }
