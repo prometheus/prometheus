@@ -937,7 +937,7 @@ func (r *walReader) Read(
 				series = v.([]RefSeries)
 			}
 
-			err := r.decodeSeries(flag, b, &series)
+			err = r.decodeSeries(flag, b, &series)
 			if err != nil {
 				err = errors.Wrap(err, "decode series entry")
 				break
@@ -958,7 +958,7 @@ func (r *walReader) Read(
 				samples = v.([]RefSample)
 			}
 
-			err := r.decodeSamples(flag, b, &samples)
+			err = r.decodeSamples(flag, b, &samples)
 			if err != nil {
 				err = errors.Wrap(err, "decode samples entry")
 				break
@@ -980,7 +980,7 @@ func (r *walReader) Read(
 				deletes = v.([]Stone)
 			}
 
-			err := r.decodeDeletes(flag, b, &deletes)
+			err = r.decodeDeletes(flag, b, &deletes)
 			if err != nil {
 				err = errors.Wrap(err, "decode delete entry")
 				break

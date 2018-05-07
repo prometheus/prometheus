@@ -192,12 +192,12 @@ func TestIndexRW_Postings(t *testing.T) {
 	}
 
 	err = iw.AddSymbols(map[string]struct{}{
-		"a": struct{}{},
-		"b": struct{}{},
-		"1": struct{}{},
-		"2": struct{}{},
-		"3": struct{}{},
-		"4": struct{}{},
+		"a": {},
+		"b": {},
+		"1": {},
+		"2": {},
+		"3": {},
+		"4": {},
 	})
 	testutil.Ok(t, err)
 
