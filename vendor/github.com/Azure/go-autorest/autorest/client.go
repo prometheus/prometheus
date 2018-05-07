@@ -1,5 +1,19 @@
 package autorest
 
+// Copyright 2017 Microsoft Corporation
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 import (
 	"bytes"
 	"fmt"
@@ -8,6 +22,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"runtime"
 	"time"
 )
 
@@ -20,15 +35,31 @@ const (
 
 	// DefaultRetryAttempts is number of attempts for retry status codes (5xx).
 	DefaultRetryAttempts = 3
+
+	// DefaultRetryDuration is the duration to wait between retries.
+	DefaultRetryDuration = 30 * time.Second
 )
 
-var statusCodesForRetry = []int{
-	http.StatusRequestTimeout,      // 408
-	http.StatusInternalServerError, // 500
-	http.StatusBadGateway,          // 502
-	http.StatusServiceUnavailable,  // 503
-	http.StatusGatewayTimeout,      // 504
-}
+var (
+	// defaultUserAgent builds a string containing the Go version, system archityecture and OS,
+	// and the go-autorest version.
+	defaultUserAgent = fmt.Sprintf("Go/%s (%s-%s) go-autorest/%s",
+		runtime.Version(),
+		runtime.GOARCH,
+		runtime.GOOS,
+		Version(),
+	)
+
+	// StatusCodesForRetry are a defined group of status code for which the client will retry
+	StatusCodesForRetry = []int{
+		http.StatusRequestTimeout,      // 408
+		http.StatusTooManyRequests,     // 429
+		http.StatusInternalServerError, // 500
+		http.StatusBadGateway,          // 502
+		http.StatusServiceUnavailable,  // 503
+		http.StatusGatewayTimeout,      // 504
+	}
+)
 
 const (
 	requestFormat = `HTTP Request Begin ===================================================
@@ -135,18 +166,33 @@ type Client struct {
 	UserAgent string
 
 	Jar http.CookieJar
+
+	// Set to true to skip attempted registration of resource providers (false by default).
+	SkipResourceProviderRegistration bool
 }
 
 // NewClientWithUserAgent returns an instance of a Client with the UserAgent set to the passed
 // string.
 func NewClientWithUserAgent(ua string) Client {
-	return Client{
+	c := Client{
 		PollingDelay:    DefaultPollingDelay,
 		PollingDuration: DefaultPollingDuration,
 		RetryAttempts:   DefaultRetryAttempts,
-		RetryDuration:   30 * time.Second,
-		UserAgent:       ua,
+		RetryDuration:   DefaultRetryDuration,
+		UserAgent:       defaultUserAgent,
 	}
+	c.Sender = c.sender()
+	c.AddToUserAgent(ua)
+	return c
+}
+
+// AddToUserAgent adds an extension to the current user agent
+func (c *Client) AddToUserAgent(extension string) error {
+	if extension != "" {
+		c.UserAgent = fmt.Sprintf("%s %s", c.UserAgent, extension)
+		return nil
+	}
+	return fmt.Errorf("Extension was empty, User Agent stayed as %s", c.UserAgent)
 }
 
 // Do implements the Sender interface by invoking the active Sender after applying authorization.
@@ -157,16 +203,22 @@ func (c Client) Do(r *http.Request) (*http.Response, error) {
 		r, _ = Prepare(r,
 			WithUserAgent(c.UserAgent))
 	}
+	// NOTE: c.WithInspection() must be last in the list so that it can inspect all preceding operations
 	r, err := Prepare(r,
-		c.WithInspection(),
-		c.WithAuthorization())
+		c.WithAuthorization(),
+		c.WithInspection())
 	if err != nil {
-		return nil, NewErrorWithError(err, "autorest/Client", "Do", nil, "Preparing request failed")
+		var resp *http.Response
+		if detErr, ok := err.(DetailedError); ok {
+			// if the authorization failed (e.g. invalid credentials) there will
+			// be a response associated with the error, be sure to return it.
+			resp = detErr.Response
+		}
+		return resp, NewErrorWithError(err, "autorest/Client", "Do", nil, "Preparing request failed")
 	}
-	resp, err := SendWithSender(c.sender(), r,
-		DoRetryForStatusCodes(c.RetryAttempts, c.RetryDuration, statusCodesForRetry...))
-	Respond(resp,
-		c.ByInspecting())
+
+	resp, err := SendWithSender(c.sender(), r)
+	Respond(resp, c.ByInspecting())
 	return resp, err
 }
 
