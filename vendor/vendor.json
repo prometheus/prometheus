@@ -2178,5 +2178,5 @@
 			"revisionTime": "2017-03-31T20:34:26Z"
 		}
 	],
-	"rootPath": "Golang/prometheus"
+	"rootPath": "github.com/prometheus/prometheus"
 }
