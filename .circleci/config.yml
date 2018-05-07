@@ -82,8 +82,8 @@ jobs:
           docker tag "$DOCKER_IMAGE_NAME:$CIRCLE_TAG" "$DOCKER_IMAGE_NAME:latest"
           docker tag "$QUAY_IMAGE_NAME:$CIRCLE_TAG" "$QUAY_IMAGE_NAME:latest"
         fi
-    - run: docker push $DOCKER_IMAGE_NAME:$CIRCLE_TAG
-    - run: docker push $QUAY_IMAGE_NAME:$CIRCLE_TAG
+    - run: docker push $DOCKER_IMAGE_NAME
+    - run: docker push $QUAY_IMAGE_NAME
 
 workflows:
   version: 2
