@@ -413,11 +413,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		}
 
 	}
-	// Range evaluation.
-	if err := contextDone(ctx, "range evaluation"); err != nil {
-		return nil, err
-	}
 
+	// Range evaluation.
 	evaluator := &evaluator{
 		timestamp:    timeMilliseconds(s.Start),
 		endTimestamp: timeMilliseconds(s.End),
@@ -562,12 +559,12 @@ type evaluator struct {
 	logger log.Logger
 }
 
-// fatalf causes a panic with the input formatted into an error.
+// errorf causes a panic with the input formatted into an error.
 func (ev *evaluator) errorf(format string, args ...interface{}) {
 	ev.error(fmt.Errorf(format, args...))
 }
 
-// fatal causes a panic with the given error.
+// error causes a panic with the given error.
 func (ev *evaluator) error(err error) {
 	panic(err)
 }
