@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -45,6 +46,7 @@ func main() {
 		benchWriteNumMetrics = benchWriteCmd.Flag("metrics", "number of metrics to read").Default("10000").Int()
 		benchSamplesFile     = benchWriteCmd.Arg("file", "input file with samples data, default is (../../testdata/20k.series)").Default("../../testdata/20k.series").String()
 		listCmd              = cli.Command("ls", "list db blocks")
+		listCmdHumanReadable = listCmd.Flag("human-readable", "print human readable values").Short('h').Bool()
 		listPath             = listCmd.Arg("db path", "database path (default is benchout/storage)").Default("benchout/storage").String()
 	)
 
@@ -61,7 +63,7 @@ func main() {
 		if err != nil {
 			exitWithError(err)
 		}
-		printBlocks(db.Blocks())
+		printBlocks(db.Blocks(), listCmdHumanReadable)
 	}
 	flag.CommandLine.Set("log.level", "debug")
 }
@@ -344,7 +346,7 @@ func exitWithError(err error) {
 	os.Exit(1)
 }
 
-func printBlocks(blocks []*tsdb.Block) {
+func printBlocks(blocks []*tsdb.Block, humanReadable *bool) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 
@@ -355,11 +357,18 @@ func printBlocks(blocks []*tsdb.Block) {
 		fmt.Fprintf(tw,
 			"%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
-			meta.MinTime,
-			meta.MaxTime,
+			getFormatedTime(meta.MinTime, humanReadable),
+			getFormatedTime(meta.MaxTime, humanReadable),
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
 		)
 	}
+}
+
+func getFormatedTime(timestamp int64, humanReadable *bool) string {
+	if *humanReadable {
+		return time.Unix(timestamp/1000, 0).String()
+	}
+	return strconv.FormatInt(timestamp, 10)
 }
