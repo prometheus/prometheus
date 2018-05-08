@@ -579,6 +579,7 @@ address with relabeling.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_gce_instance_name`: the name of the instance
+* `__meta_gce_label_<name>`: each GCE label of the instance
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
