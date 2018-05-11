@@ -42,6 +42,7 @@ jobs:
     - attach_workspace:
         at: .
     - run: ln -s .build/linux-amd64/prometheus prometheus
+    - run: ln -s .build/linux-amd64/promtool promtool
     - run: make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME
     - run: make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME
     - run: docker images
@@ -73,6 +74,7 @@ jobs:
         path: .tarballs
         destination: releases
     - run: ln -s .build/linux-amd64/prometheus prometheus
+    - run: ln -s .build/linux-amd64/promtool promtool
     - run: make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
     - run: make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
     - run: docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
