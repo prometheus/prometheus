@@ -355,11 +355,11 @@ func durationMilliseconds(d time.Duration) int64 {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, error) {
 	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
-	querier, err := ng.populateIterators(ctx, query.queryable, s)
+	querier, err := ng.populateSeries(ctx, query.queryable, s)
 	prepareTimer.Stop()
 	ng.metrics.queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
 
-	// XXX(fabxc): the querier returned by populateIterators might be instantiated
+	// XXX(fabxc): the querier returned by populateSeries might be instantiated
 	// we must not return without closing irrespective of the error.
 	// TODO: make this semantically saner.
 	if querier != nil {
@@ -449,7 +449,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	return mat, nil
 }
 
-func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
+func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
 	Inspect(s.Expr, func(node Node, _ []Node) bool {
 		switch n := node.(type) {
@@ -671,7 +671,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 
-		seriess := map[uint64]Series{}        // Output series by series hash.
 		vectors := make([]Vector, len(exprs)) // Input vectors for the function.
 		args := make([]Value, len(exprs))     // Argument to function.
 		// Create an output vector that is as big as the input matrix with
@@ -684,6 +683,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 		enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
+		seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
 		for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
 			// Gather input vectors for this timestamp.
 			for i := range exprs {
@@ -739,7 +739,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 		// Assemble the output matrix.
-		mat := Matrix{}
+		mat := make(Matrix, 0, len(seriess))
 		for _, ss := range seriess {
 			mat = append(mat, ss)
 		}
