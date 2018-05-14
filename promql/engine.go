@@ -644,6 +644,101 @@ func (enh *evalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 	}
 }
 
+// rangeEval evaluates the given expressions, and then for each step calls
+// the given function with the values computed for each expression at that
+// step.  The return value is the combination into time series of  of all the
+// function call results.
+func (ev *evaluator) rangeEval(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Matrix {
+	numSteps := int((ev.endTimestamp-ev.timestamp)/ev.interval) + 1
+	matrixes := make([]Matrix, len(exprs))
+	origMatrixes := make([]Matrix, len(exprs))
+	for i, e := range exprs {
+		// Functions will take string arguments from the expressions, not the values.
+		if e != nil && e.Type() != ValueTypeString {
+			matrixes[i] = ev.eval(e).(Matrix)
+
+			// Keep a copy of the original point slices so that they
+			// can be returned to the pool.
+			origMatrixes[i] = make(Matrix, len(matrixes[i]))
+			copy(origMatrixes[i], matrixes[i])
+		}
+	}
+
+	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
+	args := make([]Value, len(exprs))     // Argument to function.
+	// Create an output vector that is as big as the input matrix with
+	// the most time series.
+	biggestLen := 1
+	for i := range exprs {
+		vectors[i] = make(Vector, 0, len(matrixes[i]))
+		if len(matrixes[i]) > biggestLen {
+			biggestLen = len(matrixes[i])
+		}
+	}
+	enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
+	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
+	for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		// Gather input vectors for this timestamp.
+		for i := range exprs {
+			vectors[i] = vectors[i][:0]
+			for si, series := range matrixes[i] {
+				for pos, point := range series.Points {
+					if point.T == ts {
+						vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
+					}
+					if point.T >= ts {
+						// Move input vectors forward so we don't have to re-scan the same
+						// past points at the next step.
+						matrixes[i][si].Points = series.Points[pos:]
+						break
+					}
+				}
+			}
+			args[i] = vectors[i]
+		}
+		// Make the function call.
+		enh.ts = ts
+		result := f(args, enh)
+		enh.out = result[:0] // Reuse result vector.
+		// If this could be an instant query, shortcut so as not to change sort order.
+		if ev.endTimestamp == ev.timestamp {
+			mat := make(Matrix, len(result))
+			for i, s := range result {
+				s.Point.T = ts
+				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
+			}
+			return mat
+		}
+		// Add samples in output vector to output series.
+		for _, sample := range result {
+			h := sample.Metric.Hash()
+			ss, ok := seriess[h]
+			if !ok {
+				ss = Series{
+					Metric: sample.Metric,
+					Points: getPointSlice(numSteps),
+				}
+				seriess[h] = ss
+			}
+			sample.Point.T = ts
+			ss.Points = append(ss.Points, sample.Point)
+			seriess[h] = ss
+		}
+	}
+	// Reuse the original point slices.
+	for _, m := range origMatrixes {
+		for _, s := range m {
+			putPointSlice(s.Points)
+		}
+	}
+	// Assemble the output matrix.
+	mat := make(Matrix, 0, len(seriess))
+	for _, ss := range seriess {
+		mat = append(mat, ss)
+	}
+	return mat
+}
+
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(expr Expr) Value {
 	// This is the top-level evaluation method.
@@ -653,107 +748,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 	}
 	numSteps := int((ev.endTimestamp-ev.timestamp)/ev.interval) + 1
 
-	// rangeWrapper evaluates the given expressions as matrixes, and then for
-	// each step calls the given function with the expressions for that step.
-	// The return value is the combination of all the function call results.
-	rangeWrapper := func(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Matrix {
-		matrixes := make([]Matrix, len(exprs))
-		origMatrixes := make([]Matrix, len(exprs))
-		for i, e := range exprs {
-			// Functions will take string arguments from the expressions, not the values.
-			if e != nil && e.Type() != ValueTypeString {
-				matrixes[i] = ev.eval(e).(Matrix)
-
-				// Keep a copy of the original point slices so that they
-				// can be returned to the pool.
-				origMatrixes[i] = make(Matrix, len(matrixes[i]))
-				copy(origMatrixes[i], matrixes[i])
-			}
-		}
-
-		vectors := make([]Vector, len(exprs)) // Input vectors for the function.
-		args := make([]Value, len(exprs))     // Argument to function.
-		// Create an output vector that is as big as the input matrix with
-		// the most time series.
-		biggestLen := 1
-		for i := range exprs {
-			vectors[i] = make(Vector, 0, len(matrixes[i]))
-			if len(matrixes[i]) > biggestLen {
-				biggestLen = len(matrixes[i])
-			}
-		}
-		enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
-		seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
-		for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
-			// Gather input vectors for this timestamp.
-			for i := range exprs {
-				vectors[i] = vectors[i][:0]
-				for si, series := range matrixes[i] {
-					for pos, point := range series.Points {
-						if point.T == ts {
-							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
-						}
-						if point.T >= ts {
-							// Move input vectors forward so we don't have to re-scan the same
-							// past points at the next step.
-							matrixes[i][si].Points = series.Points[pos:]
-							break
-						}
-					}
-				}
-				args[i] = vectors[i]
-			}
-			// Make the function call.
-			enh.ts = ts
-			result := f(args, enh)
-			enh.out = result[:0] // Reuse result vector.
-			// If this could be an instant query, shortcut so as not to change sort order.
-			if ev.endTimestamp == ev.timestamp {
-				mat := make(Matrix, len(result))
-				for i, s := range result {
-					s.Point.T = ts
-					mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
-				}
-				return mat
-			}
-			// Add samples in output vector to output series.
-			for _, sample := range result {
-				h := sample.Metric.Hash()
-				ss, ok := seriess[h]
-				if !ok {
-					ss = Series{
-						Metric: sample.Metric,
-						Points: getPointSlice(numSteps),
-					}
-					seriess[h] = ss
-				}
-				sample.Point.T = ts
-				ss.Points = append(ss.Points, sample.Point)
-				seriess[h] = ss
-			}
-		}
-		// Reuse the original point slices.
-		for _, m := range origMatrixes {
-			for _, s := range m {
-				putPointSlice(s.Points)
-			}
-		}
-		// Assemble the output matrix.
-		mat := make(Matrix, 0, len(seriess))
-		for _, ss := range seriess {
-			mat = append(mat, ss)
-		}
-		return mat
-	}
-
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		if s, ok := e.Param.(*StringLiteral); ok {
-			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
-		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+		return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 			var param float64
 			if e.Param != nil {
 				param = v[0].(Vector)[0].V
@@ -768,7 +770,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// a vector selector.
 			vs, ok := e.Args[0].(*VectorSelector)
 			if ok {
-				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
 				})
 			}
@@ -786,7 +788,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 				return e.Func.Call(v, e.Args, enh)
 			}, e.Args...)
 		}
@@ -878,43 +880,43 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
 				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case itemLAND:
-				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case itemLOR:
-				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case itemLUnless:
-				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 		}
 
 	case *NumberLiteral:
-		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+		return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
 			return append(enh.out, Sample{Point: Point{V: e.Val}})
 		})
 
