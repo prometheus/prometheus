@@ -830,11 +830,21 @@ func (sl *scrapeLoop) append(b []byte, ts time.Time) (total, added int, err erro
 	var sampleLimitErr error
 
 loop:
-	for p.Next() {
+	for {
+		var et textparse.Entry
+		if et, err = p.Next(); err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			break
+		}
+		if et != textparse.EntrySeries {
+			continue
+		}
 		total++
 
 		t := defTime
-		met, tp, v := p.At()
+		met, tp, v := p.Series()
 		if tp != nil {
 			t = *tp
 		}
@@ -931,10 +941,10 @@ loop:
 		}
 		added++
 	}
-	if err == nil {
-		err = p.Err()
-	}
 	if sampleLimitErr != nil {
+		if err == nil {
+			err = sampleLimitErr
+		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeSampleLimit.Inc()
 	}
