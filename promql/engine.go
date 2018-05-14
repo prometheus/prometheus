@@ -774,82 +774,91 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}
 		}
 		// Check if the function has a matrix argument.
-		for matrixArgIndex, a := range e.Args {
-			sel, ok := a.(*MatrixSelector)
+		var matrixArgIndex int
+		var matrixArg bool
+		for i, a := range e.Args {
+			_, ok := a.(*MatrixSelector)
 			if ok {
-				inArgs := make([]Value, len(e.Args))
-				// Evaluate any non-matrix arguments.
-				otherArgs := make([]Matrix, len(e.Args))
-				otherArgsIn := make([]Vector, len(e.Args))
-				for i, e := range e.Args {
-					if i != matrixArgIndex {
-						otherArgs[i] = ev.eval(e).(Matrix)
-						otherArgsIn[i] = Vector{Sample{}}
-						inArgs[i] = otherArgsIn[i]
-					}
-				}
-
-				mat := make(Matrix, 0, len(sel.series)) // Output matrix.
-				offset := durationMilliseconds(sel.Offset)
-				// Reuse objects across steps to save memory allocations.
-				points := getPointSlice(16)
-				inMatrix := make(Matrix, 1)
-				inArgs[matrixArgIndex] = inMatrix
-				enh := &evalNodeHelper{out: make(Vector, 0, 1)}
-				// Process all the calls for one time series at a time.
-				var it *storage.BufferedSeriesIterator
-				for i, s := range sel.series {
-					if it == nil {
-						it = storage.NewBuffer(s.Iterator(), durationMilliseconds(sel.Range))
-					} else {
-						it.Reset(s.Iterator())
-					}
-					ss := Series{
-						// For all range vector functions, the only change to the
-						// output labels is dropping the metric name so just do
-						// it once here.
-						Metric: dropMetricName(sel.series[i].Labels()),
-						Points: getPointSlice(numSteps),
-					}
-					inMatrix[0].Metric = sel.series[i].Labels()
-					for ts, step := ev.timestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
-						step++
-						// Set the non-matrix arguments.
-						// They are scalar, so it is safe to use the step number
-						// when looking up the argument, as there will be no gaps.
-						for j := range e.Args {
-							if j != matrixArgIndex {
-								otherArgsIn[j][0].V = otherArgs[j][0].Points[step].V
-							}
-						}
-						maxt := ts - offset
-						mint := maxt - durationMilliseconds(sel.Range)
-						// Evaluate the matrix selector for this series for this step.
-						points = ev.matrixIterSlice(it, maxt, mint, points[:0])
-						if len(points) == 0 {
-							continue
-						}
-						inMatrix[0].Points = points
-						enh.ts = ts
-						// Make the function call.
-						outVec := e.Func.Call(inArgs, e.Args, enh)
-						enh.out = outVec[:0]
-						if len(outVec) > 0 {
-							ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
-						}
-					}
-					if len(ss.Points) > 0 {
-						mat = append(mat, ss)
-					}
-				}
-				putPointSlice(points)
-				return mat
+				matrixArgIndex = i
+				matrixArg = true
+				break
 			}
 		}
-		// Does not have a matrix argument.
-		return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
-			return e.Func.Call(v, e.Args, enh)
-		}, e.Args...)
+		if !matrixArg {
+			// Does not have a matrix argument.
+			return rangeWrapper(func(v []Value, enh *evalNodeHelper) Vector {
+				return e.Func.Call(v, e.Args, enh)
+			}, e.Args...)
+		}
+
+		inArgs := make([]Value, len(e.Args))
+		// Evaluate any non-matrix arguments.
+		otherArgs := make([]Matrix, len(e.Args))
+		otherArgsIn := make([]Vector, len(e.Args))
+		for i, e := range e.Args {
+			if i != matrixArgIndex {
+				otherArgs[i] = ev.eval(e).(Matrix)
+				otherArgsIn[i] = Vector{Sample{}}
+				inArgs[i] = otherArgsIn[i]
+			}
+		}
+
+		sel := e.Args[matrixArgIndex].(*MatrixSelector)
+		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
+		offset := durationMilliseconds(sel.Offset)
+		// Reuse objects across steps to save memory allocations.
+		points := getPointSlice(16)
+		inMatrix := make(Matrix, 1)
+		inArgs[matrixArgIndex] = inMatrix
+		enh := &evalNodeHelper{out: make(Vector, 0, 1)}
+		// Process all the calls for one time series at a time.
+		var it *storage.BufferedSeriesIterator
+		for i, s := range sel.series {
+			if it == nil {
+				it = storage.NewBuffer(s.Iterator(), durationMilliseconds(sel.Range))
+			} else {
+				it.Reset(s.Iterator())
+			}
+			ss := Series{
+				// For all range vector functions, the only change to the
+				// output labels is dropping the metric name so just do
+				// it once here.
+				Metric: dropMetricName(sel.series[i].Labels()),
+				Points: getPointSlice(numSteps),
+			}
+			inMatrix[0].Metric = sel.series[i].Labels()
+			for ts, step := ev.timestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+				step++
+				// Set the non-matrix arguments.
+				// They are scalar, so it is safe to use the step number
+				// when looking up the argument, as there will be no gaps.
+				for j := range e.Args {
+					if j != matrixArgIndex {
+						otherArgsIn[j][0].V = otherArgs[j][0].Points[step].V
+					}
+				}
+				maxt := ts - offset
+				mint := maxt - durationMilliseconds(sel.Range)
+				// Evaluate the matrix selector for this series for this step.
+				points = ev.matrixIterSlice(it, maxt, mint, points[:0])
+				if len(points) == 0 {
+					continue
+				}
+				inMatrix[0].Points = points
+				enh.ts = ts
+				// Make the function call.
+				outVec := e.Func.Call(inArgs, e.Args, enh)
+				enh.out = outVec[:0]
+				if len(outVec) > 0 {
+					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
+				}
+			}
+			if len(ss.Points) > 0 {
+				mat = append(mat, ss)
+			}
+		}
+		putPointSlice(points)
+		return mat
 
 	case *ParenExpr:
 		return ev.eval(e.Expr)
