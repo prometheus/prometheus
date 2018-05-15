@@ -40,7 +40,6 @@ type Function struct {
 	//    value,and nil for strings.
 	// args are the original arguments to the function, where you can access
 	//    matrixSelectors, vectorSelectors, and StringLiterals.
-	// ts is the evaluation timestamp.
 	// enh.out is a pre-allocated empty vector that you may use to accumulate
 	//    output before returning it. The vectors in vals should not be returned.a
 	// Range vector functions need only return a vector with the right value,
