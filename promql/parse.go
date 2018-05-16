@@ -210,7 +210,7 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 			p.next()
 			k = math.Float64frombits(value.StaleNaN)
 		} else {
-			p.errorf("expected number or 'stale' in %s but got %s", ctx, t.desc())
+			p.errorf("expected number or 'stale' in %s but got %s (value: %s)", ctx, t.desc(), p.peek())
 		}
 		vals = append(vals, sequenceValue{
 			value: k,
@@ -222,7 +222,7 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 		} else if t.typ == itemEOF {
 			break
 		} else if t.typ != itemADD && t.typ != itemSUB {
-			p.errorf("expected next value or relative expansion in %s but got %s", ctx, t.desc())
+			p.errorf("expected next value or relative expansion in %s but got %s (value: %s)", ctx, t.desc(), p.peek())
 		}
 
 		// Expand the repeated offsets into values.
