@@ -161,7 +161,7 @@ func TestWAL_FuzzWriteRead(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	w, err := newWAL(nil, nil, dir, 128*pageSize)
+	w, err := NewSize(nil, nil, dir, 128*pageSize)
 	testutil.Ok(t, err)
 
 	var input [][]byte
@@ -212,6 +212,102 @@ func TestWAL_FuzzWriteRead(t *testing.T) {
 		}
 	}
 	testutil.Ok(t, rdr.Err())
+}
+
+func TestWAL_Repair(t *testing.T) {
+	for name, cf := range map[string]func(f *os.File){
+		"bad_fragment_sequence": func(f *os.File) {
+			_, err := f.Seek(pageSize, 0)
+			testutil.Ok(t, err)
+			_, err = f.Write([]byte{byte(recLast)})
+			testutil.Ok(t, err)
+		},
+		"bad_fragment_flag": func(f *os.File) {
+			_, err := f.Seek(pageSize, 0)
+			testutil.Ok(t, err)
+			_, err = f.Write([]byte{123})
+			testutil.Ok(t, err)
+		},
+		"bad_checksum": func(f *os.File) {
+			_, err := f.Seek(pageSize+4, 0)
+			testutil.Ok(t, err)
+			_, err = f.Write([]byte{0})
+			testutil.Ok(t, err)
+		},
+		"bad_length": func(f *os.File) {
+			_, err := f.Seek(pageSize+2, 0)
+			testutil.Ok(t, err)
+			_, err = f.Write([]byte{0})
+			testutil.Ok(t, err)
+		},
+		"bad_content": func(f *os.File) {
+			_, err := f.Seek(pageSize+100, 0)
+			testutil.Ok(t, err)
+			_, err = f.Write([]byte("beef"))
+			testutil.Ok(t, err)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, err := ioutil.TempDir("", "wal_repair")
+			testutil.Ok(t, err)
+			defer os.RemoveAll(dir)
+
+			// We create 3 segments with 3 records each and then corrupt the 2nd record
+			// of the 2nd segment.
+			// As a result we want a repaired WAL with the first 4 records intact.
+			w, err := NewSize(nil, nil, dir, 3*pageSize)
+			testutil.Ok(t, err)
+
+			var records [][]byte
+
+			for i := 1; i <= 9; i++ {
+				b := make([]byte, pageSize-recordHeaderSize)
+				b[0] = byte(i)
+				records = append(records, b)
+				testutil.Ok(t, w.Log(b))
+			}
+			testutil.Ok(t, w.Close())
+
+			f, err := os.OpenFile(SegmentName(dir, 1), os.O_RDWR, 0666)
+			testutil.Ok(t, err)
+
+			// Apply corruption function.
+			cf(f)
+
+			testutil.Ok(t, f.Close())
+
+			w, err = New(nil, nil, dir)
+			testutil.Ok(t, err)
+
+			sr, err := NewSegmentsReader(dir)
+			testutil.Ok(t, err)
+			r := NewReader(sr)
+
+			for r.Next() {
+			}
+			testutil.NotOk(t, r.Err())
+
+			testutil.Ok(t, w.Repair(r.Err()))
+
+			sr, err = NewSegmentsReader(dir)
+			testutil.Ok(t, err)
+			r = NewReader(sr)
+
+			var result [][]byte
+			for r.Next() {
+				var b []byte
+				result = append(result, append(b, r.Record()...))
+			}
+			testutil.Ok(t, r.Err())
+			testutil.Equals(t, 4, len(result))
+
+			for i, r := range result {
+				if !bytes.Equal(records[i], r) {
+					t.Fatalf("record %d diverges: want %x, got %x", i, records[i][:10], r[:10])
+				}
+			}
+		})
+	}
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
