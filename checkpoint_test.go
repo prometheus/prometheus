@@ -15,7 +15,6 @@
 package tsdb
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -82,7 +81,7 @@ func TestDeleteCheckpoints(t *testing.T) {
 func TestCheckpoint(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test_checkpoint")
 	testutil.Ok(t, err)
-	fmt.Println(dir)
+	defer os.RemoveAll(dir)
 
 	var enc RecordEncoder
 	// Create a dummy segment to bump the initial number.
@@ -138,11 +137,10 @@ func TestCheckpoint(t *testing.T) {
 	}
 	testutil.Ok(t, w.Close())
 
-	stats, err = Checkpoint(nil, w, 100, 106, func(x uint64) bool {
+	_, err = Checkpoint(nil, w, 100, 106, func(x uint64) bool {
 		return x%2 == 0
 	}, last/2)
 	testutil.Ok(t, err)
-	testutil.Equals(t, 106, stats.HighSegment)
 
 	// Only the new checkpoint should be left.
 	files, err := fileutil.ReadDir(dir)
