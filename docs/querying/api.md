@@ -329,7 +329,7 @@ Both the active and dropped targets are part of the response.
 ```json
 $ curl http://localhost:9090/api/v1/targets
 {
-  "status": "success",                                                                                                                                [3/11]
+  "status": "success",
   "data": {
     "activeTargets": [
       {
@@ -360,6 +360,85 @@ $ curl http://localhost:9090/api/v1/targets
       }
     ]
   }
+}
+```
+
+## Target metadata
+
+The following endpoint returns metadata about metrics currently scraped by targets.
+
+```
+GET /api/v1/targets/metadata
+```
+
+URL query parameters:
+
+- `match=<series_selector>`: A selector that matches targets by label matchers. If a metric name is provided, only metadata for that metric name is returned.
+- `limit=<number>`: Maximum number of targets to match.
+
+The `data` section of the query result consists of a list of objects that
+contain metric metadata and the target label set.
+
+The following example returns all metadata entries for the `go_goroutines` metric
+from the first two targets with label `job="prometheus"`.
+
+```json
+curl -G http://localhost:9091/api/v1/targets/metadata \
+    --data-urlencode 'match=go_goroutines{job="prometheus"}' \
+    --data-urlencode 'limit=2'
+{
+  "status": "success",
+  "data": [
+    {
+      "target": {
+        "instance": "127.0.0.1:9090",
+        "job": "prometheus"
+      },
+      "type": "gauge",
+      "help": "Number of goroutines that currently exist."
+    },
+    {
+      "target": {
+        "instance": "127.0.0.1:9091",
+        "job": "prometheus"
+      },
+      "type": "gauge",
+      "help": "Number of goroutines that currently exist."
+    }
+  ]
+}
+```
+
+The following example returns metadata for all metrics for the target with
+label `instance="127.0.0.1:9090`.
+
+```json
+curl -G http://localhost:9091/api/v1/targets/metadata \
+    --data-urlencode 'match={instance="127.0.0.1:9090"}'
+{
+  "status": "success",
+  "data": [
+    // ...
+    {
+      "target": {
+        "instance": "127.0.0.1:9090",
+        "job": "prometheus"
+      },
+      "metric": "prometheus_treecache_zookeeper_failures_total",
+      "type": "counter",
+      "help": "The total number of ZooKeeper failures."
+    },
+    {
+      "target": {
+        "instance": "127.0.0.1:9090",
+        "job": "prometheus"
+      },
+      "metric": "prometheus_tsdb_reloads_total",
+      "type": "counter",
+      "help": "Number of times the database reloaded block data from disk."
+    },
+    // ...
+  ]
 }
 ```
 
