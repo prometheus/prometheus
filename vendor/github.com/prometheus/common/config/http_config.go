@@ -32,9 +32,6 @@ type BasicAuth struct {
 	Username     string `yaml:"username"`
 	Password     Secret `yaml:"password,omitempty"`
 	PasswordFile string `yaml:"password_file,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // URL is a custom URL type that allows validation at configuration load time.
@@ -77,9 +74,6 @@ type HTTPClientConfig struct {
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
 	// TLSConfig to use to connect to the targets.
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // Validate validates the HTTPClientConfig to check only one of BearerToken,
@@ -91,9 +85,6 @@ func (c *HTTPClientConfig) Validate() error {
 	if c.BasicAuth != nil && (len(c.BearerToken) > 0 || len(c.BearerTokenFile) > 0) {
 		return fmt.Errorf("at most one of basic_auth, bearer_token & bearer_token_file must be configured")
 	}
-	if c.BasicAuth != nil && c.BasicAuth.Username == "" {
-		return fmt.Errorf("basic_auth requires a username")
-	}
 	if c.BasicAuth != nil && (string(c.BasicAuth.Password) != "" && c.BasicAuth.PasswordFile != "") {
 		return fmt.Errorf("at most one of basic_auth password & password_file must be configured")
 	}
@@ -103,25 +94,16 @@ func (c *HTTPClientConfig) Validate() error {
 // UnmarshalYAML implements the yaml.Unmarshaler interface
 func (c *HTTPClientConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain HTTPClientConfig
-	err := unmarshal((*plain)(c))
-	if err != nil {
+	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	err = c.Validate()
-	if err != nil {
-		return c.Validate()
-	}
-	return checkOverflow(c.XXX, "http_client_config")
+	return c.Validate()
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *BasicAuth) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain BasicAuth
-	err := unmarshal((*plain)(a))
-	if err != nil {
-		return err
-	}
-	return checkOverflow(a.XXX, "basic_auth")
+	return unmarshal((*plain)(a))
 }
 
 // NewClient returns a http.Client using the specified http.RoundTripper.
@@ -318,18 +300,12 @@ type TLSConfig struct {
 	ServerName string `yaml:"server_name,omitempty"`
 	// Disable target certificate validation.
 	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
-
-	// Catches all undefined fields and must be empty after parsing.
-	XXX map[string]interface{} `yaml:",inline"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *TLSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain TLSConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-	return checkOverflow(c.XXX, "TLS config")
+	return unmarshal((*plain)(c))
 }
 
 func (c HTTPClientConfig) String() string {
