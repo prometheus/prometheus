@@ -141,7 +141,7 @@ func parseFlags() *config {
 	)
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
-	flag.StringVar(&cfg.logLevel, "log.level", "debug", "The log level(error/warn/info/debug) to be set for promlog")
+	flag.StringVar(&cfg.logLevel, "log.level", "debug", "The log level(error/warn/info/debug) to be set for promlog. ")
 
 	flag.Parse()
 
