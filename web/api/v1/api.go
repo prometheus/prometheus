@@ -35,6 +35,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -63,6 +64,7 @@ const (
 	errorBadData     errorType = "bad_data"
 	errorInternal    errorType = "internal"
 	errorUnavailable errorType = "unavailable"
+	errorNotFound    errorType = "not_found"
 )
 
 var corsHeaders = map[string]string{
@@ -186,6 +188,7 @@ func (api *API) Register(r *route.Router) {
 	r.Del("/series", wrap(api.dropSeries))
 
 	r.Get("/targets", wrap(api.targets))
+	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
 	r.Get("/status/config", wrap(api.serveConfig))
@@ -461,7 +464,6 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(tActive)), DroppedTargets: make([]*DroppedTarget, len(tDropped))}
 
 	for i, t := range tActive {
-
 		lastErrStr := ""
 		lastErr := t.LastError()
 		if lastErr != nil {
@@ -484,6 +486,76 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 		}
 	}
 	return res, nil, nil
+}
+
+func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError) {
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return nil, &apiError{errorBadData, fmt.Errorf("limit must be a number")}
+		}
+	}
+
+	matchers, err := promql.ParseMetricSelector(r.FormValue("match"))
+	if err != nil {
+		return nil, &apiError{errorBadData, err}
+	}
+
+	var metric string
+	for i, m := range matchers {
+		// Extract metric matcher.
+		if m.Name == labels.MetricName && m.Type == labels.MatchEqual {
+			metric = m.Value
+			matchers = append(matchers[:i], matchers[i+1:]...)
+			break
+		}
+	}
+
+	var res []metricMetadata
+Outer:
+	for _, t := range api.targetRetriever.TargetsActive() {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+		for _, m := range matchers {
+			// Filter targets that don't satisfy the label matchers.
+			if !m.Matches(t.Labels().Get(m.Name)) {
+				continue Outer
+			}
+		}
+		// If no metric is specified, get the full list for the target.
+		if metric == "" {
+			for _, md := range t.MetadataList() {
+				res = append(res, metricMetadata{
+					Target: t.Labels(),
+					Metric: md.Metric,
+					Type:   md.Type,
+					Help:   md.Help,
+				})
+			}
+			continue
+		}
+		// Get metadata for the specified metric.
+		if md, ok := t.Metadata(metric); ok {
+			res = append(res, metricMetadata{
+				Target: t.Labels(),
+				Type:   md.Type,
+				Help:   md.Help,
+			})
+		}
+	}
+	if len(res) == 0 {
+		return nil, &apiError{errorNotFound, errors.New("specified metadata not found")}
+	}
+	return res, nil
+}
+
+type metricMetadata struct {
+	Target labels.Labels        `json:"target"`
+	Metric string               `json:"metric,omitempty"`
+	Type   textparse.MetricType `json:"type"`
+	Help   string               `json:"help"`
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
@@ -783,6 +855,8 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 		code = http.StatusServiceUnavailable
 	case errorInternal:
 		code = http.StatusInternalServerError
+	case errorNotFound:
+		code = http.StatusNotFound
 	default:
 		code = http.StatusInternalServerError
 	}

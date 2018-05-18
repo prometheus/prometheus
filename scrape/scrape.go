@@ -161,6 +161,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 		logger:     logger,
 	}
 	sp.newLoop = func(t *Target, s scraper, limit int, honor bool, mrc []*config.RelabelConfig) loop {
+		// Update the targets retrieval function for metadata to a new scrape cache.
+		cache := newScrapeCache()
+		t.setMetadataStore(cache)
+
 		return newScrapeLoop(
 			ctx,
 			s,
@@ -175,6 +179,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 				}
 				return appender(app, limit)
 			},
+			cache,
 		)
 	}
 
@@ -523,43 +528,62 @@ type scrapeCache struct {
 
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
-	entries map[string]*cacheEntry
+	series map[string]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it without setting a new entry with an unsafe
 	// string in addDropped().
-	dropped map[string]*uint64
+	droppedSeries map[string]*uint64
 
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
 	// We hold two maps and swap them out to save allocations.
 	seriesCur  map[uint64]labels.Labels
 	seriesPrev map[uint64]labels.Labels
+
+	metaMtx  sync.Mutex
+	metadata map[string]*metaEntry
+}
+
+// metaEntry holds meta information about a metric.
+type metaEntry struct {
+	lastIter uint64 // last scrape iteration the entry was observed
+	typ      textparse.MetricType
+	help     string
 }
 
 func newScrapeCache() *scrapeCache {
 	return &scrapeCache{
-		entries:    map[string]*cacheEntry{},
-		dropped:    map[string]*uint64{},
-		seriesCur:  map[uint64]labels.Labels{},
-		seriesPrev: map[uint64]labels.Labels{},
+		series:        map[string]*cacheEntry{},
+		droppedSeries: map[string]*uint64{},
+		seriesCur:     map[uint64]labels.Labels{},
+		seriesPrev:    map[uint64]labels.Labels{},
+		metadata:      map[string]*metaEntry{},
 	}
 }
 
 func (c *scrapeCache) iterDone() {
-	// refCache and lsetCache may grow over time through series churn
+	// All caches may grow over time through series churn
 	// or multiple string representations of the same metric. Clean up entries
 	// that haven't appeared in the last scrape.
-	for s, e := range c.entries {
+	for s, e := range c.series {
 		if c.iter-e.lastIter > 2 {
-			delete(c.entries, s)
+			delete(c.series, s)
 		}
 	}
-	for s, iter := range c.dropped {
+	for s, iter := range c.droppedSeries {
 		if c.iter-*iter > 2 {
-			delete(c.dropped, s)
+			delete(c.droppedSeries, s)
 		}
 	}
+	c.metaMtx.Lock()
+	for m, e := range c.metadata {
+		// Keep metadata around for 10 scrapes after its metric disappeared.
+		if c.iter-e.lastIter > 10 {
+			delete(c.metadata, m)
+		}
+	}
+	c.metaMtx.Unlock()
 
 	// Swap current and previous series.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
@@ -573,7 +597,7 @@ func (c *scrapeCache) iterDone() {
 }
 
 func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
-	e, ok := c.entries[met]
+	e, ok := c.series[met]
 	if !ok {
 		return nil, false
 	}
@@ -585,16 +609,16 @@ func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, hash ui
 	if ref == 0 {
 		return
 	}
-	c.entries[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 }
 
 func (c *scrapeCache) addDropped(met string) {
 	iter := c.iter
-	c.dropped[met] = &iter
+	c.droppedSeries[met] = &iter
 }
 
 func (c *scrapeCache) getDropped(met string) bool {
-	iterp, ok := c.dropped[met]
+	iterp, ok := c.droppedSeries[met]
 	if ok {
 		*iterp = c.iter
 	}
@@ -615,6 +639,65 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
+func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
+	c.metaMtx.Lock()
+
+	e, ok := c.metadata[yoloString(metric)]
+	if !ok {
+		e = &metaEntry{typ: textparse.MetricTypeUntyped}
+		c.metadata[string(metric)] = e
+	}
+	e.typ = t
+	e.lastIter = c.iter
+
+	c.metaMtx.Unlock()
+}
+
+func (c *scrapeCache) setHelp(metric, help []byte) {
+	c.metaMtx.Lock()
+
+	e, ok := c.metadata[yoloString(metric)]
+	if !ok {
+		e = &metaEntry{typ: textparse.MetricTypeUntyped}
+		c.metadata[string(metric)] = e
+	}
+	if e.help != yoloString(help) {
+		e.help = string(help)
+	}
+	e.lastIter = c.iter
+
+	c.metaMtx.Unlock()
+}
+
+func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+
+	m, ok := c.metadata[metric]
+	if !ok {
+		return MetricMetadata{}, false
+	}
+	return MetricMetadata{
+		Metric: metric,
+		Type:   m.typ,
+		Help:   m.help,
+	}, true
+}
+
+func (c *scrapeCache) listMetadata() (res []MetricMetadata) {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+
+	for m, e := range c.metadata {
+		res = append(res, MetricMetadata{
+			Metric: m,
+			Type:   e.typ,
+			Help:   e.help,
+		})
+	}
+	return res
+}
+
 func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
@@ -622,6 +705,7 @@ func newScrapeLoop(ctx context.Context,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func() storage.Appender,
+	cache *scrapeCache,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -629,10 +713,13 @@ func newScrapeLoop(ctx context.Context,
 	if buffers == nil {
 		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 	}
+	if cache == nil {
+		cache = newScrapeCache()
+	}
 	sl := &scrapeLoop{
 		scraper:             sc,
 		buffers:             buffers,
-		cache:               newScrapeCache(),
+		cache:               cache,
 		appender:            appender,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
@@ -838,8 +925,16 @@ loop:
 			}
 			break
 		}
-		if et != textparse.EntrySeries {
+		switch et {
+		case textparse.EntryType:
+			sl.cache.setType(p.Type())
 			continue
+		case textparse.EntryHelp:
+			sl.cache.setHelp(p.Help())
+			continue
+		case textparse.EntryComment:
+			continue
+		default:
 		}
 		total++
 
