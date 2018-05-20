@@ -15,6 +15,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -183,6 +185,8 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
+
+	r.Post("/alerts_testing", wrap(api.alertsTesting))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
@@ -858,4 +862,101 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 	return false
+}
+
+type AlertsTestResult struct {
+	IsError bool
+	Errors  []string
+	Success string
+}
+
+func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
+	decoder := json.NewDecoder(r.Body)
+	var data struct {
+		RuleText string
+	}
+	err := decoder.Decode(&data)
+	if err != nil {
+		return nil, &apiError{
+			typ: errorBadData,
+			err: err,
+		}
+	}
+	defer r.Body.Close()
+
+	ruleString, err := url.QueryUnescape(data.RuleText)
+
+	if err != nil {
+		return nil, &apiError{
+			typ: errorBadData,
+			err: err,
+		}
+	}
+
+	result := AlertsTestResult{IsError: false}
+
+	// Checking syntax of rule file and expression.
+	rgs, errs := rulefmt.Parse([]byte(ruleString))
+	if len(errs) > 0 {
+		result.IsError = true
+		for _, e := range errs {
+			result.Errors = append(result.Errors, e.Error())
+		}
+		return result, nil
+	}
+
+	// Trying to run the expression.
+	maxt := time.Now()
+	mint := maxt.Add(-24 * time.Hour)
+	maxtMS := int64(model.TimeFromUnixNano(maxt.UnixNano()))
+	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
+	_, err = api.Queryable.Querier(r.Context(), mintMS, maxtMS)
+	if err != nil {
+		return nil, &apiError{
+			typ: errorInternal,
+			err: err,
+		}
+	}
+
+	queryFunc := func(ctx context.Context, qs string, st, et time.Time) (promql.Matrix, error) {
+		q, err := api.QueryEngine.NewRangeQuery(api.Queryable, qs, st, et, 5*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		res := q.Exec(ctx)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		switch v := res.Value.(type) {
+		case promql.Matrix:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("rule result is not a matrix")
+		}
+	}
+
+	for _, g := range rgs.Groups {
+		for _, rl := range g.Rules {
+			if rl.Alert == "" {
+				continue
+			}
+			v, err := queryFunc(r.Context(), rl.Expr, mint, maxt)
+			if err != nil {
+				fmt.Println(err.Error())
+				return nil, &apiError{
+					typ: errorInternal,
+					err: err,
+				}
+			}
+			if len(v) == 0 {
+				result.IsError = true
+				errStr := "Failed to get any samples for expr `" + rl.Expr + "`. <br/>Please tweak the bounds of this expressions (if any) for testing, for example changing `< 20` to `< 50`."
+				result.Errors = append(result.Errors, errStr)
+				return result, nil
+			}
+		}
+	}
+
+	result.Success = "Evaluated"
+	return result, nil
 }

@@ -263,6 +263,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/targets", readyf(h.targets))
 	router.Get("/version", readyf(h.version))
 	router.Get("/service-discovery", readyf(h.serviceDiscovery))
+	router.Get("/alert-rule-testing", readyf(h.alertRuleTesting))
 
 	router.Get("/heap", h.dumpHeap)
 
@@ -594,6 +595,10 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	h.executeTemplate(w, "graph.html", nil)
+}
+
+func (h *Handler) alertRuleTesting(w http.ResponseWriter, r *http.Request) {
+	h.executeTemplate(w, "alert-rule-testing.html", nil)
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {

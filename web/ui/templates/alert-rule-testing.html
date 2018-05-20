@@ -1,0 +1,44 @@
+{{define "head"}}
+  <script src="{{ pathPrefix }}/static/js/alert_rule_testing.js?v={{ buildVersion }}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.5/ace.js" type="text/javascript" charset="utf-8"></script>
+{{end}}
+
+{{define "content"}}
+
+<div class="container-fluid">
+  <h1>Test Your Alert Rules</h1>
+  <table style="height: 350px; width: 100%;">
+    <tr>
+
+      <td rowspan="2" style="height: 100%; width: 67%; padding: 0.3em;">
+        <div id="ruleTextArea" style="height: 100%;"># Enter your entire alert rule file here</div>
+        <script>
+          var e=ace.edit("ruleTextArea");
+          e.setTheme("ace/theme/xcode");
+          e.getSession().setMode("ace/mode/yaml");
+          e.setFontSize("12pt");
+          e.focus();
+        </script>
+      </td>
+
+      <td style="height: 15%; width: 33%; padding: 0.3em">
+        <button id="ruleTestExecute" class="btn btn-primary btn-block">Execute</button> <br/>
+      </td>
+
+    </tr>
+    
+    <tr style="height: 100%">
+      
+      <td style="height: 100%; width: 33%; padding: 0.3em">
+        <div id="ruleTestInfo" class="form-control" style="height: 100%; background: white;">
+          Error messages will be displayed here
+        </div>
+      </td>
+    
+    </tr>
+  </table>
+  <br/>
+  &lt;Alert will be shown here just like '/alerts'&gt; <br/><br/>
+  &lt;Graph will be shown here just like '/graph'&gt;
+</div>
+{{end}}
