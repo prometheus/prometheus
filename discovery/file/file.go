@@ -279,7 +279,7 @@ func (d *Discovery) deleteTimestamp(filename string) {
 
 // stop shuts down the file watcher.
 func (d *Discovery) stop() {
-	level.Debug(d.logger).Log("msg", "Stopping file discovery...", "paths", d.paths)
+	level.Debug(d.logger).Log("msg", "Stopping file discovery...", "paths", fmt.Sprintf("%v", d.paths))
 
 	done := make(chan struct{})
 	defer close(done)
@@ -299,10 +299,10 @@ func (d *Discovery) stop() {
 		}
 	}()
 	if err := d.watcher.Close(); err != nil {
-		level.Error(d.logger).Log("msg", "Error closing file watcher", "paths", d.paths, "err", err)
+		level.Error(d.logger).Log("msg", "Error closing file watcher", "paths", fmt.Sprintf("%v", d.paths), "err", err)
 	}
 
-	level.Debug(d.logger).Log("File discovery stopped", "paths", d.paths)
+	level.Debug(d.logger).Log("msg", "File discovery stopped")
 }
 
 // refresh reads all files matching the discovery's patterns and sends the respective
