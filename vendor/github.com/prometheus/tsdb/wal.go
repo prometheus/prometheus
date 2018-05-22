@@ -290,7 +290,7 @@ func (w *SegmentWAL) truncate(err error, file int, lastOffset int64) error {
 	w.files = w.files[:file+1]
 
 	// Seek the current file to the last valid offset where we continue writing from.
-	_, err = w.files[file].Seek(lastOffset, os.SEEK_SET)
+	_, err = w.files[file].Seek(lastOffset, io.SeekStart)
 	return err
 }
 
@@ -393,7 +393,7 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 		return errors.Wrap(r.Err(), "read candidate WAL files")
 	}
 
-	off, err := csf.Seek(0, os.SEEK_CUR)
+	off, err := csf.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err
 	}
@@ -418,7 +418,7 @@ func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
 	}
 
 	// The file object of csf still holds the name before rename. Recreate it so
-	// subsequent truncations do not look at a non-existant file name.
+	// subsequent truncations do not look at a non-existent file name.
 	csf.File, err = w.openSegmentFile(candidates[0].Name())
 	if err != nil {
 		return err
@@ -583,7 +583,7 @@ func (w *SegmentWAL) cut() error {
 		// in the new segment.
 		go func() {
 			w.actorc <- func() error {
-				off, err := hf.Seek(0, os.SEEK_CUR)
+				off, err := hf.Seek(0, io.SeekCurrent)
 				if err != nil {
 					return errors.Wrapf(err, "finish old segment %s", hf.Name())
 				}
@@ -937,7 +937,7 @@ func (r *walReader) Read(
 				series = v.([]RefSeries)
 			}
 
-			err := r.decodeSeries(flag, b, &series)
+			err = r.decodeSeries(flag, b, &series)
 			if err != nil {
 				err = errors.Wrap(err, "decode series entry")
 				break
@@ -958,7 +958,7 @@ func (r *walReader) Read(
 				samples = v.([]RefSample)
 			}
 
-			err := r.decodeSamples(flag, b, &samples)
+			err = r.decodeSamples(flag, b, &samples)
 			if err != nil {
 				err = errors.Wrap(err, "decode samples entry")
 				break
@@ -980,7 +980,7 @@ func (r *walReader) Read(
 				deletes = v.([]Stone)
 			}
 
-			err := r.decodeDeletes(flag, b, &deletes)
+			err = r.decodeDeletes(flag, b, &deletes)
 			if err != nil {
 				err = errors.Wrap(err, "decode delete entry")
 				break
@@ -1015,7 +1015,7 @@ func (r *walReader) at() (WALEntryType, byte, []byte) {
 }
 
 // next returns decodes the next entry pair and returns true
-// if it was succesful.
+// if it was successful.
 func (r *walReader) next() bool {
 	if r.cur >= len(r.files) {
 		return false
@@ -1024,7 +1024,7 @@ func (r *walReader) next() bool {
 
 	// Remember the offset after the last correctly read entry. If the next one
 	// is corrupted, this is where we can safely truncate.
-	r.lastOffset, r.err = cf.Seek(0, os.SEEK_CUR)
+	r.lastOffset, r.err = cf.Seek(0, io.SeekCurrent)
 	if r.err != nil {
 		return false
 	}
