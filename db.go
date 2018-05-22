@@ -502,7 +502,6 @@ func (db *DB) reload() (err error) {
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Meta().MinTime < blocks[j].Meta().MinTime
 	})
-
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
 	}
@@ -597,10 +596,6 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	if len(bm) <= 1 {
 		return nil
 	}
-	sort.Slice(bm, func(i, j int) bool {
-		return bm[i].MinTime < bm[j].MinTime
-	})
-
 	var (
 		overlaps [][]BlockMeta
 
