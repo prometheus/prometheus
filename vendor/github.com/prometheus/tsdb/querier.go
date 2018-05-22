@@ -117,7 +117,7 @@ func (q *querier) Close() error {
 	return merr.Err()
 }
 
-// NewBlockQuerier returns a queries against the readers.
+// NewBlockQuerier returns a querier against the reader.
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 	indexr, err := b.Index()
 	if err != nil {
