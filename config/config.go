@@ -122,8 +122,6 @@ var (
 		MaxRetries: 10,
 		MinBackoff: 30 * time.Millisecond,
 		MaxBackoff: 100 * time.Millisecond,
-
-		FlushDeadline: 1 * time.Minute,
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
@@ -648,10 +646,6 @@ type QueueConfig struct {
 	// On recoverable errors, backoff exponentially.
 	MinBackoff time.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff time.Duration `yaml:"max_backoff,omitempty"`
-
-	// On shutdown or config reload allow the following duration for flushing
-	// pending samples, otherwise continue without waiting.
-	FlushDeadline time.Duration `yaml:"flush_deadline"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
