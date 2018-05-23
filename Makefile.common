@@ -88,6 +88,9 @@ tarball: promu
 docker:
 	docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
+docker-image-name:
+	@echo "$(DOCKER_IMAGE_NAME)"
+
 promu:
 	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 

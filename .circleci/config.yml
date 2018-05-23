@@ -32,13 +32,15 @@ jobs:
     - image: circleci/golang:1.10
     working_directory: /go/src/github.com/prometheus/prometheus
 
-    environment:
-      DOCKER_IMAGE_NAME: prom/prometheus
-      QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
-
     steps:
     - checkout
     - setup_remote_docker
+    - run:
+        name: Setup docker image names
+        command: |
+          echo 'export DOCKER_IMAGE_NAME="prom/$(make docker-image-name)"' >> $BASH_ENV
+          echo 'export QUAY_IMAGE_NAME="quay.io/prometheus/$(make docker-image-name)"' >> $BASH_ENV
+          source $BASH_ENV
     - attach_workspace:
         at: .
     - run: ln -s .build/linux-amd64/prometheus prometheus
@@ -56,13 +58,15 @@ jobs:
     - image: circleci/golang:1.10
     working_directory: /go/src/github.com/prometheus/prometheus
 
-    environment:
-      DOCKER_IMAGE_NAME: prom/prometheus
-      QUAY_IMAGE_NAME: quay.io/prometheus/prometheus
-
     steps:
     - checkout
     - setup_remote_docker
+    - run:
+        name: Setup docker image names
+        command: |
+          echo 'export DOCKER_IMAGE_NAME="prom/$(make docker-image-name)"' >> $BASH_ENV
+          echo 'export QUAY_IMAGE_NAME="quay.io/prometheus/$(make docker-image-name)"' >> $BASH_ENV
+          source $BASH_ENV
     - run: mkdir -v -p ${HOME}/bin
     - run: curl -L 'https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C ${HOME}/bin
     - run: echo 'export PATH=${HOME}/bin:${PATH}' >> ${BASH_ENV}
