@@ -140,6 +140,7 @@ type StorageClient interface {
 type QueueManager struct {
 	logger log.Logger
 
+	flushDeadline  time.Duration
 	cfg            config.QueueConfig
 	externalLabels model.LabelSet
 	relabelConfigs []*config.RelabelConfig
@@ -159,12 +160,13 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
+func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	t := &QueueManager{
 		logger:         logger,
+		flushDeadline:  flushDeadline,
 		cfg:            cfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
@@ -256,7 +258,7 @@ func (t *QueueManager) Stop() {
 
 	t.shardsMtx.Lock()
 	defer t.shardsMtx.Unlock()
-	t.shards.stop(t.cfg.FlushDeadline)
+	t.shards.stop(t.flushDeadline)
 
 	level.Info(t.logger).Log("msg", "Remote storage stopped.")
 }
@@ -361,7 +363,7 @@ func (t *QueueManager) reshard(n int) {
 	t.shards = newShards
 	t.shardsMtx.Unlock()
 
-	oldShards.stop(t.cfg.FlushDeadline)
+	oldShards.stop(t.flushDeadline)
 
 	// We start the newShards after we have stopped (the therefore completely
 	// flushed) the oldShards, to guarantee we only every deliver samples in

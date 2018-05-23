@@ -26,6 +26,8 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 )
 
+const defaultFlushDeadline = 1 * time.Minute
+
 type TestStorageClient struct {
 	receivedSamples map[string][]*prompb.Sample
 	expectedSamples map[string][]*prompb.Sample
@@ -109,7 +111,7 @@ func TestSampleDelivery(t *testing.T) {
 
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
-	m := NewQueueManager(nil, cfg, nil, nil, c)
+	m := NewQueueManager(nil, cfg, nil, nil, c, defaultFlushDeadline)
 
 	// These should be received by the client.
 	for _, s := range samples[:len(samples)/2] {
@@ -145,7 +147,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
 	cfg.BatchSendDeadline = 100 * time.Millisecond
-	m := NewQueueManager(nil, cfg, nil, nil, c)
+	m := NewQueueManager(nil, cfg, nil, nil, c, defaultFlushDeadline)
 	m.Start()
 	defer m.Stop()
 
@@ -181,7 +183,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 
 	c := NewTestStorageClient()
 	c.expectSamples(samples)
-	m := NewQueueManager(nil, config.DefaultQueueConfig, nil, nil, c)
+	m := NewQueueManager(nil, config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
 
 	// These should be received by the client.
 	for _, s := range samples {
@@ -259,7 +261,7 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
 	cfg.Capacity = n
-	m := NewQueueManager(nil, cfg, nil, nil, c)
+	m := NewQueueManager(nil, cfg, nil, nil, c, defaultFlushDeadline)
 
 	m.Start()
 
