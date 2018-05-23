@@ -16,6 +16,7 @@ package remote
 import (
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -255,7 +256,7 @@ func (t *QueueManager) Stop() {
 
 	t.shardsMtx.Lock()
 	defer t.shardsMtx.Unlock()
-	t.shards.stop()
+	t.shards.stop(t.cfg.FlushDeadline)
 
 	level.Info(t.logger).Log("msg", "Remote storage stopped.")
 }
@@ -360,7 +361,7 @@ func (t *QueueManager) reshard(n int) {
 	t.shards = newShards
 	t.shardsMtx.Unlock()
 
-	oldShards.stop()
+	oldShards.stop(t.cfg.FlushDeadline)
 
 	// We start the newShards after we have stopped (the therefore completely
 	// flushed) the oldShards, to guarantee we only every deliver samples in
@@ -369,10 +370,10 @@ func (t *QueueManager) reshard(n int) {
 }
 
 type shards struct {
-	qm     *QueueManager
-	queues []chan *model.Sample
-	done   chan struct{}
-	wg     sync.WaitGroup
+	qm      *QueueManager
+	queues  []chan *model.Sample
+	done    chan struct{}
+	running int32
 }
 
 func (t *QueueManager) newShards(numShards int) *shards {
@@ -381,11 +382,11 @@ func (t *QueueManager) newShards(numShards int) *shards {
 		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
 	}
 	s := &shards{
-		qm:     t,
-		queues: queues,
-		done:   make(chan struct{}),
+		qm:      t,
+		queues:  queues,
+		done:    make(chan struct{}),
+		running: int32(numShards),
 	}
-	s.wg.Add(numShards)
 	return s
 }
 
@@ -399,11 +400,16 @@ func (s *shards) start() {
 	}
 }
 
-func (s *shards) stop() {
+func (s *shards) stop(deadline time.Duration) {
 	for _, shard := range s.queues {
 		close(shard)
 	}
-	s.wg.Wait()
+
+	select {
+	case <-s.done:
+	case <-time.After(deadline):
+		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
+	}
 }
 
 func (s *shards) enqueue(sample *model.Sample) bool {
@@ -421,7 +427,12 @@ func (s *shards) enqueue(sample *model.Sample) bool {
 }
 
 func (s *shards) runShard(i int) {
-	defer s.wg.Done()
+	defer func() {
+		if atomic.AddInt32(&s.running, -1) == 0 {
+			close(s.done)
+		}
+	}()
+
 	queue := s.queues[i]
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
