@@ -621,14 +621,6 @@ func NewSegmentsRangeReader(dir string, m, n int) (io.ReadCloser, error) {
 	return newSegmentBufReader(segs...), nil
 }
 
-// Reader reads WAL records from an io.Reader.
-type Reader struct {
-	rdr   io.Reader
-	err   error
-	rec   []byte
-	total int // total bytes processed.
-}
-
 // segmentBufReader is a buffered reader that reads in multiples of pages.
 // The main purpose is that we are able to track segment and offset for
 // corruption reporting.
@@ -683,6 +675,15 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 	return n, nil
 }
 
+// Reader reads WAL records from an io.Reader.
+type Reader struct {
+	rdr   io.Reader
+	err   error
+	rec   []byte
+	buf   [pageSize]byte
+	total int // total bytes processed.
+}
+
 // NewReader returns a new reader.
 func NewReader(r io.Reader) *Reader {
 	return &Reader{rdr: r}
@@ -700,8 +701,11 @@ func (r *Reader) Next() bool {
 }
 
 func (r *Reader) next() (err error) {
-	var hdr [recordHeaderSize]byte
-	var buf [pageSize]byte
+	// We have to use r.buf since allocating byte arrays here fails escape
+	// analysis and ends up on the heap, even though it seemingly should not.
+	hdr := r.buf[:7]
+	buf := r.buf[7:]
+
 	r.rec = r.rec[:0]
 
 	i := 0
@@ -745,7 +749,7 @@ func (r *Reader) next() (err error) {
 			crc    = binary.BigEndian.Uint32(hdr[3:])
 		)
 
-		if length > pageSize {
+		if length > pageSize-recordHeaderSize {
 			return errors.Errorf("invalid record size %d", length)
 		}
 		n, err = io.ReadFull(r.rdr, buf[:length])
