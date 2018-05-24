@@ -162,7 +162,7 @@ func main() {
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
-		Default(1 * time.Minute).PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
+		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
@@ -226,7 +226,7 @@ func main() {
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime, cfg.RemoteFlushDeadline)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
