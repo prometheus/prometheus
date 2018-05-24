@@ -30,6 +30,7 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -40,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -864,10 +866,12 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 	return false
 }
 
-type AlertsTestResult struct {
-	IsError bool
-	Errors  []string
-	Success string
+type alertsTestResult struct {
+	queryData
+	IsError         bool              `json:"isError"`
+	Errors          []string          `json:"errors"`
+	Success         string            `json:"success"`
+	RuleIDToNameMap map[string]string `json:"ruleIDToNameMap"`
 }
 
 func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
@@ -893,7 +897,9 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 		}
 	}
 
-	result := AlertsTestResult{IsError: false}
+	result := alertsTestResult{IsError: false}
+	result.Success = "Evaluated"
+	result.RuleIDToNameMap = make(map[string]string)
 
 	// Checking syntax of rule file and expression.
 	rgs, errs := rulefmt.Parse([]byte(ruleString))
@@ -908,55 +914,67 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 	// Trying to run the expression.
 	maxt := time.Now()
 	mint := maxt.Add(-24 * time.Hour)
-	maxtMS := int64(model.TimeFromUnixNano(maxt.UnixNano()))
-	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
-	_, err = api.Queryable.Querier(r.Context(), mintMS, maxtMS)
-	if err != nil {
-		return nil, &apiError{
-			typ: errorInternal,
-			err: err,
-		}
-	}
 
-	queryFunc := func(ctx context.Context, qs string, st, et time.Time) (promql.Matrix, error) {
-		q, err := api.QueryEngine.NewRangeQuery(api.Queryable, qs, st, et, 5*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		res := q.Exec(ctx)
-		if res.Err != nil {
-			return nil, res.Err
-		}
-		switch v := res.Value.(type) {
-		case promql.Matrix:
-			return v, nil
-		default:
-			return nil, fmt.Errorf("rule result is not a matrix")
-		}
-	}
+	{
+		queryFunc := rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
 
-	for _, g := range rgs.Groups {
-		for _, rl := range g.Rules {
-			if rl.Alert == "" {
-				continue
-			}
-			v, err := queryFunc(r.Context(), rl.Expr, mint, maxt)
-			if err != nil {
-				fmt.Println(err.Error())
-				return nil, &apiError{
-					typ: errorInternal,
-					err: err,
+		ruleIDToRuleMap := make(map[string]struct {
+			Rule   rulefmt.Rule
+			Vector promql.Vector
+		})
+
+		seriesHashMap := make(map[uint64]*promql.Series)
+		for _, g := range rgs.Groups {
+			for _, rl := range g.Rules {
+				if rl.Alert == "" {
+					continue
 				}
-			}
-			if len(v) == 0 {
-				result.IsError = true
-				errStr := "Failed to get any samples for expr `" + rl.Expr + "`. <br/>Please tweak the bounds of this expressions (if any) for testing, for example changing `< 20` to `< 50`."
-				result.Errors = append(result.Errors, errStr)
-				return result, nil
+
+				var alertVector promql.Vector
+				expr, _ := promql.ParseExpr(rl.Expr) // TODO(codesome): check error
+				hold := 5 * time.Second              // TODO(codesome): what should this be?
+				lbls := labels.FromMap(rl.Labels)
+				anns := labels.FromMap(rl.Annotations)
+				alertingRule := rules.NewAlertingRule(rl.Alert, expr, hold, lbls, anns, nil)
+
+				for t := mint; maxt.Sub(t) > 0; t = t.Add(5 * time.Second) { // TODO(codesome): replace with evaluation interval
+					vec, _ := alertingRule.Eval(r.Context(), t, queryFunc, nil) // TODO(codesome): check error
+					for _, smpl := range vec {
+						var series *promql.Series
+						var ok bool
+						if series, ok = seriesHashMap[smpl.Metric.Hash()]; !ok {
+							series = &promql.Series{
+								Metric: smpl.Metric,
+							}
+							seriesHashMap[smpl.Metric.Hash()] = series
+						}
+						series.Points = append(series.Points, smpl.Point)
+					}
+					alertVector = append(alertVector, vec...)
+				}
+
+				t := time.Now().UTC()
+				entropy := rand.New(rand.NewSource(t.UnixNano()))
+				id := ulid.MustNew(ulid.Timestamp(t), entropy)
+				ruleIDToRuleMap[id.String()] = struct {
+					Rule   rulefmt.Rule
+					Vector promql.Vector
+				}{
+					Rule:   rl,
+					Vector: alertVector,
+				}
+				result.RuleIDToNameMap[id.String()] = rl.Alert
+
 			}
 		}
+
+		var matrix promql.Matrix
+		for _, series := range seriesHashMap {
+			matrix = append(matrix, *series)
+		}
+		result.Result = matrix
+		result.ResultType = matrix.Type()
 	}
 
-	result.Success = "Evaluated"
 	return result, nil
 }
