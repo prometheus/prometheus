@@ -593,7 +593,7 @@ func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 }
 
 // Extra information and caches for evaluating a single node across steps.
-type evalNodeHelper struct {
+type EvalNodeHelper struct {
 	// Evaluation timestamp.
 	ts int64
 	// Vector that can be used for output.
@@ -616,7 +616,7 @@ type evalNodeHelper struct {
 }
 
 // dropMetricName is a cached version of dropMetricName.
-func (enh *evalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
+func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	if enh.dmn == nil {
 		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
 	}
@@ -631,7 +631,7 @@ func (enh *evalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 }
 
 // signatureFunc is a cached version of signatureFunc.
-func (enh *evalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
+func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	if enh.sigf == nil {
 		enh.sigf = make(map[uint64]uint64, len(enh.out))
 	}
@@ -652,7 +652,7 @@ func (enh *evalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 // the given function with the values computed for each expression at that
 // step.  The return value is the combination into time series of  of all the
 // function call results.
-func (ev *evaluator) rangeEval(f func([]Value, *evalNodeHelper) Vector, exprs ...Expr) Matrix {
+func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ...Expr) Matrix {
 	numSteps := int((ev.endTimestamp-ev.timestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
@@ -679,7 +679,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *evalNodeHelper) Vector, exprs ..
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &evalNodeHelper{out: make(Vector, 0, biggestLen)}
+	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
 	for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		// Gather input vectors for this timestamp.
@@ -752,11 +752,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 	switch e := expr.(type) {
 	case *AggregateExpr:
 		if s, ok := e.Param.(*StringLiteral); ok {
-			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
 			}, e.Expr)
 		}
-		return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 			var param float64
 			if e.Param != nil {
 				param = v[0].(Vector)[0].V
@@ -771,7 +771,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			// a vector selector.
 			vs, ok := e.Args[0].(*VectorSelector)
 			if ok {
-				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return e.Func.Call([]Value{ev.vectorSelector(vs, enh.ts)}, e.Args, enh)
 				})
 			}
@@ -789,7 +789,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 				return e.Func.Call(v, e.Args, enh)
 			}, e.Args...)
 		}
@@ -814,7 +814,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		points := getPointSlice(16)
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
-		enh := &evalNodeHelper{out: make(Vector, 0, 1)}
+		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		var it *storage.BufferedSeriesIterator
 		for i, s := range sel.series {
@@ -882,43 +882,43 @@ func (ev *evaluator) eval(expr Expr) Value {
 	case *BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == ValueTypeScalar && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
 				return append(enh.out, Sample{Point: Point{V: val}})
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
 			case itemLAND:
-				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case itemLOR:
-				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			case itemLUnless:
-				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == ValueTypeVector && rt == ValueTypeScalar:
-			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 
 		case lt == ValueTypeScalar && rt == ValueTypeVector:
-			return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh)
 			}, e.LHS, e.RHS)
 		}
 
 	case *NumberLiteral:
-		return ev.rangeEval(func(v []Value, enh *evalNodeHelper) Vector {
+		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 			return append(enh.out, Sample{Point: Point{V: e.Val}})
 		})
 
@@ -1087,7 +1087,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, maxt, m
 	return out
 }
 
-func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *evalNodeHelper) Vector {
+func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *EvalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1109,7 +1109,7 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *VectorMatching, enh *e
 	return enh.out
 }
 
-func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *evalNodeHelper) Vector {
+func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *EvalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1130,7 +1130,7 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *VectorMatching, enh *ev
 	return enh.out
 }
 
-func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh *evalNodeHelper) Vector {
+func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh *EvalNodeHelper) Vector {
 	if matching.Card != CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -1150,7 +1150,7 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *VectorMatching, enh
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool, enh *evalNodeHelper) Vector {
+func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorMatching, returnBool bool, enh *EvalNodeHelper) Vector {
 	if matching.Card == CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
@@ -1299,7 +1299,7 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching, enh *evalNodeHelper) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[uint64]labels.Labels, len(enh.out))
 	}
@@ -1349,7 +1349,7 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 }
 
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
-func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *evalNodeHelper) Vector {
+func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.V, rhs.V
 		// lhs always contains the Vector. If the original position was different
@@ -1468,7 +1468,7 @@ type groupedAggregation struct {
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
-func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *evalNodeHelper) Vector {
+func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, param interface{}, vec Vector, enh *EvalNodeHelper) Vector {
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
