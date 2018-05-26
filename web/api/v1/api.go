@@ -26,11 +26,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
+	yaml "gopkg.in/yaml.v2"
+
 	jsoniter "github.com/json-iterator/go"
-	"github.com/oklog/ulid"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -120,10 +122,11 @@ type API struct {
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 
-	now      func() time.Time
-	config   func() config.Config
-	flagsMap map[string]string
-	ready    func(http.HandlerFunc) http.HandlerFunc
+	now         func() time.Time
+	config      func() config.Config
+	flagsMap    map[string]string
+	ready       func(http.HandlerFunc) http.HandlerFunc
+	routePrefix string
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -137,6 +140,7 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
+	routePrefix string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
@@ -149,6 +153,7 @@ func NewAPI(
 		now:         time.Now,
 		config:      configFunc,
 		flagsMap:    flagsMap,
+		routePrefix: routePrefix,
 		ready:       readyFunc,
 		db:          db,
 		enableAdmin: enableAdmin,
@@ -867,114 +872,160 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 }
 
 type alertsTestResult struct {
-	queryData
-	IsError         bool              `json:"isError"`
-	Errors          []string          `json:"errors"`
-	Success         string            `json:"success"`
-	RuleIDToNameMap map[string]string `json:"ruleIDToNameMap"`
+	IsError              bool                        `json:"isError"`
+	Errors               []string                    `json:"errors"`
+	Success              string                      `json:"success"`
+	AlertStateToRowClass map[rules.AlertState]string `json:"alertStateToRowClass"`
+	AlertStateToName     map[rules.AlertState]string `json:"alertStateToName"`
+	RuleResults          []ruleResult                `json:"ruleResults"`
+}
+
+func newAlertsTestResult() alertsTestResult {
+	return alertsTestResult{
+		IsError: false,
+		Success: "Evaluated",
+		AlertStateToRowClass: map[rules.AlertState]string{
+			rules.StateInactive: "success",
+			rules.StatePending:  "warning",
+			rules.StateFiring:   "danger",
+		},
+		AlertStateToName: map[rules.AlertState]string{
+			rules.StateInactive: strings.ToUpper(rules.StateInactive.String()),
+			rules.StatePending:  strings.ToUpper(rules.StatePending.String()),
+			rules.StateFiring:   strings.ToUpper(rules.StateFiring.String()),
+		},
+	}
+}
+
+type ruleResult struct {
+	Name         string         `json:"name"`
+	Alerts       []*rules.Alert `json:"alerts"`
+	MatrixResult queryData      `json:"matrixResult"`
+	HTMLSnippet  string         `json:"htmlSnippet"`
 }
 
 func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
+
+	// As we have 'goto' statement ahead, many variables are declared beforehand.
+	var (
+		// Final result variables.
+		result = newAlertsTestResult()
+		ae     *apiError
+
+		// Time ranges for which the alerting rule will be simulated.
+		// It is set to past 1 day.
+		maxt = time.Now()
+		mint = maxt.Add(-24 * time.Hour)
+
+		postData struct {
+			RuleText string
+		}
+		ruleString string
+		rgs        *rulefmt.RuleGroups
+		queryFunc  rules.QueryFunc
+
+		err  error
+		errs []error
+	)
+
+	// Getting the Rule string from HTTP body.
 	decoder := json.NewDecoder(r.Body)
-	var data struct {
-		RuleText string
-	}
-	err := decoder.Decode(&data)
-	if err != nil {
-		return nil, &apiError{
-			typ: errorBadData,
-			err: err,
-		}
-	}
 	defer r.Body.Close()
-
-	ruleString, err := url.QueryUnescape(data.RuleText)
-
-	if err != nil {
-		return nil, &apiError{
-			typ: errorBadData,
-			err: err,
-		}
+	if err = decoder.Decode(&postData); err != nil {
+		ae = &apiError{errorBadData, err}
+		goto endLabel
 	}
 
-	result := alertsTestResult{IsError: false}
-	result.Success = "Evaluated"
-	result.RuleIDToNameMap = make(map[string]string)
+	if ruleString, err = url.QueryUnescape(postData.RuleText); err != nil {
+		ae = &apiError{errorBadData, err}
+		goto endLabel
+	}
 
 	// Checking syntax of rule file and expression.
-	rgs, errs := rulefmt.Parse([]byte(ruleString))
-	if len(errs) > 0 {
+	if rgs, errs = rulefmt.Parse([]byte(ruleString)); len(errs) > 0 {
 		result.IsError = true
 		for _, e := range errs {
 			result.Errors = append(result.Errors, e.Error())
 		}
-		return result, nil
+		goto endLabel
 	}
 
-	// Trying to run the expression.
-	maxt := time.Now()
-	mint := maxt.Add(-24 * time.Hour)
-
-	{
-		queryFunc := rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
-
-		ruleIDToRuleMap := make(map[string]struct {
-			Rule   rulefmt.Rule
-			Vector promql.Vector
-		})
-
-		seriesHashMap := make(map[uint64]*promql.Series)
-		for _, g := range rgs.Groups {
-			for _, rl := range g.Rules {
-				if rl.Alert == "" {
-					continue
-				}
-
-				var alertVector promql.Vector
-				expr, _ := promql.ParseExpr(rl.Expr) // TODO(codesome): check error
-				hold := 5 * time.Second              // TODO(codesome): what should this be?
-				lbls := labels.FromMap(rl.Labels)
-				anns := labels.FromMap(rl.Annotations)
-				alertingRule := rules.NewAlertingRule(rl.Alert, expr, hold, lbls, anns, nil)
-
-				for t := mint; maxt.Sub(t) > 0; t = t.Add(5 * time.Second) { // TODO(codesome): replace with evaluation interval
-					vec, _ := alertingRule.Eval(r.Context(), t, queryFunc, nil) // TODO(codesome): check error
-					for _, smpl := range vec {
-						var series *promql.Series
-						var ok bool
-						if series, ok = seriesHashMap[smpl.Metric.Hash()]; !ok {
-							series = &promql.Series{
-								Metric: smpl.Metric,
-							}
-							seriesHashMap[smpl.Metric.Hash()] = series
-						}
-						series.Points = append(series.Points, smpl.Point)
-					}
-					alertVector = append(alertVector, vec...)
-				}
-
-				t := time.Now().UTC()
-				entropy := rand.New(rand.NewSource(t.UnixNano()))
-				id := ulid.MustNew(ulid.Timestamp(t), entropy)
-				ruleIDToRuleMap[id.String()] = struct {
-					Rule   rulefmt.Rule
-					Vector promql.Vector
-				}{
-					Rule:   rl,
-					Vector: alertVector,
-				}
-				result.RuleIDToNameMap[id.String()] = rl.Alert
-
+	// Simulating the Alerts.
+	queryFunc = rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
+	for _, g := range rgs.Groups {
+		for _, rl := range g.Rules {
+			if rl.Alert == "" {
+				// Not an alerting rule.
+				continue
 			}
-		}
 
-		var matrix promql.Matrix
-		for _, series := range seriesHashMap {
-			matrix = append(matrix, *series)
+			expr, err := promql.ParseExpr(rl.Expr)
+			if err != nil {
+				result.IsError = true
+				result.Errors = append(result.Errors, fmt.Sprintf("Failed the parse the expression `%s`", rl.Expr))
+				goto endLabel
+			}
+			lbls, anns := labels.FromMap(rl.Labels), labels.FromMap(rl.Annotations)
+			alertingRule := rules.NewAlertingRule(rl.Alert, expr, time.Duration(rl.For), lbls, anns, nil)
+
+			// Evaluating the alerting rule for past 1 day.
+			seriesHashMap := make(map[uint64]*promql.Series) // All the series created for this rule.
+			for t := mint; maxt.Sub(t) > 0; t = t.Add(15 * time.Second) {
+				vec, err := alertingRule.Eval(r.Context(), t, queryFunc, nil)
+				if err != nil {
+					ae = &apiError{errorInternal, err}
+					goto endLabel
+				}
+				for _, smpl := range vec {
+					var (
+						series *promql.Series
+						ok     bool
+					)
+					if series, ok = seriesHashMap[smpl.Metric.Hash()]; !ok {
+						series = &promql.Series{Metric: smpl.Metric}
+						seriesHashMap[smpl.Metric.Hash()] = series
+					}
+					series.Points = append(series.Points, smpl.Point)
+				}
+			}
+
+			var matrix promql.Matrix
+			for _, series := range seriesHashMap {
+				matrix = append(matrix, *series)
+			}
+
+			var htmlSnippet string
+			if api.routePrefix == "/" {
+				htmlSnippet = string(alertingRule.HTMLSnippet(""))
+			} else {
+				htmlSnippet = string(alertingRule.HTMLSnippet(api.routePrefix))
+			}
+			// Removing the hyperlinks from the HTML snippet.
+			var ar rulefmt.Rule
+			if err = yaml.Unmarshal([]byte(htmlSnippet), &ar); err != nil {
+				ae = &apiError{errorInternal, err}
+				goto endLabel
+			}
+			ar.Alert, ar.Expr = rl.Alert, rl.Expr
+			bytes, err := yaml.Marshal(ar)
+			if err != nil {
+				ae = &apiError{errorInternal, err}
+				goto endLabel
+			}
+
+			result.RuleResults = append(result.RuleResults, ruleResult{
+				Name:        rl.Alert,
+				Alerts:      alertingRule.ActiveAlerts(),
+				HTMLSnippet: string(bytes),
+				MatrixResult: queryData{
+					Result:     matrix,
+					ResultType: matrix.Type(),
+				},
+			})
+
 		}
-		result.Result = matrix
-		result.ResultType = matrix.Type()
 	}
 
-	return result, nil
+endLabel:
+	return result, ae
 }
