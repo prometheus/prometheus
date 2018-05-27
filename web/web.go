@@ -235,7 +235,6 @@ func New(logger log.Logger, o *Options) *Handler {
 			return *h.config
 		},
 		o.Flags,
-		o.RoutePrefix,
 		h.testReady,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,

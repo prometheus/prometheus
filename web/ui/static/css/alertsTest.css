@@ -1,0 +1,30 @@
+div.show-annotations,
+div.show-graphs,
+div.show-hide-all {
+  font-size: 1em;
+  padding: 1em;
+}
+
+.alert_header,
+div.show-annotations:hover,
+div.show-graphs:hover {
+  cursor: pointer;
+}
+
+div.show-annotations.is-checked, 
+div.show-graphs.is-checked {
+  color: #286090;
+}
+
+div.show-annotations button,
+div.show-graphs button,
+div.show-hide-all button {
+  background-color: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+
+div.show-hide-all button {
+  color: #286090;
+}

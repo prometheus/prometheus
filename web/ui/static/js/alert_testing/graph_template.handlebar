@@ -1,0 +1,147 @@
+<div class="container-fluid">
+    <table class="table table-bordered table-collapsed">
+      <tbody>
+        <tr class="{{maxState}} alert_header" data-id="{{id}}">
+          <td><i class="icon-chevron-down"></i> <b>{{ruleName}}</b> ({{#activeAlerts}}{{activeAlerts.length}}{{/activeAlerts}}{{^activeAlerts}}0{{/activeAlerts}} active)</td>
+        </tr>
+        <tr class="alert_details">
+          <td>
+            <div>
+              <pre><code>{{htmlSnippet}}</code></pre>
+            </div>
+            <table class="table table-bordered table-hover table-condensed alert_elements_table">
+              <tr class="">
+                <th>Labels</th>
+                <th>State</th>
+                <th>Active Since</th>
+                <th>Value</th>
+              </tr>
+              {{#activeAlerts}}
+              <tr>
+                <td>
+                  {{#Labels}}
+                  <span class="label label-primary">{{key}}="{{value}}"</span>
+                  {{/Labels}}
+                </td>
+                <td><span class="alert alert-{{stateClass}} state_indicator text-uppercase">{{stateName}}</span></td>
+                <td>{{ActiveAt}}</td>
+                <td>{{Value}}</td>
+              </tr>
+              <tr class="alert_annotations">
+                <th colspan="4">Annotations</th>
+              </tr>
+              <tr class="alert_annotations">
+                <td colspan="4">
+                  <dl>
+                    {{#Annotations}}
+                    <dt>{{key}}</dt>
+                    <dd>{{value}}</dd>
+                    {{/Annotations}}
+                  </dl>
+                </td>
+              </tr>
+              {{/activeAlerts}}
+
+              <tr class="graph_header">
+                <th colspan="4">Graph</th>
+              </tr>
+              <tr class="graph_body">
+                <td colspan="4">
+                  
+
+        <div id="graph_wrapper{{id}}" class="graph_wrapper">
+          <div class="query_form form-inline">
+
+            <div class="row">
+              <div class="col-lg-12">
+                <div class="error alert alert-danger"></div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-lg-12">
+
+                      <div class="clearfix">
+                        <!-- Extracted to force grouped inputs. -->
+                        <div class="prometheus_input_group range_input pull-left hidden">
+                          <button
+                            class="btn btn-default pull-left"
+                            type="button"
+                            name="dec_range"
+                            title="Shrink the time range.">
+                            <i class="glyphicon glyphicon-minus"></i>
+                          </button>
+                          <input
+                            class="pull-left input"
+                            id="range_input{{id}}"
+                            title="Time range of graph"
+                            type="text"
+                            name="range_input"
+                            size="3"
+                            value="{{range_input}}">
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_range"
+                              title="Grow the time range.">
+                            <i class="glyphicon glyphicon-plus"></i>
+                          </button>
+                        </div>
+
+                        <!-- Extracted to force grouped inputs. -->
+                        <div class="prometheus_input_group pull-left hidden">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="dec_end"
+                              title="Rewind the end time.">
+                            <i class="glyphicon glyphicon-backward"></i>
+                          </button>
+
+                          <input
+                              class="pull-left date_input input"
+                              id="end{{id}}"
+                              title="End time of graph (UTC)"
+                              placeholder="Until"
+                              data-format="yyyy-MM-dd"
+                              type="text"
+                              name="end_input"
+                              size="16"
+                              value="{{end}}">
+
+                          <button
+                              class="btn btn-default pull-left"
+                              type="button"
+                              name="inc_end"
+                              title="Advance the end time.">
+                            <i class="glyphicon glyphicon-forward"></i>
+                          </button>
+                        </div>
+
+                        <div class="prometheus_input_group pull-left">
+                          <button type="button" class="btn btn-default stacked_btn">
+                            <i class="glyphicon"></i> stacked
+                          </button>
+                          <input type="hidden" name="stacked" value="{{stacked}}">
+                        </div>
+                      </div>
+
+                      <div class="graph_area"></div>
+                      <div class="legend"></div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+                  
+
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  

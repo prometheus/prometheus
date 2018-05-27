@@ -122,11 +122,10 @@ type API struct {
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
 
-	now         func() time.Time
-	config      func() config.Config
-	flagsMap    map[string]string
-	ready       func(http.HandlerFunc) http.HandlerFunc
-	routePrefix string
+	now      func() time.Time
+	config   func() config.Config
+	flagsMap map[string]string
+	ready    func(http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -140,7 +139,6 @@ func NewAPI(
 	ar alertmanagerRetriever,
 	configFunc func() config.Config,
 	flagsMap map[string]string,
-	routePrefix string,
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
@@ -153,7 +151,6 @@ func NewAPI(
 		now:         time.Now,
 		config:      configFunc,
 		flagsMap:    flagsMap,
-		routePrefix: routePrefix,
 		ready:       readyFunc,
 		db:          db,
 		enableAdmin: enableAdmin,
@@ -994,12 +991,7 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 				matrix = append(matrix, *series)
 			}
 
-			var htmlSnippet string
-			if api.routePrefix == "/" {
-				htmlSnippet = string(alertingRule.HTMLSnippet(""))
-			} else {
-				htmlSnippet = string(alertingRule.HTMLSnippet(api.routePrefix))
-			}
+			htmlSnippet := string(alertingRule.HTMLSnippet(""))
 			// Removing the hyperlinks from the HTML snippet.
 			var ar rulefmt.Rule
 			if err = yaml.Unmarshal([]byte(htmlSnippet), &ar); err != nil {

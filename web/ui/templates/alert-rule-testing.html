@@ -1,6 +1,30 @@
 {{define "head"}}
-  <script src="{{ pathPrefix }}/static/js/alert_rule_testing.js?v={{ buildVersion }}"></script>
+
+
+  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/graph.css?v={{ buildVersion }}">
+
+  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.css?v={{ buildVersion }}">
+  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.css?v={{ buildVersion }}">
+
+  <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.v3.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/rickshaw/vendor/d3.layout.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/rickshaw/rickshaw.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/moment/moment.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/moment/moment-timezone-with-data.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/eonasdan-bootstrap-datetimepicker/bootstrap-datetimepicker.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/bootstrap3-typeahead/bootstrap3-typeahead.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/fuzzy/fuzzy.js?v={{ buildVersion }}"></script>
+
+  <script src="{{ pathPrefix }}/static/vendor/mustache/mustache.min.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/js/jquery.selection.js?v={{ buildVersion }}"></script>
+  <script src="{{ pathPrefix }}/static/vendor/js/jquery.hotkeys.js?v={{ buildVersion }}"></script>
+
+  <script id="graph_template" type="text/x-handlebars-template"></script>
+  
+  <link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/alertsTest.css?v={{ buildVersion }}">
+  <script src="{{ pathPrefix }}/static/js/alert_testing/index.js?v={{ buildVersion }}"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.5/ace.js" type="text/javascript" charset="utf-8"></script>
+
 {{end}}
 
 {{define "content"}}
@@ -11,14 +35,7 @@
     <tr>
 
       <td rowspan="2" style="height: 100%; width: 67%; padding: 0.3em;">
-        <div id="ruleTextArea" style="height: 100%;"># Enter your entire alert rule file here</div>
-        <script>
-          var e=ace.edit("ruleTextArea");
-          e.setTheme("ace/theme/xcode");
-          e.getSession().setMode("ace/mode/yaml");
-          e.setFontSize("12pt");
-          e.focus();
-        </script>
+        <div id="ruleTextArea" style="height: 100%;">Setting up...</div>
       </td>
 
       <td style="height: 15%; width: 33%; padding: 0.3em">
@@ -38,7 +55,27 @@
     </tr>
   </table>
   <br/>
-  &lt;Alert will be shown here just like '/alerts'&gt; <br/><br/>
-  &lt;Graph will be shown here just like '/graph'&gt;
+  <h2>Alert Preview &amp; Graph</h2>
+
+  <div class="show-annotations is-checked" style="display: inline;">
+    <i class="glyphicon glyphicon-check"></i>
+    <button type="button" class="show-annotations" title="show annotations">Show annotations</button>
+  </div>
+
+  <div class="show-graphs is-checked" style="display: inline;">
+    <i class="glyphicon glyphicon-check"></i>
+    <button type="button" class="show-graphs" title="show graphs">Show graphs</button>
+  </div>
+
+  <div class="show-hide-all" style="display: inline;">
+    <button id="showAll" type="button" class="show-hide-all" title="open all">Open all</button>
+  </div>
+
+  <div class="show-hide-all" style="display: inline;">
+    <button id="hideAll" type="button" class="show-hide-all" title="close all">Close all</button>
+  </div>
+  <br/><br/>
+  <div id="graph_container" style="width: 100%">No Alerts to show yet</div>
+
 </div>
 {{end}}
