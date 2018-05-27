@@ -392,6 +392,8 @@ func (h *Head) Init() error {
 	if err == nil {
 		return nil
 	}
+	level.Warn(h.logger).Log("msg", "encountered WAL error, attempting repair", "err", err)
+
 	if err := h.wal.Repair(err); err != nil {
 		return errors.Wrap(err, "repair corrupted WAL")
 	}
