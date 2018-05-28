@@ -19,6 +19,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -52,7 +53,7 @@ func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) 
 		logger = log.NewNopLogger()
 	}
 
-	return &Client{
+	client := &Client{
 		logger:          logger,
 		client:          c,
 		database:        db,
@@ -64,6 +65,8 @@ func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) 
 			},
 		),
 	}
+	client.ensureDatabase()
+	return client
 }
 
 // tagsFromMetric extracts InfluxDB tags from a Prometheus metric.
@@ -75,6 +78,25 @@ func tagsFromMetric(m model.Metric) map[string]string {
 		}
 	}
 	return tags
+}
+
+// ensureDatabase ensures the existence of the database.
+func (c *Client) ensureDatabase() {
+	q := influx.Query{
+		Command: fmt.Sprintf(`CREATE DATABASE %s`, c.database),
+	}
+	tk := time.NewTicker(5 * time.Second)
+	defer tk.Stop()
+	// Creating database is an idempotent operation, so it's safe to do it repeatively.
+	for ; true; <-tk.C {
+		_, err := c.client.Query(q)
+		if err == nil {
+			return
+		}
+		// TODO: check the error code, once they are available.
+		// See https://github.com/influxdata/influxdb/issues/9702 for more detials.
+		level.Warn(c.logger).Log("msg", "failed to create database", "err", err)
+	}
 }
 
 // Write sends a batch of samples to InfluxDB via its HTTP API.

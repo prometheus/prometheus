@@ -74,6 +74,11 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/query" { // Ignore the create DB query.
+				w.Write([]byte("{}")) // Send a fake JSON response.
+				return
+			}
+
 			if r.Method != "POST" {
 				t.Fatalf("Unexpected method; expected POST, got %s", r.Method)
 			}
@@ -108,4 +113,52 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 	if err := c.Write(samples); err != nil {
 		t.Fatalf("Error sending samples: %s", err)
 	}
+}
+
+// TestClientEnsureDB checks that the client tries to create the DB as its initialization.
+func TestClientEnsureDB(t *testing.T) {
+
+	expectedQuery := `CREATE DATABASE test_db`
+	var gotQuery string
+	var requestMatches bool
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			gotQuery := r.FormValue("q")
+			if gotQuery == expectedQuery {
+				requestMatches = true
+			}
+			w.Write([]byte("{}")) // Send a fake JSON response.
+		},
+	))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("Unable to parse server URL %s: %s", server.URL, err)
+	}
+
+	conf := influx.HTTPConfig{
+		Addr: serverURL.String(),
+	}
+
+	wait := make(chan struct{})
+
+	go func() {
+		NewClient(nil, conf, "test_db", "default")
+		close(wait)
+	}()
+	select {
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("Client didn't complete initialization within the set timeout!")
+	case <-wait:
+	}
+
+	if !requestMatches {
+		t.Fatalf(`
+Unexpected query!
+expected:%s
+got:%s`, expectedQuery, gotQuery)
+	}
+
 }
