@@ -18,9 +18,11 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
@@ -61,6 +63,31 @@ func query(t testing.TB, q Querier, matchers ...labels.Matcher) map[string][]sam
 	testutil.Ok(t, ss.Err())
 
 	return result
+}
+
+// Ensure that blocks are held in memory in their time order
+// and not in ULID order as they are read from the directory.
+func TestDB_reloadOrder(t *testing.T) {
+	db, close := openTestDB(t, nil)
+	defer close()
+	defer db.Close()
+
+	metas := []*BlockMeta{
+		{ULID: ulid.MustNew(100, nil), MinTime: 90, MaxTime: 100},
+		{ULID: ulid.MustNew(200, nil), MinTime: 70, MaxTime: 80},
+		{ULID: ulid.MustNew(300, nil), MinTime: 100, MaxTime: 110},
+	}
+	for _, m := range metas {
+		bdir := filepath.Join(db.Dir(), m.ULID.String())
+		createEmptyBlock(t, bdir, m)
+	}
+
+	testutil.Ok(t, db.reload())
+	blocks := db.Blocks()
+	testutil.Equals(t, 3, len(blocks))
+	testutil.Equals(t, *metas[1], blocks[0].Meta())
+	testutil.Equals(t, *metas[0], blocks[1].Meta())
+	testutil.Equals(t, *metas[2], blocks[2].Meta())
 }
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {

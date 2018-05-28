@@ -43,7 +43,7 @@ func TestSetCompactionFailed(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(tmpdir)
 
-	b := createEmptyBlock(t, tmpdir)
+	b := createEmptyBlock(t, tmpdir, &BlockMeta{Version: 2})
 
 	testutil.Equals(t, false, b.meta.Compaction.Failed)
 	testutil.Ok(t, b.setCompactionFailed())
@@ -55,10 +55,11 @@ func TestSetCompactionFailed(t *testing.T) {
 	testutil.Equals(t, true, b.meta.Compaction.Failed)
 }
 
-func createEmptyBlock(t *testing.T, dir string) *Block {
+// createEmpty block creates a block with the given meta but without any data.
+func createEmptyBlock(t *testing.T, dir string, meta *BlockMeta) *Block {
 	testutil.Ok(t, os.MkdirAll(dir, 0777))
 
-	testutil.Ok(t, writeMetaFile(dir, &BlockMeta{Version: 2}))
+	testutil.Ok(t, writeMetaFile(dir, meta))
 
 	ir, err := index.NewWriter(filepath.Join(dir, indexFilename))
 	testutil.Ok(t, err)
