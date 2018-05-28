@@ -235,8 +235,12 @@ func (g *Group) run(ctx context.Context) {
 }
 
 func (g *Group) stop() {
-	close(g.done)
-	<-g.terminated
+	select {
+	case <-g.done: // This ensures that we don't try to close a closed channel.
+	default:
+		close(g.done)
+		<-g.terminated
+	}
 }
 
 func (g *Group) hash() uint64 {
