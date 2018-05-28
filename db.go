@@ -522,6 +522,9 @@ func (db *DB) reload(deleteable ...string) (err error) {
 		blocks = append(blocks, b)
 		exist[meta.ULID] = struct{}{}
 	}
+	sort.Slice(blocks, func(i, j int) bool {
+		return blocks[i].Meta().MinTime < blocks[j].Meta().MinTime
+	})
 
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
