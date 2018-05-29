@@ -429,6 +429,8 @@ func (w *WAL) pagesPerSegment() int {
 // Log writes the records into the log.
 // Multiple records can be passed at once to reduce writes and increase throughput.
 func (w *WAL) Log(recs ...[]byte) error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
 	// Callers could just implement their own list record format but adding
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {
@@ -442,9 +444,6 @@ func (w *WAL) Log(recs ...[]byte) error {
 // log writes rec to the log and forces a flush of the current page if its
 // the final record of a batch.
 func (w *WAL) log(rec []byte, final bool) error {
-	w.mtx.Lock()
-	defer w.mtx.Unlock()
-
 	// If the record is too big to fit within pages in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
