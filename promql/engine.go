@@ -375,11 +375,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			timestamp:    start,
-			endTimestamp: start,
-			interval:     1,
-			ctx:          ctx,
-			logger:       ng.logger,
+			startTimestamp: start,
+			endTimestamp:   start,
+			interval:       1,
+			ctx:            ctx,
+			logger:         ng.logger,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -416,11 +416,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// Range evaluation.
 	evaluator := &evaluator{
-		timestamp:    timeMilliseconds(s.Start),
-		endTimestamp: timeMilliseconds(s.End),
-		interval:     durationMilliseconds(s.Interval),
-		ctx:          ctx,
-		logger:       ng.logger,
+		startTimestamp: timeMilliseconds(s.Start),
+		endTimestamp:   timeMilliseconds(s.End),
+		interval:       durationMilliseconds(s.Interval),
+		ctx:            ctx,
+		logger:         ng.logger,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -551,7 +551,7 @@ func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
 type evaluator struct {
 	ctx context.Context
 
-	timestamp int64 // Start time in milliseconds.
+	startTimestamp int64 // Start time in milliseconds.
 
 	endTimestamp int64 // End time in milliseconds.
 	interval     int64 // Interval in milliseconds.
@@ -653,7 +653,7 @@ func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.L
 // step.  The return value is the combination into time series of  of all the
 // function call results.
 func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ...Expr) Matrix {
-	numSteps := int((ev.endTimestamp-ev.timestamp)/ev.interval) + 1
+	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
 	for i, e := range exprs {
@@ -681,7 +681,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	}
 	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
-	for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
+	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
 			vectors[i] = vectors[i][:0]
@@ -703,7 +703,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		result := f(args, enh)
 		enh.out = result[:0] // Reuse result vector.
 		// If this could be an instant query, shortcut so as not to change sort order.
-		if ev.endTimestamp == ev.timestamp {
+		if ev.endTimestamp == ev.startTimestamp {
 			mat := make(Matrix, len(result))
 			for i, s := range result {
 				s.Point.T = ts
@@ -747,7 +747,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 	if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
-	numSteps := int((ev.endTimestamp-ev.timestamp)/ev.interval) + 1
+	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
@@ -831,7 +831,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				Points: getPointSlice(numSteps),
 			}
 			inMatrix[0].Metric = sel.series[i].Labels()
-			for ts, step := ev.timestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
 				// They are scalar, so it is safe to use the step number
@@ -844,7 +844,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				maxt := ts - offset
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
-				points = ev.matrixIterSlice(it, maxt, mint, points[:0])
+				points = ev.matrixIterSlice(it, mint, maxt, points[:0])
 				if len(points) == 0 {
 					continue
 				}
@@ -936,7 +936,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				Points: getPointSlice(numSteps),
 			}
 
-			for ts := ev.timestamp; ts <= ev.endTimestamp; ts += ev.interval {
+			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					ss.Points = append(ss.Points, Point{V: v, T: ts})
@@ -950,7 +950,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return mat
 
 	case *MatrixSelector:
-		if ev.timestamp != ev.endTimestamp {
+		if ev.startTimestamp != ev.endTimestamp {
 			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
@@ -1032,7 +1032,7 @@ func putPointSlice(p []Point) {
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	var (
 		offset = durationMilliseconds(node.Offset)
-		maxt   = ev.timestamp - offset
+		maxt   = ev.startTimestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = make(Matrix, 0, len(node.series))
 	)
@@ -1048,7 +1048,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 			Metric: node.series[i].Labels(),
 		}
 
-		ss.Points = ev.matrixIterSlice(it, maxt, mint, getPointSlice(16))
+		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
@@ -1058,7 +1058,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 }
 
 // matrixIterSlice evaluates a matrix vector for the iterator of one time series.
-func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, maxt, mint int64, out []Point) []Point {
+func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Point) []Point {
 	ok := it.Seek(maxt)
 	if !ok {
 		if it.Err() != nil {
