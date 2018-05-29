@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -71,7 +72,7 @@ func (c *TestStorageClient) waitForExpectedSamples(t *testing.T) {
 	}
 }
 
-func (c *TestStorageClient) Store(req *prompb.WriteRequest) error {
+func (c *TestStorageClient) Store(_ context.Context, req *prompb.WriteRequest) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	count := 0
@@ -211,9 +212,12 @@ func NewTestBlockedStorageClient() *TestBlockingStorageClient {
 	}
 }
 
-func (c *TestBlockingStorageClient) Store(_ *prompb.WriteRequest) error {
+func (c *TestBlockingStorageClient) Store(ctx context.Context, _ *prompb.WriteRequest) error {
 	atomic.AddUint64(&c.numCalls, 1)
-	<-c.block
+	select {
+	case <-c.block:
+	case <-ctx.Done():
+	}
 	return nil
 }
 
@@ -299,5 +303,28 @@ func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
 	numCalls := c.NumCalls()
 	if numCalls != uint64(1) {
 		t.Errorf("Saw %d concurrent sends, expected 1", numCalls)
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	deadline := 10 * time.Second
+	c := NewTestBlockedStorageClient()
+	m := NewQueueManager(nil, config.DefaultQueueConfig, nil, nil, c, deadline)
+	for i := 0; i < config.DefaultQueueConfig.MaxSamplesPerSend; i++ {
+		m.Append(&model.Sample{
+			Metric: model.Metric{
+				model.MetricNameLabel: model.LabelValue(fmt.Sprintf("test_metric_%d", i)),
+			},
+			Value:     model.SampleValue(i),
+			Timestamp: model.Time(i),
+		})
+	}
+	m.Start()
+
+	start := time.Now()
+	m.Stop()
+	duration := time.Now().Sub(start)
+	if duration > deadline+(deadline/10) {
+		t.Errorf("Took too long to shutdown: %s > %s", duration, deadline)
 	}
 }
