@@ -156,6 +156,7 @@ type Group struct {
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	opts                 *ManagerOptions
 	evaluationTime       time.Duration
+	evaluationTimestamp  time.Time
 	mtx                  sync.Mutex
 
 	done       chan struct{}
@@ -192,8 +193,9 @@ func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
+	g.evaluationTimestamp = g.nextEval()
 	select {
-	case <-time.After(g.offset()):
+	case <-time.After(time.Until(g.evaluationTimestamp)):
 	case <-g.done:
 		return
 	}
@@ -202,17 +204,19 @@ func (g *Group) run(ctx context.Context) {
 		iterationsScheduled.Inc()
 
 		start := time.Now()
-		g.Eval(ctx, start)
+		g.Eval(ctx, g.evaluationTimestamp)
 
 		iterationDuration.Observe(time.Since(start).Seconds())
 		g.SetEvaluationTime(time.Since(start))
 	}
-	lastTriggered := time.Now()
-	iter()
 
+	// The assumption here is that since the ticker was started after having
+	// waited for `g.evaluationTimestamp` to pass, the ticks will trigger soon
+	// after each `g.evaluationTimestamp + N * g.interval` occurrence.
 	tick := time.NewTicker(g.interval)
 	defer tick.Stop()
 
+	iter()
 	for {
 		select {
 		case <-g.done:
@@ -222,12 +226,13 @@ func (g *Group) run(ctx context.Context) {
 			case <-g.done:
 				return
 			case <-tick.C:
-				missed := (time.Since(lastTriggered).Nanoseconds() / g.interval.Nanoseconds()) - 1
+				missed := (time.Since(g.evaluationTimestamp).Nanoseconds() / g.interval.Nanoseconds()) - 1
 				if missed > 0 {
 					iterationsMissed.Add(float64(missed))
 					iterationsScheduled.Add(float64(missed))
+					g.evaluationTimestamp.Add(time.Duration(missed * g.interval.Nanoseconds()))
 				}
-				lastTriggered = time.Now()
+				g.evaluationTimestamp = g.evaluationTimestamp.Add(g.interval)
 				iter()
 			}
 		}
@@ -261,8 +266,8 @@ func (g *Group) SetEvaluationTime(dur time.Duration) {
 	g.evaluationTime = dur
 }
 
-// offset returns until the next consistently slotted evaluation interval.
-func (g *Group) offset() time.Duration {
+// nextEval returns the next consistently slotted evaluation time.
+func (g *Group) nextEval() time.Time {
 	now := time.Now().UnixNano()
 
 	var (
@@ -274,7 +279,7 @@ func (g *Group) offset() time.Duration {
 	if next < now {
 		next += int64(g.interval)
 	}
-	return time.Duration(next - now)
+	return time.Unix(0, next)
 }
 
 // copyState copies the alerting rule and staleness related state from the given group.
