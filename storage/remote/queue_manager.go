@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -130,7 +131,7 @@ func init() {
 // external timeseries database.
 type StorageClient interface {
 	// Store stores the given samples in the remote storage.
-	Store(*prompb.WriteRequest) error
+	Store(context.Context, *prompb.WriteRequest) error
 	// Name identifies the remote storage implementation.
 	Name() string
 }
@@ -376,6 +377,8 @@ type shards struct {
 	queues  []chan *model.Sample
 	done    chan struct{}
 	running int32
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func (t *QueueManager) newShards(numShards int) *shards {
@@ -383,11 +386,14 @@ func (t *QueueManager) newShards(numShards int) *shards {
 	for i := 0; i < numShards; i++ {
 		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &shards{
 		qm:      t,
 		queues:  queues,
 		done:    make(chan struct{}),
 		running: int32(numShards),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 	return s
 }
@@ -403,15 +409,21 @@ func (s *shards) start() {
 }
 
 func (s *shards) stop(deadline time.Duration) {
+	// Attempt a clean shutdown.
 	for _, shard := range s.queues {
 		close(shard)
 	}
-
 	select {
 	case <-s.done:
+		return
 	case <-time.After(deadline):
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
 	}
+
+	// Force a unclean shutdown.
+	s.cancel()
+	<-s.done
+	return
 }
 
 func (s *shards) enqueue(sample *model.Sample) bool {
@@ -455,6 +467,9 @@ func (s *shards) runShard(i int) {
 
 	for {
 		select {
+		case <-s.ctx.Done():
+			return
+
 		case sample, ok := <-queue:
 			if !ok {
 				if len(pendingSamples) > 0 {
@@ -502,7 +517,7 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
 		req := ToWriteRequest(samples)
-		err := s.qm.client.Store(req)
+		err := s.qm.client.Store(s.ctx, req)
 
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
 		if err == nil {
