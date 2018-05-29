@@ -31,7 +31,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/nightlyone/lockfile"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -94,7 +93,7 @@ type Appender interface {
 // a hashed partition of a seriedb.
 type DB struct {
 	dir   string
-	lockf *lockfile.Lockfile
+	lockf fileutil.Releaser
 
 	logger    log.Logger
 	metrics   *dbMetrics
@@ -210,14 +209,11 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		if err != nil {
 			return nil, err
 		}
-		lockf, err := lockfile.New(filepath.Join(absdir, "lock"))
+		lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "lock DB directory")
 		}
-		if err := lockf.TryLock(); err != nil {
-			return nil, errors.Wrapf(err, "open DB in %s", dir)
-		}
-		db.lockf = &lockf
+		db.lockf = lockf
 	}
 
 	db.compactor, err = NewLeveledCompactor(r, l, opts.BlockRanges, db.chunkPool)
@@ -719,7 +715,7 @@ func (db *DB) Close() error {
 	merr.Add(g.Wait())
 
 	if db.lockf != nil {
-		merr.Add(db.lockf.Unlock())
+		merr.Add(db.lockf.Release())
 	}
 	merr.Add(db.head.Close())
 	return merr.Err()
