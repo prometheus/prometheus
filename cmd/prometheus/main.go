@@ -83,15 +83,16 @@ func main() {
 	cfg := struct {
 		configFile string
 
-		localStoragePath string
-		notifier         notifier.Options
-		notifierTimeout  model.Duration
-		web              web.Options
-		tsdb             tsdb.Options
-		lookbackDelta    model.Duration
-		webTimeout       model.Duration
-		queryTimeout     model.Duration
-		queryConcurrency int
+		localStoragePath    string
+		notifier            notifier.Options
+		notifierTimeout     model.Duration
+		web                 web.Options
+		tsdb                tsdb.Options
+		lookbackDelta       model.Duration
+		webTimeout          model.Duration
+		queryTimeout        model.Duration
+		queryConcurrency    int
+		RemoteFlushDeadline model.Duration
 
 		prometheusURL string
 
@@ -160,6 +161,9 @@ func main() {
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
+	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
+		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
@@ -222,7 +226,7 @@ func main() {
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

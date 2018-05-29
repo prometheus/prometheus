@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -73,7 +74,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err = c.Store(&prompb.WriteRequest{})
+		err = c.Store(context.Background(), &prompb.WriteRequest{})
 		if !reflect.DeepEqual(err, test.err) {
 			t.Errorf("%d. Unexpected error; want %v, got %v", i, test.err, err)
 		}
