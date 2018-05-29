@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
@@ -901,6 +902,62 @@ type ruleResult struct {
 	HTMLSnippet  string         `json:"htmlSnippet"`
 }
 
+func testTemplateExpansion(ctx context.Context, queryFunc rules.QueryFunc, rgs *rulefmt.RuleGroups) (errs []string) {
+	// NOTE: This will only check for correct variables used, like `$wrongLabelsVariable`.
+	//       It wont detect if a wrong key is used with the variables, like `$labels.wrongKey`.
+	for _, g := range rgs.Groups {
+		for _, rl := range g.Rules {
+			if rl.Alert == "" {
+				// Not an alerting rule.
+				continue
+			}
+
+			// Trying to expand templates.
+			l := make(map[string]string)
+
+			tmplData := struct {
+				Labels map[string]string
+				Value  float64
+			}{
+				Labels: l,
+			}
+			defs := "{{$labels := .Labels}}{{$value := .Value}}"
+			expand := func(text string) error {
+				tmpl := template.NewTemplateExpander(
+					ctx,
+					defs+text,
+					"__alert_"+rl.Alert,
+					tmplData,
+					model.Time(timestamp.FromTime(time.Now())),
+					template.QueryFunc(queryFunc),
+					nil,
+				)
+				_, err := tmpl.Expand()
+				return err
+			}
+
+			// Expanding Labels.
+			for _, val := range rl.Labels {
+				err := expand(val)
+				if err != nil {
+					errs = append(errs, err.Error())
+				}
+			}
+
+			// Expanding Annotations.
+			for _, val := range rl.Annotations {
+				err := expand(val)
+				if err != nil {
+					errs = append(errs, err.Error())
+				}
+			}
+
+		}
+	}
+
+	return errs
+}
+
 func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 
 	// As we have 'goto' statement ahead, many variables are declared beforehand.
@@ -921,8 +978,9 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 		rgs        *rulefmt.RuleGroups
 		queryFunc  rules.QueryFunc
 
-		err  error
-		errs []error
+		err     error
+		errs    []error
+		errStrs []string
 	)
 
 	// Getting the Rule string from HTTP body.
@@ -947,8 +1005,17 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 		goto endLabel
 	}
 
-	// Simulating the Alerts.
 	queryFunc = rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
+
+	// Trying to expand the templates.
+	errStrs = testTemplateExpansion(r.Context(), queryFunc, rgs)
+	if len(errStrs) > 0 {
+		result.IsError = true
+		result.Errors = errStrs
+		goto endLabel
+	}
+
+	// Simulating the Alerts.
 	for _, g := range rgs.Groups {
 		for _, rl := range g.Rules {
 			if rl.Alert == "" {
@@ -988,6 +1055,16 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 
 			var matrix promql.Matrix
 			for _, series := range seriesHashMap {
+				if len(series.Points) > 256 {
+					// Limiting to 256-257 points.
+					step := len(series.Points) / 256
+					var filtered []promql.Point
+					for i := 0; i < 256; i++ {
+						filtered = append(filtered, series.Points[i*step])
+					}
+					filtered = append(filtered, series.Points[len(series.Points)-1])
+					series.Points = filtered
+				}
 				matrix = append(matrix, *series)
 			}
 

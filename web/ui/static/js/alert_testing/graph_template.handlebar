@@ -2,7 +2,7 @@
     <table class="table table-bordered table-collapsed">
       <tbody>
         <tr class="{{maxState}} alert_header" data-id="{{id}}">
-          <td><i class="icon-chevron-down"></i> <b>{{ruleName}}</b> ({{#activeAlerts}}{{activeAlerts.length}}{{/activeAlerts}}{{^activeAlerts}}0{{/activeAlerts}} active)</td>
+          <td><i class="icon-chevron-down"></i> <b>{{ruleName}}</b> ({{activeAlertsLength}} active)</td>
         </tr>
         <tr class="alert_details">
           <td>
@@ -119,7 +119,7 @@
                           </button>
                         </div>
 
-                        <div class="prometheus_input_group pull-left">
+                        <div class="prometheus_input_group pull-right">
                           <button type="button" class="btn btn-default stacked_btn">
                             <i class="glyphicon"></i> stacked
                           </button>

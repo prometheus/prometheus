@@ -124,6 +124,11 @@ Graph.prototype.initialize = function() {
     'activeAlerts': self.json.alerts,
     'htmlSnippet': self.json.htmlSnippet,
   };
+  if(self.json.alerts) {
+    options.activeAlertsLength = self.json.alerts.length;
+  } else {
+    options.activeAlertsLength = 0
+  }
   var maxState = 0;
   for(i in options.activeAlerts) {
     options.activeAlerts[i].Labels = mustacheFormatMap(options.activeAlerts[i].Labels);
@@ -374,10 +379,10 @@ Graph.prototype.updateGraph = function() {
   // For some reason 'data' field was getting restricted to size of 258-259 (observed with console log).
   // But, you could get original array by accessing .data field manually (but graph did not do it).
   // Hence we this to restore the original array from 'tempData' to 'data' field.
-  self.data = self.data.map(function(val){
-    val.data = val.tempData;
-    return val;
-  });
+  // self.data = self.data.map(function(val){
+  //   val.data = val.tempData;
+  //   return val;
+  // });
 
   // Now create the new graph.
   self.rickshawGraph = new Rickshaw.Graph({
@@ -573,7 +578,7 @@ function initRuleTesting() {
       success: function(json) {
         var data = json.data
         if(data.isError) {
-          var errStr = "Syntax of the file is erroneous<br/>Error message:<br/>"
+          var errStr = "Error message:<br/>"
           var len = data.errors.length 
           for(var i = 0; i<len; i++) {
             errStr += "(" + (i+1) + ") " + data.errors[i] + '<br/>'
@@ -584,8 +589,8 @@ function initRuleTesting() {
 
           alertStateToRowClass = json.data.alertStateToRowClass;
           alertStateToName = json.data.alertStateToName;
-          replaceRules(json);        
         }
+        replaceRules(json);        
       },
       error: function(jqXHR, textStatus, errorThrown) {
         $("#ruleTestInfo").html(redHtml("ERROR: "+errorThrown));
