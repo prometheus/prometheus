@@ -205,9 +205,10 @@ func (g *Group) run(ctx context.Context) {
 
 		start := time.Now()
 		g.Eval(ctx, g.evaluationTimestamp)
+		timeSinceStart := time.Since(start)
 
-		iterationDuration.Observe(time.Since(start).Seconds())
-		g.SetEvaluationTime(time.Since(start))
+		iterationDuration.Observe(timeSinceStart.Seconds())
+		g.SetEvaluationTime(timeSinceStart)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -230,9 +231,8 @@ func (g *Group) run(ctx context.Context) {
 				if missed > 0 {
 					iterationsMissed.Add(float64(missed))
 					iterationsScheduled.Add(float64(missed))
-					g.evaluationTimestamp.Add(time.Duration(missed * g.interval.Nanoseconds()))
 				}
-				g.evaluationTimestamp = g.evaluationTimestamp.Add(g.interval)
+				g.evaluationTimestamp = g.evaluationTimestamp.Add(time.Duration((missed + 1) * g.interval.Nanoseconds()))
 				iter()
 			}
 		}
