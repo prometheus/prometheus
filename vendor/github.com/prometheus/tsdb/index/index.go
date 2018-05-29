@@ -780,7 +780,7 @@ func (r *Reader) readSymbols(off int) error {
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
-		r.symbols[uint32(nextPos)] = s
+		r.symbols[nextPos] = s
 
 		if r.version == 2 {
 			nextPos++
@@ -800,7 +800,7 @@ func (r *Reader) readOffsetTable(off uint64, f func([]string, uint64) error) err
 	cnt := d.be32()
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
-		keyCount := int(d.uvarint())
+		keyCount := d.uvarint()
 		keys := make([]string, 0, keyCount)
 
 		for i := 0; i < keyCount; i++ {
@@ -1038,7 +1038,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 
 	d := decbuf{b: b}
 
-	k := int(d.uvarint())
+	k := d.uvarint()
 
 	for i := 0; i < k; i++ {
 		lno := uint32(d.uvarint())
@@ -1061,7 +1061,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 	}
 
 	// Read the chunks meta data.
-	k = int(d.uvarint())
+	k = d.uvarint()
 
 	if k == 0 {
 		return nil
