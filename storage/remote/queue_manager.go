@@ -420,7 +420,7 @@ func (s *shards) stop(deadline time.Duration) {
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
 	}
 
-	// Force a unclean shutdown.
+	// Force an unclean shutdown.
 	s.cancel()
 	<-s.done
 	return
