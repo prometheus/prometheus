@@ -146,6 +146,21 @@ func funcIrate(ev *evaluator, args Expressions) Value {
 	return instantValue(ev, args[0], true)
 }
 
+// === isnan(Vector ValueTypeVector) Vector ===
+func funcIsnan(ev *evaluator, args Expressions) Value {
+	vec := ev.evalVector(args[0])
+	for i := range vec {
+		el := &vec[i]
+		el.Metric = dropMetricName(el.Metric)
+		if math.IsNaN(float64(el.V)) {
+			el.V = float64(1)
+		} else {
+			el.V = float64(0)
+		}
+	}
+	return vec
+}
+
 // === idelta(node model.ValMatric) Vector ===
 func funcIdelta(ev *evaluator, args Expressions) Value {
 	return instantValue(ev, args[0], false)
@@ -1084,6 +1099,12 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 		Call:       funcIrate,
+	},
+	"isnan": {
+		Name:       "isnan",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+		Call:       funcIsnan,
 	},
 	"label_replace": {
 		Name:       "label_replace",

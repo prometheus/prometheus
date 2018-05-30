@@ -60,6 +60,18 @@ eval instant at 15m changes(x[15m])
   {a="b"} 0
   {a="c"} 2
 
+eval instant at 0m isnan(x)
+  {a="b"} 1
+  {a="c"} 0
+
+eval instant at 5m isnan(x)
+  {a="b"} 1
+  {a="c"} 1
+
+eval instant at 10m isnan(x)
+  {a="b"} 1
+  {a="c"} 0
+
 clear
 
 # Tests for increase().
