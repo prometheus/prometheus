@@ -117,6 +117,13 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	return nil
 }
 
+// StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
+func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker Discoverer) {
+	// Pool key for non-standard SD implementations are unknown.
+	poolKey := poolKey{setName: name, provider: name}
+	m.startProvider(ctx, poolKey, worker)
+}
+
 func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Discoverer) {
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
