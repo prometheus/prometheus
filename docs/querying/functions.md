@@ -236,6 +236,11 @@ or a function aggregating over time (any function ending in `_over_time`),
 always take a `irate()` first, then aggregate. Otherwise `irate()` cannot detect
 counter resets when your target restarts.
 
+## `isnan()`
+
+`isnan(v instant-vector)` returns 1 for all sample values that are NaN, otherwise returns 0.
+
+
 ## `label_join()`
 
 For each timeseries in `v`, `label_join(v instant-vector, dst_label string, separator string, src_label_1 string, src_label_2 string, ...)` joins all the values of all the `src_labels`
