@@ -226,12 +226,12 @@ func (g *Group) run(ctx context.Context) {
 			case <-g.done:
 				return
 			case <-tick.C:
-				missed := (time.Since(evalTimestamp).Nanoseconds() / g.interval.Nanoseconds()) - 1
+				missed := (time.Since(evalTimestamp) / g.interval) - 1
 				if missed > 0 {
 					iterationsMissed.Add(float64(missed))
 					iterationsScheduled.Add(float64(missed))
 				}
-				evalTimestamp = evalTimestamp.Add(time.Duration((missed + 1) * g.interval.Nanoseconds()))
+				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 				iter()
 			}
 		}
