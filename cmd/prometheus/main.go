@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -67,6 +68,10 @@ var (
 	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
+	})
+	oldestTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_oldest_timestamp_seconds",
+		Help: "Oldest timestamp stored in the database.",
 	})
 )
 
@@ -342,6 +347,7 @@ func main() {
 
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(oldestTimestamp)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -526,6 +532,12 @@ func main() {
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
 				close(dbOpen)
+
+				ts, err := localStorage.StartTime()
+				if err != nil {
+					level.Error(logger).Log("msg", "Error retrieving oldest timestamp in storage", "err", err)
+				}
+				oldestTimestamp.Set(float64(timestamp.Time(ts).Unix()))
 				<-cancel
 				return nil
 			},
