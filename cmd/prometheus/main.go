@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -68,6 +69,10 @@ var (
 	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_config_last_reload_success_timestamp_seconds",
 		Help: "Timestamp of the last successful configuration reload.",
+	})
+	startTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_start_time_seconds",
+		Help: "Oldest unix timestamp stored in the database.",
 	})
 )
 
@@ -371,6 +376,7 @@ func main() {
 
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(startTimestamp)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -574,6 +580,31 @@ func main() {
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
 				close(dbOpen)
+
+				oldestTs, err := localStorage.StartTime()
+				if err != nil {
+					level.Error(logger).Log("msg", "Error retrieving oldest timestamp in storage", "err", err)
+				}
+				startTimestamp.Set(float64(timestamp.Time(oldestTs).Unix()))
+
+				headBlockMaxTime := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_max_time_seconds",
+					Help: "Maximum unix timestamp of the head block.",
+				}, func() float64 {
+					headBlock := localStorage.Get().Head()
+					return float64(timestamp.Time(headBlock.MaxTime()).Unix())
+				})
+				prometheus.MustRegister(headBlockMaxTime)
+
+				headBlockMinTime := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_min_time_seconds",
+					Help: "Minimum unix timestamp of the head block.",
+				}, func() float64 {
+					headBlock := localStorage.Get().Head()
+					return float64(timestamp.Time(headBlock.MinTime()).Unix())
+				})
+				prometheus.MustRegister(headBlockMinTime)
+
 				<-cancel
 				return nil
 			},
