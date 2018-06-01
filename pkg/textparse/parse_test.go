@@ -51,6 +51,7 @@ go_goroutines 33  	123123
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1`
+	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
 	int64p := func(x int64) *int64 { return &x }
@@ -145,6 +146,9 @@ testmetric{label="\"bar\""} 1`
 			m:    "testmetric{label=\"\\\"bar\\\"\"}",
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
+		}, {
+			m:    "metric",
+			help: "foo\x00bar",
 		}, {
 			m:    "null_byte_metric{a=\"abc\x00\"}",
 			v:    1,

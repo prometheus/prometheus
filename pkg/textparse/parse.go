@@ -28,9 +28,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/pkg/value"
-
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/value"
 )
 
 type lexer struct {
@@ -122,9 +121,9 @@ func (l *lexer) next() byte {
 		l.err = io.EOF
 		return byte(tEOF)
 	}
-	// Lex struggles with null bytes. If we are in a label value, where
+	// Lex struggles with null bytes. If we are in a label value or help string, where
 	// they are allowed, consume them here immediately.
-	for l.b[l.i] == 0 && l.state == sLValue {
+	for l.b[l.i] == 0 && (l.state == sLValue || l.state == sMeta2 || l.state == sComment) {
 		l.i++
 	}
 	return l.b[l.i]
@@ -280,7 +279,8 @@ func (p *Parser) Next() (Entry, error) {
 		default:
 			return EntryInvalid, parseError("expected text in HELP", t)
 		}
-		if t == tType {
+		switch t {
+		case tType:
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = MetricTypeCounter
@@ -294,6 +294,10 @@ func (p *Parser) Next() (Entry, error) {
 				p.mtype = MetricTypeUntyped
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
+			}
+		case tHelp:
+			if !utf8.Valid(p.text) {
+				return EntryInvalid, fmt.Errorf("help text is not a valid utf8 string")
 			}
 		}
 		if t := p.nextToken(); t != tLinebreak {
