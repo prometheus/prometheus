@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -75,6 +76,10 @@ func main() {
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 
+	debugCmd := app.Command("debug", "debug cmd")
+	debugPprofCmd := debugCmd.Command("pprof", "pprof cmd")
+	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to query.").Required().URL()
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
@@ -93,6 +98,9 @@ func main() {
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
+
+	case debugPprofCmd.FullCommand():
+		os.Exit(DebugPprof(*debugPprofServer))
 	}
 
 }
@@ -446,4 +454,37 @@ func parseTime(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+func DebugPprof(url *url.URL) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	req, err := http.NewRequest(http.MethodGet, url.String()+"/debug/pprof", nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "debug pprof error:", err)
+		return 1
+	}
+
+	_, body, err := c.Do(ctx, req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "debug pprof error:", err)
+		return 1
+	}
+	cancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "debug pprof error:", err)
+		return 1
+	}
+
+	fmt.Println(string(body))
+	return 0
 }
