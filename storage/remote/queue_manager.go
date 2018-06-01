@@ -164,6 +164,8 @@ type QueueManager struct {
 func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
+	} else {
+		logger = log.With(logger, "queue", client.Name())
 	}
 	t := &QueueManager{
 		logger:         logger,
