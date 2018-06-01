@@ -28,8 +28,8 @@ unexport GOBIN
 GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
-PROMU        := $(FIRST_GOPATH)/bin/promu
-STATICCHECK  := $(FIRST_GOPATH)/bin/staticcheck
+PROMU        ?= $(FIRST_GOPATH)/bin/promu
+STATICCHECK  ?= $(FIRST_GOPATH)/bin/staticcheck
 GOVENDOR     := $(FIRST_GOPATH)/bin/govendor
 pkgs          = ./...
 
@@ -77,18 +77,18 @@ unused: $(GOVENDOR)
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
 
-build: promu
+build: $(PROMU)
 	@echo ">> building binaries"
 	$(PROMU) build --prefix $(PREFIX)
 
-tarball: promu
+tarball: $(PROMU)
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
 docker:
 	docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
-promu:
+$(FIRST_GOPATH)/bin/promu promu:
 	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 
 $(FIRST_GOPATH)/bin/staticcheck:
@@ -97,4 +97,10 @@ $(FIRST_GOPATH)/bin/staticcheck:
 $(FIRST_GOPATH)/bin/govendor:
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
 
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
+.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck govendor 
+
+# Declaring the binaries at their default locations as PHONY targets is a hack
+# to ensure the latest version is downloaded on every make execution.
+# If this is not desired, copy/symlink these binaries to a different path and
+# set the respective environment variables.
+.PHONY: $(FIRST_GOPATH)/bin/promu $(FIRST_GOPATH)/bin/govendor $(FIRST_GOPATH)/bin/staticcheck
