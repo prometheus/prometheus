@@ -46,10 +46,6 @@ func DebugPprof(url *url.URL) int {
 			return 1
 		}
 		cancel()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "debug pprof error:", err)
-			return 1
-		}
 
 		p, err := profile.Parse(bytes.NewReader(body))
 		if err != nil {
