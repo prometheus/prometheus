@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -8,16 +9,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
 )
 
-var pprofUrls = []string{
-	"/debug/pprof/block?debug=1",
-	"/debug/pprof/goroutine?debug=1",
-	"/debug/pprof/heap?debug=1",
-	"/debug/pprof/mutex?debug=1",
-	"/debug/pprof/threadcreate?debug=1",
-	"/debug/pprof/goroutine?debug=2",
+var profNames = []string{
+	"block",
+	"goroutine",
+	"heap",
+	"mutex",
+	"threadcreate",
 }
 
 func DebugPprof(url *url.URL) int {
@@ -31,9 +32,9 @@ func DebugPprof(url *url.URL) int {
 		return 1
 	}
 
-	for _, u := range pprofUrls {
+	for _, n := range profNames {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		req, err := http.NewRequest(http.MethodGet, url.String()+u, nil)
+		req, err := http.NewRequest(http.MethodGet, url.String()+"/debug/pprof/"+n, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "debug pprof error:", err)
 			return 1
@@ -50,7 +51,27 @@ func DebugPprof(url *url.URL) int {
 			return 1
 		}
 
-		fmt.Println(string(body))
+		p, err := profile.Parse(bytes.NewReader(body))
+		if err != nil {
+			panic(err)
+		}
+
+		// open output file
+		fo, err := os.Create(n + ".pb.gz")
+		if err != nil {
+			panic(err)
+		}
+		// close fo on exit and check for its returned error
+		defer func() {
+			if err := fo.Close(); err != nil {
+				panic(err)
+			}
+		}()
+		if err := p.Write(fo); err != nil {
+			panic(err)
+		}
+
+		fmt.Println(p.String())
 	}
 	return 0
 }
