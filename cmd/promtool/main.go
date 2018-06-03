@@ -78,6 +78,8 @@ func main() {
 	debugCmd := app.Command("debug", "debug cmd")
 	debugPprofCmd := debugCmd.Command("pprof", "pprof cmd")
 	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	debugMetricsCmd := debugCmd.Command("metrics", "metrics cmd")
+	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to query.").Required().URL()
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
@@ -100,6 +102,9 @@ func main() {
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(DebugPprof(*debugPprofServer))
+
+	case debugMetricsCmd.FullCommand():
+		os.Exit(DebugMetrics(*debugMetricsServer))
 	}
 
 }
