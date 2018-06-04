@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -70,40 +69,20 @@ func DebugPprof(url *url.URL) int {
 			panic(err)
 		}
 
-		// open output file
-		profFileName := profName + ".pb"
-		fo, err := os.Create(profFileName)
-		if err != nil {
+		var buf bytes.Buffer
+		if err := p.WriteUncompressed(&buf); err != nil {
 			panic(err)
 		}
-		if err := p.WriteUncompressed(fo); err != nil {
-			panic(err)
-		}
-		if err := fo.Close(); err != nil {
-			panic(err)
-		}
-		fi, err := os.Open(profFileName)
-		if err != nil {
-			panic(err)
-		}
-		defer fi.Close()
-		stat, err := fi.Stat()
-		if err != nil {
-			panic(err)
-		}
+
 		header := &tar.Header{
-			Name: profFileName,
-			Mode: int64(stat.Mode()),
-			Size: stat.Size(),
+			Name: profName + ".pb",
+			Mode: 0644,
+			Size: int64(buf.Len()),
 		}
 		if err := tw.WriteHeader(header); err != nil {
 			panic(err)
 		}
-		// copy the file data to the tarball
-		if _, err := io.Copy(tw, fi); err != nil {
-			panic(err)
-		}
-		if err := os.Remove(profName + ".pb"); err != nil {
+		if _, err := tw.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
 		fmt.Println(p.String())
