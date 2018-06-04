@@ -132,9 +132,8 @@ type MatrixSelector struct {
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
 
-	// The series iterators are populated at query preparation time.
-	series    []storage.Series
-	iterators []*storage.BufferedSeriesIterator
+	// The series are populated at query preparation time.
+	series []storage.Series
 }
 
 // NumberLiteral represents a number.
@@ -166,9 +165,8 @@ type VectorSelector struct {
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
 
-	// The series iterators are populated at query preparation time.
-	series    []storage.Series
-	iterators []*storage.BufferedSeriesIterator
+	// The series are populated at query preparation time.
+	series []storage.Series
 }
 
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }

@@ -160,7 +160,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	}
 	ts := testStartTime.Add(time.Duration(offset))
 
-	cmd := newEvalCmd(expr, ts, ts, 0)
+	cmd := newEvalCmd(expr, ts)
 	switch mod {
 	case "ordered":
 		cmd.ordered = true
@@ -301,11 +301,9 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 // evalCmd is a command that evaluates an expression for the given time (range)
 // and expects a specific result.
 type evalCmd struct {
-	expr       string
-	start, end time.Time
-	interval   time.Duration
+	expr  string
+	start time.Time
 
-	instant       bool
 	fail, ordered bool
 
 	metrics  map[uint64]labels.Labels
@@ -321,13 +319,10 @@ func (e entry) String() string {
 	return fmt.Sprintf("%d: %s", e.pos, e.vals)
 }
 
-func newEvalCmd(expr string, start, end time.Time, interval time.Duration) *evalCmd {
+func newEvalCmd(expr string, start time.Time) *evalCmd {
 	return &evalCmd{
-		expr:     expr,
-		start:    start,
-		end:      end,
-		interval: interval,
-		instant:  start == end && interval == 0,
+		expr:  expr,
+		start: start,
 
 		metrics:  map[uint64]labels.Labels{},
 		expected: map[uint64]entry{},
@@ -354,37 +349,9 @@ func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 func (ev *evalCmd) compareResult(result Value) error {
 	switch val := result.(type) {
 	case Matrix:
-		if ev.instant {
-			return fmt.Errorf("received range result on instant evaluation")
-		}
-		seen := map[uint64]bool{}
-		for pos, v := range val {
-			fp := v.Metric.Hash()
-			if _, ok := ev.metrics[fp]; !ok {
-				return fmt.Errorf("unexpected metric %s in result", v.Metric)
-			}
-			exp := ev.expected[fp]
-			if ev.ordered && exp.pos != pos+1 {
-				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
-			}
-			for i, expVal := range exp.vals {
-				if !almostEqual(expVal.value, v.Points[i].V) {
-					return fmt.Errorf("expected %v for %s but got %v", expVal, v.Metric, v.Points)
-				}
-			}
-			seen[fp] = true
-		}
-		for fp, expVals := range ev.expected {
-			if !seen[fp] {
-				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
-			}
-		}
+		return fmt.Errorf("received range result on instant evaluation")
 
 	case Vector:
-		if !ev.instant {
-			return fmt.Errorf("received instant result on range evaluation")
-		}
-
 		seen := map[uint64]bool{}
 		for pos, v := range val {
 			fp := v.Metric.Hash()
@@ -464,8 +431,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 	case *evalCmd:
-		qry, _ := ParseExpr(cmd.expr)
-		q := t.queryEngine.newQuery(t.storage, qry, cmd.start, cmd.end, cmd.interval)
+		q, _ := t.queryEngine.NewInstantQuery(t.storage, cmd.expr, cmd.start)
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
@@ -473,6 +439,7 @@ func (t *Test) exec(tc testCommand) error {
 			}
 			return fmt.Errorf("error evaluating query %q: %s", cmd.expr, res.Err)
 		}
+		defer q.Close()
 		if res.Err == nil && cmd.fail {
 			return fmt.Errorf("expected error evaluating query but got none")
 		}
@@ -480,6 +447,37 @@ func (t *Test) exec(tc testCommand) error {
 		err := cmd.compareResult(res.Value)
 		if err != nil {
 			return fmt.Errorf("error in %s %s: %s", cmd, cmd.expr, err)
+		}
+
+		// Check query returns same result in range mode,
+		/// by checking against the middle step.
+		q, _ = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
+		rangeRes := q.Exec(t.context)
+		if rangeRes.Err != nil {
+			return fmt.Errorf("error evaluating query %q in range mode: %s", cmd.expr, rangeRes.Err)
+		}
+		defer q.Close()
+		if cmd.ordered {
+			// Ordering isn't defined for range queries.
+			return nil
+		}
+		mat := rangeRes.Value.(Matrix)
+		vec := make(Vector, 0, len(mat))
+		for _, series := range mat {
+			for _, point := range series.Points {
+				if point.T == timeMilliseconds(cmd.start) {
+					vec = append(vec, Sample{Metric: series.Metric, Point: point})
+					break
+				}
+			}
+		}
+		if _, ok := res.Value.(Scalar); ok {
+			err = cmd.compareResult(Scalar{V: vec[0].Point.V})
+		} else {
+			err = cmd.compareResult(vec)
+		}
+		if err != nil {
+			return fmt.Errorf("error in %s %s rande mode: %s", cmd, cmd.expr, err)
 		}
 
 	default:
