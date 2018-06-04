@@ -589,44 +589,12 @@ func TestReadEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
-	data, err := proto.Marshal(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
-	recorder := httptest.NewRecorder()
-	api.remoteRead(recorder, request)
 
-	// Decode the response.
-	compressed, err = ioutil.ReadAll(recorder.Result().Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	uncompressed, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		t.Fatal(err)
+	testParams := []*storage.SelectParams{
+		nil,
+		&storage.SelectParams{Step: 0, Func: "avg"},
 	}
 
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(resp.Results) != 1 {
-		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
-	}
-
-	result := resp.Results[0]
 	expected := &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
@@ -641,8 +609,54 @@ func TestReadEndpoint(t *testing.T) {
 			},
 		},
 	}
-	if !reflect.DeepEqual(result, expected) {
-		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+
+	defer func() {
+		if err := recover(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	for _, params := range testParams {
+		query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+		data, err := proto.Marshal(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compressed := snappy.Encode(nil, data)
+		request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		api.remoteRead(recorder, request)
+
+		// Decode the response.
+		compressed, err = ioutil.ReadAll(recorder.Result().Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		uncompressed, err := snappy.Decode(nil, compressed)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var resp prompb.ReadResponse
+		err = proto.Unmarshal(uncompressed, &resp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(resp.Results) != 1 {
+			t.Fatalf("Expected 1 result, got %d", len(resp.Results))
+		}
+
+		result := resp.Results[0]
+		if !reflect.DeepEqual(result, expected) {
+			t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+		}
 	}
 }
 
