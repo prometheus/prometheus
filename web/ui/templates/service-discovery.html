@@ -22,7 +22,7 @@
       <ul>
         {{range $i, $job := .Index}}
           <li>
-            <a href="#job-{{$job}}">{{$job}}</a>
+            <a href="#job-{{$job}}">{{$job}}</a> ({{ index $.Active $i }}/{{ index $.Total $i }} active targets)
           </li>
         {{end}}
       </ul>
