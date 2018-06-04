@@ -32,9 +32,9 @@ func DebugPprof(url *url.URL) int {
 		return 1
 	}
 
-	for _, n := range profNames {
+	for _, profName := range profNames {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		req, err := http.NewRequest(http.MethodGet, url.String()+"/debug/pprof/"+n, nil)
+		req, err := http.NewRequest(http.MethodGet, url.String()+"/debug/pprof/"+profName, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "debug pprof error:", err)
 			return 1
@@ -53,7 +53,8 @@ func DebugPprof(url *url.URL) int {
 		}
 
 		// open output file
-		fo, err := os.Create(n + ".pb.gz")
+		profFileName := profName + ".pb"
+		fo, err := os.Create(profFileName)
 		if err != nil {
 			panic(err)
 		}
@@ -63,7 +64,7 @@ func DebugPprof(url *url.URL) int {
 				panic(err)
 			}
 		}()
-		if err := p.Write(fo); err != nil {
+		if err := p.WriteUncompressed(fo); err != nil {
 			panic(err)
 		}
 
