@@ -601,23 +601,24 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 		Index   []string
 		Targets map[string][]*scrape.Target
 		Active  []int
+		Dropped []int
 		Total   []int
 	}{
 		Index:   index,
 		Targets: make(map[string][]*scrape.Target),
 		Active:  make([]int, len(index)),
+		Dropped: make([]int, len(index)),
 		Total:   make([]int, len(index)),
 	}
 	for i, job := range scrapeConfigData.Index {
-		nbDropped := 0
 		scrapeConfigData.Targets[job] = make([]*scrape.Target, 0, len(targets[job]))
 		scrapeConfigData.Total[i] = len(targets[job])
 		for _, target := range targets[job] {
-			// Do not display more than 1k dropped targets per job to avoid
+			// Do not display more than 100 dropped targets per job to avoid
 			// returning too much data to the clients.
 			if target.Labels().Len() == 0 {
-				nbDropped++
-				if nbDropped > 1000 {
+				scrapeConfigData.Dropped[i]++
+				if scrapeConfigData.Dropped[i] > 100 {
 					continue
 				}
 			} else {
