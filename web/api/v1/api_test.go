@@ -610,11 +610,6 @@ func TestReadEndpoint(t *testing.T) {
 		},
 	}
 
-	defer func() {
-		if err := recover(); err != nil {
-			t.Fatal(err)
-		}
-	}()
 	for _, params := range testParams {
 		query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, params)
 		if err != nil {
