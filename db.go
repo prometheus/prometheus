@@ -861,13 +861,10 @@ func (db *DB) CleanTombstones() (err error) {
 
 	deletable := []string{}
 	for _, b := range blocks {
-		uid, er := b.CleanTombstones(db.Dir(), db.compactor)
-		if er != nil {
+		if uid, er := b.CleanTombstones(db.Dir(), db.compactor); er != nil {
 			err = errors.Wrapf(er, "clean tombstones: %s", b.Dir())
 			return err
-		}
-
-		if uid != nil { // New block was created.
+		} else if uid != nil { // New block was created.
 			deletable = append(deletable, b.Dir())
 			newUIDs = append(newUIDs, *uid)
 		}
