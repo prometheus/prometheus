@@ -530,7 +530,7 @@ func TestEndpoints(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, apiErr := test.endpoint(req.WithContext(ctx))
+			resp, apiErr, _ := test.endpoint(req.WithContext(ctx))
 			if apiErr != nil {
 				if test.errType == errorNone {
 					t.Fatalf("Unexpected error: %s", apiErr)
