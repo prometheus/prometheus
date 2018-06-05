@@ -29,9 +29,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
@@ -589,12 +592,44 @@ func TestReadEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+	data, err := proto.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := snappy.Encode(nil, data)
+	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	api.remoteRead(recorder, request)
 
-	testParams := []*storage.SelectParams{
-		nil,
-		&storage.SelectParams{Step: 0, Func: "avg"},
+	// Decode the response.
+	compressed, err = ioutil.ReadAll(recorder.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncompressed, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		t.Fatal(err)
 	}
 
+	var resp prompb.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(resp.Results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
+	}
+
+	result := resp.Results[0]
 	expected := &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
@@ -609,50 +644,90 @@ func TestReadEndpoint(t *testing.T) {
 			},
 		},
 	}
-
-	for _, params := range testParams {
-		query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, params)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
-		data, err := proto.Marshal(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		compressed := snappy.Encode(nil, data)
-		request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
-		recorder := httptest.NewRecorder()
-		api.remoteRead(recorder, request)
-
-		// Decode the response.
-		compressed, err = ioutil.ReadAll(recorder.Result().Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		uncompressed, err := snappy.Decode(nil, compressed)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		var resp prompb.ReadResponse
-		err = proto.Unmarshal(uncompressed, &resp)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if len(resp.Results) != 1 {
-			t.Fatalf("Expected 1 result, got %d", len(resp.Results))
-		}
-
-		result := resp.Results[0]
-		if !reflect.DeepEqual(result, expected) {
-			t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
-		}
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
 	}
+}
+
+func TestSeriesEndpoint(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar"} 1+0x100
+			test_metric2{foo="bar"} 1+0x100
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer suite.Close()
+
+	if err := suite.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	readURL, err := url.Parse("http://localhost:8086/api/v1/prom/read?db=prometheus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logLevel := promlog.AllowedLevel{}
+	logLevel.Set("debug")
+	localStorage := suite.Storage()
+	l := log.With(promlog.New(logLevel), "component", "remote")
+	remoteStorage := remote.NewStorage(l, localStorage.StartTime, time.Minute)
+	conf := config.Config{
+		RemoteReadConfigs: []*config.RemoteReadConfig{
+			&config.RemoteReadConfig{
+				URL:           &config_util.URL{readURL},
+				RemoteTimeout: model.Duration(time.Second / 8),
+				ReadRecent:    false,
+			},
+		},
+	}
+	if err := remoteStorage.ApplyConfig(&conf); err != nil {
+		t.Fatal(err)
+	}
+
+	queryable := storage.NewFanout(promlog.New(logLevel), localStorage, remoteStorage)
+	api := &API{
+		Queryable:   queryable,
+		QueryEngine: suite.QueryEngine(),
+		config: func() config.Config {
+			return conf
+		},
+	}
+
+	end := time.Now().Unix()
+	start := end - 24*60*60
+	q := url.Values{
+		"match[]": []string{`test_metric1`},
+		"start":   []string{fmt.Sprintf("%d", start)},
+		"end":     []string{fmt.Sprintf("%d", end)},
+	}
+	seriesURL, err := url.Parse("http://example.com:9090/api/v1/series")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seriesURL.RawQuery = q.Encode()
+	req, err := http.NewRequest("GET", seriesURL.String(), nil)
+
+	_ /*labels*/, apiErr := api.series(req)
+	if apiErr != nil {
+		if apiErr.typ == errorExec {
+			msg := apiErr.Error()
+			reasons := []string{
+				context.DeadlineExceeded.Error(), // config.RemoteReadConfig.RemoteTimeout
+				"connection refused",             // refused by TCP reset
+			}
+			for i := range reasons {
+				if strings.HasSuffix(msg, reasons[i]) {
+					return
+				}
+			}
+		}
+		t.Fatal(apiErr)
+	}
+
+	// TODO: In the future the /series endpoint will return results from local storage
+	// even if the remote read fails, compare the result with the expected.
 }
 
 func TestRespondSuccess(t *testing.T) {
