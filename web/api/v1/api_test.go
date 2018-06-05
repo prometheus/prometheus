@@ -712,7 +712,7 @@ func TestSeriesEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_ /*labels*/, apiErr := api.series(req)
+	_, apiErr := api.series(req)
 	if apiErr != nil {
 		if apiErr.typ == errorExec {
 			msg := apiErr.Error()
