@@ -1213,7 +1213,7 @@ func (r *walReader) decodeDeletes(flag byte, b []byte, res *[]Stone) error {
 }
 
 // MigrateWAL rewrites the deprecated write ahead log into the new format.
-func MigrateWAL(logger log.Logger, dir string) error {
+func MigrateWAL(logger log.Logger, dir string) (err error) {
 	// Detect whether we still have the old WAL.
 	fns, err := sequenceFiles(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -1227,6 +1227,8 @@ func MigrateWAL(logger log.Logger, dir string) error {
 	if err != nil {
 		return errors.Wrap(err, "check first existing segment")
 	}
+	defer f.Close()
+
 	var hdr [4]byte
 	if n, err := f.Read(hdr[:]); err != nil {
 		return errors.Wrap(err, "read header from first segment")
@@ -1247,10 +1249,20 @@ func MigrateWAL(logger log.Logger, dir string) error {
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}
+	// We close it once already before as part of finalization.
+	// Do it once again in case of prior errors.
+	defer func() {
+		if err != nil {
+			repl.Close()
+		}
+	}()
+
 	w, err := OpenSegmentWAL(dir, logger, time.Minute, nil)
 	if err != nil {
 		return errors.Wrap(err, "open old WAL")
 	}
+	defer w.Close()
+
 	rdr := w.Reader()
 
 	var (
@@ -1282,9 +1294,6 @@ func MigrateWAL(logger log.Logger, dir string) error {
 	}
 	if err != nil {
 		return errors.Wrap(err, "write new entries")
-	}
-	if err := w.Close(); err != nil {
-		return errors.Wrap(err, "close old WAL")
 	}
 	if err := repl.Close(); err != nil {
 		return errors.Wrap(err, "close new WAL")
