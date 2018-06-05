@@ -1,7 +1,26 @@
-## next release
+## 2.3.0 / 2018-06-05
 
+* [FEATURE] Add query commands to promtool
+* [FEATURE] Add security headers to HTTP server responses
+* [FEATURE] Pass query hints via remote read API
 * [CHANGE] `marathon_sd`: use `auth_token` and `auth_token_file` for token-based authentication instead of `bearer_token` and `bearer_token_file` respectively.
+* [ENHANCEMENT] Optimise PromQL for memory usage and allocations
+* [ENHANCEMENT] Limit number of dropped targets in web UI
+* [ENHANCEMENT] Add advanced filterting configuration to Consul service discovery
+* [ENHANCEMENT] Add advanced filterting configuration to EC2 service discovery
 * [ENHANCEMENT] `marathon_sd`: adds support for basic and bearer authentication, plus all other common HTTP client options (TLS config, proxy URL, etc.)
+* [ENHANCEMENT] Provide machine type metadata and labels in GCE service discovery
+* [ENHANCEMENT] Use more efficient JSON encoder in API
+* [ENHANCEMENT] Add pod controller kind and name to Kubernetes service discovery data
+* [ENHANCEMENT] Move TSDB to flock-based log file that works with Docker containers
+* [BUGFIX] Properly propagate storage errors in PromQL
+* [BUGFIX] Fix path prefix for web pages
+* [BUGFIX] Fix goroutine leak in Consul service discovery
+* [BUGFIX] Fix races in scrape manager
+* [BUGFIX] Fix OOM for very large k in PromQL topk() queries
+* [BUGFIX] Make remote write more resilient to unavailable receivers
+* [BUGFIX] Make remote write shutdown cleanly
+* [BUGFIX] Don't leak files on errors in TSDB's tombstone cleanup
 
 ## 2.2.1 / 2018-03-13
 
