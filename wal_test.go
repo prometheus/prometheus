@@ -434,6 +434,23 @@ func TestWALRestoreCorrupted(t *testing.T) {
 	}
 }
 
+func TestMigrateWAL_Empty(t *testing.T) {
+	// The migration proecedure must properly deal with a zero-length segment,
+	// which is valid in the new format.
+	dir, err := ioutil.TempDir("", "walmigrate")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+
+	wdir := path.Join(dir, "wal")
+
+	// Initialize empty WAL.
+	w, err := wal.New(nil, nil, wdir)
+	testutil.Ok(t, err)
+	testutil.Ok(t, w.Close())
+
+	testutil.Ok(t, MigrateWAL(nil, wdir))
+}
+
 func TestMigrateWAL_Fuzz(t *testing.T) {
 	dir, err := ioutil.TempDir("", "walmigrate")
 	testutil.Ok(t, err)

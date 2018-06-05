@@ -1214,6 +1214,9 @@ func (r *walReader) decodeDeletes(flag byte, b []byte, res *[]Stone) error {
 
 // MigrateWAL rewrites the deprecated write ahead log into the new format.
 func MigrateWAL(logger log.Logger, dir string) (err error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 	// Detect whether we still have the old WAL.
 	fns, err := sequenceFiles(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -1222,7 +1225,8 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if len(fns) == 0 {
 		return nil // No WAL at all yet.
 	}
-	// Check header of first segment.
+	// Check header of first segment to see whether we are still dealing with an
+	// old WAL.
 	f, err := os.Open(fns[0])
 	if err != nil {
 		return errors.Wrap(err, "check first existing segment")
@@ -1230,13 +1234,14 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	defer f.Close()
 
 	var hdr [4]byte
-	if n, err := f.Read(hdr[:]); err != nil {
+	if _, err := f.Read(hdr[:]); err != nil && err != io.EOF {
 		return errors.Wrap(err, "read header from first segment")
-	} else if n != 4 {
-		return errors.New("could not read full header from segment")
 	}
+	// If we cannot read the magic header for segments of the old WAL, abort.
+	// Either it's migrated already or there's a corruption issue with which
+	// we cannot deal here anyway. Subsequent attempts to open the WAL will error in that case.
 	if binary.BigEndian.Uint32(hdr[:]) != WALMagic {
-		return nil // Not the old WAL anymore.
+		return nil
 	}
 
 	level.Info(logger).Log("msg", "migrating WAL format")
