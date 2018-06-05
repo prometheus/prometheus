@@ -27,8 +27,11 @@ ifdef DEBUG
 	bindata_flags = -debug
 endif
 
+# -mode 420 (eg 0644) and -modtime 1 ensure that the content is generated deterministically.
 assets:
 	@echo ">> writing assets"
 	@$(GO) get -u github.com/jteeuwen/go-bindata/...
-	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
+	@go-bindata $(bindata_flags) -mode 420 -modtime 1 -pkg ui -o web/ui/bindata.go \
+		-ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)' \
+		web/ui/templates/... web/ui/static/...
 	@$(GO) fmt ./web/ui
