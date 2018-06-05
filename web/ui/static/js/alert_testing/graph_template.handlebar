@@ -120,6 +120,12 @@
                         </div>
 
                         <div class="prometheus_input_group pull-right">
+                          <div class="evaluation_message"></div>
+                          <input type="hidden" class="btn btn-default reevaluate_value" readonly>
+                          <input name="reevaluate" class="btn btn-default reevaluate_value_display" value="0" readonly>
+                          <button type="button" class="btn btn-primary reevaluate">
+                            Evaluate for this time
+                          </button>
                           <button type="button" class="btn btn-default stacked_btn">
                             <i class="glyphicon"></i> stacked
                           </button>

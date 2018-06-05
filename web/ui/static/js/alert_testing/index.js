@@ -1,6 +1,7 @@
 var graphTemplate;
 var alertStateToRowClass;
 var alertStateToName;
+var lastEvaluateTime = -1;
 
 var SECOND = 1000;
 
@@ -164,6 +165,9 @@ Graph.prototype.initialize = function() {
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
+  self.reevaluateValue = graphWrapper.find(".reevaluate_value");
+  self.reevaluateValueDisplay = graphWrapper.find(".reevaluate_value_display");
+  self.reevaluateBtn = graphWrapper.find(".reevaluate");
 
   self.endDate = graphWrapper.find("input[name=end_input]");
   self.endDate.datetimepicker({
@@ -208,6 +212,18 @@ Graph.prototype.initialize = function() {
     self.stacked.val(self.isStacked() ? '0' : '1');
     styleStackBtn();
     self.updateGraph();
+  });
+
+  self.reevaluateBtn.click(function() {
+    var time = self.reevaluateValue.val();
+    if(time != "0") {
+      var text = ace.edit("ruleTextArea").getValue();          
+      var data = {
+        RuleText: encodeURIComponent(text),
+        Time: Number(time)
+      };
+      evaluate(data);
+    }
   });
 
   self.spinner.hide();
@@ -376,14 +392,6 @@ Graph.prototype.updateGraph = function() {
     }
   });
 
-  // For some reason 'data' field was getting restricted to size of 258-259 (observed with console log).
-  // But, you could get original array by accessing .data field manually (but graph did not do it).
-  // Hence we this to restore the original array from 'tempData' to 'data' field.
-  // self.data = self.data.map(function(val){
-  //   val.data = val.tempData;
-  //   return val;
-  // });
-
   // Now create the new graph.
   self.rickshawGraph = new Rickshaw.Graph({
     element: self.graph[0],
@@ -446,7 +454,10 @@ Graph.prototype.updateGraph = function() {
   var hoverDetail = new Rickshaw.Graph.HoverDetail({
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
-      var date = '<span class="date">' + new Date(x * 1000).toUTCString() + '</span>';
+      var datestr = new Date(x * 1000).toUTCString();
+      self.reevaluateValue.val(""+x);
+      self.reevaluateValueDisplay.val(datestr);
+      var date = '<span class="date">' + datestr + '</span>';
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
       var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong>';
       return date + '<br>' + content + '<br>' + self.renderLabels(series.labels);
@@ -468,7 +479,6 @@ Graph.prototype.updateGraph = function() {
     legend: legend
   });
 
-  // self.handleChange();
 };
 
 Graph.prototype.resizeGraph = function() {
@@ -560,45 +570,56 @@ var replaceRules = function(json) {
       graph.resizeGraph();
     });
   }
-
+  
 };
+
+function evaluate(data) {
+  
+  if(lastEvaluateTime == data.Time) {
+    return;
+  }
+  var time = data.Time;
+  $("#ruleTestInfo").html("Testing...");
+  $(".evaluation_message").html("Testing...");          
+  $.ajax({
+    method: 'POST',
+    url: PATH_PREFIX + "/api/v1/alerts_testing",
+    dataType: "json",
+    data: JSON.stringify(data),
+    success: function(json) {
+      var data = json.data
+      if(data.isError) {
+        var errStr = "Error message:<br/>"
+        var len = data.errors.length 
+        for(var i = 0; i<len; i++) {
+          errStr += "(" + (i+1) + ") " + data.errors[i] + '<br/>'
+        }
+        $("#ruleTestInfo").html(redHtml(errStr));
+      } else {
+        $("#ruleTestInfo").html(greenHtml(data.success));  
+        $(".evaluation_message").html("");          
+        alertStateToRowClass = json.data.alertStateToRowClass;
+        alertStateToName = json.data.alertStateToName;
+        lastEvaluateTime = time;
+      }
+      replaceRules(json);        
+    },
+    error: function(jqXHR, textStatus, errorThrown) {
+      $("#ruleTestInfo").html(redHtml("ERROR: "+errorThrown));
+    }
+  });
+
+}
 
 function initRuleTesting() {
   $("#ruleTestExecute").click(function() {
     var text = ace.edit("ruleTextArea").getValue();
-    $("#ruleTestInfo").html("Testing...");          
-
-    $.ajax({
-      method: 'POST',
-      url: PATH_PREFIX + "/api/v1/alerts_testing",
-      dataType: "json",
-      data: JSON.stringify({
-        RuleText: encodeURIComponent(text)
-      }),
-      success: function(json) {
-        var data = json.data
-        if(data.isError) {
-          var errStr = "Error message:<br/>"
-          var len = data.errors.length 
-          for(var i = 0; i<len; i++) {
-            errStr += "(" + (i+1) + ") " + data.errors[i] + '<br/>'
-          }
-          $("#ruleTestInfo").html(redHtml(errStr));
-        } else {
-          $("#ruleTestInfo").html(greenHtml(data.success));  
-
-          alertStateToRowClass = json.data.alertStateToRowClass;
-          alertStateToName = json.data.alertStateToName;
-        }
-        replaceRules(json);        
-      },
-      error: function(jqXHR, textStatus, errorThrown) {
-        $("#ruleTestInfo").html(redHtml("ERROR: "+errorThrown));
-      }
-    });
-
+    var data = {
+      RuleText: encodeURIComponent(text),
+      Time: 0
+    };
+    evaluate(data);
   });
-  
 }
 
 function initEditor() {

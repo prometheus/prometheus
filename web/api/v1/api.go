@@ -973,6 +973,7 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 
 		postData struct {
 			RuleText string
+			Time     float64
 		}
 		ruleString string
 		rgs        *rulefmt.RuleGroups
@@ -989,6 +990,11 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 	if err = decoder.Decode(&postData); err != nil {
 		ae = &apiError{errorBadData, err}
 		goto endLabel
+	}
+
+	if postData.Time > 0 {
+		maxt = time.Unix(int64(postData.Time), 0)
+		mint = maxt.Add(-24 * time.Hour)
 	}
 
 	if ruleString, err = url.QueryUnescape(postData.RuleText); err != nil {
@@ -1034,7 +1040,15 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 
 			// Evaluating the alerting rule for past 1 day.
 			seriesHashMap := make(map[uint64]*promql.Series) // All the series created for this rule.
-			for t := mint; maxt.Sub(t) > 0; t = t.Add(15 * time.Second) {
+			nextiter := func(curr, max time.Time, step time.Duration) time.Time {
+				diff := max.Sub(curr)
+				if diff != 0 && diff < step {
+					return max
+				} else {
+					return curr.Add(step)
+				}
+			}
+			for t := mint; maxt.Sub(t) >= 0; t = nextiter(t, maxt, 15*time.Second) {
 				vec, err := alertingRule.Eval(r.Context(), t, queryFunc, nil)
 				if err != nil {
 					ae = &apiError{errorInternal, err}
