@@ -547,7 +547,7 @@ type scrapeCache struct {
 
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
-	lastIter uint64 // last scrape iteration the entry was observed
+	lastIter uint64 // Last scrape iteration the entry was observed at.
 	typ      textparse.MetricType
 	help     string
 }
@@ -684,9 +684,11 @@ func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
 	}, true
 }
 
-func (c *scrapeCache) listMetadata() (res []MetricMetadata) {
+func (c *scrapeCache) listMetadata() []MetricMetadata {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
+
+	res := make([]MetricMetadata, 0, len(c.metadata))
 
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{

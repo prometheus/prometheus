@@ -363,9 +363,10 @@ $ curl http://localhost:9090/api/v1/targets
 }
 ```
 
-## Target metadata
+## Querying target metadata
 
 The following endpoint returns metadata about metrics currently scraped by targets.
+This is **experimental** and might change in the future.
 
 ```
 GET /api/v1/targets/metadata
@@ -373,7 +374,8 @@ GET /api/v1/targets/metadata
 
 URL query parameters:
 
-- `match=<series_selector>`: A selector that matches targets by label matchers. If a metric name is provided, only metadata for that metric name is returned.
+- `match_target=<label_selectors>`: Label selectors that match targets by their label sets. All targets are selected if left empty.
+- `metric=<string>`: A metric name to retrieve metadata for. All metric metadata is retrieved if left empty.
 - `limit=<number>`: Maximum number of targets to match.
 
 The `data` section of the query result consists of a list of objects that
@@ -384,7 +386,8 @@ from the first two targets with label `job="prometheus"`.
 
 ```json
 curl -G http://localhost:9091/api/v1/targets/metadata \
-    --data-urlencode 'match=go_goroutines{job="prometheus"}' \
+    --data-urlencode 'metric=go_goroutines' \
+    --data-urlencode 'match_target={job="prometheus"}' \
     --data-urlencode 'limit=2'
 {
   "status": "success",
@@ -409,12 +412,12 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 }
 ```
 
-The following example returns metadata for all metrics for the target with
+The following example returns metadata for all metrics for all targets with
 label `instance="127.0.0.1:9090`.
 
 ```json
 curl -G http://localhost:9091/api/v1/targets/metadata \
-    --data-urlencode 'match={instance="127.0.0.1:9090"}'
+    --data-urlencode 'match_target={instance="127.0.0.1:9090"}'
 {
   "status": "success",
   "data": [
