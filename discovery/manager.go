@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/prometheus/discovery/swarm"
 
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -246,6 +247,14 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 			continue
 		}
 		app("kubernetes", i, k)
+	}
+	for i, c := range cfg.SwarmSDConfigs {
+		d, err := swarm.NewDiscovery(*c, log.With(m.logger, "discovery", "swarm"))
+		if err != nil {
+			level.Error(m.logger).Log("msg", "Cannot create Swarm discovery", "err", err)
+			continue
+		}
+		app("swarm", i, d)
 	}
 	for i, c := range cfg.ServersetSDConfigs {
 		app("serverset", i, zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper")))
