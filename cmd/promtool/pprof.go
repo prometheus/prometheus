@@ -23,17 +23,37 @@ var profNames = []string{
 	"threadcreate",
 }
 
-func DebugPprof(url *url.URL) int {
+func GetPprofProfile(url string, name string) (*profile.Profile, error) {
 	config := api.Config{
-		Address: url.String(),
+		Address: url,
 	}
 
 	c, err := api.NewClient(config)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return nil, err
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	req, err := http.NewRequest(http.MethodGet, url+"/debug/pprof/"+name, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	_, body, err := c.Do(ctx, req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "debug pprof error:", err)
+		return nil, err
+	}
+	cancel()
+
+	p, err := profile.Parse(bytes.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+	return p, nil
+}
+
+func DebugPprof(url *url.URL) int {
 	tarfile, err := os.Create("debug.tar.gz")
 	if err != nil {
 		panic(err)
@@ -50,25 +70,10 @@ func DebugPprof(url *url.URL) int {
 	defer tw.Close()
 
 	for _, profName := range profNames {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		req, err := http.NewRequest(http.MethodGet, url.String()+"/debug/pprof/"+profName, nil)
+		p, err := GetPprofProfile(url.String(), profName)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "debug pprof error:", err)
-			return 1
+			fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		}
-
-		_, body, err := c.Do(ctx, req)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "debug pprof error:", err)
-			return 1
-		}
-		cancel()
-
-		p, err := profile.Parse(bytes.NewReader(body))
-		if err != nil {
-			panic(err)
-		}
-
 		var buf bytes.Buffer
 		if err := p.WriteUncompressed(&buf); err != nil {
 			panic(err)
