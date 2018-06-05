@@ -488,29 +488,21 @@ func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 	return res, nil, nil
 }
 
-func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError) {
+func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError, func()) {
 	limit := -1
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil {
-			return nil, &apiError{errorBadData, fmt.Errorf("limit must be a number")}
+			return nil, &apiError{errorBadData, fmt.Errorf("limit must be a number")}, nil
 		}
 	}
 
-	matchers, err := promql.ParseMetricSelector(r.FormValue("match"))
+	matchers, err := promql.ParseMetricSelector(r.FormValue("match_target"))
 	if err != nil {
-		return nil, &apiError{errorBadData, err}
+		return nil, &apiError{errorBadData, err}, nil
 	}
 
-	var metric string
-	for i, m := range matchers {
-		// Extract metric matcher.
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual {
-			metric = m.Value
-			matchers = append(matchers[:i], matchers[i+1:]...)
-			break
-		}
-	}
+	metric := r.FormValue("metric")
 
 	var res []metricMetadata
 Outer:
@@ -546,9 +538,9 @@ Outer:
 		}
 	}
 	if len(res) == 0 {
-		return nil, &apiError{errorNotFound, errors.New("specified metadata not found")}
+		return nil, &apiError{errorNotFound, errors.New("specified metadata not found")}, nil
 	}
-	return res, nil
+	return res, nil, nil
 }
 
 type metricMetadata struct {
