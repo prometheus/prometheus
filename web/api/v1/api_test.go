@@ -708,6 +708,9 @@ func TestSeriesEndpoint(t *testing.T) {
 	}
 	seriesURL.RawQuery = q.Encode()
 	req, err := http.NewRequest("GET", seriesURL.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	_ /*labels*/, apiErr := api.series(req)
 	if apiErr != nil {
