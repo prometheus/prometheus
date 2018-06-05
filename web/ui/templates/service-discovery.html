@@ -22,20 +22,27 @@
       <ul>
         {{range $i, $job := .Index}}
           <li>
-            <a href="#job-{{$job}}">{{$job}}</a>
+            <a href="#job-{{$job}}">{{$job}}</a> ({{ index $.Active $i }}/{{ index $.Total $i }} active targets)
           </li>
         {{end}}
       </ul>
     </div>
 
     {{$targets := .Targets}}
-    {{range $job := .Index}}
+    {{range $i, $job := .Index}}
 
     <div class="table-container">
       <h2 class="job_header" id="job-{{$job}}">
         {{$job}}
         <button type="button" class="targets collapsed-table btn btn-primary">show more</button>
       </h2>
+      {{with index $.Dropped $i}}
+      {{if gt . 100 }}
+      <div class="collapsed-element" style="display:none">
+        {{ . }} targets have been dropped, showing only the first 100 dropped targets as examples.
+      </div>
+      {{end}}
+      {{end}}
       <table class="table table-condensed table-bordered table-striped table-hover" style="display:none">
         <thead class="job_details">
           <tr>
