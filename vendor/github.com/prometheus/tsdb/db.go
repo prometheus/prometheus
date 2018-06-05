@@ -835,34 +835,46 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 }
 
 // CleanTombstones re-writes any blocks with tombstones.
-func (db *DB) CleanTombstones() error {
+func (db *DB) CleanTombstones() (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
 	start := time.Now()
 	defer db.metrics.tombCleanTimer.Observe(time.Since(start).Seconds())
 
+	newUIDs := []ulid.ULID{}
+	defer func() {
+		// If any error is caused, we need to delete all the new directory created.
+		if err != nil {
+			for _, uid := range newUIDs {
+				dir := filepath.Join(db.Dir(), uid.String())
+				if err := os.RemoveAll(dir); err != nil {
+					level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
+				}
+			}
+		}
+	}()
+
 	db.mtx.RLock()
 	blocks := db.blocks[:]
 	db.mtx.RUnlock()
 
-	deleted := []string{}
+	deletable := []string{}
 	for _, b := range blocks {
-		ok, err := b.CleanTombstones(db.Dir(), db.compactor)
-		if err != nil {
-			return errors.Wrapf(err, "clean tombstones: %s", b.Dir())
-		}
-
-		if ok {
-			deleted = append(deleted, b.Dir())
+		if uid, er := b.CleanTombstones(db.Dir(), db.compactor); er != nil {
+			err = errors.Wrapf(er, "clean tombstones: %s", b.Dir())
+			return err
+		} else if uid != nil { // New block was created.
+			deletable = append(deletable, b.Dir())
+			newUIDs = append(newUIDs, *uid)
 		}
 	}
 
-	if len(deleted) == 0 {
+	if len(deletable) == 0 {
 		return nil
 	}
 
-	return errors.Wrap(db.reload(deleted...), "reload blocks")
+	return errors.Wrap(db.reload(deletable...), "reload blocks")
 }
 
 func intervalOverlap(amin, amax, bmin, bmax int64) bool {

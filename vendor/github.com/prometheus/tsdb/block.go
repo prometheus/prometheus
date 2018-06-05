@@ -468,9 +468,9 @@ Outer:
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 
-// CleanTombstones will rewrite the block if there any tombstones to remove them
-// and returns if there was a re-write.
-func (pb *Block) CleanTombstones(dest string, c Compactor) (bool, error) {
+// CleanTombstones will remove the tombstones and rewrite the block (only if there are any tombstones).
+// If there was a rewrite, then it returns the ULID of the new block written, else nil.
+func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, error) {
 	numStones := 0
 
 	pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
@@ -480,14 +480,15 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (bool, error) {
 	})
 
 	if numStones == 0 {
-		return false, nil
+		return nil, nil
 	}
 
-	if _, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime); err != nil {
-		return false, err
+	uid, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime)
+	if err != nil {
+		return nil, err
 	}
 
-	return true, nil
+	return &uid, nil
 }
 
 // Snapshot creates snapshot of the block into dir.

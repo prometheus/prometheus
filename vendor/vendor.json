@@ -820,40 +820,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "e7QdIY1+bs+75qObh1MLVdGNLvE=",
+			"checksumSHA1": "eohOTRwnox/+qrSrgYmnxeJB2yM=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "ae33d7873d94cec6b3da3ffbf903b3b35a2db9ee",
-			"revisionTime": "2018-05-29T19:14:13Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "QI0UME2olSr4kH6Z8UkpffM59Mc=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "ae33d7873d94cec6b3da3ffbf903b3b35a2db9ee",
-			"revisionTime": "2018-05-29T19:14:13Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "746Mjy2y6wdsGjY/FcGhc8tI4w8=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "ae33d7873d94cec6b3da3ffbf903b3b35a2db9ee",
-			"revisionTime": "2018-05-29T19:14:13Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "dnyelqeik/xHDRCvCmKFv/Op9XQ=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "ae33d7873d94cec6b3da3ffbf903b3b35a2db9ee",
-			"revisionTime": "2018-05-29T19:14:13Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "A2uIFwIgeHmXGBzOpna95kM80RY=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "ae33d7873d94cec6b3da3ffbf903b3b35a2db9ee",
-			"revisionTime": "2018-05-29T19:14:13Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "ae33d7873d94cec6b3da3ffbf903b3b35a2db9ee",
-			"revisionTime": "2018-05-29T19:14:13Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",
