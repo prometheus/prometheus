@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -56,6 +57,7 @@ type Target struct {
 	lastError  error
 	lastScrape time.Time
 	health     TargetHealth
+	metadata   metricMetadataStore
 }
 
 // NewTarget creates a reasonably configured target for querying.
@@ -70,6 +72,45 @@ func NewTarget(labels, discoveredLabels labels.Labels, params url.Values) *Targe
 
 func (t *Target) String() string {
 	return t.URL().String()
+}
+
+type metricMetadataStore interface {
+	listMetadata() []MetricMetadata
+	getMetadata(metric string) (MetricMetadata, bool)
+}
+
+// MetricMetadata is a piece of metadata for a metric.
+type MetricMetadata struct {
+	Metric string
+	Type   textparse.MetricType
+	Help   string
+}
+
+func (t *Target) MetadataList() []MetricMetadata {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	if t.metadata == nil {
+		return nil
+	}
+	return t.metadata.listMetadata()
+}
+
+// Metadata returns type and help metadata for the given metric.
+func (t *Target) Metadata(metric string) (MetricMetadata, bool) {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	if t.metadata == nil {
+		return MetricMetadata{}, false
+	}
+	return t.metadata.getMetadata(metric)
+}
+
+func (t *Target) setMetadataStore(s metricMetadataStore) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	t.metadata = s
 }
 
 // hash returns an identifying hash for the target.
