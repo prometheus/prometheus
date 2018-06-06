@@ -451,7 +451,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) bool {
+	Inspect(s.Expr, func(node Node, _ []Node) error {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
@@ -468,7 +468,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				maxOffset = n.Offset + n.Range
 			}
 		}
-		return true
+		return nil
 	})
 
 	mint := s.Start.Add(-maxOffset)
@@ -478,7 +478,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
-	Inspect(s.Expr, func(node Node, path []Node) bool {
+	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
 			Step: int64(s.Interval / time.Millisecond),
@@ -491,13 +491,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
+				return err
 			}
 			n.series, err = expandSeriesSet(set)
 			if err != nil {
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				return err
 			}
 
 		case *MatrixSelector:
@@ -506,15 +506,15 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
+				return err
 			}
 			n.series, err = expandSeriesSet(set)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				return err
 			}
 		}
-		return true
+		return nil
 	})
 	return querier, err
 }
