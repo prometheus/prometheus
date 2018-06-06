@@ -114,7 +114,8 @@ func main() {
 		initPromClient(PrometheusHttpClientConfig{
 			ServerAddress: (*debugMetricsServer).String(),
 		})
-		os.Exit(DebugMetrics())
+		initDebugMetrics("/metrics")
+		os.Exit(debugMetrics.Exec())
 	}
 
 }

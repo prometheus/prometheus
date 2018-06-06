@@ -43,13 +43,9 @@ func NewPrometheusHttpClient(cfg PrometheusHttpClientConfig) (*PrometheusHttpCli
 	}, nil
 }
 
-func (c *PrometheusHttpClient) Do(path string) (*http.Response, []byte, error) {
+func (c *PrometheusHttpClient) Do(req *http.Request) (*http.Response, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.RequestTimeout)
 	defer cancel()
-	req, err := http.NewRequest(http.MethodGet, c.Server.String()+path, nil)
-	if err != nil {
-		return nil, nil, err
-	}
 	return c.HTTPClient.Do(ctx, req)
 }
 
