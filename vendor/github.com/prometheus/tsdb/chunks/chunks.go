@@ -57,6 +57,12 @@ func (cm *Meta) writeHash(h hash.Hash) error {
 	return nil
 }
 
+// Returns true if the chunk overlaps [mint, maxt].
+func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
+	// The chunk itself is a closed interval [cm.MinTime, cm.MaxTime].
+	return cm.MinTime <= maxt && mint <= cm.MaxTime
+}
+
 var (
 	errInvalidSize     = fmt.Errorf("invalid size")
 	errInvalidFlag     = fmt.Errorf("invalid flag")
@@ -296,7 +302,7 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.Range(0, 4)); m != MagicChunks {
-			return nil, fmt.Errorf("invalid magic number %x", m)
+			return nil, errors.Errorf("invalid magic number %x", m)
 		}
 	}
 	return &cr, nil
@@ -357,8 +363,8 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	r := b.Range(off, off+binary.MaxVarintLen32)
 
 	l, n := binary.Uvarint(r)
-	if n < 0 {
-		return nil, fmt.Errorf("reading chunk length failed")
+	if n <= 0 {
+		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
 	r = b.Range(off+n, off+n+int(l))
 

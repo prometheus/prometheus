@@ -15,6 +15,7 @@ package remote
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"sort"
@@ -28,9 +29,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// decodeReadLimit is the maximum size of a read request body in bytes.
+const decodeReadLimit = 32 * 1024 * 1024
+
 // DecodeReadRequest reads a remote.Request from a http.Request.
 func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
-	compressed, err := ioutil.ReadAll(r.Body)
+	compressed, err := ioutil.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +96,14 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 		return nil, err
 	}
 
-	rp := &prompb.ReadHints{
-		StepMs: p.Step,
-		Func:   p.Func,
+	var rp *prompb.ReadHints
+	if p != nil {
+		rp = &prompb.ReadHints{
+			StepMs:  p.Step,
+			Func:    p.Func,
+			StartMs: p.Start,
+			EndMs:   p.End,
+		}
 	}
 
 	return &prompb.Query{
@@ -106,12 +115,22 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 }
 
 // FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, error) {
+func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.SelectParams, error) {
 	matchers, err := fromLabelMatchers(req.Matchers)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
+	var selectParams *storage.SelectParams
+	if req.Hints != nil {
+		selectParams = &storage.SelectParams{
+			Start: req.Hints.StartMs,
+			End:   req.Hints.EndMs,
+			Step:  req.Hints.StepMs,
+			Func:  req.Hints.Func,
+		}
+	}
+
+	return req.StartTimestampMs, req.EndTimestampMs, matchers, selectParams, nil
 }
 
 // ToQueryResult builds a QueryResult proto.

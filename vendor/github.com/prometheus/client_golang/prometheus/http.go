@@ -115,7 +115,7 @@ func decorateWriter(request *http.Request, writer io.Writer) (io.Writer, string)
 	header := request.Header.Get(acceptEncodingHeader)
 	parts := strings.Split(header, ",")
 	for _, part := range parts {
-		part := strings.TrimSpace(part)
+		part = strings.TrimSpace(part)
 		if part == "gzip" || strings.HasPrefix(part, "gzip;") {
 			return gzip.NewWriter(writer), "gzip"
 		}
@@ -138,16 +138,6 @@ func (n nowFunc) Now() time.Time {
 var now nower = nowFunc(func() time.Time {
 	return time.Now()
 })
-
-func nowSeries(t ...time.Time) nower {
-	return nowFunc(func() time.Time {
-		defer func() {
-			t = t[1:]
-		}()
-
-		return t[0]
-	})
-}
 
 // InstrumentHandler wraps the given HTTP handler for instrumentation. It
 // registers four metric collectors (if not already done) and reports HTTP
@@ -352,10 +342,9 @@ func computeApproximateRequestSize(r *http.Request) <-chan int {
 type responseWriterDelegator struct {
 	http.ResponseWriter
 
-	handler, method string
-	status          int
-	written         int64
-	wroteHeader     bool
+	status      int
+	written     int64
+	wroteHeader bool
 }
 
 func (r *responseWriterDelegator) WriteHeader(code int) {

@@ -257,7 +257,7 @@ func TestCopyState(t *testing.T) {
 			map[string]labels.Labels{"r3a": nil},
 			map[string]labels.Labels{"r3b": nil},
 		},
-		evaluationTime: time.Second,
+		evaluationDuration: time.Second,
 	}
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
@@ -271,7 +271,7 @@ func TestCopyState(t *testing.T) {
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
 	}
-	newGroup.copyState(oldGroup)
+	newGroup.CopyState(oldGroup)
 
 	want := []map[string]labels.Labels{
 		map[string]labels.Labels{"r3a": nil},
@@ -283,10 +283,11 @@ func TestCopyState(t *testing.T) {
 	}
 	testutil.Equals(t, want, newGroup.seriesInPreviousEval)
 	testutil.Equals(t, oldGroup.rules[0], newGroup.rules[3])
-	testutil.Equals(t, oldGroup.evaluationTime, newGroup.evaluationTime)
+	testutil.Equals(t, oldGroup.evaluationDuration, newGroup.evaluationDuration)
 }
 
 func TestUpdate(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
 	expected := map[string]labels.Labels{
 		"test": labels.FromStrings("name", "value"),
 	}
@@ -296,15 +297,16 @@ func TestUpdate(t *testing.T) {
 	})
 	ruleManager.Run()
 
-	err := ruleManager.Update(0, nil)
+	err := ruleManager.Update(10*time.Second, files)
 	testutil.Ok(t, err)
+	testutil.Assert(t, len(ruleManager.groups) > 0, "expected non-empty rule groups")
 	for _, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
 			expected,
 		}
 	}
 
-	err = ruleManager.Update(0, nil)
+	err = ruleManager.Update(10*time.Second, files)
 	testutil.Ok(t, err)
 	for _, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {

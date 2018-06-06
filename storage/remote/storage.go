@@ -107,7 +107,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		}
 
 		q := QueryableClient(c)
-		q = ExternablLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
+		q = ExternalLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
 		if len(rrConf.RequiredMatchers) > 0 {
 			q = RequiredMatchersFilter(q, labelsToEqualityMatchers(rrConf.RequiredMatchers))
 		}
@@ -140,7 +140,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeQuerier(queriers), nil
+	return storage.NewMergeQuerier(nil, queriers), nil
 }
 
 // Close the background processing of the storage queues.

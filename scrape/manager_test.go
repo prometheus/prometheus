@@ -16,13 +16,13 @@ package scrape
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
+
+	yaml "gopkg.in/yaml.v2"
 )
 
 func mustNewRegexp(s string) config.Regexp {
@@ -229,39 +229,41 @@ func TestPopulateLabels(t *testing.T) {
 func TestManagerReloadNoChange(t *testing.T) {
 	tsetName := "test"
 
-	reloadCfg := &config.Config{
-		ScrapeConfigs: []*config.ScrapeConfig{
-			&config.ScrapeConfig{
-				ScrapeInterval: model.Duration(3 * time.Second),
-				ScrapeTimeout:  model.Duration(2 * time.Second),
-			},
-		},
+	cfgText := `
+scrape_configs:
+ - job_name: '` + tsetName + `'
+   static_configs:
+   - targets: ["foo:9090"]
+   - targets: ["bar:9090"]
+`
+	cfg := &config.Config{}
+	if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 	}
 
 	scrapeManager := NewManager(nil, nil)
-	scrapeManager.scrapeConfigs[tsetName] = reloadCfg.ScrapeConfigs[0]
+	// Load the current config.
+	scrapeManager.ApplyConfig(cfg)
+
 	// As reload never happens, new loop should never be called.
 	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
 		t.Fatal("reload happened")
 		return nil
 	}
+
 	sp := &scrapePool{
 		appendable: &nopAppendable{},
 		targets:    map[uint64]*Target{},
 		loops: map[uint64]loop{
-			1: &scrapeLoop{},
+			1: &testLoop{},
 		},
 		newLoop: newLoop,
 		logger:  nil,
-		config:  reloadCfg.ScrapeConfigs[0],
+		config:  cfg.ScrapeConfigs[0],
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		tsetName: sp,
 	}
 
-	targets := map[string][]*targetgroup.Group{
-		tsetName: []*targetgroup.Group{},
-	}
-
-	scrapeManager.reload(targets)
+	scrapeManager.ApplyConfig(cfg)
 }

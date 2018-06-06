@@ -155,3 +155,50 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+func TestServiceDiscoveryNamespaces(t *testing.T) {
+	n, c, w := makeDiscovery(RoleService, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			for _, ns := range []string{"ns1", "ns2"} {
+				obj := makeService()
+				obj.Namespace = ns
+				c.CoreV1().Services(obj.Namespace).Create(obj)
+				w.Services().Add(obj)
+			}
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"svc/ns1/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                             "testservice.ns1.svc:30900",
+						"__meta_kubernetes_service_port_name":     "testport",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "ns1",
+				},
+				Source: "svc/ns1/testservice",
+			},
+			"svc/ns2/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                             "testservice.ns2.svc:30900",
+						"__meta_kubernetes_service_port_name":     "testport",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "ns2",
+				},
+				Source: "svc/ns2/testservice",
+			},
+		},
+	}.Run(t)
+}

@@ -69,7 +69,7 @@ type Head struct {
 
 	postings *index.MemPostings // postings lists for terms
 
-	tombstones memTombstones
+	tombstones *memTombstones
 }
 
 type headMetrics struct {
@@ -189,7 +189,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
-		tombstones: memTombstones{},
+		tombstones: NewMemTombstones(),
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -300,7 +300,7 @@ func (h *Head) ReadWAL() error {
 				if itv.Maxt < mint {
 					continue
 				}
-				h.tombstones.add(s.ref, itv)
+				h.tombstones.addInterval(s.ref, itv)
 			}
 		}
 	}
@@ -521,7 +521,8 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 }
 
 func (a *headAppender) Commit() error {
-	defer a.Rollback()
+	defer a.head.metrics.activeAppenders.Dec()
+	defer a.head.putAppendBuffer(a.samples)
 
 	if err := a.head.wal.LogSeries(a.series); err != nil {
 		return err
@@ -565,7 +566,9 @@ func (a *headAppender) Rollback() error {
 	a.head.metrics.activeAppenders.Dec()
 	a.head.putAppendBuffer(a.samples)
 
-	return nil
+	// Series are created in the head memory regardless of rollback. Thus we have
+	// to log them to the WAL in any case.
+	return a.head.wal.LogSeries(a.series)
 }
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
@@ -602,7 +605,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return err
 	}
 	for _, s := range stones {
-		h.tombstones.add(s.ref, s.intervals[0])
+		h.tombstones.addInterval(s.ref, s.intervals[0])
 	}
 	return nil
 }
@@ -732,19 +735,14 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	s.Lock()
 	c := s.chunk(int(cid))
 
-	// This means that the chunk has been garbage collected.
-	if c == nil {
+	// This means that the chunk has been garbage collected or is outside
+	// the specified range.
+	if c == nil || !c.OverlapsClosedInterval(h.mint, h.maxt) {
 		s.Unlock()
 		return nil, ErrNotFound
 	}
-
-	mint, maxt := c.minTime, c.maxTime
 	s.Unlock()
 
-	// Do not expose chunks that are outside of the specified range.
-	if c == nil || !intervalOverlap(mint, maxt, h.mint, h.maxt) {
-		return nil, ErrNotFound
-	}
 	return &safeChunk{
 		Chunk: c.chunk,
 		s:     s,
@@ -849,7 +847,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 
 	for i, c := range s.chunks {
 		// Do not expose chunks that are outside of the specified range.
-		if !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
+		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
 			continue
 		}
 		*chks = append(*chks, chunks.Meta{
@@ -1286,6 +1284,11 @@ func (s *memSeries) head() *memChunk {
 type memChunk struct {
 	chunk            chunkenc.Chunk
 	minTime, maxTime int64
+}
+
+// Returns true if the chunk overlaps [mint, maxt].
+func (mc *memChunk) OverlapsClosedInterval(mint, maxt int64) bool {
+	return mc.minTime <= maxt && mint <= mc.maxTime
 }
 
 type memSafeIterator struct {

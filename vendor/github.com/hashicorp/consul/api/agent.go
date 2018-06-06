@@ -15,6 +15,7 @@ type AgentCheck struct {
 	Output      string
 	ServiceID   string
 	ServiceName string
+	Definition  HealthCheckDefinition
 }
 
 // AgentService represents a service known to the agent
@@ -22,9 +23,12 @@ type AgentService struct {
 	ID                string
 	Service           string
 	Tags              []string
+	Meta              map[string]string
 	Port              int
 	Address           string
 	EnableTagOverride bool
+	CreateIndex       uint64
+	ModifyIndex       uint64
 }
 
 // AgentMember represents a cluster member known to the agent
@@ -42,14 +46,28 @@ type AgentMember struct {
 	DelegateCur uint8
 }
 
+// AllSegments is used to select for all segments in MembersOpts.
+const AllSegments = "_all"
+
+// MembersOpts is used for querying member information.
+type MembersOpts struct {
+	// WAN is whether to show members from the WAN.
+	WAN bool
+
+	// Segment is the LAN segment to show members for. Setting this to the
+	// AllSegments value above will show members in all segments.
+	Segment string
+}
+
 // AgentServiceRegistration is used to register a new service
 type AgentServiceRegistration struct {
-	ID                string   `json:",omitempty"`
-	Name              string   `json:",omitempty"`
-	Tags              []string `json:",omitempty"`
-	Port              int      `json:",omitempty"`
-	Address           string   `json:",omitempty"`
-	EnableTagOverride bool     `json:",omitempty"`
+	ID                string            `json:",omitempty"`
+	Name              string            `json:",omitempty"`
+	Tags              []string          `json:",omitempty"`
+	Port              int               `json:",omitempty"`
+	Address           string            `json:",omitempty"`
+	EnableTagOverride bool              `json:",omitempty"`
+	Meta              map[string]string `json:",omitempty"`
 	Check             *AgentServiceCheck
 	Checks            AgentServiceChecks
 }
@@ -65,17 +83,23 @@ type AgentCheckRegistration struct {
 
 // AgentServiceCheck is used to define a node or service level check
 type AgentServiceCheck struct {
-	Script            string `json:",omitempty"`
-	DockerContainerID string `json:",omitempty"`
-	Shell             string `json:",omitempty"` // Only supported for Docker.
-	Interval          string `json:",omitempty"`
-	Timeout           string `json:",omitempty"`
-	TTL               string `json:",omitempty"`
-	HTTP              string `json:",omitempty"`
-	TCP               string `json:",omitempty"`
-	Status            string `json:",omitempty"`
-	Notes             string `json:",omitempty"`
-	TLSSkipVerify     bool   `json:",omitempty"`
+	CheckID           string              `json:",omitempty"`
+	Name              string              `json:",omitempty"`
+	Args              []string            `json:"ScriptArgs,omitempty"`
+	DockerContainerID string              `json:",omitempty"`
+	Shell             string              `json:",omitempty"` // Only supported for Docker.
+	Interval          string              `json:",omitempty"`
+	Timeout           string              `json:",omitempty"`
+	TTL               string              `json:",omitempty"`
+	HTTP              string              `json:",omitempty"`
+	Header            map[string][]string `json:",omitempty"`
+	Method            string              `json:",omitempty"`
+	TCP               string              `json:",omitempty"`
+	Status            string              `json:",omitempty"`
+	Notes             string              `json:",omitempty"`
+	TLSSkipVerify     bool                `json:",omitempty"`
+	GRPC              string              `json:",omitempty"`
+	GRPCUseTLS        bool                `json:",omitempty"`
 
 	// In Consul 0.7 and later, checks that are associated with a service
 	// may also contain this optional DeregisterCriticalServiceAfter field,
@@ -86,6 +110,47 @@ type AgentServiceCheck struct {
 	DeregisterCriticalServiceAfter string `json:",omitempty"`
 }
 type AgentServiceChecks []*AgentServiceCheck
+
+// AgentToken is used when updating ACL tokens for an agent.
+type AgentToken struct {
+	Token string
+}
+
+// Metrics info is used to store different types of metric values from the agent.
+type MetricsInfo struct {
+	Timestamp string
+	Gauges    []GaugeValue
+	Points    []PointValue
+	Counters  []SampledValue
+	Samples   []SampledValue
+}
+
+// GaugeValue stores one value that is updated as time goes on, such as
+// the amount of memory allocated.
+type GaugeValue struct {
+	Name   string
+	Value  float32
+	Labels map[string]string
+}
+
+// PointValue holds a series of points for a metric.
+type PointValue struct {
+	Name   string
+	Points []float32
+}
+
+// SampledValue stores info about a metric that is incremented over time,
+// such as the number of requests to an HTTP endpoint.
+type SampledValue struct {
+	Name   string
+	Count  int
+	Sum    float64
+	Min    float64
+	Max    float64
+	Mean   float64
+	Stddev float64
+	Labels map[string]string
+}
 
 // Agent can be used to query the Agent endpoints
 type Agent struct {
@@ -111,6 +176,23 @@ func (a *Agent) Self() (map[string]map[string]interface{}, error) {
 	defer resp.Body.Close()
 
 	var out map[string]map[string]interface{}
+	if err := decodeBody(resp, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Metrics is used to query the agent we are speaking to for
+// its current internal metric data
+func (a *Agent) Metrics() (*MetricsInfo, error) {
+	r := a.c.newRequest("GET", "/v1/agent/metrics")
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var out *MetricsInfo
 	if err := decodeBody(resp, &out); err != nil {
 		return nil, err
 	}
@@ -181,6 +263,28 @@ func (a *Agent) Members(wan bool) ([]*AgentMember, error) {
 	if wan {
 		r.params.Set("wan", "1")
 	}
+	_, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var out []*AgentMember
+	if err := decodeBody(resp, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MembersOpts returns the known gossip members and can be passed
+// additional options for WAN/segment filtering.
+func (a *Agent) MembersOpts(opts MembersOpts) ([]*AgentMember, error) {
+	r := a.c.newRequest("GET", "/v1/agent/members")
+	r.params.Set("segment", opts.Segment)
+	if opts.WAN {
+		r.params.Set("wan", "1")
+	}
+
 	_, resp, err := requireOK(a.c.doRequest(r))
 	if err != nil {
 		return nil, err
@@ -437,8 +541,9 @@ func (a *Agent) DisableNodeMaintenance() error {
 
 // Monitor returns a channel which will receive streaming logs from the agent
 // Providing a non-nil stopCh can be used to close the connection and stop the
-// log stream
-func (a *Agent) Monitor(loglevel string, stopCh chan struct{}, q *QueryOptions) (chan string, error) {
+// log stream. An empty string will be sent down the given channel when there's
+// nothing left to stream, after which the caller should close the stopCh.
+func (a *Agent) Monitor(loglevel string, stopCh <-chan struct{}, q *QueryOptions) (chan string, error) {
 	r := a.c.newRequest("GET", "/v1/agent/monitor")
 	r.setQueryOptions(q)
 	if loglevel != "" {
@@ -462,10 +567,61 @@ func (a *Agent) Monitor(loglevel string, stopCh chan struct{}, q *QueryOptions) 
 			default:
 			}
 			if scanner.Scan() {
-				logCh <- scanner.Text()
+				// An empty string signals to the caller that
+				// the scan is done, so make sure we only emit
+				// that when the scanner says it's done, not if
+				// we happen to ingest an empty line.
+				if text := scanner.Text(); text != "" {
+					logCh <- text
+				} else {
+					logCh <- " "
+				}
+			} else {
+				logCh <- ""
 			}
 		}
 	}()
 
 	return logCh, nil
+}
+
+// UpdateACLToken updates the agent's "acl_token". See updateToken for more
+// details.
+func (a *Agent) UpdateACLToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateToken("acl_token", token, q)
+}
+
+// UpdateACLAgentToken updates the agent's "acl_agent_token". See updateToken
+// for more details.
+func (a *Agent) UpdateACLAgentToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateToken("acl_agent_token", token, q)
+}
+
+// UpdateACLAgentMasterToken updates the agent's "acl_agent_master_token". See
+// updateToken for more details.
+func (a *Agent) UpdateACLAgentMasterToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateToken("acl_agent_master_token", token, q)
+}
+
+// UpdateACLReplicationToken updates the agent's "acl_replication_token". See
+// updateToken for more details.
+func (a *Agent) UpdateACLReplicationToken(token string, q *WriteOptions) (*WriteMeta, error) {
+	return a.updateToken("acl_replication_token", token, q)
+}
+
+// updateToken can be used to update an agent's ACL token after the agent has
+// started. The tokens are not persisted, so will need to be updated again if
+// the agent is restarted.
+func (a *Agent) updateToken(target, token string, q *WriteOptions) (*WriteMeta, error) {
+	r := a.c.newRequest("PUT", fmt.Sprintf("/v1/agent/token/%s", target))
+	r.setWriteOptions(q)
+	r.obj = &AgentToken{Token: token}
+	rtt, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+
+	wm := &WriteMeta{RequestTime: rtt}
+	return wm, nil
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/pkg/api/v1"
 )
@@ -464,6 +465,140 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 					"__meta_kubernetes_service_label_component": "testing",
 				},
 				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryNamespaces(t *testing.T) {
+	epOne := makeEndpoints()
+	epOne.Namespace = "ns1"
+	objs := []runtime.Object{
+		epOne,
+		&v1.Endpoints{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testendpoints",
+				Namespace: "ns2",
+			},
+			Subsets: []v1.EndpointSubset{
+				{
+					Addresses: []v1.EndpointAddress{
+						{
+							IP: "4.3.2.1",
+							TargetRef: &v1.ObjectReference{
+								Kind:      "Pod",
+								Name:      "testpod",
+								Namespace: "ns2",
+							},
+						},
+					},
+					Ports: []v1.EndpointPort{
+						{
+							Name:     "testport",
+							Port:     9000,
+							Protocol: v1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		&v1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testendpoints",
+				Namespace: "ns1",
+				Labels: map[string]string{
+					"app": "app1",
+				},
+			},
+		},
+		&v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testpod",
+				Namespace: "ns2",
+				UID:       types.UID("deadbeef"),
+			},
+			Spec: v1.PodSpec{
+				NodeName: "testnode",
+				Containers: []v1.Container{
+					{
+						Name: "c1",
+						Ports: []v1.ContainerPort{
+							{
+								Name:          "mainport",
+								ContainerPort: 9000,
+								Protocol:      v1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			},
+			Status: v1.PodStatus{
+				HostIP: "2.3.4.5",
+				PodIP:  "4.3.2.1",
+			},
+		},
+	}
+	n, _, _ := makeDiscovery(RoleEndpoint, NamespaceDiscovery{Names: []string{"ns1", "ns2"}}, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/ns1/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":         "ns1",
+					"__meta_kubernetes_endpoints_name":    "testendpoints",
+					"__meta_kubernetes_service_label_app": "app1",
+					"__meta_kubernetes_service_name":      "testendpoints",
+				},
+				Source: "endpoints/ns1/testendpoints",
+			},
+			"endpoints/ns2/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                    "4.3.2.1:9000",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_endpoint_address_target_kind": "Pod",
+						"__meta_kubernetes_endpoint_address_target_name": "testpod",
+						"__meta_kubernetes_pod_name":                     "testpod",
+						"__meta_kubernetes_pod_ip":                       "4.3.2.1",
+						"__meta_kubernetes_pod_ready":                    "unknown",
+						"__meta_kubernetes_pod_node_name":                "testnode",
+						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
+						"__meta_kubernetes_pod_container_name":           "c1",
+						"__meta_kubernetes_pod_container_port_name":      "mainport",
+						"__meta_kubernetes_pod_container_port_number":    "9000",
+						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
+						"__meta_kubernetes_pod_uid":                      "deadbeef",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":      "ns2",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/ns2/testendpoints",
 			},
 		},
 	}.Run(t)

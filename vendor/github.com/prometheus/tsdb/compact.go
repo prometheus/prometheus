@@ -55,7 +55,7 @@ type Compactor interface {
 	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
-	Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error)
+	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
@@ -297,6 +297,11 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		for _, s := range b.Compaction.Sources {
 			sources[s] = struct{}{}
 		}
+		res.Compaction.Parents = append(res.Compaction.Parents, BlockDesc{
+			ULID:    b.ULID,
+			MinTime: b.MinTime,
+			MaxTime: b.MaxTime,
+		})
 	}
 	res.Compaction.Level++
 
@@ -367,7 +372,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, 
 	return uid, merr
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
@@ -378,6 +383,12 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64) (
 	}
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
+
+	if parent != nil {
+		meta.Compaction.Parents = []BlockDesc{
+			{ULID: parent.ULID, MinTime: parent.MinTime, MaxTime: parent.MaxTime},
+		}
+	}
 
 	err := c.write(dest, meta, b)
 	if err != nil {
@@ -472,7 +483,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, EmptyTombstoneReader()); err != nil {
+	if err := writeTombstoneFile(tmp, NewMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 
@@ -581,7 +592,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if len(dranges) > 0 {
 			// Re-encode the chunk to not have deleted values.
 			for i, chk := range chks {
-				if !intervalOverlap(dranges[0].Mint, dranges[len(dranges)-1].Maxt, chk.MinTime, chk.MaxTime) {
+				if !chk.OverlapsClosedInterval(dranges[0].Mint, dranges[len(dranges)-1].Maxt) {
 					continue
 				}
 

@@ -36,14 +36,23 @@ pkgs          = ./...
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+DOCKER_REPO             ?= prom
 
+.PHONY: all
 all: style staticcheck unused build test
 
-style:
+# This rule is used to forward a target like "build" to "common-build".  This
+# allows a new "build" target to be defined in a Makefile which includes this
+# one and override "common-build" without override warnings.
+%: common-% ;
+
+.PHONY: common-style
+common-style:
 	@echo ">> checking code style"
 	! $(GOFMT) -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
-check_license:
+.PHONY: common-check_license
+common-check_license:
 	@echo ">> checking license header"
 	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
                awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo $$file; \
@@ -53,48 +62,66 @@ check_license:
                exit 1; \
        fi
 
-test-short:
+.PHONY: common-test-short
+common-test-short:
 	@echo ">> running short tests"
 	$(GO) test -short $(pkgs)
 
-test:
+.PHONY: common-test
+common-test:
 	@echo ">> running all tests"
 	$(GO) test -race $(pkgs)
 
-format:
+.PHONY: common-format
+common-format:
 	@echo ">> formatting code"
 	$(GO) fmt $(pkgs)
 
-vet:
+.PHONY: common-vet
+common-vet:
 	@echo ">> vetting code"
 	$(GO) vet $(pkgs)
 
-staticcheck: $(STATICCHECK)
+.PHONY: common-staticcheck
+common-staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 
-unused: $(GOVENDOR)
+.PHONY: common-unused
+common-unused: $(GOVENDOR)
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
 
-build: promu
+.PHONY: common-build
+common-build: promu
 	@echo ">> building binaries"
 	$(PROMU) build --prefix $(PREFIX)
 
-tarball: promu
+.PHONY: common-tarball
+common-tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
-docker:
-	docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+.PHONY: common-docker
+common-docker:
+	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
+.PHONY: common-docker-publish
+common-docker-publish:
+	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
+
+.PHONY: common-docker-tag-latest
+common-docker-tag-latest:
+	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):latest"
+
+.PHONY: promu
 promu:
 	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 
-$(FIRST_GOPATH)/bin/staticcheck:
+.PHONY: $(STATICCHECK)
+$(STATICCHECK):
 	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
-$(FIRST_GOPATH)/bin/govendor:
+.PHONY: $(GOVENDOR)
+$(GOVENDOR):
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
-
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor

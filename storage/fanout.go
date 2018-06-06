@@ -66,23 +66,23 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	queriers := make([]Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
-	querier, err := f.primary.Querier(ctx, mint, maxt)
+	primaryQuerier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	queriers = append(queriers, querier)
+	queriers = append(queriers, primaryQuerier)
 
 	// Add secondary queriers
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
-			NewMergeQuerier(queriers).Close()
+			NewMergeQuerier(nil, queriers).Close()
 			return nil, err
 		}
 		queriers = append(queriers, querier)
 	}
 
-	return NewMergeQuerier(queriers), nil
+	return NewMergeQuerier(primaryQuerier, queriers), nil
 }
 
 func (f *fanout) Appender() (Appender, error) {
@@ -188,14 +188,15 @@ func (f *fanoutAppender) Rollback() (err error) {
 
 // mergeQuerier implements Querier.
 type mergeQuerier struct {
-	queriers []Querier
+	primaryQuerier Querier
+	queriers       []Querier
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
 // NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
-func NewMergeQuerier(queriers []Querier) Querier {
+func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 	filtered := make([]Querier, 0, len(queriers))
 	for _, querier := range queriers {
 		if querier != NoopQuerier() {
@@ -210,7 +211,8 @@ func NewMergeQuerier(queriers []Querier) Querier {
 		return filtered[0]
 	default:
 		return &mergeQuerier{
-			queriers: filtered,
+			primaryQuerier: primaryQuerier,
+			queriers:       filtered,
 		}
 	}
 }
@@ -218,14 +220,23 @@ func NewMergeQuerier(queriers []Querier) Querier {
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
+	var remoteErr error = nil
 	for _, querier := range q.queriers {
 		set, err := querier.Select(params, matchers...)
 		if err != nil {
-			return nil, err
+			if querier != q.primaryQuerier {
+				// If it's a remote storage error, keep going and report it
+				remoteErr = RemoteStorageError("error connecting to remote storage")
+				if set == nil {
+					continue
+				}
+			} else {
+				return nil, err
+			}
 		}
 		seriesSets = append(seriesSets, set)
 	}
-	return NewMergeSeriesSet(seriesSets), nil
+	return NewMergeSeriesSet(seriesSets), remoteErr
 }
 
 // LabelValues returns all potential values for a label name.
@@ -366,6 +377,12 @@ func (c *mergeSeriesSet) Err() error {
 	return nil
 }
 
+type RemoteStorageError string
+
+func (e RemoteStorageError) Error() string {
+	return string(e)
+}
+
 type seriesSetHeap []SeriesSet
 
 func (h seriesSetHeap) Len() int      { return len(h) }
@@ -450,10 +467,10 @@ func (c *mergeIterator) Next() bool {
 		return false
 	}
 
-	currt, currv := c.At()
+	currt, _ := c.At()
 	for len(c.h) > 0 {
-		nextt, nextv := c.h[0].At()
-		if nextt != currt || nextv != currv {
+		nextt, _ := c.h[0].At()
+		if nextt != currt {
 			break
 		}
 
