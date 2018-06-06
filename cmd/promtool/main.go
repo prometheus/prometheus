@@ -101,14 +101,10 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
-		var err error
-		promClient, err = NewPrometheusHttpClient(PrometheusHttpClientConfig{
+		initPromClient(PrometheusHttpClientConfig{
 			ServerAddress: (*debugPprofServer).String(),
 		})
-		if err != nil {
-			panic(err)
-		}
-		os.Exit(DebugPprof(*debugPprofServer))
+		os.Exit(DebugPprof())
 
 	case debugMetricsCmd.FullCommand():
 		initPromClient(PrometheusHttpClientConfig{

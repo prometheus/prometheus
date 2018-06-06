@@ -4,15 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
-	"time"
 
 	"github.com/google/pprof/profile"
-	"github.com/prometheus/client_golang/api"
 )
 
 var profNames = []string{
@@ -23,37 +19,35 @@ var profNames = []string{
 	"threadcreate",
 }
 
-func GetPprofProfile(url string, name string) (*profile.Profile, error) {
-	config := api.Config{
-		Address: url,
-	}
+var debugPprofProfile DebugPprofProfile
 
-	c, err := api.NewClient(config)
-	if err != nil {
-		return nil, err
-	}
+type DebugPprofProfile struct {
+	Request *http.Request
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	req, err := http.NewRequest(http.MethodGet, url+"/debug/pprof/"+name, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	_, body, err := c.Do(ctx, req)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "debug pprof error:", err)
-		return nil, err
-	}
-	cancel()
-
-	p, err := profile.Parse(bytes.NewReader(body))
+func initDebugPprofProfile(path string) {
+	req, err := http.NewRequest(http.MethodGet, promClient.Server.String()+"/debug/pprof/"+path, nil)
 	if err != nil {
 		panic(err)
+	}
+	debugPprofProfile = DebugPprofProfile{
+		Request: req,
+	}
+}
+
+func (c *DebugPprofProfile) Get() (*profile.Profile, error) {
+	_, body, err := promClient.Do(c.Request)
+	if err != nil {
+		return nil, err
+	}
+	p, err := profile.Parse(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
 	}
 	return p, nil
 }
 
-func DebugPprof(url *url.URL) int {
+func DebugPprof() int {
 	tarfile, err := os.Create("debug.tar.gz")
 	if err != nil {
 		panic(err)
@@ -70,7 +64,8 @@ func DebugPprof(url *url.URL) int {
 	defer tw.Close()
 
 	for _, profName := range profNames {
-		p, err := GetPprofProfile(url.String(), profName)
+		initDebugPprofProfile(profName)
+		p, err := debugPprofProfile.Get()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		}
