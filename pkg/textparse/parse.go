@@ -165,7 +165,13 @@ func (p *Parser) Series() ([]byte, *int64, float64) {
 // Must only be called after Next returned a help entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *Parser) Help() ([]byte, []byte) {
-	return p.l.b[p.offsets[0]:p.offsets[1]], p.text
+	m := p.l.b[p.offsets[0]:p.offsets[1]]
+
+	// Replacer causes allocations. Replace only when necessary.
+	if strings.IndexByte(yoloString(p.text), byte('\\')) >= 0 {
+		return m, []byte(helpReplacer.Replace(string(p.text)))
+	}
+	return m, p.text
 }
 
 // Type returns the metric name and type in the current entry.
@@ -202,7 +208,7 @@ func (p *Parser) Metric(l *labels.Labels) string {
 
 		// Replacer causes allocations. Replace only when necessary.
 		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			*l = append(*l, labels.Label{Name: s[a:b], Value: replacer.Replace(s[c:d])})
+			*l = append(*l, labels.Label{Name: s[a:b], Value: lvalReplacer.Replace(s[c:d])})
 			continue
 		}
 		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
@@ -394,12 +400,15 @@ func (p *Parser) parseLVals() error {
 	}
 }
 
-var replacer = strings.NewReplacer(
-	`\"`, `"`,
-	`\\`, `\`,
-	`\n`, `
-`,
-	`\t`, `	`,
+var lvalReplacer = strings.NewReplacer(
+	`\"`, "\"",
+	`\\`, "\\",
+	`\n`, "\n",
+)
+
+var helpReplacer = strings.NewReplacer(
+	`\\`, "\\",
+	`\n`, "\n",
 )
 
 func yoloString(b []byte) string {
