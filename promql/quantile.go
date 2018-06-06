@@ -104,7 +104,7 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 		count -= buckets[b-1].count
 		rank -= buckets[b-1].count
 	}
-	return bucketStart + (bucketEnd-bucketStart)*float64(rank/count)
+	return bucketStart + (bucketEnd-bucketStart)*(rank/count)
 }
 
 // The assumption that bucket counts increase monotonically with increasing
@@ -179,5 +179,5 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
-	return float64(values[int(lowerIndex)].V)*(1-weight) + float64(values[int(upperIndex)].V)*weight
+	return values[int(lowerIndex)].V*(1-weight) + values[int(upperIndex)].V*weight
 }
