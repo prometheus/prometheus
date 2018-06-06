@@ -60,6 +60,7 @@ const (
 type errorType string
 
 const (
+<<<<<<< HEAD
 	errorNone                errorType = ""
 	errorTimeout             errorType = "timeout"
 	errorCanceled            errorType = "canceled"
@@ -69,6 +70,16 @@ const (
 	errorUnavailable         errorType = "unavailable"
 	errorNotFound            errorType = "not_found"
 	errorFailedRemoteStorage errorType = "failed_remote_storage"
+=======
+	errorNone        errorType = ""
+	errorTimeout     errorType = "timeout"
+	errorCanceled    errorType = "canceled"
+	errorExec        errorType = "execution"
+	errorBadData     errorType = "bad_data"
+	errorInternal    errorType = "internal"
+	errorUnavailable errorType = "unavailable"
+	errorNotFound    errorType = "not_found"
+>>>>>>> Handle remote read error and return warning when they occur
 )
 
 var corsHeaders = map[string]string{
@@ -166,7 +177,6 @@ func NewAPI(
 		rulesRetriever: rr,
 	}
 }
-
 // Register the API's endpoints in the given router.
 func (api *API) Register(r *route.Router) {
 	wrap := func(f apiFunc) http.HandlerFunc {
@@ -174,6 +184,7 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			data, err, finalizer := f(r)
 			if err != nil {
+<<<<<<< HEAD
 				if err.typ != errorFailedRemoteStorage {
 					api.respondError(w, err, data)
 				} else {
@@ -182,6 +193,25 @@ func (api *API) Register(r *route.Router) {
 
 			} else if data != nil {
 				api.respond(w, data)
+=======
+				api.respondError(w, err, data)
+			} else if data != nil {
+				var warnings []error
+				switch result := data.(type) {
+				case *queryData:
+					warnings = result.Warnings
+					result.Warnings = nil
+				case *seriesData:
+					warnings = result.Warnings
+					result.Warnings = nil
+				}
+				if warnings != nil {
+					api.respondWarnings(w, warnings, data)
+				} else {
+					api.respond(w, data)
+				}
+
+>>>>>>> Handle remote read error and return warning when they occur
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -224,10 +254,17 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
+<<<<<<< HEAD
 	ResultType   promql.ValueType  `json:"resultType"`
 	Result       promql.Value      `json:"result"`
 	Stats        *stats.QueryStats `json:"stats,omitempty"`
 	ExtraMessage string            `json:"extraMessage,omitempty"`
+=======
+	ResultType promql.ValueType  `json:"resultType"`
+	Result     promql.Value      `json:"result"`
+	Stats      *stats.QueryStats `json:"stats,omitempty"`
+	Warnings   []error           `json:"warnings,omitempty"`
+>>>>>>> Handle remote read error and return warning when they occur
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError, func()) {
@@ -286,18 +323,29 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
+<<<<<<< HEAD
 	var remoteError *apiError
 	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
 		if fanout.HadRemoteError() {
 			remoteError = &apiError{errorFailedRemoteStorage, errors.New("Remote storage error")}
 		}
+=======
+	var warnings []error
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		warnings = fanout.GetRemoteErrors()
+>>>>>>> Handle remote read error and return warning when they occur
 	}
 
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
+<<<<<<< HEAD
 	}, remoteError, qry.Close
+=======
+		Warnings:   warnings,
+	}, nil, qry.Close
+>>>>>>> Handle remote read error and return warning when they occur
 }
 
 func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
@@ -366,17 +414,28 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
+<<<<<<< HEAD
 	var remoteError *apiError
 	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
 		if fanout.HadRemoteError() {
 			remoteError = &apiError{errorFailedRemoteStorage, errors.New("Remote storage error")}
 		}
+=======
+	var warnings []error
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		warnings = fanout.GetRemoteErrors()
+>>>>>>> Handle remote read error and return warning when they occur
 	}
 	return &queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
+<<<<<<< HEAD
 	}, remoteError, qry.Close
+=======
+		Warnings:   warnings,
+	}, nil, qry.Close
+>>>>>>> Handle remote read error and return warning when they occur
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError, func()) {
@@ -404,6 +463,11 @@ var (
 	minTime = time.Unix(math.MinInt64/1000+62135596801, 0)
 	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999)
 )
+
+type seriesData struct {
+	Data     []labels.Labels
+	Warnings []error `json:"-"`
+}
 
 func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 	r.ParseForm()
@@ -470,6 +534,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorExec, set.Err()}, nil
 	}
 
+<<<<<<< HEAD
 	var remoteError *apiError
 	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
 		if fanout.HadRemoteError() {
@@ -478,6 +543,17 @@ func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 	}
 
 	return metrics, remoteError, nil
+=======
+	var warnings []error
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		warnings = fanout.GetRemoteErrors()
+	}
+
+	return &seriesData{
+		Data:     metrics,
+		Warnings: warnings,
+	}, nil, nil
+>>>>>>> Handle remote read error and return warning when they occur
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError, func()) {
@@ -1052,14 +1128,35 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
 }
+<<<<<<< HEAD
 
 func (api *API) respondExtraMessage(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+=======
+>>>>>>> Handle remote read error and return warning when they occur
 
+func (api *API) respondWarnings(w http.ResponseWriter, warnings []error, data interface{}) {
+	seen := make(map[string]struct{}, len(warnings))
+	var warningStrings []string
+	for _, warning := range warnings {
+		// Deduplicate warnings
+		if _, ok := seen[warning.Error()]; ok {
+			continue
+		}
+		seen[warning.Error()] = struct{}{}
+		warningStrings = append(warningStrings, warning.Error())
+	}
+	
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
+<<<<<<< HEAD
 		Status:       statusSuccess,
 		Data:         data,
 		ExtraMessage: apiErr.err.Error(),
+=======
+		Status:   statusSuccess,
+		Data:     data,
+		Warnings: warningStrings,
+>>>>>>> Handle remote read error and return warning when they occur
 	})
 	if err != nil {
 		return

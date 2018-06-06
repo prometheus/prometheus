@@ -25,7 +25,11 @@ import (
 )
 
 type FanoutStorage interface {
+<<<<<<< HEAD
 	HadRemoteError() bool
+=======
+	GetRemoteErrors() []error
+>>>>>>> Handle remote read error and return warning when they occur
 	Duplicate() Storage
 }
 
@@ -35,7 +39,11 @@ type fanout struct {
 	primary     Storage
 	secondaries []Storage
 
+<<<<<<< HEAD
 	remoteError          bool
+=======
+	remoteErrors         []error
+>>>>>>> Handle remote read error and return warning when they occur
 	failedRemoteQueriers []Querier
 }
 
@@ -133,8 +141,13 @@ func (f *fanout) Close() error {
 	return lastErr
 }
 
+<<<<<<< HEAD
 func (f *fanout) HadRemoteError() bool {
 	return f.remoteError
+=======
+func (f *fanout) GetRemoteErrors() []error {
+	return f.remoteErrors
+>>>>>>> Handle remote read error and return warning when they occur
 }
 
 func (f *fanout) Duplicate() Storage {
@@ -252,7 +265,11 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 			if querier != q.primaryQuerier {
 				// If it's a remote storage error, keep going and report it
 				if q.storage != nil {
+<<<<<<< HEAD
 					q.storage.remoteError = true
+=======
+					q.storage.remoteErrors = append(q.storage.remoteErrors, err)
+>>>>>>> Handle remote read error and return warning when they occur
 					q.storage.failedRemoteQueriers = append(q.storage.failedRemoteQueriers, querier)
 				}
 				if set == nil {

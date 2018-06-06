@@ -186,10 +186,17 @@ func (i *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
 	for _, rule := range ingress.Spec.Rules {
 		paths := pathsFromIngressRule(&rule.IngressRuleValue)
 
+<<<<<<< HEAD
 		scheme := "http"
 		_, isTLS := tlsHosts[rule.Host]
 		if isTLS {
 			scheme = "https"
+=======
+		schema := "http"
+		_, isTLS := tlsHosts[rule.Host]
+		if isTLS {
+			schema = "https"
+>>>>>>> Handle remote read error and return warning when they occur
 		}
 
 		for _, path := range paths {

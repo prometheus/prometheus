@@ -479,7 +479,10 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
+<<<<<<< HEAD
 	var seriesSets []storage.SeriesSet
+=======
+>>>>>>> Handle remote read error and return warning when they occur
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
@@ -506,7 +509,11 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			// Collect all the series sets first and expand later
 			// so that if there's a remote error, we can remove all data
 			// from that source.
+<<<<<<< HEAD
 			seriesSets = append(seriesSets, set)
+=======
+			n.unexpandedSeriesSet = set
+>>>>>>> Handle remote read error and return warning when they occur
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
@@ -523,6 +530,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return err
+<<<<<<< HEAD
 			}
 			seriesSets = append(seriesSets, set)
 		}
@@ -536,7 +544,10 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return err
+=======
+>>>>>>> Handle remote read error and return warning when they occur
 			}
+			n.unexpandedSeriesSet = set
 		}
 		return nil
 	})
@@ -836,7 +847,11 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 		sel := e.Args[matrixArgIndex].(*MatrixSelector)
-		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
+		series, err := expandSeriesSet(ev.ctx, sel.unexpandedSeriesSet)
+		if err != nil {
+			ev.error(err)
+		}
+		mat := make(Matrix, 0, len(series)) // Output matrix.
 		offset := durationMilliseconds(sel.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
@@ -850,17 +865,21 @@ func (ev *evaluator) eval(expr Expr) Value {
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
+<<<<<<< HEAD
 		for i, s := range sel.series {
+=======
+		for i, s := range series {
+>>>>>>> Handle remote read error and return warning when they occur
 			points = points[:0]
 			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
 				// it once here.
-				Metric: dropMetricName(sel.series[i].Labels()),
+				Metric: dropMetricName(series[i].Labels()),
 				Points: getPointSlice(numSteps),
 			}
-			inMatrix[0].Metric = sel.series[i].Labels()
+			inMatrix[0].Metric = series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.
@@ -955,12 +974,22 @@ func (ev *evaluator) eval(expr Expr) Value {
 		})
 
 	case *VectorSelector:
+<<<<<<< HEAD
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
+=======
+		series, err := expandSeriesSet(ev.ctx, e.unexpandedSeriesSet)
+		if err != nil {
+			ev.error(err)
+		}
+		mat := make(Matrix, 0, len(series))
+		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
+		for i, s := range series {
+>>>>>>> Handle remote read error and return warning when they occur
 			it.Reset(s.Iterator())
 			ss := Series{
-				Metric: e.series[i].Labels(),
+				Metric: series[i].Labels(),
 				Points: getPointSlice(numSteps),
 			}
 
@@ -989,18 +1018,26 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
+	series, err := expandSeriesSet(ev.ctx, node.unexpandedSeriesSet)
+	if err != nil {
+		ev.error(err)
+	}
 	var (
-		vec = make(Vector, 0, len(node.series))
+		vec = make(Vector, 0, len(series))
 	)
 
 	it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
+<<<<<<< HEAD
 	for i, s := range node.series {
+=======
+	for i, s := range series {
+>>>>>>> Handle remote read error and return warning when they occur
 		it.Reset(s.Iterator())
 
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
 			vec = append(vec, Sample{
-				Metric: node.series[i].Labels(),
+				Metric: series[i].Labels(),
 				Point:  Point{V: v, T: t},
 			})
 		}
@@ -1054,21 +1091,29 @@ func putPointSlice(p []Point) {
 
 // matrixSelector evaluates a *MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
+	series, err := expandSeriesSet(ev.ctx, node.unexpandedSeriesSet)
+	if err != nil {
+		ev.error(err)
+	}
 	var (
 		offset = durationMilliseconds(node.Offset)
 		maxt   = ev.startTimestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
-		matrix = make(Matrix, 0, len(node.series))
+		matrix = make(Matrix, 0, len(series))
 	)
 
 	it := storage.NewBuffer(durationMilliseconds(node.Range))
+<<<<<<< HEAD
 	for i, s := range node.series {
+=======
+	for i, s := range series {
+>>>>>>> Handle remote read error and return warning when they occur
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
 		it.Reset(s.Iterator())
 		ss := Series{
-			Metric: node.series[i].Labels(),
+			Metric: series[i].Labels(),
 		}
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))

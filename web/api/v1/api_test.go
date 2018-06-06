@@ -236,6 +236,7 @@ func TestEndpoints(t *testing.T) {
 	t.Run("remote", func(t *testing.T) {
 		server := setupRemote(suite.Storage())
 		defer server.Close()
+<<<<<<< HEAD
 
 		u, err := url.Parse(server.URL)
 		if err != nil {
@@ -326,6 +327,98 @@ func setupRemote(s storage.Storage) *httptest.Server {
 		}
 	})
 
+=======
+
+		u, err := url.Parse(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		al := promlog.AllowedLevel{}
+		al.Set("debug")
+		remote := remote.NewStorage(promlog.New(al), func() (int64, error) {
+			return 0, nil
+		}, 1*time.Second)
+
+		err = remote.ApplyConfig(&config.Config{
+			RemoteReadConfigs: []*config.RemoteReadConfig{
+				{
+					URL:           &config_util.URL{URL: u},
+					RemoteTimeout: model.Duration(1 * time.Second),
+					ReadRecent:    true,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var algr rulesRetrieverMock
+		algr.testing = t
+
+		algr.AlertingRules()
+
+		algr.RuleGroups()
+
+		api := &API{
+			Queryable:             remote,
+			QueryEngine:           suite.QueryEngine(),
+			targetRetriever:       testTargetRetriever{},
+			alertmanagerRetriever: testAlertmanagerRetriever{},
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
+		}
+
+		testEndpoints(t, api, false)
+	})
+}
+
+func setupRemote(s storage.Storage) *httptest.Server {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, err := remote.DecodeReadRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := prompb.ReadResponse{
+			Results: make([]*prompb.QueryResult, len(req.Queries)),
+		}
+		for i, query := range req.Queries {
+			from, through, matchers, selectParams, err := remote.FromQuery(query)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			querier, err := s.Querier(r.Context(), from, through)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			defer querier.Close()
+
+			set, err := querier.Select(selectParams, matchers...)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			resp.Results[i], err = remote.ToQueryResult(set)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if err := remote.EncodeReadResponse(&resp, w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+
+>>>>>>> Handle remote read error and return warning when they occur
 	return httptest.NewServer(handler)
 }
 
