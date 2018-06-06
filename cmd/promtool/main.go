@@ -39,6 +39,8 @@ import (
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
+var promClient *PrometheusHttpClient
+
 func main() {
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.")
 	app.Version(version.Print("promtool"))
@@ -101,10 +103,24 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
+		var err error
+		promClient, err = NewPrometheusHttpClient(PrometheusHttpClientConfig{
+			ServerAddress: (*debugPprofServer).String(),
+		})
+		if err != nil {
+			panic(err)
+		}
 		os.Exit(DebugPprof(*debugPprofServer))
 
 	case debugMetricsCmd.FullCommand():
-		os.Exit(DebugMetrics(*debugMetricsServer))
+		var err error
+		promClient, err = NewPrometheusHttpClient(PrometheusHttpClientConfig{
+			ServerAddress: (*debugMetricsServer).String(),
+		})
+		if err != nil {
+			panic(err)
+		}
+		os.Exit(DebugMetrics())
 	}
 
 }

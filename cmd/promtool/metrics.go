@@ -1,44 +1,19 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
-	"net/http"
-	"net/url"
 	"os"
-	"time"
-
-	"github.com/prometheus/client_golang/api"
 )
 
-func GetMetrics(url string) ([]byte, error) {
-	config := api.Config{
-		Address: url,
-	}
+func GetMetrics() ([]byte, error) {
+	_, body, err := promClient.Do("/metrics")
 
-	c, err := api.NewClient(config)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	req, err := http.NewRequest(http.MethodGet, url+"/metrics", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	_, body, err := c.Do(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	cancel()
-
-	return body, nil
+	return body, err
 }
 
-func DebugMetrics(url *url.URL) int {
-	buf, err := GetMetrics(url.String())
+func DebugMetrics() int {
+	buf, err := GetMetrics()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
