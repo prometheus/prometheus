@@ -12,34 +12,39 @@ import (
 	"github.com/prometheus/client_golang/api"
 )
 
-func DebugMetrics(url *url.URL) int {
+func GetMetrics(url string) ([]byte, error) {
 	config := api.Config{
-		Address: url.String(),
+		Address: url,
 	}
 
 	c, err := api.NewClient(config)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	req, err := http.NewRequest(http.MethodGet, url.String()+"/metrics", nil)
+	req, err := http.NewRequest(http.MethodGet, url+"/metrics", nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "debug metrics error:", err)
-		return 1
+		return nil, err
 	}
 
 	_, body, err := c.Do(ctx, req)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "debug metrics error:", err)
-		return 1
+		return nil, err
 	}
 	cancel()
 
-	if err := ioutil.WriteFile("metrics.txt", body, 0644); err != nil {
-		panic(err)
+	return body, nil
+}
+
+func DebugMetrics(url *url.URL) int {
+	buf, err := GetMetrics(url.String())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-	fmt.Println(string(body))
+	if err := ioutil.WriteFile("metrics.txt", buf, 0644); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	fmt.Println(string(buf))
 	return 0
 }
