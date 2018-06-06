@@ -12,6 +12,8 @@ import (
 
 const DEFAULT_TIMEOUT = 2 * time.Minute
 
+var promClient *PrometheusHttpClient
+
 type PrometheusHttpClientConfig struct {
 	ServerAddress string
 }
@@ -49,4 +51,12 @@ func (c *PrometheusHttpClient) Do(path string) (*http.Response, []byte, error) {
 		return nil, nil, err
 	}
 	return c.HTTPClient.Do(ctx, req)
+}
+
+func initPromClient(cfg PrometheusHttpClientConfig) {
+	var err error
+	promClient, err = NewPrometheusHttpClient(cfg)
+	if err != nil {
+		panic(err)
+	}
 }
