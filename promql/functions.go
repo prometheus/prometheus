@@ -77,16 +77,21 @@ func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCou
 			continue
 		}
 		var (
-			counterCorrection float64
-			lastValue         float64
+			lastValue       float64
+			resultValue     float64
+			startPointValue float64
 		)
+
+		// Correct count data which reset or reduced
+		startPointValue = samples.Points[0].V
 		for _, sample := range samples.Points {
 			if isCounter && sample.V < lastValue {
-				counterCorrection += lastValue
+				resultValue += (lastValue - startPointValue)
+				startPointValue = sample.V
 			}
 			lastValue = sample.V
 		}
-		resultValue := lastValue - samples.Points[0].V + counterCorrection
+		resultValue += lastValue - startPointValue
 
 		// Duration between first/last samples and boundary of range.
 		durationToStart := float64(samples.Points[0].T-rangeStart) / 1000
@@ -167,35 +172,41 @@ func instantValue(vals []Value, out Vector, isRate bool) Vector {
 	for _, samples := range vals[0].(Matrix) {
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
-		if len(samples.Points) < 2 {
-			continue
-		}
-
-		lastSample := samples.Points[len(samples.Points)-1]
-		previousSample := samples.Points[len(samples.Points)-2]
 
 		var resultValue float64
-		if isRate && lastSample.V < previousSample.V {
-			// Counter reset.
-			resultValue = lastSample.V
-		} else {
+		var sampledInterval int64
+
+		for i, _ := range samples.Points {
+			if len(samples.Points) < i+2 {
+				break
+			}
+
+			lastSample := samples.Points[len(samples.Points)-(i+1)]
+			previousSample := samples.Points[len(samples.Points)-(i+2)]
+
+			// Correct count data which reset or reduced
+			if isRate && lastSample.V < previousSample.V {
+				continue
+			}
 			resultValue = lastSample.V - previousSample.V
-		}
+			sampledInterval = lastSample.T - previousSample.T
 
-		sampledInterval := lastSample.T - previousSample.T
-		if sampledInterval == 0 {
-			// Avoid dividing by 0.
-			continue
-		}
+			if sampledInterval == 0 {
+				// Avoid dividing by 0.
+				continue
+			}
 
-		if isRate {
-			// Convert to per-second.
-			resultValue /= float64(sampledInterval) / 1000
-		}
+			if isRate {
+				// Convert to per-second.
+				resultValue /= float64(sampledInterval) / 1000
+			}
 
-		out = append(out, Sample{
-			Point: Point{V: resultValue},
-		})
+			out = append(out, Sample{
+				Point: Point{V: resultValue},
+			})
+
+			break
+		}
 	}
 	return out
 }
