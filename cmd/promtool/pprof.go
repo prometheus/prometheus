@@ -1,9 +1,7 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"fmt"
 	"os"
 
@@ -35,21 +33,12 @@ func buffer(p *profile.Profile) bytes.Buffer {
 }
 
 func DebugPprof() int {
-	tarfile, err := os.Create("debug.tar.gz")
-	if err != nil {
-		panic(err)
-	}
-	// close fo on exit and check for its returned error
+	tw := NewTarGzFileFileWriter(TarGzFileWriterConfig{FileName: "debug.tar.gz"})
 	defer func() {
-		if err := tarfile.Close(); err != nil {
+		if err := tw.Close(); err != nil {
 			panic(err)
 		}
 	}()
-	gw := gzip.NewWriter(tarfile)
-	defer gw.Close()
-	tw := tar.NewWriter(gw)
-	defer tw.Close()
-
 	for _, profName := range profNames {
 		body, err := NewBodyGetter(BodyGetterConfig{Path: "/debug/pprof/" + profName}).Get()
 		if err != nil {
@@ -59,16 +48,8 @@ func DebugPprof() int {
 		p := validate(body)
 		buf := buffer(p)
 
-		header := &tar.Header{
-			Name: profName + ".pb",
-			Mode: 0644,
-			Size: int64(buf.Len()),
-		}
-		if err := tw.WriteHeader(header); err != nil {
-			panic(err)
-		}
-		if _, err := tw.Write(buf.Bytes()); err != nil {
-			panic(err)
+		if err := tw.AddFile(profName+".pb", buf); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 		}
 		fmt.Println(p.String())
 	}
