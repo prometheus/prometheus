@@ -53,13 +53,17 @@ check_license:
                exit 1; \
        fi
 
+test:
+	@echo ">> running all tests"
+	$(GO) test $(pkgs)
+
+test-race:
+	@echo ">> running short tests"
+	$(GO) test -race $(pkgs)
+
 test-short:
 	@echo ">> running short tests"
 	$(GO) test -short $(pkgs)
-
-test:
-	@echo ">> running all tests"
-	$(GO) test -race $(pkgs)
 
 format:
 	@echo ">> formatting code"
