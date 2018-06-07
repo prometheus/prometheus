@@ -35,16 +35,26 @@ func initDebugPprofProfile(path string) {
 	}
 }
 
-func (c *DebugPprofProfile) Get() (*profile.Profile, error) {
+func (c *DebugPprofProfile) Get() ([]byte, error) {
 	_, body, err := promClient.Do(c.Request)
+
+	return body, err
+}
+
+func validate(b []byte) *profile.Profile {
+	p, err := profile.Parse(bytes.NewReader(b))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	p, err := profile.Parse(bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+	return p
+}
+
+func buffer(p *profile.Profile) bytes.Buffer {
+	var buf bytes.Buffer
+	if err := p.WriteUncompressed(&buf); err != nil {
+		panic(err)
 	}
-	return p, nil
+	return buf
 }
 
 func DebugPprof() int {
@@ -65,14 +75,13 @@ func DebugPprof() int {
 
 	for _, profName := range profNames {
 		initDebugPprofProfile(profName)
-		p, err := debugPprofProfile.Get()
+		body, err := debugPprofProfile.Get()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		}
-		var buf bytes.Buffer
-		if err := p.WriteUncompressed(&buf); err != nil {
-			panic(err)
-		}
+
+		p := validate(body)
+		buf := buffer(p)
 
 		header := &tar.Header{
 			Name: profName + ".pb",
