@@ -3,34 +3,11 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	"os"
 )
 
-var debugMetrics DebugMetrics
-
-type DebugMetrics struct {
-	Request *http.Request
-}
-
-func initDebugMetrics(path string) {
-	req, err := http.NewRequest(http.MethodGet, promClient.Server.String()+path, nil)
-	if err != nil {
-		panic(err)
-	}
-	debugMetrics = DebugMetrics{
-		Request: req,
-	}
-}
-
-func (c *DebugMetrics) Get() ([]byte, error) {
-	_, body, err := promClient.Do(c.Request)
-
-	return body, err
-}
-
-func (c *DebugMetrics) Exec() int {
-	buf, err := c.Get()
+func DebugMetrics() int {
+	buf, err := NewBodyGetter(BodyGetterConfig{Path: "/metrics"}).Get()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}

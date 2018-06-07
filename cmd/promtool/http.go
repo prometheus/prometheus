@@ -56,3 +56,27 @@ func initPromClient(cfg PrometheusHttpClientConfig) {
 		panic(err)
 	}
 }
+
+type BodyGetterConfig struct {
+	Path string
+}
+
+func NewBodyGetter(cfg BodyGetterConfig) *BodyGetter {
+	req, err := http.NewRequest(http.MethodGet, promClient.Server.String()+cfg.Path, nil)
+	if err != nil {
+		panic(err)
+	}
+	return &BodyGetter{
+		Request: req,
+	}
+}
+
+type BodyGetter struct {
+	Request *http.Request
+}
+
+func (c *BodyGetter) Get() ([]byte, error) {
+	_, body, err := promClient.Do(c.Request)
+
+	return body, err
+}

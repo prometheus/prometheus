@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/google/pprof/profile"
@@ -17,28 +16,6 @@ var profNames = []string{
 	"heap",
 	"mutex",
 	"threadcreate",
-}
-
-var debugPprofProfile DebugPprofProfile
-
-type DebugPprofProfile struct {
-	Request *http.Request
-}
-
-func initDebugPprofProfile(path string) {
-	req, err := http.NewRequest(http.MethodGet, promClient.Server.String()+"/debug/pprof/"+path, nil)
-	if err != nil {
-		panic(err)
-	}
-	debugPprofProfile = DebugPprofProfile{
-		Request: req,
-	}
-}
-
-func (c *DebugPprofProfile) Get() ([]byte, error) {
-	_, body, err := promClient.Do(c.Request)
-
-	return body, err
 }
 
 func validate(b []byte) *profile.Profile {
@@ -74,8 +51,7 @@ func DebugPprof() int {
 	defer tw.Close()
 
 	for _, profName := range profNames {
-		initDebugPprofProfile(profName)
-		body, err := debugPprofProfile.Get()
+		body, err := NewBodyGetter(BodyGetterConfig{Path: "/debug/pprof/" + profName}).Get()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		}
