@@ -96,7 +96,7 @@ For example, this selects all `http_requests_total` time series for `staging`,
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
 Label matchers that match empty label values also select all time series that do
-not have the specific label set at all. Regex-matches are fully anchored.
+not have the specific label set at all. Regex-matches are fully anchored. 
 
 Vector selectors must either specify a name or at least one label matcher
 that does not match the empty string. The following expression is illegal:
@@ -115,6 +115,10 @@ Label matchers can also be applied to metric names by matching against the inter
 The following expression selects all metrics that have a name starting with `job:`:
 
     {__name__=~"job:.*"}
+
+All label matchers are case-sensitive. To perform a case-insensitive match, use a 
+regex with the `(?i)` option at the beginning. Partial case-insensivity can be 
+achieved with the `(?i:pattern)` group.  
 
 All regular expressions in Prometheus use [RE2
 syntax](https://github.com/google/re2/wiki/Syntax).
