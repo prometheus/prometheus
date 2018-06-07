@@ -97,4 +97,4 @@ $(FIRST_GOPATH)/bin/staticcheck:
 $(FIRST_GOPATH)/bin/govendor:
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
 
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
+.PHONY: all style check_license format build test-short test vet tarball docker promu unused staticcheck $(FIRST_GOPATH)/bin/staticcheck $(FIRST_GOPATH)/bin/govendor
