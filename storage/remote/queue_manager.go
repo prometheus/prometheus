@@ -218,9 +218,7 @@ func (t *QueueManager) Append(s *model.Sample) error {
 		return nil
 	}
 
-	t.shardsMtx.Lock()
 	enqueued := t.shards.enqueue(&snew)
-	t.shardsMtx.Unlock()
 
 	if enqueued {
 		queueLength.WithLabelValues(t.queueName).Inc()
@@ -359,62 +357,62 @@ func (t *QueueManager) reshardLoop() {
 
 func (t *QueueManager) reshard(n int) {
 	numShards.WithLabelValues(t.queueName).Set(float64(n))
-
-	t.shardsMtx.Lock()
 	newShards := t.newShards(n)
 	oldShards := t.shards
 	t.shards = newShards
-	t.shardsMtx.Unlock()
 
 	oldShards.stop(t.flushDeadline)
 
-	// We start the newShards after we have stopped (the therefore completely
-	// flushed) the oldShards, to guarantee we only every deliver samples in
+	// We start the newShards (worker) after we have stopped (the therefore completely
+	// flushed) the oldShards (worker), to guarantee we only every deliver samples in
 	// order.
 	newShards.start()
 }
 
 type shards struct {
 	qm      *QueueManager
-	queues  []chan *model.Sample
+	queue   chan *model.Sample
 	done    chan struct{}
 	running int32
 	ctx     context.Context
 	cancel  context.CancelFunc
+	workers []chan struct{}
 }
 
 func (t *QueueManager) newShards(numShards int) *shards {
-	queues := make([]chan *model.Sample, numShards)
+	workers := make([]chan struct{}, numShards)
 	for i := 0; i < numShards; i++ {
-		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
+		workers[i] = make(chan struct{}, 1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &shards{
 		qm:      t,
-		queues:  queues,
 		done:    make(chan struct{}),
 		running: int32(numShards),
 		ctx:     ctx,
 		cancel:  cancel,
+		queue:   make(chan *model.Sample, t.cfg.Capacity),
+		workers: workers,
 	}
 	return s
 }
 
 func (s *shards) len() int {
-	return len(s.queues)
+	return len(s.workers)
 }
 
 func (s *shards) start() {
-	for i := 0; i < len(s.queues); i++ {
-		go s.runShard(i)
+	for i := 0; i < len(s.workers); i++ {
+		go s.runShard(s.workers[i])
 	}
 }
 
 func (s *shards) stop(deadline time.Duration) {
 	// Attempt a clean shutdown.
-	for _, shard := range s.queues {
-		close(shard)
+	for _, w := range s.workers {
+		close(w)
 	}
+
 	select {
 	case <-s.done:
 		return
@@ -431,25 +429,22 @@ func (s *shards) stop(deadline time.Duration) {
 func (s *shards) enqueue(sample *model.Sample) bool {
 	s.qm.samplesIn.incr(1)
 
-	fp := sample.Metric.FastFingerprint()
-	shard := uint64(fp) % uint64(len(s.queues))
-
 	select {
-	case s.queues[shard] <- sample:
+	case s.queue <- sample:
 		return true
 	default:
 		return false
 	}
 }
 
-func (s *shards) runShard(i int) {
+func (s *shards) runShard(done chan struct{}) {
 	defer func() {
 		if atomic.AddInt32(&s.running, -1) == 0 {
 			close(s.done)
 		}
 	}()
 
-	queue := s.queues[i]
+	queue := s.queue
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline
@@ -499,6 +494,8 @@ func (s *shards) runShard(i int) {
 				pendingSamples = pendingSamples[:0]
 			}
 			timer.Reset(s.qm.cfg.BatchSendDeadline)
+		case <-done:
+			return
 		}
 	}
 }

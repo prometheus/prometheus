@@ -234,13 +234,7 @@ func (c *TestBlockingStorageClient) Name() string {
 }
 
 func (t *QueueManager) queueLen() int {
-	t.shardsMtx.Lock()
-	defer t.shardsMtx.Unlock()
-	queueLength := 0
-	for _, shard := range t.shards.queues {
-		queueLength += len(shard)
-	}
-	return queueLength
+	return len(t.shards.queue)
 }
 
 func TestSpawnNotMoreThanMaxConcurrentSendsGoroutines(t *testing.T) {
