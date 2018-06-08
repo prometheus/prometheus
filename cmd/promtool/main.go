@@ -100,10 +100,18 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
-		initPromClient(PrometheusHttpClientConfig{
-			ServerURL: *debugPprofServer,
-		})
-		os.Exit(DebugPprof())
+		os.Exit(NewDebugPprof(DebugPprofConfig{
+			server:      *debugPprofServer,
+			tarballName: "debug.tar.gz",
+			profileNames: []string{
+				"block",
+				"goroutine",
+				"heap",
+				"mutex",
+				"threadcreate",
+			},
+			fileExt: ".pb",
+		}).Exec())
 
 	case debugMetricsCmd.FullCommand():
 		os.Exit(NewDebugMetrics(DebugMetricsConfig{
