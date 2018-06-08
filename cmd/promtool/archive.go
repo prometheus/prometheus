@@ -7,18 +7,19 @@ import (
 	"os"
 )
 
-type TarGzFileWriterConfig struct {
-	FileName string
+const FILE_PERM = 0644
+
+type ArchiveWriterConfig struct {
+	ArchiveName string
 }
 
-type TarGzFileWriter struct {
-	TarWriter *tar.Writer
-	GzWriter  *gzip.Writer
-	File      *os.File
+type ArchiveWriter interface {
+	Write(fileName string, buf bytes.Buffer) error
+	Close() error
 }
 
-func NewTarGzFileFileWriter(cfg TarGzFileWriterConfig) *TarGzFileWriter {
-	f, err := os.Create(cfg.FileName)
+func NewArchiveWriter(cfg ArchiveWriterConfig) ArchiveWriter {
+	f, err := os.Create(cfg.ArchiveName)
 	if err != nil {
 		panic(err)
 	}
@@ -29,6 +30,12 @@ func NewTarGzFileFileWriter(cfg TarGzFileWriterConfig) *TarGzFileWriter {
 		GzWriter:  gzw,
 		File:      f,
 	}
+}
+
+type TarGzFileWriter struct {
+	TarWriter *tar.Writer
+	GzWriter  *gzip.Writer
+	File      *os.File
 }
 
 func (w *TarGzFileWriter) Close() error {
@@ -44,10 +51,10 @@ func (w *TarGzFileWriter) Close() error {
 	return nil
 }
 
-func (w *TarGzFileWriter) AddFile(fileName string, buf bytes.Buffer) error {
+func (w *TarGzFileWriter) Write(fileName string, buf bytes.Buffer) error {
 	header := &tar.Header{
 		Name: fileName,
-		Mode: 0644,
+		Mode: FILE_PERM,
 		Size: int64(buf.Len()),
 	}
 	if err := w.TarWriter.WriteHeader(header); err != nil {

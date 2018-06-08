@@ -20,7 +20,7 @@ type DebugPprofConfig struct {
 }
 
 type DebugPprof struct {
-	writer           *TarGzFileWriter
+	writer           ArchiveWriter
 	httpClient       HTTPClient
 	profileToRequest map[string]*http.Request
 	fileExt          string
@@ -31,7 +31,7 @@ func NewDebugPprof(cfg DebugPprofConfig) *DebugPprof {
 	if err != nil {
 		panic(err)
 	}
-	tw := NewTarGzFileFileWriter(TarGzFileWriterConfig{FileName: cfg.tarballName})
+	tw := NewArchiveWriter(ArchiveWriterConfig{ArchiveName: cfg.tarballName})
 	m := make(map[string]*http.Request)
 	for _, prof := range cfg.profileNames {
 		req, err := http.NewRequest(http.MethodGet, client.URLJoin(path.Join(PPROF_PATH, prof)), nil)
@@ -75,7 +75,7 @@ func (c *DebugPprof) Exec() int {
 		p := validate(body)
 		buf := buffer(p)
 
-		if err := c.writer.AddFile(prof+c.fileExt, buf); err != nil {
+		if err := c.writer.Write(prof+c.fileExt, buf); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

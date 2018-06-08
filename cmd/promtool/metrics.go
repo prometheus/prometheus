@@ -15,7 +15,7 @@ type DebugMetricsConfig struct {
 }
 
 type DebugMetrics struct {
-	writer     *TarGzFileWriter
+	writer     ArchiveWriter
 	httpClient HTTPClient
 	request    *http.Request
 	fileName   string
@@ -26,7 +26,7 @@ func NewDebugMetrics(cfg DebugMetricsConfig) *DebugMetrics {
 	if err != nil {
 		panic(err)
 	}
-	tw := NewTarGzFileFileWriter(TarGzFileWriterConfig{FileName: cfg.tarballName})
+	tw := NewArchiveWriter(ArchiveWriterConfig{ArchiveName: cfg.tarballName})
 	req, err := http.NewRequest(http.MethodGet, client.URLJoin(cfg.path), nil)
 	if err != nil {
 		panic(err)
@@ -48,7 +48,7 @@ func (c *DebugMetrics) Exec() int {
 
 	var buf bytes.Buffer
 	buf.Write(body)
-	if err := c.writer.AddFile(c.fileName, buf); err != nil {
+	if err := c.writer.Write(c.fileName, buf); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
