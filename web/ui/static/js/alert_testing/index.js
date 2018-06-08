@@ -1,7 +1,7 @@
 var graphTemplate;
 var alertStateToRowClass;
 var alertStateToName;
-var lastEvaluateTime = -1;
+var endDate = null;
 
 var SECOND = 1000;
 
@@ -84,7 +84,11 @@ var Graph = function(element, options, json) {
   this.options = options;
   this.rickshawGraph = null;
   this.data = [];
-  this.json = json
+  this.json = json;
+
+  this.alertGraphRef = {};
+  this.alertGraphRef.data = [];
+  this.alertGraphRef.rickshawGraph = null;
 
   this.initialize();
 };
@@ -124,6 +128,7 @@ Graph.prototype.initialize = function() {
     'ruleName': self.json.name,
     'activeAlerts': self.json.alerts,
     'htmlSnippet': self.json.htmlSnippet,
+    'end': endDate,
   };
   if(self.json.alerts) {
     options.activeAlertsLength = self.json.alerts.length;
@@ -152,23 +157,28 @@ Graph.prototype.initialize = function() {
   // bind event handlers.
   var graphWrapper = self.el.find("#graph_wrapper" + self.id);
   self.queryForm = graphWrapper.find(".query_form");
-
+  
   self.rangeInput = self.queryForm.find("input[name=range_input]");
   self.stackedBtn = self.queryForm.find(".stacked_btn");
   self.stacked = self.queryForm.find("input[name=stacked]");
   self.refreshInterval = self.queryForm.find("select[name=refresh]");
-
+  
   self.error = graphWrapper.find(".error").hide();
+  self.exprGraphTitle = self.el.find("#expr_graph_title"+self.id);
   self.graphArea = graphWrapper.find(".graph_area");
   self.graph = self.graphArea.find(".graph");
   self.yAxis = self.graphArea.find(".y_axis");
   self.legend = graphWrapper.find(".legend");
   self.spinner = graphWrapper.find(".spinner");
   self.evalStats = graphWrapper.find(".eval_stats");
-  self.reevaluateValue = graphWrapper.find(".reevaluate_value");
-  self.reevaluateValueDisplay = graphWrapper.find(".reevaluate_value_display");
   self.reevaluateBtn = graphWrapper.find(".reevaluate");
 
+  var alertGraphWrapper = self.el.find("#alert_graph_wrapper" + self.id);
+  self.alertGraphRef.graphArea = alertGraphWrapper.find(".graph_area");
+  self.alertGraphRef.graph = self.alertGraphRef.graphArea.find(".graph");
+  self.alertGraphRef.yAxis = self.alertGraphRef.graphArea.find(".y_axis");
+  self.alertGraphRef.legend = alertGraphWrapper.find(".legend");
+  
   self.endDate = graphWrapper.find("input[name=end_input]");
   self.endDate.datetimepicker({
     locale: 'en',
@@ -203,27 +213,30 @@ Graph.prototype.initialize = function() {
   };
   styleStackBtn();
 
+  self.queryForm.find("button[name=inc_end]").click(function() { self.increaseEnd(); });
+  self.queryForm.find("button[name=dec_end]").click(function() { self.decreaseEnd(); });
+
   self.stackedBtn.click(function() {
-    if (self.isStacked() && self.graphJSON) {
+    if (self.isStacked() && self.graphJSON && self.alertGraphRef.graphJSON) {
       // If the graph was stacked, the original series data got mutated
       // (scaled) and we need to reconstruct it from the original JSON data.
       self.data = self.transformData(self.graphJSON);
+      self.alertGraphRef.data = self.transformData(self.alertGraphRef.graphJSON);
     }
     self.stacked.val(self.isStacked() ? '0' : '1');
     styleStackBtn();
     self.updateGraph();
+    self.updateAlertGraph();
   });
 
   self.reevaluateBtn.click(function() {
-    var time = self.reevaluateValue.val();
-    if(time != "0") {
-      var text = ace.edit("ruleTextArea").getValue();          
-      var data = {
-        RuleText: encodeURIComponent(text),
-        Time: Number(time)
-      };
-      evaluate(data);
-    }
+    var date = moment(self.getOrSetEndDate());
+    var text = ace.edit("ruleTextArea").getValue();          
+    var data = {
+      RuleText: encodeURIComponent(text),
+      Time: date.unix()
+    };
+    evaluate(data);
   });
 
   self.spinner.hide();
@@ -244,12 +257,38 @@ Graph.prototype.parseDuration = function(rangeText) {
   return value * Graph.timeFactors[unit];
 };
 
+Graph.prototype.getOrSetEndDate = function() {
+  var self = this;
+  var date = self.getEndDate();
+  self.setEndDate(date);
+  return date;
+};
+
 Graph.prototype.getEndDate = function() {
   var self = this;
   if (!self.endDate || !self.endDate.val()) {
     return moment();
   }
   return self.endDate.data('DateTimePicker').date();
+};
+
+Graph.prototype.setEndDate = function(date) {
+  var self = this;
+  self.endDate.data('DateTimePicker').date(date);
+};
+
+Graph.prototype.increaseEnd = function() {
+  var self = this;
+  var newDate = moment(self.getOrSetEndDate());
+  newDate.add(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+  self.setEndDate(newDate);
+};
+
+Graph.prototype.decreaseEnd = function() {
+  var self = this;
+  var newDate = moment(self.getOrSetEndDate());
+  newDate.subtract(self.parseDuration(self.rangeInput.val()) / 2, 'seconds');
+  self.setEndDate(newDate);
 };
 
 Graph.prototype.initGraphUpdate = function() {
@@ -265,7 +304,10 @@ Graph.prototype.initGraphUpdate = function() {
   params.step = resolution;
   self.params = params;
 
-  self.handleGraphResponse(self.json.matrixResult);
+  self.handleGraphResponse({
+    exprJSON: self.json.exprQueryResult,
+    alertJSON: self.json.matrixResult,
+  });
 };
 
 Graph.prototype.showError = function(msg) {
@@ -372,6 +414,10 @@ Graph.prototype.updateGraph = function() {
     self.graph.remove();
     self.yAxis.remove();
   }
+
+  // TODO: encode into html entity
+  self.exprGraphTitle.html("<u>Graph</u>: '"+self.graphJSON.expr+"'");
+  
   self.graph = $('<div class="graph"></div>');
   self.yAxis = $('<div class="y_axis"></div>');
   self.graphArea.append(self.graph);
@@ -455,8 +501,6 @@ Graph.prototype.updateGraph = function() {
     graph: self.rickshawGraph,
     formatter: function(series, x, y) {
       var datestr = new Date(x * 1000).toUTCString();
-      self.reevaluateValue.val(""+x);
-      self.reevaluateValueDisplay.val(datestr);
       var date = '<span class="date">' + datestr + '</span>';
       var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
       var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong>';
@@ -481,6 +525,123 @@ Graph.prototype.updateGraph = function() {
 
 };
 
+Graph.prototype.updateAlertGraph = function() {
+  var self = this;
+  if (self.data.length === 0) { return; }
+
+  // Remove any traces of an existing graph.
+  self.alertGraphRef.legend.empty();
+  if (self.alertGraphRef.graphArea.children().length > 0) {
+    self.alertGraphRef.graph.remove();
+    self.alertGraphRef.yAxis.remove();
+  }
+  self.alertGraphRef.graph = $('<div class="graph"></div>');
+  self.alertGraphRef.yAxis = $('<div class="y_axis"></div>');
+  self.alertGraphRef.graphArea.append(self.alertGraphRef.graph);
+  self.alertGraphRef.graphArea.append(self.alertGraphRef.yAxis);
+
+  var endTime = self.getEndDate() / 1000; // Convert to UNIX timestamp.
+  var duration = self.parseDuration(self.rangeInput.val()) || 3600; // 1h default.
+  var startTime = endTime - duration;
+  self.alertGraphRef.data.forEach(function(s) {
+    // Padding series with invisible "null" values at the configured x-axis boundaries ensures
+    // that graphs are displayed with a fixed x-axis range instead of snapping to the available
+    // time range in the data.
+    if (s.data[0].x > startTime) {
+      s.data.unshift({x: startTime, y: null});
+    }
+    if (s.data[s.data.length - 1].x < endTime) {
+      s.data.push({x: endTime, y: null});
+    }
+  });
+
+  // Now create the new graph.
+  self.alertGraphRef.rickshawGraph = new Rickshaw.Graph({
+    element: self.alertGraphRef.graph[0],
+    height: Math.max(self.alertGraphRef.graph.innerHeight(), 100),
+    width: Math.max(self.alertGraphRef.graph.innerWidth() - 80, 200),
+    renderer: (self.isStacked() ? "stack" : "line"),
+    interpolation: "linear",
+    series: self.alertGraphRef.data,
+    min: "auto",
+  });
+
+  // Find and set graph's max/min
+  if (self.isStacked() === true) {
+    // When stacked is toggled
+    var max = 0;
+    self.alertGraphRef.data.forEach(function(timeSeries) {
+      var currSeriesMax = 0;
+      timeSeries.data.forEach(function(dataPoint) {
+        if (dataPoint.y > currSeriesMax && dataPoint.y != null) {
+          currSeriesMax = dataPoint.y;
+        }
+      });
+      max += currSeriesMax;
+    });
+    self.alertGraphRef.rickshawGraph.max = max*1.05;
+    self.alertGraphRef.rickshawGraph.min = 0;
+  } else {
+    var min = Infinity;
+    var max = -Infinity;
+    self.alertGraphRef.data.forEach(function(timeSeries) {
+      timeSeries.data.forEach(function(dataPoint) {
+        if (dataPoint.y < min && dataPoint.y != null) {
+          min = dataPoint.y;
+        }
+        if (dataPoint.y > max && dataPoint.y != null) {
+          max = dataPoint.y;
+        }
+      });
+    });
+    if (min === max) {
+      self.alertGraphRef.rickshawGraph.max = max + 1;
+      self.alertGraphRef.rickshawGraph.min = min - 1;
+    } else {
+      self.alertGraphRef.rickshawGraph.max = max + (0.1*(Math.abs(max - min)));
+      self.alertGraphRef.rickshawGraph.min = min - (0.1*(Math.abs(max - min)));
+    }
+  }
+
+  var xAxis = new Rickshaw.Graph.Axis.Time({ graph: self.alertGraphRef.rickshawGraph });
+
+  var yAxis = new Rickshaw.Graph.Axis.Y({
+    graph: self.alertGraphRef.rickshawGraph,
+    orientation: "left",
+    tickFormat: this.formatKMBT,
+    element: self.alertGraphRef.yAxis[0],
+  });
+
+  self.alertGraphRef.rickshawGraph.render();
+
+  var hoverDetail = new Rickshaw.Graph.HoverDetail({
+    graph: self.alertGraphRef.rickshawGraph,
+    formatter: function(series, x, y) {
+      var datestr = new Date(x * 1000).toUTCString();
+      var date = '<span class="date">' + datestr + '</span>';
+      var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
+      var content = swatch + (series.labels.__name__ || 'value') + ": <strong>" + y + '</strong>';
+      return date + '<br>' + content + '<br>' + self.renderLabels(series.labels);
+    }
+  });
+
+  var legend = new Rickshaw.Graph.Legend({
+    element: self.alertGraphRef.legend[0],
+    graph: self.alertGraphRef.rickshawGraph,
+  });
+
+  var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight( {
+    graph: self.alertGraphRef.rickshawGraph,
+    legend: legend
+  });
+
+  var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
+    graph: self.alertGraphRef.rickshawGraph,
+    legend: legend
+  });
+
+};
+
 Graph.prototype.resizeGraph = function() {
   var self = this;
   if (self.rickshawGraph !== null) {
@@ -489,6 +650,12 @@ Graph.prototype.resizeGraph = function() {
     });
     self.rickshawGraph.render();
   }
+  if (self.alertGraphRef.rickshawGraph !== null) {
+    self.alertGraphRef.rickshawGraph.configure({
+      width: Math.max(self.alertGraphRef.graph.innerWidth() - 80, 200),
+    });
+    self.alertGraphRef.rickshawGraph.render();
+  }
 };
 
 Graph.prototype.handleGraphResponse = function(json) {
@@ -496,13 +663,21 @@ Graph.prototype.handleGraphResponse = function(json) {
   // Rickshaw mutates passed series data for stacked graphs, so we need to save
   // the original AJAX response in order to re-transform it into series data
   // when the user disables the stacking.
-  self.graphJSON = json;
-  self.data = self.transformData(json);
+  self.graphJSON = json.exprJSON;
+  self.data = self.transformData(json.exprJSON);
   if (self.data.length === 0) {
     self.showError("No datapoints found.");
     return;
   }
   self.updateGraph();
+
+  self.alertGraphRef.graphJSON = json.alertJSON;
+  self.alertGraphRef.data = self.transformData(json.alertJSON);
+  if (self.alertGraphRef.data.length === 0) {
+    self.showError("No datapoints found.");
+    return;
+  }
+  self.updateAlertGraph();
 };
 
 Graph.prototype.formatKMBT = function(y) {
@@ -563,31 +738,37 @@ var replaceRules = function(json) {
   for(i in json.data.ruleResults) {
     var graph = new Graph(
       $("#graph_container"),
-      {},
+      {
+        end_input: endDate,
+      },
       json.data.ruleResults[i]
     );
     $(window).resize(function() {
       graph.resizeGraph();
     });
   }
+
+  $('[data-toggle="popover"]').popover(); 
   
 };
 
 function evaluate(data) {
   
-  if(lastEvaluateTime == data.Time) {
-    return;
-  }
   var time = data.Time;
-  $("#ruleTestInfo").html("Testing...");
-  $(".evaluation_message").html("Testing...");          
+  if(time == 0) {
+    $("#ruleTestInfo").html("Testing for current time");
+    $(".evaluation_message").html("Testing for current time");          
+  } else {
+    $("#ruleTestInfo").html("Testing for: " + (new Date(time * 1000).toUTCString()));
+    $(".evaluation_message").html("Testing for: " + (new Date(time * 1000).toUTCString()));          
+  }
   $.ajax({
     method: 'POST',
     url: PATH_PREFIX + "/api/v1/alerts_testing",
     dataType: "json",
     data: JSON.stringify(data),
     success: function(json) {
-      var data = json.data
+      var data = json.data;
       if(data.isError) {
         var errStr = "Error message:<br/>"
         var len = data.errors.length 
@@ -596,11 +777,15 @@ function evaluate(data) {
         }
         $("#ruleTestInfo").html(redHtml(errStr));
       } else {
+        if(time == 0) {
+          endDate = null;
+        } else {
+          endDate = new Date(time*1000);
+        }
         $("#ruleTestInfo").html(greenHtml(data.success));  
         $(".evaluation_message").html("");          
         alertStateToRowClass = json.data.alertStateToRowClass;
         alertStateToName = json.data.alertStateToName;
-        lastEvaluateTime = time;
       }
       replaceRules(json);        
     },

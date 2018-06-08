@@ -10,13 +10,13 @@
               <pre><code>{{htmlSnippet}}</code></pre>
             </div>
             <table class="table table-bordered table-hover table-condensed alert_elements_table">
+              {{#activeAlerts}}
               <tr class="">
                 <th>Labels</th>
                 <th>State</th>
                 <th>Active Since</th>
                 <th>Value</th>
               </tr>
-              {{#activeAlerts}}
               <tr>
                 <td>
                   {{#Labels}}
@@ -43,8 +43,9 @@
               {{/activeAlerts}}
 
               <tr class="graph_header">
-                <th colspan="4">Graph</th>
+                <th id="expr_graph_title{{id}}" colspan="4">Graph</th>
               </tr>
+              
               <tr class="graph_body">
                 <td colspan="4">
                   
@@ -89,7 +90,7 @@
                         </div>
 
                         <!-- Extracted to force grouped inputs. -->
-                        <div class="prometheus_input_group pull-left hidden">
+                        <div class="prometheus_input_group pull-right">
 
                           <button
                               class="btn btn-default pull-left"
@@ -103,7 +104,7 @@
                               class="pull-left date_input input"
                               id="end{{id}}"
                               title="End time of graph (UTC)"
-                              placeholder="Until"
+                              placeholder="End Time for Eval"
                               data-format="yyyy-MM-dd"
                               type="text"
                               name="end_input"
@@ -117,20 +118,23 @@
                               title="Advance the end time.">
                             <i class="glyphicon glyphicon-forward"></i>
                           </button>
+                          <button type="button" class="btn btn-primary reevaluate">
+                            Evaluate
+                          </button>
+                          <a data-toggle="popover" title="Evaluate" data-placement="bottom" data-content="The selected time will be set as the end time for the evaluation and the alerts displayed will be with respect to that time."><span class="glyphicon glyphicon-question-sign"></span></a>
+                        </div>
+
+                        <div class="prometheus_input_group pull-left">
+                          <div class="evaluation_message"></div>
                         </div>
 
                         <div class="prometheus_input_group pull-right">
-                          <div class="evaluation_message"></div>
-                          <input type="hidden" class="btn btn-default reevaluate_value" readonly>
-                          <input name="reevaluate" class="btn btn-default reevaluate_value_display" value="0" readonly>
-                          <button type="button" class="btn btn-primary reevaluate">
-                            Evaluate for this time
-                          </button>
                           <button type="button" class="btn btn-default stacked_btn">
                             <i class="glyphicon"></i> stacked
                           </button>
                           <input type="hidden" name="stacked" value="{{stacked}}">
                         </div>
+
                       </div>
 
                       <div class="graph_area"></div>
@@ -142,8 +146,39 @@
         </div>
                   
 
+
                 </td>
               </tr>
+
+
+
+              <tr class="graph_header">
+                <th id="alerts_graph_title" colspan="4"><u>Graph</u>: 'ALERTS'</th>
+              </tr>
+              
+
+
+              <tr class="graph_body">
+                <td colspan="4">
+                  
+
+
+        <div id="alert_graph_wrapper{{id}}" class="graph_wrapper">
+          <div class="query_form form-inline">
+            <div class="row">
+              <div class="col-lg-12">
+                      <div class="graph_area"></div>
+                      <div class="legend"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+                  
+
+                </td>
+              </tr>
+
+
             </table>
           </td>
         </tr>

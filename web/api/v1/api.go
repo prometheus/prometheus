@@ -895,11 +895,18 @@ func newAlertsTestResult() alertsTestResult {
 	}
 }
 
+type queryDataWithExpr struct {
+	ResultType promql.ValueType `json:"resultType"`
+	Result     promql.Value     `json:"result"`
+	Expr       string           `json:"expr"`
+}
+
 type ruleResult struct {
-	Name         string         `json:"name"`
-	Alerts       []*rules.Alert `json:"alerts"`
-	MatrixResult queryData      `json:"matrixResult"`
-	HTMLSnippet  string         `json:"htmlSnippet"`
+	Name            string            `json:"name"`
+	Alerts          []*rules.Alert    `json:"alerts"`
+	MatrixResult    queryData         `json:"matrixResult"`
+	ExprQueryResult queryDataWithExpr `json:"exprQueryResult"`
+	HTMLSnippet     string            `json:"htmlSnippet"`
 }
 
 func testTemplateExpansion(ctx context.Context, queryFunc rules.QueryFunc, rgs *rulefmt.RuleGroups) (errs []string) {
@@ -958,6 +965,30 @@ func testTemplateExpansion(ctx context.Context, queryFunc rules.QueryFunc, rgs *
 	return errs
 }
 
+func downsampleMatrix(matrix promql.Matrix, maxSamples int) promql.Matrix {
+	var newMatrix promql.Matrix
+	for _, series := range matrix {
+		if len(series.Points) > maxSamples {
+			// Limiting till 'maxSamples' or 'maxSamples+1' samples.
+			step := len(series.Points) / maxSamples
+			var filtered []promql.Point
+			for i := 0; i < maxSamples; i++ {
+				filtered = append(filtered, series.Points[i*step])
+			}
+			// Adding the last sample if not added. We would want the
+			// first and the last sample after downsampling for proper
+			// limits in the graph.
+			if (maxSamples-1)*step < len(series.Points)-1 {
+				filtered = append(filtered, series.Points[len(series.Points)-1])
+			}
+			series.Points = filtered
+		}
+		newMatrix = append(newMatrix, series)
+	}
+
+	return newMatrix
+}
+
 func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 
 	// As we have 'goto' statement ahead, many variables are declared beforehand.
@@ -992,7 +1023,7 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 		goto endLabel
 	}
 
-	if postData.Time > 0 {
+	if postData.Time > 0 && int64(postData.Time) <= maxt.Unix() {
 		maxt = time.Unix(int64(postData.Time), 0)
 		mint = maxt.Add(-24 * time.Hour)
 	}
@@ -1069,18 +1100,9 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 
 			var matrix promql.Matrix
 			for _, series := range seriesHashMap {
-				if len(series.Points) > 256 {
-					// Limiting to 256-257 points.
-					step := len(series.Points) / 256
-					var filtered []promql.Point
-					for i := 0; i < 256; i++ {
-						filtered = append(filtered, series.Points[i*step])
-					}
-					filtered = append(filtered, series.Points[len(series.Points)-1])
-					series.Points = filtered
-				}
 				matrix = append(matrix, *series)
 			}
+			matrix = downsampleMatrix(matrix, 256)
 
 			htmlSnippet := string(alertingRule.HTMLSnippet(""))
 			// Removing the hyperlinks from the HTML snippet.
@@ -1096,6 +1118,34 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 				goto endLabel
 			}
 
+			// Querying the expression.
+
+			qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, rl.Expr, mint, maxt, 15*time.Second)
+			if err != nil {
+				ae = &apiError{errorBadData, err}
+				goto endLabel
+			}
+
+			res := qry.Exec(r.Context())
+			if res.Err != nil {
+				switch res.Err.(type) {
+				case promql.ErrQueryCanceled:
+					ae = &apiError{errorCanceled, res.Err}
+					goto endLabel
+				case promql.ErrQueryTimeout:
+					ae = &apiError{errorTimeout, res.Err}
+					goto endLabel
+				}
+				ae = &apiError{errorExec, res.Err}
+				goto endLabel
+			}
+
+			exprMatrix, err := res.Matrix()
+			if err != nil {
+				ae = &apiError{errorExec, err}
+				goto endLabel
+			}
+			exprMatrix = downsampleMatrix(exprMatrix, 256)
 			result.RuleResults = append(result.RuleResults, ruleResult{
 				Name:        rl.Alert,
 				Alerts:      alertingRule.ActiveAlerts(),
@@ -1103,6 +1153,11 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
 				MatrixResult: queryData{
 					Result:     matrix,
 					ResultType: matrix.Type(),
+				},
+				ExprQueryResult: queryDataWithExpr{
+					Result:     exprMatrix,
+					ResultType: exprMatrix.Type(),
+					Expr:       rl.Expr,
 				},
 			})
 
