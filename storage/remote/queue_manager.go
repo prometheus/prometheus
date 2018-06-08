@@ -444,8 +444,6 @@ func (s *shards) runShard(done chan struct{}) {
 		}
 	}()
 
-	queue := s.queue
-
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline
 	// anyways.
@@ -467,7 +465,7 @@ func (s *shards) runShard(done chan struct{}) {
 		case <-s.ctx.Done():
 			return
 
-		case sample, ok := <-queue:
+		case sample, ok := <-s.queue:
 			if !ok {
 				if len(pendingSamples) > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", len(pendingSamples))
