@@ -21,35 +21,45 @@ import (
 
 // Appender implements scrape.Appendable.
 func (s *Storage) Appender() (storage.Appender, error) {
-	return s, nil
+	return &storageAppender{
+		s: s,
+	}, nil
 }
 
-// Add implements storage.Appender.
-func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	for _, q := range s.queues {
-		q.Append(&model.Sample{
-			Metric:    labelsToMetric(l),
-			Timestamp: model.Time(t),
-			Value:     model.SampleValue(v),
-		})
-	}
+type storageAppender struct {
+	s       *Storage
+	samples []model.Sample
+}
+
+func (s *storageAppender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+	s.samples = append(s.samples, model.Sample{
+		Metric:    labelsToMetric(l),
+		Timestamp: model.Time(t),
+		Value:     model.SampleValue(v),
+	})
 	return 0, nil
 }
 
 // AddFast implements storage.Appender.
-func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
+func (s *storageAppender) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
 	_, err := s.Add(l, t, v)
 	return err
 }
 
 // Commit implements storage.Appender.
-func (*Storage) Commit() error {
+func (s *storageAppender) Commit() error {
+	s.s.mtx.RLock()
+	defer s.s.mtx.RUnlock()
+	for _, a := range s.samples {
+		for _, q := range s.s.queues {
+			q.Append(&a)
+		}
+	}
+
 	return nil
 }
 
 // Rollback implements storage.Appender.
-func (*Storage) Rollback() error {
+func (*storageAppender) Rollback() error {
 	return nil
 }
