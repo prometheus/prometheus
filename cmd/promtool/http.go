@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
@@ -15,29 +13,22 @@ const DEFAULT_TIMEOUT = 2 * time.Minute
 var promClient *PrometheusHttpClient
 
 type PrometheusHttpClientConfig struct {
-	ServerAddress string
+	ServerURL string
 }
 
 type PrometheusHttpClient struct {
-	Server         *url.URL
 	RequestTimeout time.Duration
 	HTTPClient     api.Client
 }
 
 func NewPrometheusHttpClient(cfg PrometheusHttpClientConfig) (*PrometheusHttpClient, error) {
-	u, err := url.Parse(cfg.ServerAddress)
-	if err != nil {
-		return nil, err
-	}
-	u.Path = strings.TrimRight(u.Path, "/")
 	hc, err := api.NewClient(api.Config{
-		Address: u.String(),
+		Address: cfg.ServerURL,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &PrometheusHttpClient{
-		Server:         u,
 		RequestTimeout: DEFAULT_TIMEOUT,
 		HTTPClient:     hc,
 	}, nil
@@ -62,7 +53,7 @@ type BodyGetterConfig struct {
 }
 
 func NewBodyGetter(cfg BodyGetterConfig) *BodyGetter {
-	req, err := http.NewRequest(http.MethodGet, promClient.Server.String()+cfg.Path, nil)
+	req, err := http.NewRequest(http.MethodGet, promClient.HTTPClient.URL(cfg.Path, nil).String(), nil)
 	if err != nil {
 		panic(err)
 	}

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,20 +65,20 @@ func main() {
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
-	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 
 	debugCmd := app.Command("debug", "debug cmd")
 	debugPprofCmd := debugCmd.Command("pprof", "pprof cmd")
-	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to query.").Required().String()
 	debugMetricsCmd := debugCmd.Command("metrics", "metrics cmd")
-	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to query.").Required().String()
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
@@ -102,13 +101,13 @@ func main() {
 
 	case debugPprofCmd.FullCommand():
 		initPromClient(PrometheusHttpClientConfig{
-			ServerAddress: (*debugPprofServer).String(),
+			ServerURL: *debugPprofServer,
 		})
 		os.Exit(DebugPprof())
 
 	case debugMetricsCmd.FullCommand():
 		initPromClient(PrometheusHttpClientConfig{
-			ServerAddress: (*debugMetricsServer).String(),
+			ServerURL: *debugMetricsServer,
 		})
 		os.Exit(DebugMetrics())
 	}
@@ -369,9 +368,9 @@ func CheckMetrics() int {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, query string) int {
+func QueryInstant(url string, query string) int {
 	config := api.Config{
-		Address: url.String(),
+		Address: url,
 	}
 
 	// Create new client.
@@ -398,9 +397,9 @@ func QueryInstant(url *url.URL, query string) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url *url.URL, query string, start string, end string) int {
+func QueryRange(url string, query string, start string, end string) int {
 	config := api.Config{
-		Address: url.String(),
+		Address: url,
 	}
 
 	// Create new client.
