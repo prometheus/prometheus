@@ -10,30 +10,40 @@ import (
 
 const DEFAULT_TIMEOUT = 2 * time.Minute
 
-type PrometheusHttpClientConfig struct {
+type HTTPClientConfig struct {
 	ServerURL string
 }
 
-type PrometheusHttpClient struct {
-	RequestTimeout time.Duration
-	HTTPClient     api.Client
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, []byte, error)
+	URLJoin(path string) string
 }
 
-func NewPrometheusHttpClient(cfg PrometheusHttpClientConfig) (*PrometheusHttpClient, error) {
+func NewHTTPClient(cfg HTTPClientConfig) (HTTPClient, error) {
 	hc, err := api.NewClient(api.Config{
 		Address: cfg.ServerURL,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &PrometheusHttpClient{
+	return &PrometheusHTTPClient{
 		RequestTimeout: DEFAULT_TIMEOUT,
 		HTTPClient:     hc,
 	}, nil
 }
 
-func (c *PrometheusHttpClient) Do(req *http.Request) (*http.Response, []byte, error) {
+type PrometheusHTTPClient struct {
+	RequestTimeout time.Duration
+	HTTPClient     api.Client
+	ServerURL      string
+}
+
+func (c *PrometheusHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.RequestTimeout)
 	defer cancel()
 	return c.HTTPClient.Do(ctx, req)
+}
+
+func (c *PrometheusHTTPClient) URLJoin(path string) string {
+	return c.HTTPClient.URL(path, nil).String()
 }

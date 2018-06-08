@@ -16,18 +16,18 @@ type DebugMetricsConfig struct {
 
 type DebugMetrics struct {
 	writer     *TarGzFileWriter
-	httpClient *PrometheusHttpClient
+	httpClient HTTPClient
 	request    *http.Request
 	fileName   string
 }
 
 func NewDebugMetrics(cfg DebugMetricsConfig) *DebugMetrics {
-	client, err := NewPrometheusHttpClient(PrometheusHttpClientConfig{ServerURL: cfg.server})
+	client, err := NewHTTPClient(HTTPClientConfig{ServerURL: cfg.server})
 	if err != nil {
 		panic(err)
 	}
 	tw := NewTarGzFileFileWriter(TarGzFileWriterConfig{FileName: cfg.tarballName})
-	req, err := http.NewRequest(http.MethodGet, client.HTTPClient.URL(cfg.path, nil).String(), nil)
+	req, err := http.NewRequest(http.MethodGet, client.URLJoin(cfg.path), nil)
 	if err != nil {
 		panic(err)
 	}

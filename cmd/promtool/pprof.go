@@ -21,20 +21,20 @@ type DebugPprofConfig struct {
 
 type DebugPprof struct {
 	writer           *TarGzFileWriter
-	httpClient       *PrometheusHttpClient
+	httpClient       HTTPClient
 	profileToRequest map[string]*http.Request
 	fileExt          string
 }
 
 func NewDebugPprof(cfg DebugPprofConfig) *DebugPprof {
-	client, err := NewPrometheusHttpClient(PrometheusHttpClientConfig{ServerURL: cfg.server})
+	client, err := NewHTTPClient(HTTPClientConfig{ServerURL: cfg.server})
 	if err != nil {
 		panic(err)
 	}
 	tw := NewTarGzFileFileWriter(TarGzFileWriterConfig{FileName: cfg.tarballName})
 	m := make(map[string]*http.Request)
 	for _, prof := range cfg.profileNames {
-		req, err := http.NewRequest(http.MethodGet, client.HTTPClient.URL(path.Join(PPROF_PATH, prof), nil).String(), nil)
+		req, err := http.NewRequest(http.MethodGet, client.URLJoin(path.Join(PPROF_PATH, prof)), nil)
 		if err != nil {
 			panic(err)
 		}
