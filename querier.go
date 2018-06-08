@@ -478,7 +478,7 @@ type baseChunkSeries struct {
 // over them. It drops chunks based on tombstones in the given reader.
 func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher) (ChunkSeriesSet, error) {
 	if tr == nil {
-		tr = EmptyTombstoneReader()
+		tr = NewMemTombstones()
 	}
 	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {

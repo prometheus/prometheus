@@ -69,7 +69,7 @@ type Head struct {
 
 	postings *index.MemPostings // postings lists for terms
 
-	tombstones memTombstones
+	tombstones *memTombstones
 }
 
 type headMetrics struct {
@@ -189,7 +189,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal WAL, chunkRange int64) (
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
-		tombstones: memTombstones{},
+		tombstones: NewMemTombstones(),
 	}
 	h.metrics = newHeadMetrics(h, r)
 
@@ -300,7 +300,7 @@ func (h *Head) ReadWAL() error {
 				if itv.Maxt < mint {
 					continue
 				}
-				h.tombstones.add(s.ref, itv)
+				h.tombstones.addInterval(s.ref, itv)
 			}
 		}
 	}
@@ -602,7 +602,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 		return err
 	}
 	for _, s := range stones {
-		h.tombstones.add(s.ref, s.intervals[0])
+		h.tombstones.addInterval(s.ref, s.intervals[0])
 	}
 	return nil
 }
