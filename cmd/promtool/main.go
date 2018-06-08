@@ -106,10 +106,12 @@ func main() {
 		os.Exit(DebugPprof())
 
 	case debugMetricsCmd.FullCommand():
-		initPromClient(PrometheusHttpClientConfig{
-			ServerURL: *debugMetricsServer,
-		})
-		os.Exit(DebugMetrics())
+		os.Exit(NewDebugMetrics(DebugMetricsConfig{
+			server:      *debugMetricsServer,
+			tarballName: "debug.tar.gz",
+			path:        "/metrics",
+			fileName:    "metrics.txt",
+		}).Exec())
 	}
 
 }
