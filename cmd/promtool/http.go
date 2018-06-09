@@ -24,39 +24,39 @@ import (
 
 const DEFAULT_TIMEOUT = 2 * time.Minute
 
-type HTTPClientConfig struct {
-	ServerURL string
+type httpClientConfig struct {
+	serverURL string
 }
 
-type HTTPClient interface {
-	Do(req *http.Request) (*http.Response, []byte, error)
-	URLJoin(path string) string
+type httpClient interface {
+	do(req *http.Request) (*http.Response, []byte, error)
+	urlJoin(path string) string
 }
 
-func NewHTTPClient(cfg HTTPClientConfig) (HTTPClient, error) {
+func newHTTPClient(cfg httpClientConfig) (httpClient, error) {
 	hc, err := api.NewClient(api.Config{
-		Address: cfg.ServerURL,
+		Address: cfg.serverURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error of creating http client: %s", err)
 	}
-	return &PrometheusHTTPClient{
-		RequestTimeout: DEFAULT_TIMEOUT,
-		HTTPClient:     hc,
+	return &prometheusHTTPClient{
+		requestTimeout: DEFAULT_TIMEOUT,
+		httpClient:     hc,
 	}, nil
 }
 
-type PrometheusHTTPClient struct {
-	RequestTimeout time.Duration
-	HTTPClient     api.Client
+type prometheusHTTPClient struct {
+	requestTimeout time.Duration
+	httpClient     api.Client
 }
 
-func (c *PrometheusHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.RequestTimeout)
+func (c *prometheusHTTPClient) do(req *http.Request) (*http.Response, []byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout)
 	defer cancel()
-	return c.HTTPClient.Do(ctx, req)
+	return c.httpClient.Do(ctx, req)
 }
 
-func (c *PrometheusHTTPClient) URLJoin(path string) string {
-	return c.HTTPClient.URL(path, nil).String()
+func (c *prometheusHTTPClient) urlJoin(path string) string {
+	return c.httpClient.URL(path, nil).String()
 }

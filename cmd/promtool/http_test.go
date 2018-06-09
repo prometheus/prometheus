@@ -43,11 +43,11 @@ func TestURLJoin(t *testing.T) {
 		{"https://host/", "/path/", "https://host/path"},
 	}
 	for i, c := range testCases {
-		client, err := NewHTTPClient(HTTPClientConfig{ServerURL: c.inputHost})
+		client, err := newHTTPClient(httpClientConfig{serverURL: c.inputHost})
 		if err != nil {
 			panic(err)
 		}
-		actual := client.URLJoin(c.inputPath)
+		actual := client.urlJoin(c.inputPath)
 		if actual != c.expected {
 			t.Errorf("Error on case %d: %v(actual) != %v(expected)", i, actual, c.expected)
 		}

@@ -23,58 +23,58 @@ import (
 
 const FILE_PERM = 0644
 
-type ArchiveWriterConfig struct {
-	ArchiveName string
+type archiveWriterConfig struct {
+	archiveName string
 }
 
-type ArchiveWriter interface {
-	Write(fileName string, buf *bytes.Buffer) error
-	Close() error
+type archiveWriter interface {
+	write(fileName string, buf *bytes.Buffer) error
+	close() error
 }
 
-func NewArchiveWriter(cfg ArchiveWriterConfig) (ArchiveWriter, error) {
-	f, err := os.Create(cfg.ArchiveName)
+func newArchiveWriter(cfg archiveWriterConfig) (archiveWriter, error) {
+	f, err := os.Create(cfg.archiveName)
 	if err != nil {
-		return nil, fmt.Errorf("error of creating archive %s: %s", cfg.ArchiveName, err)
+		return nil, fmt.Errorf("error of creating archive %s: %s", cfg.archiveName, err)
 	}
 	gzw := gzip.NewWriter(f)
 	tw := tar.NewWriter(gzw)
-	return &TarGzFileWriter{
-		TarWriter: tw,
-		GzWriter:  gzw,
-		File:      f,
+	return &tarGzFileWriter{
+		tarWriter: tw,
+		gzWriter:  gzw,
+		file:      f,
 	}, nil
 }
 
-type TarGzFileWriter struct {
-	TarWriter *tar.Writer
-	GzWriter  *gzip.Writer
-	File      *os.File
+type tarGzFileWriter struct {
+	tarWriter *tar.Writer
+	gzWriter  *gzip.Writer
+	file      *os.File
 }
 
-func (w *TarGzFileWriter) Close() error {
-	if err := w.TarWriter.Close(); err != nil {
+func (w *tarGzFileWriter) close() error {
+	if err := w.tarWriter.Close(); err != nil {
 		return err
 	}
-	if err := w.GzWriter.Close(); err != nil {
+	if err := w.gzWriter.Close(); err != nil {
 		return err
 	}
-	if err := w.File.Close(); err != nil {
+	if err := w.file.Close(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (w *TarGzFileWriter) Write(fileName string, buf *bytes.Buffer) error {
+func (w *tarGzFileWriter) write(fileName string, buf *bytes.Buffer) error {
 	header := &tar.Header{
 		Name: fileName,
 		Mode: FILE_PERM,
 		Size: int64(buf.Len()),
 	}
-	if err := w.TarWriter.WriteHeader(header); err != nil {
+	if err := w.tarWriter.WriteHeader(header); err != nil {
 		return err
 	}
-	if _, err := w.TarWriter.Write(buf.Bytes()); err != nil {
+	if _, err := w.tarWriter.Write(buf.Bytes()); err != nil {
 		return err
 	}
 	return nil

@@ -102,7 +102,7 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
-		os.Exit(NewResourceSaver(ResourceSaverConfig{
+		os.Exit(newResourceSaver(resourceSaverConfig{
 			server:      *debugPprofServer,
 			tarballName: "debug.tar.gz",
 			pathToFileName: map[string]string{
@@ -113,20 +113,20 @@ func main() {
 				"/debug/pprof/threadcreate": "threadcreate.pb",
 			},
 			postProcess: pprofPostProcess,
-		}).Exec())
+		}).exec())
 
 	case debugMetricsCmd.FullCommand():
-		os.Exit(NewResourceSaver(ResourceSaverConfig{
+		os.Exit(newResourceSaver(resourceSaverConfig{
 			server:      *debugMetricsServer,
 			tarballName: "debug.tar.gz",
 			pathToFileName: map[string]string{
 				"/metrics": "metrics.txt",
 			},
 			postProcess: metricsPostProcess,
-		}).Exec())
+		}).exec())
 
 	case debugAllCmd.FullCommand():
-		os.Exit(NewResourceSaver(ResourceSaverConfig{
+		os.Exit(newResourceSaver(resourceSaverConfig{
 			server:      *debugAllServer,
 			tarballName: "debug.tar.gz",
 			pathToFileName: map[string]string{
@@ -138,7 +138,7 @@ func main() {
 				"/metrics":                  "metrics.txt",
 			},
 			postProcess: allPostProcess,
-		}).Exec())
+		}).exec())
 	}
 
 }

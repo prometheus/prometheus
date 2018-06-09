@@ -22,38 +22,38 @@ import (
 	"github.com/google/pprof/profile"
 )
 
-type ResourceSaverConfig struct {
+type resourceSaverConfig struct {
 	server         string
 	tarballName    string
 	pathToFileName map[string]string
 	postProcess    func(b []byte) (*bytes.Buffer, error)
 }
 
-type ResourceSaver struct {
-	writer            ArchiveWriter
-	httpClient        HTTPClient
+type resourceSaver struct {
+	writer            archiveWriter
+	httpClient        httpClient
 	fileNameToRequest map[string]*http.Request
 	postProcess       func(b []byte) (*bytes.Buffer, error)
 }
 
-func NewResourceSaver(cfg ResourceSaverConfig) *ResourceSaver {
-	client, err := NewHTTPClient(HTTPClientConfig{ServerURL: cfg.server})
+func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
+	client, err := newHTTPClient(httpClientConfig{serverURL: cfg.server})
 	if err != nil {
 		panic(err)
 	}
-	tw, err := NewArchiveWriter(ArchiveWriterConfig{ArchiveName: cfg.tarballName})
+	tw, err := newArchiveWriter(archiveWriterConfig{archiveName: cfg.tarballName})
 	if err != nil {
 		panic(err)
 	}
 	m := make(map[string]*http.Request)
 	for path, filename := range cfg.pathToFileName {
-		req, err := http.NewRequest(http.MethodGet, client.URLJoin(path), nil)
+		req, err := http.NewRequest(http.MethodGet, client.urlJoin(path), nil)
 		if err != nil {
 			panic(err)
 		}
 		m[filename] = req
 	}
-	return &ResourceSaver{
+	return &resourceSaver{
 		writer:            tw,
 		httpClient:        client,
 		fileNameToRequest: m,
@@ -61,9 +61,9 @@ func NewResourceSaver(cfg ResourceSaverConfig) *ResourceSaver {
 	}
 }
 
-func (c *ResourceSaver) Exec() int {
+func (c *resourceSaver) exec() int {
 	for filename, req := range c.fileNameToRequest {
-		_, body, err := c.httpClient.Do(req)
+		_, body, err := c.httpClient.do(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -75,13 +75,13 @@ func (c *ResourceSaver) Exec() int {
 			return 1
 		}
 
-		if err := c.writer.Write(filename, buf); err != nil {
+		if err := c.writer.write(filename, buf); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 	}
 
-	if err := c.writer.Close(); err != nil {
+	if err := c.writer.close(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
