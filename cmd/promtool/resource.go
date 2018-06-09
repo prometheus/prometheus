@@ -108,3 +108,11 @@ var metricsPostProcess = func(b []byte) (*bytes.Buffer, error) {
 	fmt.Println(buf.String())
 	return buf, nil
 }
+
+var allPostProcess = func(b []byte) (*bytes.Buffer, error) {
+	_, err := validate(b)
+	if err != nil {
+		return metricsPostProcess(b)
+	}
+	return pprofPostProcess(b)
+}

@@ -76,9 +76,11 @@ func main() {
 
 	debugCmd := app.Command("debug", "debug cmd")
 	debugPprofCmd := debugCmd.Command("pprof", "pprof cmd")
-	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to query.").Required().String()
+	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to get pprof files.").Required().String()
 	debugMetricsCmd := debugCmd.Command("metrics", "metrics cmd")
-	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to query.").Required().String()
+	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to get metrics.").Required().String()
+	debugAllCmd := debugCmd.Command("all", "all cmd")
+	debugAllServer := debugAllCmd.Arg("server", "Prometheus server to get all debug infomation.").Required().String()
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
@@ -121,6 +123,21 @@ func main() {
 				"/metrics": "metrics.txt",
 			},
 			postProcess: metricsPostProcess,
+		}).Exec())
+
+	case debugAllCmd.FullCommand():
+		os.Exit(NewResourceSaver(ResourceSaverConfig{
+			server:      *debugAllServer,
+			tarballName: "debug.tar.gz",
+			pathToFileName: map[string]string{
+				"/debug/pprof/block":        "block.pb",
+				"/debug/pprof/goroutine":    "goroutine.pb",
+				"/debug/pprof/heap":         "heap.pb",
+				"/debug/pprof/mutex":        "mutex.pb",
+				"/debug/pprof/threadcreate": "threadcreate.pb",
+				"/metrics":                  "metrics.txt",
+			},
+			postProcess: allPostProcess,
 		}).Exec())
 	}
 
