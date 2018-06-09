@@ -28,7 +28,10 @@ func NewResourceSaver(cfg ResourceSaverConfig) *ResourceSaver {
 	if err != nil {
 		panic(err)
 	}
-	tw := NewArchiveWriter(ArchiveWriterConfig{ArchiveName: cfg.tarballName})
+	tw, err := NewArchiveWriter(ArchiveWriterConfig{ArchiveName: cfg.tarballName})
+	if err != nil {
+		panic(err)
+	}
 	m := make(map[string]*http.Request)
 	for path, filename := range cfg.pathToFileName {
 		req, err := http.NewRequest(http.MethodGet, client.URLJoin(path), nil)

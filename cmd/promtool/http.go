@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -24,7 +25,7 @@ func NewHTTPClient(cfg HTTPClientConfig) (HTTPClient, error) {
 		Address: cfg.ServerURL,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error of creating http client: %s", err)
 	}
 	return &PrometheusHTTPClient{
 		RequestTimeout: DEFAULT_TIMEOUT,

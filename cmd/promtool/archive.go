@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"os"
 )
 
@@ -18,10 +19,10 @@ type ArchiveWriter interface {
 	Close() error
 }
 
-func NewArchiveWriter(cfg ArchiveWriterConfig) ArchiveWriter {
+func NewArchiveWriter(cfg ArchiveWriterConfig) (ArchiveWriter, error) {
 	f, err := os.Create(cfg.ArchiveName)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("error of creating archive %s: %s", cfg.ArchiveName, err)
 	}
 	gzw := gzip.NewWriter(f)
 	tw := tar.NewWriter(gzw)
@@ -29,7 +30,7 @@ func NewArchiveWriter(cfg ArchiveWriterConfig) ArchiveWriter {
 		TarWriter: tw,
 		GzWriter:  gzw,
 		File:      f,
-	}
+	}, nil
 }
 
 type TarGzFileWriter struct {
