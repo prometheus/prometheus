@@ -131,6 +131,22 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
 		},
+		// Simple aggregations.
+		{
+			expr: "sum(a_X)",
+		},
+		{
+			expr: "sum without (l)(h_X)",
+		},
+		{
+			expr: "sum without (le)(h_X)",
+		},
+		{
+			expr: "sum by (l)(h_X)",
+		},
+		{
+			expr: "sum by (le)(h_X)",
+		},
 		// Combinations.
 		{
 			expr: "rate(a_X[1m]) + rate(b_X[1m])",
