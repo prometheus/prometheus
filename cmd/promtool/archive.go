@@ -14,7 +14,7 @@ type ArchiveWriterConfig struct {
 }
 
 type ArchiveWriter interface {
-	Write(fileName string, buf bytes.Buffer) error
+	Write(fileName string, buf *bytes.Buffer) error
 	Close() error
 }
 
@@ -51,7 +51,7 @@ func (w *TarGzFileWriter) Close() error {
 	return nil
 }
 
-func (w *TarGzFileWriter) Write(fileName string, buf bytes.Buffer) error {
+func (w *TarGzFileWriter) Write(fileName string, buf *bytes.Buffer) error {
 	header := &tar.Header{
 		Name: fileName,
 		Mode: FILE_PERM,

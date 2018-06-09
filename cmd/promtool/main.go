@@ -100,25 +100,27 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
-		os.Exit(NewDebugPprof(DebugPprofConfig{
+		os.Exit(NewResourceSaver(ResourceSaverConfig{
 			server:      *debugPprofServer,
 			tarballName: "debug.tar.gz",
-			profileNames: []string{
-				"block",
-				"goroutine",
-				"heap",
-				"mutex",
-				"threadcreate",
+			pathToFileName: map[string]string{
+				"/debug/pprof/block":        "block.pb",
+				"/debug/pprof/goroutine":    "goroutine.pb",
+				"/debug/pprof/heap":         "heap.pb",
+				"/debug/pprof/mutex":        "mutex.pb",
+				"/debug/pprof/threadcreate": "threadcreate.pb",
 			},
-			fileExt: ".pb",
+			postProcess: pprofPostProcess,
 		}).Exec())
 
 	case debugMetricsCmd.FullCommand():
-		os.Exit(NewDebugMetrics(DebugMetricsConfig{
+		os.Exit(NewResourceSaver(ResourceSaverConfig{
 			server:      *debugMetricsServer,
 			tarballName: "debug.tar.gz",
-			path:        "/metrics",
-			fileName:    "metrics.txt",
+			pathToFileName: map[string]string{
+				"/metrics": "metrics.txt",
+			},
+			postProcess: metricsPostProcess,
 		}).Exec())
 	}
 
