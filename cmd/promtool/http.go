@@ -49,7 +49,6 @@ func NewHTTPClient(cfg HTTPClientConfig) (HTTPClient, error) {
 type PrometheusHTTPClient struct {
 	RequestTimeout time.Duration
 	HTTPClient     api.Client
-	ServerURL      string
 }
 
 func (c *PrometheusHTTPClient) Do(req *http.Request) (*http.Response, []byte, error) {
