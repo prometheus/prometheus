@@ -27,6 +27,7 @@ ifdef DEBUG
 	bindata_flags = -debug
 endif
 
+.PHONY: assets
 assets:
 	@echo ">> writing assets"
 	@$(GO) get -u github.com/jteeuwen/go-bindata/...
