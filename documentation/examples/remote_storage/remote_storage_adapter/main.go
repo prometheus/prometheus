@@ -197,7 +197,7 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	level.Info(logger).Log("Starting up...")
+	level.Info(logger).Log("msg", "Starting up...")
 	return writers, readers
 }
 
