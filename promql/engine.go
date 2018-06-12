@@ -1486,10 +1486,8 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 
 			if without {
 				lb := labels.NewBuilder(metric)
-				if without {
-					lb.Del(grouping...)
-					lb.Del(labels.MetricName)
-				}
+				lb.Del(grouping...)
+				lb.Del(labels.MetricName)
 				m = lb.Labels()
 			} else {
 				m = make(labels.Labels, 0, len(grouping))
