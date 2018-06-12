@@ -757,13 +757,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
 		"consolesPath": func() string { return consolesPath },
-		"pathPrefix": func() string {
-			if opts.RoutePrefix == "/" {
-				return ""
-			} else {
-				return opts.RoutePrefix
-			}
-		},
+		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {
