@@ -487,6 +487,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Func = extractFuncFromPath(path)
+			params.Groups = extractGroupsFromPath(path)
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
@@ -502,6 +503,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			params.Groups = extractGroupsFromPath(path)
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
@@ -517,6 +519,18 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil
 	})
 	return querier, err
+}
+
+func extractGroupsFromPath(p []Node) []string {
+	var groups []string
+
+	for _, n := range p {
+		switch n := n.(type) {
+		case *AggregateExpr:
+			groups = append(groups, n.Grouping...)
+		}
+	}
+	return groups
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of

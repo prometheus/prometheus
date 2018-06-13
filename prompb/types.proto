@@ -53,4 +53,5 @@ message LabelMatcher {
 message ReadHints {
   int64 step_ms = 1; // Query step size in milliseconds.
   string func = 2;   // String representation of surrounding function or aggregation.
+  repeated string groups = 3; // List of label names of any fields used in a group-by aggregation
 }

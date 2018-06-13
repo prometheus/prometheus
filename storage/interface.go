@@ -63,8 +63,9 @@ type Querier interface {
 
 // SelectParams specifies parameters passed to data selections.
 type SelectParams struct {
-	Step int64  // Query step size in milliseconds.
-	Func string // String representation of surrounding function or aggregation.
+	Step   int64    // Query step size in milliseconds.
+	Func   string   // String representation of surrounding function or aggregation.
+	Groups []string // List of label names found in group-by clause
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as
