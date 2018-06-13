@@ -360,7 +360,13 @@ func (db *DB) compact() (changes bool, err error) {
 		head := &rangeHead{
 			head: db.head,
 			mint: mint,
-			maxt: maxt,
+			// We remove 1 millisecond from maxt because block
+			// intervals are half-open: [b.MinTime, b.MaxTime). But
+			// chunk intervals are closed: [c.MinTime, c.MaxTime];
+			// so in order to make sure that overlaps are evaluated
+			// consistently, we explicitly remove the last value
+			// from the block interval here.
+			maxt: maxt - 1,
 		}
 		if _, err = db.compactor.Write(db.dir, head, mint, maxt, nil); err != nil {
 			return changes, errors.Wrap(err, "persist head block")
