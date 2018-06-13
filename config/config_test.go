@@ -128,6 +128,7 @@ var expectedConf = &Config{
 							"my":   "label",
 							"your": "label",
 						},
+						Source: "0",
 					},
 				},
 
@@ -484,6 +485,7 @@ var expectedConf = &Config{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
 						},
+						Source: "0",
 					},
 				},
 			},
@@ -503,6 +505,7 @@ var expectedConf = &Config{
 						Targets: []model.LabelSet{
 							{model.AddressLabel: "localhost:9090"},
 						},
+						Source: "0",
 					},
 				},
 			},
@@ -548,6 +551,7 @@ var expectedConf = &Config{
 								{model.AddressLabel: "1.2.3.5:9093"},
 								{model.AddressLabel: "1.2.3.6:9093"},
 							},
+							Source: "0",
 						},
 					},
 				},
