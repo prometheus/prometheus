@@ -95,10 +95,13 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	if err != nil {
 		return nil, err
 	}
+	var rp *prompb.ReadHints = nil
 
-	rp := &prompb.ReadHints{
-		StepMs: p.Step,
-		Func:   p.Func,
+	if p != nil {
+		rp = &prompb.ReadHints{
+			StepMs: p.Step,
+			Func:   p.Func,
+		}
 	}
 
 	return &prompb.Query{
