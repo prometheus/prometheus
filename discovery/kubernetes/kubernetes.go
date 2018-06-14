@@ -250,28 +250,31 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	switch d.role {
 	case RoleEndpoint:
 		for _, namespace := range namespaces {
+			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Endpoints(namespace).List(options)
+					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Endpoints(namespace).Watch(options)
+					return e.Watch(options)
 				},
 			}
+			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Services(namespace).List(options)
+					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Services(namespace).Watch(options)
+					return s.Watch(options)
 				},
 			}
+			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Pods(namespace).List(options)
+					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Pods(namespace).Watch(options)
+					return p.Watch(options)
 				},
 			}
 			eps := NewEndpoints(
@@ -287,12 +290,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RolePod:
 		for _, namespace := range namespaces {
+			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Pods(namespace).List(options)
+					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Pods(namespace).Watch(options)
+					return p.Watch(options)
 				},
 			}
 			pod := NewPod(
@@ -304,12 +308,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleService:
 		for _, namespace := range namespaces {
+			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Services(namespace).List(options)
+					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Services(namespace).Watch(options)
+					return s.Watch(options)
 				},
 			}
 			svc := NewService(
@@ -321,12 +326,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleIngress:
 		for _, namespace := range namespaces {
+			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.ExtensionsV1beta1().Ingresses(namespace).List(options)
+					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.ExtensionsV1beta1().Ingresses(namespace).Watch(options)
+					return i.Watch(options)
 				},
 			}
 			ingress := NewIngress(
