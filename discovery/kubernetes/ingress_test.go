@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -64,13 +65,14 @@ func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
 	}
 }
 
-func expectedTargetGroups(tls bool) map[string]*targetgroup.Group {
+func expectedTargetGroups(ns string, tls bool) map[string]*targetgroup.Group {
 	scheme := "http"
 	if tls {
 		scheme = "https"
 	}
+	key := fmt.Sprintf("ingress/%s/testingress", ns)
 	return map[string]*targetgroup.Group{
-		"ingress/default/testingress": {
+		key: {
 			Targets: []model.LabelSet{
 				{
 					"__meta_kubernetes_ingress_scheme": lv(scheme),
@@ -93,11 +95,11 @@ func expectedTargetGroups(tls bool) map[string]*targetgroup.Group {
 			},
 			Labels: model.LabelSet{
 				"__meta_kubernetes_ingress_name":                      "testingress",
-				"__meta_kubernetes_namespace":                         "default",
+				"__meta_kubernetes_namespace":                         lv(ns),
 				"__meta_kubernetes_ingress_label_testlabel":           "testvalue",
 				"__meta_kubernetes_ingress_annotation_testannotation": "testannotationvalue",
 			},
-			Source: "ingress/default/testingress",
+			Source: key,
 		},
 	}
 }
@@ -113,7 +115,7 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups(false),
+		expectedRes:      expectedTargetGroups("default", false),
 	}.Run(t)
 }
 
@@ -128,6 +130,28 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups(true),
+		expectedRes:      expectedTargetGroups("default", true),
+	}.Run(t)
+}
+
+func TestIngressDiscoveryNamespaces(t *testing.T) {
+	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+
+	expected := expectedTargetGroups("ns1", false)
+	for k, v := range expectedTargetGroups("ns2", false) {
+		expected[k] = v
+	}
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			for _, ns := range []string{"ns1", "ns2"} {
+				obj := makeIngress(nil)
+				obj.Namespace = ns
+				c.ExtensionsV1beta1().Ingresses(obj.Namespace).Create(obj)
+				w.Ingresses().Add(obj)
+			}
+		},
+		expectedMaxItems: 2,
+		expectedRes:      expected,
 	}.Run(t)
 }
