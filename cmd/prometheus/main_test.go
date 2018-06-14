@@ -184,8 +184,8 @@ func TestFailedStartupExitCode(t *testing.T) {
 	}
 }
 
-// TestApplyConfig ensures that no component is modifing the global config.
-// The config includes many pointers so modifing it has global side effects.
+// TestApplyConfig ensures that no component is modifying the global config.
+// The config includes many pointers so modifying it has global side effects.
 func TestApplyConfig(t *testing.T) {
 	// Disable k8s logs.
 	k8s_runtime.ErrorHandlers = []func(error){}
@@ -213,7 +213,6 @@ func TestApplyConfig(t *testing.T) {
 		remoteStorage.ApplyConfig,
 		webHandler.ApplyConfig,
 		notifyManager.ApplyConfig,
-		scrapeManager.ApplyConfig,
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
