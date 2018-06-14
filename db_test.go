@@ -1153,3 +1153,35 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		testutil.Assert(t, chunkCount == 1, "expected 1 chunk in block %s, got %d", meta.ULID, chunkCount)
 	}
 }
+
+func TestQuerierWithBoundaryChunks(t *testing.T) {
+	db, close := openTestDB(t, nil)
+	defer close()
+	defer db.Close()
+
+	app := db.Appender()
+
+	blockRange := DefaultOptions.BlockRanges[0]
+	label := labels.FromStrings("foo", "bar")
+
+	for i := int64(0); i < 5; i++ {
+		_, err := app.Add(label, i*blockRange, 0)
+		testutil.Ok(t, err)
+	}
+
+	err := app.Commit()
+	testutil.Ok(t, err)
+
+	_, err = db.compact()
+	testutil.Ok(t, err)
+
+	testutil.Assert(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
+
+	q, err := db.Querier(blockRange, 2*blockRange)
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	// The requested interval covers 2 blocks, so the querier should contain 2 blocks.
+	count := len(q.(*querier).blocks)
+	testutil.Assert(t, count == 2, "expected 2 blocks in querier, got %d", count)
+}
