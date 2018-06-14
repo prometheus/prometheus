@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -114,6 +115,33 @@ func makePods() *v1.Pod {
 	}
 }
 
+func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	return map[string]*targetgroup.Group{
+		key: {
+			Targets: []model.LabelSet{
+				{
+					"__address__":                                   "1.2.3.4:9000",
+					"__meta_kubernetes_pod_container_name":          "testcontainer",
+					"__meta_kubernetes_pod_container_port_name":     "testport",
+					"__meta_kubernetes_pod_container_port_number":   "9000",
+					"__meta_kubernetes_pod_container_port_protocol": "TCP",
+				},
+			},
+			Labels: model.LabelSet{
+				"__meta_kubernetes_pod_name":      "testpod",
+				"__meta_kubernetes_namespace":     lv(ns),
+				"__meta_kubernetes_pod_node_name": "testnode",
+				"__meta_kubernetes_pod_ip":        "1.2.3.4",
+				"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+				"__meta_kubernetes_pod_ready":     "true",
+				"__meta_kubernetes_pod_uid":       "abc123",
+			},
+			Source: key,
+		},
+	}
+}
+
 func TestPodDiscoveryBeforeRun(t *testing.T) {
 	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{})
 
@@ -177,29 +205,7 @@ func TestPodDiscoveryAdd(t *testing.T) {
 			w.Pods().Add(obj)
 		},
 		expectedMaxItems: 1,
-		expectedRes: map[string]*targetgroup.Group{
-			"pod/default/testpod": {
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-					"__meta_kubernetes_pod_uid":       "abc123",
-				},
-				Source: "pod/default/testpod",
-			},
-		},
+		expectedRes:      expectedPodTargetGroups("default"),
 	}.Run(t)
 }
 
@@ -260,29 +266,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 			w.Pods().Modify(obj)
 		},
 		expectedMaxItems: 2,
-		expectedRes: map[string]*targetgroup.Group{
-			"pod/default/testpod": {
-				Targets: []model.LabelSet{
-					{
-						"__address__":                                   "1.2.3.4:9000",
-						"__meta_kubernetes_pod_container_name":          "testcontainer",
-						"__meta_kubernetes_pod_container_port_name":     "testport",
-						"__meta_kubernetes_pod_container_port_number":   "9000",
-						"__meta_kubernetes_pod_container_port_protocol": "TCP",
-					},
-				},
-				Labels: model.LabelSet{
-					"__meta_kubernetes_pod_name":      "testpod",
-					"__meta_kubernetes_namespace":     "default",
-					"__meta_kubernetes_pod_node_name": "testnode",
-					"__meta_kubernetes_pod_ip":        "1.2.3.4",
-					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
-					"__meta_kubernetes_pod_ready":     "true",
-					"__meta_kubernetes_pod_uid":       "abc123",
-				},
-				Source: "pod/default/testpod",
-			},
-		},
+		expectedRes:      expectedPodTargetGroups("default"),
 	}.Run(t)
 }
 
@@ -309,5 +293,27 @@ func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 				Source: "pod/default/testpod",
 			},
 		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryNamespaces(t *testing.T) {
+	n, c, w := makeDiscovery(RolePod, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+
+	expected := expectedPodTargetGroups("ns1")
+	for k, v := range expectedPodTargetGroups("ns2") {
+		expected[k] = v
+	}
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			for _, ns := range []string{"ns1", "ns2"} {
+				pod := makePods()
+				pod.Namespace = ns
+				c.CoreV1().Pods(pod.Namespace).Create(pod)
+				w.Pods().Add(pod)
+			}
+		},
+		expectedMaxItems: 2,
+		expectedRes:      expected,
 	}.Run(t)
 }
