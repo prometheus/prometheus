@@ -33,6 +33,7 @@ function mustacheFormatMap(map) {
 
 
 function reinitJQueryFunctions() {
+  // Turning off previous functions.
   $(".alert_header").off();
   $("div.show-annotations").off();
   $("div.show-graphs").off();
@@ -101,11 +102,6 @@ Graph.timeFactors = {
   "m": 60,
   "s": 1
 };
-
-Graph.stepValues = [
-  "1s", "10s", "1m", "5m", "15m", "30m", "1h", "2h", "6h", "12h", "1d", "2d",
-  "1w", "2w", "4w", "8w", "1y", "2y"
-];
 
 Graph.numGraphs = 0;
 

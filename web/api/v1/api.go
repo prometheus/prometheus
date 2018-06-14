@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -311,20 +312,9 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
-	if err != nil {
-		return nil, &apiError{errorBadData, err}
-	}
-
-	res := qry.Exec(ctx)
-	if res.Err != nil {
-		switch res.Err.(type) {
-		case promql.ErrQueryCanceled:
-			return nil, &apiError{errorCanceled, res.Err}
-		case promql.ErrQueryTimeout:
-			return nil, &apiError{errorTimeout, res.Err}
-		}
-		return nil, &apiError{errorExec, res.Err}
+	qry, res, apiErr := rangeQuery(api, ctx, r.FormValue("query"), start, end, step)
+	if apiErr != nil {
+		return nil, apiErr
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -338,6 +328,26 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil
+}
+
+func rangeQuery(api *API, ctx context.Context, qs string, start, end time.Time, step time.Duration) (promql.Query, *promql.Result, *apiError) {
+	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, qs, start, end, step)
+	if err != nil {
+		return nil, nil, &apiError{errorBadData, err}
+	}
+
+	res := qry.Exec(ctx)
+	if res.Err != nil {
+		switch res.Err.(type) {
+		case promql.ErrQueryCanceled:
+			return nil, nil, &apiError{errorCanceled, res.Err}
+		case promql.ErrQueryTimeout:
+			return nil, nil, &apiError{errorTimeout, res.Err}
+		}
+		return nil, nil, &apiError{errorExec, res.Err}
+	}
+
+	return qry, res, nil
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError) {
@@ -869,6 +879,8 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 	return false
 }
 
+// Alert testing api logic follows from here.
+
 type alertsTestResult struct {
 	IsError              bool                        `json:"isError"`
 	Errors               []string                    `json:"errors"`
@@ -895,18 +907,194 @@ func newAlertsTestResult() alertsTestResult {
 	}
 }
 
-type queryDataWithExpr struct {
-	ResultType promql.ValueType `json:"resultType"`
-	Result     promql.Value     `json:"result"`
-	Expr       string           `json:"expr"`
-}
-
 type ruleResult struct {
 	Name            string            `json:"name"`
 	Alerts          []*rules.Alert    `json:"alerts"`
 	MatrixResult    queryData         `json:"matrixResult"`
 	ExprQueryResult queryDataWithExpr `json:"exprQueryResult"`
 	HTMLSnippet     string            `json:"htmlSnippet"`
+}
+
+type queryDataWithExpr struct {
+	ResultType promql.ValueType `json:"resultType"`
+	Result     promql.Value     `json:"result"`
+	Expr       string           `json:"expr"`
+}
+
+var alertTestingSampleInterval = 15 * time.Second
+
+func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
+
+	// As we have 'goto' statement ahead, variables have to be declared beforehand.
+	var (
+		// Final result variables.
+		result = newAlertsTestResult()
+		ae     *apiError
+
+		mint, maxt time.Time
+		ruleString string
+		rgs        *rulefmt.RuleGroups
+		queryFunc  rules.QueryFunc
+
+		errs []error
+	)
+
+	mint, maxt, ruleString, ae = parseAlertsTestingBody(r.Body)
+	if ae != nil {
+		goto endLabel
+	}
+
+	// Checking syntax of rule file and expression.
+	if rgs, errs = rulefmt.Parse([]byte(ruleString)); len(errs) > 0 {
+		result.IsError = true
+		for _, e := range errs {
+			result.Errors = append(result.Errors, e.Error())
+		}
+		goto endLabel
+	}
+
+	queryFunc = rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
+
+	// Trying to expand the templates.
+	result.Errors = testTemplateExpansion(r.Context(), queryFunc, rgs)
+	if len(result.Errors) > 0 {
+		result.IsError = true
+		goto endLabel
+	}
+
+	// Simulating the Alerts.
+	for _, g := range rgs.Groups {
+		for _, rl := range g.Rules {
+			if rl.Alert == "" {
+				// Not an alerting rule.
+				continue
+			}
+
+			expr, err := promql.ParseExpr(rl.Expr)
+			if err != nil {
+				result.IsError = true
+				result.Errors = append(result.Errors, fmt.Sprintf("Failed the parse the expression `%s`", rl.Expr))
+				goto endLabel
+			}
+			lbls, anns := labels.FromMap(rl.Labels), labels.FromMap(rl.Annotations)
+			alertingRule := rules.NewAlertingRule(rl.Alert, expr, time.Duration(rl.For), lbls, anns, nil)
+
+			seriesHashMap := make(map[uint64]*promql.Series) // All the series created for this rule.
+			nextiter := func(curr, max time.Time, step time.Duration) time.Time {
+				diff := max.Sub(curr)
+				if diff != 0 && diff < step {
+					return max
+				} else {
+					return curr.Add(step)
+				}
+			}
+			// Evaluating the alerting rule for past 1 day.
+			for t := mint; maxt.Sub(t) >= 0; t = nextiter(t, maxt, alertTestingSampleInterval) {
+				vec, err := alertingRule.Eval(r.Context(), t, queryFunc, nil)
+				if err != nil {
+					ae = &apiError{errorInternal, err}
+					goto endLabel
+				}
+				for _, smpl := range vec {
+					var (
+						series *promql.Series
+						ok     bool
+					)
+					if series, ok = seriesHashMap[smpl.Metric.Hash()]; !ok {
+						series = &promql.Series{Metric: smpl.Metric}
+						seriesHashMap[smpl.Metric.Hash()] = series
+					}
+					series.Points = append(series.Points, smpl.Point)
+				}
+			}
+
+			var matrix promql.Matrix
+			for _, series := range seriesHashMap {
+				matrix = append(matrix, *series)
+			}
+			matrix = downsampleMatrix(matrix, 256, false)
+
+			htmlSnippet := string(alertingRule.HTMLSnippet(""))
+			// Removing the hyperlinks from the HTML snippet.
+			var ar rulefmt.Rule
+			if err = yaml.Unmarshal([]byte(htmlSnippet), &ar); err != nil {
+				ae = &apiError{errorInternal, err}
+				goto endLabel
+			}
+			ar.Alert, ar.Expr = rl.Alert, rl.Expr
+			bytes, err := yaml.Marshal(ar)
+			if err != nil {
+				ae = &apiError{errorInternal, err}
+				goto endLabel
+			}
+
+			// Querying the expression.
+			_, res, apiErr := rangeQuery(api, r.Context(), rl.Expr, mint, maxt, alertTestingSampleInterval)
+			if apiErr != nil {
+				ae = apiErr
+				goto endLabel
+			}
+			exprMatrix, err := res.Matrix()
+			if err != nil {
+				ae = &apiError{errorExec, err}
+				goto endLabel
+			}
+			exprMatrix = downsampleMatrix(exprMatrix, 256, true)
+			result.RuleResults = append(result.RuleResults, ruleResult{
+				Name:        rl.Alert,
+				Alerts:      alertingRule.ActiveAlerts(),
+				HTMLSnippet: string(bytes),
+				MatrixResult: queryData{
+					Result:     matrix,
+					ResultType: matrix.Type(),
+				},
+				ExprQueryResult: queryDataWithExpr{
+					Result:     exprMatrix,
+					ResultType: exprMatrix.Type(),
+					Expr:       rl.Expr,
+				},
+			})
+
+		}
+	}
+
+endLabel:
+	return result, ae
+}
+
+func parseAlertsTestingBody(body io.ReadCloser) (time.Time, time.Time, string, *apiError) {
+
+	var (
+		postData struct {
+			RuleText string
+			Time     float64
+		}
+
+		// Time ranges for which the alerting rule will be simulated.
+		// It is set to past 1 day.
+		maxt = time.Now()
+		mint time.Time
+
+		ruleString string
+		err        error
+	)
+
+	decoder := json.NewDecoder(body)
+	defer body.Close()
+	if err = decoder.Decode(&postData); err != nil {
+		return maxt, maxt, "", &apiError{errorBadData, err}
+	}
+
+	if postData.Time > 0 && int64(postData.Time) <= maxt.Unix() {
+		maxt = time.Unix(int64(postData.Time), 0)
+	}
+	mint = maxt.Add(-24 * time.Hour)
+
+	if ruleString, err = url.QueryUnescape(postData.RuleText); err != nil {
+		return maxt, maxt, "", &apiError{errorBadData, err}
+	}
+
+	return mint, maxt, ruleString, nil
 }
 
 func testTemplateExpansion(ctx context.Context, queryFunc rules.QueryFunc, rgs *rulefmt.RuleGroups) (errs []string) {
@@ -965,15 +1153,37 @@ func testTemplateExpansion(ctx context.Context, queryFunc rules.QueryFunc, rgs *
 	return errs
 }
 
-func downsampleMatrix(matrix promql.Matrix, maxSamples int) promql.Matrix {
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// downsampleMatrix picks out samples (or averages) with a fixed step to have
+// maximum of `maxSamples` or `maxSamples + 1` samples as result for
+// every series (including the first and the last sample in the series).
+// If avg=true, it performs average of samples over the range within the step,
+// else only pics the samples.
+func downsampleMatrix(matrix promql.Matrix, maxSamples int, avg bool) promql.Matrix {
 	var newMatrix promql.Matrix
 	for _, series := range matrix {
 		if len(series.Points) > maxSamples {
 			// Limiting till 'maxSamples' or 'maxSamples+1' samples.
 			step := len(series.Points) / maxSamples
 			var filtered []promql.Point
-			for i := 0; i < maxSamples; i++ {
-				filtered = append(filtered, series.Points[i*step])
+			if avg {
+				for i := 0; i < maxSamples; i++ {
+					var v float64 = 0
+					for j := i * step; j < min((i+1)*step, len(series.Points)); j++ {
+						v += series.Points[j].V
+					}
+					filtered = append(filtered, promql.Point{series.Points[i*step].T, v})
+				}
+			} else {
+				for i := 0; i < maxSamples; i++ {
+					filtered = append(filtered, series.Points[i*step])
+				}
 			}
 			// Adding the last sample if not added. We would want the
 			// first and the last sample after downsampling for proper
@@ -987,183 +1197,4 @@ func downsampleMatrix(matrix promql.Matrix, maxSamples int) promql.Matrix {
 	}
 
 	return newMatrix
-}
-
-func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError) {
-
-	// As we have 'goto' statement ahead, many variables are declared beforehand.
-	var (
-		// Final result variables.
-		result = newAlertsTestResult()
-		ae     *apiError
-
-		// Time ranges for which the alerting rule will be simulated.
-		// It is set to past 1 day.
-		maxt = time.Now()
-		mint = maxt.Add(-24 * time.Hour)
-
-		postData struct {
-			RuleText string
-			Time     float64
-		}
-		ruleString string
-		rgs        *rulefmt.RuleGroups
-		queryFunc  rules.QueryFunc
-
-		err     error
-		errs    []error
-		errStrs []string
-	)
-
-	// Getting the Rule string from HTTP body.
-	decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
-	if err = decoder.Decode(&postData); err != nil {
-		ae = &apiError{errorBadData, err}
-		goto endLabel
-	}
-
-	if postData.Time > 0 && int64(postData.Time) <= maxt.Unix() {
-		maxt = time.Unix(int64(postData.Time), 0)
-		mint = maxt.Add(-24 * time.Hour)
-	}
-
-	if ruleString, err = url.QueryUnescape(postData.RuleText); err != nil {
-		ae = &apiError{errorBadData, err}
-		goto endLabel
-	}
-
-	// Checking syntax of rule file and expression.
-	if rgs, errs = rulefmt.Parse([]byte(ruleString)); len(errs) > 0 {
-		result.IsError = true
-		for _, e := range errs {
-			result.Errors = append(result.Errors, e.Error())
-		}
-		goto endLabel
-	}
-
-	queryFunc = rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
-
-	// Trying to expand the templates.
-	errStrs = testTemplateExpansion(r.Context(), queryFunc, rgs)
-	if len(errStrs) > 0 {
-		result.IsError = true
-		result.Errors = errStrs
-		goto endLabel
-	}
-
-	// Simulating the Alerts.
-	for _, g := range rgs.Groups {
-		for _, rl := range g.Rules {
-			if rl.Alert == "" {
-				// Not an alerting rule.
-				continue
-			}
-
-			expr, err := promql.ParseExpr(rl.Expr)
-			if err != nil {
-				result.IsError = true
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed the parse the expression `%s`", rl.Expr))
-				goto endLabel
-			}
-			lbls, anns := labels.FromMap(rl.Labels), labels.FromMap(rl.Annotations)
-			alertingRule := rules.NewAlertingRule(rl.Alert, expr, time.Duration(rl.For), lbls, anns, nil)
-
-			// Evaluating the alerting rule for past 1 day.
-			seriesHashMap := make(map[uint64]*promql.Series) // All the series created for this rule.
-			nextiter := func(curr, max time.Time, step time.Duration) time.Time {
-				diff := max.Sub(curr)
-				if diff != 0 && diff < step {
-					return max
-				} else {
-					return curr.Add(step)
-				}
-			}
-			for t := mint; maxt.Sub(t) >= 0; t = nextiter(t, maxt, 15*time.Second) {
-				vec, err := alertingRule.Eval(r.Context(), t, queryFunc, nil)
-				if err != nil {
-					ae = &apiError{errorInternal, err}
-					goto endLabel
-				}
-				for _, smpl := range vec {
-					var (
-						series *promql.Series
-						ok     bool
-					)
-					if series, ok = seriesHashMap[smpl.Metric.Hash()]; !ok {
-						series = &promql.Series{Metric: smpl.Metric}
-						seriesHashMap[smpl.Metric.Hash()] = series
-					}
-					series.Points = append(series.Points, smpl.Point)
-				}
-			}
-
-			var matrix promql.Matrix
-			for _, series := range seriesHashMap {
-				matrix = append(matrix, *series)
-			}
-			matrix = downsampleMatrix(matrix, 256)
-
-			htmlSnippet := string(alertingRule.HTMLSnippet(""))
-			// Removing the hyperlinks from the HTML snippet.
-			var ar rulefmt.Rule
-			if err = yaml.Unmarshal([]byte(htmlSnippet), &ar); err != nil {
-				ae = &apiError{errorInternal, err}
-				goto endLabel
-			}
-			ar.Alert, ar.Expr = rl.Alert, rl.Expr
-			bytes, err := yaml.Marshal(ar)
-			if err != nil {
-				ae = &apiError{errorInternal, err}
-				goto endLabel
-			}
-
-			// Querying the expression.
-
-			qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, rl.Expr, mint, maxt, 15*time.Second)
-			if err != nil {
-				ae = &apiError{errorBadData, err}
-				goto endLabel
-			}
-
-			res := qry.Exec(r.Context())
-			if res.Err != nil {
-				switch res.Err.(type) {
-				case promql.ErrQueryCanceled:
-					ae = &apiError{errorCanceled, res.Err}
-					goto endLabel
-				case promql.ErrQueryTimeout:
-					ae = &apiError{errorTimeout, res.Err}
-					goto endLabel
-				}
-				ae = &apiError{errorExec, res.Err}
-				goto endLabel
-			}
-
-			exprMatrix, err := res.Matrix()
-			if err != nil {
-				ae = &apiError{errorExec, err}
-				goto endLabel
-			}
-			exprMatrix = downsampleMatrix(exprMatrix, 256)
-			result.RuleResults = append(result.RuleResults, ruleResult{
-				Name:        rl.Alert,
-				Alerts:      alertingRule.ActiveAlerts(),
-				HTMLSnippet: string(bytes),
-				MatrixResult: queryData{
-					Result:     matrix,
-					ResultType: matrix.Type(),
-				},
-				ExprQueryResult: queryDataWithExpr{
-					Result:     exprMatrix,
-					ResultType: exprMatrix.Type(),
-					Expr:       rl.Expr,
-				},
-			})
-
-		}
-	}
-
-endLabel:
-	return result, ae
 }
