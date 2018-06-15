@@ -185,6 +185,10 @@ ec2_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+  # List of vSphere service discovery configurations.
+  vsphere_sd_configs:
+    [ - <vsphere_sd_config> ... ]
+
 # List of file service discovery configurations.
 file_sd_configs:
   [ - <file_sd_config> ... ]
@@ -522,6 +526,116 @@ region: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 ```
+
+### `<vsphere_sd_config>`
+
+vSphere SD configurations allow retrieving scrape targets from a VMware vSphere
+environment.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `esx`
+
+The `esx` role allow retrieving scrape targets from VMware ESX hosts.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_vsphere_esx_id`: The ESX host unique identifier.
+* `__meta_vsphere_esx_name`: The ESX hostname.
+* `__meta_vsphere_esx_version`: The release version of the ESX hypervisor.
+* `__meta_vsphere_esx_status`: The ESX host status.
+* `__meta_vsphere_esx_datacenter`: The datacenter the ESX belongs to.
+* `__meta_vsphere_esx_metrics_proxy_address`: The metrics proxy service address. Please see note below.
+* `__meta_vsphere_esx_metrics_proxy_path`: The metrics path to be used on metrics proxy service. Please see note below.
+* `__meta_vsphere_esx_datastore_list`: The list of datastores unique identifiers associated with the ESX host.
+* `__meta_vsphere_esx_virtual_machine_list`: The list of virtual machines unique identifiers associated with the ESX host.
+* `__meta_vsphere_esx_tags`: The list of tags associated with the ESX host.
+
+#### `datastore`
+
+The `datastore` role allow retrieving scrape targets from VMware datastores.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_vsphere_datastore_id`: The datastore unique identifier.
+* `__meta_vsphere_datastore_name`: The datastore name.
+* `__meta_vsphere_datastore_status`: The datastore status.
+* `__meta_vsphere_datastore_datacenter`: The datacenter the datastore belongs to.
+* `__meta_vsphere_datastore_metrics_proxy_address`: The metrics proxy service address. Please see note below.
+* `__meta_vsphere_datastore_metrics_proxy_path`: The metrics path to be used on metrics proxy service. Please see note below.
+* `__meta_vsphere_datastore_esx_list`: The list of esx unique identifiers associated with the datastore.
+* `__meta_vsphere_datastore_virtual_machine_list`: The list of virtual machines unique identifiers associated with the datastore.
+* `__meta_vsphere_datastore_tags`: The list of tags associated with the datastore.
+
+#### `virtualmachine`
+
+The `virtualmachine` role allow retrieving scrape targets from VMware virtual machines.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_vsphere_virtual_machine_id`: The virtual machine unique identifier.
+* `__meta_vsphere_virtual_machine_name`: The virtual machine name.
+* `__meta_vsphere_virtual_machine_status`: The virtual machine status.
+* `__meta_vsphere_virtual_machine_datacenter`: The datacenter the virtual machine belongs to.
+* `__meta_vsphere_virtual_machine_metrics_proxy_address`: The metrics proxy service address. Please see note below.
+* `__meta_vsphere_virtual_machine_metrics_proxy_path`: The metrics path to be used on metrics proxy service. Please see note below.
+* `__meta_vsphere_virtual_machine_owning_host`: The esx host identifier associated with the virtual machine.
+* `__meta_vsphere_virtual_machine_datastore_list`: The list of datastore unique identifiers associated with the virtual machine.
+* `__meta_vsphere_virtual_machine_tags`: The list of tags associated with the virtual machine.
+
+See below for the configuration options for vSphere discovery:
+
+```yaml
+# The information to access the vSphere API.
+
+# The vSphere role of entities that should be discovered.
+role: <role>
+
+# vcenter_address specifies the vCenter Server API endpoint that is required to
+# discover vSphere entities.
+[ vcenter_address: <string> ]
+
+# vcenter_port specifies the port of vCenter Server API endpoint that is required to
+# discover vSphere entities. The default is port 443.
+[ vcenter_port: <int> | default = 443 ]
+
+# vcenter_insecure specifies whether to access the vCenter Server API endpoint
+# in an insecure fashion (ie without performing certificate authentication).
+[ vcenter_insecure: <bool> | default = false ]
+
+# vcenter_username specifies what username or account to access the
+# vCenter Server API endpoint with.
+[ vcenter_username: <string> ]
+
+# vcenter_password specifies what password to access the vCenter Server API endpoint with.
+[ vcenter_password: <secret> ]
+
+# metrics_proxy_address specifies where the metrics proxy endpoint is accessible.
+# Please see note below.
+[ metrics_proxy_address: <string> ]
+
+# metrics_proxy_port specifies the port for the metrics proxy endpoint.
+# Please see note below.
+[ metrics_proxy_port: <int> | default = 9444 ]
+
+# new_connections specifies if a new connection should be used when accessing the
+# vCenter Server API endpoint.
+[ new_connections: <bool> | default = false ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
+Where `<role>` must be `esx`, `datastore`, or `virtualmachine`.
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-vsphere.yml)
+for a detailed example of configuring Prometheus for vSphere.
+
+NOTE: The vSphere SD currently requires the use of the
+[vSphere Metrics for Prometheus](https://github.com/dvonthenen/vsphere-metrics-prometheus)
+proxy service denoted in the vsphere_sd_configs as metrics_proxy_address and
+metrics_proxy_port. You can find more information about this metrics service in
+previously mentioned GitHub page. 
 
 ### `<file_sd_config>`
 
