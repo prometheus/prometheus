@@ -1,0 +1,14 @@
+{
+	"version": 0,
+	"dependencies": [
+		{
+			"importpath": "github.com/sstephenson/bats",
+			"repository": "https://github.com/sstephenson/bats",
+			"vcs": "git",
+			"revision": "03608115df2071fff4eaaff1605768c275e5f81f",
+			"branch": "master",
+			"notests": true,
+			"allfiles": true
+		}
+	]
+}

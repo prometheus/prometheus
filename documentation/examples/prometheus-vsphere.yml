@@ -1,0 +1,88 @@
+# A scrape configuration for running Prometheus on a VMware vSphere environment.
+# This uses separate scrape configs for vSphere components (i.e. esx, datastore, etc)
+# and services to allow each to use different authentication configs.
+#
+# Kubernetes exposes API servers as endpoints to the default/kubernetes
+# service so this uses `endpoints` role and uses relabelling to only keep
+# the endpoints associated with the default/kubernetes service using the
+# default named port `https`. This works for single API server deployments as
+# well as HA API server deployments.
+scrape_configs:
+
+  - job_name: 'vsphere-host'
+    scheme: http
+
+    vsphere_sd_configs:
+      - role: esx
+        vcenter_address: fqdn.vcenter.com
+        vcenter_username: administrator@vsphere.local
+        vcenter_password: changeme
+        vcenter_insecure: true
+        metrics_proxy_address: example-vmp.default.svc.cluster.local
+        metrics_proxy_port: 9444
+
+    relabel_configs:
+      - source_labels: [__meta_vsphere_esx_metrics_proxy_address]
+        regex: (.+)
+        target_label: __address__
+        replacement: ${1}
+        action: replace
+      - source_labels: [__meta_vsphere_esx_metrics_proxy_path]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: ${1}
+        action: replace
+      - source_labels: [__meta_vsphere_esx_name]
+        target_label: instance
+
+  - job_name: 'vsphere-datastore'
+    scheme: http
+
+    vsphere_sd_configs:
+      - role: datastore
+        vcenter_address: fqdn.vcenter.com
+        vcenter_username: administrator@vsphere.local
+        vcenter_password: changeme
+        vcenter_insecure: true
+        metrics_proxy_address: example-vmp.default.svc.cluster.local
+        metrics_proxy_port: 9444
+
+    relabel_configs:
+      - source_labels: [__meta_vsphere_datastore_metrics_proxy_address]
+        regex: (.+)
+        target_label: __address__
+        replacement: ${1}
+        action: replace
+      - source_labels: [__meta_vsphere_datastore_metrics_proxy_path]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: ${1}
+        action: replace
+      - source_labels: [__meta_vsphere_datastore_name]
+        target_label: instance
+
+  - job_name: 'vsphere-virtualmachine'
+    scheme: http
+
+    vsphere_sd_configs:
+      - role: virtualmachine
+        vcenter_address: fqdn.vcenter.com
+        vcenter_username: administrator@vsphere.local
+        vcenter_password: changeme
+        vcenter_insecure: true
+        metrics_proxy_address: example-vmp.default.svc.cluster.local
+        metrics_proxy_port: 9444
+
+    relabel_configs:
+      - source_labels: [__meta_vsphere_virtual_machine_metrics_proxy_address]
+        regex: (.+)
+        target_label: __address__
+        replacement: ${1}
+        action: replace
+      - source_labels: [__meta_vsphere_virtual_machine_metrics_proxy_path]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: ${1}
+        action: replace
+      - source_labels: [__meta_vsphere_virtual_machine_name]
+        target_label: instance

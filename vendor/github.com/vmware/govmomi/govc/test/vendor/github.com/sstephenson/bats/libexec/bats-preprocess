@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -e
+
+encode_name() {
+  local name="$1"
+  local result="test_"
+
+  if [[ ! "$name" =~ [^[:alnum:]\ _-] ]]; then
+    name="${name//_/-5f}"
+    name="${name//-/-2d}"
+    name="${name// /_}"
+    result+="$name"
+  else
+    local length="${#name}"
+    local char i
+
+    for ((i=0; i<length; i++)); do
+      char="${name:$i:1}"
+      if [ "$char" = " " ]; then
+        result+="_"
+      elif [[ "$char" =~ [[:alnum:]] ]]; then
+        result+="$char"
+      else
+        result+="$(printf -- "-%02x" \'"$char")"
+      fi
+    done
+  fi
+
+  echo "$result"
+}
+
+tests=()
+index=0
+pattern='^ *@test  *([^ ].*)  *\{ *(.*)$'
+
+while IFS= read -r line; do
+  let index+=1
+  if [[ "$line" =~ $pattern ]]; then
+    quoted_name="${BASH_REMATCH[1]}"
+    body="${BASH_REMATCH[2]}"
+    name="$(eval echo "$quoted_name")"
+    encoded_name="$(encode_name "$name")"
+    tests["${#tests[@]}"]="$encoded_name"
+    echo "${encoded_name}() { bats_test_begin ${quoted_name} ${index}; ${body}"
+  else
+    printf "%s\n" "$line"
+  fi
+done
+
+for test_name in "${tests[@]}"; do
+  echo "bats_test_function ${test_name}"
+done

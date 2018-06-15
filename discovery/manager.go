@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
+	"github.com/prometheus/prometheus/discovery/vsphere"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
@@ -257,7 +258,14 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 		}
 		app("openstack", i, openstackd)
 	}
-
+	for i, c := range cfg.VsphereSDConfigs {
+		vsphered, err := vsphere.NewDiscovery(c, log.With(m.logger, "discovery", "vsphere"))
+		if err != nil {
+			level.Error(m.logger).Log("msg", "Cannot initialize vSphere discovery", "err", err)
+			continue
+		}
+		app("vsphere", i, vsphered)
+	}
 	for i, c := range cfg.GCESDConfigs {
 		gced, err := gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
 		if err != nil {
