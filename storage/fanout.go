@@ -432,7 +432,6 @@ func (c *mergeIterator) At() (t int64, v float64) {
 		panic("mergeIterator.At() called after .Next() returned false.")
 	}
 
-	// TODO do I need to dedupe or just merge?
 	return c.h[0].At()
 }
 
@@ -443,6 +442,7 @@ func (c *mergeIterator) Next() bool {
 				heap.Push(&c.h, iter)
 			}
 		}
+
 		return len(c.h) > 0
 	}
 
@@ -450,9 +450,17 @@ func (c *mergeIterator) Next() bool {
 		return false
 	}
 
-	iter := heap.Pop(&c.h).(SeriesIterator)
-	if iter.Next() {
-		heap.Push(&c.h, iter)
+	currt, currv := c.At()
+	for len(c.h) > 0 {
+		nextt, nextv := c.h[0].At()
+		if nextt != currt || nextv != currv {
+			break
+		}
+
+		iter := heap.Pop(&c.h).(SeriesIterator)
+		if iter.Next() {
+			heap.Push(&c.h, iter)
+		}
 	}
 
 	return len(c.h) > 0

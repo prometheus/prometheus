@@ -29,15 +29,19 @@ import (
 
 func TestParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
-# TYPE go_gc_duration_seconds summary
+# 	TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
 go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
 go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
+# Hrandom comment starting with prefix of HELP
+#
+# comment with escaped \n newline
+# comment with escaped \ escape character
 go_gc_duration_seconds{ quantile="1.0", a="b" } 8.3835e-05
 go_gc_duration_seconds { quantile="1.0", a="b" } 8.3835e-05
-go_gc_duration_seconds { quantile= "1.0", a= "b" } 8.3835e-05
+go_gc_duration_seconds { quantile= "1.0", a= "b", } 8.3835e-05
 go_gc_duration_seconds { quantile = "1.0", a = "b" } 8.3835e-05
 go_gc_duration_seconds_count 99
 some:aggregate:rate5m{a_b="c"}	1
@@ -47,17 +51,27 @@ go_goroutines 33  	123123
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1`
+	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
 	int64p := func(x int64) *int64 { return &x }
 
 	exp := []struct {
-		lset labels.Labels
-		m    string
-		t    *int64
-		v    float64
+		lset    labels.Labels
+		m       string
+		t       *int64
+		v       float64
+		typ     MetricType
+		help    string
+		comment string
 	}{
 		{
+			m:    "go_gc_duration_seconds",
+			help: "A summary of the GC invocation durations.",
+		}, {
+			m:   "go_gc_duration_seconds",
+			typ: MetricTypeSummary,
+		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
@@ -78,6 +92,14 @@ testmetric{label="\"bar\""} 1`
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
 		}, {
+			comment: "# Hrandom comment starting with prefix of HELP",
+		}, {
+			comment: "#",
+		}, {
+			comment: "# comment with escaped \\n newline",
+		}, {
+			comment: "# comment with escaped \\ escape character",
+		}, {
 			m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
@@ -86,7 +108,7 @@ testmetric{label="\"bar\""} 1`
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
 		}, {
-			m:    `go_gc_duration_seconds { quantile= "1.0", a= "b" }`,
+			m:    `go_gc_duration_seconds { quantile= "1.0", a= "b", }`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
 		}, {
@@ -101,6 +123,12 @@ testmetric{label="\"bar\""} 1`
 			m:    `some:aggregate:rate5m{a_b="c"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "some:aggregate:rate5m", "a_b", "c"),
+		}, {
+			m:    "go_goroutines",
+			help: "Number of goroutines that currently exist.",
+		}, {
+			m:   "go_goroutines",
+			typ: MetricTypeGauge,
 		}, {
 			m:    `go_goroutines`,
 			v:    33,
@@ -119,6 +147,9 @@ testmetric{label="\"bar\""} 1`
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
+			m:    "metric",
+			help: "foo\x00bar",
+		}, {
 			m:    "null_byte_metric{a=\"abc\x00\"}",
 			v:    1,
 			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
@@ -130,23 +161,42 @@ testmetric{label="\"bar\""} 1`
 
 	var res labels.Labels
 
-	for p.Next() {
-		m, ts, v := p.At()
+	for {
+		et, err := p.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
 
-		p.Metric(&res)
+		switch et {
+		case EntrySeries:
+			m, ts, v := p.Series()
 
-		require.Equal(t, exp[i].m, string(m))
-		require.Equal(t, exp[i].t, ts)
-		require.Equal(t, exp[i].v, v)
-		require.Equal(t, exp[i].lset, res)
+			p.Metric(&res)
+
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].v, v)
+			require.Equal(t, exp[i].lset, res)
+			res = res[:0]
+
+		case EntryType:
+			m, typ := p.Type()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].typ, typ)
+
+		case EntryHelp:
+			m, h := p.Help()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].help, string(h))
+
+		case EntryComment:
+			require.Equal(t, exp[i].comment, string(p.Comment()))
+		}
 
 		i++
-		res = res[:0]
 	}
-
-	require.NoError(t, p.Err())
 	require.Equal(t, len(exp), i)
-
 }
 
 func TestParseErrors(t *testing.T) {
@@ -156,19 +206,19 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{
 			input: "a",
-			err:   "no token found",
+			err:   "expected value after metric, got \"MNAME\"",
 		},
 		{
 			input: "a{b='c'} 1\n",
-			err:   "no token found",
+			err:   "expected label value, got \"INVALID\"",
 		},
 		{
 			input: "a{b=\n",
-			err:   "no token found",
+			err:   "expected label value, got \"INVALID\"",
 		},
 		{
 			input: "a{\xff=\"foo\"} 1\n",
-			err:   "no token found",
+			err:   "expected label name, got \"INVALID\"",
 		},
 		{
 			input: "a{b=\"\xff\"} 1\n",
@@ -180,20 +230,22 @@ func TestParseErrors(t *testing.T) {
 		},
 		{
 			input: "something_weird{problem=\"",
-			err:   "no token found",
+			err:   "expected label value, got \"INVALID\"",
 		},
 		{
 			input: "empty_label_name{=\"\"} 0",
-			err:   "no token found",
+			err:   "expected label name, got \"EQUAL\"",
 		},
 	}
 
-	for _, c := range cases {
+	for i, c := range cases {
 		p := New([]byte(c.input))
-		for p.Next() {
+		var err error
+		for err == nil {
+			_, err = p.Next()
 		}
-		require.NotNil(t, p.Err())
-		require.Equal(t, c.err, p.Err().Error())
+		require.NotNil(t, err)
+		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -220,34 +272,36 @@ func TestNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b=\x00\"ssss\"} 1\n",
-			err:   "no token found",
+			err:   "expected label value, got \"INVALID\"",
 		},
 		{
 			input: "a{b=\"\x00",
-			err:   "no token found",
+			err:   "expected label value, got \"INVALID\"",
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err: "no token found",
+			err: "expected equal, got \"INVALID\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
-			err:   "no token found",
+			err:   "expected value after metric, got \"MNAME\"",
 		},
 	}
 
-	for _, c := range cases {
+	for i, c := range cases {
 		p := New([]byte(c.input))
-		for p.Next() {
+		var err error
+		for err == nil {
+			_, err = p.Next()
 		}
 
 		if c.err == "" {
-			require.NoError(t, p.Err())
+			require.Equal(t, io.EOF, err, "test %d", i)
 			continue
 		}
 
-		require.Error(t, p.Err())
-		require.Equal(t, c.err, p.Err().Error())
+		require.Error(t, err)
+		require.Equal(t, c.err, err.Error(), "test %d", i)
 	}
 }
 
@@ -274,13 +328,21 @@ func BenchmarkParse(b *testing.B) {
 			for i := 0; i < b.N; i += testdataSampleCount {
 				p := New(buf)
 
-				for p.Next() && i < b.N {
-					m, _, _ := p.At()
-
-					total += len(m)
-					i++
+			Outer:
+				for i < b.N {
+					t, err := p.Next()
+					switch t {
+					case EntryInvalid:
+						if err == io.EOF {
+							break Outer
+						}
+						b.Fatal(err)
+					case EntrySeries:
+						m, _, _ := p.Series()
+						total += len(m)
+						i++
+					}
 				}
-				require.NoError(b, p.Err())
 			}
 			_ = total
 		})
@@ -294,16 +356,25 @@ func BenchmarkParse(b *testing.B) {
 			for i := 0; i < b.N; i += testdataSampleCount {
 				p := New(buf)
 
-				for p.Next() && i < b.N {
-					m, _, _ := p.At()
+			Outer:
+				for i < b.N {
+					t, err := p.Next()
+					switch t {
+					case EntryInvalid:
+						if err == io.EOF {
+							break Outer
+						}
+						b.Fatal(err)
+					case EntrySeries:
+						m, _, _ := p.Series()
 
-					res := make(labels.Labels, 0, 5)
-					p.Metric(&res)
+						res := make(labels.Labels, 0, 5)
+						p.Metric(&res)
 
-					total += len(m)
-					i++
+						total += len(m)
+						i++
+					}
 				}
-				require.NoError(b, p.Err())
 			}
 			_ = total
 		})
@@ -318,16 +389,25 @@ func BenchmarkParse(b *testing.B) {
 			for i := 0; i < b.N; i += testdataSampleCount {
 				p := New(buf)
 
-				for p.Next() && i < b.N {
-					m, _, _ := p.At()
+			Outer:
+				for i < b.N {
+					t, err := p.Next()
+					switch t {
+					case EntryInvalid:
+						if err == io.EOF {
+							break Outer
+						}
+						b.Fatal(err)
+					case EntrySeries:
+						m, _, _ := p.Series()
 
-					p.Metric(&res)
+						p.Metric(&res)
 
-					total += len(m)
-					i++
-					res = res[:0]
+						total += len(m)
+						i++
+						res = res[:0]
+					}
 				}
-				require.NoError(b, p.Err())
 			}
 			_ = total
 		})
@@ -361,7 +441,6 @@ func BenchmarkParse(b *testing.B) {
 		})
 	}
 }
-
 func BenchmarkGzip(b *testing.B) {
 	for _, fn := range []string{"testdata.txt", "testdata.nometa.txt"} {
 		b.Run(fn, func(b *testing.B) {

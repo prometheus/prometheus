@@ -4,9 +4,6 @@ metadata:
   name: rabbitmq
   labels:
     name: rabbitmq
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9090"
 spec:
   ports:
   - port: 9090

@@ -344,7 +344,11 @@ func fetchApps(client *http.Client, url string) (*AppList, error) {
 		return nil, err
 	}
 
-	return parseAppJSON(body)
+	apps, err := parseAppJSON(body)
+	if err != nil {
+		return nil, fmt.Errorf("%v in %s", err, url)
+	}
+	return apps, nil
 }
 
 func parseAppJSON(body []byte) (*AppList, error) {

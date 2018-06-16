@@ -1,5 +1,4 @@
-// Copyright 2016 The etcd Authors
-//
+// Copyright 2016 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,23 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build linux
-
 package fileutil
 
-import (
-	"os"
-	"syscall"
-)
+import "os"
 
-// Fsync is a wrapper around file.Sync(). Special handling is needed on darwin platform.
-func Fsync(f *os.File) error {
-	return f.Sync()
+type plan9Lock struct {
+	f *os.File
 }
 
-// Fdatasync is similar to fsync(), but does not flush modified metadata
-// unless that metadata is needed in order to allow a subsequent data retrieval
-// to be correctly handled.
-func Fdatasync(f *os.File) error {
-	return syscall.Fdatasync(int(f.Fd()))
+func (l *plan9Lock) Release() error {
+	return l.f.Close()
+}
+
+func newLock(fileName string) (Releaser, error) {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, os.ModeExclusive|0644)
+	if err != nil {
+		return nil, err
+	}
+	return &plan9Lock{f}, nil
 }

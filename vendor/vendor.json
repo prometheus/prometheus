@@ -680,12 +680,6 @@
 			"revisionTime": "2016-11-29T09:58:57Z"
 		},
 		{
-			"checksumSHA1": "aCtmlyAgau9n0UHs8Pk+3xfIaVk=",
-			"path": "github.com/nightlyone/lockfile",
-			"revision": "1d49c987357a327b5b03aa84cbddd582c328615d",
-			"revisionTime": "2016-09-28T00:14:32Z"
-		},
-		{
 			"checksumSHA1": "gkyBg/2hcIWR/8qGEeGVoHwOyfo=",
 			"path": "github.com/oklog/oklog/pkg/group",
 			"revision": "f857583a70c345341d679b3f27aa542c8db70a21",
@@ -772,52 +766,52 @@
 			"revisionTime": "2015-02-12T10:17:44Z"
 		},
 		{
-			"checksumSHA1": "bgmAaHIDapEUVLIWaqpxG9t4mYQ=",
+			"checksumSHA1": "cxLURB7wEFsMAZ6fi5Ptfdrwdc8=",
 			"path": "github.com/prometheus/common/config",
-			"revision": "e5b036cc37a466a0af27d604d1ee500211d16d6a",
-			"revisionTime": "2018-04-23T14:05:01Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
-			"checksumSHA1": "+wZ+Pa6NX+NOxUvayXBXGOcqFe8=",
+			"checksumSHA1": "vPdC/DzEm7YbzRir2wwnpLPfay8=",
 			"path": "github.com/prometheus/common/expfmt",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
 			"checksumSHA1": "GWlM3d2vPYyNATtTFgftS10/A9w=",
 			"path": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
-			"checksumSHA1": "YU+/K48IMawQnToO4ETE6a+hhj4=",
+			"checksumSHA1": "EXTRY7DL9gFW8c341Dk6LDXCBn8=",
 			"path": "github.com/prometheus/common/model",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
 			"checksumSHA1": "Yseprf8kAFr/s7wztkQnrFuFN+8=",
 			"path": "github.com/prometheus/common/promlog",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
 			"checksumSHA1": "1H28FCxsaAIm6kvue+Wfdd8Lq6M=",
 			"path": "github.com/prometheus/common/promlog/flag",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
 			"checksumSHA1": "9doPk0x0LONG/idxK61JnZYcxBs=",
 			"path": "github.com/prometheus/common/route",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
 			"checksumSHA1": "91KYK0SpvkaMJJA2+BcxbVnyRO0=",
 			"path": "github.com/prometheus/common/version",
-			"revision": "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a",
-			"revisionTime": "2018-03-26T16:04:09Z"
+			"revision": "7600349dcfe1abd18d72d3a1770870d9800a7801",
+			"revisionTime": "2018-05-18T15:47:59Z"
 		},
 		{
 			"checksumSHA1": "W218eJZPXJG783fUr/z6IaAZyes=",
@@ -826,40 +820,40 @@
 			"revisionTime": "2016-04-11T19:08:41Z"
 		},
 		{
-			"checksumSHA1": "vNslgGjRBqauFmVIBTkvEWwvURg=",
+			"checksumSHA1": "eohOTRwnox/+qrSrgYmnxeJB2yM=",
 			"path": "github.com/prometheus/tsdb",
-			"revision": "659ed644294eec6310cef0685b002a3aed8c8f85",
-			"revisionTime": "2018-03-14T13:49:50Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
-			"checksumSHA1": "S7F4yWxVLhxQNHMdgoOo6plmOOs=",
+			"checksumSHA1": "QI0UME2olSr4kH6Z8UkpffM59Mc=",
 			"path": "github.com/prometheus/tsdb/chunkenc",
-			"revision": "659ed644294eec6310cef0685b002a3aed8c8f85",
-			"revisionTime": "2018-03-14T13:49:50Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
-			"checksumSHA1": "+zsn1i8cqwgZXL8Bg6jDy32xjAo=",
+			"checksumSHA1": "746Mjy2y6wdsGjY/FcGhc8tI4w8=",
 			"path": "github.com/prometheus/tsdb/chunks",
-			"revision": "659ed644294eec6310cef0685b002a3aed8c8f85",
-			"revisionTime": "2018-03-14T13:49:50Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
-			"checksumSHA1": "T7qvg4VhFLklT3g+qPkUWxBo0yw=",
+			"checksumSHA1": "dnyelqeik/xHDRCvCmKFv/Op9XQ=",
 			"path": "github.com/prometheus/tsdb/fileutil",
-			"revision": "659ed644294eec6310cef0685b002a3aed8c8f85",
-			"revisionTime": "2018-03-14T13:49:50Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
-			"checksumSHA1": "4ebzIE2Jvj6+SG6yGFSXN8scgfo=",
+			"checksumSHA1": "A2uIFwIgeHmXGBzOpna95kM80RY=",
 			"path": "github.com/prometheus/tsdb/index",
-			"revision": "659ed644294eec6310cef0685b002a3aed8c8f85",
-			"revisionTime": "2018-03-14T13:49:50Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "Va8HWvOFTwFeewZFadMAOzNGDps=",
 			"path": "github.com/prometheus/tsdb/labels",
-			"revision": "659ed644294eec6310cef0685b002a3aed8c8f85",
-			"revisionTime": "2018-03-14T13:49:50Z"
+			"revision": "c848349f07c83bd38d5d19faa5ea71c7fd8923ea",
+			"revisionTime": "2018-06-05T09:24:13Z"
 		},
 		{
 			"checksumSHA1": "5SYLEhADhdBVZAGPVHWggQl7H8k=",

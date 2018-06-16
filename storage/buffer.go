@@ -30,14 +30,20 @@ type BufferedSeriesIterator struct {
 // of the current element and the duration of delta before.
 func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
-		it:       it,
-		buf:      newSampleRing(delta, 16),
-		lastTime: math.MinInt64,
-		ok:       true,
+		buf: newSampleRing(delta, 16),
 	}
-	it.Next()
+	bit.Reset(it)
 
 	return bit
+}
+
+// Reset re-uses the buffer with a new iterator.
+func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
+	b.it = it
+	b.lastTime = math.MinInt64
+	b.ok = true
+	b.buf.reset()
+	it.Next()
 }
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
@@ -46,7 +52,8 @@ func (b *BufferedSeriesIterator) PeekBack(n int) (t int64, v float64, ok bool) {
 	return b.buf.nthLast(n)
 }
 
-// Buffer returns an iterator over the buffered data.
+// Buffer returns an iterator over the buffered data. Invalidates previously
+// returned iterators.
 func (b *BufferedSeriesIterator) Buffer() SeriesIterator {
 	return b.buf.iterator()
 }
@@ -118,6 +125,8 @@ type sampleRing struct {
 	i   int      // position of most recent element in ring buffer
 	f   int      // position of first element in ring buffer
 	l   int      // number of elements in buffer
+
+	it sampleRingIterator
 }
 
 func newSampleRing(delta int64, sz int) *sampleRing {
@@ -133,8 +142,11 @@ func (r *sampleRing) reset() {
 	r.f = 0
 }
 
+// Returns the current iterator. Invalidates previously retuned iterators.
 func (r *sampleRing) iterator() SeriesIterator {
-	return &sampleRingIterator{r: r, i: -1}
+	r.it.r = r
+	r.it.i = -1
+	return &r.it
 }
 
 type sampleRingIterator struct {

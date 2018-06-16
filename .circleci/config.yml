@@ -66,6 +66,8 @@ jobs:
     - run: mkdir -v -p ${HOME}/bin
     - run: curl -L 'https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C ${HOME}/bin
     - run: echo 'export PATH=${HOME}/bin:${PATH}' >> ${BASH_ENV}
+    - attach_workspace:
+        at: .
     - run: make promu
     - run: promu crossbuild tarballs
     - run: promu checksum .tarballs

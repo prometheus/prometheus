@@ -2,9 +2,9 @@
 
 {{ template "prom_right_table_head" }}
   <tr>
-    <th colspan="2">CPU(s): {{ template "prom_query_drilldown" (args (printf "scalar(count(count by (cpu)(node_cpu{job='node',instance='%s'})))" .Params.instance)) }}</th>
+    <th colspan="2">CPU(s): {{ template "prom_query_drilldown" (args (printf "scalar(count(count by (cpu)(node_cpu_seconds_total{job='node',instance='%s'})))" .Params.instance)) }}</th>
   </tr>
-{{ range printf "sum by (mode)(irate(node_cpu{job='node',instance='%s'}[5m])) * 100 / scalar(count(count by (cpu)(node_cpu{job='node',instance='%s'})))" .Params.instance .Params.instance | query | sortByLabel "mode" }}
+{{ range printf "sum by (mode)(irate(node_cpu_seconds_total{job='node',instance='%s'}[5m])) * 100 / scalar(count(count by (cpu)(node_cpu_seconds_total{job='node',instance='%s'})))" .Params.instance .Params.instance | query | sortByLabel "mode" }}
   <tr>
     <td>{{ .Labels.mode | title }} CPU</td>
     <td>{{ .Value | printf "%.1f" }}%</td>
@@ -21,15 +21,15 @@
   </tr>
   <tr>
     <td>Forks</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_forks{job='node',instance='%s'}[5m])" .Params.instance) "/s" "humanize") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_forks_total{job='node',instance='%s'}[5m])" .Params.instance) "/s" "humanize") }}</td>
   </tr>
   <tr>
     <td>Context Switches</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_context_switches{job='node',instance='%s'}[5m])" .Params.instance) "/s" "humanize") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_context_switches_total{job='node',instance='%s'}[5m])" .Params.instance) "/s" "humanize") }}</td>
   </tr>
   <tr>
     <td>Interrupts</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_intr{job='node',instance='%s'}[5m])" .Params.instance) "/s" "humanize") }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_intr_total{job='node',instance='%s'}[5m])" .Params.instance) "/s" "humanize") }}</td>
   </tr>
   <tr>
     <td>1m Loadavg</td>
@@ -47,9 +47,9 @@
   <script>
   new PromConsole.Graph({
     node: document.querySelector("#cpuGraph"),
-    expr: "sum by (mode)(irate(node_cpu{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
+    expr: "sum by (mode)(irate(node_cpu_seconds_total{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
     renderer: 'area',
-    max: {{ with printf "count(count by (cpu)(node_cpu{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
+    max: {{ with printf "count(count by (cpu)(node_cpu_seconds_total{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yHoverFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
     yTitle: 'Cores'
