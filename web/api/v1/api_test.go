@@ -25,6 +25,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -498,12 +500,183 @@ func TestEndpoints(t *testing.T) {
 			endpoint: api.serveFlags,
 			response: sampleFlagMap,
 		},
+
+		// Alert testing.
+		{ // A valid run.
+			endpoint: api.alertsTesting,
+			query: url.Values{
+				"RuleText": []string{"" +
+					"groups:\n" +
+					"- name: example\n" +
+					"  rules:\n" +
+					"  - alert: TestMetricZero\n" +
+					"    expr: test_metric1 > 10\n" +
+					"    for: 3m\n" +
+					"    labels:\n" +
+					"      severity: page\n" +
+					"    annotations:\n" +
+					"      description: \"{{ $labels.foo }} foo has been down for more than 3 minutes.\"\n"},
+				"Time": []string{strconv.Itoa(int(start.Add(5 * time.Minute).Unix()))},
+			},
+			response: alertsTestResult{
+				IsError:              false,
+				Success:              "Evaluated",
+				AlertStateToRowClass: map[rules.AlertState]string{rules.StateInactive: "success", rules.StatePending: "warning", rules.StateFiring: "danger"},
+				AlertStateToName: map[rules.AlertState]string{
+					rules.StateInactive: strings.ToUpper(rules.StateInactive.String()),
+					rules.StatePending:  strings.ToUpper(rules.StatePending.String()),
+					rules.StateFiring:   strings.ToUpper(rules.StateFiring.String()),
+				},
+				RuleResults: []ruleResult{
+					ruleResult{
+						Name: "TestMetricZero",
+						Alerts: []rules.Alert{
+							rules.Alert{
+								State:       rules.StateFiring,
+								Labels:      labels.FromStrings("alertname", "TestMetricZero", "foo", "bar", "severity", "page"),
+								Annotations: labels.FromStrings("description", "bar foo has been down for more than 3 minutes."),
+								Value:       500,
+								ActiveAt:    start.Add(1 * time.Minute),
+								FiredAt:     start.Add(4 * time.Minute),
+							},
+						},
+						MatrixResult: queryData{
+							ResultType: promql.ValueTypeMatrix,
+							Result: promql.Matrix{
+								promql.Series{
+									Metric: labels.FromStrings("__name__", "ALERTS", "alertname", "TestMetricZero", "alertstate", "firing", "foo", "bar", "severity", "page"),
+									Points: []promql.Point{
+										promql.Point{240000, 1}, promql.Point{255000, 1}, promql.Point{270000, 1},
+										promql.Point{285000, 1}, promql.Point{300000, 1},
+									},
+								},
+								promql.Series{
+									Metric: labels.FromStrings("__name__", "ALERTS", "alertname", "TestMetricZero", "alertstate", "pending", "foo", "bar", "severity", "page"),
+									Points: []promql.Point{
+										promql.Point{60000, 1}, promql.Point{75000, 1}, promql.Point{90000, 1},
+										promql.Point{105000, 1}, promql.Point{120000, 1}, promql.Point{135000, 1},
+										promql.Point{150000, 1}, promql.Point{165000, 1}, promql.Point{180000, 1},
+										promql.Point{195000, 1}, promql.Point{210000, 1}, promql.Point{225000, 1},
+									},
+								},
+							},
+						},
+						ExprQueryResult: queryDataWithExpr{
+							ResultType: promql.ValueTypeMatrix,
+							Expr:       "test_metric1 > 10",
+							Result: promql.Matrix{
+								promql.Series{
+									Metric: labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
+									Points: []promql.Point{
+										promql.Point{60000, 100}, promql.Point{75000, 100}, promql.Point{90000, 100},
+										promql.Point{105000, 100}, promql.Point{120000, 200}, promql.Point{135000, 200},
+										promql.Point{150000, 200}, promql.Point{165000, 200}, promql.Point{180000, 300},
+										promql.Point{195000, 300}, promql.Point{210000, 300}, promql.Point{225000, 300},
+										promql.Point{240000, 400}, promql.Point{255000, 400}, promql.Point{270000, 400},
+										promql.Point{285000, 400}, promql.Point{300000, 500}},
+								},
+							},
+						},
+						HTMLSnippet: "" +
+							"alert: TestMetricZero\n" +
+							"expr: test_metric1 > 10\n" +
+							"for: 3m\n" +
+							"labels:\n" +
+							"  severity: page\n" +
+							"annotations:\n" +
+							"  description: '{{ $labels.foo }} foo has been down for more than 3 minutes.'\n",
+					},
+				},
+			},
+		},
+		{ // Expr missing in rule.
+			endpoint: api.alertsTesting,
+			query: url.Values{
+				"RuleText": []string{"" +
+					"groups:\n" +
+					"- name: example\n" +
+					"  rules:\n" +
+					"  - alert: TestMetricZero\n" +
+					"    for: 3m\n" +
+					"    labels:\n" +
+					"      severity: page\n" +
+					"    annotations:\n" +
+					"      description: \"{{ $labels.foo }} foo has been down for more than 3 minutes.\"\n"},
+				"Time": []string{"0"},
+			},
+			response: alertsTestResult{
+				IsError:              true,
+				Errors:               []string{`group "example", rule 0, "TestMetricZero": field 'expr' must be set in rule`},
+				Success:              "Evaluated",
+				AlertStateToRowClass: map[rules.AlertState]string{rules.StateInactive: "success", rules.StatePending: "warning", rules.StateFiring: "danger"},
+				AlertStateToName: map[rules.AlertState]string{
+					rules.StateInactive: strings.ToUpper(rules.StateInactive.String()),
+					rules.StatePending:  strings.ToUpper(rules.StatePending.String()),
+					rules.StateFiring:   strings.ToUpper(rules.StateFiring.String()),
+				},
+			},
+		},
+		{ // Error in template.
+			endpoint: api.alertsTesting,
+			query: url.Values{
+				"RuleText": []string{"" +
+					"groups:\n" +
+					"- name: example\n" +
+					"  rules:\n" +
+					"  - alert: TestMetricZero\n" +
+					"    expr: test_metric1 > 10\n" +
+					"    for: 3m\n" +
+					"    labels:\n" +
+					"      severity: page\n" +
+					"    annotations:\n" +
+					"      description: \"{{ $labelsfoo }} foo has been down for more than 3 minutes.\"\n"},
+				"Time": []string{"0"},
+			},
+			response: alertsTestResult{
+				IsError:              true,
+				Errors:               []string{`error parsing template __alert_TestMetricZero: template: __alert_TestMetricZero:1: undefined variable "$labelsfoo"`},
+				Success:              "Evaluated",
+				AlertStateToRowClass: map[rules.AlertState]string{rules.StateInactive: "success", rules.StatePending: "warning", rules.StateFiring: "danger"},
+				AlertStateToName: map[rules.AlertState]string{
+					rules.StateInactive: strings.ToUpper(rules.StateInactive.String()),
+					rules.StatePending:  strings.ToUpper(rules.StatePending.String()),
+					rules.StateFiring:   strings.ToUpper(rules.StateFiring.String()),
+				},
+			},
+		},
+		{ // RuleText missing.
+			endpoint: api.alertsTesting,
+			query: url.Values{
+				"Time": []string{"0"},
+			},
+			errType: errorBadData,
+		},
+		{ // Time field is in wrong format, should be float.
+			endpoint: api.alertsTesting,
+			query: url.Values{
+				"RuleText": []string{"" +
+					"groups:\n" +
+					"- name: example\n" +
+					"  rules:\n" +
+					"  - alert: TestMetricZero\n" +
+					"    for: 3m\n" +
+					"    labels:\n" +
+					"      severity: page\n" +
+					"    annotations:\n" +
+					"      description: \"{{ $labels.foo }} foo has been down for more than 3 minutes.\"\n"},
+				"Time": []string{"12abc"},
+			},
+			errType: errorBadData,
+		},
 	}
 
 	methods := func(f apiFunc) []string {
 		fp := reflect.ValueOf(f).Pointer()
 		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() {
 			return []string{http.MethodGet, http.MethodPost}
+		}
+		if fp == reflect.ValueOf(api.alertsTesting).Pointer() {
+			return []string{http.MethodPost}
 		}
 		return []string{http.MethodGet}
 	}

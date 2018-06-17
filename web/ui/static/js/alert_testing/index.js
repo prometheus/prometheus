@@ -762,7 +762,8 @@ function evaluate(data) {
     method: 'POST',
     url: PATH_PREFIX + "/api/v1/alerts_testing",
     dataType: "json",
-    data: JSON.stringify(data),
+    contentType: "application/x-www-form-urlencoded",
+    data: $.param(data),
     success: function(json) {
       var data = json.data;
       if(data.isError) {

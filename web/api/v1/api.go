@@ -15,10 +15,8 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -979,7 +977,7 @@ func newAlertsTestResult() alertsTestResult {
 
 type ruleResult struct {
 	Name            string            `json:"name"`
-	Alerts          []*rules.Alert    `json:"alerts"`
+	Alerts          []rules.Alert     `json:"alerts"`
 	MatrixResult    queryData         `json:"matrixResult"`
 	ExprQueryResult queryDataWithExpr `json:"exprQueryResult"`
 	HTMLSnippet     string            `json:"htmlSnippet"`
@@ -999,17 +997,14 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 	var (
 		// Final result variables.
 		result = newAlertsTestResult()
-		ae     *apiError
 
-		mint, maxt time.Time
-		ruleString string
-		rgs        *rulefmt.RuleGroups
-		queryFunc  rules.QueryFunc
+		rgs       *rulefmt.RuleGroups
+		queryFunc rules.QueryFunc
 
 		errs []error
 	)
 
-	mint, maxt, ruleString, ae = parseAlertsTestingBody(r.Body)
+	mint, maxt, ruleString, ae := parseAlertsTestingBody(r)
 	if ae != nil {
 		goto endLabel
 	}
@@ -1066,11 +1061,8 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 					goto endLabel
 				}
 				for _, smpl := range vec {
-					var (
-						series *promql.Series
-						ok     bool
-					)
-					if series, ok = seriesHashMap[smpl.Metric.Hash()]; !ok {
+					series, ok := seriesHashMap[smpl.Metric.Hash()]
+					if !ok {
 						series = &promql.Series{Metric: smpl.Metric}
 						seriesHashMap[smpl.Metric.Hash()] = series
 					}
@@ -1080,7 +1072,15 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 
 			var matrix promql.Matrix
 			for _, series := range seriesHashMap {
-				matrix = append(matrix, *series)
+				p := 0
+				for p < len(matrix) {
+					if matrix[p].Metric.Hash() < series.Metric.Hash() {
+						p++
+					} else {
+						break
+					}
+				}
+				matrix = append(matrix[:p], append(promql.Matrix{*series}, matrix[p:]...)...)
 			}
 			matrix = downsampleMatrix(matrix, 256, false)
 
@@ -1110,9 +1110,13 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 				goto endLabel
 			}
 			exprMatrix = downsampleMatrix(exprMatrix, 256, true)
+			var activeAlerts []rules.Alert
+			for _, aa := range alertingRule.ActiveAlerts() {
+				activeAlerts = append(activeAlerts, *aa)
+			}
 			result.RuleResults = append(result.RuleResults, ruleResult{
 				Name:        rl.Alert,
-				Alerts:      alertingRule.ActiveAlerts(),
+				Alerts:      activeAlerts,
 				HTMLSnippet: string(bytes),
 				MatrixResult: queryData{
 					Result:     matrix,
@@ -1132,7 +1136,7 @@ endLabel:
 	return result, ae, nil
 }
 
-func parseAlertsTestingBody(body io.ReadCloser) (time.Time, time.Time, string, *apiError) {
+func parseAlertsTestingBody(r *http.Request) (time.Time, time.Time, string, *apiError) {
 
 	var (
 		postData struct {
@@ -1143,22 +1147,27 @@ func parseAlertsTestingBody(body io.ReadCloser) (time.Time, time.Time, string, *
 		// Time ranges for which the alerting rule will be simulated.
 		// It is set to past 1 day.
 		maxt = time.Now()
-		mint time.Time
+		mint = time.Unix(0, 0)
 
 		ruleString string
 		err        error
 	)
 
-	decoder := json.NewDecoder(body)
-	defer body.Close()
-	if err = decoder.Decode(&postData); err != nil {
-		return maxt, maxt, "", &apiError{errorBadData, err}
+	postData.RuleText = r.FormValue("RuleText")
+	if postData.RuleText == "" {
+		return maxt, maxt, "", &apiError{errorBadData, errors.New("RuleText missing")}
+	}
+	postData.Time, err = strconv.ParseFloat(r.FormValue("Time"), 64)
+	if err != nil {
+		return maxt, maxt, "", &apiError{errorBadData, errors.New("Error in parsing time")}
 	}
 
 	if postData.Time > 0 && int64(postData.Time) <= maxt.Unix() {
 		maxt = time.Unix(int64(postData.Time), 0)
 	}
-	mint = maxt.Add(-24 * time.Hour)
+	if maxt.Sub(mint) > 24*time.Hour {
+		mint = maxt.Add(-24 * time.Hour)
+	}
 
 	if ruleString, err = url.QueryUnescape(postData.RuleText); err != nil {
 		return maxt, maxt, "", &apiError{errorBadData, err}
