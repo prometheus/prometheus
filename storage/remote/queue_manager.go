@@ -516,9 +516,10 @@ func (s *shards) sendSamples(samples model.Samples) {
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	backoff := s.qm.cfg.MinBackoff
+	req := ToWriteRequest(samples)
+
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
-		req := ToWriteRequest(samples)
 		err := s.qm.client.Store(s.ctx, req)
 
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
