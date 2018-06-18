@@ -43,6 +43,8 @@ const (
 	nodeLabel = model.MetaLabelPrefix + "consul_node"
 	// metaDataLabel is the prefix for the labels mapping to a target's metadata.
 	metaDataLabel = model.MetaLabelPrefix + "consul_metadata_"
+	// serviceMetaDataLabel is the prefix for the labels mapping to a target's service metadata.
+	serviceMetaDataLabel = model.MetaLabelPrefix + "consul_service_metadata_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
@@ -503,6 +505,12 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		for k, v := range node.NodeMeta {
 			name := strutil.SanitizeLabelName(k)
 			labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
+		}
+
+		// Add all key/value pairs from the service's metadata as their own labels
+		for k, v := range node.ServiceMeta {
+			name := strutil.SanitizeLabelName(k)
+			labels[serviceMetaDataLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
 		tgroup.Targets = append(tgroup.Targets, labels)

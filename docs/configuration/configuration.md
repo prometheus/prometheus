@@ -301,6 +301,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
+* `__meta_consul_service_metadata_<key>`: each service metadata key value of the target
 * `__meta_consul_service_port`: the service port of the target
 * `__meta_consul_service`: the name of the service the target belongs to
 * `__meta_consul_tags`: the list of tags of the target joined by the tag separator
