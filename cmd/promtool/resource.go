@@ -30,7 +30,7 @@ type resourceSaverConfig struct {
 }
 
 type resourceSaver struct {
-	writer            archiveWriter
+	writer            archiver
 	httpClient        httpClient
 	fileNameToRequest map[string]*http.Request
 	postProcess       func(b []byte) (*bytes.Buffer, error)
@@ -41,7 +41,7 @@ func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
 	if err != nil {
 		panic(err)
 	}
-	tw, err := newArchiveWriter(archiveWriterConfig{archiveName: cfg.tarballName})
+	a, err := newArchiver(archiverConfig{archiveName: cfg.tarballName})
 	if err != nil {
 		panic(err)
 	}
@@ -54,34 +54,34 @@ func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
 		m[filename] = req
 	}
 	return &resourceSaver{
-		writer:            tw,
+		writer:            a,
 		httpClient:        client,
 		fileNameToRequest: m,
 		postProcess:       cfg.postProcess,
 	}
 }
 
-func (c *resourceSaver) exec() int {
-	for filename, req := range c.fileNameToRequest {
-		_, body, err := c.httpClient.do(req)
+func (rs *resourceSaver) exec() int {
+	for filename, req := range rs.fileNameToRequest {
+		_, body, err := rs.httpClient.do(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 
-		buf, err := c.postProcess(body)
+		buf, err := rs.postProcess(body)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 
-		if err := c.writer.write(filename, buf); err != nil {
+		if err := rs.writer.write(filename, buf); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 	}
 
-	if err := c.writer.close(); err != nil {
+	if err := rs.writer.close(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

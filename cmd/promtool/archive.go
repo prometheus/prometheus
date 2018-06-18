@@ -23,16 +23,16 @@ import (
 
 const FILE_PERM = 0644
 
-type archiveWriterConfig struct {
+type archiverConfig struct {
 	archiveName string
 }
 
-type archiveWriter interface {
+type archiver interface {
 	write(fileName string, buf *bytes.Buffer) error
 	close() error
 }
 
-func newArchiveWriter(cfg archiveWriterConfig) (archiveWriter, error) {
+func newArchiver(cfg archiverConfig) (archiver, error) {
 	f, err := os.Create(cfg.archiveName)
 	if err != nil {
 		return nil, fmt.Errorf("error of creating archive %s: %s", cfg.archiveName, err)
