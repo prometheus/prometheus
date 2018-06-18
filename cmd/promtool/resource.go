@@ -30,7 +30,7 @@ type resourceSaverConfig struct {
 }
 
 type resourceSaver struct {
-	writer            archiver
+	archiver
 	httpClient        httpClient
 	fileNameToRequest map[string]*http.Request
 	postProcess       func(b []byte) (*bytes.Buffer, error)
@@ -54,10 +54,10 @@ func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
 		m[filename] = req
 	}
 	return &resourceSaver{
-		writer:            a,
-		httpClient:        client,
-		fileNameToRequest: m,
-		postProcess:       cfg.postProcess,
+		a,
+		client,
+		m,
+		cfg.postProcess,
 	}
 }
 
@@ -75,13 +75,13 @@ func (rs *resourceSaver) exec() int {
 			return 1
 		}
 
-		if err := rs.writer.write(filename, buf); err != nil {
+		if err := rs.write(filename, buf); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 	}
 
-	if err := rs.writer.close(); err != nil {
+	if err := rs.close(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
