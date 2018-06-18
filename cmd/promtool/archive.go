@@ -30,6 +30,7 @@ type archiverConfig struct {
 type archiver interface {
 	write(fileName string, buf *bytes.Buffer) error
 	close() error
+	archive() *os.File
 }
 
 func newArchiver(cfg archiverConfig) (archiver, error) {
@@ -78,4 +79,8 @@ func (w *tarGzFileWriter) write(fileName string, buf *bytes.Buffer) error {
 		return err
 	}
 	return nil
+}
+
+func (w *tarGzFileWriter) archive() *os.File {
+	return w.file
 }

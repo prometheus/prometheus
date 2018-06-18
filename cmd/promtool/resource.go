@@ -85,6 +85,8 @@ func (rs *resourceSaver) exec() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+
+	fmt.Println("debug complete all files written in:", rs.archive().Name())
 	return 0
 }
 
