@@ -450,10 +450,10 @@ func (c *mergeIterator) Next() bool {
 		return false
 	}
 
-	currt, currv := c.At()
+	currt, _ := c.At()
 	for len(c.h) > 0 {
-		nextt, nextv := c.h[0].At()
-		if nextt != currt || nextv != currv {
+		nextt, _ := c.h[0].At()
+		if nextt != currt {
 			break
 		}
 
