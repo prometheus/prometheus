@@ -5,14 +5,17 @@ e.g. `000000`, `000001`, `000002`, etc., and are limited to 128MB by default.
 A segment is written to in pages of 32KB. Only the last page of the most recent segment
 may be partial. A WAL record is an opaque byte slice that gets split up into sub-records
 should it exceed the remaining space of the current page. Records are never split across
-segment boundaries.
-The encoding of pages is largely borrowed from [LevelDB's/RocksDB's wirte ahead log.][1]
+segment boundaries. If a single record exceeds the default segment size, a segment with
+a larger size will be created.
+The encoding of pages is largely borrowed from [LevelDB's/RocksDB's write ahead log.][1]
 
 Notable deviations are that the record fragment is encoded as:
 
+```
 ┌───────────┬──────────┬────────────┬──────────────┐
 │ type <1b> │ len <2b> │ CRC32 <4b> │ data <bytes> │
 └───────────┴──────────┴────────────┴──────────────┘
+```
 
 ## Record encoding
 
@@ -22,6 +25,7 @@ The records written to the write ahead log are encoded as follows:
 
 Series records encode the labels that identifier a series and its unique ID.
 
+```
 ┌────────────────────────────────────────────┐
 │ type = 1 <1b>                              │
 ├────────────────────────────────────────────┤
@@ -36,12 +40,14 @@ Series records encode the labels that identifier a series and its unique ID.
 │ └───────────────────────┴────────────────┘ │
 │                  . . .                     │
 └────────────────────────────────────────────┘
+```
 
 ### Sample records
 
 Sample records encode samples as a list of triples `(series_id, timestamp, value)`.
 Series reference and timestamp are encoded as deltas w.r.t the first sample.
 
+```
 ┌──────────────────────────────────────────────────────────────────┐
 │ type = 2 <1b>                                                    │
 ├──────────────────────────────────────────────────────────────────┤
@@ -53,13 +59,14 @@ Series reference and timestamp are encoded as deltas w.r.t the first sample.
 │ └────────────────────┴───────────────────────────┴─────────────┘ │
 │                              . . .                               │
 └──────────────────────────────────────────────────────────────────┘
+```
 
 ### Tombstone records
 
 Tombstone records encode tombstones as a list of triples `(series_id, min_time, max_time)`
 and specify an interval for which samples of a series got deleted.
 
-
+```
 ┌─────────────────────────────────────────────────────┐
 │ type = 3 <1b>                                       │
 ├─────────────────────────────────────────────────────┤
@@ -68,5 +75,6 @@ and specify an interval for which samples of a series got deleted.
 │ └─────────┴───────────────────┴───────────────────┘ │
 │                        . . .                        │
 └─────────────────────────────────────────────────────┘
+```
 
 [1][https://github.com/facebook/rocksdb/wiki/Write-Ahead-Log-File-Format]

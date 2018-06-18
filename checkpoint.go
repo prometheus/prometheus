@@ -35,9 +35,9 @@ type CheckpointStats struct {
 	DroppedSeries     int
 	DroppedSamples    int
 	DroppedTombstones int
-	TotalSeries       int
-	TotalSamples      int
-	TotalTombstones   int
+	TotalSeries       int // Processed series including dropped ones.
+	TotalSamples      int // Processed samples inlcuding dropped ones.
+	TotalTombstones   int // Processed tombstones including droppes ones.
 }
 
 // LastCheckpoint returns the directory name of the most recent checkpoint.
@@ -129,16 +129,16 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 			sr = last
 		}
 
-		segs, err := wal.NewSegmentsRangeReader(w.Dir(), m, n)
+		segsr, err := wal.NewSegmentsRangeReader(w.Dir(), m, n)
 		if err != nil {
 			return nil, errors.Wrap(err, "create segment reader")
 		}
-		defer segs.Close()
+		defer segsr.Close()
 
 		if sr != nil {
-			sr = io.MultiReader(sr, segs)
+			sr = io.MultiReader(sr, segsr)
 		} else {
-			sr = segs
+			sr = segsr
 		}
 	}
 
@@ -169,7 +169,7 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
-		// Remember where  the record for this iteration starts.
+		// Remember where the record for this iteration starts.
 		start := len(buf)
 		rec := r.Record()
 

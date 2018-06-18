@@ -23,6 +23,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -35,9 +36,7 @@ import (
 )
 
 const (
-	version            = 1
 	defaultSegmentSize = 128 * 1024 * 1024 // 128 MB
-	maxRecordSize      = 1 * 1024 * 1024   // 1MB
 	pageSize           = 32 * 1024         // 32KB
 	recordHeaderSize   = 7
 )
@@ -94,7 +93,6 @@ func (e *CorruptionErr) Error() string {
 
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
 func OpenWriteSegment(dir string, k int) (*Segment, error) {
-	// Only .active segments are allowed to be opened for write.
 	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
@@ -127,7 +125,7 @@ func CreateSegment(dir string, k int) (*Segment, error) {
 	return &Segment{File: f, i: k, dir: dir}, nil
 }
 
-// OpenReadSegment opens the segment k in dir for reading.
+// OpenReadSegment opens the segment with the given filename.
 func OpenReadSegment(fn string) (*Segment, error) {
 	k, err := strconv.Atoi(filepath.Base(fn))
 	if err != nil {
@@ -142,7 +140,7 @@ func OpenReadSegment(fn string) (*Segment, error) {
 
 // WAL is a write ahead log that stores records in segment files.
 // It must be read from start to end once before logging new data.
-// If an errore occurs during read, the repair procedure must be called
+// If an erroe occurs during read, the repair procedure must be called
 // before it's safe to do further writes.
 //
 // Segments are written to in pages of 32KB, with records possibly split
@@ -244,23 +242,19 @@ Loop:
 		case f := <-w.actorc:
 			f()
 		case donec := <-w.stopc:
+			close(w.actorc)
 			defer close(donec)
 			break Loop
 		}
 	}
 	// Drain and process any remaining functions.
-	for {
-		select {
-		case f := <-w.actorc:
-			f()
-		default:
-			return
-		}
+	for f := range w.actorc {
+		f()
 	}
 }
 
 // Repair attempts to repair the WAL based on the error.
-// It discards all data behind the corruption
+// It discards all data after the corruption.
 func (w *WAL) Repair(err error) error {
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
@@ -333,7 +327,7 @@ func (w *WAL) Repair(err error) error {
 
 // SegmentName builds a segment name for the directory.
 func SegmentName(dir string, i int) string {
-	return filepath.Join(dir, fmt.Sprintf("%06d", i))
+	return filepath.Join(dir, fmt.Sprintf("%08d", i))
 }
 
 // nextSegment creates the next segment and closes the previous one.
@@ -384,6 +378,7 @@ func (w *WAL) flushPage(clear bool) error {
 	}
 	p.flushed += n
 
+	// We flushed an entire page, prepare a new one.
 	if clear {
 		for i := range p.buf {
 			p.buf[i] = 0
@@ -485,7 +480,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 		binary.BigEndian.PutUint16(buf[1:], uint16(len(part)))
 		binary.BigEndian.PutUint32(buf[3:], crc)
 
-		copy(buf[7:], part)
+		copy(buf[recordHeaderSize:], part)
 		p.alloc += len(part) + recordHeaderSize
 
 		// If we wrote a full record, we can fit more records of the batch
@@ -587,6 +582,9 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		refs = append(refs, segmentRef{s: fn, n: k})
 		last = k
 	}
+	sort.Slice(refs, func(i, j int) bool {
+		return refs[i].n < refs[j].n
+	})
 	return refs, nil
 }
 
@@ -667,10 +665,6 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 	// Only unset more so we don't invalidate the current segment and
 	// offset before the next read.
 	r.more = false
-	// If no more segments are left, it's the end for the reader.
-	if len(r.segs) == 0 {
-		return n, io.EOF
-	}
 	return n, nil
 }
 
@@ -689,7 +683,7 @@ func NewReader(r io.Reader) *Reader {
 }
 
 // Next advances the reader to the next records and returns true if it exists.
-// It must not be called once after it returned false.
+// It must not be called again after it returned false.
 func (r *Reader) Next() bool {
 	err := r.next()
 	if errors.Cause(err) == io.EOF {
@@ -702,8 +696,8 @@ func (r *Reader) Next() bool {
 func (r *Reader) next() (err error) {
 	// We have to use r.buf since allocating byte arrays here fails escape
 	// analysis and ends up on the heap, even though it seemingly should not.
-	hdr := r.buf[:7]
-	buf := r.buf[7:]
+	hdr := r.buf[:recordHeaderSize]
+	buf := r.buf[recordHeaderSize:]
 
 	r.rec = r.rec[:0]
 

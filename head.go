@@ -438,7 +438,7 @@ func (h *Head) Truncate(mint int64) error {
 		return nil // no segments yet.
 	}
 	// The lower third of segments should contain mostly obsolete samples.
-	// If we have too few segments, it's not worth checkpointing yet.
+	// If we have less than three segments, it's not worth checkpointing yet.
 	n = m + (n-m)/3
 	if n <= m {
 		return nil
