@@ -95,8 +95,8 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	if err != nil {
 		return nil, err
 	}
-	var rp *prompb.ReadHints = nil
 
+	var rp *prompb.ReadHints
 	if p != nil {
 		rp = &prompb.ReadHints{
 			StepMs: p.Step,
