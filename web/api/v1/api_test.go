@@ -147,7 +147,7 @@ func TestEndpoints(t *testing.T) {
 
 	// Run all the API tests against a API that is wired to forward queries via
 	// the remote read client to a test server, which in turn sends them to the
-	// date from the test suite.
+	// data from the test suite.
 	t.Run("remote", func(t *testing.T) {
 		server := setupRemote(suite.Storage())
 		defer server.Close()
