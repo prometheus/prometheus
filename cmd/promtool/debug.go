@@ -75,18 +75,18 @@ func (w *debugWriter) Write() int {
 			return 1
 		}
 
-		if err := w.write(filename, buf); err != nil {
+		if err := w.archiver.Write(filename, buf); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 	}
 
-	if err := w.close(); err != nil {
+	if err := w.Close(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	fmt.Println("debug complete all files written in:", w.file().Name())
+	fmt.Println("debug complete all files written in:", w.File().Name())
 	return 0
 }
 

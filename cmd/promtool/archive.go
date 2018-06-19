@@ -28,9 +28,9 @@ type archiverConfig struct {
 }
 
 type archiver interface {
-	write(fileName string, buf *bytes.Buffer) error
-	close() error
-	file() *os.File
+	Write(fileName string, buf *bytes.Buffer) error
+	Close() error
+	File() *os.File
 }
 
 func newArchiver(cfg archiverConfig) (archiver, error) {
@@ -43,17 +43,17 @@ func newArchiver(cfg archiverConfig) (archiver, error) {
 	return &tarGzFileWriter{
 		tarWriter: tw,
 		gzWriter:  gzw,
-		archive:   file,
+		file:      file,
 	}, nil
 }
 
 type tarGzFileWriter struct {
 	tarWriter *tar.Writer
 	gzWriter  *gzip.Writer
-	archive   *os.File
+	file      *os.File
 }
 
-func (w *tarGzFileWriter) close() error {
+func (w *tarGzFileWriter) Close() error {
 	if err := w.tarWriter.Close(); err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (w *tarGzFileWriter) close() error {
 	return w.File().Close()
 }
 
-func (w *tarGzFileWriter) write(fileName string, buf *bytes.Buffer) error {
+func (w *tarGzFileWriter) Write(fileName string, buf *bytes.Buffer) error {
 	header := &tar.Header{
 		Name: fileName,
 		Mode: filePerm,
@@ -78,6 +78,6 @@ func (w *tarGzFileWriter) write(fileName string, buf *bytes.Buffer) error {
 	return nil
 }
 
-func (w *tarGzFileWriter) file() *os.File {
-	return w.archive
+func (w *tarGzFileWriter) File() *os.File {
+	return w.file
 }
