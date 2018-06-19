@@ -22,21 +22,21 @@ import (
 	"github.com/google/pprof/profile"
 )
 
-type resourceSaverConfig struct {
+type debugWriterConfig struct {
 	server         string
 	tarballName    string
 	pathToFileName map[string]string
 	postProcess    func(b []byte) (*bytes.Buffer, error)
 }
 
-type resourceSaver struct {
+type debugWriter struct {
 	archiver
 	httpClient
 	requestToFile map[*http.Request]string
 	postProcess   func(b []byte) (*bytes.Buffer, error)
 }
 
-func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
+func newDebugWriter(cfg debugWriterConfig) *debugWriter {
 	client, err := newHTTPClient(httpClientConfig{serverURL: cfg.server})
 	if err != nil {
 		panic(err)
@@ -53,7 +53,7 @@ func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
 		}
 		reqs[req] = filename
 	}
-	return &resourceSaver{
+	return &debugWriter{
 		archiver,
 		client,
 		reqs,
@@ -61,32 +61,32 @@ func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
 	}
 }
 
-func (rs *resourceSaver) exec() int {
-	for req, filename := range rs.requestToFile {
-		_, body, err := rs.do(req)
+func (w *debugWriter) Write() int {
+	for req, filename := range w.requestToFile {
+		_, body, err := w.do(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 
-		buf, err := rs.postProcess(body)
+		buf, err := w.postProcess(body)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 
-		if err := rs.write(filename, buf); err != nil {
+		if err := w.write(filename, buf); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 	}
 
-	if err := rs.close(); err != nil {
+	if err := w.close(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	fmt.Println("debug complete all files written in:", rs.archive().Name())
+	fmt.Println("debug complete all files written in:", w.archive().Name())
 	return 0
 }
 
