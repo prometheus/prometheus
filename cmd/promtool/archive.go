@@ -21,7 +21,7 @@ import (
 	"os"
 )
 
-const FILE_PERM = 0644
+const filePerm = 0644
 
 type archiverConfig struct {
 	archiveName string
@@ -60,16 +60,13 @@ func (w *tarGzFileWriter) close() error {
 	if err := w.gzWriter.Close(); err != nil {
 		return err
 	}
-	if err := w.archive.Close(); err != nil {
-		return err
-	}
-	return nil
+	return w.File().Close()
 }
 
 func (w *tarGzFileWriter) write(fileName string, buf *bytes.Buffer) error {
 	header := &tar.Header{
 		Name: fileName,
-		Mode: FILE_PERM,
+		Mode: filePerm,
 		Size: int64(buf.Len()),
 	}
 	if err := w.tarWriter.WriteHeader(header); err != nil {
