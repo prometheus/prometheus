@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/client_golang/api"
 )
 
-const DEFAULT_TIMEOUT = 2 * time.Minute
+const defaultTimeout = 2 * time.Minute
 
 type httpClientConfig struct {
 	serverURL string
@@ -41,7 +41,7 @@ func newHTTPClient(cfg httpClientConfig) (httpClient, error) {
 		return nil, fmt.Errorf("error of creating http client: %s", err)
 	}
 	return &prometheusHTTPClient{
-		requestTimeout: DEFAULT_TIMEOUT,
+		requestTimeout: defaultTimeout,
 		httpClient:     hc,
 	}, nil
 }
