@@ -69,13 +69,13 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	return p
 }
 
-func (e *Pod) enqueue(obj interface{}) {
+func (p *Pod) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
 	}
 
-	e.queue.Add(key)
+	p.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.

@@ -61,13 +61,13 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	return s
 }
 
-func (e *Service) enqueue(obj interface{}) {
+func (s *Service) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
 	}
 
-	e.queue.Add(key)
+	s.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.

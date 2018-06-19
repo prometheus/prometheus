@@ -60,7 +60,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	for s := 0; s < numIntervals; s += 1 {
+	for s := 0; s < numIntervals; s++ {
 		a, err := storage.Appender()
 		if err != nil {
 			b.Fatal(err)
