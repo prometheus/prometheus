@@ -491,7 +491,7 @@ func main() {
 				}
 
 				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
-					return fmt.Errorf("Error loading config %s", err)
+					return fmt.Errorf("error loading config from %q: %s", cfg.configFile, err)
 				}
 
 				reloadReady.Close()
@@ -519,7 +519,7 @@ func main() {
 					&cfg.tsdb,
 				)
 				if err != nil {
-					return fmt.Errorf("Opening storage failed %s", err)
+					return fmt.Errorf("opening storage failed: %s", err)
 				}
 				level.Info(logger).Log("msg", "TSDB started")
 
@@ -542,7 +542,7 @@ func main() {
 		g.Add(
 			func() error {
 				if err := webHandler.Run(ctxWeb); err != nil {
-					return fmt.Errorf("Error starting web server: %s", err)
+					return fmt.Errorf("error starting web server: %s", err)
 				}
 				return nil
 			},
@@ -613,7 +613,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%s): %v", filename, err)
+		return fmt.Errorf("couldn't load configuration (--config.file=%q): %v", filename, err)
 	}
 
 	failed := false
@@ -624,7 +624,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%s)", filename)
+		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
 	return nil
 }
