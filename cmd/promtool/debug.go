@@ -86,7 +86,7 @@ func (w *debugWriter) Write() int {
 		return 1
 	}
 
-	fmt.Println("debug complete all files written in:", w.archive().Name())
+	fmt.Println("debug complete all files written in:", w.file().Name())
 	return 0
 }
 

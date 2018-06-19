@@ -30,27 +30,27 @@ type archiverConfig struct {
 type archiver interface {
 	write(fileName string, buf *bytes.Buffer) error
 	close() error
-	archive() *os.File
+	file() *os.File
 }
 
 func newArchiver(cfg archiverConfig) (archiver, error) {
-	f, err := os.Create(cfg.archiveName)
+	file, err := os.Create(cfg.archiveName)
 	if err != nil {
 		return nil, fmt.Errorf("error of creating archive %s: %s", cfg.archiveName, err)
 	}
-	gzw := gzip.NewWriter(f)
+	gzw := gzip.NewWriter(file)
 	tw := tar.NewWriter(gzw)
 	return &tarGzFileWriter{
 		tarWriter: tw,
 		gzWriter:  gzw,
-		file:      f,
+		archive:   file,
 	}, nil
 }
 
 type tarGzFileWriter struct {
 	tarWriter *tar.Writer
 	gzWriter  *gzip.Writer
-	file      *os.File
+	archive   *os.File
 }
 
 func (w *tarGzFileWriter) close() error {
@@ -60,7 +60,7 @@ func (w *tarGzFileWriter) close() error {
 	if err := w.gzWriter.Close(); err != nil {
 		return err
 	}
-	if err := w.file.Close(); err != nil {
+	if err := w.archive.Close(); err != nil {
 		return err
 	}
 	return nil
@@ -81,6 +81,6 @@ func (w *tarGzFileWriter) write(fileName string, buf *bytes.Buffer) error {
 	return nil
 }
 
-func (w *tarGzFileWriter) archive() *os.File {
-	return w.file
+func (w *tarGzFileWriter) file() *os.File {
+	return w.archive
 }
