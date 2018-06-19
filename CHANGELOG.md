@@ -1,3 +1,13 @@
+## 2.3.1 / 2018-06-19
+
+* [BUGFIX] Avoid infinite loop on duplicate NaN values. #4275
+* [BUGFIX] Fix nil pointer deference when using various API endpoints #4282
+* [BUGFIX] config: set target group source index during unmarshalling #4245
+* [BUGFIX] discovery/file: fix logging #4178
+* [BUGFIX] kubernetes_sd: fix namespace filtering #4285
+* [BUGFIX] web: restore old path prefix behavior #4273
+* [BUGFIX] web: remove security headers added in 2.3.0 #4259
+
 ## 2.3.0 / 2018-06-05
 
 * [CHANGE] `marathon_sd`: use `auth_token` and `auth_token_file` for token-based authentication instead of `bearer_token` and `bearer_token_file` respectively.
