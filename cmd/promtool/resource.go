@@ -31,9 +31,9 @@ type resourceSaverConfig struct {
 
 type resourceSaver struct {
 	archiver
-	httpClient        httpClient
-	fileNameToRequest map[string]*http.Request
-	postProcess       func(b []byte) (*bytes.Buffer, error)
+	httpClient
+	requestToFile map[*http.Request]string
+	postProcess   func(b []byte) (*bytes.Buffer, error)
 }
 
 func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
@@ -41,29 +41,29 @@ func newResourceSaver(cfg resourceSaverConfig) *resourceSaver {
 	if err != nil {
 		panic(err)
 	}
-	a, err := newArchiver(archiverConfig{archiveName: cfg.tarballName})
+	archiver, err := newArchiver(archiverConfig{archiveName: cfg.tarballName})
 	if err != nil {
 		panic(err)
 	}
-	m := make(map[string]*http.Request)
+	reqs := make(map[*http.Request]string)
 	for path, filename := range cfg.pathToFileName {
 		req, err := http.NewRequest(http.MethodGet, client.urlJoin(path), nil)
 		if err != nil {
 			panic(err)
 		}
-		m[filename] = req
+		reqs[req] = filename
 	}
 	return &resourceSaver{
-		a,
+		archiver,
 		client,
-		m,
+		reqs,
 		cfg.postProcess,
 	}
 }
 
 func (rs *resourceSaver) exec() int {
-	for filename, req := range rs.fileNameToRequest {
-		_, body, err := rs.httpClient.do(req)
+	for req, filename := range rs.requestToFile {
+		_, body, err := rs.do(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
