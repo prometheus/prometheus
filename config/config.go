@@ -370,6 +370,13 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 		}
 	}
+
+	// Add index to the static config target groups for unique identification
+	// within scrape pool.
+	for i, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
+		tg.Source = fmt.Sprintf("%d", i)
+	}
+
 	return nil
 }
 
@@ -432,6 +439,13 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 			}
 		}
 	}
+
+	// Add index to the static config target groups for unique identification
+	// within scrape pool.
+	for i, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
+		tg.Source = fmt.Sprintf("%d", i)
+	}
+
 	return nil
 }
 
