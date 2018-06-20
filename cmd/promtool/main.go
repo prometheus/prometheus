@@ -102,58 +102,13 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
-		w, err := newDebugWriter(debugWriterConfig{
-			server:      *debugPprofServer,
-			tarballName: "debug.tar.gz",
-			pathToFileName: map[string]string{
-				"/debug/pprof/block":        "block.pb",
-				"/debug/pprof/goroutine":    "goroutine.pb",
-				"/debug/pprof/heap":         "heap.pb",
-				"/debug/pprof/mutex":        "mutex.pb",
-				"/debug/pprof/threadcreate": "threadcreate.pb",
-			},
-			postProcess: pprofPostProcess,
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
-			os.Exit(1)
-		}
-		os.Exit(w.Write())
+		os.Exit(debugPprof(*debugPprofServer))
 
 	case debugMetricsCmd.FullCommand():
-		w, err := newDebugWriter(debugWriterConfig{
-			server:      *debugMetricsServer,
-			tarballName: "debug.tar.gz",
-			pathToFileName: map[string]string{
-				"/metrics": "metrics.txt",
-			},
-			postProcess: metricsPostProcess,
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
-			os.Exit(1)
-		}
-		os.Exit(w.Write())
+		os.Exit(debugMetrics(*debugMetricsServer))
 
 	case debugAllCmd.FullCommand():
-		w, err := newDebugWriter(debugWriterConfig{
-			server:      *debugAllServer,
-			tarballName: "debug.tar.gz",
-			pathToFileName: map[string]string{
-				"/debug/pprof/block":        "block.pb",
-				"/debug/pprof/goroutine":    "goroutine.pb",
-				"/debug/pprof/heap":         "heap.pb",
-				"/debug/pprof/mutex":        "mutex.pb",
-				"/debug/pprof/threadcreate": "threadcreate.pb",
-				"/metrics":                  "metrics.txt",
-			},
-			postProcess: allPostProcess,
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
-			os.Exit(1)
-		}
-		os.Exit(w.Write())
+		os.Exit(debugAll(*debugAllServer))
 	}
 
 }
@@ -507,4 +462,61 @@ func parseTime(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+func debugPprof(url string) int {
+	w, err := newDebugWriter(debugWriterConfig{
+		server:      url,
+		tarballName: "debug.tar.gz",
+		pathToFileName: map[string]string{
+			"/debug/pprof/block":        "block.pb",
+			"/debug/pprof/goroutine":    "goroutine.pb",
+			"/debug/pprof/heap":         "heap.pb",
+			"/debug/pprof/mutex":        "mutex.pb",
+			"/debug/pprof/threadcreate": "threadcreate.pb",
+		},
+		postProcess: pprofPostProcess,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		return 1
+	}
+	return w.Write()
+}
+
+func debugMetrics(url string) int {
+	w, err := newDebugWriter(debugWriterConfig{
+		server:      url,
+		tarballName: "debug.tar.gz",
+		pathToFileName: map[string]string{
+			"/metrics": "metrics.txt",
+		},
+		postProcess: metricsPostProcess,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		return 1
+	}
+	return w.Write()
+}
+
+func debugAll(url string) int {
+	w, err := newDebugWriter(debugWriterConfig{
+		server:      url,
+		tarballName: "debug.tar.gz",
+		pathToFileName: map[string]string{
+			"/debug/pprof/block":        "block.pb",
+			"/debug/pprof/goroutine":    "goroutine.pb",
+			"/debug/pprof/heap":         "heap.pb",
+			"/debug/pprof/mutex":        "mutex.pb",
+			"/debug/pprof/threadcreate": "threadcreate.pb",
+			"/metrics":                  "metrics.txt",
+		},
+		postProcess: allPostProcess,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		return 1
+	}
+	return w.Write()
 }
