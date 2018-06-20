@@ -15,6 +15,7 @@ package storage
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -95,6 +96,16 @@ func TestMergeSeriesSet(t *testing.T) {
 			expected: newMockSeriesSet(
 				newMockSeries(labels.FromStrings("bar", "baz"), []sample{{1, 1}, {2, 2}, {3, 3}, {4, 4}}),
 				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, 0}, {1, 1}, {2, 2}, {3, 3}}),
+			),
+		},
+		{
+			input: []SeriesSet{newMockSeriesSet(
+				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, math.NaN()}}),
+			), newMockSeriesSet(
+				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, math.NaN()}}),
+			)},
+			expected: newMockSeriesSet(
+				newMockSeries(labels.FromStrings("foo", "bar"), []sample{{0, math.NaN()}}),
 			),
 		},
 	} {
@@ -197,6 +208,10 @@ func drainSamples(iter SeriesIterator) []sample {
 	result := []sample{}
 	for iter.Next() {
 		t, v := iter.At()
+		// NaNs can't be compared normally, so substitute for another value.
+		if math.IsNaN(v) {
+			v = -42
+		}
 		result = append(result, sample{t, v})
 	}
 	return result
