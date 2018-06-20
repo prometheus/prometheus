@@ -65,7 +65,7 @@ func (w *debugWriter) Write() int {
 	for req, filename := range w.requestToFile {
 		_, body, err := w.do(req)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "error executing HTTP request:", err)
 			return 1
 		}
 
@@ -86,7 +86,7 @@ func (w *debugWriter) Write() int {
 		return 1
 	}
 
-	fmt.Println("debug complete all files written in:", w.File().Name())
+	fmt.Printf("Compiling debug information complete, all files written in %q.", w.File().Name())
 	return 0
 }
 

@@ -74,13 +74,13 @@ func main() {
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 
-	debugCmd := app.Command("debug", "debug cmd")
-	debugPprofCmd := debugCmd.Command("pprof", "pprof cmd")
-	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to get pprof files.").Required().String()
-	debugMetricsCmd := debugCmd.Command("metrics", "metrics cmd")
-	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to get metrics.").Required().String()
-	debugAllCmd := debugCmd.Command("all", "all cmd")
-	debugAllServer := debugAllCmd.Arg("server", "Prometheus server to get all debug infomation.").Required().String()
+	debugCmd := app.Command("debug", "Fetch debug information.")
+	debugPprofCmd := debugCmd.Command("pprof", "Fetch profiling debug information.")
+	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to get pprof files from.").Required().String()
+	debugMetricsCmd := debugCmd.Command("metrics", "Fetch metrics debug information.")
+	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to get metrics from.").Required().String()
+	debugAllCmd := debugCmd.Command("all", "Fetch all debug information.")
+	debugAllServer := debugAllCmd.Arg("server", "Prometheus server to get all debug information from.").Required().String()
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():

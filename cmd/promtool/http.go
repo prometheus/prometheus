@@ -38,7 +38,7 @@ func newHTTPClient(cfg httpClientConfig) (httpClient, error) {
 		Address: cfg.serverURL,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error of creating http client: %s", err)
+		return nil, fmt.Errorf("error creating HTTP client: %s", err)
 	}
 	return &prometheusHTTPClient{
 		requestTimeout: defaultTimeout,

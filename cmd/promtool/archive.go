@@ -36,7 +36,7 @@ type archiver interface {
 func newArchiver(cfg archiverConfig) (archiver, error) {
 	file, err := os.Create(cfg.archiveName)
 	if err != nil {
-		return nil, fmt.Errorf("error of creating archive %s: %s", cfg.archiveName, err)
+		return nil, fmt.Errorf("error creating archive %q: %s", cfg.archiveName, err)
 	}
 	gzw := gzip.NewWriter(file)
 	tw := tar.NewWriter(gzw)
