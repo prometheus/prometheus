@@ -29,6 +29,12 @@ type archiver interface {
 	filename() string
 }
 
+type tarGzFileWriter struct {
+	tarWriter *tar.Writer
+	gzWriter  *gzip.Writer
+	file      *os.File
+}
+
 func newTarGzFileWriter(archiveName string) (*tarGzFileWriter, error) {
 	file, err := os.Create(archiveName)
 	if err != nil {
@@ -41,12 +47,6 @@ func newTarGzFileWriter(archiveName string) (*tarGzFileWriter, error) {
 		gzWriter:  gzw,
 		file:      file,
 	}, nil
-}
-
-type tarGzFileWriter struct {
-	tarWriter *tar.Writer
-	gzWriter  *gzip.Writer
-	file      *os.File
 }
 
 func (w *tarGzFileWriter) close() error {

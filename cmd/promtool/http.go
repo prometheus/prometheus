@@ -29,6 +29,11 @@ type httpClient interface {
 	urlJoin(path string) string
 }
 
+type prometheusHTTPClient struct {
+	requestTimeout time.Duration
+	httpClient     api.Client
+}
+
 func newPrometheusHTTPClient(serverURL string) (*prometheusHTTPClient, error) {
 	hc, err := api.NewClient(api.Config{
 		Address: serverURL,
@@ -40,11 +45,6 @@ func newPrometheusHTTPClient(serverURL string) (*prometheusHTTPClient, error) {
 		requestTimeout: defaultTimeout,
 		httpClient:     hc,
 	}, nil
-}
-
-type prometheusHTTPClient struct {
-	requestTimeout time.Duration
-	httpClient     api.Client
 }
 
 func (c *prometheusHTTPClient) do(req *http.Request) (*http.Response, []byte, error) {
