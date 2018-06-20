@@ -466,7 +466,7 @@ func parseTime(s string) (time.Time, error) {
 
 func debugPprof(url string) int {
 	w, err := newDebugWriter(debugWriterConfig{
-		server:      url,
+		serverURL:   url,
 		tarballName: "debug.tar.gz",
 		pathToFileName: map[string]string{
 			"/debug/pprof/block":        "block.pb",
@@ -486,7 +486,7 @@ func debugPprof(url string) int {
 
 func debugMetrics(url string) int {
 	w, err := newDebugWriter(debugWriterConfig{
-		server:      url,
+		serverURL:   url,
 		tarballName: "debug.tar.gz",
 		pathToFileName: map[string]string{
 			"/metrics": "metrics.txt",
@@ -502,7 +502,7 @@ func debugMetrics(url string) int {
 
 func debugAll(url string) int {
 	w, err := newDebugWriter(debugWriterConfig{
-		server:      url,
+		serverURL:   url,
 		tarballName: "debug.tar.gz",
 		pathToFileName: map[string]string{
 			"/debug/pprof/block":        "block.pb",

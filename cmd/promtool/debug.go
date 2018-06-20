@@ -23,7 +23,7 @@ import (
 )
 
 type debugWriterConfig struct {
-	server         string
+	serverURL      string
 	tarballName    string
 	pathToFileName map[string]string
 	postProcess    func(b []byte) (*bytes.Buffer, error)
@@ -37,7 +37,7 @@ type debugWriter struct {
 }
 
 func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
-	client, err := newHTTPClient(httpClientConfig{serverURL: cfg.server})
+	client, err := newHTTPClient(httpClientConfig{serverURL: cfg.serverURL})
 	if err != nil {
 		return nil, err
 	}
