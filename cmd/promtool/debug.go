@@ -26,14 +26,14 @@ type debugWriterConfig struct {
 	serverURL      string
 	tarballName    string
 	pathToFileName map[string]string
-	postProcess    func(b []byte) (*bytes.Buffer, error)
+	postProcess    func(b []byte) ([]byte, error)
 }
 
 type debugWriter struct {
 	archiver
 	httpClient
 	requestToFile map[*http.Request]string
-	postProcess   func(b []byte) (*bytes.Buffer, error)
+	postProcess   func(b []byte) ([]byte, error)
 }
 
 func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
@@ -98,33 +98,25 @@ func validate(b []byte) (*profile.Profile, error) {
 	return p, nil
 }
 
-func buffer(p *profile.Profile) (*bytes.Buffer, error) {
-	buf := new(bytes.Buffer)
-	if err := p.WriteUncompressed(buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
-}
-
-var pprofPostProcess = func(b []byte) (*bytes.Buffer, error) {
+var pprofPostProcess = func(b []byte) ([]byte, error) {
 	p, err := validate(b)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(p.String())
-	return buffer(p)
-}
-
-var metricsPostProcess = func(b []byte) (*bytes.Buffer, error) {
-	buf := new(bytes.Buffer)
-	if _, err := buf.Write(b); err != nil {
+	var buf bytes.Buffer
+	if err := p.WriteUncompressed(&buf); err != nil {
 		return nil, err
 	}
-	fmt.Println(buf.String())
-	return buf, nil
+	fmt.Println(p.String())
+	return buf.Bytes(), nil
 }
 
-var allPostProcess = func(b []byte) (*bytes.Buffer, error) {
+var metricsPostProcess = func(b []byte) ([]byte, error) {
+	fmt.Println(string(b))
+	return b, nil
+}
+
+var allPostProcess = func(b []byte) ([]byte, error) {
 	_, err := validate(b)
 	if err != nil {
 		return metricsPostProcess(b)

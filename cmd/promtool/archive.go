@@ -15,7 +15,6 @@ package main
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"fmt"
 	"os"
@@ -24,7 +23,7 @@ import (
 const filePerm = 0644
 
 type archiver interface {
-	write(filename string, buf *bytes.Buffer) error
+	write(filename string, b []byte) error
 	close() error
 	filename() string
 }
@@ -59,16 +58,16 @@ func (w *tarGzFileWriter) close() error {
 	return w.file.Close()
 }
 
-func (w *tarGzFileWriter) write(filename string, buf *bytes.Buffer) error {
+func (w *tarGzFileWriter) write(filename string, b []byte) error {
 	header := &tar.Header{
 		Name: filename,
 		Mode: filePerm,
-		Size: int64(buf.Len()),
+		Size: int64(len(b)),
 	}
 	if err := w.tarWriter.WriteHeader(header); err != nil {
 		return err
 	}
-	if _, err := w.tarWriter.Write(buf.Bytes()); err != nil {
+	if _, err := w.tarWriter.Write(b); err != nil {
 		return err
 	}
 	return nil
