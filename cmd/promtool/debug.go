@@ -86,7 +86,7 @@ func (w *debugWriter) Write() int {
 		return 1
 	}
 
-	fmt.Printf("Compiling debug information complete, all files written in %q.", w.File().Name())
+	fmt.Printf("Compiling debug information complete, all files written in %q.\n", w.File().Name())
 	return 0
 }
 
