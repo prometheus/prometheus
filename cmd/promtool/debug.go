@@ -49,7 +49,7 @@ func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
 	for path, filename := range cfg.pathToFileName {
 		req, err := http.NewRequest(http.MethodGet, client.urlJoin(path), nil)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		reqs[req] = filename
 	}
