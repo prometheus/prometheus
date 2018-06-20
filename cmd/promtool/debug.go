@@ -71,18 +71,18 @@ func (w *debugWriter) Write() int {
 
 		buf, err := w.postProcess(body)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "error post-processing HTTP response body:", err)
 			return 1
 		}
 
 		if err := w.archiver.write(filename, buf); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "error writing into archive:", err)
 			return 1
 		}
 	}
 
 	if err := w.close(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "error closing archiver:", err)
 		return 1
 	}
 
