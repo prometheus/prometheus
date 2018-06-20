@@ -24,9 +24,9 @@ import (
 const filePerm = 0644
 
 type archiver interface {
-	Write(fileName string, buf *bytes.Buffer) error
-	Close() error
-	File() *os.File
+	write(filename string, buf *bytes.Buffer) error
+	close() error
+	filename() string
 }
 
 func newArchiver(archiveName string) (archiver, error) {
@@ -49,19 +49,19 @@ type tarGzFileWriter struct {
 	file      *os.File
 }
 
-func (w *tarGzFileWriter) Close() error {
+func (w *tarGzFileWriter) close() error {
 	if err := w.tarWriter.Close(); err != nil {
 		return err
 	}
 	if err := w.gzWriter.Close(); err != nil {
 		return err
 	}
-	return w.File().Close()
+	return w.file.Close()
 }
 
-func (w *tarGzFileWriter) Write(fileName string, buf *bytes.Buffer) error {
+func (w *tarGzFileWriter) write(filename string, buf *bytes.Buffer) error {
 	header := &tar.Header{
-		Name: fileName,
+		Name: filename,
 		Mode: filePerm,
 		Size: int64(buf.Len()),
 	}
@@ -74,6 +74,6 @@ func (w *tarGzFileWriter) Write(fileName string, buf *bytes.Buffer) error {
 	return nil
 }
 
-func (w *tarGzFileWriter) File() *os.File {
-	return w.file
+func (w *tarGzFileWriter) filename() string {
+	return w.file.Name()
 }
