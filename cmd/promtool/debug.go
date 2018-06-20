@@ -36,14 +36,14 @@ type debugWriter struct {
 	postProcess   func(b []byte) (*bytes.Buffer, error)
 }
 
-func newDebugWriter(cfg debugWriterConfig) *debugWriter {
+func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
 	client, err := newHTTPClient(httpClientConfig{serverURL: cfg.server})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	archiver, err := newArchiver(archiverConfig{archiveName: cfg.tarballName})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	reqs := make(map[*http.Request]string)
 	for path, filename := range cfg.pathToFileName {
@@ -58,7 +58,7 @@ func newDebugWriter(cfg debugWriterConfig) *debugWriter {
 		client,
 		reqs,
 		cfg.postProcess,
-	}
+	}, nil
 }
 
 func (w *debugWriter) Write() int {

@@ -102,7 +102,7 @@ func main() {
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
 
 	case debugPprofCmd.FullCommand():
-		os.Exit(newDebugWriter(debugWriterConfig{
+		w, err := newDebugWriter(debugWriterConfig{
 			server:      *debugPprofServer,
 			tarballName: "debug.tar.gz",
 			pathToFileName: map[string]string{
@@ -113,20 +113,30 @@ func main() {
 				"/debug/pprof/threadcreate": "threadcreate.pb",
 			},
 			postProcess: pprofPostProcess,
-		}).Write())
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+			os.Exit(1)
+		}
+		os.Exit(w.Write())
 
 	case debugMetricsCmd.FullCommand():
-		os.Exit(newDebugWriter(debugWriterConfig{
+		w, err := newDebugWriter(debugWriterConfig{
 			server:      *debugMetricsServer,
 			tarballName: "debug.tar.gz",
 			pathToFileName: map[string]string{
 				"/metrics": "metrics.txt",
 			},
 			postProcess: metricsPostProcess,
-		}).Write())
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+			os.Exit(1)
+		}
+		os.Exit(w.Write())
 
 	case debugAllCmd.FullCommand():
-		os.Exit(newDebugWriter(debugWriterConfig{
+		w, err := newDebugWriter(debugWriterConfig{
 			server:      *debugAllServer,
 			tarballName: "debug.tar.gz",
 			pathToFileName: map[string]string{
@@ -138,7 +148,12 @@ func main() {
 				"/metrics":                  "metrics.txt",
 			},
 			postProcess: allPostProcess,
-		}).Write())
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+			os.Exit(1)
+		}
+		os.Exit(w.Write())
 	}
 
 }
