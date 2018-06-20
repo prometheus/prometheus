@@ -26,9 +26,25 @@ type BufferedSeriesIterator struct {
 	ok       bool
 }
 
+type nopIterator struct{}
+
+func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
+func (nopIterator) Seek(t int64) bool    { return false }
+func (nopIterator) Next() bool           { return false }
+func (nopIterator) Err() error           { return nil }
+
+var nopIt = nopIterator{}
+
 // NewBuffer returns a new iterator that buffers the values within the time range
-// of the current element and the duration of delta before.
-func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
+// of the current element and the duration of delta before, initialized with an
+// empty iterator. Use Reset() to set an actual iterator to be buffered.
+func NewBuffer(delta int64) *BufferedSeriesIterator {
+	return NewBufferIterator(&nopIt, delta)
+}
+
+// NewBufferIterator returns a new iterator that buffers the values within the
+// time range of the current element and the duration of delta before.
+func NewBufferIterator(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
 		buf: newSampleRing(delta, 16),
 	}
