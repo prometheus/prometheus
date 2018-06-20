@@ -43,7 +43,7 @@ func TestURLJoin(t *testing.T) {
 		{"https://host/", "/path/", "https://host/path"},
 	}
 	for i, c := range testCases {
-		client, err := newHTTPClient(c.inputHost)
+		client, err := newPrometheusHTTPClient(c.inputHost)
 		if err != nil {
 			panic(err)
 		}

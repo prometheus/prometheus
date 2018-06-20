@@ -29,7 +29,7 @@ type archiver interface {
 	filename() string
 }
 
-func newArchiver(archiveName string) (archiver, error) {
+func newTarGzFileWriter(archiveName string) (*tarGzFileWriter, error) {
 	file, err := os.Create(archiveName)
 	if err != nil {
 		return nil, fmt.Errorf("error creating archive %q: %s", archiveName, err)

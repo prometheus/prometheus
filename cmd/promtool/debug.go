@@ -37,11 +37,11 @@ type debugWriter struct {
 }
 
 func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
-	client, err := newHTTPClient(cfg.serverURL)
+	client, err := newPrometheusHTTPClient(cfg.serverURL)
 	if err != nil {
 		return nil, err
 	}
-	archiver, err := newArchiver(cfg.tarballName)
+	archiver, err := newTarGzFileWriter(cfg.tarballName)
 	if err != nil {
 		return nil, err
 	}

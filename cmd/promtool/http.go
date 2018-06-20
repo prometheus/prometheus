@@ -29,7 +29,7 @@ type httpClient interface {
 	urlJoin(path string) string
 }
 
-func newHTTPClient(serverURL string) (httpClient, error) {
+func newPrometheusHTTPClient(serverURL string) (*prometheusHTTPClient, error) {
 	hc, err := api.NewClient(api.Config{
 		Address: serverURL,
 	})
