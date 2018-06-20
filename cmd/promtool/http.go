@@ -24,18 +24,14 @@ import (
 
 const defaultTimeout = 2 * time.Minute
 
-type httpClientConfig struct {
-	serverURL string
-}
-
 type httpClient interface {
 	do(req *http.Request) (*http.Response, []byte, error)
 	urlJoin(path string) string
 }
 
-func newHTTPClient(cfg httpClientConfig) (httpClient, error) {
+func newHTTPClient(serverURL string) (httpClient, error) {
 	hc, err := api.NewClient(api.Config{
-		Address: cfg.serverURL,
+		Address: serverURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %s", err)

@@ -23,20 +23,16 @@ import (
 
 const filePerm = 0644
 
-type archiverConfig struct {
-	archiveName string
-}
-
 type archiver interface {
 	Write(fileName string, buf *bytes.Buffer) error
 	Close() error
 	File() *os.File
 }
 
-func newArchiver(cfg archiverConfig) (archiver, error) {
-	file, err := os.Create(cfg.archiveName)
+func newArchiver(archiveName string) (archiver, error) {
+	file, err := os.Create(archiveName)
 	if err != nil {
-		return nil, fmt.Errorf("error creating archive %q: %s", cfg.archiveName, err)
+		return nil, fmt.Errorf("error creating archive %q: %s", archiveName, err)
 	}
 	gzw := gzip.NewWriter(file)
 	tw := tar.NewWriter(gzw)

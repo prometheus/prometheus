@@ -37,11 +37,11 @@ type debugWriter struct {
 }
 
 func newDebugWriter(cfg debugWriterConfig) (*debugWriter, error) {
-	client, err := newHTTPClient(httpClientConfig{serverURL: cfg.serverURL})
+	client, err := newHTTPClient(cfg.serverURL)
 	if err != nil {
 		return nil, err
 	}
-	archiver, err := newArchiver(archiverConfig{archiveName: cfg.tarballName})
+	archiver, err := newArchiver(cfg.tarballName)
 	if err != nil {
 		return nil, err
 	}
