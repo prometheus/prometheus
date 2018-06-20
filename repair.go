@@ -20,11 +20,11 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 	// We must actually set the index file version to 2 and revert the meta.json version back to 1.
 	dirs, err := blockDirs(dir)
 	if err != nil {
-		return errors.Wrapf(err, "list block dirs %s", dir)
+		return errors.Wrapf(err, "list block dirs in %q", dir)
 	}
 
 	wrapErr := func(err error, d string) error {
-		return errors.Wrapf(err, "block dir: %s", d)
+		return errors.Wrapf(err, "block dir: %q", d)
 	}
 	for _, d := range dirs {
 		meta, err := readBogusMetaFile(d)
