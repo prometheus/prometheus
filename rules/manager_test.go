@@ -271,7 +271,7 @@ func TestCopyState(t *testing.T) {
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
 	}
-	newGroup.copyState(oldGroup)
+	newGroup.CopyState(oldGroup)
 
 	want := []map[string]labels.Labels{
 		map[string]labels.Labels{"r3a": nil},
