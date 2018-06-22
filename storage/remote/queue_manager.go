@@ -141,6 +141,8 @@ type StorageClient interface {
 type QueueManager struct {
 	logger log.Logger
 
+	rwConf *config.RemoteWriteConfig
+
 	flushDeadline  time.Duration
 	cfg            config.QueueConfig
 	externalLabels model.LabelSet

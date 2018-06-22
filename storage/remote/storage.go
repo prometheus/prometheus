@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"time"
 
@@ -62,42 +63,50 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 
 	// Update write queues
 
-	newQueues := []*QueueManager{}
-	// TODO: we should only stop & recreate queues which have changes,
-	// as this can be quite disruptive.
+	newQueues := make([]*QueueManager, 0, len(conf.RemoteWriteConfigs))
+	oldQueues := s.queues
+
 	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, &ClientConfig{
-			URL:              rwConf.URL,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-		})
+		if i < len(oldQueues) {
+			qm := oldQueues[i]
+			if conf.GlobalConfig.ExternalLabels.Equal(qm.externalLabels) &&
+				reflect.DeepEqual(rwConf, qm.rwConf) {
+				newQueues = append(newQueues, qm)
+				continue
+			}
+		}
+
+		qm, err := s.newQueue(i, rwConf, conf.GlobalConfig.ExternalLabels)
 		if err != nil {
 			return err
 		}
-		newQueues = append(newQueues, NewQueueManager(
-			s.logger,
-			rwConf.QueueConfig,
-			conf.GlobalConfig.ExternalLabels,
-			rwConf.WriteRelabelConfigs,
-			c,
-			s.flushDeadline,
-		))
+
+		newQueues = append(newQueues, qm)
 	}
 
-	for _, q := range s.queues {
-		q.Stop()
+	for i, nqm := range newQueues {
+
+		if i < len(oldQueues) {
+			oqm := oldQueues[i]
+			if oqm == nqm {
+				continue
+			}
+			oqm.Stop()
+		}
+
+		nqm.Start()
+	}
+
+	for i := len(newQueues); i < len(oldQueues); i++ {
+		oldQueues[i].Stop()
 	}
 
 	s.queues = newQueues
-	for _, q := range s.queues {
-		q.Start()
-	}
 
 	// Update read clients
-
 	s.queryables = make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &ClientConfig{
+		client, err := NewClient(i, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
@@ -106,7 +115,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
-		q := QueryableClient(c)
+		q := QueryableClient(client)
 		q = ExternablLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
 		if len(rrConf.RequiredMatchers) > 0 {
 			q = RequiredMatchersFilter(q, labelsToEqualityMatchers(rrConf.RequiredMatchers))
@@ -118,6 +127,30 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	return nil
+}
+
+func (s *Storage) newQueue(i int, rwConf *config.RemoteWriteConfig, externalLabels model.LabelSet) (*QueueManager, error) {
+	client, err := NewClient(i, &ClientConfig{
+		URL:              rwConf.URL,
+		Timeout:          rwConf.RemoteTimeout,
+		HTTPClientConfig: rwConf.HTTPClientConfig,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	qm := NewQueueManager(
+		s.logger,
+		rwConf.QueueConfig,
+		externalLabels,
+		rwConf.WriteRelabelConfigs,
+		client,
+		s.flushDeadline,
+	)
+
+	qm.rwConf = rwConf
+
+	return qm, nil
 }
 
 // StartTime implements the Storage interface.
