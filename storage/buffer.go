@@ -26,20 +26,11 @@ type BufferedSeriesIterator struct {
 	ok       bool
 }
 
-type nopIterator struct{}
-
-func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
-func (nopIterator) Seek(t int64) bool    { return false }
-func (nopIterator) Next() bool           { return false }
-func (nopIterator) Err() error           { return nil }
-
-var nopIt = nopIterator{}
-
 // NewBuffer returns a new iterator that buffers the values within the time range
 // of the current element and the duration of delta before, initialized with an
 // empty iterator. Use Reset() to set an actual iterator to be buffered.
 func NewBuffer(delta int64) *BufferedSeriesIterator {
-	return NewBufferIterator(&nopIt, delta)
+	return NewBufferIterator(&NoopSeriesIt, delta)
 }
 
 // NewBufferIterator returns a new iterator that buffers the values within the
