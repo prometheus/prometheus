@@ -397,6 +397,7 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		// TODO Guido: add a job for OCI
 		{
 			JobName: "service-ec2",
 

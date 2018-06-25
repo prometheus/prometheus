@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/gce"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/oci"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -255,6 +256,9 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 	}
 	for i, c := range cfg.EC2SDConfigs {
 		app("ec2", i, ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")))
+	}
+	for i, c := range cfg.OciSDConfigs {
+		app("oci", i, oci.NewDiscovery(c, log.With(m.logger, "discovery", "oci")))
 	}
 	for i, c := range cfg.OpenstackSDConfigs {
 		openstackd, err := openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))
