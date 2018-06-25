@@ -101,6 +101,8 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 		rp = &prompb.ReadHints{
 			StepMs: p.Step,
 			Func:   p.Func,
+			Start:  p.Start,
+			End:    p.End,
 		}
 	}
 

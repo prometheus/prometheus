@@ -53,4 +53,6 @@ message LabelMatcher {
 message ReadHints {
   int64 step_ms = 1; // Query step size in milliseconds.
   string func = 2;   // String representation of surrounding function or aggregation.
+  int64 start = 3;   // Start time in milliseconds.
+  int64 end = 4;     // End time in milliseconds.
 }
