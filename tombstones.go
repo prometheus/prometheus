@@ -16,14 +16,12 @@ package tsdb
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-
 	"sync"
-
-	"github.com/pkg/errors"
 )
 
 const tombstoneFilename = "tombstones"
@@ -174,8 +172,8 @@ func (t *memTombstones) Get(ref uint64) (Intervals, error) {
 }
 
 func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
 	for ref, ivs := range t.mts {
 		if err := f(ref, ivs); err != nil {
 			return err
@@ -185,16 +183,12 @@ func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
 }
 
 // addInterval to an existing memTombstones
-func (t *memTombstones) addInterval(ref uint64, itv Interval) {
-	t.mtx.Lock()
-	t.mts[ref] = t.mts[ref].add(itv)
-	t.mtx.Unlock()
-}
-
-func (t *memTombstones) put(ref uint64, itvs Intervals) *memTombstones {
+func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) *memTombstones {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
-	t.mts[ref] = itvs
+	for _, itv := range itvs {
+		t.mts[ref] = t.mts[ref].add(itv)
+	}
 	return t
 }
 

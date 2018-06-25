@@ -808,7 +808,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 
 		// Add some some fake tombstones to trigger the compaction.
 		tomb := NewMemTombstones()
-		tomb.put(0,Intervals{{0, 1}})
+		tomb.addInterval(0, Interval{0, 1})
 		block.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)

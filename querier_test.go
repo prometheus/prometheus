@@ -557,7 +557,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				},
 			},
 		},
-		tombstones: NewMemTombstones().put(1, Intervals{{1, 3}}).put(2, Intervals{{1, 3}, {6, 10}}).put(3, Intervals{{6, 10}}),
+		tombstones: NewMemTombstones().addInterval(1, Interval{1, 3}).addInterval(2, Interval{1, 3}, Interval{6, 10}).addInterval(3, Interval{6, 10}),
 		queries: []query{
 			{
 				mint: 2,

@@ -41,7 +41,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 			dranges = dranges.add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
-		stones.put(ref, dranges)
+		stones.addInterval(ref, dranges...)
 	}
 
 	testutil.Ok(t, writeTombstoneFile(tmpdir, stones))
@@ -132,7 +132,6 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			tomb.put(uint64(x), Intervals{{int64(x), int64(x)}})
 			tomb.addInterval(uint64(x), Interval{int64(x), int64(x)})
 		}
 		wg.Done()
