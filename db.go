@@ -75,7 +75,7 @@ type Appender interface {
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
-	// If the reference is the empty string it must not be used for caching.
+	// If the reference is 0 it must not be used for caching.
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
 	// Add adds a sample pair for the referenced series. It is generally faster
