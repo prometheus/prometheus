@@ -32,18 +32,28 @@ func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
 		buf: newSampleRing(delta, 16),
 	}
-	bit.Reset(it)
+	bit.Reset(it, delta)
 
 	return bit
 }
 
 // Reset re-uses the buffer with a new iterator.
-func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
+func (b *BufferedSeriesIterator) Reset(it SeriesIterator, delta int64) {
 	b.it = it
 	b.lastTime = math.MinInt64
 	b.ok = true
+	b.buf.delta = delta
 	b.buf.reset()
 	it.Next()
+}
+
+// SetDelta sets the buffered duration to a new, lower value.
+func (b *BufferedSeriesIterator) SetDelta(delta int64) bool {
+	if delta > b.buf.delta {
+		return false
+	}
+	b.buf.delta = delta
+	return true
 }
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
