@@ -16,13 +16,8 @@ package oci
 import (
 	"context"
 	"fmt"
-	"net"
-	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/oracle/oci-go-sdk/common"
@@ -30,25 +25,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 	"io/ioutil"
 )
 
 const (
-	ociLabel              = model.MetaLabelPrefix + "oci_"
-	ociLabelAZ            = ociLabel + "availability_zone"
-	ociLabelInstanceID    = ociLabel + "instance_id"
-	ociLabelInstanceState = ociLabel + "instance_state"
-	ociLabelInstanceType  = ociLabel + "instance_type"
-	ociLabelPublicDNS     = ociLabel + "public_dns_name"
-	ociLabelPublicIP      = ociLabel + "public_ip"
-	ociLabelPrivateIP     = ociLabel + "private_ip"
-	ociLabelSubnetID      = ociLabel + "subnet_id"
-	ociLabelTag           = ociLabel + "tag_"
-	ociLabelVPCID         = ociLabel + "vpc_id"
-	subnetSeparator       = ","
+	ociLabel                   = model.MetaLabelPrefix + "oci_"
+	ociLabelCompartment        = ociLabel + "compartment"
+	ociLabelAvailabilityDomain = ociLabel + "availability_domain"
+	ociLabelInstanceID         = ociLabel + "instance_id"
+	ociLabelInstanceState      = ociLabel + "instance_state"
+	ociLabelPublicIP           = ociLabel + "public_ip"
+	ociLabelPrivateIP          = ociLabel + "private_ip"
+	ociLabelTag                = ociLabel + "tag_"
 )
 
 var (
@@ -74,13 +63,14 @@ type Filter struct {
 
 // SDConfig is the configuration for OCI based service discovery.
 type SDConfig struct {
-	User        string `yaml:"user"`
-	FingerPrint string `yaml:"fingerprint"`
-	KeyFile     string `yaml:"key_file"`
-	PassPhrase  string `yaml:"pass_phrase,omitempty"`
-	Tenancy     string `yaml:"tenancy"`
-	Region      string `yaml:"region"`
-	// TODO Guido: consider to add an availability domain and a compartement
+	User            string         `yaml:"user"`
+	FingerPrint     string         `yaml:"fingerprint"`
+	KeyFile         string         `yaml:"key_file"`
+	PassPhrase      string         `yaml:"pass_phrase,omitempty"`
+	Tenancy         string         `yaml:"tenancy"`
+	Region          string         `yaml:"region"`
+	Compartment     string         `yaml:"compartment"`
+	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -117,9 +107,10 @@ func init() {
 // Discovery periodically performs OCI-SD requests. It implements
 // the Discoverer interface.
 type Discovery struct {
-	config *SDConfig
-	client core.ComputeClient
-	logger log.Logger
+	sdConfig  *SDConfig
+	ociConfig common.ConfigurationProvider
+	interval  time.Duration
+	logger    log.Logger
 }
 
 // NewDiscovery returns a new OCI Discovery which periodically refreshes its targets.
@@ -139,14 +130,11 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		privateKey,
 		&conf.PassPhrase,
 	)
-	client, err := core.NewComputeClientWithConfigurationProvider(ociConfig)
-	if err != nil {
-		return nil, err
-	}
 	return &Discovery{
-		config: conf,
-		client: client,
-		logger: logger,
+		sdConfig:  conf,
+		ociConfig: ociConfig,
+		interval:  time.Duration(conf.RefreshInterval),
+		logger:    logger,
 	}, nil
 }
 
@@ -158,7 +146,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
+		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 	} else {
 		select {
 		case ch <- []*targetgroup.Group{tg}:
@@ -172,7 +160,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
+				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 				continue
 			}
 
@@ -187,14 +175,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func loadKey(keyFile string) (string, error) {
-	data, err := ioutil.ReadFile(keyFile)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
 func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
@@ -204,87 +184,66 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		}
 	}()
 
-	sess, err := session.NewSessionWithOptions(session.Options{
-		Config:  *d.aws,
-		Profile: d.profile,
-	})
+	computeClient, err := core.NewComputeClientWithConfigurationProvider(d.ociConfig)
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws session: %s", err)
+		return nil, err
+	}
+	vnicClient, err := core.NewVirtualNetworkClientWithConfigurationProvider(d.ociConfig)
+	if err != nil {
+		return nil, err
+	}
+	res, err := computeClient.ListInstances(
+		context.Background(),
+		core.ListInstancesRequest{CompartmentId: &d.sdConfig.Compartment},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not obtain list of instances: %s", err)
 	}
 
-	var ec2s *ec2.EC2
-	if d.roleARN != "" {
-		creds := stscreds.NewCredentials(sess, d.roleARN)
-		ec2s = ec2.New(sess, &aws.Config{Credentials: creds})
-	} else {
-		ec2s = ec2.New(sess)
-	}
-	tg = &targetgroup.Group{
-		Source: *d.aws.Region,
-	}
-
-	var filters []*ec2.Filter
-	for _, f := range d.filters {
-		filters = append(filters, &ec2.Filter{
-			Name:   aws.String(f.Name),
-			Values: aws.StringSlice(f.Values),
-		})
-	}
-
-	input := &ec2.DescribeInstancesInput{Filters: filters}
-
-	if err = ec2s.DescribeInstancesPages(input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
-		for _, r := range p.Reservations {
-			for _, inst := range r.Instances {
-				if inst.PrivateIpAddress == nil {
-					continue
-				}
+	for _, instance := range res.Items {
+		// TODO Guido: filter instances for defined, or free tags
+		res, err := computeClient.ListVnicAttachments(
+			context.Background(),
+			core.ListVnicAttachmentsRequest{
+				CompartmentId: &d.sdConfig.Compartment,
+				InstanceId:    instance.Id,
+			},
+		)
+		if err != nil {
+			level.Error(d.logger).Log("msg", "could not obtain attached vnic", "ocid", instance.Id)
+		}
+		for _, vnic := range res.Items {
+			res, err := vnicClient.GetVnic(
+				context.Background(),
+				core.GetVnicRequest{VnicId: vnic.VnicId},
+			)
+			if err != nil {
+				level.Error(d.logger).Log("msg", "could not obtain vnic", "ocid", vnic.VnicId)
+			}
+			if *res.IsPrimary {
 				labels := model.LabelSet{
-					ociLabelInstanceID: model.LabelValue(*inst.InstanceId),
+					ociLabelInstanceID:         model.LabelValue(*instance.Id),
+					ociLabelInstanceState:      model.LabelValue(instance.LifecycleState),
+					ociLabelCompartment:        model.LabelValue(*instance.CompartmentId)
+					ociLabelAvailabilityDomain: model.LabelValue(*instance.AvailabilityDomain),
+					ociLabelPrivateIP:          model.LabelValue(*res.PrivateIp),
 				}
-				labels[ociLabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.port))
-				labels[model.AddressLabel] = model.LabelValue(addr)
-
-				if inst.PublicIpAddress != nil {
-					labels[ociLabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
-					labels[ociLabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
+				if *res.PublicIp != "" {
+					labels[ociLabelPublicIP] = model.LabelValue(*res.PublicIp)
 				}
-
-				labels[ociLabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
-				labels[ociLabelInstanceState] = model.LabelValue(*inst.State.Name)
-				labels[ociLabelInstanceType] = model.LabelValue(*inst.InstanceType)
-
-				if inst.VpcId != nil {
-					labels[ociLabelVPCID] = model.LabelValue(*inst.VpcId)
-
-					subnetsMap := make(map[string]struct{})
-					for _, eni := range inst.NetworkInterfaces {
-						subnetsMap[*eni.SubnetId] = struct{}{}
-					}
-					subnets := []string{}
-					for k := range subnetsMap {
-						subnets = append(subnets, k)
-					}
-					labels[ociLabelSubnetID] = model.LabelValue(
-						subnetSeparator +
-							strings.Join(subnets, subnetSeparator) +
-							subnetSeparator)
-				}
-
-				for _, t := range inst.Tags {
-					if t == nil || t.Key == nil || t.Value == nil {
-						continue
-					}
-					name := strutil.SanitizeLabelName(*t.Key)
-					labels[ociLabelTag+model.LabelName(name)] = model.LabelValue(*t.Value)
-				}
+				// TODO Guido: add tags as labels
 				tg.Targets = append(tg.Targets, labels)
 			}
 		}
-		return true
-	}); err != nil {
-		return nil, fmt.Errorf("could not describe instances: %s", err)
 	}
+
 	return tg, nil
+}
+
+func loadKey(keyFile string) (string, error) {
+	data, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }

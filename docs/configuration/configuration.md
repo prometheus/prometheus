@@ -446,6 +446,15 @@ way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
 support for filtering instances.
 
+### `<oci_sd_config>`
+
+<!--
+# TODO Guido: document OCI SD config)
+-->
+
+[//]: # (TODO Guido: document OCI SD config)
+TBD
+
 ### `<openstack_sd_config>`
 
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
