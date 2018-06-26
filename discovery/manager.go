@@ -258,7 +258,12 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 		app("ec2", i, ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")))
 	}
 	for i, c := range cfg.OciSDConfigs {
-		app("oci", i, oci.NewDiscovery(c, log.With(m.logger, "discovery", "oci")))
+		o, err := oci.NewDiscovery(c, log.With(m.logger, "discovery", "oci"))
+		if err != nil {
+			level.Error(m.logger).Log("msg", "Cannot initialize OCI discovery", "err", err)
+			continue
+		}
+		app("oci", i, o)
 	}
 	for i, c := range cfg.OpenstackSDConfigs {
 		openstackd, err := openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))

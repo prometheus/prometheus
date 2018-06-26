@@ -224,7 +224,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				labels := model.LabelSet{
 					ociLabelInstanceID:         model.LabelValue(*instance.Id),
 					ociLabelInstanceState:      model.LabelValue(instance.LifecycleState),
-					ociLabelCompartment:        model.LabelValue(*instance.CompartmentId)
+					ociLabelCompartment:        model.LabelValue(*instance.CompartmentId),
 					ociLabelAvailabilityDomain: model.LabelValue(*instance.AvailabilityDomain),
 					ociLabelPrivateIP:          model.LabelValue(*res.PrivateIp),
 				}
