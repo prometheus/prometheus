@@ -363,6 +363,103 @@ $ curl http://localhost:9090/api/v1/targets
 }
 ```
 
+
+## Rules
+
+The `/rules` API endpoint returns a list of alerting and recording rules that
+are currently loaded. In addition it returns the currently active alerts fired
+by the Prometheus instance of each alerting rule.
+
+As the `/rules` endpoint is fairly new, it does not have the same stability
+guarantees as the overarching API v1.
+
+```
+GET /api/v1/rules
+```
+
+```json
+$ curl http://localhost:9090/api/v1/rules
+
+{
+    "data": {
+        "groups": [
+            {
+                "rules": [
+                    {
+                        "alerts": [
+                            {
+                                "activeAt": "2018-07-04T20:27:12.60602144+02:00",
+                                "annotations": {
+                                    "summary": "High request latency"
+                                },
+                                "labels": {
+                                    "alertname": "HighRequestLatency",
+                                    "severity": "page"
+                                },
+                                "state": "firing",
+                                "value": 1
+                            }
+                        ],
+                        "annotations": {
+                            "summary": "High request latency"
+                        },
+                        "duration": 600,
+                        "labels": {
+                            "severity": "page"
+                        },
+                        "name": "HighRequestLatency",
+                        "query": "job:request_latency_seconds:mean5m{job=\"myjob\"} > 0.5",
+                        "type": "alerting"
+                    },
+                    {
+                        "name": "job:http_inprogress_requests:sum",
+                        "query": "sum(http_inprogress_requests) by (job)",
+                        "type": "recording"
+                    }
+                ],
+                "file": "/rules.yaml",
+                "interval": 60,
+                "name": "example"
+            }
+        ]
+    },
+    "status": "success"
+}
+```
+
+
+## Alerts
+
+The `/alerts` endpoint returns a list of all active alerts.
+
+As the `/alerts` endpoint is fairly new, it does not have the same stability
+guarantees as the overarching API v1.
+
+```
+GET /api/v1/alerts
+```
+
+```json
+$ curl http://localhost:9090/api/v1/alerts
+
+{
+    "data": {
+        "alerts": [
+            {
+                "activeAt": "2018-07-04T20:27:12.60602144+02:00",
+                "annotations": {},
+                "labels": {
+                    "alertname": "my-alert"
+                },
+                "state": "firing",
+                "value": 1
+            }
+        ]
+    },
+    "status": "success"
+}
+```
+
 ## Querying target metadata
 
 The following endpoint returns metadata about metrics currently scraped by targets.

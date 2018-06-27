@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"github.com/go-kit/kit/log"
 	"io/ioutil"
-	stdlog "log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -102,18 +101,18 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 	}
 }
 
-type testalertsrulesfunc struct {
-	test *testing.T
+type rulesRetrieverMock struct {
+	testing *testing.T
 }
 
-func (t testalertsrulesfunc) AlertingRules() []*rules.AlertingRule {
+func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
-		stdlog.Fatalf("Unable to parse alert expression: %s", err)
+		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
 	expr2, err := promql.ParseExpr(`up == 1`)
 	if err != nil {
-		stdlog.Fatalf("Unable to parse alert expression: %s", err)
+		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
 
 	rule1 := rules.NewAlertingRule(
@@ -138,10 +137,10 @@ func (t testalertsrulesfunc) AlertingRules() []*rules.AlertingRule {
 	return r
 }
 
-func (t testalertsrulesfunc) RuleGroups() []*rules.Group {
-	var ar testalertsrulesfunc
+func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
+	var ar rulesRetrieverMock
 	arules := ar.AlertingRules()
-	storage := testutil.NewStorage(t.test)
+	storage := testutil.NewStorage(m.testing)
 	defer storage.Close()
 
 	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
@@ -158,10 +157,15 @@ func (t testalertsrulesfunc) RuleGroups() []*rules.Group {
 		r = append(r, alertrule)
 	}
 
-	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, opts)
-	fmt.Println(group)
-	return []*rules.Group{group}
+	recordingExpr, err := promql.ParseExpr(`vector(1)`)
+	if err != nil {
+		m.testing.Fatalf("unable to parse alert expression: %s", err)
+	}
+	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
+	r = append(r, recordingRule)
 
+	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, opts)
+	return []*rules.Group{group}
 }
 
 var samplePrometheusCfg = config.Config{
@@ -196,10 +200,14 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	t.Run("local", func(t *testing.T) {
+	var algr rulesRetrieverMock
+	algr.testing = t
+	algr.AlertingRules()
+	algr.RuleGroups()
 
-		var algr testalertsrulesfunc
-		algr.test = t
+	t.Run("local", func(t *testing.T) {
+		var algr rulesRetrieverMock
+		algr.testing = t
 
 		algr.AlertingRules()
 
@@ -210,11 +218,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:                  func() time.Time { return now },
-			config:               func() config.Config { return samplePrometheusCfg },
-			flagsMap:             sampleFlagMap,
-			ready:                func(f http.HandlerFunc) http.HandlerFunc { return f },
-			alertsrulesRetreiver: algr,
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
 		}
 
 		testEndpoints(t, api, true)
@@ -251,8 +259,8 @@ func TestEndpoints(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		var algr testalertsrulesfunc
-		algr.test = t
+		var algr rulesRetrieverMock
+		algr.testing = t
 
 		algr.AlertingRules()
 
@@ -263,11 +271,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:                  func() time.Time { return now },
-			config:               func() config.Config { return samplePrometheusCfg },
-			flagsMap:             sampleFlagMap,
-			ready:                func(f http.HandlerFunc) http.HandlerFunc { return f },
-			alertsrulesRetreiver: algr,
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
 		}
 
 		testEndpoints(t, api, false)
@@ -652,37 +660,41 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		{
 			endpoint: api.alerts,
 			response: &AlertDiscovery{
-				Alertgrps: []*Alertgrp{
-					{
-						Name:        "test_metric3",
-						Query:       "absent(test_metric3) != 1",
-						Duration:    "1s",
-						Alerts:      nil,
-						Annotations: labels.Labels{},
-					},
-					{
-						Name:        "test_metric4",
-						Query:       "up == 1",
-						Duration:    "1s",
-						Alerts:      nil,
-						Annotations: labels.Labels{},
-					},
-				},
+				Alerts: []*Alert{},
 			},
 		},
 		{
 			endpoint: api.rules,
-			response: &GroupDiscovery{
-				Rulegrps: []*Rulegrp{
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
 					{
-						Name: "grp",
-						File: "/path/to/file",
-						Rules: []*Ruleinfo{
-							{
-								Rule: "alert: test_metric3\nexpr: absent(test_metric3) != 1\nfor: 1s\n",
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
+							alertingRule{
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Type:        "alerting",
 							},
-							{
-								Rule: "alert: test_metric4\nexpr: up == 1\nfor: 1s\n",
+							alertingRule{
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Type:        "alerting",
+							},
+							recordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Type:   "recording",
 							},
 						},
 					},
@@ -768,7 +780,21 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				t.Fatalf("Expected error of type %q but got none", test.errType)
 			}
 			if !reflect.DeepEqual(resp, test.response) {
-				t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+				respJSON, err := json.Marshal(resp)
+				if err != nil {
+					t.Fatalf("failed to marshal response as JSON: %v", err.Error())
+				}
+
+				expectedRespJSON, err := json.Marshal(test.response)
+				if err != nil {
+					t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
+				}
+
+				t.Fatalf(
+					"Response does not match, expected:\n%+v\ngot:\n%+v",
+					string(expectedRespJSON),
+					string(respJSON),
+				)
 			}
 		}
 	}

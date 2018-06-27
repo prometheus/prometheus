@@ -188,6 +188,9 @@ func (g *Group) File() string { return g.file }
 // Rules returns the group's rules.
 func (g *Group) Rules() []Rule { return g.rules }
 
+// Interval returns the group's interval.
+func (g *Group) Interval() time.Duration { return g.interval }
+
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
