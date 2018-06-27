@@ -32,9 +32,10 @@ import (
 
 const (
 	ociLabel                   = model.MetaLabelPrefix + "oci_"
-	ociLabelCompartment        = ociLabel + "compartment"
+	ociLabelCompartmentID      = ociLabel + "compartment_id"
 	ociLabelAvailabilityDomain = ociLabel + "availability_domain"
 	ociLabelInstanceID         = ociLabel + "instance_id"
+	ociLabelInstanceName       = ociLabel + "instance_name"
 	ociLabelInstanceState      = ociLabel + "instance_state"
 	ociLabelPublicIP           = ociLabel + "public_ip"
 	ociLabelPrivateIP          = ociLabel + "private_ip"
@@ -235,8 +236,9 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			if *res.IsPrimary {
 				labels := model.LabelSet{
 					ociLabelInstanceID:         model.LabelValue(*instance.Id),
+					ociLabelInstanceName:       model.LabelValue(*instance.DisplayName),
 					ociLabelInstanceState:      model.LabelValue(instance.LifecycleState),
-					ociLabelCompartment:        model.LabelValue(*instance.CompartmentId),
+					ociLabelCompartmentID:      model.LabelValue(*instance.CompartmentId),
 					ociLabelAvailabilityDomain: model.LabelValue(*instance.AvailabilityDomain),
 					ociLabelPrivateIP:          model.LabelValue(*res.PrivateIp),
 				}
