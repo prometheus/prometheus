@@ -178,6 +178,8 @@ type BlockMetaCompaction struct {
 	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
+	// Short descriptions of the direct blocks that were used to create
+	// this block.
 	Parents []BlockDesc `json:"parents,omitempty"`
 	Failed  bool        `json:"failed,omitempty"`
 }
