@@ -214,7 +214,6 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	}
 
 	for _, instance := range res.Items {
-		// TODO Guido: filter instances for defined, or free tags
 		res, err := computeClient.ListVnicAttachments(
 			context.Background(),
 			core.ListVnicAttachmentsRequest{
@@ -224,6 +223,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		)
 		if err != nil {
 			level.Error(d.logger).Log("msg", "could not obtain attached vnic", "ocid", instance.Id)
+			continue
 		}
 		for _, vnic := range res.Items {
 			res, err := vnicClient.GetVnic(
@@ -232,6 +232,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "could not obtain vnic", "ocid", vnic.VnicId)
+				continue
 			}
 			if *res.IsPrimary {
 				labels := model.LabelSet{
