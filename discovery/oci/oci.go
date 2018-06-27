@@ -27,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"io/ioutil"
+	"net"
 )
 
 const (
@@ -52,7 +53,10 @@ var (
 			Help: "The duration of a OCI-SD refresh in seconds.",
 		})
 	// DefaultSDConfig is the default OCI SD configuration
-	DefaultSDConfig = SDConfig{}
+	DefaultSDConfig = SDConfig{
+		Port:            9100,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
 )
 
 // Filter is the configuration for filtering OCI instances.
@@ -70,6 +74,7 @@ type SDConfig struct {
 	Tenancy         string         `yaml:"tenancy"`
 	Region          string         `yaml:"region"`
 	Compartment     string         `yaml:"compartment"`
+	Port            int            `yaml:"port"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
@@ -98,9 +103,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.Compartment == "" {
 		return fmt.Errorf("oci sd configuration requires a compartment")
-	}
-	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("oci sd configuration requires refresh interval to be a positive time duration")
 	}
 	return nil
 }
@@ -241,6 +243,8 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				if *res.PublicIp != "" {
 					labels[ociLabelPublicIP] = model.LabelValue(*res.PublicIp)
 				}
+				addr := net.JoinHostPort(*res.PrivateIp, fmt.Sprintf("%d", d.sdConfig.Port))
+				labels[model.AddressLabel] = model.LabelValue(addr)
 				// TODO Guido: add tags as labels
 				tg.Targets = append(tg.Targets, labels)
 			}
