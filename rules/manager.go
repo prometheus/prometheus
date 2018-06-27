@@ -477,7 +477,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	defer m.mtx.Unlock()
 
 	// To be replaced with a configurable per-group interval.
-	groups, errs := m.loadGroups(interval, files...)
+	groups, errs := m.LoadGroups(interval, files...)
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -523,10 +523,10 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	return nil
 }
 
-// loadGroups reads groups from a list of files.
+// LoadGroups reads groups from a list of files.
 // As there's currently no group syntax a single group named "default" containing
 // all rules will be returned.
-func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
+func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
 	for _, fn := range filenames {
