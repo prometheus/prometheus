@@ -96,17 +96,9 @@ type alertmanagerRetriever interface {
 	DroppedAlertmanagers() []*url.URL
 }
 
-type alertRetreiver interface {
-	AlertingRules() []*rules.AlertingRule
-}
-
-type rulesRetreiver interface {
+type rulesRetriever interface {
 	RuleGroups() []*rules.Group
-}
-
-type alertsrulesRetreiver interface {
-	alertRetreiver
-	rulesRetreiver
+	AlertingRules() []*rules.AlertingRule
 }
 
 type response struct {
@@ -133,7 +125,7 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
-	alertsrulesRetreiver  alertsrulesRetreiver
+	rulesRetriever        rulesRetriever
 	now                   func() time.Time
 	config                func() config.Config
 	flagsMap              map[string]string
@@ -156,20 +148,20 @@ func NewAPI(
 	db func() *tsdb.DB,
 	enableAdmin bool,
 	logger log.Logger,
-	al alertsrulesRetreiver,
+	rr rulesRetriever,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:                  time.Now,
-		config:               configFunc,
-		flagsMap:             flagsMap,
-		ready:                readyFunc,
-		db:                   db,
-		enableAdmin:          enableAdmin,
-		alertsrulesRetreiver: al,
+		now:            time.Now,
+		config:         configFunc,
+		flagsMap:       flagsMap,
+		ready:          readyFunc,
+		db:             db,
+		enableAdmin:    enableAdmin,
+		rulesRetriever: rr,
 	}
 }
 
@@ -597,92 +589,130 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError, func()) 
 	return ams, nil, nil
 }
 
-// AlertDiscovery has info for all alerts
+// AlertDiscovery has info for all active alerts.
 type AlertDiscovery struct {
-	Alertgrps []*Alertgrp `json:"alertgrp"`
+	Alerts []*Alert `json:"alerts"`
 }
 
-// Alert has info for a alert
+// Alert has info for an alert.
 type Alert struct {
 	Labels      labels.Labels `json:"labels"`
-	Status      string        `json:"status"`
-	Activesince *time.Time    `json:"activesince,omitempty"`
+	Annotations labels.Labels `json:"annotations"`
+	State       string        `json:"state"`
+	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
+	Value       float64       `json:"value"`
 }
 
-// Alertgrp has info for alerts part of a group
-type Alertgrp struct {
+func (api *API) alerts(r *http.Request) (interface{}, *apiError, func()) {
+	alertingRules := api.rulesRetriever.AlertingRules()
+	alerts := []*Alert{}
+
+	for _, alertingRule := range alertingRules {
+		alerts = append(
+			alerts,
+			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
+		)
+	}
+
+	res := &AlertDiscovery{Alerts: alerts}
+
+	return res, nil, nil
+}
+
+func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
+	apiAlerts := make([]*Alert, len(rulesAlerts))
+	for i, ruleAlert := range rulesAlerts {
+		apiAlerts[i] = &Alert{
+			Labels:      ruleAlert.Labels,
+			Annotations: ruleAlert.Annotations,
+			State:       ruleAlert.State.String(),
+			ActiveAt:    &ruleAlert.ActiveAt,
+			Value:       ruleAlert.Value,
+		}
+	}
+
+	return apiAlerts
+}
+
+// RuleDiscovery has info for all rules
+type RuleDiscovery struct {
+	RuleGroups []*RuleGroup `json:"groups"`
+}
+
+// RuleGroup has info for rules which are part of a group
+type RuleGroup struct {
+	Name string `json:"name"`
+	File string `json:"file"`
+	// In order to preserve rule ordering, while exposing type (alerting or recording)
+	// specific properties, both alerting and recording rules are exposed in the
+	// same array.
+	Rules    []rule  `json:"rules"`
+	Interval float64 `json:"interval"`
+}
+
+type rule interface{}
+
+type alertingRule struct {
 	Name        string        `json:"name"`
 	Query       string        `json:"query"`
-	Duration    string        `json:"duration"`
-	Annotations labels.Labels `json:"annotations,omitempty"`
+	Duration    float64       `json:"duration"`
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
 	Alerts      []*Alert      `json:"alerts"`
+	// Type of an alertingRule is always "alerting".
+	Type string `json:"type"`
 }
 
-func (api *API) alerts(r *http.Request) (interface{}, *apiError) {
-	alertingrules := api.alertsrulesRetreiver.AlertingRules()
-	var alertgrps []*Alertgrp
-	res := &AlertDiscovery{Alertgrps: alertgrps}
-	for _, activerule := range alertingrules {
-		t := &Alertgrp{
-			Name:        activerule.Name(),
-			Query:       fmt.Sprintf("%v", activerule.Query()),
-			Duration:    activerule.Duration().String(),
-			Annotations: activerule.Annotations(),
+type recordingRule struct {
+	Name   string        `json:"name"`
+	Query  string        `json:"query"`
+	Labels labels.Labels `json:"labels,omitempty"`
+	// Type of a recordingRule is always "recording".
+	Type string `json:"type"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
+	ruleGroups := api.rulesRetriever.RuleGroups()
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	for i, grp := range ruleGroups {
+		apiRuleGroup := &RuleGroup{
+			Name:     grp.Name(),
+			File:     grp.File(),
+			Interval: grp.Interval().Seconds(),
+			Rules:    []rule{},
 		}
-		alerts := activerule.Alertinfo()
-		var activealerts []*Alert
-		for _, alert := range alerts {
-			q := &Alert{
-				Labels:      alert.Labels,
-				Status:      alert.State.String(),
-				Activesince: &alert.ActiveAt,
+
+		for _, r := range grp.Rules() {
+			var enrichedRule rule
+
+			switch rule := r.(type) {
+			case *rules.AlertingRule:
+				enrichedRule = alertingRule{
+					Name:        rule.Name(),
+					Query:       rule.Query().String(),
+					Duration:    rule.Duration().Seconds(),
+					Labels:      rule.Labels(),
+					Annotations: rule.Annotations(),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Type:        "alerting",
+				}
+			case *rules.RecordingRule:
+				enrichedRule = recordingRule{
+					Name:   rule.Name(),
+					Query:  rule.Query().String(),
+					Labels: rule.Labels(),
+					Type:   "recording",
+				}
+			default:
+				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
+				return nil, &apiError{errorInternal, err}, nil
 			}
 
-			activealerts = append(activealerts, q)
+			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
 		}
-		t.Alerts = activealerts
-		res.Alertgrps = append(res.Alertgrps, t)
+		res.RuleGroups[i] = apiRuleGroup
 	}
-
-	return res, nil
-}
-
-// GroupDiscovery has info for all rules
-type GroupDiscovery struct {
-	Rulegrps []*Rulegrp `json:"groups"`
-}
-
-// Rulegrp has info for rules which are part of a group
-type Rulegrp struct {
-	Name  string      `json:"name"`
-	File  string      `json:"file"`
-	Rules []*Ruleinfo `json:"rules"`
-}
-
-// Ruleinfo has rule in human readable format using \n as line separators
-type Ruleinfo struct {
-	Rule string `json:"rule"`
-}
-
-func (api *API) rules(r *http.Request) (interface{}, *apiError) {
-	grps := api.alertsrulesRetreiver.RuleGroups()
-	res := &GroupDiscovery{Rulegrps: make([]*Rulegrp, len(grps))}
-	for i, grp := range grps {
-		t := &Rulegrp{
-			Name: grp.Name(),
-			File: grp.File(),
-		}
-		var rulearr []*Ruleinfo
-		for _, rule := range grp.Rules() {
-			q := &Ruleinfo{
-				Rule: rule.String(),
-			}
-			rulearr = append(rulearr, q)
-		}
-		t.Rules = rulearr
-		res.Rulegrps[i] = t
-	}
-	return res, nil
+	return res, nil, nil
 }
 
 type prometheusConfig struct {
