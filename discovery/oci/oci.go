@@ -100,7 +100,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("oci sd configuration requires a compartment")
 	}
 	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("oci sd configuration requires RefreshInterval to be a positive integer")
+		return fmt.Errorf("oci sd configuration requires refresh interval to be a positive time duration")
 	}
 	return nil
 }
@@ -152,7 +152,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tg, err := d.refresh()
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
+		level.Error(d.logger).Log("msg", "refreshing targets failed", "err", err)
 	} else {
 		select {
 		case ch <- []*targetgroup.Group{tg}:
@@ -166,7 +166,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ticker.C:
 			tg, err := d.refresh()
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
+				level.Error(d.logger).Log("msg", "refreshing targets failed", "err", err)
 				continue
 			}
 
@@ -189,6 +189,10 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			ociSDRefreshFailuresCount.Inc()
 		}
 	}()
+
+	tg = &targetgroup.Group{
+		Source: d.sdConfig.Region,
+	}
 
 	computeClient, err := core.NewComputeClientWithConfigurationProvider(d.ociConfig)
 	if err != nil {
