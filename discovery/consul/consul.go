@@ -41,7 +41,7 @@ const (
 	addressLabel = model.MetaLabelPrefix + "consul_address"
 	// nodeLabel is the name for the label containing a target's node name.
 	nodeLabel = model.MetaLabelPrefix + "consul_node"
-	// metaDataLabel is the prefix for the labels mapping to a target's metadata.
+	// metaDataLabel is the prefix for the labels mapping to a target's node metadata.
 	metaDataLabel = model.MetaLabelPrefix + "consul_metadata_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
@@ -49,8 +49,10 @@ const (
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
-	//servicePortLabel is the name of the label containing the service port.
+	// servicePortLabel is the name of the label containing the service port.
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
+	// serviceMetaDataLabel is the prefix for the labels mapping to a target's service metadata.
+	serviceMetaDataLabel = model.MetaLabelPrefix + "consul_service_metadata_"
 	// datacenterLabel is the name of the label containing the datacenter ID.
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
 	// serviceIDLabel is the name of the label containing the service ID.
@@ -503,6 +505,12 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 		for k, v := range node.NodeMeta {
 			name := strutil.SanitizeLabelName(k)
 			labels[metaDataLabel+model.LabelName(name)] = model.LabelValue(v)
+		}
+
+		// Add all key/value pairs from the service's metadata as their own labels
+		for k, v := range node.ServiceMeta {
+			name := strutil.SanitizeLabelName(k)
+			labels[serviceMetaDataLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
 		tgroup.Targets = append(tgroup.Targets, labels)
