@@ -82,19 +82,25 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.User == "" {
-		return fmt.Errorf("OCI SD configuration requires a user")
+		return fmt.Errorf("oci sd configuration requires a user")
 	}
 	if c.FingerPrint == "" {
-		return fmt.Errorf("OCI SD configuration requires a fingerprint")
+		return fmt.Errorf("oci sd configuration requires a fingerprint")
 	}
 	if c.KeyFile == "" {
-		return fmt.Errorf("OCI SD configuration requires a key file")
+		return fmt.Errorf("oci sd configuration requires a key file")
 	}
 	if c.Tenancy == "" {
-		return fmt.Errorf("OCI SD configuration requires a tenancy")
+		return fmt.Errorf("oci sd configuration requires a tenancy")
 	}
 	if c.Region == "" {
-		return fmt.Errorf("OCI SD configuration requires a region")
+		return fmt.Errorf("oci sd configuration requires a region")
+	}
+	if c.Compartment == "" {
+		return fmt.Errorf("oci sd configuration requires a compartment")
+	}
+	if c.RefreshInterval <= 0 {
+		return fmt.Errorf("oci sd configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
 }
