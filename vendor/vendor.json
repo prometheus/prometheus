@@ -927,36 +927,6 @@
 			"versionExact": "v0.17.1"
 		},
 		{
-			"checksumSHA1": "mZAQA7eT6aJVo1yC7jJgakpzv9E=",
-			"path": "github.com/vmware/vmw-guestinfo/bdoor",
-			"revision": "25eff159a728be87e103a0b8045e08273f4dbec4",
-			"revisionTime": "2017-07-07T01:53:58Z"
-		},
-		{
-			"checksumSHA1": "VUTu43xkOTlpW74+ynsVD0Sd39k=",
-			"path": "github.com/vmware/vmw-guestinfo/message",
-			"revision": "25eff159a728be87e103a0b8045e08273f4dbec4",
-			"revisionTime": "2017-07-07T01:53:58Z"
-		},
-		{
-			"checksumSHA1": "N535iC4UrjeSomx/NjQDKXqwf2E=",
-			"path": "github.com/vmware/vmw-guestinfo/rpcout",
-			"revision": "25eff159a728be87e103a0b8045e08273f4dbec4",
-			"revisionTime": "2017-07-07T01:53:58Z"
-		},
-		{
-			"checksumSHA1": "cKaHEX36rvc+w6ETliySpPoW288=",
-			"path": "github.com/vmware/vmw-guestinfo/rpcvmx",
-			"revision": "25eff159a728be87e103a0b8045e08273f4dbec4",
-			"revisionTime": "2017-07-07T01:53:58Z"
-		},
-		{
-			"checksumSHA1": "WUO6r12AOgpjFWLQ/KKXTSe1oVc=",
-			"path": "github.com/vmware/vmw-guestinfo/vmcheck",
-			"revision": "25eff159a728be87e103a0b8045e08273f4dbec4",
-			"revisionTime": "2017-07-07T01:53:58Z"
-		},
-		{
 			"checksumSHA1": "1hwn8cgg4EVXhCpJIqmMbzqnUo0=",
 			"path": "golang.org/x/crypto/ed25519",
 			"revision": "94eea52f7b742c7cbe0b03b22f0c4c8631ece122",
