@@ -435,8 +435,7 @@ func (db *DB) reload() (err error) {
 	// after we loaded the other blocks.
 	// This makes us resilient against the process crashing towards the end of a compaction.
 	// Creation of a new block and deletion of its parents cannot happen atomically. By creating
-	// blocks atomically with their parents, we can pick up the deletion where it left off during
-	// a crash.
+	// blocks with their parents, we can pick up the deletion where it left off during a crash.
 	var (
 		blocks     []*Block
 		corrupted  = map[ulid.ULID]error{}
