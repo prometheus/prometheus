@@ -842,7 +842,7 @@ type mockCompactorFailing struct {
 func (*mockCompactorFailing) Plan(dir string) ([]string, error) {
 	return nil, nil
 }
-func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int64) (ulid.ULID, error) {
+func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
@@ -925,10 +925,8 @@ func TestDB_Retention(t *testing.T) {
 
 	testutil.Equals(t, 2, len(db.blocks))
 
-	// Now call retention.
-	changes, err := db.retentionCutoff()
-	testutil.Ok(t, err)
-	testutil.Assert(t, changes, "there should be changes")
+	// Reload blocks, which should drop blocks beyond the retention boundary.
+	testutil.Ok(t, db.reload())
 	testutil.Equals(t, 1, len(db.blocks))
 	testutil.Equals(t, int64(100), db.blocks[0].meta.MaxTime) // To verify its the right block.
 }
