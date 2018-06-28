@@ -39,7 +39,8 @@ const (
 	ociLabelInstanceState      = ociLabel + "instance_state"
 	ociLabelPublicIP           = ociLabel + "public_ip"
 	ociLabelPrivateIP          = ociLabel + "private_ip"
-	ociLabelTag                = ociLabel + "tag_"
+	ociLabelFreeformTag        = ociLabel + "freeform_tag_"
+	ociLabelDefinedTag         = ociLabel + "defined_tag_"
 )
 
 var (
@@ -248,7 +249,15 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				}
 				addr := net.JoinHostPort(*res.PrivateIp, fmt.Sprintf("%d", d.sdConfig.Port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
-				// TODO Guido: add tags as labels
+				for key, value := range instance.FreeformTags {
+					labels[ociLabelFreeformTag+model.LabelName(key)] = model.LabelValue(value)
+				}
+				for ns, tags := range instance.DefinedTags {
+					for key, value := range tags {
+						labelName := model.LabelName(ociLabelDefinedTag + ns + "_" + key)
+						labels[labelName] = model.LabelValue(value.(string))
+					}
+				}
 				tg.Targets = append(tg.Targets, labels)
 			}
 		}
