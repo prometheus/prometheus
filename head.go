@@ -521,7 +521,8 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 }
 
 func (a *headAppender) Commit() error {
-	defer a.Rollback()
+	defer a.head.metrics.activeAppenders.Dec()
+	defer a.head.putAppendBuffer(a.samples)
 
 	if err := a.head.wal.LogSeries(a.series); err != nil {
 		return err
@@ -565,7 +566,9 @@ func (a *headAppender) Rollback() error {
 	a.head.metrics.activeAppenders.Dec()
 	a.head.putAppendBuffer(a.samples)
 
-	return nil
+	// Series are created in the head memory regardless of rollback. Thus we have
+	// to log them to the WAL in any case.
+	return a.head.wal.LogSeries(a.series)
 }
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given

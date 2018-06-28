@@ -47,6 +47,21 @@ type memoryWAL struct {
 	entries []interface{}
 }
 
+func (w *memoryWAL) LogSeries(s []RefSeries) error {
+	w.entries = append(w.entries, s)
+	return nil
+}
+
+func (w *memoryWAL) LogSamples(s []RefSample) error {
+	w.entries = append(w.entries, s)
+	return nil
+}
+
+func (w *memoryWAL) LogDeletes(s []Stone) error {
+	w.entries = append(w.entries, s)
+	return nil
+}
+
 func (w *memoryWAL) Reader() WALReader {
 	return w
 }
@@ -768,4 +783,21 @@ func TestGCSeriesAccess(t *testing.T) {
 	testutil.Equals(t, ErrNotFound, err)
 	_, err = cr.Chunk(chunks[1].Ref)
 	testutil.Equals(t, ErrNotFound, err)
+}
+
+func TestHead_LogRollback(t *testing.T) {
+	w := &memoryWAL{}
+	h, err := NewHead(nil, nil, w, 1000)
+	testutil.Ok(t, err)
+
+	app := h.Appender()
+	_, err = app.Add(labels.FromStrings("a", "b"), 1, 2)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, app.Rollback())
+	testutil.Equals(t, 1, len(w.entries))
+
+	series, ok := w.entries[0].([]RefSeries)
+	testutil.Assert(t, ok, "expected series record but got %+v", w.entries[0])
+	testutil.Equals(t, series, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}})
 }
