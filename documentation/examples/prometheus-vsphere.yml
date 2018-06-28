@@ -18,7 +18,7 @@ scrape_configs:
         vcenter_username: administrator@vsphere.local
         vcenter_password: changeme
         vcenter_insecure: true
-        metrics_proxy_address: example-vmp.default.svc.cluster.local
+        metrics_proxy_address: example-vmp-esx.default.svc.cluster.local
         metrics_proxy_port: 9444
 
     relabel_configs:
@@ -44,7 +44,7 @@ scrape_configs:
         vcenter_username: administrator@vsphere.local
         vcenter_password: changeme
         vcenter_insecure: true
-        metrics_proxy_address: example-vmp.default.svc.cluster.local
+        metrics_proxy_address: example-vmp-ds.default.svc.cluster.local
         metrics_proxy_port: 9444
 
     relabel_configs:
@@ -70,7 +70,7 @@ scrape_configs:
         vcenter_username: administrator@vsphere.local
         vcenter_password: changeme
         vcenter_insecure: true
-        metrics_proxy_address: example-vmp.default.svc.cluster.local
+        metrics_proxy_address: example-vmp-vm.default.svc.cluster.local
         metrics_proxy_port: 9444
 
     relabel_configs:
