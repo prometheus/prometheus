@@ -8,6 +8,7 @@ function toggleJobTable(button, shouldExpand){
   }
 
   button.parents(".table-container").find("table").toggle(shouldExpand);
+  button.parents(".table-container").find(".collapsed-element").toggle(shouldExpand);
 }
 
 function showAll(_, container) {

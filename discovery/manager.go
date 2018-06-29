@@ -117,6 +117,13 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	return nil
 }
 
+// StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
+func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker Discoverer) {
+	// Pool key for non-standard SD implementations are unknown.
+	poolKey := poolKey{setName: name, provider: name}
+	m.startProvider(ctx, poolKey, worker)
+}
+
 func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Discoverer) {
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
@@ -278,7 +285,7 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 		app("triton", i, t)
 	}
 	if len(cfg.StaticConfigs) > 0 {
-		app("static", 0, NewStaticProvider(cfg.StaticConfigs))
+		app("static", 0, &StaticProvider{cfg.StaticConfigs})
 	}
 
 	return providers
@@ -287,15 +294,6 @@ func (m *Manager) providersFromConfig(cfg sd_config.ServiceDiscoveryConfig) map[
 // StaticProvider holds a list of target groups that never change.
 type StaticProvider struct {
 	TargetGroups []*targetgroup.Group
-}
-
-// NewStaticProvider returns a StaticProvider configured with the given
-// target groups.
-func NewStaticProvider(groups []*targetgroup.Group) *StaticProvider {
-	for i, tg := range groups {
-		tg.Source = fmt.Sprintf("%d", i)
-	}
-	return &StaticProvider{groups}
 }
 
 // Run implements the Worker interface.

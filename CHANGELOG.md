@@ -1,7 +1,39 @@
-## next release
+## 2.3.1 / 2018-06-19
+
+* [BUGFIX] Avoid infinite loop on duplicate NaN values. #4275
+* [BUGFIX] Fix nil pointer deference when using various API endpoints #4282
+* [BUGFIX] config: set target group source index during unmarshalling #4245
+* [BUGFIX] discovery/file: fix logging #4178
+* [BUGFIX] kubernetes_sd: fix namespace filtering #4285
+* [BUGFIX] web: restore old path prefix behavior #4273
+* [BUGFIX] web: remove security headers added in 2.3.0 #4259
+
+## 2.3.0 / 2018-06-05
 
 * [CHANGE] `marathon_sd`: use `auth_token` and `auth_token_file` for token-based authentication instead of `bearer_token` and `bearer_token_file` respectively.
+* [CHANGE] Metric names for HTTP server metrics changed
+* [FEATURE] Add query commands to promtool
+* [FEATURE] Add security headers to HTTP server responses
+* [FEATURE] Pass query hints via remote read API
+* [FEATURE] Basic auth passwords can now be configured via file across all configuration
+* [ENHANCEMENT] Optimise PromQL and API serialization for memory usage and allocations
+* [ENHANCEMENT] Limit number of dropped targets in web UI
+* [ENHANCEMENT] Consul and EC2 service discovery allow using server-side filtering for performance improvement
+* [ENHANCEMENT] Add advanced filtering configuration to EC2 service discovery
 * [ENHANCEMENT] `marathon_sd`: adds support for basic and bearer authentication, plus all other common HTTP client options (TLS config, proxy URL, etc.)
+* [ENHANCEMENT] Provide machine type metadata and labels in GCE service discovery
+* [ENHANCEMENT] Add pod controller kind and name to Kubernetes service discovery data
+* [ENHANCEMENT] Move TSDB to flock-based log file that works with Docker containers
+* [BUGFIX] Properly propagate storage errors in PromQL
+* [BUGFIX] Fix path prefix for web pages
+* [BUGFIX] Fix goroutine leak in Consul service discovery
+* [BUGFIX] Fix races in scrape manager
+* [BUGFIX] Fix OOM for very large k in PromQL topk() queries
+* [BUGFIX] Make remote write more resilient to unavailable receivers
+* [BUGFIX] Make remote write shutdown cleanly
+* [BUGFIX] Don't leak files on errors in TSDB's tombstone cleanup
+* [BUGFIX] Unary minus expressions now removes the metric name from results
+* [BUGFIX] Fix bug that lead to wrong amount of samples considered for time range expressions
 
 ## 2.2.1 / 2018-03-13
 

@@ -438,7 +438,7 @@ Outer:
 
 		for _, chk := range chks {
 			if intervalOverlap(mint, maxt, chk.MinTime, chk.MaxTime) {
-				// Delete only until the current vlaues and not beyond.
+				// Delete only until the current values and not beyond.
 				tmin, tmax := clampInterval(mint, maxt, chks[0].MinTime, chks[len(chks)-1].MaxTime)
 				stones[p.At()] = Intervals{{tmin, tmax}}
 				continue Outer
@@ -468,28 +468,27 @@ Outer:
 	return writeMetaFile(pb.dir, &pb.meta)
 }
 
-// CleanTombstones will rewrite the block if there any tombstones to remove them
-// and returns if there was a re-write.
-func (pb *Block) CleanTombstones(dest string, c Compactor) (bool, error) {
+// CleanTombstones will remove the tombstones and rewrite the block (only if there are any tombstones).
+// If there was a rewrite, then it returns the ULID of the new block written, else nil.
+func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, error) {
 	numStones := 0
 
 	pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
-		for _ = range ivs {
-			numStones++
-		}
+		numStones += len(ivs)
 
 		return nil
 	})
 
 	if numStones == 0 {
-		return false, nil
+		return nil, nil
 	}
 
-	if _, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime); err != nil {
-		return false, err
+	uid, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime)
+	if err != nil {
+		return nil, err
 	}
 
-	return true, nil
+	return &uid, nil
 }
 
 // Snapshot creates snapshot of the block into dir.

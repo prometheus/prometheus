@@ -33,7 +33,6 @@ type Appendable interface {
 
 // NewManager is the Manager constructor
 func NewManager(logger log.Logger, app Appendable) *Manager {
-
 	return &Manager{
 		append:        app,
 		logger:        logger,

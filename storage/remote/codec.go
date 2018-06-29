@@ -15,6 +15,7 @@ package remote
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"sort"
@@ -28,9 +29,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// decodeReadLimit is the maximum size of a read request body in bytes.
+const decodeReadLimit = 32 * 1024 * 1024
+
 // DecodeReadRequest reads a remote.Request from a http.Request.
 func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
-	compressed, err := ioutil.ReadAll(r.Body)
+	compressed, err := ioutil.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +96,12 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 		return nil, err
 	}
 
-	rp := &prompb.ReadHints{
-		StepMs: p.Step,
-		Func:   p.Func,
+	var rp *prompb.ReadHints
+	if p != nil {
+		rp = &prompb.ReadHints{
+			StepMs: p.Step,
+			Func:   p.Func,
+		}
 	}
 
 	return &prompb.Query{

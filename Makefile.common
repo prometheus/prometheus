@@ -37,12 +37,15 @@ PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 
+.PHONY: all
 all: style staticcheck unused build test
 
+.PHONY: style
 style:
 	@echo ">> checking code style"
 	! $(GOFMT) -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
+.PHONY: check_license
 check_license:
 	@echo ">> checking license header"
 	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
@@ -53,48 +56,58 @@ check_license:
                exit 1; \
        fi
 
+.PHONY: test-short
 test-short:
 	@echo ">> running short tests"
 	$(GO) test -short $(pkgs)
 
+.PHONY: test
 test:
 	@echo ">> running all tests"
 	$(GO) test -race $(pkgs)
 
+.PHONY: format
 format:
 	@echo ">> formatting code"
 	$(GO) fmt $(pkgs)
 
+.PHONY: vet
 vet:
 	@echo ">> vetting code"
 	$(GO) vet $(pkgs)
 
+.PHONY: staticcheck
 staticcheck: $(STATICCHECK)
 	@echo ">> running staticcheck"
 	$(STATICCHECK) -ignore "$(STATICCHECK_IGNORE)" $(pkgs)
 
+.PHONY: unused
 unused: $(GOVENDOR)
 	@echo ">> running check for unused packages"
 	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
 
+.PHONY: build
 build: promu
 	@echo ">> building binaries"
 	$(PROMU) build --prefix $(PREFIX)
 
+.PHONY: tarball
 tarball: promu
 	@echo ">> building release tarball"
 	$(PROMU) tarball --prefix $(PREFIX) $(BIN_DIR)
 
+.PHONY: docker
 docker:
 	docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
+.PHONY: promu
 promu:
 	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
 
-$(FIRST_GOPATH)/bin/staticcheck:
+.PHONY: $(STATICCHECK)
+$(STATICCHECK):
 	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
-$(FIRST_GOPATH)/bin/govendor:
+.PHONY: $(GOVENDOR)
+$(GOVENDOR):
 	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
-
-.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor

@@ -449,10 +449,10 @@ func (h *Head) Appender() Appender {
 
 func (h *Head) appender() *headAppender {
 	return &headAppender{
-		head:          h,
-		mint:          h.MaxTime() - h.chunkRange/2,
-		samples:       h.getAppendBuffer(),
-		highTimestamp: math.MinInt64,
+		head:    h,
+		mint:    h.MaxTime() - h.chunkRange/2,
+		maxt:    math.MinInt64,
+		samples: h.getAppendBuffer(),
 	}
 }
 
@@ -469,12 +469,11 @@ func (h *Head) putAppendBuffer(b []RefSample) {
 }
 
 type headAppender struct {
-	head *Head
-	mint int64
+	head       *Head
+	mint, maxt int64
 
-	series        []RefSeries
-	samples       []RefSample
-	highTimestamp int64
+	series  []RefSeries
+	samples []RefSample
 }
 
 func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -508,8 +507,8 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	if t < a.mint {
 		return ErrOutOfBounds
 	}
-	if t > a.highTimestamp {
-		a.highTimestamp = t
+	if t > a.maxt {
+		a.maxt = t
 	}
 
 	a.samples = append(a.samples, RefSample{
@@ -551,10 +550,10 @@ func (a *headAppender) Commit() error {
 
 	for {
 		ht := a.head.MaxTime()
-		if a.highTimestamp <= ht {
+		if a.maxt <= ht {
 			break
 		}
-		if atomic.CompareAndSwapInt64(&a.head.maxTime, ht, a.highTimestamp) {
+		if atomic.CompareAndSwapInt64(&a.head.maxTime, ht, a.maxt) {
 			break
 		}
 	}
@@ -587,8 +586,12 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	for p.Next() {
 		series := h.series.getByID(p.At())
 
+		t0, t1 := series.minTime(), series.maxTime()
+		if t0 == math.MinInt64 || t1 == math.MinInt64 {
+			continue
+		}
 		// Delete only until the current values and not beyond.
-		t0, t1 := clampInterval(mint, maxt, series.minTime(), series.maxTime())
+		t0, t1 = clampInterval(mint, maxt, t0, t1)
 		stones = append(stones, Stone{p.At(), Intervals{{t0, t1}}})
 	}
 
@@ -1106,11 +1109,18 @@ type memSeries struct {
 }
 
 func (s *memSeries) minTime() int64 {
+	if len(s.chunks) == 0 {
+		return math.MinInt64
+	}
 	return s.chunks[0].minTime
 }
 
 func (s *memSeries) maxTime() int64 {
-	return s.head().maxTime
+	c := s.head()
+	if c == nil {
+		return math.MinInt64
+	}
+	return c.maxTime
 }
 
 func (s *memSeries) cut(mint int64) *memChunk {
