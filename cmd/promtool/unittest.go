@@ -1,0 +1,509 @@
+// Copyright 2018 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
+)
+
+// RulesUnitTest does unit testing of rules based on the unit testing files provided.
+// An example file as input can be found here: https://gist.github.com/codesome/f4426d28244ee9fac128031ed2f9af70
+func RulesUnitTest(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		if errs := ruleUnitTest(f); errs != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+			}
+			failed = true
+		} else {
+			fmt.Println("  SUCCESS")
+		}
+		fmt.Println()
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func ruleUnitTest(filename string) []error {
+	fmt.Println("Unit Testing: ", filename)
+
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return []error{err}
+	}
+
+	var unitTestInp unitTestFile
+	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+		return []error{err}
+	}
+
+	if unitTestInp.EvaluationInterval == 0 {
+		unitTestInp.EvaluationInterval = 1 * time.Minute
+	}
+
+	// Bounds for evaluating the rules.
+	mint := time.Unix(0, 0)
+	maxd := unitTestInp.maxEvalTime()
+	maxt := mint.Add(maxd)
+	// Rounding off to nearest Eval time (> maxt).
+	maxt = maxt.Add(unitTestInp.EvaluationInterval / 2).Round(unitTestInp.EvaluationInterval)
+
+	// Giving number for groups mentioned in the file for ordering.
+	// Lower number group should be evaluated before higher number group.
+	groupOrderMap := make(map[string]int)
+	for i, gn := range unitTestInp.GroupEvalOrder {
+		if _, ok := groupOrderMap[gn]; ok {
+			return []error{fmt.Errorf("Group name repeated in evaluation order: %s", gn)}
+		}
+		groupOrderMap[gn] = i
+	}
+
+	// Testing.
+	var errs []error
+	for _, t := range unitTestInp.Tests {
+		ers := t.test(mint, maxt, unitTestInp.EvaluationInterval, groupOrderMap,
+			unitTestInp.RuleFiles...)
+		if ers != nil {
+			errs = append(errs, ers...)
+		}
+	}
+
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+// unitTestFile holds the contents of a single unit test file.
+type unitTestFile struct {
+	RuleFiles          []string      `yaml:"rule_files"`
+	EvaluationInterval time.Duration `yaml:"evaluation_interval,omitempty"`
+	GroupEvalOrder     []string      `yaml:"group_eval_order"`
+	Tests              []testGroup   `yaml:"tests"`
+}
+
+func (utf *unitTestFile) maxEvalTime() time.Duration {
+	var maxd time.Duration
+	for _, t := range utf.Tests {
+		d := t.maxEvalTime()
+		if d > maxd {
+			maxd = d
+		}
+	}
+	return maxd
+}
+
+// testGroup is a group of input series and tests associated with it.
+type testGroup struct {
+	Interval       time.Duration    `yaml:"interval"`
+	InputSeries    []series         `yaml:"input_series"`
+	AlertRuleTest  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTest []promqlTestCase `yaml:"promql_expr_test,omitempty"`
+}
+
+// test performs the unit tests.
+func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
+
+	// Setup testing suite.
+	suite, err := promql.NewTest(nil, tg.seriesLoadingString())
+	if err != nil {
+		return []error{err}
+	}
+	defer suite.Close()
+
+	err = suite.Run()
+	if err != nil {
+		return []error{err}
+	}
+
+	// Load the rule files.
+	opts := &rules.ManagerOptions{
+		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable: suite.Storage(),
+		Context:    context.Background(),
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) error { return nil },
+	}
+	m := rules.NewManager(opts)
+	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)
+	if ers != nil {
+		return ers
+	}
+	groups := orderedGroups(groupsMap, groupOrderMap)
+
+	// Pre-processing some data for testing alerts.
+	// All this preparating so that we can test the alerts as and when we evaluate
+	// the rules so that we can avoid storing them in memory, as number of eval might
+	// get very big.
+
+	// All the `eval_time` for which we have unit tests.
+	var alertEvalTimes []time.Duration
+	// Map of all the eval_time+alertname combination present in the unit tests.
+	presentInTest := make(map[time.Duration]map[string]struct{})
+	// Map of all the unit tests for given eval_time.
+	alertTests := make(map[time.Duration][]alertTestCase)
+	for _, art := range tg.AlertRuleTest {
+		pos := func() int {
+			for i, d := range alertEvalTimes {
+				if d > art.EvalTime {
+					return i
+				}
+			}
+			return len(alertEvalTimes)
+		}()
+		alertEvalTimes = append(alertEvalTimes[:pos], append([]time.Duration{art.EvalTime}, alertEvalTimes[pos:]...)...)
+
+		if _, ok := presentInTest[art.EvalTime]; !ok {
+			presentInTest[art.EvalTime] = make(map[string]struct{})
+		}
+		presentInTest[art.EvalTime][art.Alertname] = struct{}{}
+
+		if _, ok := alertTests[art.EvalTime]; ok {
+			alertTests[art.EvalTime] = []alertTestCase{art}
+		} else {
+			alertTests[art.EvalTime] = append(alertTests[art.EvalTime], art)
+		}
+	}
+
+	// Current index in alertEvalTimes what we are looking at.
+	curr := 0
+
+	var errs []error
+	for ts := mint; maxt.Sub(ts) > 0; ts = ts.Add(evalInterval) {
+		// Collects the alerts asked in unit testing.
+		for _, g := range groups {
+			g.Eval(suite.Context(), ts)
+		}
+
+		for curr < len(alertEvalTimes) && ts.Sub(mint) <= alertEvalTimes[curr] && alertEvalTimes[curr] < ts.Add(evalInterval).Sub(mint) {
+			// We need to check alerts for this time.
+			// If 'ts <= `eval_time=alertEvalTimes[curr]` < ts+evalInterval'
+			// then we compare alerts with the Eval at `ts`.
+			t := alertEvalTimes[curr]
+
+			presentNames := presentInTest[t]
+			got := make(map[string]labelsAndAnnotations)
+
+			for _, g := range groups {
+				grules := g.Rules()
+
+				for _, r := range grules {
+					ar, ok := r.(*rules.AlertingRule)
+					if !ok {
+						continue
+					}
+					if _, ok := presentNames[ar.Name()]; !ok {
+						continue
+					}
+
+					var alerts labelsAndAnnotations
+					for _, a := range ar.ActiveAlerts() {
+						if a.State == rules.StateFiring {
+							alerts = append(alerts, labelAndAnnotation{
+								Labels:      append(labels.Labels{}, a.Labels...),
+								Annotations: append(labels.Labels{}, a.Annotations...),
+							})
+						}
+					}
+
+					if _, ok := got[ar.Name()]; ok {
+						got[ar.Name()] = append(got[ar.Name()], alerts...)
+					} else {
+						got[ar.Name()] = alerts
+					}
+
+				}
+
+			}
+
+			for _, testCase := range alertTests[t] {
+				// Checking alerts.
+				gotAlerts, ok := got[testCase.Alertname]
+				if !ok {
+					gotAlerts = labelsAndAnnotations{}
+				}
+
+				var expAlerts labelsAndAnnotations
+				for _, a := range testCase.ExpAlerts {
+					// User gives only the labels from alerting rule, which doesn't
+					// include this label (added by Prometheus during Eval).
+					a.ExpLabels[labels.AlertName] = testCase.Alertname
+
+					expAlerts = append(expAlerts, labelAndAnnotation{
+						Labels:      labels.FromMap(a.ExpLabels),
+						Annotations: labels.FromMap(a.ExpAnnotations),
+					})
+				}
+
+				if gotAlerts.Len() != expAlerts.Len() {
+					errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+						testCase.Alertname, testCase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+				} else {
+					sort.Sort(gotAlerts)
+					sort.Sort(expAlerts)
+
+					if !reflect.DeepEqual(expAlerts, gotAlerts) {
+						errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
+							testCase.Alertname, testCase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+					}
+				}
+
+			}
+
+			curr++
+		}
+	}
+
+	// Checking promql expressions.
+	for _, testCase := range tg.PromqlExprTest {
+		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
+			suite.QueryEngine(), suite.Queryable())
+		if err != nil {
+			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+				testCase.EvalTime.String(), err.Error()))
+		}
+
+		var gotSamples []parsedSample
+		for _, s := range got {
+			gotSamples = append(gotSamples, parsedSample{
+				Labels: s.Metric.Copy(),
+				Value:  s.V,
+			})
+		}
+
+		var expSamples []parsedSample
+		parseError := false
+		for _, s := range testCase.ExpSamples {
+			lb, err := promql.ParseMetric(s.Labels)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
+					testCase.EvalTime.String(), err.Error()))
+				parseError = true
+				break
+			}
+			expSamples = append(expSamples, parsedSample{
+				Labels: lb,
+				Value:  s.Value,
+			})
+		}
+
+		if !parseError && !reflect.DeepEqual(expSamples, gotSamples) {
+			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
+				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
+		}
+
+	}
+
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+// seriesLoadingString returns the input series in
+// PromQL notation.
+func (tg *testGroup) seriesLoadingString() string {
+	result := ""
+	result += "load " + shortDur(tg.Interval) + "\n"
+	for _, is := range tg.InputSeries {
+		result += "  " + is.Series + " " + is.Values + "\n"
+	}
+	return result
+}
+
+// https://stackoverflow.com/a/41336257/6219247
+func shortDur(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = s[:len(s)-2]
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = s[:len(s)-2]
+	}
+	return s
+}
+
+// orderedGroups returns a slice of *rules.Group from `groupsMap` which follows the order
+// mentioned by `groupOrderMap`. The returned slice starts with the groups that need to be in order,
+// followed by rest of the groups in undetermined order.
+func orderedGroups(groupsMap map[string]*rules.Group, groupOrderMap map[string]int) []*rules.Group {
+	var groups []*rules.Group
+	for _, g := range groupsMap {
+		order, ok := groupOrderMap[g.Name()]
+		if !ok {
+			groups = append(groups, g)
+			continue
+		}
+		pivot := 0
+		for i, gg := range groups {
+			pivot = i
+			if o, ok := groupOrderMap[gg.Name()]; ok {
+				if o > order {
+					break
+				}
+			} else {
+				// Found a group which doesn't need to be ordered.
+				break
+			}
+			if i == len(groups)-1 {
+				pivot = i + 1
+			}
+		}
+		if pivot == len(groups) {
+			groups = append(groups, g)
+		} else {
+			groups = append(groups[:pivot], append([]*rules.Group{g}, groups[pivot:]...)...)
+		}
+	}
+	return groups
+}
+
+// maxEvalTime returns the max eval time among all alert and promql unit tests.
+func (tg *testGroup) maxEvalTime() time.Duration {
+	var maxd time.Duration
+	for _, art := range tg.AlertRuleTest {
+		if art.EvalTime > maxd {
+			maxd = art.EvalTime
+		}
+	}
+	for _, pet := range tg.PromqlExprTest {
+		if pet.EvalTime > maxd {
+			maxd = pet.EvalTime
+		}
+	}
+	return maxd
+}
+
+func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
+	q, err := engine.NewInstantQuery(qu, qs, t)
+	if err != nil {
+		return nil, err
+	}
+	res := q.Exec(ctx)
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	switch v := res.Value.(type) {
+	case promql.Vector:
+		return v, nil
+	case promql.Scalar:
+		return promql.Vector{promql.Sample{
+			Point:  promql.Point(v),
+			Metric: labels.Labels{},
+		}}, nil
+	default:
+		return nil, fmt.Errorf("rule result is not a vector or scalar")
+	}
+}
+
+type labelsAndAnnotations []labelAndAnnotation
+
+func (la labelsAndAnnotations) Len() int      { return len(la) }
+func (la labelsAndAnnotations) Swap(i, j int) { la[i], la[j] = la[j], la[i] }
+func (la labelsAndAnnotations) Less(i, j int) bool {
+	l1h, l2h := la[i].Labels.Hash(), la[j].Labels.Hash()
+	if l1h != l2h {
+		return l1h < l2h
+	}
+	return la[i].Annotations.Hash() < la[j].Annotations.Hash()
+}
+
+func (la labelsAndAnnotations) String() string {
+	if len(la) == 0 {
+		return "[]"
+	}
+	s := "[" + la[0].String()
+	for _, l := range la[1:] {
+		s += ", " + l.String()
+	}
+	s += "]"
+
+	return s
+}
+
+type labelAndAnnotation struct {
+	Labels      labels.Labels
+	Annotations labels.Labels
+}
+
+func (la *labelAndAnnotation) String() string {
+	return "Labels:" + la.Labels.String() + " Annotations:" + la.Annotations.String()
+}
+
+type series struct {
+	Series string `yaml:"series"`
+	Values string `yaml:"values"`
+}
+
+type alertTestCase struct {
+	EvalTime  time.Duration `yaml:"eval_time"`
+	Alertname string        `yaml:"alertname"`
+	ExpAlerts []alert       `yaml:"exp_alerts"`
+}
+
+type alert struct {
+	ExpLabels      map[string]string `yaml:"exp_labels"`
+	ExpAnnotations map[string]string `yaml:"exp_annotations"`
+}
+
+type promqlTestCase struct {
+	Expr       string        `yaml:"expr"`
+	EvalTime   time.Duration `yaml:"eval_time"`
+	ExpSamples []sample      `yaml:"exp_samples"`
+}
+
+type sample struct {
+	Labels string  `yaml:"labels"`
+	Value  float64 `yaml:"value"`
+}
+
+// parsedSample is a sample with parsed Labels.
+type parsedSample struct {
+	Labels labels.Labels
+	Value  float64
+}
+
+func parsedSamplesString(pss []parsedSample) string {
+	if len(pss) == 0 {
+		return "nil"
+	}
+	s := pss[0].String()
+	for _, ps := range pss[0:] {
+		s += ", " + ps.String()
+	}
+	return s
+}
+
+func (ps *parsedSample) String() string {
+	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
+}
