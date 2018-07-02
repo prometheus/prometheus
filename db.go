@@ -762,8 +762,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		m := b.Meta()
-		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
+		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
 		}
 	}
@@ -805,8 +804,7 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		m := b.Meta()
-		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
+		if b.OverlapsClosedInterval(mint, maxt) {
 			g.Go(func(b *Block) func() error {
 				return func() error { return b.Delete(mint, maxt, ms...) }
 			}(b))
@@ -852,11 +850,6 @@ func (db *DB) CleanTombstones() (err error) {
 		}
 	}
 	return errors.Wrap(db.reload(), "reload blocks")
-}
-
-func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	// Checks Overlap: http://stackoverflow.com/questions/3269434/
-	return amin <= bmax && bmin <= amax
 }
 
 func isBlockDir(fi os.FileInfo) bool {

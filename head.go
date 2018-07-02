@@ -735,19 +735,14 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	s.Lock()
 	c := s.chunk(int(cid))
 
-	// This means that the chunk has been garbage collected.
-	if c == nil {
+	// This means that the chunk has been garbage collected or is outside
+	// the specified range.
+	if c == nil || !c.OverlapsClosedInterval(h.mint, h.maxt) {
 		s.Unlock()
 		return nil, ErrNotFound
 	}
-
-	mint, maxt := c.minTime, c.maxTime
 	s.Unlock()
 
-	// Do not expose chunks that are outside of the specified range.
-	if c == nil || !intervalOverlap(mint, maxt, h.mint, h.maxt) {
-		return nil, ErrNotFound
-	}
 	return &safeChunk{
 		Chunk: c.chunk,
 		s:     s,
@@ -852,7 +847,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 
 	for i, c := range s.chunks {
 		// Do not expose chunks that are outside of the specified range.
-		if !intervalOverlap(c.minTime, c.maxTime, h.mint, h.maxt) {
+		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
 			continue
 		}
 		*chks = append(*chks, chunks.Meta{
@@ -1289,6 +1284,11 @@ func (s *memSeries) head() *memChunk {
 type memChunk struct {
 	chunk            chunkenc.Chunk
 	minTime, maxTime int64
+}
+
+// Returns true if the chunk overlaps [mint, maxt].
+func (mc *memChunk) OverlapsClosedInterval(mint, maxt int64) bool {
+	return mc.minTime <= maxt && mint <= mc.maxTime
 }
 
 type memSafeIterator struct {

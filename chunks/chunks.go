@@ -57,6 +57,12 @@ func (cm *Meta) writeHash(h hash.Hash) error {
 	return nil
 }
 
+// Returns true if the chunk overlaps [mint, maxt].
+func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
+	// The chunk itself is a closed interval [cm.MinTime, cm.MaxTime].
+	return cm.MinTime <= maxt && mint <= cm.MaxTime
+}
+
 var (
 	errInvalidSize     = fmt.Errorf("invalid size")
 	errInvalidFlag     = fmt.Errorf("invalid flag")
