@@ -3,6 +3,8 @@ version: 2
 
 jobs:
   test:
+    # Whenever the Go version is updated here, .travis.yml should also be
+    # updated.
     docker:
     - image: circleci/golang:1.10
     working_directory: /go/src/github.com/prometheus/prometheus
