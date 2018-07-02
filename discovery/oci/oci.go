@@ -32,15 +32,15 @@ import (
 
 const (
 	ociLabel                   = model.MetaLabelPrefix + "oci_"
-	ociLabelCompartmentID      = ociLabel + "compartment_id"
 	ociLabelAvailabilityDomain = ociLabel + "availability_domain"
+	ociLabelCompartmentID      = ociLabel + "compartment_id"
 	ociLabelInstanceID         = ociLabel + "instance_id"
 	ociLabelInstanceName       = ociLabel + "instance_name"
 	ociLabelInstanceState      = ociLabel + "instance_state"
-	ociLabelPublicIP           = ociLabel + "public_ip"
 	ociLabelPrivateIP          = ociLabel + "private_ip"
-	ociLabelFreeformTag        = ociLabel + "freeform_tag_"
+	ociLabelPublicIP           = ociLabel + "public_ip"
 	ociLabelDefinedTag         = ociLabel + "defined_tag_"
+	ociLabelFreeformTag        = ociLabel + "freeform_tag_"
 )
 
 var (
@@ -60,12 +60,6 @@ var (
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
 )
-
-// Filter is the configuration for filtering OCI instances.
-type Filter struct {
-	Name   string   `yaml:"name"`
-	Values []string `yaml:"values"`
-}
 
 // SDConfig is the configuration for OCI based service discovery.
 type SDConfig struct {
