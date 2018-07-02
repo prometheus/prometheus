@@ -177,6 +177,16 @@ scrape_configs:
       cert_file: valid_cert_file
       key_file: valid_key_file
 
+- job_name: service-oci
+  oci_sd_configs:
+    - user: ocid1.user.oc1..aaaaaaaa4x5iosqhislin74qt76
+      fingerprint: 95:84:4b:43:25:0e:6c:fd:68:af:3e:f7:88:85:61:40
+      key_file: valid_key_file
+      pass_phrase: valid_passphrase
+      tenancy: ocid1.tenancy.oc1..aaaaaaaazo7h6yqgac7aunoj
+      region: us-phoenix-1
+      compartment: ocid1.compartment.oc1..aaaaaaaa453qdm6adnnp
+
 - job_name: service-ec2
   ec2_sd_configs:
     - region: us-east-1
