@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/oci"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -393,6 +394,31 @@ var expectedConf = &Config{
 								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 							},
 						},
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-oci",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				OciSDConfigs: []*oci.SDConfig{
+					{
+						User:            "ocid1.user.oc1..aaaaaaaa4x5iosqhislin74qt76",
+						FingerPrint:     "95:84:4b:43:25:0e:6c:fd:68:af:3e:f7:88:85:61:40",
+						KeyFile:         "valid_key_file",
+						PassPhrase:      "valid_passphrase",
+						Tenancy:         "ocid1.tenancy.oc1..aaaaaaaazo7h6yqgac7aunoj",
+						Region:          "us-phoenix-1",
+						Compartment:     "ocid1.compartment.oc1..aaaaaaaa453qdm6adnnp",
+						Port:            9100,
+						RefreshInterval: model.Duration(60 * time.Second),
 					},
 				},
 			},
