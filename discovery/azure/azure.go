@@ -277,7 +277,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				// This information is available via another API call however the Go SDK does not
 				// yet support this. On deallocated machines, this value happens to be nil so it
 				// is a cheap and easy way to determine if a machine is allocated or not.
-				if networkInterface.Properties.Primary == nil {
+				if networkInterface.Properties.MacAddress == nil {
 					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", *vm.Name)
 					ch <- target{}
 					return
