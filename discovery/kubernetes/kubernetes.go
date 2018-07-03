@@ -84,13 +84,13 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          config_util.URL        `yaml:"api_server"`
+	APIServer          config_util.URL        `yaml:"api_server,omitempty"`
 	Role               Role                   `yaml:"role"`
 	BasicAuth          *config_util.BasicAuth `yaml:"basic_auth,omitempty"`
 	BearerToken        config_util.Secret     `yaml:"bearer_token,omitempty"`
 	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
 	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
-	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces"`
+	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
