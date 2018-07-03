@@ -29,6 +29,10 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+const (
+	NodeLegacyHostIP = "LegacyHostIP"
+)
+
 // Node discovers Kubernetes nodes.
 type Node struct {
 	logger   log.Logger
@@ -201,6 +205,9 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
+		return addresses[0], m, nil
+	}
+	if addresses, ok := m[apiv1.NodeAddressType(NodeLegacyHostIP)]; ok {
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeHostName]; ok {
