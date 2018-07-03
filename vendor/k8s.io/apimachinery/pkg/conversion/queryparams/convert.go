@@ -90,7 +90,14 @@ func customMarshalValue(value reflect.Value) (reflect.Value, bool) {
 
 	marshaler, ok := value.Interface().(Marshaler)
 	if !ok {
-		return reflect.Value{}, false
+		if !isPointerKind(value.Kind()) && value.CanAddr() {
+			marshaler, ok = value.Addr().Interface().(Marshaler)
+			if !ok {
+				return reflect.Value{}, false
+			}
+		} else {
+			return reflect.Value{}, false
+		}
 	}
 
 	// Don't invoke functions on nil pointers
@@ -167,6 +174,9 @@ func convertStruct(result url.Values, st reflect.Type, sv reflect.Value) {
 			kind = ft.Kind()
 			if !field.IsNil() {
 				field = reflect.Indirect(field)
+				// If the field is non-nil, it should be added to params
+				// and the omitempty should be overwite to false
+				omitempty = false
 			}
 		}
 
