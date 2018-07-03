@@ -24,8 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -189,7 +188,6 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 // nodeAddresses returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeExternalIP
-// 3. NodeLegacyHostIP
 // 3. NodeHostName
 //
 // Derived from k8s.io/kubernetes/pkg/util/node/node.go
@@ -203,9 +201,6 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
-		return addresses[0], m, nil
-	}
-	if addresses, ok := m[apiv1.NodeAddressType(api.NodeLegacyHostIP)]; ok {
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeHostName]; ok {

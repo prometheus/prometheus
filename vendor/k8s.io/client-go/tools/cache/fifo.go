@@ -59,7 +59,7 @@ type Queue interface {
 	// has since been added.
 	AddIfNotPresent(interface{}) error
 
-	// Return true if the first batch of items has been popped
+	// HasSynced returns true if the first batch of items has been popped
 	HasSynced() bool
 
 	// Close queue
@@ -169,7 +169,7 @@ func (f *FIFO) AddIfNotPresent(obj interface{}) error {
 	return nil
 }
 
-// addIfNotPresent assumes the fifo lock is already held and adds the the provided
+// addIfNotPresent assumes the fifo lock is already held and adds the provided
 // item to the queue under id if it does not already exist.
 func (f *FIFO) addIfNotPresent(id string, obj interface{}) {
 	f.populated = true
