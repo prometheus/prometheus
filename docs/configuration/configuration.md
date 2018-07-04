@@ -181,6 +181,10 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -445,6 +449,61 @@ The [relabeling phase](#relabel_config) is the preferred and more powerful
 way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
 support for filtering instances.
+
+### `<oci_sd_config>`
+
+OCI SD configurations allow retrieving scrape targets from OCI (Oracle Cloud
+Infrastructure) instances. The private IP address is used by default, but may be
+changed to the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_oci_availability_domain`: the availability domain in which the instance is running
+* `__meta_oci_compartment_id`: OCID of the used compartment
+* `__meta_oci_defined_tag_<namespace>_<tagkey>`: each defined tag value of the instance
+* `__meta_oci_freeform_tag_<tagkey>`: each freeform tag value of the instance
+* `__meta_oci_instance_id`: OCID of the instance
+* `__meta_oci_instance_name`: the name of the instance
+* `__meta_oci_instance_state`: the state of the instance
+* `__meta_oci_private_ip`: the private IP address of the instance
+* `__meta_oci_public_ip`: the public IP address of the instance, if available
+
+See below for the configuration options for OCI discovery:
+
+```yaml
+# The information to access the OCI API. Documentation:
+# https://docs.cloud.oracle.com/iaas/Content/API/Concepts/sdkconfig.htm#CLIConfiguration
+
+# OCID of the user calling the API.
+user: <string>
+
+# Fingerprint for the key pair being used.
+fingerprint: <string>
+
+# Full path and filename of the private key. The key pair must be in PEM format.
+key_file: <string>
+
+# Passphrase used for the key, if it is encrypted.
+[ pass_phrase: <string> ]
+
+# OCID of your tenancy.
+tenancy: <string>
+
+# An OCI region.
+region: <string>
+
+# OCID of the compartment which groups instances.
+compartment: <string>
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 9100 ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
+The [relabeling phase](#relabel_config) is the preferred way to filter targets based on arbitrary labels.
 
 ### `<openstack_sd_config>`
 
@@ -1136,6 +1195,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of OCI service discovery configurations.
+oci_sd_configs:
+  [ - <oci_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
