@@ -177,11 +177,9 @@ func (s *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
 	tg.Labels = ingressLabels(ingress)
 
 	tlsHosts := make(map[string]struct{})
-	if ingress.Spec.TLS != nil {
-		for _, tls := range ingress.Spec.TLS {
-			for _, host := range tls.Hosts {
-				tlsHosts[host] = struct{}{}
-			}
+	for _, tls := range ingress.Spec.TLS {
+		for _, host := range tls.Hosts {
+			tlsHosts[host] = struct{}{}
 		}
 	}
 
