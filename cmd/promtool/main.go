@@ -75,6 +75,10 @@ func main() {
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 
+	queryLabelsCmd := queryCmd.Command("labels", "Run labels query.")
+	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
@@ -93,6 +97,9 @@ func main() {
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
+
+	case queryLabelsCmd.FullCommand():
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName))
 	}
 
 }
@@ -434,6 +441,36 @@ func QueryRange(url *url.URL, query string, start string, end string) int {
 	}
 
 	fmt.Println(val.String())
+	return 0
+}
+
+// QueryLabels queries for label values against a Prometheus server.
+func QueryLabels(url *url.URL, name string) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.LabelValues(ctx, name)
+	cancel()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	for _, v := range val {
+		fmt.Println(v)
+	}
 	return 0
 }
 
