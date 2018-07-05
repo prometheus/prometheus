@@ -360,7 +360,13 @@ func (db *DB) compact() (changes bool, err error) {
 		head := &rangeHead{
 			head: db.head,
 			mint: mint,
-			maxt: maxt,
+			// We remove 1 millisecond from maxt because block
+			// intervals are half-open: [b.MinTime, b.MaxTime). But
+			// chunk intervals are closed: [c.MinTime, c.MaxTime];
+			// so in order to make sure that overlaps are evaluated
+			// consistently, we explicitly remove the last value
+			// from the block interval here.
+			maxt: maxt - 1,
 		}
 		if _, err = db.compactor.Write(db.dir, head, mint, maxt, nil); err != nil {
 			return changes, errors.Wrap(err, "persist head block")
@@ -756,8 +762,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		m := b.Meta()
-		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
+		if b.OverlapsClosedInterval(mint, maxt) {
 			blocks = append(blocks, b)
 		}
 	}
@@ -799,8 +804,7 @@ func (db *DB) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
-		m := b.Meta()
-		if intervalOverlap(mint, maxt, m.MinTime, m.MaxTime) {
+		if b.OverlapsClosedInterval(mint, maxt) {
 			g.Go(func(b *Block) func() error {
 				return func() error { return b.Delete(mint, maxt, ms...) }
 			}(b))
@@ -846,11 +850,6 @@ func (db *DB) CleanTombstones() (err error) {
 		}
 	}
 	return errors.Wrap(db.reload(), "reload blocks")
-}
-
-func intervalOverlap(amin, amax, bmin, bmax int64) bool {
-	// Checks Overlap: http://stackoverflow.com/questions/3269434/
-	return amin <= bmax && bmin <= amax
 }
 
 func isBlockDir(fi os.FileInfo) bool {
