@@ -4,7 +4,7 @@ The Prometheus server consists of many internal components that work together in
 
 The overall Prometheus server architecture is shown in this diagram:
 
-![Prometheus server architecture](https://i.imgur.com/FTeb80I.jpg)
+![Prometheus server architecture](images/internal_architecture.jpg)
 
 The sections below will explain each component in the diagram. Code links and explanations are based on Prometheus version 2.3.1. Future Prometheus versions may differ.
 
@@ -77,7 +77,7 @@ To spread out scrapes within a scrape pool and in a consistenly slotted way acro
 
 ### Target scrapes
 
-Finally, a scrape loop periodically scrapes its targets over HTTP and tries to decode the received HTTP responses according to the [Prometheus text-based metrics exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/). It then applies [metric relabeling configurations](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cmetric_relabel_configs%3E) to each individual sample and sends the resulting samples to the storage subsystem. Additionally, it tracks and stores the staleness of time series over multiple scrape runs, records [scrape health information](https://prometheus.io/docs/concepts/jobs_instances/#automatically-generated-labels-and-time-series) (such as the `up` and `scrape_duration_seconds` metrics), and performs other housekeeping tasks to optimize the appending of time series to the storage engine.
+Finally, a scrape loop periodically scrapes its targets over HTTP and tries to decode the received HTTP responses according to the [Prometheus text-based metrics exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/). It then applies [metric relabeling configurations](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cmetric_relabel_configs%3E) to each individual sample and sends the resulting samples to the storage subsystem. Additionally, it tracks and stores the staleness of time series over multiple scrape runs, records [scrape health information](https://prometheus.io/docs/concepts/jobs_instances/#automatically-generated-labels-and-time-series) (such as the `up` and `scrape_duration_seconds` metrics), and performs other housekeeping tasks to optimize the appending of time series to the storage engine. Note that a scrape is not allowed to take longer than the configured scrape interval, and the configurable scrape timeout is capped to that. This ensures that one scrape is terminated before another one begins.
 
 ## Storage
 
@@ -87,9 +87,11 @@ Prometheus stores time series samples in a local time series database (TSDB) and
 
 The [fanout storage](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/fanout.go#L27-L32) is a [`storage.Storage`](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44) implementation that proxies and abstracts away the details of the underlying local and remote storage subsystems for use by other components. For reads, it merges query results from local and remote sources, while writes are duplicated to all local and remote destinations. Internally, the fanout storage differentiates between a primary (local) storage and optional secondary (remote) storages, as they have different capabilities for optimized series ingestion.
 
+Currently rules still read and write directly from/to the fanout storage, but this will be changed soon so that rules will only read local data by default. This is to increase the reliability of alerting and recording rules, which should only need short-term data in most cases.
+
 ### Local storage
 
-Prometheus's local on-disk time series database is a [light-weight wrapper](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/tsdb/tsdb.go#L102-L106) around [`github.com/prometheus/tsdb.DB`](https://github.com/prometheus/tsdb/blob/master/db.go#L92-L117). The wrapper makes only minor interface adjustments for use of the TSDB in the context of the Prometheus server and implements the [`storage.Storage` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/). There is also a document that describes the [implementation internals of the TSDB](TODO).
+Prometheus's local on-disk time series database is a [light-weight wrapper](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/tsdb/tsdb.go#L102-L106) around [`github.com/prometheus/tsdb.DB`](https://github.com/prometheus/tsdb/blob/master/db.go#L92-L117). The wrapper makes only minor interface adjustments for use of the TSDB in the context of the Prometheus server and implements the [`storage.Storage` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
 
 ### Remote storage
 
@@ -126,4 +128,8 @@ Internally it works like the scrape discovery manager.
 
 ## Web UI and API
 
-Prometheus serves its web UI and API on port `9090` by default. The web UI is available at `/` and serves a human-usable interface for running expression queries, inspecting active alerts, or getting other insight into the status of the Prometheus server. The web API is served under `/api/v1` and allows programmatical [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
+Prometheus serves its web UI and API on port `9090` by default. The web UI is available at `/` and serves a human-usable interface for running expression queries, inspecting active alerts, or getting other insight into the status of the Prometheus server.
+
+The web API is served under `/api/v1` and allows programmatical [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
+
+[Console templates](https://prometheus.io/docs/visualization/consoles/), which allow Prometheus to serve user-defined HTML templates that have access to TSDB data, are served under `/consoles` when console templates are present and configured.
