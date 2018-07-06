@@ -183,13 +183,12 @@ func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
 }
 
 // addInterval to an existing memTombstones
-func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) *memTombstones {
+func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {
 		t.mts[ref] = t.mts[ref].add(itv)
 	}
-	return t
 }
 
 func (memTombstones) Close() error {
