@@ -380,3 +380,11 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	testutil.Ok(t, ir.Close())
 }
+
+func TestReaderWithInvalidBuffer(t *testing.T) {
+	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
+	r := &Reader{b: b}
+
+	db := r.decbufUvarintAt(0)
+	testutil.NotOk(t, db.err())
+}
