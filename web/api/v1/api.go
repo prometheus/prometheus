@@ -28,6 +28,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -125,6 +127,7 @@ type API struct {
 
 	db          func() *tsdb.DB
 	enableAdmin bool
+	logger      log.Logger
 }
 
 // NewAPI returns an initialized API type.
@@ -138,6 +141,7 @@ func NewAPI(
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
+	logger log.Logger,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -160,9 +164,9 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			data, err, finalizer := f(r)
 			if err != nil {
-				respondError(w, err, data)
+				api.respondError(w, err, data)
 			} else if data != nil {
-				respond(w, data)
+				api.respond(w, data)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -819,7 +823,7 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 	return result
 }
 
-func respond(w http.ResponseWriter, data interface{}) {
+func (api *API) respond(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
@@ -829,12 +833,15 @@ func respond(w http.ResponseWriter, data interface{}) {
 		Data:   data,
 	})
 	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
 		return
 	}
-	w.Write(b)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "n", n, "err", err)
+	}
 }
 
-func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var code int
@@ -864,7 +871,13 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	if err != nil {
 		return
 	}
-	w.Write(b)
+	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		return
+	}
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "n", n, "err", err)
+	}
 }
 
 func parseTime(s string) (time.Time, error) {
