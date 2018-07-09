@@ -1060,6 +1060,8 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
+		} else {
+			putPointSlice(ss.Points)
 		}
 	}
 	return matrix
