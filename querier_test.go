@@ -557,7 +557,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				},
 			},
 		},
-		tombstones: &memTombstones{mts: map[uint64]Intervals{
+		tombstones: &memTombstones{intvlGroups: map[uint64]Intervals{
 			1: Intervals{{1, 3}},
 			2: Intervals{{1, 3}, {6, 10}},
 			3: Intervals{{6, 10}},

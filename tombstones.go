@@ -157,24 +157,24 @@ func readTombstones(dir string) (*memTombstones, error) {
 }
 
 type memTombstones struct {
-	mts map[uint64]Intervals
-	mtx sync.RWMutex
+	intvlGroups map[uint64]Intervals
+	mtx         sync.RWMutex
 }
 
 func NewMemTombstones() *memTombstones {
-	return &memTombstones{mts: make(map[uint64]Intervals)}
+	return &memTombstones{intvlGroups: make(map[uint64]Intervals)}
 }
 
 func (t *memTombstones) Get(ref uint64) (Intervals, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	return t.mts[ref], nil
+	return t.intvlGroups[ref], nil
 }
 
 func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	for ref, ivs := range t.mts {
+	for ref, ivs := range t.intvlGroups {
 		if err := f(ref, ivs); err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {
-		t.mts[ref] = t.mts[ref].add(itv)
+		t.intvlGroups[ref] = t.intvlGroups[ref].add(itv)
 	}
 }
 
