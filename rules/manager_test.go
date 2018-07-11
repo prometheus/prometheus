@@ -314,3 +314,20 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 }
+
+func TestStop(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
+	ruleManager := NewManager(&ManagerOptions{
+		Context: context.Background(),
+		Logger:  log.NewNopLogger(),
+	})
+	ruleManager.Run()
+
+	err := ruleManager.Update(10*time.Second, files)
+	testutil.Ok(t, err)
+
+	ruleManager.Stop()
+
+	err = ruleManager.Update(10*time.Second, files)
+	testutil.Ok(t, err)
+}

@@ -409,10 +409,11 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 // The Manager manages recording and alerting rules.
 type Manager struct {
-	opts   *ManagerOptions
-	groups map[string]*Group
-	mtx    sync.RWMutex
-	block  chan struct{}
+	opts          *ManagerOptions
+	groups        map[string]*Group
+	mtx           sync.RWMutex
+	block         chan struct{}
+	acceptUpdates bool
 
 	logger log.Logger
 }
@@ -440,10 +441,11 @@ type ManagerOptions struct {
 // by calling the Run method.
 func NewManager(o *ManagerOptions) *Manager {
 	m := &Manager{
-		groups: map[string]*Group{},
-		opts:   o,
-		block:  make(chan struct{}),
-		logger: o.Logger,
+		groups:        map[string]*Group{},
+		opts:          o,
+		block:         make(chan struct{}),
+		acceptUpdates: true,
+		logger:        o.Logger,
 	}
 	if o.Registerer != nil {
 		o.Registerer.MustRegister(m)
@@ -461,6 +463,8 @@ func (m *Manager) Stop() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	m.stopUpdates()
+
 	level.Info(m.logger).Log("msg", "Stopping rule manager...")
 
 	for _, eg := range m.groups {
@@ -470,11 +474,17 @@ func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "Rule manager stopped")
 }
 
+func (m *Manager) stopUpdates() { m.acceptUpdates = false }
+
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
 func (m *Manager) Update(interval time.Duration, files []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	if !m.acceptUpdates {
+		return nil
+	}
 
 	// To be replaced with a configurable per-group interval.
 	groups, errs := m.loadGroups(interval, files...)
