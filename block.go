@@ -434,7 +434,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
-	stones := memTombstones{}
+	stones := NewMemTombstones()
 
 	var lset labels.Labels
 	var chks []chunks.Meta
@@ -450,7 +450,7 @@ Outer:
 			if chk.OverlapsClosedInterval(mint, maxt) {
 				// Delete only until the current values and not beyond.
 				tmin, tmax := clampInterval(mint, maxt, chks[0].MinTime, chks[len(chks)-1].MaxTime)
-				stones[p.At()] = Intervals{{tmin, tmax}}
+				stones.addInterval(p.At(), Interval{tmin, tmax})
 				continue Outer
 			}
 		}
@@ -462,7 +462,7 @@ Outer:
 
 	err = pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
 		for _, iv := range ivs {
-			stones.add(id, iv)
+			stones.addInterval(id, iv)
 			pb.meta.Stats.NumTombstones++
 		}
 		return nil

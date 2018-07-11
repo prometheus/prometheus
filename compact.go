@@ -483,7 +483,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
-	if err := writeTombstoneFile(tmp, EmptyTombstoneReader()); err != nil {
+	if err := writeTombstoneFile(tmp, NewMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
 

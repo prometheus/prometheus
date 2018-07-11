@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 
 	ref := uint64(0)
 
-	stones := memTombstones{}
+	stones := NewMemTombstones()
 	// Generate the tombstones.
 	for i := 0; i < 100; i++ {
 		ref += uint64(rand.Int31n(10)) + 1
@@ -40,7 +41,7 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 			dranges = dranges.add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
-		stones[ref] = dranges
+		stones.addInterval(ref, dranges...)
 	}
 
 	testutil.Ok(t, writeTombstoneFile(tmpdir, stones))
@@ -120,4 +121,26 @@ func TestAddingNewIntervals(t *testing.T) {
 		testutil.Equals(t, c.exp, c.exist.add(c.new))
 	}
 	return
+}
+
+// TestMemTombstonesConcurrency to make sure they are safe to access from different goroutines.
+func TestMemTombstonesConcurrency(t *testing.T) {
+	tomb := NewMemTombstones()
+	totalRuns := 100
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		for x := 0; x < totalRuns; x++ {
+			tomb.addInterval(uint64(x), Interval{int64(x), int64(x)})
+		}
+		wg.Done()
+	}()
+	go func() {
+		for x := 0; x < totalRuns; x++ {
+			tomb.Get(uint64(x))
+		}
+		wg.Done()
+	}()
+	wg.Wait()
 }
