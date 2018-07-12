@@ -36,7 +36,7 @@ import (
 var (
 	a             = kingpin.New("sd adapter usage", "Tool to generate file_sd target files for unimplemented SD mechanisms.")
 	outputFile    = a.Flag("output.file", "Output file for file_sd compatible file.").Default("custom_sd.json").String()
-	listenAddress = a.Flag("listen.address", "The address the HTTP sd is listening on for requests.").Default("localhost:8080").String()
+	listenAddress = a.Flag("listen.address", "The address the Consul HTTP API is listening on for requests.").Default("localhost:8500").String()
 	logger        log.Logger
 
 	// addressLabel is the name for the label containing a target's address.
@@ -196,7 +196,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			tgs = append(tgs, tg)
 		}
-		if err != nil {
+		if err == nil {
 			// We're returning all Consul services as a single targetgroup.
 			ch <- tgs
 		}
@@ -236,7 +236,7 @@ func main() {
 	// NOTE: create an instance of your new SD implementation here.
 	cfg := sdConfig{
 		TagSeparator:    ",",
-		Address:         "localhost:8500",
+		Address:         *listenAddress,
 		RefreshInterval: 30,
 	}
 
