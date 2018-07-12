@@ -28,7 +28,7 @@ import (
 func TestQueryConcurrency(t *testing.T) {
 	concurrentQueries := 10
 
-	engine := NewEngine(nil, nil, concurrentQueries, 10*time.Second)
+	engine := NewEngine(nil, nil, concurrentQueries, 10*time.Second, -1)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -79,7 +79,7 @@ func TestQueryConcurrency(t *testing.T) {
 }
 
 func TestQueryTimeout(t *testing.T) {
-	engine := NewEngine(nil, nil, 20, 5*time.Millisecond)
+	engine := NewEngine(nil, nil, 20, 5*time.Millisecond, -1)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -98,7 +98,7 @@ func TestQueryTimeout(t *testing.T) {
 }
 
 func TestQueryCancel(t *testing.T) {
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	engine := NewEngine(nil, nil, 10, 10*time.Second, -1)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -143,6 +143,110 @@ func TestQueryCancel(t *testing.T) {
 	}
 }
 
+func TestOversizeQuery(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric 1 2
+`)
+	if err != nil {
+		t.Fatalf("unexpected error creating test: %q", err)
+	}
+	defer test.Close()
+
+	err = test.Run()
+	if err != nil {
+		t.Fatalf("unexpected error initializing test: %q", err)
+	}
+
+	// storage.BufferedSeriesIterator dominates the expected sizes in these tests.
+	// A default minimum-size buffer is 512 bytes for 16 items (SampleSize == 32 bytes).
+
+	cases := []struct {
+		Query        string
+		QueryMaxSize int64
+		Result       Value
+		ExpectedErr  error
+		Start        time.Time
+		End          time.Time
+		Interval     time.Duration
+	}{
+		// Instant queries.
+		{
+			Query:        "1",
+			QueryMaxSize: 0,
+			ExpectedErr:  ErrQueryTooBig(0),
+			Start:        time.Unix(1, 0),
+		},
+		{
+			Query: "metric",
+			// Sample with labels `{__name__="metric"}` is 30 bytes
+			// plus 16 byte overhead for Series, expected value is 46 bytes + 512 buffer overhead.
+			QueryMaxSize: 557,
+			ExpectedErr:  ErrQueryTooBig(557),
+			Start:        time.Unix(1, 0),
+		},
+		{
+			Query: "metric",
+			// Sample with labels `{__name__="metric"}` is 30 bytes
+			// plus 16 byte overhead for Series, expected value ignoring the buffer is 46 bytes + buffer 512 overhead
+			QueryMaxSize: 558,
+			Result: Vector{
+				Sample{Point: Point{V: 1, T: 1000},
+					Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start: time.Unix(1, 0),
+		},
+
+		// Range queries.
+		{
+			Query: "metric",
+			// 3x samples with shared labels `{__name__="metric"}` is 62 bytes
+			// plus 16 byte overhead for Series, expected value is 78 bytes plus 512 buffer overhead.
+			QueryMaxSize: 589,
+			ExpectedErr:  ErrQueryTooBig(589),
+			Start:        time.Unix(0, 0),
+			End:          time.Unix(2, 0),
+			Interval:     time.Second,
+		},
+		{
+			Query: "metric",
+			// 3x samples with shared labels `{__name__="metric"}` is 62 bytes
+			// plus 16 byte overhead for Series, expected value is 78 bytes plus 512 buffer overhead.
+			QueryMaxSize: 590,
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+				Metric: labels.FromStrings("__name__", "metric")},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(2, 0),
+			Interval: time.Second,
+		},
+	}
+
+	for _, c := range cases {
+		var err error
+		var qry Query
+		engine := test.QueryEngine()
+		engine.querySizeLimit = c.QueryMaxSize
+		if c.Interval == 0 {
+			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+		} else {
+			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+		}
+		if err != nil {
+			t.Fatalf("unexpected error creating query: %q", err)
+		}
+		res := qry.Exec(test.Context())
+		if (res.Err != nil || c.ExpectedErr != nil) && !reflect.DeepEqual(res.Err, c.ExpectedErr) {
+			t.Fatalf("unexpected error running query: %q, wanted: %q", res.Err, c.ExpectedErr)
+		} else {
+			if !reflect.DeepEqual(res.Value, c.Result) {
+				t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
+			}
+		}
+	}
+}
+
 // errQuerier implements storage.Querier which always returns error.
 type errQuerier struct {
 	err error
@@ -164,7 +268,7 @@ func (errSeriesSet) At() storage.Series { return nil }
 func (e errSeriesSet) Err() error       { return e.err }
 
 func TestQueryError(t *testing.T) {
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	engine := NewEngine(nil, nil, 10, 10*time.Second, -1)
 	errStorage := ErrStorage(fmt.Errorf("storage error"))
 	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
@@ -198,7 +302,7 @@ func TestQueryError(t *testing.T) {
 }
 
 func TestEngineShutdown(t *testing.T) {
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	engine := NewEngine(nil, nil, 10, 10*time.Second, -1)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
 	block := make(chan struct{})
@@ -331,10 +435,12 @@ load 10s
 	for _, c := range cases {
 		var err error
 		var qry Query
+		engine := test.QueryEngine()
+		engine.querySizeLimit = -1
 		if c.Interval == 0 {
-			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.Query, c.Start)
+			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
 		} else {
-			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
 		if err != nil {
 			t.Fatalf("unexpected error creating query: %q", err)

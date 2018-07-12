@@ -14,8 +14,13 @@
 package storage
 
 import (
+	"errors"
 	"math"
 )
+
+// ErrBufferOversize occurs when BufferedSeriesIterator.Next() fails because the buffer
+// has reached the maximum allowed size.
+var ErrBufferOversize = errors.New("buffer oversize")
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
@@ -24,13 +29,18 @@ type BufferedSeriesIterator struct {
 
 	lastTime int64
 	ok       bool
+	err      error
 }
 
 // NewBuffer returns a new iterator that buffers the values within the time range
 // of the current element and the duration of delta before.
-func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
+func NewBuffer(it SeriesIterator, delta int64, maxSize int) *BufferedSeriesIterator {
+	initSize := 16
+	if maxSize > -1 && maxSize < initSize {
+		initSize = maxSize
+	}
 	bit := &BufferedSeriesIterator{
-		buf: newSampleRing(delta, 16),
+		buf: newSampleRing(delta, initSize, maxSize),
 	}
 	bit.Reset(it)
 
@@ -42,6 +52,7 @@ func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
 	b.it = it
 	b.lastTime = math.MinInt64
 	b.ok = true
+	b.err = nil
 	b.buf.reset()
 	it.Next()
 }
@@ -88,12 +99,17 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 
 // Next advances the iterator to the next element.
 func (b *BufferedSeriesIterator) Next() bool {
-	if !b.ok {
+	if !b.ok || b.err != nil {
 		return false
 	}
 
 	// Add current element to buffer before advancing.
-	b.buf.add(b.it.At())
+	ok := b.buf.add(b.it.At())
+	if !ok {
+		// Add failed because the buffer couldn't grow anymore
+		b.err = ErrBufferOversize
+		return false
+	}
 
 	b.ok = b.it.Next()
 	if b.ok {
@@ -110,7 +126,16 @@ func (b *BufferedSeriesIterator) Values() (int64, float64) {
 
 // Err returns the last encountered error.
 func (b *BufferedSeriesIterator) Err() error {
+	if b.err != nil {
+		return b.err
+	}
 	return b.it.Err()
+}
+
+// Capacity returns the capacity of the underlying buffer.
+// Used for memory consumption estimation.
+func (b *BufferedSeriesIterator) Capacity() int {
+	return len(b.buf.buf)
 }
 
 type sample struct {
@@ -125,12 +150,13 @@ type sampleRing struct {
 	i   int      // position of most recent element in ring buffer
 	f   int      // position of first element in ring buffer
 	l   int      // number of elements in buffer
+	max int      // max size buf can grow to.
 
 	it sampleRingIterator
 }
 
-func newSampleRing(delta int64, sz int) *sampleRing {
-	r := &sampleRing{delta: delta, buf: make([]sample, sz)}
+func newSampleRing(delta int64, sz int, maxSize int) *sampleRing {
+	r := &sampleRing{delta: delta, buf: make([]sample, sz), max: maxSize}
 	r.reset()
 
 	return r
@@ -179,11 +205,21 @@ func (r *sampleRing) at(i int) (int64, float64) {
 
 // add adds a sample to the ring buffer and frees all samples that fall
 // out of the delta range.
-func (r *sampleRing) add(t int64, v float64) {
+// Returns false if the buffer cannot grow to hold the sample.
+func (r *sampleRing) add(t int64, v float64) bool {
 	l := len(r.buf)
 	// Grow the ring buffer if it fits no more elements.
 	if l == r.l {
-		buf := make([]sample, 2*l)
+		growTo := 2 * l
+		if r.max > -1 && growTo > r.max {
+			growTo = r.max
+		}
+		if growTo <= len(r.buf) {
+			// Can't grow anymore, add failed
+			return false
+		}
+
+		buf := make([]sample, growTo)
 		copy(buf[l+r.f:], r.buf[r.f:])
 		copy(buf, r.buf[:r.f])
 
@@ -209,6 +245,7 @@ func (r *sampleRing) add(t int64, v float64) {
 		}
 		r.l--
 	}
+	return true
 }
 
 // nthLast returns the nth most recent element added to the ring.

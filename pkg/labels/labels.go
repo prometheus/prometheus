@@ -201,17 +201,19 @@ func Compare(a, b Labels) int {
 
 // Builder allows modifiying Labels.
 type Builder struct {
-	base Labels
-	del  []string
-	add  []Label
+	base     Labels
+	del      []string
+	add      []Label
+	lastSize int64
 }
 
 // NewBuilder returns a new LabelsBuilder
 func NewBuilder(base Labels) *Builder {
 	return &Builder{
-		base: base,
-		del:  make([]string, 0, 5),
-		add:  make([]Label, 0, 5),
+		base:     base,
+		del:      make([]string, 0, 5),
+		add:      make([]Label, 0, 5),
+		lastSize: -1,
 	}
 }
 
@@ -221,9 +223,11 @@ func (b *Builder) Del(ns ...string) *Builder {
 		for i, a := range b.add {
 			if a.Name == n {
 				b.add = append(b.add[:i], b.add[i+1:]...)
+				b.lastSize = -1
 			}
 		}
 		b.del = append(b.del, n)
+		b.lastSize = -1
 	}
 	return b
 }
@@ -233,10 +237,12 @@ func (b *Builder) Set(n, v string) *Builder {
 	for i, a := range b.add {
 		if a.Name == n {
 			b.add[i].Value = v
+			b.lastSize = -1
 			return b
 		}
 	}
 	b.add = append(b.add, Label{Name: n, Value: v})
+	b.lastSize = -1
 
 	return b
 }
@@ -269,4 +275,25 @@ Outer:
 	sort.Sort(res)
 
 	return res
+}
+
+// Size returns the approximate size of the label builder in bytes.
+// It is cached to avoid recalculating it every call.
+// This is not thread safe.
+func (b *Builder) Size() int64 {
+	if b.lastSize > -1 {
+		return b.lastSize
+	}
+
+	var size int64
+	for _, labels := range []Labels{b.add, b.base} {
+		for _, l := range labels {
+			size += int64(len(l.Name) + len(l.Value))
+		}
+	}
+	for _, l := range b.del {
+		size += int64(len(l))
+	}
+	b.lastSize = size
+	return size
 }

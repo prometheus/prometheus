@@ -92,6 +92,7 @@ func main() {
 		webTimeout          model.Duration
 		queryTimeout        model.Duration
 		queryConcurrency    int
+		querySizeLimit      int64
 		RemoteFlushDeadline model.Duration
 
 		prometheusURL string
@@ -176,6 +177,9 @@ func main() {
 	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
 		Default("2m").SetValue(&cfg.queryTimeout)
 
+	a.Flag("query.max-size", "Maximum size of a single query can be (in bytes).").
+		Default("-1").Int64Var(&cfg.querySizeLimit)
+
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryConcurrency)
 
@@ -249,6 +253,7 @@ func main() {
 			prometheus.DefaultRegisterer,
 			cfg.queryConcurrency,
 			time.Duration(cfg.queryTimeout),
+			cfg.querySizeLimit,
 		)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{

@@ -500,7 +500,7 @@ func (t *Test) clear() {
 	}
 	t.storage = testutil.NewStorage(t)
 
-	t.queryEngine = NewEngine(nil, nil, 20, 10*time.Second)
+	t.queryEngine = NewEngine(nil, nil, 20, 10*time.Second, -1)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

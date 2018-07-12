@@ -51,10 +51,13 @@ const (
 type engineMetrics struct {
 	currentQueries       prometheus.Gauge
 	maxConcurrentQueries prometheus.Gauge
+	maxQuerySize         prometheus.Gauge
+	oversizeQueries      prometheus.Counter
 	queryQueueTime       prometheus.Summary
 	queryPrepareTime     prometheus.Summary
 	queryInnerEval       prometheus.Summary
 	queryResultSort      prometheus.Summary
+	querySize            prometheus.Summary
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -70,10 +73,13 @@ type (
 	// ErrStorage is returned if an error was encountered in the storage layer
 	// during query handling.
 	ErrStorage error
+	// ErrQueryTooBig is returned if a query exceeds the configured query-maxsize.
+	ErrQueryTooBig int64
 )
 
 func (e ErrQueryTimeout) Error() string  { return fmt.Sprintf("query timed out in %s", string(e)) }
 func (e ErrQueryCanceled) Error() string { return fmt.Sprintf("query was canceled in %s", string(e)) }
+func (e ErrQueryTooBig) Error() string   { return fmt.Sprintf("query exceeded %d bytes", e) }
 
 // A Query is derived from an a raw query string and can be run against an engine
 // it is associated with.
@@ -164,17 +170,31 @@ func contextDone(ctx context.Context, env string) error {
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
-	logger  log.Logger
-	metrics *engineMetrics
-	timeout time.Duration
-	gate    *queryGate
+	logger         log.Logger
+	metrics        *engineMetrics
+	timeout        time.Duration
+	gate           *queryGate
+	querySizeLimit int64
 }
 
 // NewEngine returns a new engine.
-func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, timeout time.Duration) *Engine {
+func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, timeout time.Duration, maxQuerySize int64) *Engine {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
+	var maxBucketSize float64
+	minBucketSize := float64(50) // 50 bytes
+	if maxQuerySize > int64(minBucketSize) {
+		maxBucketSize = float64(maxQuerySize)
+	} else {
+		// Default to 100MB top bucket
+		maxBucketSize = 100 * 1024 * 1024
+	}
+	numSteps := 10
+	factor := math.Exp(math.Log(float64(maxBucketSize)/minBucketSize) / float64(numSteps))
+	querySizeBuckets := prometheus.ExponentialBuckets(minBucketSize, factor, numSteps)
+	querySizeBuckets = append(querySizeBuckets, maxBucketSize)
 
 	metrics := &engineMetrics{
 		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -188,6 +208,12 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 			Subsystem: subsystem,
 			Name:      "queries_concurrent_max",
 			Help:      "The max number of concurrent queries.",
+		}),
+		maxQuerySize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queries_size_max_bytes",
+			Help:      "The max size of a query in bytes.",
 		}),
 		queryQueueTime: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -217,23 +243,41 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_sort"},
 		}),
+		querySize: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_size_bytes",
+			Help:      "Query size in bytes",
+			Buckets:   querySizeBuckets,
+		}),
+		oversizeQueries: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "queries_oversize_total",
+			Help:      "The total number of queries that failed execution due to exceeding the configured max query size.",
+		}),
 	}
 	metrics.maxConcurrentQueries.Set(float64(maxConcurrent))
+	metrics.maxQuerySize.Set(float64(maxQuerySize))
 
 	if reg != nil {
 		reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
+			metrics.maxQuerySize,
 			metrics.queryInnerEval,
 			metrics.queryPrepareTime,
 			metrics.queryResultSort,
+			metrics.querySize,
+			metrics.oversizeQueries,
 		)
 	}
 	return &Engine{
-		gate:    newQueryGate(maxConcurrent),
-		timeout: timeout,
-		logger:  logger,
-		metrics: metrics,
+		gate:           newQueryGate(maxConcurrent),
+		timeout:        timeout,
+		logger:         logger,
+		querySizeLimit: maxQuerySize,
+		metrics:        metrics,
 	}
 }
 
@@ -380,14 +424,22 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			interval:       1,
 			ctx:            ctx,
 			logger:         ng.logger,
+			sizeLimit:      ng.querySizeLimit,
+			curSize:        0,
 		}
+
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
+			if _, ok := err.(ErrQueryTooBig); ok {
+				ng.metrics.querySize.Observe(float64(ng.querySizeLimit))
+				ng.metrics.oversizeQueries.Add(1)
+			}
 			return nil, err
 		}
 
 		evalTimer.Stop()
 		ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+		ng.metrics.querySize.Observe(float64(evaluator.curSize))
 
 		mat, ok := val.(Matrix)
 		if !ok {
@@ -421,6 +473,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		interval:       durationMilliseconds(s.Interval),
 		ctx:            ctx,
 		logger:         ng.logger,
+		sizeLimit:      ng.querySizeLimit,
+		curSize:        0,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -428,6 +482,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 	evalTimer.Stop()
 	ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+	ng.metrics.querySize.Observe(float64(evaluator.curSize))
 
 	mat, ok := val.(Matrix)
 	if !ok {
@@ -562,6 +617,10 @@ type evaluator struct {
 	interval     int64 // Interval in milliseconds.
 
 	logger log.Logger
+
+	sizeLimit int64
+
+	curSize int64
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -668,6 +727,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 
 			// Keep a copy of the original point slices so that they
 			// can be returned to the pool.
+			ev.incSize(matrixes[i].Size())
 			origMatrixes[i] = make(Matrix, len(matrixes[i]))
 			copy(origMatrixes[i], matrixes[i])
 		}
@@ -686,6 +746,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	}
 	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
+	preExecSize := ev.curSize
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
@@ -693,7 +754,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 			for si, series := range matrixes[i] {
 				for _, point := range series.Points {
 					if point.T == ts {
-						vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
+						sample := Sample{Metric: series.Metric, Point: point}
+						ev.incSize(sample.Size())
+						vectors[i] = append(vectors[i], sample)
 						// Move input vectors forward so we don't have to re-scan the same
 						// past points at the next step.
 						matrixes[i][si].Points = series.Points[1:]
@@ -706,13 +769,15 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// Make the function call.
 		enh.ts = ts
 		result := f(args, enh)
-		enh.out = result[:0] // Reuse result vector.
+		ev.curSize = preExecSize // Reset size to what it was before the function exec
+		enh.out = result[:0]     // Reuse result vector.
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
 			mat := make(Matrix, len(result))
 			for i, s := range result {
 				s.Point.T = ts
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
+				ev.incSize(mat[i].Size())
 			}
 			return mat
 		}
@@ -721,12 +786,15 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 			h := sample.Metric.Hash()
 			ss, ok := seriess[h]
 			if !ok {
+				ev.assertFreeSpace(PointSize*int64(numSteps) + sample.Size())
 				ss = Series{
 					Metric: sample.Metric,
 					Points: getPointSlice(numSteps),
 				}
+				ev.incSize(ss.Size())
 			}
 			sample.Point.T = ts
+			ev.incSize(PointSize)
 			ss.Points = append(ss.Points, sample.Point)
 			seriess[h] = ss
 		}
@@ -741,6 +809,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	mat := make(Matrix, 0, len(seriess))
 	for _, ss := range seriess {
 		mat = append(mat, ss)
+		ev.incSize(ss.Size())
 	}
 	return mat
 }
@@ -824,7 +893,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		var it *storage.BufferedSeriesIterator
 		for i, s := range sel.series {
 			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), selRange)
+				it = ev.newSizeLimitedBuffer(s.Iterator(), selRange)
 			} else {
 				it.Reset(s.Iterator())
 			}
@@ -859,6 +928,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				outVec := e.Func.Call(inArgs, e.Args, enh)
 				enh.out = outVec[:0]
 				if len(outVec) > 0 {
+					ev.incSize(PointSize)
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
 				}
 			}
@@ -932,7 +1002,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		var it *storage.BufferedSeriesIterator
 		for i, s := range e.series {
 			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
+				it = ev.newSizeLimitedBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
 			} else {
 				it.Reset(s.Iterator())
 			}
@@ -940,11 +1010,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 				Metric: e.series[i].Labels(),
 				Points: getPointSlice(numSteps),
 			}
+			ev.incSize(ss.Size())
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					ss.Points = append(ss.Points, Point{V: v, T: ts})
+					ev.incSize(PointSize)
 				}
 			}
 
@@ -966,6 +1038,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 // vectorSelector evaluates a *VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
+	// Make sure there is enough space to allocate the matrix var below
+	// The 8 bytes at the end is for the cap/len of the Matrix slice.
+	ev.assertFreeSpace(SampleSize*int64(len(node.series)) + int64(8))
 	var (
 		vec = make(Vector, 0, len(node.series))
 	)
@@ -973,19 +1048,26 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 	var it *storage.BufferedSeriesIterator
 	for i, s := range node.series {
 		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
+			it = ev.newSizeLimitedBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
 		} else {
+			// The underlying buffer isn't deallocated, so no need to adjust query size here.
 			it.Reset(s.Iterator())
 		}
 
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
-			vec = append(vec, Sample{
+			sample := Sample{
 				Metric: node.series[i].Labels(),
 				Point:  Point{V: v, T: t},
-			})
+			}
+			ev.incSize(sample.Size())
+			vec = append(vec, sample)
 		}
 
+	}
+	// Reduce the query size by the about-to-be-released BufferedSeriesIterator
+	if it != nil {
+		ev.incSize(SampleSize * int64(it.Capacity()) * -1)
 	}
 	return vec
 }
@@ -999,6 +1081,9 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.BufferedSeriesIterator, no
 	ok := it.Seek(refTime)
 	if !ok {
 		if it.Err() != nil {
+			if it.Err() == storage.ErrBufferOversize {
+				ev.error(ErrQueryTooBig(ev.sizeLimit))
+			}
 			ev.error(it.Err())
 		}
 	}
@@ -1033,8 +1118,28 @@ func putPointSlice(p []Point) {
 	pointPool.Put(p[:0])
 }
 
+// newSizeLimitedBuffer is a helper function to call storage.NewBuffer with the appropriate maxSize
+// based on the current and maximum query size.
+func (ev *evaluator) newSizeLimitedBuffer(it storage.SeriesIterator, delta int64) *storage.BufferedSeriesIterator {
+	// Set an upper limit on how big the underlying buffer can get.
+	// This mitigates the query size limit case where expanding a series
+	// into the buffer takes significant memory before returning
+	// control to the evaluator where size can again be asserted.
+	maxSize := -1
+	if ev.sizeLimit > -1 {
+		maxSize = int((ev.sizeLimit - ev.curSize) / SampleSize)
+	}
+	limitedIter := storage.NewBuffer(it, delta, maxSize)
+	ev.incSize(SampleSize * int64(limitedIter.Capacity()))
+	return limitedIter
+}
+
 // matrixSelector evaluates a *MatrixSelector expression.
 func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
+	// Make sure there is enough space to allocate the matrix var below
+	// The 8 bytes at the end is for the cap/len of the Matrix slice.
+	ev.assertFreeSpace(Series{}.Size()*int64(len(node.series)) + int64(8))
+	ev.assertFreeSpace(PointSize*int64(len(node.series)) + int64(8))
 	var (
 		offset = durationMilliseconds(node.Offset)
 		maxt   = ev.startTimestamp - offset
@@ -1048,8 +1153,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 			ev.error(err)
 		}
 		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
+			it = ev.newSizeLimitedBuffer(s.Iterator(), durationMilliseconds(node.Range))
 		} else {
+			// The underlying buffer isn't deallocated, so no need to adjust query size here.
 			it.Reset(s.Iterator())
 		}
 		ss := Series{
@@ -1058,30 +1164,51 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
 
+		// Adjust size consumed to more accurately reflect the series inclusive of labels.
+		// If we don't remove the size of the Points that were added inside of matrixIterSlice
+		// here then they will be double-counted and might trigger a false size-exceeded error.
+		ev.incSize(int64(len(ss.Points)) * PointSize * -1)
+
 		if len(ss.Points) > 0 {
+			ev.incSize(ss.Size())
 			matrix = append(matrix, ss)
 		}
+	}
+	// Reduce the query size by the about-to-be-released BufferedSeriesIterator
+	if it != nil {
+		ev.incSize(SampleSize * int64(it.Capacity()) * -1)
 	}
 	return matrix
 }
 
 // matrixIterSlice evaluates a matrix vector for the iterator of one time series.
 func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Point) []Point {
+	prevBufSpace := it.Capacity()
+
 	ok := it.Seek(maxt)
 	if !ok {
 		if it.Err() != nil {
+			if it.Err() == storage.ErrBufferOversize {
+				ev.error(ErrQueryTooBig(ev.sizeLimit))
+			}
 			ev.error(it.Err())
 		}
 	}
 
 	buf := it.Buffer()
 	for buf.Next() {
+		// Adjust the estimated query size to account for the buffer.
+		if prevBufSpace != it.Capacity() {
+			ev.incSize(SampleSize * int64(it.Capacity()-prevBufSpace))
+		}
+
 		t, v := buf.At()
 		if value.IsStaleNaN(v) {
 			continue
 		}
 		// Values in the buffer are guaranteed to be smaller than maxt.
 		if t >= mint {
+			ev.incSize(PointSize)
 			out = append(out, Point{T: t, V: v})
 		}
 	}
@@ -1089,6 +1216,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	if ok {
 		t, v := it.Values()
 		if t == maxt && !value.IsStaleNaN(v) {
+			ev.incSize(PointSize)
 			out = append(out, Point{T: t, V: v})
 		}
 	}
@@ -1190,6 +1318,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 			// Many-to-many matching not allowed.
 			ev.errorf("many-to-many matching not allowed: matching labels must be unique on one side")
 		}
+		ev.incSize(8 + rs.Size())
 		rightSigs[sig] = rs
 	}
 
@@ -1236,6 +1365,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 			if exists {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
+			ev.incSize(8)
 			matchedSigs[sig] = nil // Set existence to true.
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
@@ -1245,17 +1375,21 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 
 			if !exists {
 				insertedSigs = map[uint64]struct{}{}
+				ev.incSize(8)
 				matchedSigs[sig] = insertedSigs
 			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
+			ev.incSize(8)
 			insertedSigs[insertSig] = struct{}{}
 		}
 
-		enh.out = append(enh.out, Sample{
+		sample := Sample{
 			Metric: metric,
 			Point:  Point{V: value},
-		})
+		}
+		ev.incSize(sample.Size())
+		enh.out = append(enh.out, sample)
 	}
 	return enh.out
 }
@@ -1356,8 +1490,29 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 	return ret
 }
 
+// incSize increases the current byte count of the evaluator and verifies it is below the query limit.
+func (ev *evaluator) incSize(count int64) {
+	ev.assertFreeSpace(count)
+	ev.curSize += count
+}
+
+// assertFreeSpace verifies that the the current query size plus the required additional space is less than the limit.
+func (ev *evaluator) assertFreeSpace(required int64) {
+	if !ev.hasFreeSpace(required) {
+		ev.error(ErrQueryTooBig(ev.sizeLimit))
+	}
+}
+
+// hasFreeSpace returns true if the current query size plus the requested additional space is less than the limit.
+func (ev *evaluator) hasFreeSpace(required int64) bool {
+	return ev.sizeLimit < 0 || ev.curSize+required <= ev.sizeLimit
+}
+
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
 func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
+	// Check size but don't increment until append below.
+	ev.assertFreeSpace(SampleSize * int64(len(lhs)))
+
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.V, rhs.V
 		// lhs always contains the Vector. If the original position was different
@@ -1379,6 +1534,7 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 			if shouldDropMetricName(op) || returnBool {
 				lhsSample.Metric = enh.dropMetricName(lhsSample.Metric)
 			}
+			ev.incSize(lhsSample.Size())
 			enh.out = append(enh.out, lhsSample)
 		}
 	}
@@ -1502,6 +1658,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 
+	var lastLabelBuilderSize int64
 	for _, s := range vec {
 		lb := labels.NewBuilder(s.Metric)
 
@@ -1512,6 +1669,13 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		if op == itemCountValues {
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
 		}
+
+		// Adjust the evaluator by the difference between the current and the (now unreferenced)
+		// previous label.Builder.
+		// Doing it here results in a slight delay in short-circuiting on an oversize query,
+		// but it requires iterating over all three slices in the label builder.
+		curLabelBuilderSize := lb.Size()
+		ev.incSize((lastLabelBuilderSize - curLabelBuilderSize) * -1)
 
 		var (
 			groupingKey uint64
@@ -1535,6 +1699,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				for _, l := range metric {
 					for _, n := range grouping {
 						if l.Name == n {
+							ev.incSize(int64(len(n) + len(l.Value)))
 							m = append(m, labels.Label{Name: n, Value: l.Value})
 							break
 						}
@@ -1548,23 +1713,26 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				valuesSquaredSum: s.V * s.V,
 				groupCount:       1,
 			}
+
+			sample := Sample{
+				Point:  Point{V: s.V},
+				Metric: s.Metric,
+			}
 			input_vec_len := int64(len(vec))
 			result_size := k
 			if k > input_vec_len {
 				result_size = input_vec_len
 			}
 			if op == itemTopK || op == itemQuantile {
+				ev.assertFreeSpace(SampleSize * result_size)
 				result[groupingKey].heap = make(vectorByValueHeap, 0, result_size)
-				heap.Push(&result[groupingKey].heap, &Sample{
-					Point:  Point{V: s.V},
-					Metric: s.Metric,
-				})
+				ev.incSize(sample.Size())
+				heap.Push(&result[groupingKey].heap, &sample)
 			} else if op == itemBottomK {
+				ev.assertFreeSpace(SampleSize * result_size)
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, result_size)
-				heap.Push(&result[groupingKey].reverseHeap, &Sample{
-					Point:  Point{V: s.V},
-					Metric: s.Metric,
-				})
+				ev.incSize(sample.Size())
+				heap.Push(&result[groupingKey].reverseHeap, &sample)
 			}
 			continue
 		}
@@ -1595,29 +1763,35 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.valuesSquaredSum += s.V * s.V
 			group.groupCount++
 
-		case itemTopK:
-			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
-				if int64(len(group.heap)) == k {
-					heap.Pop(&group.heap)
-				}
-				heap.Push(&group.heap, &Sample{
-					Point:  Point{V: s.V},
-					Metric: s.Metric,
-				})
+		case itemTopK, itemBottomK:
+			sample := Sample{
+				Point:  Point{V: s.V},
+				Metric: s.Metric,
 			}
-
-		case itemBottomK:
-			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
-				if int64(len(group.reverseHeap)) == k {
-					heap.Pop(&group.reverseHeap)
+			switch op {
+			case itemTopK:
+				if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(float64(group.heap[0].V)) {
+					if int64(len(group.heap)) == k {
+						oldSample := heap.Pop(&group.heap).(Sample)
+						ev.incSize(oldSample.Size() * -1)
+					}
+					ev.incSize(sample.Size())
+					heap.Push(&group.heap, &sample)
 				}
-				heap.Push(&group.reverseHeap, &Sample{
-					Point:  Point{V: s.V},
-					Metric: s.Metric,
-				})
+
+			case itemBottomK:
+				if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(float64(group.reverseHeap[0].V)) {
+					if int64(len(group.reverseHeap)) == k {
+						oldSample := heap.Pop(&group.reverseHeap).(Sample)
+						ev.incSize(oldSample.Size() * -1)
+					}
+					ev.incSize(sample.Size())
+					heap.Push(&group.reverseHeap, &sample)
+				}
 			}
 
 		case itemQuantile:
+			ev.incSize(s.Size())
 			group.heap = append(group.heap, s)
 
 		default:
@@ -1626,6 +1800,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	}
 
 	// Construct the result Vector from the aggregated groups.
+	ev.assertFreeSpace(SampleSize * int64(len(result)))
 	for _, aggr := range result {
 		switch op {
 		case itemAvg:
@@ -1646,10 +1821,12 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
-				enh.out = append(enh.out, Sample{
+				sample := Sample{
 					Metric: v.Metric,
 					Point:  Point{V: v.V},
-				})
+				}
+				ev.incSize(sample.Size())
+				enh.out = append(enh.out, sample)
 			}
 			continue // Bypass default append.
 
@@ -1657,10 +1834,12 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
-				enh.out = append(enh.out, Sample{
+				sample := Sample{
 					Metric: v.Metric,
 					Point:  Point{V: v.V},
-				})
+				}
+				ev.incSize(sample.Size())
+				enh.out = append(enh.out, sample)
 			}
 			continue // Bypass default append.
 
@@ -1671,10 +1850,12 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			// For other aggregations, we already have the right value.
 		}
 
-		enh.out = append(enh.out, Sample{
+		sample := Sample{
 			Metric: aggr.labels,
 			Point:  Point{V: aggr.value},
-		})
+		}
+		ev.incSize(sample.Size())
+		enh.out = append(enh.out, sample)
 	}
 	return enh.out
 }

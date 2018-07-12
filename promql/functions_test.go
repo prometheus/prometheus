@@ -29,7 +29,7 @@ func TestDeriv(t *testing.T) {
 	// so we test it by hand.
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := NewEngine(nil, nil, 10, 10*time.Second)
+	engine := NewEngine(nil, nil, 10, 10*time.Second, -1)
 
 	a, err := storage.Appender()
 	testutil.Ok(t, err)

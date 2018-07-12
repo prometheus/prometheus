@@ -24,38 +24,60 @@ import (
 
 func TestSampleRing(t *testing.T) {
 	cases := []struct {
-		input []int64
-		delta int64
-		size  int
+		input    []int64
+		delta    int64
+		size     int
+		max      int
+		expected bool
 	}{
+		// Max size not exceeded
 		{
-			input: []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-			delta: 2,
-			size:  1,
+			input:    []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			delta:    2,
+			size:     1,
+			max:      -1,
+			expected: true,
 		},
 		{
-			input: []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-			delta: 2,
-			size:  2,
+			input:    []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			delta:    2,
+			size:     2,
+			max:      -1,
+			expected: true,
 		},
 		{
-			input: []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-			delta: 7,
-			size:  3,
+			input:    []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			delta:    7,
+			size:     3,
+			max:      -1,
+			expected: true,
 		},
 		{
-			input: []int64{1, 2, 3, 4, 5, 16, 17, 18, 19, 20},
-			delta: 7,
-			size:  1,
+			input:    []int64{1, 2, 3, 4, 5, 16, 17, 18, 19, 20},
+			delta:    7,
+			size:     1,
+			max:      -1,
+			expected: true,
 		},
 		{
-			input: []int64{1, 2, 3, 4, 6},
-			delta: 4,
-			size:  4,
+			input:    []int64{1, 2, 3, 4, 6},
+			delta:    4,
+			size:     4,
+			max:      -1,
+			expected: true,
+		},
+
+		// Max size exceeded
+		{
+			input:    []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			delta:    2,
+			size:     1,
+			max:      1,
+			expected: false,
 		},
 	}
 	for _, c := range cases {
-		r := newSampleRing(c.delta, c.size)
+		r := newSampleRing(c.delta, c.size, c.max)
 
 		input := []sample{}
 		for _, t := range c.input {
@@ -65,8 +87,14 @@ func TestSampleRing(t *testing.T) {
 			})
 		}
 
+		addFailed := false
 		for i, s := range input {
-			r.add(s.t, s.v)
+			result := r.add(s.t, s.v)
+			if !result {
+				// The buffer couldn't grow, stop trying to add items and check the failure case
+				addFailed = true
+				break
+			}
 			buffered := r.samples()
 
 			for _, sold := range input[:i] {
@@ -84,6 +112,10 @@ func TestSampleRing(t *testing.T) {
 					t.Fatalf("%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
 				}
 			}
+		}
+
+		if !addFailed != c.expected {
+			t.Fatalf("expected buffer.add() to return %t, got %t", c.expected, !addFailed)
 		}
 	}
 }
@@ -115,7 +147,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		{t: 99, v: 8},
 		{t: 100, v: 9},
 		{t: 101, v: 10},
-	}), 2)
+	}), 2, -1)
 
 	require.True(t, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
@@ -142,6 +174,78 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	require.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
+func TestSizeLimitedBufferedSeriesIterator(t *testing.T) {
+	it := NewBuffer(newListSeriesIterator([]sample{
+		{t: 1, v: 2},
+		{t: 2, v: 3},
+		{t: 3, v: 4},
+		{t: 4, v: 5},
+		{t: 5, v: 6},
+		{t: 6, v: 6},
+		{t: 7, v: 6},
+		{t: 8, v: 6},
+		{t: 9, v: 6},
+		{t: 10, v: 6},
+		{t: 11, v: 6},
+		{t: 12, v: 6},
+		{t: 13, v: 6},
+		{t: 14, v: 6},
+		{t: 15, v: 6},
+		{t: 16, v: 6},
+		{t: 17, v: 6},
+		{t: 18, v: 6},
+	}), 4, 5)
+
+	cases := []struct {
+		seekTo    int64
+		nextCount int
+		expected  error
+	}{
+		// No error
+		{
+			seekTo:    1,
+			nextCount: 5,
+		},
+		{
+			seekTo:    5,
+			nextCount: 0,
+		},
+
+		// Oversize error.
+		{
+			seekTo:    1,
+			nextCount: 6,
+			expected:  ErrBufferOversize,
+		},
+		{
+			seekTo:    4,
+			nextCount: 3,
+			expected:  ErrBufferOversize,
+		},
+		{
+			seekTo:   18,
+			expected: ErrBufferOversize,
+		},
+	}
+
+	for _, c := range cases {
+		it.Reset(it.it)
+		if !it.Seek(c.seekTo) {
+			goto checkErr
+		}
+
+		for i := 0; i < c.nextCount; i++ {
+			if !it.Next() {
+				break
+			}
+		}
+	checkErr:
+		if c.expected != it.Err() {
+			t.Fatalf("bad error: expected %v, got %v", c.expected, it.Err())
+		}
+	}
+}
+
 // At() should not be called once Next() returns false.
 func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	done := false
@@ -157,7 +261,7 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 		err:  func() error { return nil },
 	}
 
-	it := NewBuffer(m, 60)
+	it := NewBuffer(m, 60, -1)
 	it.Next()
 	it.Next()
 }
@@ -177,7 +281,7 @@ func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	}
 
 	// Simulate a 5 minute rate.
-	it := NewBuffer(newListSeriesIterator(samples), 5*60)
+	it := NewBuffer(newListSeriesIterator(samples), 5*60, -1)
 
 	b.SetBytes(int64(b.N * 16))
 	b.ReportAllocs()

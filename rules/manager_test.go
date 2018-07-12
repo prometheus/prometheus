@@ -165,7 +165,7 @@ func TestAlertingRule(t *testing.T) {
 func TestStaleness(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second, -1)
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Appendable: storage,

@@ -89,6 +89,19 @@ func (s Series) String() string {
 	return fmt.Sprintf("%s =>\n%s", s.Metric, strings.Join(vals, "\n"))
 }
 
+// Size returns the size of the Series in bytes.
+func (s Series) Size() int64 {
+	size := int64(16) // 4 bytes for each of cap and len for both Metric and Points
+	for _, labelVal := range s.Metric {
+		size += int64(len(labelVal.Name) + len(labelVal.Value))
+	}
+	return size + PointSize*int64(len(s.Points))
+}
+
+// PointSize is the size of a Point in bytes.
+// Hardcode instead of using reflect.
+const PointSize = int64(16)
+
 // Point represents a single data point for a given timestamp.
 type Point struct {
 	T int64
@@ -105,6 +118,12 @@ func (p Point) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
 }
+
+// SampleSize is the size of an empty Sample in bytes.
+// Hardcode instead of using reflect:
+//     - 16 bytes for Point (1x int64, 1x float64)
+//     - 16 bytes for Metric (which is labels.Labels which is []label.Label)
+const SampleSize = PointSize + int64(16)
 
 // Sample is a single sample belonging to a metric.
 type Sample struct {
@@ -128,9 +147,27 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v)
 }
 
+// Size returns the size of the sample in bytes.
+func (s Sample) Size() int64 {
+	size := SampleSize
+	for _, labelVal := range s.Metric {
+		size += int64(len(labelVal.Name) + len(labelVal.Value))
+	}
+	return size
+}
+
 // Vector is basically only an alias for model.Samples, but the
 // contract is that in a Vector, all Samples have the same timestamp.
 type Vector []Sample
+
+// Size returns the size of the Vector in bytes.
+func (vec Vector) Size() int64 {
+	var size int64
+	for i := range vec {
+		size += vec[i].Size()
+	}
+	return size
+}
 
 func (vec Vector) String() string {
 	entries := make([]string, len(vec))
@@ -143,6 +180,15 @@ func (vec Vector) String() string {
 // Matrix is a slice of Seriess that implements sort.Interface and
 // has a String method.
 type Matrix []Series
+
+// Size returns the size of the Matrix in bytes.
+func (m Matrix) Size() int64 {
+	var size int64
+	for i := range m {
+		size += m[i].Size()
+	}
+	return size
+}
 
 func (m Matrix) String() string {
 	// TODO(fabxc): sort, or can we rely on order from the querier?
