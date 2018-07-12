@@ -451,7 +451,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) bool {
+	Inspect(s.Expr, func(node Node, _ []Node) error {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
@@ -468,7 +468,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				maxOffset = n.Offset + n.Range
 			}
 		}
-		return true
+		return nil
 	})
 
 	mint := s.Start.Add(-maxOffset)
@@ -478,7 +478,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
-	Inspect(s.Expr, func(node Node, path []Node) bool {
+	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
 			Step: int64(s.Interval / time.Millisecond),
@@ -491,13 +491,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
+				return err
 			}
-			n.series, err = expandSeriesSet(set)
+			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				return err
 			}
 
 		case *MatrixSelector:
@@ -506,15 +506,15 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
+				return err
 			}
-			n.series, err = expandSeriesSet(set)
+			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				return err
 			}
 		}
-		return true
+		return nil
 	})
 	return querier, err
 }
@@ -538,8 +538,13 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
+func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, err error) {
 	for it.Next() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		res = append(res, it.At())
 	}
 	return res, it.Err()
@@ -1039,6 +1044,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 	var it *storage.BufferedSeriesIterator
 	for i, s := range node.series {
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
 		if it == nil {
 			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
 		} else {
