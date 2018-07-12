@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -57,6 +58,9 @@ const (
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
+
+	// Maximum bytes to read in remote response
+	maxRemoteReadBytes = 10 * 1024 * 1024
 )
 
 var (
@@ -339,7 +343,7 @@ func fetchApps(client *http.Client, url string) (*AppList, error) {
 		return nil, fmt.Errorf("Non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, maxRemoteReadBytes))
 	if err != nil {
 		return nil, err
 	}

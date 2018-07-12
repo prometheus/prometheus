@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -39,6 +40,7 @@ const (
 	tritonLabelMachineImage = tritonLabel + "machine_image"
 	tritonLabelServerID     = tritonLabel + "server_id"
 	namespace               = "prometheus"
+	maxRemoteReadBytes      = 10 * 1024 * 1024
 )
 
 var (
@@ -198,7 +200,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 	defer resp.Body.Close()
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := ioutil.ReadAll(io.LimitReader(resp.Body, maxRemoteReadBytes))
 	if err != nil {
 		return tg, fmt.Errorf("an error occurred when reading the response body. %s", err)
 	}
