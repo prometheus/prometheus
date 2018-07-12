@@ -108,7 +108,7 @@ type SDConfig struct {
 	// See https://www.consul.io/api/catalog.html#list-services
 	// The list of services for which targets are discovered.
 	// Defaults to all services if empty.
-	Services []string `yaml:"services"`
+	Services []string `yaml:"services,omitempty"`
 	// An optional tag used to filter instances inside a service. A single tag is supported
 	// here to match the Consul API.
 	ServiceTag string `yaml:"tag,omitempty"`
