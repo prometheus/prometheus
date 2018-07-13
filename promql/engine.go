@@ -224,8 +224,9 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 		reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
-			metrics.queryInnerEval,
+			metrics.queryQueueTime,
 			metrics.queryPrepareTime,
+			metrics.queryInnerEval,
 			metrics.queryResultSort,
 		)
 	}
