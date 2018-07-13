@@ -16,6 +16,9 @@ package file
 import (
 	"context"
 	"io"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,6 +40,85 @@ func TestFileSD(t *testing.T) {
 	testFileSD(t, "valid", ".json", true)
 	testFileSD(t, "invalid_nil", ".json", false)
 	testFileSD(t, "invalid_nil", ".yml", false)
+}
+
+func TestURLFileSD(t *testing.T) {
+	testURLFileSD(t, "valid", ".yml", true)
+	testURLFileSD(t, "valid", ".json", true)
+	testURLFileSD(t, "invalid_nil", ".json", false)
+	testURLFileSD(t, "invalid_nil", ".yml", false)
+}
+
+func testURLFileSD(t *testing.T, prefix, ext string, expect bool) {
+	// Simulate an HTTP response from the webserver
+	respHandler := func(w http.ResponseWriter, r *http.Request) {
+		fname := filepath.Join(testDir, prefix+ext)
+		fd, err := os.Open(fname)
+		if err != nil {
+			t.Fatalf("Failed to open test config file %v", fname)
+		}
+		content, err := ioutil.ReadAll(fd)
+		if err != nil {
+			t.Fatalf("Failed to read test config file %v", fname)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, string(content[:]))
+	}
+	// Create a test server with mock HTTP handler.
+	ts := httptest.NewServer(http.HandlerFunc(respHandler))
+	ts.URL = ts.URL + "/" + prefix + ext
+	defer ts.Close()
+
+	// Since we are not parsing a config file, we directly
+	// insert the Url into conf.Urls instead of adding to conf.Files
+	var conf SDConfig
+	conf.Urls = []string{ts.URL}
+	conf.RefreshInterval = model.Duration(500 * time.Millisecond)
+
+	var (
+		fsd         = NewDiscovery(&conf, nil)
+		ch          = make(chan []*targetgroup.Group)
+		ctx, cancel = context.WithCancel(context.Background())
+	)
+	go fsd.Run(ctx, ch)
+
+	timeout := time.After(2 * time.Second)
+retry:
+	for {
+		select {
+		case <-timeout:
+			if expect {
+				t.Fatalf("Expected new target group but got none")
+			} else {
+				// Invalid type fsd should always break down.
+				break retry
+			}
+		case tgs := <-ch:
+			if !expect {
+				t.Fatalf("Unexpected target groups %s, we expected a failure here.", tgs)
+			}
+
+			if len(tgs) != 2 {
+				continue retry // Potentially a partial write, just retry.
+			}
+			tg := tgs[0]
+
+			if _, ok := tg.Labels["foo"]; !ok {
+				t.Fatalf("Label not parsed")
+			}
+			if tg.String() != ts.URL+":0" {
+				t.Fatalf("Unexpected target group %s", tg)
+			}
+
+			tg = tgs[1]
+			if tg.String() != ts.URL+":1" {
+				t.Fatalf("Unexpected target groups %s", tg)
+			}
+			break retry
+		}
+	}
+	cancel()
 }
 
 func testFileSD(t *testing.T, prefix, ext string, expect bool) {
