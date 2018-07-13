@@ -451,15 +451,20 @@ support for filtering instances.
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
 instances.
 
+One of the following `<openstack_role>` types can be configured to discover targets:
+
+#### `hypervisor`
+
+The `hypervisor` role discovers one target per Nova hypervisor node. The target
+address defaults to the `host_ip` attribute of the hypervisor.
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_openstack_instance_id`: the OpenStack instance ID.
-* `__meta_openstack_instance_name`: the OpenStack instance name.
-* `__meta_openstack_instance_status`: the status of the OpenStack instance.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
-* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
+* `__meta_openstack_hypervisor_name`: the hypervisor node's name.
+* `__meta_openstack_hypervisor_state`: the hypervisor node's state.
+* `__meta_openstack_hypervisor_status`: the hypervisor node's status.
+* `__meta_openstack_hypervisor_type`: the hypervisor node's type.
 
 #### `instance`
 
@@ -482,7 +487,7 @@ See below for the configuration options for OpenStack discovery:
 # The information to access the OpenStack API.
 
 # The OpenStack role of entities that should be discovered.
-role: <role>
+role: <openstack_role>
 
 # The OpenStack Region.
 region: <string>
