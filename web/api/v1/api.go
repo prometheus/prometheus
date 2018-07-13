@@ -824,9 +824,6 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 }
 
 func (api *API) respond(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
@@ -834,8 +831,12 @@ func (api *API) respond(w http.ResponseWriter, data interface{}) {
 	})
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "n", n, "err", err)
 	}
