@@ -70,7 +70,7 @@ var (
 		Help: "Timestamp of the last successful configuration reload.",
 	})
 	oldestTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_oldest_timestamp_seconds",
+		Name: "prometheus_tsdb_start_time_seconds",
 		Help: "Oldest timestamp stored in the database.",
 	})
 )
