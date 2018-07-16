@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +38,7 @@ import (
 
 var (
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
+	patURLSDName  = regexp.MustCompile(`^http[s]?://[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 
 	// DefaultSDConfig is the default file SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -47,6 +49,7 @@ var (
 // SDConfig is the configuration for file based discovery.
 type SDConfig struct {
 	Files           []string       `yaml:"files"`
+	Urls            []string       `yaml:"urls,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
@@ -66,6 +69,17 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
+
+	// Separate out files and urls to avoid fsnotify looking at urls
+	var actualFiles []string
+	for _, name := range c.Files {
+		if patURLSDName.MatchString(name) {
+			c.Urls = append(c.Urls, name)
+		} else {
+			actualFiles = append(actualFiles, name)
+		}
+	}
+	c.Files = actualFiles
 	return nil
 }
 
@@ -156,6 +170,7 @@ func init() {
 // happens using file watches and periodic refreshes.
 type Discovery struct {
 	paths      []string
+	urls       []string
 	watcher    *fsnotify.Watcher
 	interval   time.Duration
 	timestamps map[string]float64
@@ -176,6 +191,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 
 	disc := &Discovery{
 		paths:      conf.Files,
+		urls:       conf.Urls,
 		interval:   time.Duration(conf.RefreshInterval),
 		timestamps: make(map[string]float64),
 		logger:     logger,
@@ -184,9 +200,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	return disc
 }
 
-// listFiles returns a list of all files that match the configured patterns.
-func (d *Discovery) listFiles() []string {
+// listFiles returns a list of all locations, both files and urls, which match
+// the configured patterns. Patterns don't apply to urls.
+func (d *Discovery) listLocations() []string {
 	var paths []string
+	// add urls as they need no globbing
+	paths = append(paths, d.urls...)
+
 	for _, p := range d.paths {
 		files, err := filepath.Glob(p)
 		if err != nil {
@@ -313,8 +333,9 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		fileSDScanDuration.Observe(time.Since(t0).Seconds())
 	}()
 	ref := map[string]int{}
-	for _, p := range d.listFiles() {
-		tgroups, err := d.readFile(p)
+	// Process all Files
+	for _, p := range d.listLocations() {
+		tgroups, err := d.readFileOrURL(p)
 		if err != nil {
 			fileSDReadErrorsCount.Inc()
 
@@ -331,6 +352,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 
 		ref[p] = len(tgroups)
 	}
+
 	// Send empty updates for sources that disappeared.
 	for f, n := range d.lastRefresh {
 		m, ok := ref[f]
@@ -351,34 +373,59 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 	d.watchFiles()
 }
 
-// readFile reads a JSON or YAML list of targets groups from the file, depending on its
-// file extension. It returns full configuration target groups.
-func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
-	fd, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer fd.Close()
+// readFileOrURL reads a JSON or YAML list of targets groups from a file or URL,
+// depending on its file extension. It returns full configuration target groups.
+func (d *Discovery) readFileOrURL(filename string) ([]*targetgroup.Group, error) {
+	// match against url regex.
+	//  if yes, assume url
+	//  if no, assume file
+	isURL := patURLSDName.MatchString(filename)
+	var modTime float64
+	var content []byte
 
-	content, err := ioutil.ReadAll(fd)
-	if err != nil {
-		return nil, err
-	}
+	if isURL {
+		// Reading URL
+		resp, err := http.Get(filename)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
 
-	info, err := fd.Stat()
-	if err != nil {
-		return nil, err
+		modTime = float64(time.Now().UTC().Unix())
+
+		content, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Reading file
+		fd, err := os.Open(filename)
+		if err != nil {
+			return nil, err
+		}
+		defer fd.Close()
+
+		info, err := fd.Stat()
+		if err != nil {
+			return nil, err
+		}
+		modTime = float64(info.ModTime().Unix())
+
+		content, err = ioutil.ReadAll(fd)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var targetGroups []*targetgroup.Group
-
+	var err error
 	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
 	case ".json":
-		if err := json.Unmarshal(content, &targetGroups); err != nil {
+		if err = json.Unmarshal(content, &targetGroups); err != nil {
 			return nil, err
 		}
 	case ".yml", ".yaml":
-		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+		if err = yaml.UnmarshalStrict(content, &targetGroups); err != nil {
 			return nil, err
 		}
 	default:
@@ -398,7 +445,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 		tg.Labels[fileSDFilepathLabel] = model.LabelValue(filename)
 	}
 
-	d.writeTimestamp(filename, float64(info.ModTime().Unix()))
+	d.writeTimestamp(filename, modTime)
 
 	return targetGroups, nil
 }
