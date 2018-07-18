@@ -416,6 +416,9 @@ See below for the configuration options for EC2 discovery:
 # The AWS Region.
 region: <string>
 
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
 # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
 # and `AWS_SECRET_ACCESS_KEY` are used.
 [ access_key: <string> ]
