@@ -13,7 +13,11 @@
 
 package storage
 
-import "github.com/prometheus/prometheus/pkg/labels"
+import (
+	"math"
+
+	"github.com/prometheus/prometheus/pkg/labels"
+)
 
 type noopQuerier struct{}
 
@@ -50,5 +54,26 @@ func (noopSeriesSet) At() Series {
 }
 
 func (noopSeriesSet) Err() error {
+	return nil
+}
+
+type noopSeriesIterator struct{}
+
+// NoopSeriesIt is a SeriesIterator that does nothing.
+var NoopSeriesIt = noopSeriesIterator{}
+
+func (noopSeriesIterator) At() (int64, float64) {
+	return math.MinInt64, 0
+}
+
+func (noopSeriesIterator) Seek(t int64) bool {
+	return false
+}
+
+func (noopSeriesIterator) Next() bool {
+	return false
+}
+
+func (noopSeriesIterator) Err() error {
 	return nil
 }

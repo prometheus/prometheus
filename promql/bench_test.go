@@ -60,7 +60,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
 
-	for s := 0; s < numIntervals; s += 1 {
+	for s := 0; s < numIntervals; s++ {
 		a, err := storage.Appender()
 		if err != nil {
 			b.Fatal(err)
@@ -135,8 +135,21 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
 		},
+		// Simple aggregations.
 		{
-			expr: "max_over_time(a_X[10s])",
+			expr: "sum(a_X)",
+		},
+		{
+			expr: "sum without (l)(h_X)",
+		},
+		{
+			expr: "sum without (le)(h_X)",
+		},
+		{
+			expr: "sum by (l)(h_X)",
+		},
+		{
+			expr: "sum by (le)(h_X)",
 		},
 		// Combinations.
 		{

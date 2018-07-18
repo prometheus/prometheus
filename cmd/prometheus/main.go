@@ -472,7 +472,9 @@ func main() {
 
 			},
 			func(err error) {
-				close(cancel)
+				// Wait for any in-progress reloads to complete to avoid
+				// reloading things after they have been shutdown.
+				cancel <- struct{}{}
 			},
 		)
 	}
@@ -502,6 +504,23 @@ func main() {
 				return nil
 			},
 			func(err error) {
+				close(cancel)
+			},
+		)
+	}
+	{
+		// Rule manager.
+		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				ruleManager.Run()
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				ruleManager.Stop()
 				close(cancel)
 			},
 		)
@@ -547,27 +566,7 @@ func main() {
 				return nil
 			},
 			func(err error) {
-				// Keep this interrupt before the ruleManager.Stop().
-				// Shutting down the query engine before the rule manager will cause pending queries
-				// to be canceled and ensures a quick shutdown of the rule manager.
 				cancelWeb()
-			},
-		)
-	}
-	{
-		// Rule manager.
-
-		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
-		g.Add(
-			func() error {
-				ruleManager.Run()
-				<-cancel
-				return nil
-			},
-			func(err error) {
-				ruleManager.Stop()
-				close(cancel)
 			},
 		)
 	}
@@ -627,6 +626,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%s)", filename)
 	}
+	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
 

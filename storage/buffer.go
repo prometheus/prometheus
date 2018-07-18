@@ -27,9 +27,16 @@ type BufferedSeriesIterator struct {
 	ok       bool
 }
 
-// NewBuffer returns a new iterator that buffers the values within the time
-// range of the current element and the duration of delta before.
-func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
+// NewBuffer returns a new iterator that buffers the values within the time range
+// of the current element and the duration of delta before, initialized with an
+// empty iterator. Use Reset() to set an actual iterator to be buffered.
+func NewBuffer(delta int64) *BufferedSeriesIterator {
+	return NewBufferIterator(&NoopSeriesIt, delta)
+}
+
+// NewBufferIterator returns a new iterator that buffers the values within the
+// time range of the current element and the duration of delta before.
+func NewBufferIterator(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
 		buf:   newSampleRing(delta, 16),
 		delta: delta,
