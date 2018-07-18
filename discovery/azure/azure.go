@@ -242,9 +242,9 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		return tg, fmt.Errorf("could not get virtual machines: %s", err)
 	}
 
-	level.Debug(d.logger).Log("Found %d virtual machines during Azure discovery.", len(machines))
+	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
 
-	// Load the vms managed by scale sets
+	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets()
 	if err != nil {
 		return tg, fmt.Errorf("could not get virtual machine scale sets: %s", err)
@@ -346,7 +346,8 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	return tg, nil
 }
 
-func (client *azureClient) getVMs() (vms []virtualMachine, err error) {
+func (client *azureClient) getVMs() ([]virtualMachine, error) {
+	vms := []virtualMachine{}
 	result, err := client.vm.ListAll()
 	if err != nil {
 		return vms, fmt.Errorf("could not list virtual machines: %s", err)
@@ -368,10 +369,11 @@ func (client *azureClient) getVMs() (vms []virtualMachine, err error) {
 		}
 	}
 
-	return
+	return vms, nil
 }
 
-func (client *azureClient) getScaleSets() (scaleSets []compute.VirtualMachineScaleSet, err error) {
+func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, error) {
+	scaleSets := []compute.VirtualMachineScaleSet{}
 	result, err := client.vmss.ListAll()
 	if err != nil {
 		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
@@ -386,10 +388,11 @@ func (client *azureClient) getScaleSets() (scaleSets []compute.VirtualMachineSca
 		scaleSets = append(scaleSets, *result.Value...)
 	}
 
-	return
+	return scaleSets, nil
 }
 
-func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) (vms []virtualMachine, err error) {
+func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
+	vms := []virtualMachine{}
 	//TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
 
@@ -417,7 +420,7 @@ func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleS
 		}
 	}
 
-	return
+	return vms, nil
 }
 
 func mapFromVM(vm *compute.VirtualMachine) virtualMachine {
@@ -430,7 +433,8 @@ func mapFromVMScaleSetVM(vm *compute.VirtualMachineScaleSetVM, scaleSetName *str
 	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, &osType, scaleSetName, vm.Tags, vm.Properties.NetworkProfile}
 }
 
-func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (result network.Interface, err error) {
+func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (network.Interface, error) {
+	result := network.Interface{}
 	queryParameters := map[string]interface{}{
 		"api-version": client.nic.APIVersion,
 	}
@@ -455,5 +459,6 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (r
 	if err != nil {
 		err = autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
 	}
-	return
+
+	return result, nil
 }
