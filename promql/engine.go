@@ -224,8 +224,9 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 		reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
-			metrics.queryInnerEval,
+			metrics.queryQueueTime,
 			metrics.queryPrepareTime,
+			metrics.queryInnerEval,
 			metrics.queryResultSort,
 		)
 	}
@@ -481,12 +482,19 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
-			Step: int64(s.Interval / time.Millisecond),
+			Start: timestamp.FromTime(s.Start.Add(-LookbackDelta)),
+			End:   timestamp.FromTime(s.End),
+			Step:  int64(s.Interval / time.Millisecond),
 		}
 
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Func = extractFuncFromPath(path)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				params.Start = params.Start - offsetMilliseconds
+				params.End = params.End - offsetMilliseconds
+			}
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
@@ -502,6 +510,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			// For all matrix queries we want to ensure that we have (end-start) + range selected
+			// this way we have `range` data before the start time
+			params.Start = params.Start - durationMilliseconds(n.Range)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				params.Start = params.Start - offsetMilliseconds
+				params.End = params.End - offsetMilliseconds
+			}
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
@@ -597,7 +613,7 @@ func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	return ev.eval(expr), nil
 }
 
-// Extra information and caches for evaluating a single node across steps.
+// EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
 type EvalNodeHelper struct {
 	// Evaluation timestamp.
 	ts int64
@@ -821,13 +837,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
-		var it *storage.BufferedSeriesIterator
+		it := storage.NewBuffer(selRange)
 		for i, s := range sel.series {
-			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), selRange)
-			} else {
-				it.Reset(s.Iterator())
-			}
+			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
@@ -929,13 +941,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *VectorSelector:
 		mat := make(Matrix, 0, len(e.series))
-		var it *storage.BufferedSeriesIterator
+		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
-			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-			} else {
-				it.Reset(s.Iterator())
-			}
+			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.series[i].Labels(),
 				Points: getPointSlice(numSteps),
@@ -970,13 +978,9 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 		vec = make(Vector, 0, len(node.series))
 	)
 
-	var it *storage.BufferedSeriesIterator
+	it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 	for i, s := range node.series {
-		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-		} else {
-			it.Reset(s.Iterator())
-		}
+		it.Reset(s.Iterator())
 
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
@@ -1042,16 +1046,12 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		matrix = make(Matrix, 0, len(node.series))
 	)
 
-	var it *storage.BufferedSeriesIterator
+	it := storage.NewBuffer(durationMilliseconds(node.Range))
 	for i, s := range node.series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
-		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
-		} else {
-			it.Reset(s.Iterator())
-		}
+		it.Reset(s.Iterator())
 		ss := Series{
 			Metric: node.series[i].Labels(),
 		}
@@ -1060,6 +1060,8 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
+		} else {
+			putPointSlice(ss.Points)
 		}
 	}
 	return matrix
@@ -1260,39 +1262,6 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	return enh.out
 }
 
-func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(lset))
-
-Outer:
-	for _, l := range lset {
-		for _, n := range names {
-			if n == l.Name {
-				continue Outer
-			}
-		}
-		if l.Name == labels.MetricName {
-			continue
-		}
-		cm = append(cm, l)
-	}
-
-	return cm.Hash()
-}
-
-func hashForLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(names))
-
-	for _, l := range lset {
-		for _, n := range names {
-			if l.Name == n {
-				cm = append(cm, l)
-				break
-			}
-		}
-	}
-	return cm.Hash()
-}
-
 // signatureFunc returns a function that calculates the signature for a metric
 // ignoring the provided labels. If on, then the given labels are only used instead.
 func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
@@ -1300,9 +1269,9 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	// of labels by names to speed up the operations below.
 	// Alternatively, inline the hashing and don't build new label sets.
 	if on {
-		return func(lset labels.Labels) uint64 { return hashForLabels(lset, names...) }
+		return func(lset labels.Labels) uint64 { return lset.HashForLabels(names...) }
 	}
-	return func(lset labels.Labels) uint64 { return hashWithoutLabels(lset, names...) }
+	return func(lset labels.Labels) uint64 { return lset.HashWithoutLabels(names...) }
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -1503,24 +1472,21 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	}
 
 	for _, s := range vec {
-		lb := labels.NewBuilder(s.Metric)
+		metric := s.Metric
 
-		if without {
-			lb.Del(grouping...)
-			lb.Del(labels.MetricName)
-		}
 		if op == itemCountValues {
+			lb := labels.NewBuilder(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
+			metric = lb.Labels()
 		}
 
 		var (
 			groupingKey uint64
-			metric      = lb.Labels()
 		)
 		if without {
-			groupingKey = metric.Hash()
+			groupingKey = metric.HashWithoutLabels(grouping...)
 		} else {
-			groupingKey = hashForLabels(metric, grouping...)
+			groupingKey = metric.HashForLabels(grouping...)
 		}
 
 		group, ok := result[groupingKey]
@@ -1529,13 +1495,16 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			var m labels.Labels
 
 			if without {
-				m = metric
+				lb := labels.NewBuilder(metric)
+				lb.Del(grouping...)
+				lb.Del(labels.MetricName)
+				m = lb.Labels()
 			} else {
 				m = make(labels.Labels, 0, len(grouping))
 				for _, l := range metric {
 					for _, n := range grouping {
 						if l.Name == n {
-							m = append(m, labels.Label{Name: n, Value: l.Value})
+							m = append(m, l)
 							break
 						}
 					}
@@ -1548,19 +1517,19 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				valuesSquaredSum: s.V * s.V,
 				groupCount:       1,
 			}
-			input_vec_len := int64(len(vec))
-			result_size := k
-			if k > input_vec_len {
-				result_size = input_vec_len
+			inputVecLen := int64(len(vec))
+			resultSize := k
+			if k > inputVecLen {
+				resultSize = inputVecLen
 			}
 			if op == itemTopK || op == itemQuantile {
-				result[groupingKey].heap = make(vectorByValueHeap, 0, result_size)
+				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			} else if op == itemBottomK {
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, result_size)
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,

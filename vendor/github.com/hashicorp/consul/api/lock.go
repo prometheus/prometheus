@@ -143,22 +143,23 @@ func (l *Lock) Lock(stopCh <-chan struct{}) (<-chan struct{}, error) {
 	// Check if we need to create a session first
 	l.lockSession = l.opts.Session
 	if l.lockSession == "" {
-		if s, err := l.createSession(); err != nil {
+		s, err := l.createSession()
+		if err != nil {
 			return nil, fmt.Errorf("failed to create session: %v", err)
-		} else {
-			l.sessionRenew = make(chan struct{})
-			l.lockSession = s
-			session := l.c.Session()
-			go session.RenewPeriodic(l.opts.SessionTTL, s, nil, l.sessionRenew)
-
-			// If we fail to acquire the lock, cleanup the session
-			defer func() {
-				if !l.isHeld {
-					close(l.sessionRenew)
-					l.sessionRenew = nil
-				}
-			}()
 		}
+
+		l.sessionRenew = make(chan struct{})
+		l.lockSession = s
+		session := l.c.Session()
+		go session.RenewPeriodic(l.opts.SessionTTL, s, nil, l.sessionRenew)
+
+		// If we fail to acquire the lock, cleanup the session
+		defer func() {
+			if !l.isHeld {
+				close(l.sessionRenew)
+				l.sessionRenew = nil
+			}
+		}()
 	}
 
 	// Setup the query options
@@ -179,7 +180,7 @@ WAIT:
 
 	// Handle the one-shot mode.
 	if l.opts.LockTryOnce && attempts > 0 {
-		elapsed := time.Now().Sub(start)
+		elapsed := time.Since(start)
 		if elapsed > qOpts.WaitTime {
 			return nil, nil
 		}
@@ -369,7 +370,7 @@ RETRY:
 		// by doing retries. Note that we have to attempt the retry in a non-
 		// blocking fashion so that we have a clean place to reset the retry
 		// counter if service is restored.
-		if retries > 0 && IsServerError(err) {
+		if retries > 0 && IsRetryableError(err) {
 			time.Sleep(l.opts.MonitorRetryTime)
 			retries--
 			opts.WaitIndex = 0

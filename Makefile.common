@@ -36,6 +36,7 @@ pkgs          = ./...
 PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+DOCKER_REPO             ?= prom
 
 .PHONY: all
 all: style staticcheck unused build test
@@ -98,7 +99,15 @@ tarball: promu
 
 .PHONY: docker
 docker:
-	docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+
+.PHONY: docker-publish
+docker-publish:
+	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)"
+
+.PHONY: docker-tag-latest
+docker-tag-latest:
+	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):latest"
 
 .PHONY: promu
 promu:

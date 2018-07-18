@@ -106,7 +106,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		require.Equal(t, ev, v, "value mismatch")
 	}
 
-	it = NewBuffer(newListSeriesIterator([]sample{
+	it = NewBufferIterator(newListSeriesIterator([]sample{
 		{t: 1, v: 2},
 		{t: 2, v: 3},
 		{t: 3, v: 4},
@@ -157,7 +157,7 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 		err:  func() error { return nil },
 	}
 
-	it := NewBuffer(m, 60)
+	it := NewBufferIterator(m, 60)
 	it.Next()
 	it.Next()
 }
@@ -177,7 +177,7 @@ func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	}
 
 	// Simulate a 5 minute rate.
-	it := NewBuffer(newListSeriesIterator(samples), 5*60)
+	it := NewBufferIterator(newListSeriesIterator(samples), 5*60)
 
 	b.SetBytes(int64(b.N * 16))
 	b.ReportAllocs()
