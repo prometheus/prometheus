@@ -600,7 +600,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 	for i, query := range req.Queries {
-		from, through, matchers, err := remote.FromQuery(query)
+		from, through, matchers, selectParams, err := remote.FromQuery(query)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -632,7 +632,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		set, err := querier.Select(nil, filteredMatchers...)
+		set, err := querier.Select(selectParams, filteredMatchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

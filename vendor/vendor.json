@@ -384,12 +384,6 @@
 			"versionExact": "v1.5.4"
 		},
 		{
-			"checksumSHA1": "FhLvgtYfuKY0ow9wtLJRoeg7d6w=",
-			"path": "github.com/gogo/protobuf/gogoproto",
-			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
-			"revisionTime": "2017-11-23T12:57:29Z"
-		},
-		{
 			"checksumSHA1": "8UEp6v0Dczw/SlasE0DivB0mAHA=",
 			"path": "github.com/gogo/protobuf/jsonpb",
 			"revision": "117892bf1866fbaa2318c03e50e40564c8845457",
@@ -398,12 +392,6 @@
 		{
 			"checksumSHA1": "wn2shNJMwRZpvuvkf1s7h0wvqHI=",
 			"path": "github.com/gogo/protobuf/proto",
-			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
-			"revisionTime": "2017-11-23T12:57:29Z"
-		},
-		{
-			"checksumSHA1": "F+PKpdY6PyIrxQ8b20TzsM+1JuI=",
-			"path": "github.com/gogo/protobuf/protoc-gen-gogo/descriptor",
 			"revision": "971cbfd2e72b513a28c74af7462aee0800248d69",
 			"revisionTime": "2017-11-23T12:57:29Z"
 		},

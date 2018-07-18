@@ -482,12 +482,19 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
-			Step: int64(s.Interval / time.Millisecond),
+			Start: timestamp.FromTime(s.Start.Add(-LookbackDelta)),
+			End:   timestamp.FromTime(s.End),
+			Step:  int64(s.Interval / time.Millisecond),
 		}
 
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Func = extractFuncFromPath(path)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				params.Start = params.Start - offsetMilliseconds
+				params.End = params.End - offsetMilliseconds
+			}
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
@@ -503,6 +510,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			// For all matrix queries we want to ensure that we have (end-start) + range selected
+			// this way we have `range` data before the start time
+			params.Start = params.Start - durationMilliseconds(n.Range)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				params.Start = params.Start - offsetMilliseconds
+				params.End = params.End - offsetMilliseconds
+			}
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
