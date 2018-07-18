@@ -482,13 +482,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
-			Start: timestamp.FromTime(s.Start.Add(-LookbackDelta)),
+			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
 			Step:  int64(s.Interval / time.Millisecond),
 		}
 
 		switch n := node.(type) {
 		case *VectorSelector:
+			params.Start = params.Start - durationMilliseconds(LookbackDelta)
 			params.Func = extractFuncFromPath(path)
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
