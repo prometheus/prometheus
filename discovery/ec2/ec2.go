@@ -77,6 +77,7 @@ type Filter struct {
 
 // SDConfig is the configuration for EC2 based service discovery.
 type SDConfig struct {
+	Endpoint        string             `yaml:"endpoint"`
 	Region          string             `yaml:"region"`
 	AccessKey       string             `yaml:"access_key,omitempty"`
 	SecretKey       config_util.Secret `yaml:"secret_key,omitempty"`
@@ -143,6 +144,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	}
 	return &Discovery{
 		aws: &aws.Config{
+			Endpoint:    &conf.Endpoint,
 			Region:      &conf.Region,
 			Credentials: creds,
 		},
