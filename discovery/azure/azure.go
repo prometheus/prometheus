@@ -176,10 +176,10 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	c.nic.Authorizer = autorest.NewBearerAuthorizer(spt)
 
 	c.vmss = compute.NewVirtualMachineScaleSetsClient(cfg.SubscriptionID)
-	c.vmss.Authorizer = spt
+	c.vmss.Authorizer = autorest.NewBearerAuthorizer(spt)
 
 	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClient(cfg.SubscriptionID)
-	c.vmssvm.Authorizer = spt
+	c.vmssvm.Authorizer = autorest.NewBearerAuthorizer(spt)
 
 	return c, nil
 }
