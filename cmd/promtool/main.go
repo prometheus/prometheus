@@ -74,6 +74,12 @@ func main() {
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
 
+	querySeriesCmd := queryCmd.Command("series", "Run series query.")
+	querySeriesServer := querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	querySeriesMatch := querySeriesCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().Strings()
+	querySeriesBegin := querySeriesCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	querySeriesEnd := querySeriesCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+
 	debugCmd := app.Command("debug", "Fetch debug information.")
 	debugPprofCmd := debugCmd.Command("pprof", "Fetch profiling debug information.")
 	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to get pprof files from.").Required().String()
@@ -100,6 +106,9 @@ func main() {
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
+
+	case querySeriesCmd.FullCommand():
+		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd))
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(debugPprof(*debugPprofServer))
@@ -450,6 +459,62 @@ func QueryRange(url string, query string, start string, end string) int {
 	}
 
 	fmt.Println(val.String())
+	return 0
+}
+
+// QuerySeries queries for a series against a Prometheus server.
+func QuerySeries(url *url.URL, matchers []string, start string, end string) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	// TODO: clean up timestamps
+	var (
+		minTime = time.Now().Add(-9999 * time.Hour)
+		maxTime = time.Now().Add(9999 * time.Hour)
+	)
+
+	var stime, etime time.Time
+
+	if start == "" {
+		stime = minTime
+	} else {
+		stime, err = parseTime(start)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+		}
+	}
+
+	if end == "" {
+		etime = maxTime
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+		}
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.Series(ctx, matchers, stime, etime)
+	cancel()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	for _, v := range val {
+		fmt.Println(v)
+	}
 	return 0
 }
 
