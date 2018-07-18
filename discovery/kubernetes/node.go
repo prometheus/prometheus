@@ -61,13 +61,13 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 	return n
 }
 
-func (e *Node) enqueue(obj interface{}) {
+func (n *Node) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
 	}
 
-	e.queue.Add(key)
+	n.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.
