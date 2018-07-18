@@ -4,7 +4,9 @@ The Prometheus server consists of many internal components that work together in
 
 The overall Prometheus server architecture is shown in this diagram:
 
-![Prometheus server architecture](images/internal_architecture.jpg)
+![Prometheus server architecture](images/internal_architecture.svg)
+
+**NOTE**: Arrows indicate request or connection initiation direction, not necessarily dataflow direction.
 
 The sections below will explain each component in the diagram. Code links and explanations are based on Prometheus version 2.3.1. Future Prometheus versions may differ.
 
