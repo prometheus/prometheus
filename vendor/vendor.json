@@ -482,6 +482,12 @@
 			"revisionTime": "2016-09-30T00:14:02Z"
 		},
 		{
+			"checksumSHA1": "P+F/VP7siicTrlxbwrUs9+WMD4w=",
+			"path": "github.com/google/pprof/profile",
+			"revision": "8b03ce837f3401233d4e32de3a5f0ea3ff1c13c2",
+			"revisionTime": "2018-06-05T15:39:48Z"
+		},
+		{
 			"checksumSHA1": "ndG2xmm2bas4/t+kIEUp2xIni8c=",
 			"path": "github.com/gophercloud/gophercloud",
 			"revision": "caf34a65f60295108141f62929245943bd00f237",
