@@ -837,13 +837,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
-		var it *storage.BufferedSeriesIterator
+		it := storage.NewBuffer(selRange)
 		for i, s := range sel.series {
-			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), selRange)
-			} else {
-				it.Reset(s.Iterator())
-			}
+			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
@@ -945,13 +941,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *VectorSelector:
 		mat := make(Matrix, 0, len(e.series))
-		var it *storage.BufferedSeriesIterator
+		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
-			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-			} else {
-				it.Reset(s.Iterator())
-			}
+			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.series[i].Labels(),
 				Points: getPointSlice(numSteps),
@@ -986,13 +978,9 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 		vec = make(Vector, 0, len(node.series))
 	)
 
-	var it *storage.BufferedSeriesIterator
+	it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 	for i, s := range node.series {
-		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-		} else {
-			it.Reset(s.Iterator())
-		}
+		it.Reset(s.Iterator())
 
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
@@ -1058,16 +1046,12 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		matrix = make(Matrix, 0, len(node.series))
 	)
 
-	var it *storage.BufferedSeriesIterator
+	it := storage.NewBuffer(durationMilliseconds(node.Range))
 	for i, s := range node.series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
-		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
-		} else {
-			it.Reset(s.Iterator())
-		}
+		it.Reset(s.Iterator())
 		ss := Series{
 			Metric: node.series[i].Labels(),
 		}
