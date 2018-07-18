@@ -31,11 +31,11 @@ import (
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name           string
-	vector         promql.Expr
-	labels         labels.Labels
-	mtx            sync.Mutex
-	evaluationTime time.Duration
+	name               string
+	vector             promql.Expr
+	labels             labels.Labels
+	mtx                sync.Mutex
+	evaluationDuration time.Duration
 }
 
 // NewRecordingRule returns a new recording rule.
@@ -95,18 +95,18 @@ func (rule *RecordingRule) String() string {
 	return string(byt)
 }
 
-// SetEvaluationTime updates evaluationTimeSeconds to the time in seconds it took to evaluate the rule on its last evaluation.
-func (rule *RecordingRule) SetEvaluationTime(dur time.Duration) {
+// SetEvaluationDuration updates evaluationDuration to the time in seconds it took to evaluate the rule on its last evaluation.
+func (rule *RecordingRule) SetEvaluationDuration(dur time.Duration) {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
-	rule.evaluationTime = dur
+	rule.evaluationDuration = dur
 }
 
-// GetEvaluationTime returns the time in seconds it took to evaluate the recording rule.
-func (rule *RecordingRule) GetEvaluationTime() time.Duration {
+// GetEvaluationDuration returns the time in seconds it took to evaluate the recording rule.
+func (rule *RecordingRule) GetEvaluationDuration() time.Duration {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
-	return rule.evaluationTime
+	return rule.evaluationDuration
 }
 
 // HTMLSnippet returns an HTML snippet representing this rule.
