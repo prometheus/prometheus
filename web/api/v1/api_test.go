@@ -202,7 +202,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			Results: make([]*prompb.QueryResult, len(req.Queries)),
 		}
 		for i, query := range req.Queries {
-			from, through, matchers, err := remote.FromQuery(query)
+			from, through, matchers, selectParams, err := remote.FromQuery(query)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -215,7 +215,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 			}
 			defer querier.Close()
 
-			set, err := querier.Select(nil, matchers...)
+			set, err := querier.Select(selectParams, matchers...)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
