@@ -222,7 +222,7 @@ func TestApplyConfig(t *testing.T) {
 			return discoveryManager.ApplyConfig(c)
 		},
 	}
-	testutil.Ok(t, reloadConfig("../../config/testdata/conf.good.yml", logger, reloaders...))
+	testutil.Ok(t, reloadConfig("../../config/testdata/conf.good.multi.static.yml", logger, reloaders...))
 
 	// Need to reload the file again so we have a completely new untouched copy.
 	reloaders = []func(cfg *config.Config) error{
@@ -231,5 +231,5 @@ func TestApplyConfig(t *testing.T) {
 			return nil
 		},
 	}
-	testutil.Ok(t, reloadConfig("../../config/testdata/conf.good.yml", logger, reloaders...))
+	testutil.Ok(t, reloadConfig("../../config/testdata/conf.good.multi.static.yml", logger, reloaders...))
 }
