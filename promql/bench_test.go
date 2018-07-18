@@ -82,6 +82,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 		steps int
 	}
 	cases := []benchCase{
+		// Plain retrieval.
+		{
+			expr: "a_X",
+		},
 		// Simple rate.
 		{
 			expr: "rate(a_X[1m])",
