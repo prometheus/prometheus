@@ -102,7 +102,7 @@ type AlertingRule struct {
 	// Non-identifying key/value pairs.
 	annotations labels.Labels
 	// Time in seconds taken to evaluate rule.
-	evaluationTime time.Duration
+	evaluationDuration time.Duration
 
 	// Protects the below.
 	mtx sync.Mutex
@@ -153,18 +153,18 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	return s
 }
 
-// SetEvaluationTime updates evaluationTime to the duration it took to evaluate the rule on its last evaluation.
-func (r *AlertingRule) SetEvaluationTime(dur time.Duration) {
+// SetEvaluationDuration updates evaluationDuration to the duration it took to evaluate the rule on its last evaluation.
+func (r *AlertingRule) SetEvaluationDuration(dur time.Duration) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	r.evaluationTime = dur
+	r.evaluationDuration = dur
 }
 
-// GetEvaluationTime returns the time in seconds it took to evaluate the alerting rule.
-func (r *AlertingRule) GetEvaluationTime() time.Duration {
+// GetEvaluationDuration returns the time in seconds it took to evaluate the alerting rule.
+func (r *AlertingRule) GetEvaluationDuration() time.Duration {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	return r.evaluationTime
+	return r.evaluationDuration
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
