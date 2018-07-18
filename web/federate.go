@@ -84,12 +84,13 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	set := storage.NewMergeSeriesSet(sets)
+	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it := storage.NewBuffer(s.Iterator(), int64(promql.LookbackDelta/1e6))
+		it.Reset(s.Iterator())
 
 		var t int64
 		var v float64
