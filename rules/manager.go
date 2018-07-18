@@ -277,11 +277,11 @@ func (g *Group) evalTimestamp() time.Time {
 	return time.Unix(0, base+offset)
 }
 
-// copyState copies the alerting rule and staleness related state from the given group.
+// CopyState copies the alerting rule and staleness related state from the given group.
 //
 // Rules are matched based on their name. If there are duplicates, the
 // first is matched with the first, second with the second etc.
-func (g *Group) copyState(from *Group) {
+func (g *Group) CopyState(from *Group) {
 	g.evaluationDuration = from.evaluationDuration
 
 	ruleMap := make(map[string][]int, len(from.rules))
@@ -498,7 +498,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 		go func(newg *Group) {
 			if ok {
 				oldg.stop()
-				newg.copyState(oldg)
+				newg.CopyState(oldg)
 			}
 			go func() {
 				// Wait with starting evaluation until the rule manager
