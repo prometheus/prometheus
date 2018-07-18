@@ -15,34 +15,40 @@
 			"revisionTime": "2016-10-28T18:31:11Z"
 		},
 		{
-			"checksumSHA1": "eVSHe6GIHj9/ziFrQLZ1SC7Nn6k=",
+			"checksumSHA1": "sQy6zpkumGcXs0QZLhYs8An1vlI=",
 			"path": "github.com/Azure/go-autorest/autorest",
-			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
-			"revisionTime": "2016-10-25T18:07:34Z"
+			"revision": "eaa7994b2278094c904d31993d26f56324db3052",
+			"revisionTime": "2018-05-02T23:02:43Z"
 		},
 		{
-			"checksumSHA1": "0sYi0JprevG/PZjtMbOh8h0pt0g=",
+			"checksumSHA1": "Xu6BOMnd2rZzabW6ld1yUrVjBQw=",
+			"path": "github.com/Azure/go-autorest/autorest/adal",
+			"revision": "eaa7994b2278094c904d31993d26f56324db3052",
+			"revisionTime": "2018-05-02T23:02:43Z"
+		},
+		{
+			"checksumSHA1": "vUHo41PG/G6Qq+vqD65l9KHFxUs=",
 			"path": "github.com/Azure/go-autorest/autorest/azure",
-			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
-			"revisionTime": "2016-10-25T18:07:34Z"
+			"revision": "eaa7994b2278094c904d31993d26f56324db3052",
+			"revisionTime": "2018-05-02T23:02:43Z"
 		},
 		{
-			"checksumSHA1": "q9Qz8PAxK5FTOZwgYKe5Lj38u4c=",
+			"checksumSHA1": "9nXCi9qQsYjxCeajJKWttxgEt0I=",
 			"path": "github.com/Azure/go-autorest/autorest/date",
-			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
-			"revisionTime": "2016-10-25T18:07:34Z"
+			"revision": "eaa7994b2278094c904d31993d26f56324db3052",
+			"revisionTime": "2018-05-02T23:02:43Z"
 		},
 		{
-			"checksumSHA1": "Ev8qCsbFjDlMlX0N2tYAhYQFpUc=",
+			"checksumSHA1": "SbBb2GcJNm5GjuPKGL2777QywR4=",
 			"path": "github.com/Azure/go-autorest/autorest/to",
-			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
-			"revisionTime": "2016-10-25T18:07:34Z"
+			"revision": "eaa7994b2278094c904d31993d26f56324db3052",
+			"revisionTime": "2018-05-02T23:02:43Z"
 		},
 		{
-			"checksumSHA1": "oBixceM+55gdk47iff8DSEIh3po=",
+			"checksumSHA1": "5UH4IFIB/98iowPCzzVs4M4MXiQ=",
 			"path": "github.com/Azure/go-autorest/autorest/validation",
-			"revision": "8a25372bbfec739b8719a9e3987400d15ef9e179",
-			"revisionTime": "2016-10-25T18:07:34Z"
+			"revision": "eaa7994b2278094c904d31993d26f56324db3052",
+			"revisionTime": "2018-05-02T23:02:43Z"
 		},
 		{
 			"checksumSHA1": "IatnluZB5jTVUncMN134e4VOV34=",
