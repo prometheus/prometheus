@@ -622,9 +622,9 @@ type EvalNodeHelper struct {
 
 	// Caches.
 	// dropMetricName and label_*.
-	dmn map[uint64]labels.Labels
+	dmn map[*labels.Label]labels.Labels
 	// signatureFunc.
-	sigf map[uint64]uint64
+	sigf map[*labels.Label]uint64
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[uint64]*metricWithBuckets
 	// label_replace.
@@ -636,35 +636,43 @@ type EvalNodeHelper struct {
 	resultMetric map[uint64]labels.Labels
 }
 
+// firstLabel returns the address of the first label, as a unique identifier of a Labels instance.
+func firstLabel(l labels.Labels) *labels.Label {
+	if len(l) == 0 {
+		return nil
+	}
+	return &l[0]
+}
+
 // dropMetricName is a cached version of dropMetricName.
 func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	if enh.dmn == nil {
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+		enh.dmn = make(map[*labels.Label]labels.Labels, len(enh.out))
 	}
-	h := l.Hash()
-	ret, ok := enh.dmn[h]
+	k := firstLabel(l)
+	ret, ok := enh.dmn[k]
 	if ok {
 		return ret
 	}
 	ret = dropMetricName(l)
-	enh.dmn[h] = ret
+	enh.dmn[k] = ret
 	return ret
 }
 
 // signatureFunc is a cached version of signatureFunc.
 func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	if enh.sigf == nil {
-		enh.sigf = make(map[uint64]uint64, len(enh.out))
+		enh.sigf = make(map[*labels.Label]uint64, len(enh.out))
 	}
 	f := signatureFunc(on, names...)
 	return func(l labels.Labels) uint64 {
-		h := l.Hash()
-		ret, ok := enh.sigf[h]
+		k := firstLabel(l)
+		ret, ok := enh.sigf[k]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[h] = ret
+		enh.sigf[k] = ret
 		return ret
 	}
 }
