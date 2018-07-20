@@ -1,6 +1,6 @@
 # WAL Disk Format
 
-The write ahead log operates in segments that that are numbered and sequential,
+The write ahead log operates in segments that are numbered and sequential,
 e.g. `000000`, `000001`, `000002`, etc., and are limited to 128MB by default.
 A segment is written to in pages of 32KB. Only the last page of the most recent segment
 may be partial. A WAL record is an opaque byte slice that gets split up into sub-records
@@ -17,13 +17,21 @@ Notable deviations are that the record fragment is encoded as:
 └───────────┴──────────┴────────────┴──────────────┘
 ```
 
+The type flag has the following states:
+
+* `0`: rest of page will be empty
+* `1`: a full record encoded in a single fragment
+* `2`: first fragment of a record
+* `3`: middle fragment of a record
+* `4`: final fragment of a record
+
 ## Record encoding
 
 The records written to the write ahead log are encoded as follows:
 
 ### Series records
 
-Series records encode the labels that identifier a series and its unique ID.
+Series records encode the labels that identifies a series and its unique ID.
 
 ```
 ┌────────────────────────────────────────────┐

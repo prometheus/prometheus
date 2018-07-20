@@ -27,9 +27,6 @@ func ReadDir(dirpath string) ([]string, error) {
 
 // Rename safely renames a file.
 func Rename(from, to string) error {
-	if err := os.RemoveAll(to); err != nil {
-		return err
-	}
 	if err := os.Rename(from, to); err != nil {
 		return err
 	}

@@ -140,7 +140,7 @@ func OpenReadSegment(fn string) (*Segment, error) {
 
 // WAL is a write ahead log that stores records in segment files.
 // It must be read from start to end once before logging new data.
-// If an erroe occurs during read, the repair procedure must be called
+// If an error occurs during read, the repair procedure must be called
 // before it's safe to do further writes.
 //
 // Segments are written to in pages of 32KB, with records possibly split
