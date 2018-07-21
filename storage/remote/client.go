@@ -30,6 +30,7 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/web/api/auth"
 )
 
 const maxErrMsgLen = 256
@@ -139,6 +140,11 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+
+	token, ok := auth.GetBearerToken(ctx)
+	if ok {
+		httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", string(token)))
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
