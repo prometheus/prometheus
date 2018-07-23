@@ -45,6 +45,8 @@ The initial two-hour blocks are eventually compacted into longer blocks in the b
 
 Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should thus be treated as more of an ephemeral sliding window of recent data. However, if your durability requirements are not strict, you may still succeed in storing up to years of data in the local storage.
 
+For further details on file format, see [TSDB format](https://github.com/prometheus/tsdb/blob/master/docs/format/README.md).
+
 ## Operational aspects
 
 Prometheus has several flags that allow configuring the local storage. The most important ones are:
