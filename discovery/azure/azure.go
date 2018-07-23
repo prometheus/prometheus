@@ -44,6 +44,8 @@ const (
 	azureLabelMachineOSType        = azureLabel + "machine_os_type"
 	azureLabelMachineLocation      = azureLabel + "machine_location"
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
+	azureLabelMachinePublicIP      = azureLabel + "machine_public_ip"
+	azureLabelMachinePublicDNSName = azureLabel + "machine_public_dns_name"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 )
 
@@ -150,6 +152,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 // azureClient represents multiple Azure Resource Manager providers.
 type azureClient struct {
 	nic network.InterfacesClient
+	ip  network.PublicIPAddressesClient
 	vm  compute.VirtualMachinesClient
 }
 
@@ -170,6 +173,9 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
 	c.nic.Authorizer = autorest.NewBearerAuthorizer(spt)
+
+	c.ip = network.NewPublicIPAddressesClient(cfg.SubscriptionID)
+	c.ip.Authorizer = autorest.NewBearerAuthorizer(spt)
 
 	return c, nil
 }
@@ -291,6 +297,27 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 							labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
 							address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", d.port))
 							labels[model.AddressLabel] = model.LabelValue(address)
+							// Check if Public IP is also present.
+							// Get the Public IP address information via separate call to the network provider.
+							if ip.Properties.PublicIPAddress != nil {
+								r, err := newAzureResourceFromID(*ip.Properties.PublicIPAddress.ID, d.logger)
+								if err != nil {
+									ch <- target{labelSet: nil, err: err}
+									return
+								}
+								publicIP, err := client.ip.Get(r.ResourceGroup, r.Name, "")
+								if err != nil {
+									// Only log the error as Public IP is Optional.
+									level.Error(d.logger).Log("msg", "Unable to get public ip address", "name", r.Name, "err", err)
+								} else {
+									if publicIP.Properties != nil && publicIP.Properties.IPAddress != nil {
+										labels[azureLabelMachinePublicIP] = model.LabelValue(*publicIP.Properties.IPAddress)
+										if publicIP.Properties.DNSSettings != nil && publicIP.Properties.DNSSettings.Fqdn != nil {
+											labels[azureLabelMachinePublicDNSName] = model.LabelValue(*publicIP.Properties.DNSSettings.Fqdn)
+										}
+									}
+								}
+							}
 							ch <- target{labelSet: labels, err: nil}
 							return
 						}
