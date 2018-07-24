@@ -285,6 +285,20 @@ func checkRules(filename string) (int, []error) {
 	return numRules, nil
 }
 
+func CheckRule(rule []byte) (int, []error) {
+	rgs, errs := rulefmt.Parse(rule)
+	if errs != nil {
+		return 0, errs
+	}
+
+	numRules := 0
+	for _, rg := range rgs.Groups {
+		numRules += len(rg.Rules)
+	}
+
+	return numRules, nil
+}
+
 // UpdateRules updates the rule files.
 func UpdateRules(files ...string) int {
 	failed := false
