@@ -4,7 +4,8 @@ using the go-bindata tool (c.f. Makefile).
 
 During development it is more convenient to always use the files on disk to
 directly see changes without recompiling.
-Set the environment variable `DEBUG=1` and run `make assets` for this to work. 
+To make this work, set the environment variable `DEBUG=1`, run `make assets`, and then `make build`.
+ 
 This will put `go-bindata` in DEBUG mode where it serves from your local filesystem.
 This is for development purposes only.
 
