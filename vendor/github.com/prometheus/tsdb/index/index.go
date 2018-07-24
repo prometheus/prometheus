@@ -740,8 +740,8 @@ func (r *Reader) decbufUvarintAt(off int) decbuf {
 	b := r.b.Range(off, off+binary.MaxVarintLen32)
 
 	l, n := binary.Uvarint(b)
-	if n > binary.MaxVarintLen32 {
-		return decbuf{e: errors.New("invalid uvarint")}
+	if n <= 0 || n > binary.MaxVarintLen32 {
+		return decbuf{e: errors.Errorf("invalid uvarint %d", n)}
 	}
 
 	if r.b.Len() < off+n+int(l)+4 {

@@ -214,6 +214,8 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			presentNames := presentInTest[t]
 			got := make(map[string]labelsAndAnnotations)
 
+			// Same Alert name can be present in multiple groups.
+			// Hence we collect them all to check against expected alerts.
 			for _, g := range groups {
 				grules := g.Rules()
 
@@ -241,9 +243,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 					} else {
 						got[ar.Name()] = alerts
 					}
-
 				}
-
 			}
 
 			for _, testCase := range alertTests[t] {
@@ -277,7 +277,6 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 							testCase.Alertname, testCase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 					}
 				}
-
 			}
 
 			curr++
@@ -321,7 +320,6 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
-
 	}
 
 	if len(errs) > 0 {

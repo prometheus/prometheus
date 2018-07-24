@@ -97,12 +97,12 @@ var (
 		},
 		[]string{queue},
 	)
-	queueCapacity = prometheus.NewGaugeVec(
+	shardCapacity = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "queue_capacity",
-			Help:      "The capacity of the queue of samples to be sent to the remote storage.",
+			Name:      "shard_capacity",
+			Help:      "The capacity of each shard of the queue used for parallel sending to the remote storage.",
 		},
 		[]string{queue},
 	)
@@ -123,7 +123,7 @@ func init() {
 	prometheus.MustRegister(droppedSamplesTotal)
 	prometheus.MustRegister(sentBatchDuration)
 	prometheus.MustRegister(queueLength)
-	prometheus.MustRegister(queueCapacity)
+	prometheus.MustRegister(shardCapacity)
 	prometheus.MustRegister(numShards)
 }
 
@@ -187,7 +187,7 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 	}
 	t.shards = t.newShards(t.numShards)
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
-	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
+	shardCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
 
 	// Initialise counter labels to zero.
 	sentBatchDuration.WithLabelValues(t.queueName)
@@ -516,9 +516,10 @@ func (s *shards) sendSamples(samples model.Samples) {
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	backoff := s.qm.cfg.MinBackoff
+	req := ToWriteRequest(samples)
+
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
-		req := ToWriteRequest(samples)
 		err := s.qm.client.Store(s.ctx, req)
 
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())

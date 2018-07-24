@@ -19,31 +19,51 @@ import (
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 type BufferedSeriesIterator struct {
-	it  SeriesIterator
-	buf *sampleRing
+	it    SeriesIterator
+	buf   *sampleRing
+	delta int64
 
 	lastTime int64
 	ok       bool
 }
 
 // NewBuffer returns a new iterator that buffers the values within the time range
-// of the current element and the duration of delta before.
-func NewBuffer(it SeriesIterator, delta int64) *BufferedSeriesIterator {
+// of the current element and the duration of delta before, initialized with an
+// empty iterator. Use Reset() to set an actual iterator to be buffered.
+func NewBuffer(delta int64) *BufferedSeriesIterator {
+	return NewBufferIterator(&NoopSeriesIt, delta)
+}
+
+// NewBufferIterator returns a new iterator that buffers the values within the
+// time range of the current element and the duration of delta before.
+func NewBufferIterator(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 	bit := &BufferedSeriesIterator{
-		buf: newSampleRing(delta, 16),
+		buf:   newSampleRing(delta, 16),
+		delta: delta,
 	}
 	bit.Reset(it)
 
 	return bit
 }
 
-// Reset re-uses the buffer with a new iterator.
+// Reset re-uses the buffer with a new iterator, resetting the buffered time
+// delta to its original value.
 func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
 	b.it = it
 	b.lastTime = math.MinInt64
 	b.ok = true
 	b.buf.reset()
+	b.buf.delta = b.delta
 	it.Next()
+}
+
+// ReduceDelta lowers the buffered time delta, for the current SeriesIterator only.
+func (b *BufferedSeriesIterator) ReduceDelta(delta int64) bool {
+	if delta > b.buf.delta {
+		return false
+	}
+	b.buf.delta = delta
+	return true
 }
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,

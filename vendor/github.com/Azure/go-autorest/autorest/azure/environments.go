@@ -1,14 +1,30 @@
 package azure
 
+// Copyright 2017 Microsoft Corporation
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 import (
+	"encoding/json"
 	"fmt"
-	"net/url"
+	"io/ioutil"
+	"os"
 	"strings"
 )
 
-const (
-	activeDirectoryAPIVersion = "1.0"
-)
+// EnvironmentFilepathName captures the name of the environment variable containing the path to the file
+// to be used while populating the Azure Environment.
+const EnvironmentFilepathName = "AZURE_ENVIRONMENT_FILEPATH"
 
 var environments = map[string]Environment{
 	"AZURECHINACLOUD":        ChinaCloud,
@@ -28,6 +44,8 @@ type Environment struct {
 	GalleryEndpoint              string `json:"galleryEndpoint"`
 	KeyVaultEndpoint             string `json:"keyVaultEndpoint"`
 	GraphEndpoint                string `json:"graphEndpoint"`
+	ServiceBusEndpoint           string `json:"serviceBusEndpoint"`
+	BatchManagementEndpoint      string `json:"batchManagementEndpoint"`
 	StorageEndpointSuffix        string `json:"storageEndpointSuffix"`
 	SQLDatabaseDNSSuffix         string `json:"sqlDatabaseDNSSuffix"`
 	TrafficManagerDNSSuffix      string `json:"trafficManagerDNSSuffix"`
@@ -35,6 +53,8 @@ type Environment struct {
 	ServiceBusEndpointSuffix     string `json:"serviceBusEndpointSuffix"`
 	ServiceManagementVMDNSSuffix string `json:"serviceManagementVMDNSSuffix"`
 	ResourceManagerVMDNSSuffix   string `json:"resourceManagerVMDNSSuffix"`
+	ContainerRegistryDNSSuffix   string `json:"containerRegistryDNSSuffix"`
+	TokenAudience                string `json:"tokenAudience"`
 }
 
 var (
@@ -49,13 +69,17 @@ var (
 		GalleryEndpoint:              "https://gallery.azure.com/",
 		KeyVaultEndpoint:             "https://vault.azure.net/",
 		GraphEndpoint:                "https://graph.windows.net/",
+		ServiceBusEndpoint:           "https://servicebus.windows.net/",
+		BatchManagementEndpoint:      "https://batch.core.windows.net/",
 		StorageEndpointSuffix:        "core.windows.net",
 		SQLDatabaseDNSSuffix:         "database.windows.net",
 		TrafficManagerDNSSuffix:      "trafficmanager.net",
 		KeyVaultDNSSuffix:            "vault.azure.net",
-		ServiceBusEndpointSuffix:     "servicebus.azure.com",
+		ServiceBusEndpointSuffix:     "servicebus.windows.net",
 		ServiceManagementVMDNSSuffix: "cloudapp.net",
 		ResourceManagerVMDNSSuffix:   "cloudapp.azure.com",
+		ContainerRegistryDNSSuffix:   "azurecr.io",
+		TokenAudience:                "https://management.azure.com/",
 	}
 
 	// USGovernmentCloud is the cloud environment for the US Government
@@ -65,10 +89,12 @@ var (
 		PublishSettingsURL:           "https://manage.windowsazure.us/publishsettings/index",
 		ServiceManagementEndpoint:    "https://management.core.usgovcloudapi.net/",
 		ResourceManagerEndpoint:      "https://management.usgovcloudapi.net/",
-		ActiveDirectoryEndpoint:      "https://login.microsoftonline.com/",
+		ActiveDirectoryEndpoint:      "https://login.microsoftonline.us/",
 		GalleryEndpoint:              "https://gallery.usgovcloudapi.net/",
 		KeyVaultEndpoint:             "https://vault.usgovcloudapi.net/",
-		GraphEndpoint:                "https://graph.usgovcloudapi.net/",
+		GraphEndpoint:                "https://graph.windows.net/",
+		ServiceBusEndpoint:           "https://servicebus.usgovcloudapi.net/",
+		BatchManagementEndpoint:      "https://batch.core.usgovcloudapi.net/",
 		StorageEndpointSuffix:        "core.usgovcloudapi.net",
 		SQLDatabaseDNSSuffix:         "database.usgovcloudapi.net",
 		TrafficManagerDNSSuffix:      "usgovtrafficmanager.net",
@@ -76,6 +102,8 @@ var (
 		ServiceBusEndpointSuffix:     "servicebus.usgovcloudapi.net",
 		ServiceManagementVMDNSSuffix: "usgovcloudapp.net",
 		ResourceManagerVMDNSSuffix:   "cloudapp.windowsazure.us",
+		ContainerRegistryDNSSuffix:   "azurecr.io",
+		TokenAudience:                "https://management.usgovcloudapi.net/",
 	}
 
 	// ChinaCloud is the cloud environment operated in China
@@ -85,17 +113,21 @@ var (
 		PublishSettingsURL:           "https://manage.chinacloudapi.com/publishsettings/index",
 		ServiceManagementEndpoint:    "https://management.core.chinacloudapi.cn/",
 		ResourceManagerEndpoint:      "https://management.chinacloudapi.cn/",
-		ActiveDirectoryEndpoint:      "https://login.chinacloudapi.cn/?api-version=1.0",
+		ActiveDirectoryEndpoint:      "https://login.chinacloudapi.cn/",
 		GalleryEndpoint:              "https://gallery.chinacloudapi.cn/",
 		KeyVaultEndpoint:             "https://vault.azure.cn/",
 		GraphEndpoint:                "https://graph.chinacloudapi.cn/",
+		ServiceBusEndpoint:           "https://servicebus.chinacloudapi.cn/",
+		BatchManagementEndpoint:      "https://batch.chinacloudapi.cn/",
 		StorageEndpointSuffix:        "core.chinacloudapi.cn",
 		SQLDatabaseDNSSuffix:         "database.chinacloudapi.cn",
 		TrafficManagerDNSSuffix:      "trafficmanager.cn",
 		KeyVaultDNSSuffix:            "vault.azure.cn",
-		ServiceBusEndpointSuffix:     "servicebus.chinacloudapi.net",
+		ServiceBusEndpointSuffix:     "servicebus.chinacloudapi.cn",
 		ServiceManagementVMDNSSuffix: "chinacloudapp.cn",
 		ResourceManagerVMDNSSuffix:   "cloudapp.azure.cn",
+		ContainerRegistryDNSSuffix:   "azurecr.io",
+		TokenAudience:                "https://management.chinacloudapi.cn/",
 	}
 
 	// GermanCloud is the cloud environment operated in Germany
@@ -109,6 +141,8 @@ var (
 		GalleryEndpoint:              "https://gallery.cloudapi.de/",
 		KeyVaultEndpoint:             "https://vault.microsoftazure.de/",
 		GraphEndpoint:                "https://graph.cloudapi.de/",
+		ServiceBusEndpoint:           "https://servicebus.cloudapi.de/",
+		BatchManagementEndpoint:      "https://batch.cloudapi.de/",
 		StorageEndpointSuffix:        "core.cloudapi.de",
 		SQLDatabaseDNSSuffix:         "database.cloudapi.de",
 		TrafficManagerDNSSuffix:      "azuretrafficmanager.de",
@@ -116,42 +150,42 @@ var (
 		ServiceBusEndpointSuffix:     "servicebus.cloudapi.de",
 		ServiceManagementVMDNSSuffix: "azurecloudapp.de",
 		ResourceManagerVMDNSSuffix:   "cloudapp.microsoftazure.de",
+		ContainerRegistryDNSSuffix:   "azurecr.io",
+		TokenAudience:                "https://management.microsoftazure.de/",
 	}
 )
 
-// EnvironmentFromName returns an Environment based on the common name specified
+// EnvironmentFromName returns an Environment based on the common name specified.
 func EnvironmentFromName(name string) (Environment, error) {
+	// IMPORTANT
+	// As per @radhikagupta5:
+	// This is technical debt, fundamentally here because Kubernetes is not currently accepting
+	// contributions to the providers. Once that is an option, the provider should be updated to
+	// directly call `EnvironmentFromFile`. Until then, we rely on dispatching Azure Stack environment creation
+	// from this method based on the name that is provided to us.
+	if strings.EqualFold(name, "AZURESTACKCLOUD") {
+		return EnvironmentFromFile(os.Getenv(EnvironmentFilepathName))
+	}
+
 	name = strings.ToUpper(name)
 	env, ok := environments[name]
 	if !ok {
 		return env, fmt.Errorf("autorest/azure: There is no cloud environment matching the name %q", name)
 	}
+
 	return env, nil
 }
 
-// OAuthConfigForTenant returns an OAuthConfig with tenant specific urls
-func (env Environment) OAuthConfigForTenant(tenantID string) (*OAuthConfig, error) {
-	template := "%s/oauth2/%s?api-version=%s"
-	u, err := url.Parse(env.ActiveDirectoryEndpoint)
+// EnvironmentFromFile loads an Environment from a configuration file available on disk.
+// This function is particularly useful in the Hybrid Cloud model, where one must define their own
+// endpoints.
+func EnvironmentFromFile(location string) (unmarshaled Environment, err error) {
+	fileContents, err := ioutil.ReadFile(location)
 	if err != nil {
-		return nil, err
-	}
-	authorizeURL, err := u.Parse(fmt.Sprintf(template, tenantID, "authorize", activeDirectoryAPIVersion))
-	if err != nil {
-		return nil, err
-	}
-	tokenURL, err := u.Parse(fmt.Sprintf(template, tenantID, "token", activeDirectoryAPIVersion))
-	if err != nil {
-		return nil, err
-	}
-	deviceCodeURL, err := u.Parse(fmt.Sprintf(template, tenantID, "devicecode", activeDirectoryAPIVersion))
-	if err != nil {
-		return nil, err
+		return
 	}
 
-	return &OAuthConfig{
-		AuthorizeEndpoint:  *authorizeURL,
-		TokenEndpoint:      *tokenURL,
-		DeviceCodeEndpoint: *deviceCodeURL,
-	}, nil
+	err = json.Unmarshal(fileContents, &unmarshaled)
+
+	return
 }
