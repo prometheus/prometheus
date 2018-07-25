@@ -28,7 +28,6 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -385,20 +384,13 @@ func CheckMetrics() int {
 
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url string, query string) int {
-	config := api.Config{
-		Address: url,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
+	api, err := newPrometheusAPI(url)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
 	}
 
 	// Run query against client.
-	api := v1.NewAPI(c)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	val, err := api.Query(ctx, query, time.Now())
 	cancel()
@@ -414,14 +406,10 @@ func QueryInstant(url string, query string) int {
 
 // QueryRange performs a range query against a Prometheus server.
 func QueryRange(url string, query string, start string, end string) int {
-	config := api.Config{
-		Address: url,
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
+	// Create new API querier.
+	api, err := newPrometheusAPI(url)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
 	}
 
@@ -455,7 +443,6 @@ func QueryRange(url string, query string, start string, end string) int {
 	step := time.Duration(resolution * 1e9)
 
 	// Run query against client.
-	api := v1.NewAPI(c)
 	r := v1.Range{Start: stime, End: etime, Step: step}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	val, err := api.QueryRange(ctx, query, r)
@@ -472,14 +459,9 @@ func QueryRange(url string, query string, start string, end string) int {
 
 // QuerySeries queries for a series against a Prometheus server.
 func QuerySeries(url *url.URL, matchers []string, start string, end string) int {
-	config := api.Config{
-		Address: url.String(),
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
+	api, err := newPrometheusAPI(url.String())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
 	}
 
@@ -510,7 +492,6 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 	}
 
 	// Run query against client.
-	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	val, err := api.Series(ctx, matchers, stime, etime)
 	cancel()
@@ -528,19 +509,13 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string) int {
-	config := api.Config{
-		Address: url.String(),
-	}
-
-	// Create new client.
-	c, err := api.NewClient(config)
+	api, err := newPrometheusAPI(url.String())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
 	}
 
 	// Run query against client.
-	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	val, err := api.LabelValues(ctx, name)
 	cancel()
