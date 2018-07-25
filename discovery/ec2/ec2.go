@@ -257,13 +257,14 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
 
+					// Deduplicate VPC Subnet IDs maintaining the order of the network interfaces returned by EC2.
+					var subnets []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
-						subnetsMap[*eni.SubnetId] = struct{}{}
-					}
-					subnets := []string{}
-					for k := range subnetsMap {
-						subnets = append(subnets, k)
+						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
+							subnetsMap[*eni.SubnetId] = struct{}{}
+							subnets = append(subnets, *eni.SubnetId)
+						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						subnetSeparator +
