@@ -26,6 +26,9 @@ import (
 	"reflect"
 )
 
+// This package is imported by non-test code and therefore cannot import the
+// testing package, which has side effects such as adding flags. Hence we use an
+// interface to testing.{T,B}.
 type TB interface {
 	Helper()
 	Fatalf(string, ...interface{})
