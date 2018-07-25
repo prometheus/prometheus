@@ -11,22 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !windows
+// +build windows
 
 package main
 
-import (
-	"fmt"
-	"log"
-	"syscall"
-)
-
-// FdLimits returns the soft and hard limits for file descriptors
+// FdLimits not supported on Windows
 func FdLimits() string {
-	flimit := syscall.Rlimit{}
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &flimit)
-	if err != nil {
-		log.Fatal("Error!")
-	}
-	return fmt.Sprintf("(soft=%d, hard=%d)", flimit.Cur, flimit.Max)
+	return "N/A"
+}
+
+// VmLimits not supported on Windows
+func VmLimits() string {
+	return "N/A"
 }
