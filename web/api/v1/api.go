@@ -843,7 +843,18 @@ func (api *API) respond(w http.ResponseWriter, data interface{}) {
 }
 
 func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
+	b, err := json.Marshal(&response{
+		Status:    statusError,
+		ErrorType: apiErr.typ,
+		Error:     apiErr.err.Error(),
+		Data:      data,
+	})
+	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	var code int
 	switch apiErr.typ {
@@ -860,22 +871,9 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	default:
 		code = http.StatusInternalServerError
 	}
-	w.WriteHeader(code)
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
-		Status:    statusError,
-		ErrorType: apiErr.typ,
-		Error:     apiErr.err.Error(),
-		Data:      data,
-	})
-	if err != nil {
-		return
-	}
-	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
-		return
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "n", n, "err", err)
 	}
