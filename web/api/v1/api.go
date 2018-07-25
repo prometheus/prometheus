@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/web/api/auth"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
@@ -244,7 +245,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorBadData, err}, nil
 	}
 
-	res := qry.Exec(ctx)
+	res := qry.Exec(auth.WithBearerToken(ctx, r))
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
@@ -318,7 +319,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorBadData, err}, nil
 	}
 
-	res := qry.Exec(ctx)
+	res := qry.Exec(auth.WithBearerToken(ctx, r))
 	if res.Err != nil {
 		switch res.Err.(type) {
 		case promql.ErrQueryCanceled:
