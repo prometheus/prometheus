@@ -750,7 +750,8 @@ func TestReadEndpoint(t *testing.T) {
 
 func TestRespondSuccess(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respond(w, "test")
+		api := API{}
+		api.respond(w, "test")
 	}))
 	defer s.Close()
 
@@ -787,7 +788,8 @@ func TestRespondSuccess(t *testing.T) {
 
 func TestRespondError(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
+		api := API{}
+		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
 	}))
 	defer s.Close()
 
@@ -1039,7 +1041,8 @@ func TestRespond(t *testing.T) {
 
 	for _, c := range cases {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			respond(w, c.response)
+			api := API{}
+			api.respond(w, c.response)
 		}))
 		defer s.Close()
 
@@ -1078,7 +1081,8 @@ func BenchmarkRespond(b *testing.B) {
 		},
 	}
 	b.ResetTimer()
+	api := API{}
 	for n := 0; n < b.N; n++ {
-		respond(&testResponseWriter, response)
+		api.respond(&testResponseWriter, response)
 	}
 }
