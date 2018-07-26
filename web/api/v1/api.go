@@ -206,9 +206,10 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType promql.ValueType  `json:"resultType"`
-	Result     promql.Value      `json:"result"`
-	Stats      *stats.QueryStats `json:"stats,omitempty"`
+	ResultType   promql.ValueType  `json:"resultType"`
+	Result       promql.Value      `json:"result"`
+	Stats        *stats.QueryStats `json:"stats,omitempty"`
+	ExtraMessage string            `json:"extraMessage,omitempty"`
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError, func()) {
@@ -244,6 +245,7 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorBadData, err}, nil
 	}
 
+	var extraMessage string
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
@@ -251,10 +253,13 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 			return nil, &apiError{errorCanceled, res.Err}, qry.Close
 		case promql.ErrQueryTimeout:
 			return nil, &apiError{errorTimeout, res.Err}, qry.Close
+		case storage.RemoteStorageError:
+			extraMessage = "Remote storage error"
 		case promql.ErrStorage:
 			return nil, &apiError{errorInternal, res.Err}, qry.Close
+		default:
+			return nil, &apiError{errorExec, res.Err}, qry.Close
 		}
-		return nil, &apiError{errorExec, res.Err}, qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -264,9 +269,10 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 	}
 
 	return &queryData{
-		ResultType: res.Value.Type(),
-		Result:     res.Value,
-		Stats:      qs,
+		ResultType:   res.Value.Type(),
+		Result:       res.Value,
+		Stats:        qs,
+		ExtraMessage: extraMessage,
 	}, nil, qry.Close
 }
 
@@ -318,6 +324,7 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorBadData, err}, nil
 	}
 
+	var extraMessage string
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
@@ -325,8 +332,11 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 			return nil, &apiError{errorCanceled, res.Err}, qry.Close
 		case promql.ErrQueryTimeout:
 			return nil, &apiError{errorTimeout, res.Err}, qry.Close
+		case storage.RemoteStorageError:
+			extraMessage = "Remote storage error"
+		default:
+			return nil, &apiError{errorExec, res.Err}, qry.Close
 		}
-		return nil, &apiError{errorExec, res.Err}, qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -336,9 +346,10 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 	}
 
 	return &queryData{
-		ResultType: res.Value.Type(),
-		Result:     res.Value,
-		Stats:      qs,
+		ResultType:   res.Value.Type(),
+		Result:       res.Value,
+		Stats:        qs,
+		ExtraMessage: extraMessage,
 	}, nil, qry.Close
 }
 

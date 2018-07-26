@@ -367,8 +367,13 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		defer querier.Close()
 	}
 
+	var remoteStorageError error = nil
 	if err != nil {
-		return nil, err
+		if _, ok := err.(storage.RemoteStorageError); ok {
+			remoteStorageError = err
+		} else {
+			return nil, err
+		}
 	}
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
@@ -404,11 +409,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				// timestamp as that is when we ran the evaluation.
 				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, T: start}}
 			}
-			return vector, nil
+			return vector, remoteStorageError
 		case ValueTypeScalar:
-			return Scalar{V: mat[0].Points[0].V, T: start}, nil
+			return Scalar{V: mat[0].Points[0].V, T: start}, remoteStorageError
 		case ValueTypeMatrix:
-			return mat, nil
+			return mat, remoteStorageError
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
@@ -447,7 +452,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sortTimer.Stop()
 
 	ng.metrics.queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
-	return mat, nil
+	return mat, remoteStorageError
 }
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
@@ -479,6 +484,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
+	var remoteStorageError error = nil
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
@@ -499,8 +505,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
+				if _, ok := err.(storage.RemoteStorageError); ok {
+					// If it's a remote storage error, hold onto it and return it in the api response
+					remoteStorageError = err
+				} else {
+					// If it's not a remote storage error, then log it and return the error
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
 			}
 			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
@@ -522,8 +534,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
+				if _, ok := err.(storage.RemoteStorageError); ok {
+					// If it's a remote storage error, hold onto it and return it in the api response
+					remoteStorageError = err
+				} else {
+					// If it's not a remote storage error, then log it and return the error
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
 			}
 			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
@@ -533,6 +551,10 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		}
 		return nil
 	})
+	if err == nil {
+		// If there's no other errors, just propogate the remote storage error
+		err = remoteStorageError
+	}
 	return querier, err
 }
 
