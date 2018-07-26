@@ -21,30 +21,33 @@ import (
 	"syscall"
 )
 
+// syscall.RLIM_INFINITY is a constant and its default type is int.
+// It needs to be converted to an int64 variable to be compared with uint64 values.
+// See https://golang.org/ref/spec#Conversions
 var unlimited int64 = syscall.RLIM_INFINITY
 
-func limitToString(v uint64) string {
+func limitToString(v uint64, unit string) string {
 	if v == uint64(unlimited) {
 		return "unlimited"
 	}
-	return fmt.Sprintf("%d", v)
+	return fmt.Sprintf("%d%s", v, unit)
 }
 
-func getLimits(resource int) string {
+func getLimits(resource int, unit string) string {
 	rlimit := syscall.Rlimit{}
 	err := syscall.Getrlimit(resource, &rlimit)
 	if err != nil {
 		log.Fatal("Error!")
 	}
-	return fmt.Sprintf("(soft=%s, hard=%s)", limitToString(rlimit.Cur), limitToString(rlimit.Max))
+	return fmt.Sprintf("(soft=%s, hard=%s)", limitToString(rlimit.Cur, unit), limitToString(rlimit.Max, unit))
 }
 
 // FdLimits returns the soft and hard limits for file descriptors.
 func FdLimits() string {
-	return getLimits(syscall.RLIMIT_NOFILE)
+	return getLimits(syscall.RLIMIT_NOFILE, "")
 }
 
 // VmLimits returns the soft and hard limits for virtual memory.
 func VmLimits() string {
-	return getLimits(syscall.RLIMIT_AS)
+	return getLimits(syscall.RLIMIT_AS, "b")
 }
