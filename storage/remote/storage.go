@@ -115,8 +115,10 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
+
 		q := QueryableClient(client)
-		q = ExternablLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
+		q = ExternalLabelsHandler(q, conf.GlobalConfig.ExternalLabels)
+
 		if len(rrConf.RequiredMatchers) > 0 {
 			q = RequiredMatchersFilter(q, labelsToEqualityMatchers(rrConf.RequiredMatchers))
 		}

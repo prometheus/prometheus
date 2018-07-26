@@ -99,8 +99,10 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	var rp *prompb.ReadHints
 	if p != nil {
 		rp = &prompb.ReadHints{
-			StepMs: p.Step,
-			Func:   p.Func,
+			StepMs:  p.Step,
+			Func:    p.Func,
+			StartMs: p.Start,
+			EndMs:   p.End,
 		}
 	}
 
@@ -113,12 +115,22 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 }
 
 // FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, error) {
+func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.SelectParams, error) {
 	matchers, err := fromLabelMatchers(req.Matchers)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
+	var selectParams *storage.SelectParams
+	if req.Hints != nil {
+		selectParams = &storage.SelectParams{
+			Start: req.Hints.StartMs,
+			End:   req.Hints.EndMs,
+			Step:  req.Hints.StepMs,
+			Func:  req.Hints.Func,
+		}
+	}
+
+	return req.StartTimestampMs, req.EndTimestampMs, matchers, selectParams, nil
 }
 
 // ToQueryResult builds a QueryResult proto.

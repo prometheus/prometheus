@@ -68,9 +68,9 @@ func (q *querier) Close() error {
 	return nil
 }
 
-// ExternablLabelsHandler returns a storage.Queryable which creates a
+// ExternalLabelsHandler returns a storage.Queryable which creates a
 // externalLabelsQuerier.
-func ExternablLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
+func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		q, err := next.Querier(ctx, mint, maxt)
 		if err != nil {

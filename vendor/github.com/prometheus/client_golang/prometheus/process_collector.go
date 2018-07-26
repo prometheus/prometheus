@@ -16,7 +16,6 @@ package prometheus
 import "github.com/prometheus/procfs"
 
 type processCollector struct {
-	pid             int
 	collectFn       func(chan<- Metric)
 	pidFn           func() (int, error)
 	cpuTotal        *Desc

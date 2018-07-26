@@ -106,7 +106,7 @@ type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, 
 
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
-// It converts scaler into vector results.
+// It converts scalar into vector results.
 func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		q, err := engine.NewInstantQuery(q, qs, t)
@@ -140,8 +140,8 @@ type Rule interface {
 	// String returns a human-readable string representation of the rule.
 	String() string
 
-	SetEvaluationTime(time.Duration)
-	GetEvaluationTime() time.Duration
+	SetEvaluationDuration(time.Duration)
+	GetEvaluationDuration() time.Duration
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
@@ -155,7 +155,7 @@ type Group struct {
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	opts                 *ManagerOptions
-	evaluationTime       time.Duration
+	evaluationDuration   time.Duration
 	mtx                  sync.Mutex
 
 	done       chan struct{}
@@ -207,7 +207,7 @@ func (g *Group) run(ctx context.Context) {
 		timeSinceStart := time.Since(start)
 
 		iterationDuration.Observe(timeSinceStart.Seconds())
-		g.SetEvaluationTime(timeSinceStart)
+		g.SetEvaluationDuration(timeSinceStart)
 	}
 
 	// The assumption here is that since the ticker was started after having
@@ -251,18 +251,18 @@ func (g *Group) hash() uint64 {
 	return l.Hash()
 }
 
-// GetEvaluationTime returns the time in seconds it took to evaluate the rule group.
-func (g *Group) GetEvaluationTime() time.Duration {
+// GetEvaluationDuration returns the time in seconds it took to evaluate the rule group.
+func (g *Group) GetEvaluationDuration() time.Duration {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	return g.evaluationTime
+	return g.evaluationDuration
 }
 
-// SetEvaluationTime sets the time in seconds the last evaluation took.
-func (g *Group) SetEvaluationTime(dur time.Duration) {
+// SetEvaluationDuration sets the time in seconds the last evaluation took.
+func (g *Group) SetEvaluationDuration(dur time.Duration) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
-	g.evaluationTime = dur
+	g.evaluationDuration = dur
 }
 
 // evalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -277,12 +277,12 @@ func (g *Group) evalTimestamp() time.Time {
 	return time.Unix(0, base+offset)
 }
 
-// copyState copies the alerting rule and staleness related state from the given group.
+// CopyState copies the alerting rule and staleness related state from the given group.
 //
 // Rules are matched based on their name. If there are duplicates, the
 // first is matched with the first, second with the second etc.
-func (g *Group) copyState(from *Group) {
-	g.evaluationTime = from.evaluationTime
+func (g *Group) CopyState(from *Group) {
+	g.evaluationDuration = from.evaluationDuration
 
 	ruleMap := make(map[string][]int, len(from.rules))
 
@@ -330,7 +330,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			defer func(t time.Time) {
 				sp.Finish()
 				evalDuration.Observe(time.Since(t).Seconds())
-				rule.SetEvaluationTime(time.Since(t))
+				rule.SetEvaluationDuration(time.Since(t))
 			}(time.Now())
 
 			evalTotal.Inc()
@@ -476,7 +476,6 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	// To be replaced with a configurable per-group interval.
 	groups, errs := m.loadGroups(interval, files...)
 	if errs != nil {
 		for _, e := range errs {
@@ -499,7 +498,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 		go func(newg *Group) {
 			if ok {
 				oldg.stop()
-				newg.copyState(oldg)
+				newg.CopyState(oldg)
 			}
 			go func() {
 				// Wait with starting evaluation until the rule manager
@@ -633,7 +632,7 @@ func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 	for _, g := range m.RuleGroups() {
 		ch <- prometheus.MustNewConstMetric(lastDuration,
 			prometheus.GaugeValue,
-			g.GetEvaluationTime().Seconds(),
+			g.GetEvaluationDuration().Seconds(),
 			groupKey(g.file, g.name))
 	}
 	for _, g := range m.RuleGroups() {
