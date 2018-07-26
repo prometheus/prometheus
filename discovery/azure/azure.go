@@ -22,6 +22,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 	"github.com/Azure/azure-sdk-for-go/arm/network"
+	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
 
 	"github.com/go-kit/kit/log"
@@ -154,20 +156,20 @@ type azureClient struct {
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
 func createAzureClient(cfg SDConfig) (azureClient, error) {
 	var c azureClient
-	oauthConfig, err := azure.PublicCloud.OAuthConfigForTenant(cfg.TenantID)
+	oauthConfig, err := adal.NewOAuthConfig(azure.PublicCloud.ActiveDirectoryEndpoint, cfg.TenantID)
 	if err != nil {
 		return azureClient{}, err
 	}
-	spt, err := azure.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), azure.PublicCloud.ResourceManagerEndpoint)
+	spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), azure.PublicCloud.ResourceManagerEndpoint)
 	if err != nil {
 		return azureClient{}, err
 	}
 
 	c.vm = compute.NewVirtualMachinesClient(cfg.SubscriptionID)
-	c.vm.Authorizer = spt
+	c.vm.Authorizer = autorest.NewBearerAuthorizer(spt)
 
 	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
-	c.nic.Authorizer = spt
+	c.nic.Authorizer = autorest.NewBearerAuthorizer(spt)
 
 	return c, nil
 }

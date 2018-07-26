@@ -28,6 +28,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -125,6 +127,7 @@ type API struct {
 
 	db          func() *tsdb.DB
 	enableAdmin bool
+	logger      log.Logger
 }
 
 // NewAPI returns an initialized API type.
@@ -138,6 +141,7 @@ func NewAPI(
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
+	logger log.Logger,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
@@ -160,9 +164,9 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			data, err, finalizer := f(r)
 			if err != nil {
-				respondError(w, err, data)
+				api.respondError(w, err, data)
 			} else if data != nil {
-				respond(w, data)
+				api.respond(w, data)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -600,7 +604,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 	for i, query := range req.Queries {
-		from, through, matchers, err := remote.FromQuery(query)
+		from, through, matchers, selectParams, err := remote.FromQuery(query)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -632,7 +636,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		set, err := querier.Select(nil, filteredMatchers...)
+		set, err := querier.Select(selectParams, filteredMatchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -819,23 +823,38 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 	return result
 }
 
-func respond(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+func (api *API) respond(w http.ResponseWriter, data interface{}) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
 		Data:   data,
 	})
 	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Write(b)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
+	}
 }
 
-func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
+	b, err := json.Marshal(&response{
+		Status:    statusError,
+		ErrorType: apiErr.typ,
+		Error:     apiErr.err.Error(),
+		Data:      data,
+	})
+	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	var code int
 	switch apiErr.typ {
@@ -852,19 +871,12 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	default:
 		code = http.StatusInternalServerError
 	}
-	w.WriteHeader(code)
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
-		Status:    statusError,
-		ErrorType: apiErr.typ,
-		Error:     apiErr.err.Error(),
-		Data:      data,
-	})
-	if err != nil {
-		return
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
-	w.Write(b)
 }
 
 func parseTime(s string) (time.Time, error) {

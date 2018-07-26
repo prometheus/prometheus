@@ -301,6 +301,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
+* `__meta_consul_service_metadata_<key>`: each service metadata key value of the target
 * `__meta_consul_service_port`: the service port of the target
 * `__meta_consul_service`: the name of the service the target belongs to
 * `__meta_consul_tags`: the list of tags of the target joined by the tag separator
@@ -400,6 +401,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_instance_id`: the EC2 instance ID
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
@@ -414,6 +416,9 @@ See below for the configuration options for EC2 discovery:
 
 # The AWS Region.
 region: <string>
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
 
 # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
 # and `AWS_SECRET_ACCESS_KEY` are used.
@@ -451,15 +456,20 @@ support for filtering instances.
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
 instances.
 
+One of the following `<openstack_role>` types can be configured to discover targets:
+
+#### `hypervisor`
+
+The `hypervisor` role discovers one target per Nova hypervisor node. The target
+address defaults to the `host_ip` attribute of the hypervisor.
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
-* `__meta_openstack_instance_id`: the OpenStack instance ID.
-* `__meta_openstack_instance_name`: the OpenStack instance name.
-* `__meta_openstack_instance_status`: the status of the OpenStack instance.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
-* `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
-* `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
+* `__meta_openstack_hypervisor_name`: the hypervisor node's name.
+* `__meta_openstack_hypervisor_state`: the hypervisor node's state.
+* `__meta_openstack_hypervisor_status`: the hypervisor node's status.
+* `__meta_openstack_hypervisor_type`: the hypervisor node's type.
 
 #### `instance`
 
@@ -482,7 +492,7 @@ See below for the configuration options for OpenStack discovery:
 # The information to access the OpenStack API.
 
 # The OpenStack role of entities that should be discovered.
-role: <role>
+role: <openstack_role>
 
 # The OpenStack Region.
 region: <string>

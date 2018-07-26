@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -22,8 +23,16 @@ import (
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
-	return &v1beta1.Ingress{
+type TLSMode int
+
+const (
+	TLSNo TLSMode = iota
+	TLSYes
+	TLSMixed
+)
+
+func makeIngress(tls TLSMode) *v1beta1.Ingress {
+	ret := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testingress",
 			Namespace:   "default",
@@ -31,7 +40,7 @@ func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
 			Annotations: map[string]string{"testannotation": "testannotationvalue"},
 		},
 		Spec: v1beta1.IngressSpec{
-			TLS: tls,
+			TLS: nil,
 			Rules: []v1beta1.IngressRule{
 				{
 					Host: "example.com",
@@ -62,30 +71,47 @@ func makeIngress(tls []v1beta1.IngressTLS) *v1beta1.Ingress {
 			},
 		},
 	}
+
+	switch tls {
+	case TLSYes:
+		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"example.com", "test.example.com"}}}
+	case TLSMixed:
+		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"example.com"}}}
+	}
+
+	return ret
 }
 
-func expectedTargetGroups(tls bool) map[string]*targetgroup.Group {
-	scheme := "http"
-	if tls {
-		scheme = "https"
+func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group {
+	scheme1 := "http"
+	scheme2 := "http"
+
+	switch tls {
+	case TLSYes:
+		scheme1 = "https"
+		scheme2 = "https"
+	case TLSMixed:
+		scheme1 = "https"
 	}
+
+	key := fmt.Sprintf("ingress/%s/testingress", ns)
 	return map[string]*targetgroup.Group{
-		"ingress/default/testingress": {
+		key: {
 			Targets: []model.LabelSet{
 				{
-					"__meta_kubernetes_ingress_scheme": lv(scheme),
+					"__meta_kubernetes_ingress_scheme": lv(scheme1),
 					"__meta_kubernetes_ingress_host":   "example.com",
 					"__meta_kubernetes_ingress_path":   "/",
 					"__address__":                      "example.com",
 				},
 				{
-					"__meta_kubernetes_ingress_scheme": lv(scheme),
+					"__meta_kubernetes_ingress_scheme": lv(scheme1),
 					"__meta_kubernetes_ingress_host":   "example.com",
 					"__meta_kubernetes_ingress_path":   "/foo",
 					"__address__":                      "example.com",
 				},
 				{
-					"__meta_kubernetes_ingress_scheme": lv(scheme),
+					"__meta_kubernetes_ingress_scheme": lv(scheme2),
 					"__meta_kubernetes_ingress_host":   "test.example.com",
 					"__address__":                      "test.example.com",
 					"__meta_kubernetes_ingress_path":   "/",
@@ -93,11 +119,11 @@ func expectedTargetGroups(tls bool) map[string]*targetgroup.Group {
 			},
 			Labels: model.LabelSet{
 				"__meta_kubernetes_ingress_name":                      "testingress",
-				"__meta_kubernetes_namespace":                         "default",
+				"__meta_kubernetes_namespace":                         lv(ns),
 				"__meta_kubernetes_ingress_label_testlabel":           "testvalue",
 				"__meta_kubernetes_ingress_annotation_testannotation": "testannotationvalue",
 			},
-			Source: "ingress/default/testingress",
+			Source: key,
 		},
 	}
 }
@@ -108,12 +134,12 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(nil)
+			obj := makeIngress(TLSNo)
 			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
 			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups(false),
+		expectedRes:      expectedTargetGroups("default", TLSNo),
 	}.Run(t)
 }
 
@@ -123,11 +149,48 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress([]v1beta1.IngressTLS{{}})
+			obj := makeIngress(TLSYes)
 			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
 			w.Ingresses().Add(obj)
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups(true),
+		expectedRes:      expectedTargetGroups("default", TLSYes),
+	}.Run(t)
+}
+
+func TestIngressDiscoveryAddMixed(t *testing.T) {
+	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := makeIngress(TLSMixed)
+			c.ExtensionsV1beta1().Ingresses("default").Create(obj)
+			w.Ingresses().Add(obj)
+		},
+		expectedMaxItems: 1,
+		expectedRes:      expectedTargetGroups("default", TLSMixed),
+	}.Run(t)
+}
+
+func TestIngressDiscoveryNamespaces(t *testing.T) {
+	n, c, w := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+
+	expected := expectedTargetGroups("ns1", TLSNo)
+	for k, v := range expectedTargetGroups("ns2", TLSNo) {
+		expected[k] = v
+	}
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			for _, ns := range []string{"ns1", "ns2"} {
+				obj := makeIngress(TLSNo)
+				obj.Namespace = ns
+				c.ExtensionsV1beta1().Ingresses(obj.Namespace).Create(obj)
+				w.Ingresses().Add(obj)
+			}
+		},
+		expectedMaxItems: 2,
+		expectedRes:      expected,
 	}.Run(t)
 }

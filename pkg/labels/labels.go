@@ -94,6 +94,47 @@ func (ls Labels) Hash() uint64 {
 	return xxhash.Sum64(b)
 }
 
+// HashForLabels returns a hash value for the labels matching the provided names.
+func (ls Labels) HashForLabels(names ...string) uint64 {
+	b := make([]byte, 0, 1024)
+
+	for _, v := range ls {
+		for _, n := range names {
+			if v.Name == n {
+				b = append(b, v.Name...)
+				b = append(b, sep)
+				b = append(b, v.Value...)
+				b = append(b, sep)
+				break
+			}
+		}
+	}
+	return xxhash.Sum64(b)
+}
+
+// HashWithoutLabels returns a hash value for all labels except those matching
+// the provided names.
+func (ls Labels) HashWithoutLabels(names ...string) uint64 {
+	b := make([]byte, 0, 1024)
+
+Outer:
+	for _, v := range ls {
+		if v.Name == MetricName {
+			continue
+		}
+		for _, n := range names {
+			if v.Name == n {
+				continue Outer
+			}
+		}
+		b = append(b, v.Name...)
+		b = append(b, sep)
+		b = append(b, v.Value...)
+		b = append(b, sep)
+	}
+	return xxhash.Sum64(b)
+}
+
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
 	res := make(Labels, len(ls))

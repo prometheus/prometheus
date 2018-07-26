@@ -71,17 +71,6 @@ import (
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
-// secureHeadersMiddleware adds common HTTP security headers to responses.
-func secureHeadersMiddleware(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("X-XSS-Protection", "1; mode=block")
-		w.Header().Add("X-Content-Type-Options", "nosniff")
-		w.Header().Add("X-Frame-Options", "SAMEORIGIN")
-		w.Header().Add("Content-Security-Policy", "frame-ancestors 'self'")
-		h.ServeHTTP(w, r)
-	})
-}
-
 var (
 	requestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -238,6 +227,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.testReady,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
+		logger,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -489,10 +479,8 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
-	withSecureHeaders := nethttp.Middleware(opentracing.GlobalTracer(), secureHeadersMiddleware(mux), operationName)
-
 	httpSrv := &http.Server{
-		Handler:     withSecureHeaders,
+		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -770,13 +758,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
 		"consolesPath": func() string { return consolesPath },
-		"pathPrefix": func() string {
-			if opts.RoutePrefix == "/" {
-				return ""
-			} else {
-				return opts.RoutePrefix
-			}
-		},
+		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {

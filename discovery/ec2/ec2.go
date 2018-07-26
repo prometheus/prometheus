@@ -37,18 +37,19 @@ import (
 )
 
 const (
-	ec2Label              = model.MetaLabelPrefix + "ec2_"
-	ec2LabelAZ            = ec2Label + "availability_zone"
-	ec2LabelInstanceID    = ec2Label + "instance_id"
-	ec2LabelInstanceState = ec2Label + "instance_state"
-	ec2LabelInstanceType  = ec2Label + "instance_type"
-	ec2LabelPublicDNS     = ec2Label + "public_dns_name"
-	ec2LabelPublicIP      = ec2Label + "public_ip"
-	ec2LabelPrivateIP     = ec2Label + "private_ip"
-	ec2LabelSubnetID      = ec2Label + "subnet_id"
-	ec2LabelTag           = ec2Label + "tag_"
-	ec2LabelVPCID         = ec2Label + "vpc_id"
-	subnetSeparator       = ","
+	ec2Label                = model.MetaLabelPrefix + "ec2_"
+	ec2LabelAZ              = ec2Label + "availability_zone"
+	ec2LabelInstanceID      = ec2Label + "instance_id"
+	ec2LabelInstanceState   = ec2Label + "instance_state"
+	ec2LabelInstanceType    = ec2Label + "instance_type"
+	ec2LabelPublicDNS       = ec2Label + "public_dns_name"
+	ec2LabelPublicIP        = ec2Label + "public_ip"
+	ec2LabelPrivateIP       = ec2Label + "private_ip"
+	ec2LabelPrimarySubnetID = ec2Label + "primary_subnet_id"
+	ec2LabelSubnetID        = ec2Label + "subnet_id"
+	ec2LabelTag             = ec2Label + "tag_"
+	ec2LabelVPCID           = ec2Label + "vpc_id"
+	subnetSeparator         = ","
 )
 
 var (
@@ -77,6 +78,7 @@ type Filter struct {
 
 // SDConfig is the configuration for EC2 based service discovery.
 type SDConfig struct {
+	Endpoint        string             `yaml:"endpoint"`
 	Region          string             `yaml:"region"`
 	AccessKey       string             `yaml:"access_key,omitempty"`
 	SecretKey       config_util.Secret `yaml:"secret_key,omitempty"`
@@ -143,6 +145,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	}
 	return &Discovery{
 		aws: &aws.Config{
+			Endpoint:    &conf.Endpoint,
 			Region:      &conf.Region,
 			Credentials: creds,
 		},
@@ -254,14 +257,16 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
+					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
+					// Deduplicate VPC Subnet IDs maintaining the order of the network interfaces returned by EC2.
+					var subnets []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
-						subnetsMap[*eni.SubnetId] = struct{}{}
-					}
-					subnets := []string{}
-					for k := range subnetsMap {
-						subnets = append(subnets, k)
+						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
+							subnetsMap[*eni.SubnetId] = struct{}{}
+							subnets = append(subnets, *eni.SubnetId)
+						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						subnetSeparator +

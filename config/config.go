@@ -113,13 +113,13 @@ var (
 		MaxShards:         1000,
 		MaxSamplesPerSend: 100,
 
-		// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
-		// 1000 shards, this will buffer 100M samples total.
-		Capacity:          100 * 1000,
+		// By default, buffer 100 batches, which at 100ms per batch is 10s. At
+		// 1000 shards, this will buffer 10M samples total.
+		Capacity:          100 * 100,
 		BatchSendDeadline: 5 * time.Second,
 
 		// Max number of times to retry a batch on recoverable errors.
-		MaxRetries: 10,
+		MaxRetries: 3,
 		MinBackoff: 30 * time.Millisecond,
 		MaxBackoff: 100 * time.Millisecond,
 	}
@@ -370,6 +370,13 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 		}
 	}
+
+	// Add index to the static config target groups for unique identification
+	// within scrape pool.
+	for i, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
+		tg.Source = fmt.Sprintf("%d", i)
+	}
+
 	return nil
 }
 
@@ -432,6 +439,13 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 			}
 		}
 	}
+
+	// Add index to the static config target groups for unique identification
+	// within scrape pool.
+	for i, tg := range c.ServiceDiscoveryConfig.StaticConfigs {
+		tg.Source = fmt.Sprintf("%d", i)
+	}
+
 	return nil
 }
 
