@@ -120,9 +120,6 @@ type Options struct {
 	// Duration for how long to retain data.
 	Retention model.Duration
 
-	// Maximum number of bytes to be retained.
-	MaxBytes int64
-
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
 }
@@ -146,7 +143,6 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALFlushInterval:  10 * time.Second,
 		RetentionDuration: uint64(time.Duration(opts.Retention).Seconds() * 1000),
-		MaxBytes:          opts.MaxBytes,
 		BlockRanges:       rngs,
 		NoLockfile:        opts.NoLockfile,
 	})
