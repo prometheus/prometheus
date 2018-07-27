@@ -14,7 +14,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,6 +65,7 @@ import (
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+	"github.com/prometheus/prometheus/web/ui/static"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -262,7 +262,8 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	router.Get("/static/*filepath", h.serveStaticAsset)
+	//router.Get("/static/*filepath", h.serveStaticAsset)
+	router.ServeFiles("/static/*filepath", static.Assets)
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", route.FileServe(o.UserAssetsPath))
@@ -347,28 +348,6 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
 	}
-}
-
-func (h *Handler) serveStaticAsset(w http.ResponseWriter, req *http.Request) {
-	fp := route.Param(req.Context(), "filepath")
-	fp = filepath.Join("web/ui/static", fp)
-
-	info, err := ui.AssetInfo(fp)
-	if err != nil {
-		level.Warn(h.logger).Log("msg", "Could not get file info", "err", err, "file", fp)
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	file, err := ui.Asset(fp)
-	if err != nil {
-		if err != io.EOF {
-			level.Warn(h.logger).Log("msg", "Could not get file", "err", err, "file", fp)
-		}
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
 }
 
 // Ready sets Handler to be ready.
