@@ -908,6 +908,12 @@
 			"revisionTime": "2017-11-19T17:43:26Z"
 		},
 		{
+			"checksumSHA1": "xr2r2F3yH9q83Isgj26QRdjiahg=",
+			"path": "github.com/shurcooL/vfsgen/cmd/vfsgendev",
+			"revision": "62bca832be04bd2bcaabd3b68a6b19a7ec044411",
+			"revisionTime": "2018-07-11T16:37:06Z"
+		},
+		{
 			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
 			"path": "github.com/spf13/pflag",
 			"revision": "e57e3eeb33f795204c1ca35f56c44f83227c6e66",

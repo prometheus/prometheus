@@ -23,8 +23,13 @@ STATICCHECK_IGNORE = \
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+VFSGENDEV := $(FIRST_GOPATH)/bin/vfsgendev
+
 .PHONY: assets
-assets:
+assets: $(VFSGENDEV)
 	@echo ">> writing assets"
-	cd $(BIN_DIR)/web/ui && go generate
-	cd $(BIN_DIR)/web/ui/static && go generate
+	cd $(PREFIX)/web/ui && go generate
+	cd $(PREFIX)/web/ui/static && go generate
+
+$(VFSGENDEV):
+	cd $(PREFIX)/vendor/github.com/shurcooL/vfsgen/ && go install ./cmd/vfsgendev/...
