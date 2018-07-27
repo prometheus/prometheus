@@ -262,7 +262,6 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	//router.Get("/static/*filepath", h.serveStaticAsset)
 	router.ServeFiles("/static/*filepath", static.Assets)
 
 	if o.UserAssetsPath != "" {
