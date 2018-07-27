@@ -26,5 +26,5 @@ DOCKER_IMAGE_NAME       ?= prometheus
 .PHONY: assets
 assets:
 	@echo ">> writing assets"
+	cd $(BIN_DIR)/web/ui && go generate
 	cd $(BIN_DIR)/web/ui/static && go generate
-	cd $(BIN_DIR)/web/ui/templates && go generate

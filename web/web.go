@@ -64,8 +64,8 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
+	"github.com/prometheus/prometheus/web/ui"
 	"github.com/prometheus/prometheus/web/ui/static"
-	"github.com/prometheus/prometheus/web/ui/templates"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -829,7 +829,7 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	var tmpl string
 
 	appendf := func(name string) error {
-		f, err := templates.Assets.Open(name)
+		f, err := ui.Assets.Open(name)
 		if err != nil {
 			return err
 		}

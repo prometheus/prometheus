@@ -2,7 +2,7 @@
 
 // +build !dev
 
-package templates
+package ui
 
 import (
 	"bytes"
@@ -16,12 +16,12 @@ import (
 	"time"
 )
 
-// Assets contains the project's static assets.
+// Assets contains the project's template assets.
 var Assets = func() http.FileSystem {
 	fs := vfsgen۰FS{
 		"/": &vfsgen۰DirInfo{
 			name:    "/",
-			modTime: time.Date(2018, 7, 27, 12, 17, 4, 100006584, time.UTC),
+			modTime: time.Date(2018, 7, 27, 13, 14, 17, 186276664, time.UTC),
 		},
 		"/_base.html": &vfsgen۰CompressedFileInfo{
 			name:             "_base.html",

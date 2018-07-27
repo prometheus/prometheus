@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright 2018 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,7 +13,7 @@
 
 // +build dev
 
-package templates
+package ui
 
 import (
 	"go/build"
@@ -33,10 +33,9 @@ func importPathToDir(importPath string) string {
 	return p.Dir
 }
 
-// Assets contains the project's static assets.
+// Assets contains the project's template assets.
 var Assets http.FileSystem = filter.Keep(
 	http.Dir(importPathToDir("github.com/prometheus/prometheus/web/ui/templates")),
-	//filter.FilesWithExtensions("html"),
 	func(path string, fi os.FileInfo) bool {
 		return fi.IsDir() || strings.HasSuffix(path, ".html")
 	},
