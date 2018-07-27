@@ -19,6 +19,8 @@ import (
 	"go/build"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/shurcooL/httpfs/filter"
 )
@@ -34,5 +36,8 @@ func importPathToDir(importPath string) string {
 // Assets contains the project's static assets.
 var Assets http.FileSystem = filter.Keep(
 	http.Dir(importPathToDir("github.com/prometheus/prometheus/web/ui/templates")),
-	filter.FilesWithExtensions(".html"),
+	//filter.FilesWithExtensions("html"),
+	func(path string, fi os.FileInfo) bool {
+		return fi.IsDir() || strings.HasSuffix(path, ".html")
+	},
 )

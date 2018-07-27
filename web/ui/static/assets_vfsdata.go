@@ -21,7 +21,7 @@ var Assets = func() http.FileSystem {
 	fs := vfsgen۰FS{
 		"/": &vfsgen۰DirInfo{
 			name:    "/",
-			modTime: time.Date(2018, 7, 27, 10, 4, 23, 637008988, time.UTC),
+			modTime: time.Date(2018, 7, 27, 11, 59, 12, 994019639, time.UTC),
 		},
 		"/css": &vfsgen۰DirInfo{
 			name:    "css",
@@ -89,7 +89,7 @@ var Assets = func() http.FileSystem {
 		},
 		"/js": &vfsgen۰DirInfo{
 			name:    "js",
-			modTime: time.Date(2018, 7, 27, 11, 39, 34, 615087769, time.UTC),
+			modTime: time.Date(2018, 7, 27, 11, 46, 34, 126058169, time.UTC),
 		},
 		"/js/alerts.js": &vfsgen۰CompressedFileInfo{
 			name:             "alerts.js",

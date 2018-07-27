@@ -64,8 +64,8 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
-	"github.com/prometheus/prometheus/web/ui"
 	"github.com/prometheus/prometheus/web/ui/static"
+	"github.com/prometheus/prometheus/web/ui/templates"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -826,15 +826,32 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 }
 
 func (h *Handler) getTemplate(name string) (string, error) {
-	baseTmpl, err := ui.Asset("web/ui/templates/_base.html")
+	var tmpl string
+
+	appendf := func(name string) error {
+		f, err := templates.Assets.Open(name)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		b, err := ioutil.ReadAll(f)
+		if err != nil {
+			return err
+		}
+		tmpl += string(b)
+		return nil
+	}
+
+	err := appendf("_base.html")
 	if err != nil {
 		return "", fmt.Errorf("error reading base template: %s", err)
 	}
-	pageTmpl, err := ui.Asset(filepath.Join("web/ui/templates", name))
+	err = appendf(name)
 	if err != nil {
 		return "", fmt.Errorf("error reading page template %s: %s", name, err)
 	}
-	return string(baseTmpl) + string(pageTmpl), nil
+
+	return tmpl, nil
 }
 
 func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
