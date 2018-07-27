@@ -20,9 +20,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/shurcooL/httpfs/filter"
+	"github.com/shurcooL/httpfs/union"
 )
 
 func importPathToDir(importPath string) string {
@@ -33,19 +35,23 @@ func importPathToDir(importPath string) string {
 	return p.Dir
 }
 
+func getAsset(path string) http.FileSystem {
+	return filter.Keep(
+		http.Dir(filepath.Join(importPathToDir("github.com/prometheus/prometheus/web/ui/static"), path)),
+		func(path string, fi os.FileInfo) bool {
+			return fi.IsDir() ||
+				(!strings.HasSuffix(path, "map.js") &&
+					!strings.HasSuffix(path, "/bootstrap.js") &&
+					!strings.HasSuffix(path, "/bootstrap-theme.css") &&
+					!strings.HasSuffix(path, "/bootstrap.css"))
+		},
+	)
+}
+
 // Assets contains the project's static assets.
-var Assets http.FileSystem = filter.Keep(
-	http.Dir(importPathToDir("github.com/prometheus/prometheus/web/ui/static")),
-	func(path string, fi os.FileInfo) bool {
-		switch {
-		case fi.IsDir():
-			return true
-		case strings.HasPrefix(path, "/css") || strings.HasPrefix(path, "/img") || strings.HasPrefix(path, "/js") || strings.HasPrefix(path, "/vendor"):
-			return !strings.HasSuffix(path, "map.js") &&
-				!strings.HasSuffix(path, "/bootstrap.js") &&
-				!strings.HasSuffix(path, "/bootstrap-theme.css") &&
-				!strings.HasSuffix(path, "/bootstrap.css")
-		}
-		return false
-	},
-)
+var Assets http.FileSystem = union.New(map[string]http.FileSystem{
+	"/css":    getAsset("css"),
+	"/img":    getAsset("img"),
+	"/js":     getAsset("js"),
+	"/vendor": getAsset("vendor"),
+})
