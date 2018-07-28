@@ -99,10 +99,11 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 	var rp *prompb.ReadHints
 	if p != nil {
 		rp = &prompb.ReadHints{
-			StepMs:  p.Step,
-			Func:    p.Func,
-			StartMs: p.Start,
-			EndMs:   p.End,
+			StepMs:      p.Step,
+			Func:        p.Func,
+			StartMs:     p.Start,
+			EndMs:       p.End,
+			SeriesMatch: p.SeriesMatch,
 		}
 	}
 
@@ -123,10 +124,11 @@ func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.Sel
 	var selectParams *storage.SelectParams
 	if req.Hints != nil {
 		selectParams = &storage.SelectParams{
-			Start: req.Hints.StartMs,
-			End:   req.Hints.EndMs,
-			Step:  req.Hints.StepMs,
-			Func:  req.Hints.Func,
+			Start:       req.Hints.StartMs,
+			End:         req.Hints.EndMs,
+			Step:        req.Hints.StepMs,
+			Func:        req.Hints.Func,
+			SeriesMatch: req.Hints.SeriesMatch,
 		}
 	}
 

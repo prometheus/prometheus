@@ -66,8 +66,9 @@ type SelectParams struct {
 	Start int64 // Start time in milliseconds for this select.
 	End   int64 // End time in milliseconds for this select.
 
-	Step int64  // Query step size in milliseconds.
-	Func string // String representation of surrounding function or aggregation.
+	Step        int64  // Query step size in milliseconds.
+	Func        string // String representation of surrounding function or aggregation.
+	SeriesMatch bool   // Series Match flag
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as

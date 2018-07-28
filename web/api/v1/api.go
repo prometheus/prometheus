@@ -411,9 +411,14 @@ func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 	}
 	defer q.Close()
 
+	selectParams := &storage.SelectParams{
+		Start:       timestamp.FromTime(start),
+		End:         timestamp.FromTime(end),
+		SeriesMatch: true,
+	}
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, err := q.Select(nil, mset...)
+		s, err := q.Select(selectParams, mset...)
 		if err != nil {
 			return nil, &apiError{errorExec, err}, nil
 		}
