@@ -720,13 +720,14 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
 
-		if numScrapes == 1 {
+		switch {
+		case numScrapes == 1:
 			w.Write([]byte("metric_a 42\n"))
 			return nil
-		} else if numScrapes == 2 {
+		case numScrapes == 2:
 			w.Write([]byte("7&-\n"))
 			return nil
-		} else if numScrapes == 3 {
+		case numScrapes == 3:
 			cancel()
 		}
 		return fmt.Errorf("scrape failed")

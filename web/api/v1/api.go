@@ -163,11 +163,12 @@ func (api *API) Register(r *route.Router) {
 		hf := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setCORS(w)
 			data, err, finalizer := f(r)
-			if err != nil {
+			switch {
+			case err != nil:
 				api.respondError(w, err, data)
-			} else if data != nil {
+			case data != nil:
 				api.respond(w, data)
-			} else {
+			default:
 				w.WriteHeader(http.StatusNoContent)
 			}
 			if finalizer != nil {
@@ -802,13 +803,14 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
-		if primary[i].Name < secondary[j].Name {
+		switch {
+		case primary[i].Name < secondary[j].Name:
 			result = append(result, primary[i])
 			i++
-		} else if primary[i].Name > secondary[j].Name {
+		case primary[i].Name > secondary[j].Name:
 			result = append(result, secondary[j])
 			j++
-		} else {
+		default:
 			result = append(result, primary[i])
 			i++
 			j++
