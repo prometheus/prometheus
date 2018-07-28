@@ -241,7 +241,7 @@ func TestExternalLabels(t *testing.T) {
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "a",
-				Action:       "replace",
+				Action:       config.RelabelReplace,
 				Regex:        config.MustNewRegexp("externalrelabelthis"),
 				Replacement:  "c",
 			},
@@ -273,13 +273,13 @@ func TestHandlerRelabel(t *testing.T) {
 		RelabelConfigs: []*config.RelabelConfig{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
-				Action:       "drop",
+				Action:       config.RelabelDrop,
 				Regex:        config.MustNewRegexp("drop"),
 			},
 			{
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "alertname",
-				Action:       "replace",
+				Action:       config.RelabelReplace,
 				Regex:        config.MustNewRegexp("rename"),
 				Replacement:  "renamed",
 			},

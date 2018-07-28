@@ -53,7 +53,7 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, erro
 		Username:         "test",
 		DomainName:       "12345",
 		Region:           "RegionOne",
-		Role:             "hypervisor",
+		Role:             OpenStackRoleHypervisor,
 	}
 	return NewDiscovery(&conf, nil)
 }
