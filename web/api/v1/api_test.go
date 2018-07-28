@@ -527,7 +527,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 						DiscoveredLabels: map[string]string{},
 						Labels:           map[string]string{},
 						ScrapeURL:        "http://example.com:8080/metrics",
-						Health:           "unknown",
+						Health:           scrape.HealthUnknown,
 					},
 				},
 				DroppedTargets: []*DroppedTarget{

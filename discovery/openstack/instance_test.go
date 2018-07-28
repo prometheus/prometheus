@@ -54,7 +54,7 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error)
 		Username:         "test",
 		DomainName:       "12345",
 		Region:           "RegionOne",
-		Role:             "instance",
+		Role:             OpenStackRoleInstance,
 	}
 	return NewDiscovery(&conf, nil)
 }
