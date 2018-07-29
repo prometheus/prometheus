@@ -14,7 +14,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -390,23 +389,19 @@ func QueryInstant(url string, query string) int {
 		return 1
 	}
 
-	// Run query against client.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Query(ctx, query, time.Now())
-	cancel()
+	queryFunc := api.buildQuerier(api.Query, query, time.Now())
+	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 		return 1
 	}
 
-	fmt.Println(val.String())
-
+	fmt.Print(val)
 	return 0
 }
 
 // QueryRange performs a range query against a Prometheus server.
 func QueryRange(url string, query string, start string, end string) int {
-	// Create new API querier.
 	api, err := newPrometheusAPI(url)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
@@ -441,19 +436,17 @@ func QueryRange(url string, query string, start string, end string) int {
 	resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
 	// Convert seconds to nanoseconds such that time.Duration parses correctly.
 	step := time.Duration(resolution * 1e9)
+	r := v1.Range{Start: stime, End: etime, Step: step}
 
 	// Run query against client.
-	r := v1.Range{Start: stime, End: etime, Step: step}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.QueryRange(ctx, query, r)
-	cancel()
-
+	queryFunc := api.buildQuerier(api.QueryRange, query, r)
+	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 		return 1
 	}
 
-	fmt.Println(val.String())
+	fmt.Print(val)
 	return 0
 }
 
@@ -492,18 +485,14 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 	}
 
 	// Run query against client.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.Series(ctx, matchers, stime, etime)
-	cancel()
-
+	queryFunc := api.buildQuerier(api.Series, matchers, stime, etime)
+	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 		return 1
 	}
 
-	for _, v := range val {
-		fmt.Println(v)
-	}
+	fmt.Print(val)
 	return 0
 }
 
@@ -516,18 +505,14 @@ func QueryLabels(url *url.URL, name string) int {
 	}
 
 	// Run query against client.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, err := api.LabelValues(ctx, name)
-	cancel()
-
+	queryFunc := api.buildQuerier(api.LabelValues, name)
+	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 		return 1
 	}
 
-	for _, v := range val {
-		fmt.Println(v)
-	}
+	fmt.Print(val)
 	return 0
 }
 
