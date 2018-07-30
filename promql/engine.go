@@ -161,6 +161,35 @@ func contextDone(ctx context.Context, env string) error {
 	}
 }
 
+// spanTimer unifies tracing and timing, to reduce repetition.
+type spanTimer struct {
+	timer     *stats.Timer
+	observers []prometheus.Summary
+
+	span opentracing.Span
+}
+
+func newSpanTimer(ctx context.Context, operation string, timer *stats.Timer, observers ...prometheus.Summary) (*spanTimer, context.Context) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, operation)
+	timer.Start()
+
+	return &spanTimer{
+		timer:     timer,
+		observers: observers,
+
+		span: span,
+	}, ctx
+}
+
+func (s *spanTimer) Finish() {
+	s.timer.Stop()
+	s.span.Finish()
+
+	for _, obs := range s.observers {
+		obs.Observe(s.timer.ElapsedTime().Seconds())
+	}
+}
+
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
 type Engine struct {
@@ -310,25 +339,25 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
 	q.cancel = cancel
 
-	execTimer := q.stats.GetTimer(stats.ExecTotalTime).Start()
-	defer execTimer.Stop()
-	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
+	execSpanTimer, ctx := newSpanTimer(ctx, "promqlExec", q.stats.GetTimer(stats.ExecTotalTime))
+	defer execSpanTimer.Finish()
+
+	queueSpanTimer, _ := newSpanTimer(ctx, "promqlExecQueue", q.stats.GetTimer(stats.ExecQueueTime), ng.metrics.queryQueueTime)
 
 	if err := ng.gate.Start(ctx); err != nil {
 		return nil, err
 	}
 	defer ng.gate.Done()
 
-	queueTimer.Stop()
-	ng.metrics.queryQueueTime.Observe(queueTimer.ElapsedTime().Seconds())
+	queueSpanTimer.Finish()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
 
 	const env = "query execution"
 
-	evalTimer := q.stats.GetTimer(stats.EvalTotalTime).Start()
-	defer evalTimer.Stop()
+	evalSpanTimer, ctx := newSpanTimer(ctx, "promqlEval", q.stats.GetTimer(stats.EvalTotalTime))
+	defer evalSpanTimer.Finish()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
 	if err := contextDone(ctx, env); err != nil {
@@ -355,23 +384,25 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, error) {
-	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
-	querier, err := ng.populateSeries(ctx, query.queryable, s)
-	prepareTimer.Stop()
-	ng.metrics.queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
+	{
+		// New block because we want to throw away this ctx. Propagating it further makes every call a child of prepare in traces.
+		prepareSpanTimer, ctx := newSpanTimer(ctx, "promqlPrepare", query.stats.GetTimer(stats.QueryPreparationTime), ng.metrics.queryPrepareTime)
+		querier, err := ng.populateSeries(ctx, query.queryable, s)
+		prepareSpanTimer.Finish()
 
-	// XXX(fabxc): the querier returned by populateSeries might be instantiated
-	// we must not return without closing irrespective of the error.
-	// TODO: make this semantically saner.
-	if querier != nil {
-		defer querier.Close()
+		// XXX(fabxc): the querier returned by populateSeries might be instantiated
+		// we must not return without closing irrespective of the error.
+		// TODO: make this semantically saner.
+		if querier != nil {
+			defer querier.Close()
+		}
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
+	evalSpanTimer, _ := newSpanTimer(ctx, "promqlInnerEval", query.stats.GetTimer(stats.InnerEvalTime), ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -387,8 +418,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			return nil, err
 		}
 
-		evalTimer.Stop()
-		ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+		evalSpanTimer.Finish()
 
 		mat, ok := val.(Matrix)
 		if !ok {
@@ -427,8 +457,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if err != nil {
 		return nil, err
 	}
-	evalTimer.Stop()
-	ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+	evalSpanTimer.Finish()
 
 	mat, ok := val.(Matrix)
 	if !ok {
@@ -442,11 +471,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// TODO(fabxc): order ensured by storage?
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
-	sortTimer := query.stats.GetTimer(stats.ResultSortTime).Start()
+	sortSpanTimer, _ := newSpanTimer(ctx, "promqlSort", query.stats.GetTimer(stats.ResultSortTime), ng.metrics.queryResultSort)
 	sort.Sort(mat)
-	sortTimer.Stop()
+	sortSpanTimer.Finish()
 
-	ng.metrics.queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
 	return mat, nil
 }
 
