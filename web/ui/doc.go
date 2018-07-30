@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ui provides template assets via a virtual filesystem.
+// Package ui provides the assets via a virtual filesystem.
 package ui
 
 //go:generate vfsgendev -source="github.com/prometheus/prometheus/web/ui".Assets

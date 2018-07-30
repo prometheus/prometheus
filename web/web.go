@@ -65,7 +65,6 @@ import (
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
-	"github.com/prometheus/prometheus/web/ui/static"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -262,7 +261,11 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	router.ServeFiles("/static/*filepath", static.Assets)
+	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = filepath.Join("/static", route.Param(r.Context(), "filepath"))
+		fs := http.FileServer(ui.Assets)
+		fs.ServeHTTP(w, r)
+	})
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", route.FileServe(o.UserAssetsPath))
@@ -829,7 +832,7 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	var tmpl string
 
 	appendf := func(name string) error {
-		f, err := ui.Assets.Open(name)
+		f, err := ui.Assets.Open(filepath.Join("/templates", name))
 		if err != nil {
 			return err
 		}

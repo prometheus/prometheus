@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/shurcooL/httpfs/filter"
+	"github.com/shurcooL/httpfs/union"
 )
 
 func importPathToDir(importPath string) string {
@@ -33,10 +34,26 @@ func importPathToDir(importPath string) string {
 	return p.Dir
 }
 
-// Assets contains the project's template assets.
-var Assets http.FileSystem = filter.Keep(
+var static http.FileSystem = filter.Keep(
+	http.Dir(importPathToDir("github.com/prometheus/prometheus/web/ui/static")),
+	func(path string, fi os.FileInfo) bool {
+		return fi.IsDir() ||
+			(!strings.HasSuffix(path, "map.js") &&
+				!strings.HasSuffix(path, "/bootstrap.js") &&
+				!strings.HasSuffix(path, "/bootstrap-theme.css") &&
+				!strings.HasSuffix(path, "/bootstrap.css"))
+	},
+)
+
+var templates http.FileSystem = filter.Keep(
 	http.Dir(importPathToDir("github.com/prometheus/prometheus/web/ui/templates")),
 	func(path string, fi os.FileInfo) bool {
 		return fi.IsDir() || strings.HasSuffix(path, ".html")
 	},
 )
+
+// Assets contains the project's assets.
+var Assets http.FileSystem = union.New(map[string]http.FileSystem{
+	"/templates": templates,
+	"/static":    static,
+})
