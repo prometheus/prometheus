@@ -389,15 +389,8 @@ func QueryInstant(url string, query string) int {
 		return 1
 	}
 
-	queryFunc := querier.buildQueryFunc(querier.api.Query, query, time.Now())
-	val, err := queryFunc()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
-	}
-
-	fmt.Print(val)
-	return 0
+	querier.setQueryFunc(querier.api.Query, query, time.Now())
+	return querier.exec()
 }
 
 // QueryRange performs a range query against a Prometheus server.
@@ -438,16 +431,8 @@ func QueryRange(url string, query string, start string, end string) int {
 	step := time.Duration(resolution * 1e9)
 	r := v1.Range{Start: stime, End: etime, Step: step}
 
-	// Run query against client.
-	queryFunc := querier.buildQueryFunc(querier.api.QueryRange, query, r)
-	val, err := queryFunc()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
-	}
-
-	fmt.Print(val)
-	return 0
+	querier.setQueryFunc(querier.api.QueryRange, query, r)
+	return querier.exec()
 }
 
 // QuerySeries queries for a series against a Prometheus server.
@@ -484,16 +469,8 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 		}
 	}
 
-	// Run query against client.
-	queryFunc := querier.buildQueryFunc(querier.api.Series, matchers, stime, etime)
-	val, err := queryFunc()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
-	}
-
-	fmt.Print(val)
-	return 0
+	querier.setQueryFunc(querier.api.Series, matchers, stime, etime)
+	return querier.exec()
 }
 
 // QueryLabels queries for label values against a Prometheus server.
@@ -504,16 +481,8 @@ func QueryLabels(url *url.URL, name string) int {
 		return 1
 	}
 
-	// Run query against client.
-	queryFunc := querier.buildQueryFunc(querier.api.LabelValues, name)
-	val, err := queryFunc()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
-	}
-
-	fmt.Print(val)
-	return 0
+	querier.setQueryFunc(querier.api.LabelValues, name)
+	return querier.exec()
 }
 
 func parseTime(s string) (time.Time, error) {

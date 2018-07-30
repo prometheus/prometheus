@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 type prometheusAPIQuerier struct {
 	api            v1.API
 	requestTimeout time.Duration
+	queryFunc      func() (string, error)
 }
 
 func newPrometheusAPIQuerier(serverURL string) (*prometheusAPIQuerier, error) {
@@ -71,4 +73,23 @@ func (q *prometheusAPIQuerier) buildQueryFunc(fn interface{}, args ...interface{
 		}
 		return buf.String(), err
 	}
+}
+
+func (q *prometheusAPIQuerier) setQueryFunc(fn interface{}, args ...interface{}) {
+	q.queryFunc = q.buildQueryFunc(fn, args...)
+}
+
+func (q *prometheusAPIQuerier) exec() int {
+	if q.queryFunc == nil {
+		panic("expect queryFunc to be set in advance")
+	}
+
+	val, err := q.queryFunc()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	fmt.Print(val)
+	return 0
 }
