@@ -383,13 +383,13 @@ func CheckMetrics() int {
 
 // QueryInstant performs an instant query against a Prometheus server.
 func QueryInstant(url string, query string) int {
-	api, err := newPrometheusAPI(url)
+	querier, err := newPrometheusAPIQuerier(url)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
 	}
 
-	queryFunc := api.buildQuerier(api.Query, query, time.Now())
+	queryFunc := querier.buildQueryFunc(querier.api.Query, query, time.Now())
 	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -402,7 +402,7 @@ func QueryInstant(url string, query string) int {
 
 // QueryRange performs a range query against a Prometheus server.
 func QueryRange(url string, query string, start string, end string) int {
-	api, err := newPrometheusAPI(url)
+	querier, err := newPrometheusAPIQuerier(url)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
@@ -439,7 +439,7 @@ func QueryRange(url string, query string, start string, end string) int {
 	r := v1.Range{Start: stime, End: etime, Step: step}
 
 	// Run query against client.
-	queryFunc := api.buildQuerier(api.QueryRange, query, r)
+	queryFunc := querier.buildQueryFunc(querier.api.QueryRange, query, r)
 	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -452,7 +452,7 @@ func QueryRange(url string, query string, start string, end string) int {
 
 // QuerySeries queries for a series against a Prometheus server.
 func QuerySeries(url *url.URL, matchers []string, start string, end string) int {
-	api, err := newPrometheusAPI(url.String())
+	querier, err := newPrometheusAPIQuerier(url.String())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
@@ -485,7 +485,7 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 	}
 
 	// Run query against client.
-	queryFunc := api.buildQuerier(api.Series, matchers, stime, etime)
+	queryFunc := querier.buildQueryFunc(querier.api.Series, matchers, stime, etime)
 	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)
@@ -498,14 +498,14 @@ func QuerySeries(url *url.URL, matchers []string, start string, end string) int 
 
 // QueryLabels queries for label values against a Prometheus server.
 func QueryLabels(url *url.URL, name string) int {
-	api, err := newPrometheusAPI(url.String())
+	querier, err := newPrometheusAPIQuerier(url.String())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API querier:", err)
 		return 1
 	}
 
 	// Run query against client.
-	queryFunc := api.buildQuerier(api.LabelValues, name)
+	queryFunc := querier.buildQueryFunc(querier.api.LabelValues, name)
 	val, err := queryFunc()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "query error:", err)

@@ -11,24 +11,24 @@ import (
 	"github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
-type prometheusAPI struct {
-	v1.API
+type prometheusAPIQuerier struct {
+	api            v1.API
 	requestTimeout time.Duration
 }
 
-func newPrometheusAPI(serverURL string) (*prometheusAPI, error) {
+func newPrometheusAPIQuerier(serverURL string) (*prometheusAPIQuerier, error) {
 	c, err := api.NewClient(api.Config{Address: serverURL})
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %s", err)
 	}
 	api := v1.NewAPI(c)
-	return &prometheusAPI{
-		api,
-		defaultTimeout,
+	return &prometheusAPIQuerier{
+		api:            api,
+		requestTimeout: defaultTimeout,
 	}, nil
 }
 
-func (api *prometheusAPI) buildQuerier(fn interface{}, args ...interface{}) func() (string, error) {
+func (q *prometheusAPIQuerier) buildQueryFunc(fn interface{}, args ...interface{}) func() (string, error) {
 	funcValue := reflect.ValueOf(fn)
 	funcType := funcValue.Type()
 
@@ -42,7 +42,7 @@ func (api *prometheusAPI) buildQuerier(fn interface{}, args ...interface{}) func
 	}
 
 	return func() (string, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), api.requestTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), q.requestTimeout)
 		inputParams := []reflect.Value{reflect.ValueOf(ctx)}
 		for _, arg := range args {
 			inputParams = append(inputParams, reflect.ValueOf(arg))
