@@ -8,7 +8,6 @@ import fmt "fmt"
 import math "math"
 
 import _ "google.golang.org/genproto/googleapis/api/annotations"
-import _ "github.com/gogo/protobuf/gogoproto"
 
 import time "time"
 
