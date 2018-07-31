@@ -46,8 +46,3 @@ func getLimits(resource int, unit string) string {
 func FdLimits() string {
 	return getLimits(syscall.RLIMIT_NOFILE, "")
 }
-
-// VmLimits returns the soft and hard limits for virtual memory.
-func VmLimits() string {
-	return getLimits(syscall.RLIMIT_AS, "b")
-}
