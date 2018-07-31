@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -41,9 +42,11 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTargetRetriever struct{}
@@ -98,6 +101,73 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 	}
 }
 
+type rulesRetrieverMock struct {
+	testing *testing.T
+}
+
+func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	if err != nil {
+		m.testing.Fatalf("unable to parse alert expression: %s", err)
+	}
+	expr2, err := promql.ParseExpr(`up == 1`)
+	if err != nil {
+		m.testing.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	rule1 := rules.NewAlertingRule(
+		"test_metric3",
+		expr1,
+		time.Second,
+		labels.Labels{},
+		labels.Labels{},
+		log.NewNopLogger(),
+	)
+	rule2 := rules.NewAlertingRule(
+		"test_metric4",
+		expr2,
+		time.Second,
+		labels.Labels{},
+		labels.Labels{},
+		log.NewNopLogger(),
+	)
+	var r []*rules.AlertingRule
+	r = append(r, rule1)
+	r = append(r, rule2)
+	return r
+}
+
+func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
+	var ar rulesRetrieverMock
+	arules := ar.AlertingRules()
+	storage := testutil.NewStorage(m.testing)
+	defer storage.Close()
+
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	opts := &rules.ManagerOptions{
+		QueryFunc:  rules.EngineQueryFunc(engine, storage),
+		Appendable: storage,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	var r []rules.Rule
+
+	for _, alertrule := range arules {
+		r = append(r, alertrule)
+	}
+
+	recordingExpr, err := promql.ParseExpr(`vector(1)`)
+	if err != nil {
+		m.testing.Fatalf("unable to parse alert expression: %s", err)
+	}
+	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
+	r = append(r, recordingRule)
+
+	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, opts)
+	return []*rules.Group{group}
+}
+
 var samplePrometheusCfg = config.Config{
 	GlobalConfig:       config.GlobalConfig{},
 	AlertingConfig:     config.AlertingConfig{},
@@ -130,16 +200,29 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
+	var algr rulesRetrieverMock
+	algr.testing = t
+	algr.AlertingRules()
+	algr.RuleGroups()
+
 	t.Run("local", func(t *testing.T) {
+		var algr rulesRetrieverMock
+		algr.testing = t
+
+		algr.AlertingRules()
+
+		algr.RuleGroups()
+
 		api := &API{
 			Queryable:             suite.Storage(),
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:      func() time.Time { return now },
-			config:   func() config.Config { return samplePrometheusCfg },
-			flagsMap: sampleFlagMap,
-			ready:    func(f http.HandlerFunc) http.HandlerFunc { return f },
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
 		}
 
 		testEndpoints(t, api, true)
@@ -176,15 +259,23 @@ func TestEndpoints(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		var algr rulesRetrieverMock
+		algr.testing = t
+
+		algr.AlertingRules()
+
+		algr.RuleGroups()
+
 		api := &API{
 			Queryable:             remote,
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:      func() time.Time { return now },
-			config:   func() config.Config { return samplePrometheusCfg },
-			flagsMap: sampleFlagMap,
-			ready:    func(f http.HandlerFunc) http.HandlerFunc { return f },
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
 		}
 
 		testEndpoints(t, api, false)
@@ -237,7 +328,6 @@ func setupRemote(s storage.Storage) *httptest.Server {
 }
 
 func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
-
 	start := time.Unix(0, 0)
 
 	type test struct {
@@ -567,6 +657,50 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			endpoint: api.serveFlags,
 			response: sampleFlagMap,
 		},
+		{
+			endpoint: api.alerts,
+			response: &AlertDiscovery{
+				Alerts: []*Alert{},
+			},
+		},
+		{
+			endpoint: api.rules,
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
+							alertingRule{
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Type:        "alerting",
+							},
+							alertingRule{
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Type:        "alerting",
+							},
+							recordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	if testLabelAPI {
@@ -646,7 +780,21 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				t.Fatalf("Expected error of type %q but got none", test.errType)
 			}
 			if !reflect.DeepEqual(resp, test.response) {
-				t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+				respJSON, err := json.Marshal(resp)
+				if err != nil {
+					t.Fatalf("failed to marshal response as JSON: %v", err.Error())
+				}
+
+				expectedRespJSON, err := json.Marshal(test.response)
+				if err != nil {
+					t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
+				}
+
+				t.Fatalf(
+					"Response does not match, expected:\n%+v\ngot:\n%+v",
+					string(expectedRespJSON),
+					string(respJSON),
+				)
 			}
 		}
 	}
