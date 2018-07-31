@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -95,6 +96,11 @@ type alertmanagerRetriever interface {
 	DroppedAlertmanagers() []*url.URL
 }
 
+type rulesRetriever interface {
+	RuleGroups() []*rules.Group
+	AlertingRules() []*rules.AlertingRule
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -119,11 +125,11 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
-
-	now      func() time.Time
-	config   func() config.Config
-	flagsMap map[string]string
-	ready    func(http.HandlerFunc) http.HandlerFunc
+	rulesRetriever        rulesRetriever
+	now                   func() time.Time
+	config                func() config.Config
+	flagsMap              map[string]string
+	ready                 func(http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -142,18 +148,20 @@ func NewAPI(
 	db func() *tsdb.DB,
 	enableAdmin bool,
 	logger log.Logger,
+	rr rulesRetriever,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:         time.Now,
-		config:      configFunc,
-		flagsMap:    flagsMap,
-		ready:       readyFunc,
-		db:          db,
-		enableAdmin: enableAdmin,
+		now:            time.Now,
+		config:         configFunc,
+		flagsMap:       flagsMap,
+		ready:          readyFunc,
+		db:             db,
+		enableAdmin:    enableAdmin,
+		rulesRetriever: rr,
 	}
 }
 
@@ -198,6 +206,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+
+	r.Get("/alerts", wrap(api.alerts))
+	r.Get("/rules", wrap(api.rules))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -576,6 +587,132 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError, func()) 
 		ams.DroppedAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
 	}
 	return ams, nil, nil
+}
+
+// AlertDiscovery has info for all active alerts.
+type AlertDiscovery struct {
+	Alerts []*Alert `json:"alerts"`
+}
+
+// Alert has info for an alert.
+type Alert struct {
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	State       string        `json:"state"`
+	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
+	Value       float64       `json:"value"`
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError, func()) {
+	alertingRules := api.rulesRetriever.AlertingRules()
+	alerts := []*Alert{}
+
+	for _, alertingRule := range alertingRules {
+		alerts = append(
+			alerts,
+			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
+		)
+	}
+
+	res := &AlertDiscovery{Alerts: alerts}
+
+	return res, nil, nil
+}
+
+func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
+	apiAlerts := make([]*Alert, len(rulesAlerts))
+	for i, ruleAlert := range rulesAlerts {
+		apiAlerts[i] = &Alert{
+			Labels:      ruleAlert.Labels,
+			Annotations: ruleAlert.Annotations,
+			State:       ruleAlert.State.String(),
+			ActiveAt:    &ruleAlert.ActiveAt,
+			Value:       ruleAlert.Value,
+		}
+	}
+
+	return apiAlerts
+}
+
+// RuleDiscovery has info for all rules
+type RuleDiscovery struct {
+	RuleGroups []*RuleGroup `json:"groups"`
+}
+
+// RuleGroup has info for rules which are part of a group
+type RuleGroup struct {
+	Name string `json:"name"`
+	File string `json:"file"`
+	// In order to preserve rule ordering, while exposing type (alerting or recording)
+	// specific properties, both alerting and recording rules are exposed in the
+	// same array.
+	Rules    []rule  `json:"rules"`
+	Interval float64 `json:"interval"`
+}
+
+type rule interface{}
+
+type alertingRule struct {
+	Name        string        `json:"name"`
+	Query       string        `json:"query"`
+	Duration    float64       `json:"duration"`
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	Alerts      []*Alert      `json:"alerts"`
+	// Type of an alertingRule is always "alerting".
+	Type string `json:"type"`
+}
+
+type recordingRule struct {
+	Name   string        `json:"name"`
+	Query  string        `json:"query"`
+	Labels labels.Labels `json:"labels,omitempty"`
+	// Type of a recordingRule is always "recording".
+	Type string `json:"type"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
+	ruleGroups := api.rulesRetriever.RuleGroups()
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	for i, grp := range ruleGroups {
+		apiRuleGroup := &RuleGroup{
+			Name:     grp.Name(),
+			File:     grp.File(),
+			Interval: grp.Interval().Seconds(),
+			Rules:    []rule{},
+		}
+
+		for _, r := range grp.Rules() {
+			var enrichedRule rule
+
+			switch rule := r.(type) {
+			case *rules.AlertingRule:
+				enrichedRule = alertingRule{
+					Name:        rule.Name(),
+					Query:       rule.Query().String(),
+					Duration:    rule.Duration().Seconds(),
+					Labels:      rule.Labels(),
+					Annotations: rule.Annotations(),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Type:        "alerting",
+				}
+			case *rules.RecordingRule:
+				enrichedRule = recordingRule{
+					Name:   rule.Name(),
+					Query:  rule.Query().String(),
+					Labels: rule.Labels(),
+					Type:   "recording",
+				}
+			default:
+				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
+				return nil, &apiError{errorInternal, err}, nil
+			}
+
+			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+		}
+		res.RuleGroups[i] = apiRuleGroup
+	}
+	return res, nil, nil
 }
 
 type prometheusConfig struct {

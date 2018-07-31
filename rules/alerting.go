@@ -126,9 +126,29 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 	}
 }
 
-// Name returns the name of the alert.
+// Name returns the name of the alerting rule.
 func (r *AlertingRule) Name() string {
 	return r.name
+}
+
+// Query returns the query expression of the alerting rule.
+func (r *AlertingRule) Query() promql.Expr {
+	return r.vector
+}
+
+// Duration returns the hold duration of the alerting rule.
+func (r *AlertingRule) Duration() time.Duration {
+	return r.holdDuration
+}
+
+// Labels returns the labels of the alerting rule.
+func (r *AlertingRule) Labels() labels.Labels {
+	return r.labels
+}
+
+// Annotations returns the annotations of the alerting rule.
+func (r *AlertingRule) Annotations() labels.Labels {
+	return r.annotations
 }
 
 func (r *AlertingRule) equal(o *AlertingRule) bool {
