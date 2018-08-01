@@ -192,14 +192,14 @@ type azureResource struct {
 
 // virtualMachine represents an Azure virtual machine (which can also be created by a VMSS)
 type virtualMachine struct {
-	ID             *string
-	Name           *string
-	Type           *string
-	Location       *string
-	OsType         *string
-	ScaleSet       *string
-	Tags           *map[string]*string
-	NetworkProfile *compute.NetworkProfile
+	ID             string
+	Name           string
+	Type           string
+	Location       string
+	OsType         string
+	ScaleSet       string
+	Tags           map[string]*string
+	NetworkProfile compute.NetworkProfile
 }
 
 // Create a new azureResource object from an ID string.
@@ -251,7 +251,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	}
 
 	for _, scaleSet := range scaleSets {
-		scaleSetVms, err := client.getScaleSetVMs(&scaleSet)
+		scaleSetVms, err := client.getScaleSetVMs(scaleSet)
 		if err != nil {
 			return tg, fmt.Errorf("could not get virtual machine scale set vms: %s", err)
 		}
@@ -268,26 +268,26 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	ch := make(chan target, len(machines))
 	for i, vm := range machines {
 		go func(i int, vm virtualMachine) {
-			r, err := newAzureResourceFromID(*vm.ID, d.logger)
+			r, err := newAzureResourceFromID(vm.ID, d.logger)
 			if err != nil {
 				ch <- target{labelSet: nil, err: err}
 				return
 			}
 
 			labels := model.LabelSet{
-				azureLabelMachineID:            model.LabelValue(*vm.ID),
-				azureLabelMachineName:          model.LabelValue(*vm.Name),
-				azureLabelMachineOSType:        model.LabelValue(*vm.OsType),
-				azureLabelMachineLocation:      model.LabelValue(*vm.Location),
+				azureLabelMachineID:            model.LabelValue(vm.ID),
+				azureLabelMachineName:          model.LabelValue(vm.Name),
+				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
+				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
 			}
 
-			if vm.ScaleSet != nil {
-				labels[azureLabelMachineScaleSet] = model.LabelValue(*vm.ScaleSet)
+			if vm.ScaleSet != "" {
+				labels[azureLabelMachineScaleSet] = model.LabelValue(vm.ScaleSet)
 			}
 
 			if vm.Tags != nil {
-				for k, v := range *vm.Tags {
+				for k, v := range vm.Tags {
 					name := strutil.SanitizeLabelName(k)
 					labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
 				}
@@ -308,7 +308,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				// yet support this. On deallocated machines, this value happens to be nil so it
 				// is a cheap and easy way to determine if a machine is allocated or not.
 				if networkInterface.Properties.Primary == nil {
-					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", *vm.Name)
+					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
 					ch <- target{}
 					return
 				}
@@ -324,7 +324,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 						}
 						// If we made it here, we don't have a private IP which should be impossible.
 						// Return an empty target and error to ensure an all or nothing situation.
-						err = fmt.Errorf("unable to find a private IP for VM %s", *vm.Name)
+						err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
 						ch <- target{labelSet: nil, err: err}
 						return
 					}
@@ -354,7 +354,7 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 	}
 
 	for _, vm := range *result.Value {
-		vms = append(vms, mapFromVM(&vm))
+		vms = append(vms, mapFromVM(vm))
 	}
 
 	// If we still have results, keep going until we have no more.
@@ -365,7 +365,7 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 		}
 
 		for _, vm := range *result.Value {
-			vms = append(vms, mapFromVM(&vm))
+			vms = append(vms, mapFromVM(vm))
 		}
 	}
 
@@ -391,7 +391,7 @@ func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, err
 	return scaleSets, nil
 }
 
-func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
+func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
 	vms := []virtualMachine{}
 	//TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
@@ -406,7 +406,7 @@ func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleS
 	}
 
 	for _, vm := range *result.Value {
-		vms = append(vms, mapFromVMScaleSetVM(&vm, scaleSet.Name))
+		vms = append(vms, mapFromVMScaleSetVM(vm, *scaleSet.Name))
 	}
 
 	for result.NextLink != nil {
@@ -416,21 +416,41 @@ func (client *azureClient) getScaleSetVMs(scaleSet *compute.VirtualMachineScaleS
 		}
 
 		for _, vm := range *result.Value {
-			vms = append(vms, mapFromVMScaleSetVM(&vm, scaleSet.Name))
+			vms = append(vms, mapFromVMScaleSetVM(vm, *scaleSet.Name))
 		}
 	}
 
 	return vms, nil
 }
 
-func mapFromVM(vm *compute.VirtualMachine) virtualMachine {
+func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
-	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, &osType, nil, vm.Tags, vm.Properties.NetworkProfile}
+
+	return virtualMachine{
+		ID: *(vm.ID),
+		Name: *(vm.Name),
+		Type: *(vm.Type),
+		Location: *(vm.Location),
+		OsType: osType,
+		ScaleSet: "",
+		Tags: *(vm.Tags),
+		NetworkProfile: *(vm.Properties.NetworkProfile),
+	}
 }
 
-func mapFromVMScaleSetVM(vm *compute.VirtualMachineScaleSetVM, scaleSetName *string) virtualMachine {
+func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName string) virtualMachine {
 	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
-	return virtualMachine{vm.ID, vm.Name, vm.Type, vm.Location, &osType, scaleSetName, vm.Tags, vm.Properties.NetworkProfile}
+
+	return virtualMachine{
+		ID: *(vm.ID),
+		Name: *(vm.Name),
+		Type: *(vm.Type),
+		Location: *(vm.Location),
+		OsType: osType,
+		ScaleSet: scaleSetName,
+		Tags: *(vm.Tags),
+		NetworkProfile: *(vm.Properties.NetworkProfile),
+	}
 }
 
 func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (network.Interface, error) {
