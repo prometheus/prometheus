@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -59,14 +60,15 @@ const (
 type errorType string
 
 const (
-	errorNone        errorType = ""
-	errorTimeout     errorType = "timeout"
-	errorCanceled    errorType = "canceled"
-	errorExec        errorType = "execution"
-	errorBadData     errorType = "bad_data"
-	errorInternal    errorType = "internal"
-	errorUnavailable errorType = "unavailable"
-	errorNotFound    errorType = "not_found"
+	errorNone                errorType = ""
+	errorTimeout             errorType = "timeout"
+	errorCanceled            errorType = "canceled"
+	errorExec                errorType = "execution"
+	errorBadData             errorType = "bad_data"
+	errorInternal            errorType = "internal"
+	errorUnavailable         errorType = "unavailable"
+	errorNotFound            errorType = "not_found"
+	errorFailedRemoteStorage errorType = "failed_remote_storage"
 )
 
 var corsHeaders = map[string]string{
@@ -95,11 +97,17 @@ type alertmanagerRetriever interface {
 	DroppedAlertmanagers() []*url.URL
 }
 
+type rulesRetriever interface {
+	RuleGroups() []*rules.Group
+	AlertingRules() []*rules.AlertingRule
+}
+
 type response struct {
-	Status    status      `json:"status"`
-	Data      interface{} `json:"data,omitempty"`
-	ErrorType errorType   `json:"errorType,omitempty"`
-	Error     string      `json:"error,omitempty"`
+	Status       status      `json:"status"`
+	Data         interface{} `json:"data,omitempty"`
+	ErrorType    errorType   `json:"errorType,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	ExtraMessage string      `json:"extraMessage,omitempty"`
 }
 
 // Enables cross-site script calls.
@@ -119,11 +127,11 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
-
-	now      func() time.Time
-	config   func() config.Config
-	flagsMap map[string]string
-	ready    func(http.HandlerFunc) http.HandlerFunc
+	rulesRetriever        rulesRetriever
+	now                   func() time.Time
+	config                func() config.Config
+	flagsMap              map[string]string
+	ready                 func(http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
@@ -142,18 +150,20 @@ func NewAPI(
 	db func() *tsdb.DB,
 	enableAdmin bool,
 	logger log.Logger,
+	rr rulesRetriever,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:         time.Now,
-		config:      configFunc,
-		flagsMap:    flagsMap,
-		ready:       readyFunc,
-		db:          db,
-		enableAdmin: enableAdmin,
+		now:            time.Now,
+		config:         configFunc,
+		flagsMap:       flagsMap,
+		ready:          readyFunc,
+		db:             db,
+		enableAdmin:    enableAdmin,
+		rulesRetriever: rr,
 	}
 }
 
@@ -164,7 +174,12 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			data, err, finalizer := f(r)
 			if err != nil {
-				api.respondError(w, err, data)
+				if err.typ != errorFailedRemoteStorage {
+					api.respondError(w, err, data)
+				} else {
+					api.respondExtraMessage(w, err, data)
+				}
+
 			} else if data != nil {
 				api.respond(w, data)
 			} else {
@@ -198,6 +213,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+
+	r.Get("/alerts", wrap(api.alerts))
+	r.Get("/rules", wrap(api.rules))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -240,12 +258,15 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
+	newQueryable := api.Queryable
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		newQueryable = fanout.Duplicate()
+	}
+	qry, err := api.QueryEngine.NewInstantQuery(newQueryable, r.FormValue("query"), ts)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}, nil
 	}
 
-	var extraMessage string
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
@@ -253,13 +274,10 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 			return nil, &apiError{errorCanceled, res.Err}, qry.Close
 		case promql.ErrQueryTimeout:
 			return nil, &apiError{errorTimeout, res.Err}, qry.Close
-		case storage.RemoteStorageError:
-			extraMessage = "Remote storage error"
 		case promql.ErrStorage:
 			return nil, &apiError{errorInternal, res.Err}, qry.Close
-		default:
-			return nil, &apiError{errorExec, res.Err}, qry.Close
 		}
+		return nil, &apiError{errorExec, res.Err}, qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -268,12 +286,18 @@ func (api *API) query(r *http.Request) (interface{}, *apiError, func()) {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
+	var remoteError *apiError
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		if fanout.HadRemoteError() {
+			remoteError = &apiError{errorFailedRemoteStorage, errors.New("Remote storage error")}
+		}
+	}
+
 	return &queryData{
-		ResultType:   res.Value.Type(),
-		Result:       res.Value,
-		Stats:        qs,
-		ExtraMessage: extraMessage,
-	}, nil, qry.Close
+		ResultType: res.Value.Type(),
+		Result:     res.Value,
+		Stats:      qs,
+	}, remoteError, qry.Close
 }
 
 func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
@@ -319,12 +343,12 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
+	newQueryable := api.Queryable
+	qry, err := api.QueryEngine.NewRangeQuery(newQueryable, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return nil, &apiError{errorBadData, err}, nil
 	}
 
-	var extraMessage string
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		switch res.Err.(type) {
@@ -332,11 +356,8 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 			return nil, &apiError{errorCanceled, res.Err}, qry.Close
 		case promql.ErrQueryTimeout:
 			return nil, &apiError{errorTimeout, res.Err}, qry.Close
-		case storage.RemoteStorageError:
-			extraMessage = "Remote storage error"
-		default:
-			return nil, &apiError{errorExec, res.Err}, qry.Close
 		}
+		return nil, &apiError{errorExec, res.Err}, qry.Close
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -345,12 +366,17 @@ func (api *API) queryRange(r *http.Request) (interface{}, *apiError, func()) {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
+	var remoteError *apiError
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		if fanout.HadRemoteError() {
+			remoteError = &apiError{errorFailedRemoteStorage, errors.New("Remote storage error")}
+		}
+	}
 	return &queryData{
-		ResultType:   res.Value.Type(),
-		Result:       res.Value,
-		Stats:        qs,
-		ExtraMessage: extraMessage,
-	}, nil, qry.Close
+		ResultType: res.Value.Type(),
+		Result:     res.Value,
+		Stats:      qs,
+	}, remoteError, qry.Close
 }
 
 func (api *API) labelValues(r *http.Request) (interface{}, *apiError, func()) {
@@ -416,7 +442,11 @@ func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	newQueryable := api.Queryable
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		newQueryable = fanout.Duplicate()
+	}
+	q, err := newQueryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return nil, &apiError{errorExec, err}, nil
 	}
@@ -431,7 +461,7 @@ func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets)
+	set := storage.NewMergeSeriesSet(sets, nil)
 	metrics := []labels.Labels{}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
@@ -440,7 +470,14 @@ func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorExec, set.Err()}, nil
 	}
 
-	return metrics, nil, nil
+	var remoteError *apiError
+	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
+		if fanout.HadRemoteError() {
+			remoteError = &apiError{errorFailedRemoteStorage, errors.New("Remote storage error")}
+		}
+	}
+
+	return metrics, remoteError, nil
 }
 
 func (api *API) dropSeries(r *http.Request) (interface{}, *apiError, func()) {
@@ -587,6 +624,132 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError, func()) 
 		ams.DroppedAlertmanagers[i] = &AlertmanagerTarget{URL: url.String()}
 	}
 	return ams, nil, nil
+}
+
+// AlertDiscovery has info for all active alerts.
+type AlertDiscovery struct {
+	Alerts []*Alert `json:"alerts"`
+}
+
+// Alert has info for an alert.
+type Alert struct {
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	State       string        `json:"state"`
+	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
+	Value       float64       `json:"value"`
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError, func()) {
+	alertingRules := api.rulesRetriever.AlertingRules()
+	alerts := []*Alert{}
+
+	for _, alertingRule := range alertingRules {
+		alerts = append(
+			alerts,
+			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
+		)
+	}
+
+	res := &AlertDiscovery{Alerts: alerts}
+
+	return res, nil, nil
+}
+
+func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
+	apiAlerts := make([]*Alert, len(rulesAlerts))
+	for i, ruleAlert := range rulesAlerts {
+		apiAlerts[i] = &Alert{
+			Labels:      ruleAlert.Labels,
+			Annotations: ruleAlert.Annotations,
+			State:       ruleAlert.State.String(),
+			ActiveAt:    &ruleAlert.ActiveAt,
+			Value:       ruleAlert.Value,
+		}
+	}
+
+	return apiAlerts
+}
+
+// RuleDiscovery has info for all rules
+type RuleDiscovery struct {
+	RuleGroups []*RuleGroup `json:"groups"`
+}
+
+// RuleGroup has info for rules which are part of a group
+type RuleGroup struct {
+	Name string `json:"name"`
+	File string `json:"file"`
+	// In order to preserve rule ordering, while exposing type (alerting or recording)
+	// specific properties, both alerting and recording rules are exposed in the
+	// same array.
+	Rules    []rule  `json:"rules"`
+	Interval float64 `json:"interval"`
+}
+
+type rule interface{}
+
+type alertingRule struct {
+	Name        string        `json:"name"`
+	Query       string        `json:"query"`
+	Duration    float64       `json:"duration"`
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	Alerts      []*Alert      `json:"alerts"`
+	// Type of an alertingRule is always "alerting".
+	Type string `json:"type"`
+}
+
+type recordingRule struct {
+	Name   string        `json:"name"`
+	Query  string        `json:"query"`
+	Labels labels.Labels `json:"labels,omitempty"`
+	// Type of a recordingRule is always "recording".
+	Type string `json:"type"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
+	ruleGroups := api.rulesRetriever.RuleGroups()
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	for i, grp := range ruleGroups {
+		apiRuleGroup := &RuleGroup{
+			Name:     grp.Name(),
+			File:     grp.File(),
+			Interval: grp.Interval().Seconds(),
+			Rules:    []rule{},
+		}
+
+		for _, r := range grp.Rules() {
+			var enrichedRule rule
+
+			switch rule := r.(type) {
+			case *rules.AlertingRule:
+				enrichedRule = alertingRule{
+					Name:        rule.Name(),
+					Query:       rule.Query().String(),
+					Duration:    rule.Duration().Seconds(),
+					Labels:      rule.Labels(),
+					Annotations: rule.Annotations(),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Type:        "alerting",
+				}
+			case *rules.RecordingRule:
+				enrichedRule = recordingRule{
+					Name:   rule.Name(),
+					Query:  rule.Query().String(),
+					Labels: rule.Labels(),
+					Type:   "recording",
+				}
+			default:
+				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
+				return nil, &apiError{errorInternal, err}, nil
+			}
+
+			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+		}
+		res.RuleGroups[i] = apiRuleGroup
+	}
+	return res, nil, nil
 }
 
 type prometheusConfig struct {
@@ -888,6 +1051,22 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
+}
+
+func (api *API) respondExtraMessage(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
+	b, err := json.Marshal(&response{
+		Status:       statusSuccess,
+		Data:         data,
+		ExtraMessage: apiErr.err.Error(),
+	})
+	if err != nil {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(b)
 }
 
 func parseTime(s string) (time.Time, error) {

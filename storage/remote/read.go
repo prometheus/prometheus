@@ -199,6 +199,15 @@ func newSeriesSetFilter(ss storage.SeriesSet, toFilter model.LabelSet) storage.S
 type seriesSetFilter struct {
 	storage.SeriesSet
 	toFilter model.LabelSet
+	querier  storage.Querier
+}
+
+func (ssf *seriesSetFilter) GetQuerier() storage.Querier {
+	return ssf.querier
+}
+
+func (ssf *seriesSetFilter) SetQuerier(querier storage.Querier) {
+	ssf.querier = querier
 }
 
 func (ssf seriesSetFilter) At() storage.Series {

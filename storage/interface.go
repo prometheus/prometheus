@@ -61,6 +61,11 @@ type Querier interface {
 	Close() error
 }
 
+type RemoteSet interface {
+	GetQuerier() Querier
+	SetQuerier(querier Querier)
+}
+
 // SelectParams specifies parameters passed to data selections.
 type SelectParams struct {
 	Start int64 // Start time in milliseconds for this select.

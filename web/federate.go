@@ -83,7 +83,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
-	set := storage.NewMergeSeriesSet(sets)
+	set := storage.NewMergeSeriesSet(sets, nil)
 	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()

@@ -24,11 +24,19 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
+type FanoutStorage interface {
+	HadRemoteError() bool
+	Duplicate() Storage
+}
+
 type fanout struct {
 	logger log.Logger
 
 	primary     Storage
 	secondaries []Storage
+
+	remoteError          bool
+	failedRemoteQueriers []Querier
 }
 
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
@@ -75,14 +83,17 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	// Add secondary queriers
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
+		if mergeQuerier, ok := querier.(*mergeQuerier); ok {
+			mergeQuerier.storage = f
+		}
 		if err != nil {
-			NewMergeQuerier(nil, queriers).Close()
+			NewMergeQuerier(nil, queriers, nil).Close()
 			return nil, err
 		}
 		queriers = append(queriers, querier)
 	}
 
-	return NewMergeQuerier(primaryQuerier, queriers), nil
+	return NewMergeQuerier(primaryQuerier, queriers, f), nil
 }
 
 func (f *fanout) Appender() (Appender, error) {
@@ -120,6 +131,15 @@ func (f *fanout) Close() error {
 		}
 	}
 	return lastErr
+}
+
+func (f *fanout) HadRemoteError() bool {
+	return f.remoteError
+}
+
+func (f *fanout) Duplicate() Storage {
+	dup := fanout(*f)
+	return &dup
 }
 
 // fanoutAppender implements Appender.
@@ -190,13 +210,15 @@ func (f *fanoutAppender) Rollback() (err error) {
 type mergeQuerier struct {
 	primaryQuerier Querier
 	queriers       []Querier
+
+	storage *fanout
 }
 
 // NewMergeQuerier returns a new Querier that merges results of input queriers.
 // NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
-func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
+func NewMergeQuerier(primaryQuerier Querier, queriers []Querier, storage *fanout) Querier {
 	filtered := make([]Querier, 0, len(queriers))
 	for _, querier := range queriers {
 		if querier != NoopQuerier() {
@@ -213,6 +235,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 		return &mergeQuerier{
 			primaryQuerier: primaryQuerier,
 			queriers:       filtered,
+			storage:        storage,
 		}
 	}
 }
@@ -220,13 +243,18 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
-	var remoteErr error = nil
 	for _, querier := range q.queriers {
 		set, err := querier.Select(params, matchers...)
+		if remoteSet, ok := set.(RemoteSet); ok {
+			remoteSet.SetQuerier(querier)
+		}
 		if err != nil {
 			if querier != q.primaryQuerier {
 				// If it's a remote storage error, keep going and report it
-				remoteErr = RemoteStorageError("error connecting to remote storage")
+				if q.storage != nil {
+					q.storage.remoteError = true
+					q.storage.failedRemoteQueriers = append(q.storage.failedRemoteQueriers, querier)
+				}
 				if set == nil {
 					continue
 				}
@@ -236,7 +264,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		}
 		seriesSets = append(seriesSets, set)
 	}
-	return NewMergeSeriesSet(seriesSets), remoteErr
+	return NewMergeSeriesSet(seriesSets, q.storage), nil
 }
 
 // LabelValues returns all potential values for a label name.
@@ -309,11 +337,12 @@ type mergeSeriesSet struct {
 	currentSets   []SeriesSet
 	heap          seriesSetHeap
 	sets          []SeriesSet
+	storage       *fanout
 }
 
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
-func NewMergeSeriesSet(sets []SeriesSet) SeriesSet {
+func NewMergeSeriesSet(sets []SeriesSet, storage *fanout) SeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
 	}
@@ -327,8 +356,9 @@ func NewMergeSeriesSet(sets []SeriesSet) SeriesSet {
 		}
 	}
 	return &mergeSeriesSet{
-		heap: h,
-		sets: sets,
+		heap:    h,
+		sets:    sets,
+		storage: storage,
 	}
 }
 
@@ -349,9 +379,26 @@ func (c *mergeSeriesSet) Next() bool {
 	c.currentLabels = c.heap[0].At().Labels()
 	for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
 		set := heap.Pop(&c.heap).(SeriesSet)
+		if remoteSeriesSet, ok := set.(RemoteSet); ok {
+			if contains(c.storage.failedRemoteQueriers, remoteSeriesSet.GetQuerier()) {
+				continue
+			}
+		}
 		c.currentSets = append(c.currentSets, set)
 	}
+	if len(c.currentSets) == 0 {
+		return c.Next()
+	}
 	return true
+}
+
+func contains(qs []Querier, q Querier) bool {
+	for _, querier := range qs {
+		if querier == q {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *mergeSeriesSet) At() Series {
@@ -375,12 +422,6 @@ func (c *mergeSeriesSet) Err() error {
 		}
 	}
 	return nil
-}
-
-type RemoteStorageError string
-
-func (e RemoteStorageError) Error() string {
-	return string(e)
 }
 
 type seriesSetHeap []SeriesSet
