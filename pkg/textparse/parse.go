@@ -281,7 +281,11 @@ func (p *Parser) Next() (Entry, error) {
 		}
 		switch t := p.nextToken(); t {
 		case tText:
-			p.text = p.l.buf()[1:]
+			if len(p.l.buf()) > 1 {
+				p.text = p.l.buf()[1:]
+			} else {
+				p.text = []byte{}
+			}
 		default:
 			return EntryInvalid, parseError("expected text in HELP", t)
 		}
