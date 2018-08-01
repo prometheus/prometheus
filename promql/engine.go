@@ -367,13 +367,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		defer querier.Close()
 	}
 
-	var remoteStorageError error = nil
 	if err != nil {
-		if _, ok := err.(storage.RemoteStorageError); ok {
-			remoteStorageError = err
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
@@ -409,11 +404,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 				// timestamp as that is when we ran the evaluation.
 				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, T: start}}
 			}
-			return vector, remoteStorageError
+			return vector, nil
 		case ValueTypeScalar:
-			return Scalar{V: mat[0].Points[0].V, T: start}, remoteStorageError
+			return Scalar{V: mat[0].Points[0].V, T: start}, nil
 		case ValueTypeMatrix:
-			return mat, remoteStorageError
+			return mat, nil
 		default:
 			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
@@ -452,7 +447,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	sortTimer.Stop()
 
 	ng.metrics.queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
-	return mat, remoteStorageError
+	return mat, nil
 }
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
@@ -484,7 +479,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
-	var remoteStorageError error = nil
+	var seriesSets []storage.SeriesSet
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
@@ -505,21 +500,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
-				if _, ok := err.(storage.RemoteStorageError); ok {
-					// If it's a remote storage error, hold onto it and return it in the api response
-					remoteStorageError = err
-				} else {
-					// If it's not a remote storage error, then log it and return the error
-					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-					return err
-				}
-			}
-			n.series, err = expandSeriesSet(ctx, set)
-			if err != nil {
-				// TODO(fabxc): use multi-error.
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
+				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return err
 			}
+			// Collect all the series sets first and expand later
+			// so that if there's a remote error, we can remove all data
+			// from that source.
+			seriesSets = append(seriesSets, set)
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
@@ -534,16 +521,18 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
-				if _, ok := err.(storage.RemoteStorageError); ok {
-					// If it's a remote storage error, hold onto it and return it in the api response
-					remoteStorageError = err
-				} else {
-					// If it's not a remote storage error, then log it and return the error
-					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-					return err
-				}
+				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+				return err
 			}
-			n.series, err = expandSeriesSet(ctx, set)
+			seriesSets = append(seriesSets, set)
+		}
+		return nil
+	})
+	Inspect(s.Expr, func(node Node, path []Node) error {
+		switch n := node.(type) {
+		case *VectorSelector:
+			n.series, err = expandSeriesSet(ctx, seriesSets[0])
+			seriesSets = seriesSets[1:]
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return err
@@ -551,10 +540,6 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		}
 		return nil
 	})
-	if err == nil {
-		// If there's no other errors, just propogate the remote storage error
-		err = remoteStorageError
-	}
 	return querier, err
 }
 
