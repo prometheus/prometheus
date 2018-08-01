@@ -427,13 +427,13 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
 
 	return virtualMachine{
-		ID: *(vm.ID),
-		Name: *(vm.Name),
-		Type: *(vm.Type),
-		Location: *(vm.Location),
-		OsType: osType,
-		ScaleSet: "",
-		Tags: *(vm.Tags),
+		ID:             *(vm.ID),
+		Name:           *(vm.Name),
+		Type:           *(vm.Type),
+		Location:       *(vm.Location),
+		OsType:         osType,
+		ScaleSet:       "",
+		Tags:           *(vm.Tags),
 		NetworkProfile: *(vm.Properties.NetworkProfile),
 	}
 }
@@ -442,13 +442,13 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
 
 	return virtualMachine{
-		ID: *(vm.ID),
-		Name: *(vm.Name),
-		Type: *(vm.Type),
-		Location: *(vm.Location),
-		OsType: osType,
-		ScaleSet: scaleSetName,
-		Tags: *(vm.Tags),
+		ID:             *(vm.ID),
+		Name:           *(vm.Name),
+		Type:           *(vm.Type),
+		Location:       *(vm.Location),
+		OsType:         osType,
+		ScaleSet:       scaleSetName,
+		Tags:           *(vm.Tags),
 		NetworkProfile: *(vm.Properties.NetworkProfile),
 	}
 }
