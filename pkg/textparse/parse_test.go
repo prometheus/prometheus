@@ -39,6 +39,8 @@ go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
 #
 # comment with escaped \n newline
 # comment with escaped \ escape character
+# HELP nohelp1
+# HELP nohelp2 
 go_gc_duration_seconds{ quantile="1.0", a="b" } 8.3835e-05
 go_gc_duration_seconds { quantile="1.0", a="b" } 8.3835e-05
 go_gc_duration_seconds { quantile= "1.0", a= "b", } 8.3835e-05
@@ -99,6 +101,12 @@ testmetric{label="\"bar\""} 1`
 			comment: "# comment with escaped \\n newline",
 		}, {
 			comment: "# comment with escaped \\ escape character",
+		}, {
+			m:    "nohelp1",
+			help: "",
+		}, {
+			m:    "nohelp2",
+			help: "",
 		}, {
 			m:    `go_gc_duration_seconds{ quantile="1.0", a="b" }`,
 			v:    8.3835e-05,
