@@ -845,7 +845,7 @@ func lexKeywordOrIdentifier(l *lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r) || r == ':':
+		case isAlphaNumeric(r) || r == ':' || r == '.' || r == '-':
 			// absorb.
 		default:
 			l.backup()
