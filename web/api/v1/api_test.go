@@ -121,6 +121,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
+		true,
 		log.NewNopLogger(),
 	)
 	rule2 := rules.NewAlertingRule(
@@ -129,6 +130,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		time.Second,
 		labels.Labels{},
 		labels.Labels{},
+		true,
 		log.NewNopLogger(),
 	)
 	var r []*rules.AlertingRule
@@ -164,7 +166,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	r = append(r, recordingRule)
 
-	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, opts)
+	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, false, opts)
 	return []*rules.Group{group}
 }
 
