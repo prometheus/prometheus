@@ -43,7 +43,8 @@ func (l *lexer) Lex() token {
 
 D     [0-9]
 L     [a-zA-Z_]
-M     [a-zA-Z_:]
+M     [a-zA-Z_:.-]
+N     [a-zA-Z_:.-]
 C     [^\n]
 
 %x sComment sMeta1 sMeta2 sLabels sLValue sValue sTimestamp
@@ -63,10 +64,10 @@ C     [^\n]
 #                                     return l.consumeComment()
 <sComment>HELP[\t ]+                  l.state = sMeta1; return tHelp
 <sComment>TYPE[\t ]+                  l.state = sMeta1; return tType
-<sMeta1>{M}({M}|{D})*                 l.state = sMeta2; return tMName
+<sMeta1>{M}({N}|{D})*                 l.state = sMeta2; return tMName
 <sMeta2>{C}*                          l.state = sInit; return tText
 
-{M}({M}|{D})*                         l.state = sValue; return tMName
+{M}({N}|{D})*                         l.state = sValue; return tMName
 <sValue>\{                            l.state = sLabels; return tBraceOpen
 <sLabels>{L}({L}|{D})*                return tLName
 <sLabels>\}                           l.state = sValue; return tBraceClose
