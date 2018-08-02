@@ -531,6 +531,10 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
+# Whether the service discovery should list all instances for all projects.
+# It is only relevant for the 'instance' role and usually requires admin permissions.
+[ all_tenants: <boolean> | default: false ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
 
