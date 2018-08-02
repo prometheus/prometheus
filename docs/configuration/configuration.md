@@ -526,6 +526,11 @@ region: <string>
 [ project_name: <string> ]
 [ project_id: <string> ]
 
+# If you need to discover all instances from openstack (project wide) change
+# all_tenants to true. Otherwise it will only discover instances from the
+# specified project_name or project_id even if you provide admin credentials.
+[ all_tenants: <boolean> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
 
