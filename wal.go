@@ -84,7 +84,7 @@ func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 //
-// DEPRECATED: use wal pkg combined with the record coders instead.
+// DEPRECATED: use wal pkg combined with the record codex instead.
 type WAL interface {
 	Reader() WALReader
 	LogSeries([]RefSeries) error
@@ -1254,7 +1254,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}
-	// We close it once already before as part of finalization.
+	// It should've already been closed as part of the previous finalization.
 	// Do it once again in case of prior errors.
 	defer func() {
 		if err != nil {
