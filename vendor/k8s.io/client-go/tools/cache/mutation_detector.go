@@ -24,9 +24,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
-	"k8s.io/client-go/pkg/api"
 )
 
 var mutationDetectionEnabled = false
@@ -44,6 +45,7 @@ func NewCacheMutationDetector(name string) CacheMutationDetector {
 	if !mutationDetectionEnabled {
 		return dummyMutationDetector{}
 	}
+	glog.Warningln("Mutation detector is enabled, this will result in memory leakage.")
 	return &defaultCacheMutationDetector{name: name, period: 1 * time.Second}
 }
 
@@ -79,17 +81,15 @@ type cacheObj struct {
 
 func (d *defaultCacheMutationDetector) Run(stopCh <-chan struct{}) {
 	// we DON'T want protection from panics.  If we're running this code, we want to die
-	go func() {
-		for {
-			d.CompareObjects()
+	for {
+		d.CompareObjects()
 
-			select {
-			case <-stopCh:
-				return
-			case <-time.After(d.period):
-			}
+		select {
+		case <-stopCh:
+			return
+		case <-time.After(d.period):
 		}
-	}()
+	}
 }
 
 // AddObject makes a deep copy of the object for later comparison.  It only works on runtime.Object
@@ -98,18 +98,13 @@ func (d *defaultCacheMutationDetector) AddObject(obj interface{}) {
 	if _, ok := obj.(DeletedFinalStateUnknown); ok {
 		return
 	}
-	if _, ok := obj.(runtime.Object); !ok {
-		return
-	}
+	if obj, ok := obj.(runtime.Object); ok {
+		copiedObj := obj.DeepCopyObject()
 
-	copiedObj, err := api.Scheme.Copy(obj.(runtime.Object))
-	if err != nil {
-		return
+		d.lock.Lock()
+		defer d.lock.Unlock()
+		d.cachedObjs = append(d.cachedObjs, cacheObj{cached: obj, copied: copiedObj})
 	}
-
-	d.lock.Lock()
-	defer d.lock.Unlock()
-	d.cachedObjs = append(d.cachedObjs, cacheObj{cached: obj, copied: copiedObj})
 }
 
 func (d *defaultCacheMutationDetector) CompareObjects() {

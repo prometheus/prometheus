@@ -31,6 +31,9 @@ Raw Result (easyjson requires static code generation)
 | easyjson encode | 883 ns/op | 576 B/op | 3 allocs/op |
 | jsoniter encode | 837 ns/op | 384 B/op | 4 allocs/op |
 
+Always benchmark with your own workload. 
+The result depends heavily on the data input.
+
 # Usage
 
 100% compatibility with standard lib

@@ -23,6 +23,7 @@ import (
 	"github.com/golang/glog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1beta1 "k8s.io/apimachinery/pkg/apis/meta/v1beta1"
 	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,16 +34,47 @@ import (
 // interfaces.
 var errNotList = fmt.Errorf("object does not implement the List interfaces")
 
+var errNotCommon = fmt.Errorf("object does not implement the common interface for accessing the SelfLink")
+
+// CommonAccessor returns a Common interface for the provided object or an error if the object does
+// not provide List.
+func CommonAccessor(obj interface{}) (metav1.Common, error) {
+	switch t := obj.(type) {
+	case List:
+		return t, nil
+	case metav1.ListInterface:
+		return t, nil
+	case ListMetaAccessor:
+		if m := t.GetListMeta(); m != nil {
+			return m, nil
+		}
+		return nil, errNotCommon
+	case metav1.ListMetaAccessor:
+		if m := t.GetListMeta(); m != nil {
+			return m, nil
+		}
+		return nil, errNotCommon
+	case metav1.Object:
+		return t, nil
+	case metav1.ObjectMetaAccessor:
+		if m := t.GetObjectMeta(); m != nil {
+			return m, nil
+		}
+		return nil, errNotCommon
+	default:
+		return nil, errNotCommon
+	}
+}
+
 // ListAccessor returns a List interface for the provided object or an error if the object does
 // not provide List.
-// IMPORTANT: Objects are a superset of lists, so all Objects return List metadata. Do not use this
-// check to determine whether an object *is* a List.
-// TODO: return bool instead of error
+// IMPORTANT: Objects are NOT a superset of lists. Do not use this check to determine whether an
+// object *is* a List.
 func ListAccessor(obj interface{}) (List, error) {
 	switch t := obj.(type) {
 	case List:
 		return t, nil
-	case metav1.List:
+	case metav1.ListInterface:
 		return t, nil
 	case ListMetaAccessor:
 		if m := t.GetListMeta(); m != nil {
@@ -51,13 +83,6 @@ func ListAccessor(obj interface{}) (List, error) {
 		return nil, errNotList
 	case metav1.ListMetaAccessor:
 		if m := t.GetListMeta(); m != nil {
-			return m, nil
-		}
-		return nil, errNotList
-	case metav1.Object:
-		return t, nil
-	case metav1.ObjectMetaAccessor:
-		if m := t.GetObjectMeta(); m != nil {
 			return m, nil
 		}
 		return nil, errNotList
@@ -74,7 +99,6 @@ var errNotObject = fmt.Errorf("object does not implement the Object interfaces")
 // obj must be a pointer to an API type. An error is returned if the minimum
 // required fields are missing. Fields that are not required return the default
 // value and are a no-op if set.
-// TODO: return bool instead of error
 func Accessor(obj interface{}) (metav1.Object, error) {
 	switch t := obj.(type) {
 	case metav1.Object:
@@ -84,10 +108,38 @@ func Accessor(obj interface{}) (metav1.Object, error) {
 			return m, nil
 		}
 		return nil, errNotObject
-	case List, metav1.List, ListMetaAccessor, metav1.ListMetaAccessor:
-		return nil, errNotObject
 	default:
 		return nil, errNotObject
+	}
+}
+
+// AsPartialObjectMetadata takes the metav1 interface and returns a partial object.
+// TODO: consider making this solely a conversion action.
+func AsPartialObjectMetadata(m metav1.Object) *metav1beta1.PartialObjectMetadata {
+	switch t := m.(type) {
+	case *metav1.ObjectMeta:
+		return &metav1beta1.PartialObjectMetadata{ObjectMeta: *t}
+	default:
+		return &metav1beta1.PartialObjectMetadata{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:                       m.GetName(),
+				GenerateName:               m.GetGenerateName(),
+				Namespace:                  m.GetNamespace(),
+				SelfLink:                   m.GetSelfLink(),
+				UID:                        m.GetUID(),
+				ResourceVersion:            m.GetResourceVersion(),
+				Generation:                 m.GetGeneration(),
+				CreationTimestamp:          m.GetCreationTimestamp(),
+				DeletionTimestamp:          m.GetDeletionTimestamp(),
+				DeletionGracePeriodSeconds: m.GetDeletionGracePeriodSeconds(),
+				Labels:          m.GetLabels(),
+				Annotations:     m.GetAnnotations(),
+				OwnerReferences: m.GetOwnerReferences(),
+				Finalizers:      m.GetFinalizers(),
+				ClusterName:     m.GetClusterName(),
+				Initializers:    m.GetInitializers(),
+			},
+		}
 	}
 }
 
@@ -245,7 +297,7 @@ func (resourceAccessor) SetUID(obj runtime.Object, uid types.UID) error {
 }
 
 func (resourceAccessor) SelfLink(obj runtime.Object) (string, error) {
-	accessor, err := ListAccessor(obj)
+	accessor, err := CommonAccessor(obj)
 	if err != nil {
 		return "", err
 	}
@@ -253,7 +305,7 @@ func (resourceAccessor) SelfLink(obj runtime.Object) (string, error) {
 }
 
 func (resourceAccessor) SetSelfLink(obj runtime.Object, selfLink string) error {
-	accessor, err := ListAccessor(obj)
+	accessor, err := CommonAccessor(obj)
 	if err != nil {
 		return err
 	}
@@ -296,7 +348,7 @@ func (resourceAccessor) SetAnnotations(obj runtime.Object, annotations map[strin
 }
 
 func (resourceAccessor) ResourceVersion(obj runtime.Object) (string, error) {
-	accessor, err := ListAccessor(obj)
+	accessor, err := CommonAccessor(obj)
 	if err != nil {
 		return "", err
 	}
@@ -304,11 +356,28 @@ func (resourceAccessor) ResourceVersion(obj runtime.Object) (string, error) {
 }
 
 func (resourceAccessor) SetResourceVersion(obj runtime.Object, version string) error {
-	accessor, err := ListAccessor(obj)
+	accessor, err := CommonAccessor(obj)
 	if err != nil {
 		return err
 	}
 	accessor.SetResourceVersion(version)
+	return nil
+}
+
+func (resourceAccessor) Continue(obj runtime.Object) (string, error) {
+	accessor, err := ListAccessor(obj)
+	if err != nil {
+		return "", err
+	}
+	return accessor.GetContinue(), nil
+}
+
+func (resourceAccessor) SetContinue(obj runtime.Object, version string) error {
+	accessor, err := ListAccessor(obj)
+	if err != nil {
+		return err
+	}
+	accessor.SetContinue(version)
 	return nil
 }
 
