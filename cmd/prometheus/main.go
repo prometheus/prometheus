@@ -86,6 +86,8 @@ func main() {
 		localStoragePath    string
 		notifier            notifier.Options
 		notifierTimeout     model.Duration
+		forGracePeriod      model.Duration
+		outageTolerance     model.Duration
 		web                 web.Options
 		tsdb                tsdb.Options
 		lookbackDelta       model.Duration
@@ -164,17 +166,17 @@ func main() {
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
+	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
+		Default("1h").SetValue(&cfg.outageTolerance)
+
+	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
+		Default("10m").SetValue(&cfg.forGracePeriod)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
 		Default("10s").SetValue(&cfg.notifierTimeout)
-
-	a.Flag("alertmanager.outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
-		Default("1h").SetValue(&cfg.outageTolerance)
-
-	a.Flag("alertmanager.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
-		Default("10m").SetValue(&cfg.forGracePeriod)
 
 	a.Flag("query.lookback-delta", "The delta difference allowed for retrieving metrics during expression evaluations.").
 		Default("5m").SetValue(&cfg.lookbackDelta)

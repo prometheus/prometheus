@@ -216,12 +216,6 @@ func (g *Group) run(ctx context.Context) {
 		iterationDuration.Observe(timeSinceStart.Seconds())
 		g.SetEvaluationDuration(timeSinceStart)
 	}
-	lastTriggered := time.Now()
-	iter()
-	if g.shouldRestore {
-		g.RestoreForState(time.Now())
-		g.shouldRestore = false
-	}
 
 	// The assumption here is that since the ticker was started after having
 	// waited for `evalTimestamp` to pass, the ticks will trigger soon
@@ -508,6 +502,11 @@ func (g *Group) RestoreForState(ts time.Time) {
 			it := s.Iterator()
 			for it.Next() {
 				t, v = it.At()
+			}
+			if it.Err() != nil {
+				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
+					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+				return
 			}
 			if value.IsStaleNaN(v) { // Alert was not active.
 				return
