@@ -393,11 +393,11 @@ func (w *WAL) flushPage(clear bool) error {
 type recType uint8
 
 const (
-	recPageTerm recType = 0 // rest of page is empty
-	recFull     recType = 1 // full record
-	recFirst    recType = 2 // first fragment of a record
-	recMiddle   recType = 3 // middle fragments of a record
-	recLast     recType = 4 // final fragment of a record
+	recPageTerm recType = 0 // Rest of page is empty.
+	recFull     recType = 1 // Full record.
+	recFirst    recType = 2 // First fragment of a record.
+	recMiddle   recType = 3 // Middle fragments of a record.
+	recLast     recType = 4 // Final fragment of a record.
 )
 
 func (t recType) String() string {
@@ -442,8 +442,8 @@ func (w *WAL) log(rec []byte, final bool) error {
 	// If the record is too big to fit within pages in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
-	left := w.page.remaining() - recordHeaderSize                                   // active page
-	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // free pages
+	left := w.page.remaining() - recordHeaderSize                                   // Active pages.
+	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages.
 
 	if len(rec) > left {
 		if err := w.nextSegment(); err != nil {
@@ -716,7 +716,7 @@ func (r *Reader) next() (err error) {
 			// It's not strictly necessary but may catch sketchy state early.
 			k := pageSize - (r.total % pageSize)
 			if k == pageSize {
-				continue // initial 0 byte was last page byte
+				continue // Initial 0 byte was last page byte.
 			}
 			n, err := io.ReadFull(r.rdr, buf[:k])
 			if err != nil {

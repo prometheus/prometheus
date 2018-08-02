@@ -37,7 +37,7 @@ type CheckpointStats struct {
 	DroppedTombstones int
 	TotalSeries       int // Processed series including dropped ones.
 	TotalSamples      int // Processed samples inlcuding dropped ones.
-	TotalTombstones   int // Processed tombstones including droppes ones.
+	TotalTombstones   int // Processed tombstones including dropped ones.
 }
 
 // LastCheckpoint returns the directory name of the most recent checkpoint.
@@ -260,8 +260,8 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 	if err := cp.Close(); err != nil {
 		return nil, errors.Wrap(err, "close checkpoint")
 	}
-	if err := fileutil.Rename(cpdirtmp, cpdir); err != nil {
-		return nil, errors.Wrap(err, "rename checkpoint file")
+	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
+		return nil, errors.Wrap(err, "rename checkpoint directory")
 	}
 	if err := w.Truncate(n + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.

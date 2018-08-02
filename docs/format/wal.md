@@ -7,7 +7,7 @@ may be partial. A WAL record is an opaque byte slice that gets split up into sub
 should it exceed the remaining space of the current page. Records are never split across
 segment boundaries. If a single record exceeds the default segment size, a segment with
 a larger size will be created.
-The encoding of pages is largely borrowed from [LevelDB's/RocksDB's write ahead log.][1]
+The encoding of pages is largely borrowed from [LevelDB's/RocksDB's write ahead log.](https://github.com/facebook/rocksdb/wiki/Write-Ahead-Log-File-Format)
 
 Notable deviations are that the record fragment is encoded as:
 
@@ -84,5 +84,3 @@ and specify an interval for which samples of a series got deleted.
 │                        . . .                        │
 └─────────────────────────────────────────────────────┘
 ```
-
-[1][https://github.com/facebook/rocksdb/wiki/Write-Ahead-Log-File-Format]
