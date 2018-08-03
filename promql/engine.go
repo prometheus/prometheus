@@ -85,7 +85,7 @@ type Query interface {
 	// Statement returns the parsed statement of the query.
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
-	Stats() *stats.TimerGroup
+	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 }
@@ -99,7 +99,7 @@ type query struct {
 	// Statement of the parsed query.
 	stmt Statement
 	// Timer stats for the query execution.
-	stats *stats.TimerGroup
+	stats *stats.QueryTimers
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
@@ -115,7 +115,7 @@ func (q *query) Statement() Statement {
 }
 
 // Stats implements the Query interface.
-func (q *query) Stats() *stats.TimerGroup {
+func (q *query) Stats() *stats.QueryTimers {
 	return q.stats
 }
 
@@ -158,35 +158,6 @@ func contextDone(ctx context.Context, env string) error {
 		}
 	default:
 		return nil
-	}
-}
-
-// spanTimer unifies tracing and timing, to reduce repetition.
-type spanTimer struct {
-	timer     *stats.Timer
-	observers []prometheus.Summary
-
-	span opentracing.Span
-}
-
-func newSpanTimer(ctx context.Context, operation string, timer *stats.Timer, observers ...prometheus.Summary) (*spanTimer, context.Context) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, operation)
-	timer.Start()
-
-	return &spanTimer{
-		timer:     timer,
-		observers: observers,
-
-		span: span,
-	}, ctx
-}
-
-func (s *spanTimer) Finish() {
-	s.timer.Stop()
-	s.span.Finish()
-
-	for _, obs := range s.observers {
-		obs.Observe(s.timer.ElapsedTime().Seconds())
 	}
 }
 
@@ -305,7 +276,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time,
 	qry := &query{
 		stmt:      es,
 		ng:        ng,
-		stats:     stats.NewTimerGroup(),
+		stats:     stats.NewQueryTimers(),
 		queryable: q,
 	}
 	return qry
@@ -323,7 +294,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 		q:     "test statement",
 		stmt:  testStmt(f),
 		ng:    ng,
-		stats: stats.NewTimerGroup(),
+		stats: stats.NewQueryTimers(),
 	}
 	return qry
 }
@@ -339,10 +310,10 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
 	q.cancel = cancel
 
-	execSpanTimer, ctx := newSpanTimer(ctx, "promqlExec", q.stats.GetTimer(stats.ExecTotalTime))
+	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
 	defer execSpanTimer.Finish()
 
-	queueSpanTimer, _ := newSpanTimer(ctx, "promqlExecQueue", q.stats.GetTimer(stats.ExecQueueTime), ng.metrics.queryQueueTime)
+	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 
 	if err := ng.gate.Start(ctx); err != nil {
 		return nil, err
@@ -356,7 +327,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 
 	const env = "query execution"
 
-	evalSpanTimer, ctx := newSpanTimer(ctx, "promqlEval", q.stats.GetTimer(stats.EvalTotalTime))
+	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
 	defer evalSpanTimer.Finish()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
@@ -384,25 +355,22 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, error) {
-	{
-		// New block because we want to throw away this ctx. Propagating it further makes every call a child of prepare in traces.
-		prepareSpanTimer, ctx := newSpanTimer(ctx, "promqlPrepare", query.stats.GetTimer(stats.QueryPreparationTime), ng.metrics.queryPrepareTime)
-		querier, err := ng.populateSeries(ctx, query.queryable, s)
-		prepareSpanTimer.Finish()
+	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
+	querier, err := ng.populateSeries(ctxPrepare, query.queryable, s)
+	prepareSpanTimer.Finish()
 
-		// XXX(fabxc): the querier returned by populateSeries might be instantiated
-		// we must not return without closing irrespective of the error.
-		// TODO: make this semantically saner.
-		if querier != nil {
-			defer querier.Close()
-		}
-
-		if err != nil {
-			return nil, err
-		}
+	// XXX(fabxc): the querier returned by populateSeries might be instantiated
+	// we must not return without closing irrespective of the error.
+	// TODO: make this semantically saner.
+	if querier != nil {
+		defer querier.Close()
 	}
 
-	evalSpanTimer, _ := newSpanTimer(ctx, "promqlInnerEval", query.stats.GetTimer(stats.InnerEvalTime), ng.metrics.queryInnerEval)
+	if err != nil {
+		return nil, err
+	}
+
+	evalSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -471,7 +439,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// TODO(fabxc): order ensured by storage?
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
-	sortSpanTimer, _ := newSpanTimer(ctx, "promqlSort", query.stats.GetTimer(stats.ResultSortTime), ng.metrics.queryResultSort)
+	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
 	sortSpanTimer.Finish()
 
