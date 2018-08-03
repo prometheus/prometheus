@@ -1303,7 +1303,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := repl.Close(); err != nil {
 		return errors.Wrap(err, "close new WAL")
 	}
-	if err := fileutil.Rename(tmpdir, dir); err != nil {
+	if err := fileutil.Replace(tmpdir, dir); err != nil {
 		return errors.Wrap(err, "replace old WAL")
 	}
 	return nil
