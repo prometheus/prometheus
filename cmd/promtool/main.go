@@ -74,6 +74,7 @@ func main() {
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
 	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
+	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
 
 	querySeriesCmd := queryCmd.Command("series", "Run series query.")
 	querySeriesServer := querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URL()
@@ -110,7 +111,7 @@ func main() {
 		os.Exit(QueryInstant(*queryServer, *queryExpr))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd))
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep))
 
 	case querySeriesCmd.FullCommand():
 		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd))
@@ -413,7 +414,7 @@ func QueryInstant(url string, query string) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url string, query string, start string, end string) int {
+func QueryRange(url, query, start, end string, step time.Duration) int {
 	config := api.Config{
 		Address: url,
 	}
@@ -450,9 +451,11 @@ func QueryRange(url string, query string, start string, end string) int {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
 	}
 
-	resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
-	// Convert seconds to nanoseconds such that time.Duration parses correctly.
-	step := time.Duration(resolution * 1e9)
+	if step == 0 {
+		resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
+		// Convert seconds to nanoseconds such that time.Duration parses correctly.
+		step = time.Duration(resolution) * time.Second
+	}
 
 	// Run query against client.
 	api := v1.NewAPI(c)
