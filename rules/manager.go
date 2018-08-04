@@ -150,9 +150,13 @@ type Rule interface {
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
-	// LastErr returns the last error experienced by a rule
+	// SetLastErr sets the current error experienced by the rule.
+	SetLastError(error)
+	// LastErr returns the last error experienced by the rule.
 	LastError() error
-	// Health returns the current health of the rule
+	// SetHealth sets the current health of the rule.
+	SetHealth(RuleHealth)
+	// Health returns the current health of the rule.
 	Health() RuleHealth
 	SetEvaluationDuration(time.Duration)
 	GetEvaluationDuration() time.Duration

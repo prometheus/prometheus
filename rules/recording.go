@@ -35,10 +35,10 @@ type RecordingRule struct {
 	vector promql.Expr
 	labels labels.Labels
 
-	// the health of the rule
+	// The health of the recording rule.
 	health RuleHealth
 
-	// the last error seen by the rule
+	// The last error seen by the recording rule.
 	lastError error
 
 	mtx                sync.Mutex
@@ -74,8 +74,8 @@ func (rule *RecordingRule) Labels() labels.Labels {
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
 	vector, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
-		rule.health = HealthBad
-		rule.lastError = err
+		rule.SetHealth(HealthBad)
+		rule.SetLastError(err)
 		return nil, err
 	}
 	// Override the metric name and labels.
@@ -96,8 +96,8 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 		sample.Metric = lb.Labels()
 	}
-	rule.health = HealthGood
-	rule.lastError = err
+	rule.SetHealth(HealthGood)
+	rule.SetLastError(err)
 	return vector, nil
 }
 
@@ -123,14 +123,32 @@ func (rule *RecordingRule) SetEvaluationDuration(dur time.Duration) {
 	rule.evaluationDuration = dur
 }
 
-// Health returns the current health of the recording rule
-func (rule *RecordingRule) Health() RuleHealth {
-	return rule.health
+// SetLastError sets the current error seen by the recording rule
+func (rule *RecordingRule) SetLastError(err error) {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	rule.lastError = err
 }
 
 // LastError returns the last error seen by the recording rule
 func (rule *RecordingRule) LastError() error {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
 	return rule.lastError
+}
+
+// SetHealth sets the current health of the recording rule
+func (rule *RecordingRule) SetHealth(health RuleHealth) {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	rule.health = health
+}
+
+// Health returns the current health of the recording rule
+func (rule *RecordingRule) Health() RuleHealth {
+	rule.mtx.Lock()
+	defer rule.mtx.Unlock()
+	return rule.health
 }
 
 // GetEvaluationDuration returns the time in seconds it took to evaluate the recording rule.

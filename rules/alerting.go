@@ -109,10 +109,10 @@ type AlertingRule struct {
 	// only after the restoration.
 	restored bool
 
-	// the health of the alerting rule
+	// The health of the alerting rule.
 	health RuleHealth
 
-	// the last error seen by the alerting rule
+	// The last error seen by the alerting rule.
 	lastError error
 
 	// Protects the below.
@@ -144,12 +144,31 @@ func (r *AlertingRule) Name() string {
 	return r.name
 }
 
+// SetLastError sets the current error seen by the alerting rule
+func (r *AlertingRule) SetLastError(err error) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.lastError = err
+}
+
+// LastError returns the last error seen by the alerting rule
 func (r *AlertingRule) LastError() error {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	return r.lastError
+}
+
+// SetHealth sets the current health of the alerting rule
+func (r *AlertingRule) SetHealth(health RuleHealth) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.health = health
 }
 
 // Health returns the current health of the alerting rule
 func (r *AlertingRule) Health() RuleHealth {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	return r.health
 }
 
@@ -241,8 +260,8 @@ const resolvedRetention = 15 * time.Minute
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
-		r.health = HealthBad
-		r.lastError = err
+		r.SetHealth(HealthBad)
+		r.SetLastError(err)
 		return nil, err
 	}
 
@@ -348,8 +367,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
-	r.health = HealthGood
-	r.lastError = err
+	r.SetHealth(HealthGood)
+	r.SetLastError(err)
 	return vec, nil
 }
 
