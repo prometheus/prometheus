@@ -380,7 +380,9 @@ var (
 )
 
 func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil
 	}
@@ -816,7 +818,9 @@ func (api *API) deleteSeries(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil
 	}
 
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil
 	}
@@ -866,7 +870,10 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if !api.enableAdmin {
 		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil
 	}
-	skipHead, _ := strconv.ParseBool(r.FormValue("skip_head"))
+	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
+	if err != nil {
+		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+	}
 
 	db := api.db()
 	if db == nil {
