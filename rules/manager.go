@@ -42,7 +42,7 @@ import (
 // RuleHealth describes the health state of a target.
 type RuleHealth string
 
-// The possible health states of a rule based on the last execution
+// The possible health states of a rule based on the last execution.
 const (
 	HealthUnknown RuleHealth = "unknown"
 	HealthGood    RuleHealth = "ok"

@@ -123,28 +123,28 @@ func (rule *RecordingRule) SetEvaluationDuration(dur time.Duration) {
 	rule.evaluationDuration = dur
 }
 
-// SetLastError sets the current error seen by the recording rule
+// SetLastError sets the current error seen by the recording rule.
 func (rule *RecordingRule) SetLastError(err error) {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
 	rule.lastError = err
 }
 
-// LastError returns the last error seen by the recording rule
+// LastError returns the last error seen by the recording rule.
 func (rule *RecordingRule) LastError() error {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
 	return rule.lastError
 }
 
-// SetHealth sets the current health of the recording rule
+// SetHealth sets the current health of the recording rule.
 func (rule *RecordingRule) SetHealth(health RuleHealth) {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
 	rule.health = health
 }
 
-// Health returns the current health of the recording rule
+// Health returns the current health of the recording rule.
 func (rule *RecordingRule) Health() RuleHealth {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()

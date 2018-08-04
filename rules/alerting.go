@@ -144,28 +144,28 @@ func (r *AlertingRule) Name() string {
 	return r.name
 }
 
-// SetLastError sets the current error seen by the alerting rule
+// SetLastError sets the current error seen by the alerting rule.
 func (r *AlertingRule) SetLastError(err error) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	r.lastError = err
 }
 
-// LastError returns the last error seen by the alerting rule
+// LastError returns the last error seen by the alerting rule.
 func (r *AlertingRule) LastError() error {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	return r.lastError
 }
 
-// SetHealth sets the current health of the alerting rule
+// SetHealth sets the current health of the alerting rule.
 func (r *AlertingRule) SetHealth(health RuleHealth) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	r.health = health
 }
 
-// Health returns the current health of the alerting rule
+// Health returns the current health of the alerting rule.
 func (r *AlertingRule) Health() RuleHealth {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
