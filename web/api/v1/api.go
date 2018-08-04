@@ -880,7 +880,7 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 			rand.Int())
 		dir = filepath.Join(snapdir, name)
 	)
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %s", err)}, nil
 	}
 	if err := db.Snapshot(dir, !skipHead); err != nil {

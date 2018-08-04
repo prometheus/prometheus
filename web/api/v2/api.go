@@ -179,7 +179,7 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*p
 			rand.Int())
 		dir = filepath.Join(snapdir, name)
 	)
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, status.Errorf(codes.Internal, "created snapshot directory: %s", err)
 	}
 	if err := db.Snapshot(dir, !req.SkipHead); err != nil {
