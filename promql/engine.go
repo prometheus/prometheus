@@ -452,7 +452,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) error {
+	if err := Inspect(s.Expr, func(node Node, _ []Node) error {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
@@ -470,7 +470,9 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("error computing maximum offset: %v", err)
+	}
 
 	mint := s.Start.Add(-maxOffset)
 
@@ -479,7 +481,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
-	Inspect(s.Expr, func(node Node, path []Node) error {
+	if err := Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
 			Start: timestamp.FromTime(s.Start),
@@ -499,14 +501,11 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
+				return fmt.Errorf("error selecting series set: %v", err)
 			}
 			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
-				// TODO(fabxc): use multi-error.
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return err
+				return fmt.Errorf("error expanding series set: %v", err)
 			}
 
 		case *MatrixSelector:
@@ -522,17 +521,17 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
+				return fmt.Errorf("error selecting series set: %v", err)
 			}
 			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return err
+				return fmt.Errorf("error expanding series set: %v", err)
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("error reading series data: %v", err)
+	}
 	return querier, err
 }
 

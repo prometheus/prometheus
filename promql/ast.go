@@ -336,6 +336,6 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(node Node, f inspector) {
-	Walk(inspector(f), node, nil)
+func Inspect(node Node, f inspector) error {
+	return Walk(inspector(f), node, nil)
 }
