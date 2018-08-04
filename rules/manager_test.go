@@ -343,14 +343,12 @@ func TestForStateRestore(t *testing.T) {
 	testutil.Ok(t, err)
 
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-		Appendable: suite.Storage(),
-		TSDB:       suite.Storage(),
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
-		NotifyFunc: func(ctx context.Context, expr string, alerts ...*Alert) error {
-			return nil
-		},
+		QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable:      suite.Storage(),
+		TSDB:            suite.Storage(),
+		Context:         context.Background(),
+		Logger:          log.NewNopLogger(),
+		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
 		OutageTolerance: 30 * time.Minute,
 		ForGracePeriod:  10 * time.Minute,
 	}
