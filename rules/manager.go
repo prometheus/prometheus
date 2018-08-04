@@ -39,6 +39,16 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// RuleHealth describes the health state of a target.
+type RuleHealth string
+
+// The possible health states of a rule based on the last execution
+const (
+	HealthUnknown RuleHealth = "unknown"
+	HealthGood    RuleHealth = "ok"
+	HealthBad     RuleHealth = "err"
+)
+
 // Constants for instrumentation.
 const namespace = "prometheus"
 
@@ -140,7 +150,10 @@ type Rule interface {
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
-
+	// LastErr returns the last error experienced by a rule
+	LastError() error
+	// Health returns the current health of the rule
+	Health() RuleHealth
 	SetEvaluationDuration(time.Duration)
 	GetEvaluationDuration() time.Duration
 	// HTMLSnippet returns a human-readable string representation of the rule,

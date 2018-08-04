@@ -109,6 +109,12 @@ type AlertingRule struct {
 	// only after the restoration.
 	restored bool
 
+	// the health of the alerting rule
+	health RuleHealth
+
+	// the last error seen by the alerting rule
+	lastError error
+
 	// Protects the below.
 	mtx sync.Mutex
 	// A map of alerts which are currently active (Pending or Firing), keyed by
@@ -126,6 +132,7 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 		holdDuration: hold,
 		labels:       lbls,
 		annotations:  anns,
+		health:       HealthUnknown,
 		active:       map[uint64]*Alert{},
 		logger:       logger,
 		restored:     restored,
@@ -135,6 +142,15 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 // Name returns the name of the alerting rule.
 func (r *AlertingRule) Name() string {
 	return r.name
+}
+
+func (r *AlertingRule) LastError() error {
+	return r.lastError
+}
+
+// Health returns the current health of the alerting rule
+func (r *AlertingRule) Health() RuleHealth {
+	return r.health
 }
 
 // Query returns the query expression of the alerting rule.
@@ -225,6 +241,8 @@ const resolvedRetention = 15 * time.Minute
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
+		r.health = HealthBad
+		r.lastError = err
 		return nil, err
 	}
 
@@ -330,6 +348,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	r.health = HealthGood
+	r.lastError = err
 	return vec, nil
 }
 

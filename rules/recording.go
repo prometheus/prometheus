@@ -31,9 +31,16 @@ import (
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name               string
-	vector             promql.Expr
-	labels             labels.Labels
+	name   string
+	vector promql.Expr
+	labels labels.Labels
+
+	// the health of the rule
+	health RuleHealth
+
+	// the last error seen by the rule
+	lastError error
+
 	mtx                sync.Mutex
 	evaluationDuration time.Duration
 }
@@ -43,6 +50,7 @@ func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *Reco
 	return &RecordingRule{
 		name:   name,
 		vector: vector,
+		health: HealthUnknown,
 		labels: lset,
 	}
 }
@@ -66,6 +74,8 @@ func (rule *RecordingRule) Labels() labels.Labels {
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
 	vector, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
+		rule.health = HealthBad
+		rule.lastError = err
 		return nil, err
 	}
 	// Override the metric name and labels.
@@ -86,7 +96,8 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 		sample.Metric = lb.Labels()
 	}
-
+	rule.health = HealthGood
+	rule.lastError = err
 	return vector, nil
 }
 
@@ -110,6 +121,16 @@ func (rule *RecordingRule) SetEvaluationDuration(dur time.Duration) {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
 	rule.evaluationDuration = dur
+}
+
+// Health returns the current health of the recording rule
+func (rule *RecordingRule) Health() RuleHealth {
+	return rule.health
+}
+
+// LastError returns the last error seen by the recording rule
+func (rule *RecordingRule) LastError() error {
+	return rule.lastError
 }
 
 // GetEvaluationDuration returns the time in seconds it took to evaluate the recording rule.
