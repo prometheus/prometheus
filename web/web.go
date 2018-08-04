@@ -815,11 +815,21 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 
 			return alive
 		},
-		"healthToClass": func(th scrape.TargetHealth) string {
+		"targetHealthToClass": func(th scrape.TargetHealth) string {
 			switch th {
 			case scrape.HealthUnknown:
 				return "warning"
 			case scrape.HealthGood:
+				return "success"
+			default:
+				return "danger"
+			}
+		},
+		"ruleHealthToClass": func(rh rules.RuleHealth) string {
+			switch rh {
+			case rules.HealthUnknown:
+				return "warning"
+			case rules.HealthGood:
 				return "success"
 			default:
 				return "danger"
