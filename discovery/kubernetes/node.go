@@ -24,10 +24,13 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+)
+
+const (
+	NodeLegacyHostIP = "LegacyHostIP"
 )
 
 // Node discovers Kubernetes nodes.
@@ -205,7 +208,7 @@ func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, 
 	if addresses, ok := m[apiv1.NodeExternalIP]; ok {
 		return addresses[0], m, nil
 	}
-	if addresses, ok := m[apiv1.NodeAddressType(api.NodeLegacyHostIP)]; ok {
+	if addresses, ok := m[apiv1.NodeAddressType(NodeLegacyHostIP)]; ok {
 		return addresses[0], m, nil
 	}
 	if addresses, ok := m[apiv1.NodeHostName]; ok {

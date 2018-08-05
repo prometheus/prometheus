@@ -38,6 +38,10 @@ func AddConversionFuncs(scheme *runtime.Scheme) error {
 		Convert_intstr_IntOrString_To_intstr_IntOrString,
 
 		Convert_unversioned_Time_To_unversioned_Time,
+		Convert_unversioned_MicroTime_To_unversioned_MicroTime,
+
+		Convert_Pointer_v1_Duration_To_v1_Duration,
+		Convert_v1_Duration_To_Pointer_v1_Duration,
 
 		Convert_Slice_string_To_unversioned_Time,
 
@@ -61,6 +65,9 @@ func AddConversionFuncs(scheme *runtime.Scheme) error {
 		Convert_Pointer_int32_To_int32,
 		Convert_int32_To_Pointer_int32,
 
+		Convert_Pointer_int64_To_int64,
+		Convert_int64_To_Pointer_int64,
+
 		Convert_Pointer_float64_To_float64,
 		Convert_float64_To_Pointer_float64,
 
@@ -68,6 +75,8 @@ func AddConversionFuncs(scheme *runtime.Scheme) error {
 		Convert_unversioned_LabelSelector_to_map,
 
 		Convert_Slice_string_To_Slice_int32,
+
+		Convert_Slice_string_To_v1_DeletionPropagation,
 	)
 }
 
@@ -97,6 +106,21 @@ func Convert_Pointer_int32_To_int32(in **int32, out *int32, s conversion.Scope) 
 
 func Convert_int32_To_Pointer_int32(in *int32, out **int32, s conversion.Scope) error {
 	temp := int32(*in)
+	*out = &temp
+	return nil
+}
+
+func Convert_Pointer_int64_To_int64(in **int64, out *int64, s conversion.Scope) error {
+	if *in == nil {
+		*out = 0
+		return nil
+	}
+	*out = int64(**in)
+	return nil
+}
+
+func Convert_int64_To_Pointer_int64(in *int64, out **int64, s conversion.Scope) error {
+	temp := int64(*in)
 	*out = &temp
 	return nil
 }
@@ -181,6 +205,27 @@ func Convert_unversioned_Time_To_unversioned_Time(in *Time, out *Time, s convers
 	return nil
 }
 
+func Convert_Pointer_v1_Duration_To_v1_Duration(in **Duration, out *Duration, s conversion.Scope) error {
+	if *in == nil {
+		*out = Duration{} // zero duration
+		return nil
+	}
+	*out = **in // copy
+	return nil
+}
+
+func Convert_v1_Duration_To_Pointer_v1_Duration(in *Duration, out **Duration, s conversion.Scope) error {
+	temp := *in //copy
+	*out = &temp
+	return nil
+}
+
+func Convert_unversioned_MicroTime_To_unversioned_MicroTime(in *MicroTime, out *MicroTime, s conversion.Scope) error {
+	// Cannot deep copy these, because time.Time has unexported fields.
+	*out = *in
+	return nil
+}
+
 // Convert_Slice_string_To_unversioned_Time allows converting a URL query parameter value
 func Convert_Slice_string_To_unversioned_Time(input *[]string, out *Time, s conversion.Scope) error {
 	str := ""
@@ -234,7 +279,6 @@ func Convert_map_to_unversioned_LabelSelector(in *map[string]string, out *LabelS
 	if in == nil {
 		return nil
 	}
-	out = new(LabelSelector)
 	for labelKey, labelValue := range *in {
 		AddLabelToSelector(out, labelKey, labelValue)
 	}
@@ -259,6 +303,16 @@ func Convert_Slice_string_To_Slice_int32(in *[]string, out *[]int32, s conversio
 			}
 			*out = append(*out, int32(x))
 		}
+	}
+	return nil
+}
+
+// Convert_Slice_string_To_v1_DeletionPropagation allows converting a URL query parameter propagationPolicy
+func Convert_Slice_string_To_v1_DeletionPropagation(input *[]string, out *DeletionPropagation, s conversion.Scope) error {
+	if len(*input) > 0 {
+		*out = DeletionPropagation((*input)[0])
+	} else {
+		*out = ""
 	}
 	return nil
 }

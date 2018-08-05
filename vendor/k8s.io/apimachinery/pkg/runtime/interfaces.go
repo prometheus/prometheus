@@ -174,13 +174,16 @@ type ObjectVersioner interface {
 
 // ObjectConvertor converts an object to a different version.
 type ObjectConvertor interface {
-	// Convert attempts to convert one object into another, or returns an error. This method does
-	// not guarantee the in object is not mutated. The context argument will be passed to
-	// all nested conversions.
+	// Convert attempts to convert one object into another, or returns an error. This
+	// method does not mutate the in object, but the in and out object might share data structures,
+	// i.e. the out object cannot be mutated without mutating the in object as well.
+	// The context argument will be passed to all nested conversions.
 	Convert(in, out, context interface{}) error
 	// ConvertToVersion takes the provided object and converts it the provided version. This
-	// method does not guarantee that the in object is not mutated. This method is similar to
-	// Convert() but handles specific details of choosing the correct output version.
+	// method does not mutate the in object, but the in and out object might share data structures,
+	// i.e. the out object cannot be mutated without mutating the in object as well.
+	// This method is similar to Convert() but handles specific details of choosing the correct
+	// output version.
 	ConvertToVersion(in Object, gv GroupVersioner) (out Object, err error)
 	ConvertFieldLabel(version, kind, label, value string) (string, string, error)
 }
@@ -201,13 +204,6 @@ type ObjectTyper interface {
 // ObjectCreater contains methods for instantiating an object by kind and version.
 type ObjectCreater interface {
 	New(kind schema.GroupVersionKind) (out Object, err error)
-}
-
-// ObjectCopier duplicates an object.
-type ObjectCopier interface {
-	// Copy returns an exact copy of the provided Object, or an error if the
-	// copy could not be completed.
-	Copy(Object) (Object, error)
 }
 
 // ResourceVersioner provides methods for setting and retrieving
@@ -234,18 +230,23 @@ type SelfLinker interface {
 // to return a no-op ObjectKindAccessor in cases where it is not expected to be serialized.
 type Object interface {
 	GetObjectKind() schema.ObjectKind
+	DeepCopyObject() Object
 }
 
 // Unstructured objects store values as map[string]interface{}, with only values that can be serialized
 // to JSON allowed.
 type Unstructured interface {
-	// IsUnstructuredObject is a marker interface to allow objects that can be serialized but not introspected
-	// to bypass conversion.
-	IsUnstructuredObject()
+	Object
+	// UnstructuredContent returns a non-nil map with this object's contents. Values may be
+	// []interface{}, map[string]interface{}, or any primitive type. Contents are typically serialized to
+	// and from JSON. SetUnstructuredContent should be used to mutate the contents.
+	UnstructuredContent() map[string]interface{}
+	// SetUnstructuredContent updates the object content to match the provided map.
+	SetUnstructuredContent(map[string]interface{})
 	// IsList returns true if this type is a list or matches the list convention - has an array called "items".
 	IsList() bool
-	// UnstructuredContent returns a non-nil, mutable map of the contents of this object. Values may be
-	// []interface{}, map[string]interface{}, or any primitive type. Contents are typically serialized to
-	// and from JSON.
-	UnstructuredContent() map[string]interface{}
+	// EachListItem should pass a single item out of the list as an Object to the provided function. Any
+	// error should terminate the iteration. If IsList() returns false, this method should return an error
+	// instead of calling the provided function.
+	EachListItem(func(Object) error) error
 }

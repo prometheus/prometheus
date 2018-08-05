@@ -52,6 +52,16 @@ func (rule *RecordingRule) Name() string {
 	return rule.name
 }
 
+// Query returns the rule query expression.
+func (rule *RecordingRule) Query() promql.Expr {
+	return rule.vector
+}
+
+// Labels returns the rule labels.
+func (rule *RecordingRule) Labels() labels.Labels {
+	return rule.labels
+}
+
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
 	vector, err := query(ctx, rule.vector.String(), ts)
@@ -125,7 +135,7 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 
 	byt, err := yaml.Marshal(r)
 	if err != nil {
-		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", err.Error()))
+		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", template.HTMLEscapeString(err.Error())))
 	}
 
 	return template.HTML(byt)
