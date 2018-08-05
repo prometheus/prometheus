@@ -433,7 +433,7 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 
 	byt, err := yaml.Marshal(ar)
 	if err != nil {
-		return html_template.HTML(fmt.Sprintf("error marshalling alerting rule: %q", err.Error()))
+		return html_template.HTML(fmt.Sprintf("error marshalling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
 	}
 	return html_template.HTML(byt)
 }
