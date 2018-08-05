@@ -135,7 +135,7 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 
 	byt, err := yaml.Marshal(r)
 	if err != nil {
-		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", err.Error()))
+		return template.HTML(fmt.Sprintf("error marshalling recording rule: %q", template.HTMLEscapeString(err.Error())))
 	}
 
 	return template.HTML(byt)
