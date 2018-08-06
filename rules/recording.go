@@ -34,14 +34,12 @@ type RecordingRule struct {
 	name   string
 	vector promql.Expr
 	labels labels.Labels
-
+	// Protects the below.
+	mtx sync.Mutex
 	// The health of the recording rule.
 	health RuleHealth
-
 	// The last error seen by the recording rule.
-	lastError error
-
-	mtx                sync.Mutex
+	lastError          error
 	evaluationDuration time.Duration
 }
 

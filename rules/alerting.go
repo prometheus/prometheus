@@ -108,15 +108,12 @@ type AlertingRule struct {
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
-
-	// The health of the alerting rule.
-	health RuleHealth
-
-	// The last error seen by the alerting rule.
-	lastError error
-
 	// Protects the below.
 	mtx sync.Mutex
+	// The health of the alerting rule.
+	health RuleHealth
+	// The last error seen by the alerting rule.
+	lastError error
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
