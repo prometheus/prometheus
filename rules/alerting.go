@@ -108,9 +108,12 @@ type AlertingRule struct {
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
-
 	// Protects the below.
 	mtx sync.Mutex
+	// The health of the alerting rule.
+	health RuleHealth
+	// The last error seen by the alerting rule.
+	lastError error
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
@@ -126,6 +129,7 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 		holdDuration: hold,
 		labels:       lbls,
 		annotations:  anns,
+		health:       HealthUnknown,
 		active:       map[uint64]*Alert{},
 		logger:       logger,
 		restored:     restored,
@@ -135,6 +139,34 @@ func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, ann
 // Name returns the name of the alerting rule.
 func (r *AlertingRule) Name() string {
 	return r.name
+}
+
+// SetLastError sets the current error seen by the alerting rule.
+func (r *AlertingRule) SetLastError(err error) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.lastError = err
+}
+
+// LastError returns the last error seen by the alerting rule.
+func (r *AlertingRule) LastError() error {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.lastError
+}
+
+// SetHealth sets the current health of the alerting rule.
+func (r *AlertingRule) SetHealth(health RuleHealth) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.health = health
+}
+
+// Health returns the current health of the alerting rule.
+func (r *AlertingRule) Health() RuleHealth {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.health
 }
 
 // Query returns the query expression of the alerting rule.
@@ -225,6 +257,8 @@ const resolvedRetention = 15 * time.Minute
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
+		r.SetHealth(HealthBad)
+		r.SetLastError(err)
 		return nil, err
 	}
 
@@ -330,6 +364,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	r.SetHealth(HealthGood)
+	r.SetLastError(err)
 	return vec, nil
 }
 
