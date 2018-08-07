@@ -47,20 +47,43 @@ func NewGetAction(resource schema.GroupVersionResource, namespace, name string) 
 	return action
 }
 
-func NewRootListAction(resource schema.GroupVersionResource, opts interface{}) ListActionImpl {
+func NewGetSubresourceAction(resource schema.GroupVersionResource, namespace, subresource, name string) GetActionImpl {
+	action := GetActionImpl{}
+	action.Verb = "get"
+	action.Resource = resource
+	action.Subresource = subresource
+	action.Namespace = namespace
+	action.Name = name
+
+	return action
+}
+
+func NewRootGetSubresourceAction(resource schema.GroupVersionResource, subresource, name string) GetActionImpl {
+	action := GetActionImpl{}
+	action.Verb = "get"
+	action.Resource = resource
+	action.Subresource = subresource
+	action.Name = name
+
+	return action
+}
+
+func NewRootListAction(resource schema.GroupVersionResource, kind schema.GroupVersionKind, opts interface{}) ListActionImpl {
 	action := ListActionImpl{}
 	action.Verb = "list"
 	action.Resource = resource
+	action.Kind = kind
 	labelSelector, fieldSelector, _ := ExtractFromListOptions(opts)
 	action.ListRestrictions = ListRestrictions{labelSelector, fieldSelector}
 
 	return action
 }
 
-func NewListAction(resource schema.GroupVersionResource, namespace string, opts interface{}) ListActionImpl {
+func NewListAction(resource schema.GroupVersionResource, kind schema.GroupVersionKind, namespace string, opts interface{}) ListActionImpl {
 	action := ListActionImpl{}
 	action.Verb = "list"
 	action.Resource = resource
+	action.Kind = kind
 	action.Namespace = namespace
 	labelSelector, fieldSelector, _ := ExtractFromListOptions(opts)
 	action.ListRestrictions = ListRestrictions{labelSelector, fieldSelector}
@@ -82,6 +105,29 @@ func NewCreateAction(resource schema.GroupVersionResource, namespace string, obj
 	action.Verb = "create"
 	action.Resource = resource
 	action.Namespace = namespace
+	action.Object = object
+
+	return action
+}
+
+func NewRootCreateSubresourceAction(resource schema.GroupVersionResource, name, subresource string, object runtime.Object) CreateActionImpl {
+	action := CreateActionImpl{}
+	action.Verb = "create"
+	action.Resource = resource
+	action.Subresource = subresource
+	action.Name = name
+	action.Object = object
+
+	return action
+}
+
+func NewCreateSubresourceAction(resource schema.GroupVersionResource, name, subresource, namespace string, object runtime.Object) CreateActionImpl {
+	action := CreateActionImpl{}
+	action.Verb = "create"
+	action.Resource = resource
+	action.Namespace = namespace
+	action.Subresource = subresource
+	action.Name = name
 	action.Object = object
 
 	return action
@@ -179,10 +225,31 @@ func NewRootDeleteAction(resource schema.GroupVersionResource, name string) Dele
 	return action
 }
 
+func NewRootDeleteSubresourceAction(resource schema.GroupVersionResource, subresource string, name string) DeleteActionImpl {
+	action := DeleteActionImpl{}
+	action.Verb = "delete"
+	action.Resource = resource
+	action.Subresource = subresource
+	action.Name = name
+
+	return action
+}
+
 func NewDeleteAction(resource schema.GroupVersionResource, namespace, name string) DeleteActionImpl {
 	action := DeleteActionImpl{}
 	action.Verb = "delete"
 	action.Resource = resource
+	action.Namespace = namespace
+	action.Name = name
+
+	return action
+}
+
+func NewDeleteSubresourceAction(resource schema.GroupVersionResource, subresource, namespace, name string) DeleteActionImpl {
+	action := DeleteActionImpl{}
+	action.Verb = "delete"
+	action.Resource = resource
+	action.Subresource = subresource
 	action.Namespace = namespace
 	action.Name = name
 
@@ -285,6 +352,10 @@ type Action interface {
 	GetResource() schema.GroupVersionResource
 	GetSubresource() string
 	Matches(verb, resource string) bool
+
+	// DeepCopy is used to copy an action to avoid any risk of accidental mutation.  Most people never need to call this
+	// because the invocation logic deep copies before calls to storage and reactors.
+	DeepCopy() Action
 }
 
 type GenericAction interface {
@@ -315,6 +386,17 @@ type UpdateAction interface {
 type DeleteAction interface {
 	Action
 	GetName() string
+}
+
+type DeleteCollectionAction interface {
+	Action
+	GetListRestrictions() ListRestrictions
+}
+
+type PatchAction interface {
+	Action
+	GetName() string
+	GetPatch() []byte
 }
 
 type WatchAction interface {
@@ -354,6 +436,10 @@ func (a ActionImpl) Matches(verb, resource string) bool {
 	return strings.ToLower(verb) == strings.ToLower(a.Verb) &&
 		strings.ToLower(resource) == strings.ToLower(a.Resource.Resource)
 }
+func (a ActionImpl) DeepCopy() Action {
+	ret := a
+	return ret
+}
 
 type GenericActionImpl struct {
 	ActionImpl
@@ -362,6 +448,14 @@ type GenericActionImpl struct {
 
 func (a GenericActionImpl) GetValue() interface{} {
 	return a.Value
+}
+
+func (a GenericActionImpl) DeepCopy() Action {
+	return GenericActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		// TODO this is wrong, but no worse than before
+		Value: a.Value,
+	}
 }
 
 type GetActionImpl struct {
@@ -373,22 +467,56 @@ func (a GetActionImpl) GetName() string {
 	return a.Name
 }
 
+func (a GetActionImpl) DeepCopy() Action {
+	return GetActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Name:       a.Name,
+	}
+}
+
 type ListActionImpl struct {
 	ActionImpl
+	Kind             schema.GroupVersionKind
+	Name             string
 	ListRestrictions ListRestrictions
+}
+
+func (a ListActionImpl) GetKind() schema.GroupVersionKind {
+	return a.Kind
 }
 
 func (a ListActionImpl) GetListRestrictions() ListRestrictions {
 	return a.ListRestrictions
 }
 
+func (a ListActionImpl) DeepCopy() Action {
+	return ListActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Kind:       a.Kind,
+		Name:       a.Name,
+		ListRestrictions: ListRestrictions{
+			Labels: a.ListRestrictions.Labels.DeepCopySelector(),
+			Fields: a.ListRestrictions.Fields.DeepCopySelector(),
+		},
+	}
+}
+
 type CreateActionImpl struct {
 	ActionImpl
+	Name   string
 	Object runtime.Object
 }
 
 func (a CreateActionImpl) GetObject() runtime.Object {
 	return a.Object
+}
+
+func (a CreateActionImpl) DeepCopy() Action {
+	return CreateActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Name:       a.Name,
+		Object:     a.Object.DeepCopyObject(),
+	}
 }
 
 type UpdateActionImpl struct {
@@ -398,6 +526,13 @@ type UpdateActionImpl struct {
 
 func (a UpdateActionImpl) GetObject() runtime.Object {
 	return a.Object
+}
+
+func (a UpdateActionImpl) DeepCopy() Action {
+	return UpdateActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Object:     a.Object.DeepCopyObject(),
+	}
 }
 
 type PatchActionImpl struct {
@@ -414,6 +549,16 @@ func (a PatchActionImpl) GetPatch() []byte {
 	return a.Patch
 }
 
+func (a PatchActionImpl) DeepCopy() Action {
+	patch := make([]byte, len(a.Patch))
+	copy(patch, a.Patch)
+	return PatchActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Name:       a.Name,
+		Patch:      patch,
+	}
+}
+
 type DeleteActionImpl struct {
 	ActionImpl
 	Name string
@@ -421,6 +566,13 @@ type DeleteActionImpl struct {
 
 func (a DeleteActionImpl) GetName() string {
 	return a.Name
+}
+
+func (a DeleteActionImpl) DeepCopy() Action {
+	return DeleteActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Name:       a.Name,
+	}
 }
 
 type DeleteCollectionActionImpl struct {
@@ -432,6 +584,16 @@ func (a DeleteCollectionActionImpl) GetListRestrictions() ListRestrictions {
 	return a.ListRestrictions
 }
 
+func (a DeleteCollectionActionImpl) DeepCopy() Action {
+	return DeleteCollectionActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		ListRestrictions: ListRestrictions{
+			Labels: a.ListRestrictions.Labels.DeepCopySelector(),
+			Fields: a.ListRestrictions.Fields.DeepCopySelector(),
+		},
+	}
+}
+
 type WatchActionImpl struct {
 	ActionImpl
 	WatchRestrictions WatchRestrictions
@@ -439,6 +601,17 @@ type WatchActionImpl struct {
 
 func (a WatchActionImpl) GetWatchRestrictions() WatchRestrictions {
 	return a.WatchRestrictions
+}
+
+func (a WatchActionImpl) DeepCopy() Action {
+	return WatchActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		WatchRestrictions: WatchRestrictions{
+			Labels:          a.WatchRestrictions.Labels.DeepCopySelector(),
+			Fields:          a.WatchRestrictions.Fields.DeepCopySelector(),
+			ResourceVersion: a.WatchRestrictions.ResourceVersion,
+		},
+	}
 }
 
 type ProxyGetActionImpl struct {
@@ -468,4 +641,19 @@ func (a ProxyGetActionImpl) GetPath() string {
 
 func (a ProxyGetActionImpl) GetParams() map[string]string {
 	return a.Params
+}
+
+func (a ProxyGetActionImpl) DeepCopy() Action {
+	params := map[string]string{}
+	for k, v := range a.Params {
+		params[k] = v
+	}
+	return ProxyGetActionImpl{
+		ActionImpl: a.ActionImpl.DeepCopy().(ActionImpl),
+		Scheme:     a.Scheme,
+		Name:       a.Name,
+		Port:       a.Port,
+		Path:       a.Path,
+		Params:     params,
+	}
 }

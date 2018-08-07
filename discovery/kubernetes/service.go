@@ -22,7 +22,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -61,13 +61,13 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	return s
 }
 
-func (e *Service) enqueue(obj interface{}) {
+func (s *Service) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
 	}
 
-	e.queue.Add(key)
+	s.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.

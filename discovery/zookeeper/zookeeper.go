@@ -137,8 +137,11 @@ func NewDiscovery(
 		logger = log.NewNopLogger()
 	}
 
-	conn, _, err := zk.Connect(srvs, timeout)
-	conn.SetLogger(treecache.NewZookeeperLogger(logger))
+	conn, _, err := zk.Connect(
+		srvs, timeout,
+		func(c *zk.Conn) {
+			c.SetLogger(treecache.NewZookeeperLogger(logger))
+		})
 	if err != nil {
 		return nil
 	}

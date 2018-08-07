@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -31,7 +32,9 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
@@ -39,9 +42,11 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testTargetRetriever struct{}
@@ -96,6 +101,75 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 	}
 }
 
+type rulesRetrieverMock struct {
+	testing *testing.T
+}
+
+func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+	expr1, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	if err != nil {
+		m.testing.Fatalf("unable to parse alert expression: %s", err)
+	}
+	expr2, err := promql.ParseExpr(`up == 1`)
+	if err != nil {
+		m.testing.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	rule1 := rules.NewAlertingRule(
+		"test_metric3",
+		expr1,
+		time.Second,
+		labels.Labels{},
+		labels.Labels{},
+		true,
+		log.NewNopLogger(),
+	)
+	rule2 := rules.NewAlertingRule(
+		"test_metric4",
+		expr2,
+		time.Second,
+		labels.Labels{},
+		labels.Labels{},
+		true,
+		log.NewNopLogger(),
+	)
+	var r []*rules.AlertingRule
+	r = append(r, rule1)
+	r = append(r, rule2)
+	return r
+}
+
+func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
+	var ar rulesRetrieverMock
+	arules := ar.AlertingRules()
+	storage := testutil.NewStorage(m.testing)
+	defer storage.Close()
+
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	opts := &rules.ManagerOptions{
+		QueryFunc:  rules.EngineQueryFunc(engine, storage),
+		Appendable: storage,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	var r []rules.Rule
+
+	for _, alertrule := range arules {
+		r = append(r, alertrule)
+	}
+
+	recordingExpr, err := promql.ParseExpr(`vector(1)`)
+	if err != nil {
+		m.testing.Fatalf("unable to parse alert expression: %s", err)
+	}
+	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
+	r = append(r, recordingRule)
+
+	group := rules.NewGroup("grp", "/path/to/file", time.Second, r, false, opts)
+	return []*rules.Group{group}
+}
+
 var samplePrometheusCfg = config.Config{
 	GlobalConfig:       config.GlobalConfig{},
 	AlertingConfig:     config.AlertingConfig{},
@@ -128,30 +202,145 @@ func TestEndpoints(t *testing.T) {
 
 	now := time.Now()
 
-	var tr testTargetRetriever
+	var algr rulesRetrieverMock
+	algr.testing = t
+	algr.AlertingRules()
+	algr.RuleGroups()
 
-	var ar testAlertmanagerRetriever
+	t.Run("local", func(t *testing.T) {
+		var algr rulesRetrieverMock
+		algr.testing = t
 
-	api := &API{
-		Queryable:             suite.Storage(),
-		QueryEngine:           suite.QueryEngine(),
-		targetRetriever:       tr,
-		alertmanagerRetriever: ar,
-		now:      func() time.Time { return now },
-		config:   func() config.Config { return samplePrometheusCfg },
-		flagsMap: sampleFlagMap,
-		ready:    func(f http.HandlerFunc) http.HandlerFunc { return f },
-	}
+		algr.AlertingRules()
 
+		algr.RuleGroups()
+
+		api := &API{
+			Queryable:             suite.Storage(),
+			QueryEngine:           suite.QueryEngine(),
+			targetRetriever:       testTargetRetriever{},
+			alertmanagerRetriever: testAlertmanagerRetriever{},
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
+		}
+
+		testEndpoints(t, api, true)
+	})
+
+	// Run all the API tests against a API that is wired to forward queries via
+	// the remote read client to a test server, which in turn sends them to the
+	// data from the test suite.
+	t.Run("remote", func(t *testing.T) {
+		server := setupRemote(suite.Storage())
+		defer server.Close()
+
+		u, err := url.Parse(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		al := promlog.AllowedLevel{}
+		al.Set("debug")
+		remote := remote.NewStorage(promlog.New(al), func() (int64, error) {
+			return 0, nil
+		}, 1*time.Second)
+
+		err = remote.ApplyConfig(&config.Config{
+			RemoteReadConfigs: []*config.RemoteReadConfig{
+				{
+					URL:           &config_util.URL{URL: u},
+					RemoteTimeout: model.Duration(1 * time.Second),
+					ReadRecent:    true,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var algr rulesRetrieverMock
+		algr.testing = t
+
+		algr.AlertingRules()
+
+		algr.RuleGroups()
+
+		api := &API{
+			Queryable:             remote,
+			QueryEngine:           suite.QueryEngine(),
+			targetRetriever:       testTargetRetriever{},
+			alertmanagerRetriever: testAlertmanagerRetriever{},
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
+		}
+
+		testEndpoints(t, api, false)
+	})
+}
+
+func setupRemote(s storage.Storage) *httptest.Server {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, err := remote.DecodeReadRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := prompb.ReadResponse{
+			Results: make([]*prompb.QueryResult, len(req.Queries)),
+		}
+		for i, query := range req.Queries {
+			from, through, matchers, selectParams, err := remote.FromQuery(query)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			querier, err := s.Querier(r.Context(), from, through)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			defer querier.Close()
+
+			set, err := querier.Select(selectParams, matchers...)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			resp.Results[i], err = remote.ToQueryResult(set)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if err := remote.EncodeReadResponse(&resp, w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+
+	return httptest.NewServer(handler)
+}
+
+func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 	start := time.Unix(0, 0)
 
-	var tests = []struct {
+	type test struct {
 		endpoint apiFunc
 		params   map[string]string
 		query    url.Values
 		response interface{}
 		errType  errorType
-	}{
+	}
+
+	var tests = []test{
 		{
 			endpoint: api.query,
 			query: url.Values{
@@ -203,7 +392,7 @@ func TestEndpoints(t *testing.T) {
 				ResultType: promql.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
-					T: timestamp.FromTime(now),
+					T: timestamp.FromTime(api.now()),
 				},
 			},
 		},
@@ -306,34 +495,6 @@ func TestEndpoints(t *testing.T) {
 				"start": []string{"148966367200.372"},
 				"end":   []string{"1489667272.372"},
 				"step":  []string{"1"},
-			},
-			errType: errorBadData,
-		},
-		{
-			endpoint: api.labelValues,
-			params: map[string]string{
-				"name": "__name__",
-			},
-			response: []string{
-				"test_metric1",
-				"test_metric2",
-			},
-		},
-		{
-			endpoint: api.labelValues,
-			params: map[string]string{
-				"name": "foo",
-			},
-			response: []string{
-				"bar",
-				"boo",
-			},
-		},
-		// Bad name parameter.
-		{
-			endpoint: api.labelValues,
-			params: map[string]string{
-				"name": "not!!!allowed",
 			},
 			errType: errorBadData,
 		},
@@ -498,6 +659,83 @@ func TestEndpoints(t *testing.T) {
 			endpoint: api.serveFlags,
 			response: sampleFlagMap,
 		},
+		{
+			endpoint: api.alerts,
+			response: &AlertDiscovery{
+				Alerts: []*Alert{},
+			},
+		},
+		{
+			endpoint: api.rules,
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Rules: []rule{
+							alertingRule{
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Type:        "alerting",
+							},
+							alertingRule{
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Type:        "alerting",
+							},
+							recordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if testLabelAPI {
+		tests = append(tests, []test{
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "__name__",
+				},
+				response: []string{
+					"test_metric1",
+					"test_metric2",
+				},
+			},
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				response: []string{
+					"bar",
+					"boo",
+				},
+			},
+			// Bad name parameter.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "not!!!allowed",
+				},
+				errType: errorBadData,
+			},
+		}...)
 	}
 
 	methods := func(f apiFunc) []string {
@@ -517,14 +755,14 @@ func TestEndpoints(t *testing.T) {
 		return http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
 	}
 
-	for _, test := range tests {
+	for i, test := range tests {
 		for _, method := range methods(test.endpoint) {
 			// Build a context with the correct request params.
 			ctx := context.Background()
 			for p, v := range test.params {
 				ctx = route.WithParam(ctx, p, v)
 			}
-			t.Logf("run %s\t%q", method, test.query.Encode())
+			t.Logf("run %d\t%s\t%q", i, method, test.query.Encode())
 
 			req, err := request(method, test.query)
 			if err != nil {
@@ -544,7 +782,21 @@ func TestEndpoints(t *testing.T) {
 				t.Fatalf("Expected error of type %q but got none", test.errType)
 			}
 			if !reflect.DeepEqual(resp, test.response) {
-				t.Fatalf("Response does not match, expected:\n%+v\ngot:\n%+v", test.response, resp)
+				respJSON, err := json.Marshal(resp)
+				if err != nil {
+					t.Fatalf("failed to marshal response as JSON: %v", err.Error())
+				}
+
+				expectedRespJSON, err := json.Marshal(test.response)
+				if err != nil {
+					t.Fatalf("failed to marshal expected response as JSON: %v", err.Error())
+				}
+
+				t.Fatalf(
+					"Response does not match, expected:\n%+v\ngot:\n%+v",
+					string(expectedRespJSON),
+					string(respJSON),
+				)
 			}
 		}
 	}
@@ -648,7 +900,8 @@ func TestReadEndpoint(t *testing.T) {
 
 func TestRespondSuccess(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respond(w, "test")
+		api := API{}
+		api.respond(w, "test")
 	}))
 	defer s.Close()
 
@@ -685,7 +938,8 @@ func TestRespondSuccess(t *testing.T) {
 
 func TestRespondError(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
+		api := API{}
+		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
 	}))
 	defer s.Close()
 
@@ -937,7 +1191,8 @@ func TestRespond(t *testing.T) {
 
 	for _, c := range cases {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			respond(w, c.response)
+			api := API{}
+			api.respond(w, c.response)
 		}))
 		defer s.Close()
 
@@ -976,7 +1231,8 @@ func BenchmarkRespond(b *testing.B) {
 		},
 	}
 	b.ResetTimer()
+	api := API{}
 	for n := 0; n < b.N; n++ {
-		respond(&testResponseWriter, response)
+		api.respond(&testResponseWriter, response)
 	}
 }

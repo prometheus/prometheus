@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -153,5 +154,22 @@ func TestComputeExternalURL(t *testing.T) {
 		} else {
 			testutil.NotOk(t, err, "input=%q", test.input)
 		}
+	}
+}
+
+// Let's provide an invalid configuration file and verify the exit status indicates the error.
+func TestFailedStartupExitCode(t *testing.T) {
+	fakeInputFile := "fake-input-file"
+	expectedExitStatus := 1
+
+	prom := exec.Command(promPath, "--config.file="+fakeInputFile)
+	err := prom.Run()
+	testutil.NotOk(t, err, "")
+
+	if exitError, ok := err.(*exec.ExitError); ok {
+		status := exitError.Sys().(syscall.WaitStatus)
+		testutil.Equals(t, expectedExitStatus, status.ExitStatus())
+	} else {
+		t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 	}
 }

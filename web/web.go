@@ -38,7 +38,6 @@ import (
 
 	"google.golang.org/grpc"
 
-	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
 	"github.com/cockroachdb/cmux"
@@ -70,17 +69,6 @@ import (
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
-
-// secureHeadersMiddleware adds common HTTP security headers to responses.
-func secureHeadersMiddleware(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("X-XSS-Protection", "1; mode=block")
-		w.Header().Add("X-Content-Type-Options", "nosniff")
-		w.Header().Add("X-Frame-Options", "SAMEORIGIN")
-		w.Header().Add("Content-Security-Policy", "frame-ancestors 'self'")
-		h.ServeHTTP(w, r)
-	})
-}
 
 var (
 	requestDuration = prometheus.NewHistogramVec(
@@ -238,6 +226,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.testReady,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
+		logger,
+		h.ruleManager,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -263,8 +253,6 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/targets", readyf(h.targets))
 	router.Get("/version", readyf(h.version))
 	router.Get("/service-discovery", readyf(h.serviceDiscovery))
-
-	router.Get("/heap", h.dumpHeap)
 
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
@@ -489,10 +477,8 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
-	withSecureHeaders := nethttp.Middleware(opentracing.GlobalTracer(), secureHeadersMiddleware(mux), operationName)
-
 	httpSrv := &http.Server{
-		Handler:     withSecureHeaders,
+		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -770,13 +756,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			return time.Since(t) / time.Millisecond * time.Millisecond
 		},
 		"consolesPath": func() string { return consolesPath },
-		"pathPrefix": func() string {
-			if opts.RoutePrefix == "/" {
-				return ""
-			} else {
-				return opts.RoutePrefix
-			}
-		},
+		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {
@@ -832,11 +812,21 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 
 			return alive
 		},
-		"healthToClass": func(th scrape.TargetHealth) string {
+		"targetHealthToClass": func(th scrape.TargetHealth) string {
 			switch th {
 			case scrape.HealthUnknown:
 				return "warning"
 			case scrape.HealthGood:
+				return "success"
+			default:
+				return "danger"
+			}
+		},
+		"ruleHealthToClass": func(rh rules.RuleHealth) string {
+			switch rh {
+			case rules.HealthUnknown:
+				return "warning"
+			case rules.HealthGood:
 				return "success"
 			default:
 				return "danger"
@@ -892,18 +882,6 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		return
 	}
 	io.WriteString(w, result)
-}
-
-func (h *Handler) dumpHeap(w http.ResponseWriter, r *http.Request) {
-	target := fmt.Sprintf("/tmp/%d.heap", time.Now().Unix())
-	f, err := os.Create(target)
-	if err != nil {
-		level.Error(h.logger).Log("msg", "Could not dump heap", "err", err)
-	}
-	fmt.Fprintf(w, "Writing to %s...", target)
-	defer f.Close()
-	pprof_runtime.WriteHeapProfile(f)
-	fmt.Fprintf(w, "Done")
 }
 
 // AlertStatus bundles alerting rules and the mapping of alert states to row classes.

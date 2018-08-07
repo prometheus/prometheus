@@ -1,7 +1,11 @@
 package api
 
+import (
+	"time"
+)
+
 const (
-	// ACLCLientType is the client type token
+	// ACLClientType is the client type token
 	ACLClientType = "client"
 
 	// ACLManagementType is the management type token
@@ -18,6 +22,16 @@ type ACLEntry struct {
 	Rules       string
 }
 
+// ACLReplicationStatus is used to represent the status of ACL replication.
+type ACLReplicationStatus struct {
+	Enabled          bool
+	Running          bool
+	SourceDatacenter string
+	ReplicatedIndex  uint64
+	LastSuccess      time.Time
+	LastError        time.Time
+}
+
 // ACL can be used to query the ACL endpoints
 type ACL struct {
 	c *Client
@@ -26,6 +40,24 @@ type ACL struct {
 // ACL returns a handle to the ACL endpoints
 func (c *Client) ACL() *ACL {
 	return &ACL{c}
+}
+
+// Bootstrap is used to perform a one-time ACL bootstrap operation on a cluster
+// to get the first management token.
+func (a *ACL) Bootstrap() (string, *WriteMeta, error) {
+	r := a.c.newRequest("PUT", "/v1/acl/bootstrap")
+	rtt, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+
+	wm := &WriteMeta{RequestTime: rtt}
+	var out struct{ ID string }
+	if err := decodeBody(resp, &out); err != nil {
+		return "", nil, err
+	}
+	return out.ID, wm, nil
 }
 
 // Create is used to generate a new token with the given parameters
@@ -133,6 +165,27 @@ func (a *ACL) List(q *QueryOptions) ([]*ACLEntry, *QueryMeta, error) {
 	qm.RequestTime = rtt
 
 	var entries []*ACLEntry
+	if err := decodeBody(resp, &entries); err != nil {
+		return nil, nil, err
+	}
+	return entries, qm, nil
+}
+
+// Replication returns the status of the ACL replication process in the datacenter
+func (a *ACL) Replication(q *QueryOptions) (*ACLReplicationStatus, *QueryMeta, error) {
+	r := a.c.newRequest("GET", "/v1/acl/replication")
+	r.setQueryOptions(q)
+	rtt, resp, err := requireOK(a.c.doRequest(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	qm := &QueryMeta{}
+	parseQueryMeta(resp, qm)
+	qm.RequestTime = rtt
+
+	var entries *ACLReplicationStatus
 	if err := decodeBody(resp, &entries); err != nil {
 		return nil, nil, err
 	}

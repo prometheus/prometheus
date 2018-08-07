@@ -152,9 +152,7 @@ func makeLabelPairs(desc *Desc, labelValues []string) []*dto.LabelPair {
 			Value: proto.String(labelValues[i]),
 		})
 	}
-	for _, lp := range desc.constLabelPairs {
-		labelPairs = append(labelPairs, lp)
-	}
+	labelPairs = append(labelPairs, desc.constLabelPairs...)
 	sort.Sort(LabelPairSorter(labelPairs))
 	return labelPairs
 }

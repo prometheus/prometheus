@@ -19,8 +19,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 func makeMultiPortService() *v1.Service {
@@ -151,6 +151,53 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 					"__meta_kubernetes_service_annotation_testannotation": "testannotationvalue",
 				},
 				Source: "svc/default/testservice",
+			},
+		},
+	}.Run(t)
+}
+
+func TestServiceDiscoveryNamespaces(t *testing.T) {
+	n, c, w := makeDiscovery(RoleService, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			for _, ns := range []string{"ns1", "ns2"} {
+				obj := makeService()
+				obj.Namespace = ns
+				c.CoreV1().Services(obj.Namespace).Create(obj)
+				w.Services().Add(obj)
+			}
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"svc/ns1/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                             "testservice.ns1.svc:30900",
+						"__meta_kubernetes_service_port_name":     "testport",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "ns1",
+				},
+				Source: "svc/ns1/testservice",
+			},
+			"svc/ns2/testservice": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                             "testservice.ns2.svc:30900",
+						"__meta_kubernetes_service_port_name":     "testport",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice",
+					"__meta_kubernetes_namespace":    "ns2",
+				},
+				Source: "svc/ns2/testservice",
 			},
 		},
 	}.Run(t)

@@ -27,13 +27,12 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 
+	apiv1 "k8s.io/api/core/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api"
-	apiv1 "k8s.io/client-go/pkg/api/v1"
-	extensionsv1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
@@ -84,13 +83,13 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          config_util.URL        `yaml:"api_server"`
+	APIServer          config_util.URL        `yaml:"api_server,omitempty"`
 	Role               Role                   `yaml:"role"`
 	BasicAuth          *config_util.BasicAuth `yaml:"basic_auth,omitempty"`
 	BearerToken        config_util.Secret     `yaml:"bearer_token,omitempty"`
 	BearerTokenFile    string                 `yaml:"bearer_token_file,omitempty"`
 	TLSConfig          config_util.TLSConfig  `yaml:"tls_config,omitempty"`
-	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces"`
+	NamespaceDiscovery NamespaceDiscovery     `yaml:"namespaces,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -161,7 +160,7 @@ type Discovery struct {
 func (d *Discovery) getNamespaces() []string {
 	namespaces := d.namespaceDiscovery.Names
 	if len(namespaces) == 0 {
-		namespaces = []string{api.NamespaceAll}
+		namespaces = []string{apiv1.NamespaceAll}
 	}
 	return namespaces
 }
@@ -250,28 +249,31 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	switch d.role {
 	case RoleEndpoint:
 		for _, namespace := range namespaces {
+			e := d.client.CoreV1().Endpoints(namespace)
 			elw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Endpoints(namespace).List(options)
+					return e.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Endpoints(namespace).Watch(options)
+					return e.Watch(options)
 				},
 			}
+			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Services(namespace).List(options)
+					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Services(namespace).Watch(options)
+					return s.Watch(options)
 				},
 			}
+			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Pods(namespace).List(options)
+					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Pods(namespace).Watch(options)
+					return p.Watch(options)
 				},
 			}
 			eps := NewEndpoints(
@@ -287,12 +289,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RolePod:
 		for _, namespace := range namespaces {
+			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Pods(namespace).List(options)
+					return p.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Pods(namespace).Watch(options)
+					return p.Watch(options)
 				},
 			}
 			pod := NewPod(
@@ -304,12 +307,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleService:
 		for _, namespace := range namespaces {
+			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.CoreV1().Services(namespace).List(options)
+					return s.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.CoreV1().Services(namespace).Watch(options)
+					return s.Watch(options)
 				},
 			}
 			svc := NewService(
@@ -321,12 +325,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleIngress:
 		for _, namespace := range namespaces {
+			i := d.client.ExtensionsV1beta1().Ingresses(namespace)
 			ilw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					return d.client.ExtensionsV1beta1().Ingresses(namespace).List(options)
+					return i.List(options)
 				},
 				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return d.client.ExtensionsV1beta1().Ingresses(namespace).Watch(options)
+					return i.Watch(options)
 				},
 			}
 			ingress := NewIngress(
