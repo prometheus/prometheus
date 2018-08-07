@@ -5,19 +5,6 @@
         name: 'prometheus',
         rules: [
           {
-            alert: 'PromScrapeFailed',
-            expr: |||
-              up != 1
-            |||,
-            'for': '15m',
-            labels: {
-              severity: 'warning',
-            },
-            annotations: {
-              message: 'Prometheus failed to scrape a target {{ $labels.job }} / {{ $labels.instance }}',
-            },
-          },
-          {
             alert: 'PromBadConfig',
             expr: |||
               prometheus_config_last_reload_successful{%(prometheusSelector)s} == 0
