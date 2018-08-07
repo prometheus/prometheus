@@ -33,14 +33,14 @@
           {
             alert: 'PromAlertsFailed',
             expr: |||
-              sum(increase(alertmanager_notifications_failed_total{%(alertmanagerSelector)s}[5m])) by (namespace) > 0
+              100 * rate(alertmanager_notifications_failed_total{%(alertmanagerSelector)s}[5m]) / rate(alertmanager_notifications_total{%(alertmanagerSelector)s}[5m]) > 1
             ||| % $._config,
             'for': '5m',
             labels: {
               severity: 'critical',
             },
             annotations: {
-              message: 'Alertmanager failed to send an alert.',
+              message: 'Alertmanager failed to send {{ printf "%.1f" $value }}% alerts to {{ $labels.integration }}.',
             },
           },
           {
