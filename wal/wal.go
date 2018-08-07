@@ -80,7 +80,7 @@ func (s *Segment) Dir() string {
 // CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
 	Segment int
-	Offset  int
+	Offset  int64
 	Err     error
 }
 
@@ -590,7 +590,7 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 
 // NewSegmentsReader returns a new reader over all segments in the directory.
 func NewSegmentsReader(dir string) (io.ReadCloser, error) {
-	return NewSegmentsRangeReader(dir, 0, math.MaxInt64)
+	return NewSegmentsRangeReader(dir, 0, math.MaxInt32)
 }
 
 // NewSegmentsRangeReader returns a new reader over the given WAL segment range.
@@ -674,7 +674,7 @@ type Reader struct {
 	err   error
 	rec   []byte
 	buf   [pageSize]byte
-	total int // total bytes processed.
+	total int64 // total bytes processed.
 }
 
 // NewReader returns a new reader.
@@ -722,7 +722,7 @@ func (r *Reader) next() (err error) {
 			if err != nil {
 				return errors.Wrap(err, "read remaining zeros")
 			}
-			r.total += n
+			r.total += int64(n)
 
 			for _, c := range buf[:k] {
 				if c != 0 {
@@ -735,7 +735,7 @@ func (r *Reader) next() (err error) {
 		if err != nil {
 			return errors.Wrap(err, "read remaining header")
 		}
-		r.total += n
+		r.total += int64(n)
 
 		var (
 			length = binary.BigEndian.Uint16(hdr[1:])
@@ -749,7 +749,7 @@ func (r *Reader) next() (err error) {
 		if err != nil {
 			return err
 		}
-		r.total += n
+		r.total += int64(n)
 
 		if n != int(length) {
 			return errors.Errorf("invalid size: expected %d, got %d", length, n)
@@ -798,7 +798,7 @@ func (r *Reader) Err() error {
 		return &CorruptionErr{
 			Err:     r.err,
 			Segment: b.segs[b.cur].Index(),
-			Offset:  b.off,
+			Offset:  int64(b.off),
 		}
 	}
 	return &CorruptionErr{
