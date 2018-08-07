@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2018 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,11 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build windows
+// +build openbsd
 
 package main
 
-// FdLimits not supported on Windows
-func FdLimits() string {
-	return "N/A"
+import (
+	"syscall"
+)
+
+// VmLimits returns the soft and hard limits for virtual memory.
+func VmLimits() string {
+	return getLimits(syscall.RLIMIT_DATA, "b")
 }

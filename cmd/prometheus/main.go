@@ -231,6 +231,7 @@ func main() {
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
 	level.Info(logger).Log("fd_limits", FdLimits())
+	level.Info(logger).Log("vm_limits", VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
