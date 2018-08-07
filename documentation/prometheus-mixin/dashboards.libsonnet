@@ -1,10 +1,6 @@
 local g = import 'grafana-builder/grafana.libsonnet';
 
 {
-  _config+:: {
-    storage_backend: error 'must specify storage backend (cassandra, gcp)',
-  },
-
   dashboards+: {
     'prometheus.json':
       g.dashboard('Prometheus')
