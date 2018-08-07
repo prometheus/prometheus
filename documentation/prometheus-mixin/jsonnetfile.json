@@ -1,0 +1,14 @@
+{
+    "dependencies": [
+        {
+            "name": "grafana-builder",
+            "source": {
+                "git": {
+                    "remote": "https://github.com/kausalco/public",
+                    "subdir": "grafana-builder"
+                }
+            },
+            "version": "master"
+        }
+    ]
+}
