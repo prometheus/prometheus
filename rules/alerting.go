@@ -364,8 +364,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
-	r.SetHealth(HealthGood)
-	r.SetLastError(err)
+	r.health = HealthGood
+	r.lastError = err
 	return vec, nil
 }
 
