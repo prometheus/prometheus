@@ -90,6 +90,7 @@ type Manager struct {
 
 // Run starts the background processing
 func (m *Manager) Run() error {
+	go m.runUpdater(m.ctx)
 	for range m.ctx.Done() {
 		m.cancelDiscoverers()
 		return m.ctx.Err()
@@ -132,7 +133,6 @@ func (m *Manager) startProvider(ctx context.Context, poolKey poolKey, worker Dis
 
 	go worker.Run(ctx, updates)
 	go m.runProvider(ctx, poolKey, updates)
-	go m.runUpdater(ctx)
 }
 
 func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan []*targetgroup.Group) {
