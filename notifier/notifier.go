@@ -463,7 +463,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 		for _, am := range ams.ams {
 			wg.Add(1)
 
-			ctx, cancel := context.WithTimeout(n.ctx, ams.cfg.Timeout)
+			ctx, cancel := context.WithTimeout(n.ctx, time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
 			go func(ams *alertmanagerSet, am alertmanager) {
