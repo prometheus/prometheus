@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/tsdb/wal"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -191,6 +192,10 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if err := repairBadIndexVersion(l, dir); err != nil {
 		return nil, err
 	}
+	// Migrate old WAL.
+	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
+		return nil, errors.Wrap(err, "migrate WAL")
+	}
 
 	db = &DB{
 		dir:                dir,
@@ -221,18 +226,18 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, errors.Wrap(err, "create leveled compactor")
 	}
 
-	wal, err := OpenSegmentWAL(filepath.Join(dir, "wal"), l, opts.WALFlushInterval, r)
+	wlog, err := wal.New(l, r, filepath.Join(dir, "wal"))
 	if err != nil {
 		return nil, err
 	}
-	db.head, err = NewHead(r, l, wal, opts.BlockRanges[0])
+	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0])
 	if err != nil {
 		return nil, err
 	}
 	if err := db.reload(); err != nil {
 		return nil, err
 	}
-	if err := db.head.ReadWAL(); err != nil {
+	if err := db.head.Init(); err != nil {
 		return nil, errors.Wrap(err, "read WAL")
 	}
 
@@ -501,7 +506,6 @@ func (db *DB) reload() (err error) {
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Meta().MinTime < blocks[j].Meta().MinTime
 	})
-
 	if err := validateBlockSequence(blocks); err != nil {
 		return errors.Wrap(err, "invalid block sequence")
 	}
@@ -596,10 +600,6 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	if len(bm) <= 1 {
 		return nil
 	}
-	sort.Slice(bm, func(i, j int) bool {
-		return bm[i].MinTime < bm[j].MinTime
-	})
-
 	var (
 		overlaps [][]BlockMeta
 

@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
+	"github.com/prometheus/tsdb/wal"
 )
 
 func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
@@ -1025,33 +1027,41 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 
 	testutil.Assert(t, len(OverlappingBlocks(metas)) == 0, "we found unexpected overlaps")
 
-	// Add overlapping blocks.
+	// Add overlapping blocks. We've to establish order again since we aren't interested
+	// in trivial overlaps caused by unorderedness.
+	add := func(ms ...BlockMeta) []BlockMeta {
+		repl := append(append([]BlockMeta{}, metas...), ms...)
+		sort.Slice(repl, func(i, j int) bool {
+			return repl[i].MinTime < repl[j].MinTime
+		})
+		return repl
+	}
 
 	// o1 overlaps with 10-20.
 	o1 := BlockMeta{MinTime: 15, MaxTime: 17}
 	testutil.Equals(t, Overlaps{
 		{Min: 15, Max: 17}: {metas[1], o1},
-	}, OverlappingBlocks(append(metas, o1)))
+	}, OverlappingBlocks(add(o1)))
 
 	// o2 overlaps with 20-30 and 30-40.
 	o2 := BlockMeta{MinTime: 21, MaxTime: 31}
 	testutil.Equals(t, Overlaps{
 		{Min: 21, Max: 30}: {metas[2], o2},
 		{Min: 30, Max: 31}: {o2, metas[3]},
-	}, OverlappingBlocks(append(metas, o2)))
+	}, OverlappingBlocks(add(o2)))
 
 	// o3a and o3b overlaps with 30-40 and each other.
 	o3a := BlockMeta{MinTime: 33, MaxTime: 39}
 	o3b := BlockMeta{MinTime: 34, MaxTime: 36}
 	testutil.Equals(t, Overlaps{
 		{Min: 34, Max: 36}: {metas[3], o3a, o3b},
-	}, OverlappingBlocks(append(metas, o3a, o3b)))
+	}, OverlappingBlocks(add(o3a, o3b)))
 
 	// o4 is 1:1 overlap with 50-60.
 	o4 := BlockMeta{MinTime: 50, MaxTime: 60}
 	testutil.Equals(t, Overlaps{
 		{Min: 50, Max: 60}: {metas[5], o4},
-	}, OverlappingBlocks(append(metas, o4)))
+	}, OverlappingBlocks(add(o4)))
 
 	// o5 overlaps with 60-70, 70-80 and 80-90.
 	o5 := BlockMeta{MinTime: 61, MaxTime: 85}
@@ -1059,7 +1069,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 		{Min: 61, Max: 70}: {metas[6], o5},
 		{Min: 70, Max: 80}: {o5, metas[7]},
 		{Min: 80, Max: 85}: {o5, metas[8]},
-	}, OverlappingBlocks(append(metas, o5)))
+	}, OverlappingBlocks(add(o5)))
 
 	// o6a overlaps with 90-100, 100-110 and o6b, o6b overlaps with 90-100 and o6a.
 	o6a := BlockMeta{MinTime: 92, MaxTime: 105}
@@ -1067,7 +1077,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	testutil.Equals(t, Overlaps{
 		{Min: 94, Max: 99}:   {metas[9], o6a, o6b},
 		{Min: 100, Max: 105}: {o6a, metas[10]},
-	}, OverlappingBlocks(append(metas, o6a, o6b)))
+	}, OverlappingBlocks(add(o6a, o6b)))
 
 	// All together.
 	testutil.Equals(t, Overlaps{
@@ -1077,7 +1087,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 		{Min: 50, Max: 60}: {metas[5], o4},
 		{Min: 61, Max: 70}: {metas[6], o5}, {Min: 70, Max: 80}: {o5, metas[7]}, {Min: 80, Max: 85}: {o5, metas[8]},
 		{Min: 94, Max: 99}: {metas[9], o6a, o6b}, {Min: 100, Max: 105}: {o6a, metas[10]},
-	}, OverlappingBlocks(append(metas, o1, o2, o3a, o3b, o4, o5, o6a, o6b)))
+	}, OverlappingBlocks(add(o1, o2, o3a, o3b, o4, o5, o6a, o6b)))
 
 	// Additional case.
 	var nc1 []BlockMeta
@@ -1184,4 +1194,110 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	// The requested interval covers 2 blocks, so the querier should contain 2 blocks.
 	count := len(q.(*querier).blocks)
 	testutil.Assert(t, count == 2, "expected 2 blocks in querier, got %d", count)
+}
+
+func TestInitializeHeadTimestamp(t *testing.T) {
+	t.Run("clean", func(t *testing.T) {
+		dir, err := ioutil.TempDir("", "test_head_init")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dir)
+
+		db, err := Open(dir, nil, nil, nil)
+		testutil.Ok(t, err)
+
+		// Should be set to init values if no WAL or blocks exist so far.
+		testutil.Equals(t, int64(math.MaxInt64), db.head.MinTime())
+		testutil.Equals(t, int64(math.MinInt64), db.head.MaxTime())
+
+		// First added sample initializes the writable range.
+		app := db.Appender()
+		_, err = app.Add(labels.FromStrings("a", "b"), 1000, 1)
+		testutil.Ok(t, err)
+
+		testutil.Equals(t, int64(1000), db.head.MinTime())
+		testutil.Equals(t, int64(1000), db.head.MaxTime())
+	})
+	t.Run("wal-only", func(t *testing.T) {
+		dir, err := ioutil.TempDir("", "test_head_init")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dir)
+
+		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
+		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
+		testutil.Ok(t, err)
+
+		var enc RecordEncoder
+		err = w.Log(
+			enc.Series([]RefSeries{
+				{Ref: 123, Labels: labels.FromStrings("a", "1")},
+				{Ref: 124, Labels: labels.FromStrings("a", "2")},
+			}, nil),
+			enc.Samples([]RefSample{
+				{Ref: 123, T: 5000, V: 1},
+				{Ref: 124, T: 15000, V: 1},
+			}, nil),
+		)
+		testutil.Ok(t, err)
+		testutil.Ok(t, w.Close())
+
+		db, err := Open(dir, nil, nil, nil)
+		testutil.Ok(t, err)
+
+		testutil.Equals(t, int64(5000), db.head.MinTime())
+		testutil.Equals(t, int64(15000), db.head.MaxTime())
+	})
+	t.Run("existing-block", func(t *testing.T) {
+		dir, err := ioutil.TempDir("", "test_head_init")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dir)
+
+		id := ulid.MustNew(2000, nil)
+		createEmptyBlock(t, path.Join(dir, id.String()), &BlockMeta{
+			ULID:    id,
+			MinTime: 1000,
+			MaxTime: 2000,
+		})
+
+		db, err := Open(dir, nil, nil, nil)
+		testutil.Ok(t, err)
+
+		testutil.Equals(t, int64(2000), db.head.MinTime())
+		testutil.Equals(t, int64(2000), db.head.MaxTime())
+	})
+	t.Run("existing-block-and-wal", func(t *testing.T) {
+		dir, err := ioutil.TempDir("", "test_head_init")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dir)
+
+		id := ulid.MustNew(2000, nil)
+		createEmptyBlock(t, path.Join(dir, id.String()), &BlockMeta{
+			ULID:    id,
+			MinTime: 1000,
+			MaxTime: 6000,
+		})
+
+		testutil.Ok(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
+		w, err := wal.New(nil, nil, path.Join(dir, "wal"))
+		testutil.Ok(t, err)
+
+		var enc RecordEncoder
+		err = w.Log(
+			enc.Series([]RefSeries{
+				{Ref: 123, Labels: labels.FromStrings("a", "1")},
+				{Ref: 124, Labels: labels.FromStrings("a", "2")},
+			}, nil),
+			enc.Samples([]RefSample{
+				{Ref: 123, T: 5000, V: 1},
+				{Ref: 124, T: 15000, V: 1},
+			}, nil),
+		)
+		testutil.Ok(t, err)
+		testutil.Ok(t, w.Close())
+
+		db, err := Open(dir, nil, nil, nil)
+		testutil.Ok(t, err)
+
+		testutil.Equals(t, int64(6000), db.head.MinTime())
+		testutil.Equals(t, int64(15000), db.head.MaxTime())
+	})
 }

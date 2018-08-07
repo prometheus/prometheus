@@ -76,7 +76,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	}
 
 	// On DB opening all blocks in the base dir should be repaired.
-	db, _ := Open("testdata/repair_index_version", nil, nil, nil)
+	db, err := Open("testdata/repair_index_version", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
