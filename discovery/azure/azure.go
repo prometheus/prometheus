@@ -491,8 +491,4 @@ func (client *azureClient) getNetworkInterfaceByID(networkInterfaceID string) (n
 	}
 
 	return result, nil
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> Handle remote read error and return warning when they occur

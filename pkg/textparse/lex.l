@@ -76,63 +76,6 @@ C     [^\n]
 <sValue>[^{ \t\n]+                    l.state = sTimestamp; return tValue
 <sTimestamp>{D}+                      return tTimestamp
 <sTimestamp>\n                        l.state = sInit; return tLinebreak
-<<<<<<< HEAD
-=======
-
-{M}({M}|{D})*                         l.state = lstateName
-                                      l.offsets = append(l.offsets, l.i)
-                                      l.mend = l.i
-
-<lstateName>([ \t]*)\{                l.state = lstateLabels
-
-<lstateName>[ \t]+                    l.state = lstateValue
-                                      l.vstart = l.i
-
-
-<lstateLabels>[ \t]+
-<lstateLabels>,?\}                    l.state = lstateValue
-                                      l.mend = l.i
-<lstateLabels>(,?[ \t]*)              l.state = lstateLName
-                                      l.offsets = append(l.offsets, l.i)
-
-<lstateLName>{L}({L}|{D})*            l.state = lstateLEq
-                                      l.offsets = append(l.offsets, l.i)
-
-<lstateLEq>[ \t]*=                    l.state = lstateLValue
-
-<lstateLValue>[ \t]+
-<lstateLValue>\"                      l.state = lstateLValueIn
-                                      l.offsets = append(l.offsets, l.i)
-<lstateLValueIn>(\\.|[^\\"])*\"       l.state = lstateLabels
-                                      if !utf8.Valid(l.b[l.offsets[len(l.offsets)-1]:l.i-1]) {
-                                        l.err = fmt.Errorf("invalid UTF-8 label value")
-                                        return -1
-                                      }
-                                      l.offsets = append(l.offsets, l.i-1)
-
-<lstateValue>[ \t]+                   l.vstart = l.i
-<lstateValue>(NaN)                    l.val = math.Float64frombits(value.NormalNaN)
-                                      l.state = lstateTimestamp
-
-<lstateValue>[^\n \t\r]+              // We don't parse strictly correct floats as the conversion
-                                      // repeats the effort anyway.
-                                      l.val, l.err = strconv.ParseFloat(yoloString(l.b[l.vstart:l.i]), 64)
-                                      if l.err != nil {
-                                          return -1
-                                      }
-                                      l.state = lstateTimestamp
-
-<lstateTimestamp>[ \t]+               l.tstart = l.i
-<lstateTimestamp>{D}+                 ts, err := strconv.ParseInt(yoloString(l.b[l.tstart:l.i]), 10, 64)
-                                      if err != nil {
-                                          l.err = err
-                                          return -1
-                                      }
-                                      l.ts = &ts
-<lstateTimestamp>[\r\n]+              l.nextMstart = l.i
-                                      return 1
-<lstateTimestamp>\0                   return 1
->>>>>>> Handle remote read error and return warning when they occur
 
 %%
     // Workaround to gobble up comments that started with a HELP or TYPE

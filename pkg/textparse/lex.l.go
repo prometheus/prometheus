@@ -261,11 +261,6 @@ yystart21:
 	switch {
 	default:
 		goto yyrule9
-<<<<<<< HEAD
-=======
-	case c == '\t' || c == ' ':
-		goto yystate23
->>>>>>> Handle remote read error and return warning when they occur
 	case c == '\t' || c == ' ':
 		goto yystate23
 	case c >= '\x01' && c <= '\b' || c >= '\v' && c <= '\x1f' || c >= '!' && c <= 'ÿ':

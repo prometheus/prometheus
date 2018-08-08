@@ -477,8 +477,4 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 // HoldDuration returns the holdDuration of the alerting rule.
 func (r *AlertingRule) HoldDuration() time.Duration {
 	return r.holdDuration
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> Handle remote read error and return warning when they occur
