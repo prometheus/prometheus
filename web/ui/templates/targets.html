@@ -47,7 +47,7 @@
               {{end}}
             </td>
             <td class="state">
-              <span class="alert alert-{{ .Health | healthToClass }} state_indicator text-uppercase">
+              <span class="alert alert-{{ .Health | targetHealthToClass }} state_indicator text-uppercase">
                 {{.Health}}
               </span>
             </td>

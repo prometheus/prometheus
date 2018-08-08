@@ -263,6 +263,9 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					var subnets []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
+						if eni.SubnetId == nil {
+							continue
+						}
 						if _, ok := subnetsMap[*eni.SubnetId]; !ok {
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)

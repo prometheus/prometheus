@@ -425,6 +425,11 @@ func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSe
 
 func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
+	tags := map[string]*string{}
+
+	if vm.Tags != nil {
+		tags = *(vm.Tags)
+	}
 
 	return virtualMachine{
 		ID:             *(vm.ID),
@@ -433,13 +438,18 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		Location:       *(vm.Location),
 		OsType:         osType,
 		ScaleSet:       "",
-		Tags:           *(vm.Tags),
+		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
 	}
 }
 
 func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName string) virtualMachine {
 	osType := string(vm.Properties.StorageProfile.OsDisk.OsType)
+	tags := map[string]*string{}
+
+	if vm.Tags != nil {
+		tags = *(vm.Tags)
+	}
 
 	return virtualMachine{
 		ID:             *(vm.ID),
@@ -448,7 +458,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		Location:       *(vm.Location),
 		OsType:         osType,
 		ScaleSet:       scaleSetName,
-		Tags:           *(vm.Tags),
+		Tags:           tags,
 		NetworkProfile: *(vm.Properties.NetworkProfile),
 	}
 }

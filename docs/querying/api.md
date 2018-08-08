@@ -52,6 +52,8 @@ selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `<duration>` placeholders refer to Prometheus duration strings of the form
 `[0-9]+[smhdwy]`. For example, `5m` refers to a duration of 5 minutes.
 
+`<bool>` placeholders refer to boolean values (strings `true` and `false`).
+
 ## Expression queries
 
 Query language expressions may be evaluated at a single instant or over a range

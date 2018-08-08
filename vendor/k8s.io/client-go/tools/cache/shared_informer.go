@@ -22,9 +22,11 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/clock"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/clock"
+	"k8s.io/client-go/util/buffer"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/golang/glog"
 )
@@ -92,11 +94,16 @@ func NewSharedIndexInformer(lw ListerWatcher, objType runtime.Object, defaultEve
 // InformerSynced is a function that can be used to determine if an informer has synced.  This is useful for determining if caches have synced.
 type InformerSynced func() bool
 
-// syncedPollPeriod controls how often you look at the status of your sync funcs
-const syncedPollPeriod = 100 * time.Millisecond
+const (
+	// syncedPollPeriod controls how often you look at the status of your sync funcs
+	syncedPollPeriod = 100 * time.Millisecond
+
+	// initialBufferSize is the initial number of event notifications that can be buffered.
+	initialBufferSize = 1024
+)
 
 // WaitForCacheSync waits for caches to populate.  It returns true if it was successful, false
-// if the contoller should shutdown
+// if the controller should shutdown
 func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool {
 	err := wait.PollUntil(syncedPollPeriod,
 		func() (bool, error) {
@@ -138,19 +145,16 @@ type sharedIndexInformer struct {
 	// clock allows for testability
 	clock clock.Clock
 
-	started     bool
-	startedLock sync.Mutex
+	started, stopped bool
+	startedLock      sync.Mutex
 
 	// blockDeltas gives a way to stop all event distribution so that a late event handler
 	// can safely join the shared informer.
 	blockDeltas sync.Mutex
-	// stopCh is the channel used to stop the main Run process.  We have to track it so that
-	// late joiners can have a proper stop
-	stopCh <-chan struct{}
 }
 
 // dummyController hides the fact that a SharedInformer is different from a dedicated one
-// where a caller can `Run`.  The run method is disonnected in this case, because higher
+// where a caller can `Run`.  The run method is disconnected in this case, because higher
 // level logic will decide when to start the SharedInformer and related controller.
 // Because returning information back is always asynchronous, the legacy callers shouldn't
 // notice any change in behavior.
@@ -185,7 +189,7 @@ type deleteNotification struct {
 func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 
-	fifo := NewDeltaFIFO(MetaNamespaceKeyFunc, nil, s.indexer)
+	fifo := NewDeltaFIFO(MetaNamespaceKeyFunc, s.indexer)
 
 	cfg := &Config{
 		Queue:            fifo,
@@ -207,16 +211,20 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		s.started = true
 	}()
 
-	s.stopCh = stopCh
-	s.cacheMutationDetector.Run(stopCh)
-	s.processor.run(stopCh)
-	s.controller.Run(stopCh)
-}
+	// Separate stop channel because Processor should be stopped strictly after controller
+	processorStopCh := make(chan struct{})
+	var wg wait.Group
+	defer wg.Wait()              // Wait for Processor to stop
+	defer close(processorStopCh) // Tell Processor to stop
+	wg.StartWithChannel(processorStopCh, s.cacheMutationDetector.Run)
+	wg.StartWithChannel(processorStopCh, s.processor.run)
 
-func (s *sharedIndexInformer) isStarted() bool {
-	s.startedLock.Lock()
-	defer s.startedLock.Unlock()
-	return s.started
+	defer func() {
+		s.startedLock.Lock()
+		defer s.startedLock.Unlock()
+		s.stopped = true // Don't want any new listeners
+	}()
+	s.controller.Run(stopCh)
 }
 
 func (s *sharedIndexInformer) HasSynced() bool {
@@ -287,6 +295,11 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 	s.startedLock.Lock()
 	defer s.startedLock.Unlock()
 
+	if s.stopped {
+		glog.V(2).Infof("Handler %v was not added to shared informer because it has stopped already", handler)
+		return
+	}
+
 	if resyncPeriod > 0 {
 		if resyncPeriod < minimumResyncPeriod {
 			glog.Warningf("resyncPeriod %d is too small. Changing it to the minimum allowed value of %d", resyncPeriod, minimumResyncPeriod)
@@ -307,7 +320,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 		}
 	}
 
-	listener := newProcessListener(handler, resyncPeriod, determineResyncPeriod(resyncPeriod, s.resyncCheckPeriod), s.clock.Now())
+	listener := newProcessListener(handler, resyncPeriod, determineResyncPeriod(resyncPeriod, s.resyncCheckPeriod), s.clock.Now(), initialBufferSize)
 
 	if !s.started {
 		s.processor.addListener(listener)
@@ -323,13 +336,8 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 	defer s.blockDeltas.Unlock()
 
 	s.processor.addListener(listener)
-
-	go listener.run(s.stopCh)
-	go listener.pop(s.stopCh)
-
-	items := s.indexer.List()
-	for i := range items {
-		listener.add(addNotification{newObj: items[i]})
+	for _, item := range s.indexer.List() {
+		listener.add(addNotification{newObj: item})
 	}
 }
 
@@ -365,16 +373,26 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 }
 
 type sharedProcessor struct {
+	listenersStarted bool
 	listenersLock    sync.RWMutex
 	listeners        []*processorListener
 	syncingListeners []*processorListener
 	clock            clock.Clock
+	wg               wait.Group
 }
 
 func (p *sharedProcessor) addListener(listener *processorListener) {
 	p.listenersLock.Lock()
 	defer p.listenersLock.Unlock()
 
+	p.addListenerLocked(listener)
+	if p.listenersStarted {
+		p.wg.Start(listener.run)
+		p.wg.Start(listener.pop)
+	}
+}
+
+func (p *sharedProcessor) addListenerLocked(listener *processorListener) {
 	p.listeners = append(p.listeners, listener)
 	p.syncingListeners = append(p.syncingListeners, listener)
 }
@@ -395,13 +413,22 @@ func (p *sharedProcessor) distribute(obj interface{}, sync bool) {
 }
 
 func (p *sharedProcessor) run(stopCh <-chan struct{}) {
+	func() {
+		p.listenersLock.RLock()
+		defer p.listenersLock.RUnlock()
+		for _, listener := range p.listeners {
+			p.wg.Start(listener.run)
+			p.wg.Start(listener.pop)
+		}
+		p.listenersStarted = true
+	}()
+	<-stopCh
 	p.listenersLock.RLock()
 	defer p.listenersLock.RUnlock()
-
 	for _, listener := range p.listeners {
-		go listener.run(stopCh)
-		go listener.pop(stopCh)
+		close(listener.addCh) // Tell .pop() to stop. .pop() will tell .run() to stop
 	}
+	p.wg.Wait() // Wait for all .pop() and .run() to stop
 }
 
 // shouldResync queries every listener to determine if any of them need a resync, based on each
@@ -437,20 +464,17 @@ func (p *sharedProcessor) resyncCheckPeriodChanged(resyncCheckPeriod time.Durati
 }
 
 type processorListener struct {
-	// lock/cond protects access to 'pendingNotifications'.
-	lock sync.RWMutex
-	cond sync.Cond
-
-	// pendingNotifications is an unbounded slice that holds all notifications not yet distributed
-	// there is one per listener, but a failing/stalled listener will have infinite pendingNotifications
-	// added until we OOM.
-	// TODO This is no worse that before, since reflectors were backed by unbounded DeltaFIFOs, but
-	// we should try to do something better
-	pendingNotifications []interface{}
-
 	nextCh chan interface{}
+	addCh  chan interface{}
 
 	handler ResourceEventHandler
+
+	// pendingNotifications is an unbounded ring buffer that holds all notifications not yet distributed.
+	// There is one per listener, but a failing/stalled listener will have infinite pendingNotifications
+	// added until we OOM.
+	// TODO: This is no worse than before, since reflectors were backed by unbounded DeltaFIFOs, but
+	// we should try to do something better.
+	pendingNotifications buffer.RingGrowing
 
 	// requestedResyncPeriod is how frequently the listener wants a full resync from the shared informer
 	requestedResyncPeriod time.Duration
@@ -464,16 +488,15 @@ type processorListener struct {
 	resyncLock sync.Mutex
 }
 
-func newProcessListener(handler ResourceEventHandler, requestedResyncPeriod, resyncPeriod time.Duration, now time.Time) *processorListener {
+func newProcessListener(handler ResourceEventHandler, requestedResyncPeriod, resyncPeriod time.Duration, now time.Time, bufferSize int) *processorListener {
 	ret := &processorListener{
-		pendingNotifications:  []interface{}{},
 		nextCh:                make(chan interface{}),
+		addCh:                 make(chan interface{}),
 		handler:               handler,
+		pendingNotifications:  *buffer.NewRingGrowing(bufferSize),
 		requestedResyncPeriod: requestedResyncPeriod,
 		resyncPeriod:          resyncPeriod,
 	}
-
-	ret.cond.L = &ret.lock
 
 	ret.determineNextResync(now)
 
@@ -481,76 +504,69 @@ func newProcessListener(handler ResourceEventHandler, requestedResyncPeriod, res
 }
 
 func (p *processorListener) add(notification interface{}) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	p.pendingNotifications = append(p.pendingNotifications, notification)
-	p.cond.Broadcast()
+	p.addCh <- notification
 }
 
-func (p *processorListener) pop(stopCh <-chan struct{}) {
+func (p *processorListener) pop() {
 	defer utilruntime.HandleCrash()
+	defer close(p.nextCh) // Tell .run() to stop
 
+	var nextCh chan<- interface{}
+	var notification interface{}
 	for {
-		blockingGet := func() (interface{}, bool) {
-			p.lock.Lock()
-			defer p.lock.Unlock()
-
-			for len(p.pendingNotifications) == 0 {
-				// check if we're shutdown
-				select {
-				case <-stopCh:
-					return nil, true
-				default:
-				}
-				p.cond.Wait()
+		select {
+		case nextCh <- notification:
+			// Notification dispatched
+			var ok bool
+			notification, ok = p.pendingNotifications.ReadOne()
+			if !ok { // Nothing to pop
+				nextCh = nil // Disable this select case
 			}
-
-			nt := p.pendingNotifications[0]
-			p.pendingNotifications = p.pendingNotifications[1:]
-			return nt, false
-		}
-
-		notification, stopped := blockingGet()
-		if stopped {
-			return
-		}
-
-		select {
-		case <-stopCh:
-			return
-		case p.nextCh <- notification:
+		case notificationToAdd, ok := <-p.addCh:
+			if !ok {
+				return
+			}
+			if notification == nil { // No notification to pop (and pendingNotifications is empty)
+				// Optimize the case - skip adding to pendingNotifications
+				notification = notificationToAdd
+				nextCh = p.nextCh
+			} else { // There is already a notification waiting to be dispatched
+				p.pendingNotifications.WriteOne(notificationToAdd)
+			}
 		}
 	}
 }
 
-func (p *processorListener) run(stopCh <-chan struct{}) {
-	defer utilruntime.HandleCrash()
+func (p *processorListener) run() {
+	// this call blocks until the channel is closed.  When a panic happens during the notification
+	// we will catch it, **the offending item will be skipped!**, and after a short delay (one second)
+	// the next notification will be attempted.  This is usually better than the alternative of never
+	// delivering again.
+	stopCh := make(chan struct{})
+	wait.Until(func() {
+		// this gives us a few quick retries before a long pause and then a few more quick retries
+		err := wait.ExponentialBackoff(retry.DefaultRetry, func() (bool, error) {
+			for next := range p.nextCh {
+				switch notification := next.(type) {
+				case updateNotification:
+					p.handler.OnUpdate(notification.oldObj, notification.newObj)
+				case addNotification:
+					p.handler.OnAdd(notification.newObj)
+				case deleteNotification:
+					p.handler.OnDelete(notification.oldObj)
+				default:
+					utilruntime.HandleError(fmt.Errorf("unrecognized notification: %#v", next))
+				}
+			}
+			// the only way to get here is if the p.nextCh is empty and closed
+			return true, nil
+		})
 
-	for {
-		var next interface{}
-		select {
-		case <-stopCh:
-			func() {
-				p.lock.Lock()
-				defer p.lock.Unlock()
-				p.cond.Broadcast()
-			}()
-			return
-		case next = <-p.nextCh:
+		// the only way to get here is if the p.nextCh is empty and closed
+		if err == nil {
+			close(stopCh)
 		}
-
-		switch notification := next.(type) {
-		case updateNotification:
-			p.handler.OnUpdate(notification.oldObj, notification.newObj)
-		case addNotification:
-			p.handler.OnAdd(notification.newObj)
-		case deleteNotification:
-			p.handler.OnDelete(notification.oldObj)
-		default:
-			utilruntime.HandleError(fmt.Errorf("unrecognized notification: %#v", next))
-		}
-	}
+	}, 1*time.Minute, stopCh)
 }
 
 // shouldResync deterimines if the listener needs a resync. If the listener's resyncPeriod is 0,
