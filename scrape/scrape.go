@@ -703,7 +703,7 @@ func (c *scrapeCache) listMetadata() []MetricMetadata {
 func newScrapeLoop(ctx context.Context,
 	sc scraper,
 	l log.Logger,
-	buffers *pool.Pool,
+	_ *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
 	appender func() storage.Appender,
@@ -712,9 +712,9 @@ func newScrapeLoop(ctx context.Context,
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	if buffers == nil {
-		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
-	}
+
+	buffers := pool.New(1, 1, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
+
 	if cache == nil {
 		cache = newScrapeCache()
 	}
