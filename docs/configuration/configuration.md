@@ -75,6 +75,10 @@ rule_files:
 scrape_configs:
   [ - <scrape_config> ... ]
 
+# A list of scrape configuration files.
+scrape_files:
+  [ - <filepath_glob> ... ]
+
 # Alerting specifies settings related to the Alertmanager.
 alerting:
   alert_relabel_configs:

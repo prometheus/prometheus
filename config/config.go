@@ -136,6 +136,7 @@ type Config struct {
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	ScrapeFiles    []string        `yaml:"scrape_files,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -156,6 +157,10 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 
 	for i, rf := range cfg.RuleFiles {
 		cfg.RuleFiles[i] = join(rf)
+	}
+
+	for i, rf := range cfg.ScrapeFiles {
+		cfg.ScrapeFiles[i] = join(rf)
 	}
 
 	clientPaths := func(scfg *config_util.HTTPClientConfig) {
