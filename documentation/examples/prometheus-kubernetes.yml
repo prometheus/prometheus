@@ -58,7 +58,7 @@ scrape_configs:
 # firewalling).
 - job_name: 'kubernetes-nodes'
 
-  # Default to scraping over https. If required, just disable this or change to
+  # Default to scraping over http. If required, just disable this or change to
   # `http`.
   scheme: https
 
