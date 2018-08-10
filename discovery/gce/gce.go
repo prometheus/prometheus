@@ -40,6 +40,7 @@ const (
 	gceLabelSubnetwork     = gceLabel + "subnetwork"
 	gceLabelPublicIP       = gceLabel + "public_ip"
 	gceLabelPrivateIP      = gceLabel + "private_ip"
+	gceLabelInstanceID     = gceLabel + "instance_id"
 	gceLabelInstanceName   = gceLabel + "instance_name"
 	gceLabelInstanceStatus = gceLabel + "instance_status"
 	gceLabelTags           = gceLabel + "tags"
@@ -209,6 +210,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			labels := model.LabelSet{
 				gceLabelProject:        model.LabelValue(d.project),
 				gceLabelZone:           model.LabelValue(inst.Zone),
+				gceLabelInstanceID:     model.LabelValue(inst.Id),
 				gceLabelInstanceName:   model.LabelValue(inst.Name),
 				gceLabelInstanceStatus: model.LabelValue(inst.Status),
 				gceLabelMachineType:    model.LabelValue(inst.MachineType),
