@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -210,7 +211,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			labels := model.LabelSet{
 				gceLabelProject:        model.LabelValue(d.project),
 				gceLabelZone:           model.LabelValue(inst.Zone),
-				gceLabelInstanceID:     model.LabelValue(inst.Id),
+				gceLabelInstanceID:     model.LabelValue(strconv.FormatUint(inst.Id, 10)),
 				gceLabelInstanceName:   model.LabelValue(inst.Name),
 				gceLabelInstanceStatus: model.LabelValue(inst.Status),
 				gceLabelMachineType:    model.LabelValue(inst.MachineType),
