@@ -202,8 +202,8 @@ type virtualMachine struct {
 	NetworkProfile compute.NetworkProfile
 }
 
-// Create a new azureResource object from an ID string.
-func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error) {
+// parseAzureResource converts a long-form Azure Resource Manager ID into a azureResource.
+func parseAzureResource(id string, logger log.Logger) (azureResource, error) {
 	// Resource IDs have the following format.
 	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME
 	// or if embeded resource then
@@ -268,7 +268,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	ch := make(chan target, len(machines))
 	for i, vm := range machines {
 		go func(i int, vm virtualMachine) {
-			r, err := newAzureResourceFromID(vm.ID, d.logger)
+			r, err := parseAzureResource(vm.ID, d.logger)
 			if err != nil {
 				ch <- target{labelSet: nil, err: err}
 				return
@@ -394,7 +394,7 @@ func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, err
 func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
 	var vms []virtualMachine
 	//TODO do we really need to fetch the resourcegroup this way?
-	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
+	r, err := parseAzureResource(*scaleSet.ID, nil)
 
 	if err != nil {
 		return vms, fmt.Errorf("could not parse scale set ID: %s", err)
