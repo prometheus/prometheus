@@ -347,7 +347,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 }
 
 func (client *azureClient) getVMs() ([]virtualMachine, error) {
-	vms := []virtualMachine{}
+	var vms []virtualMachine
 	result, err := client.vm.ListAll()
 	if err != nil {
 		return vms, fmt.Errorf("could not list virtual machines: %s", err)
@@ -373,7 +373,7 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 }
 
 func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, error) {
-	scaleSets := []compute.VirtualMachineScaleSet{}
+	var scaleSets []compute.VirtualMachineScaleSet
 	result, err := client.vmss.ListAll()
 	if err != nil {
 		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
@@ -392,7 +392,7 @@ func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, err
 }
 
 func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
-	vms := []virtualMachine{}
+	var vms []virtualMachine
 	//TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
 
