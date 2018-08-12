@@ -393,7 +393,8 @@ func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, err
 
 func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	//TODO do we really need to fetch the resourcegroup this way?
+	// We make assumptions about the structure of URLs, which is obviously not good,
+	// but the best thing available given the SDK.
 	r, err := parseAzureResource(*scaleSet.ID, nil)
 
 	if err != nil {
