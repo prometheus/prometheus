@@ -11,13 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !linux
+// +build 386 amd64 arm64 mips64 mips64le mips mipsle
+// +build linux
 
-package main
+package runtime
 
-import "runtime"
-
-// Uname for any platform other than linux.
-func Uname() string {
-	return "(" + runtime.GOOS + ")"
+func charsToString(ca []int8) string {
+	s := make([]byte, 0, len(ca))
+	for _, c := range ca {
+		if byte(c) == 0 {
+			break
+		}
+		s = append(s, byte(c))
+	}
+	return string(s)
 }

@@ -11,16 +11,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build windows
+package runtime
 
-package main
+import (
+	"log"
+	"syscall"
+)
 
-// FdLimits not supported on Windows
-func FdLimits() string {
-	return "N/A"
-}
+// Uname returns the uname of the host machine.
+func Uname() string {
+	buf := syscall.Utsname{}
+	err := syscall.Uname(&buf)
+	if err != nil {
+		log.Fatal("Error!")
+	}
 
-// VmLimits not supported on Windows
-func VmLimits() string {
-	return "N/A"
+	str := "(" + charsToString(buf.Sysname[:])
+	str += " " + charsToString(buf.Release[:])
+	str += " " + charsToString(buf.Version[:])
+	str += " " + charsToString(buf.Machine[:])
+	str += " " + charsToString(buf.Nodename[:])
+	str += " " + charsToString(buf.Domainname[:]) + ")"
+	return str
 }

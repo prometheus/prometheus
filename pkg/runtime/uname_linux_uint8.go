@@ -14,7 +14,7 @@
 // +build arm ppc64 ppc64le s390x
 // +build linux
 
-package main
+package runtime
 
 func charsToString(ca []uint8) string {
 	s := make([]byte, 0, len(ca))
