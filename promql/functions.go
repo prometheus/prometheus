@@ -711,63 +711,76 @@ func funcChanges(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return enh.out
 }
 
-// === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString) Vector ===
+// === label_replace(Vector ValueTypeVector, dst_label, replacement, src_labelname, regex ValueTypeString...) Vector ===
 func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
-		dst      = args[1].(*StringLiteral).Val
-		repl     = args[2].(*StringLiteral).Val
-		src      = args[3].(*StringLiteral).Val
-		regexStr = args[4].(*StringLiteral).Val
+		dst      string
+		repl     string
+		src      string
+		regexStr string
 	)
 
-	if enh.regex == nil {
-		var err error
-		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
-		if err != nil {
-			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
-		}
-		if !model.LabelNameRE.MatchString(dst) {
-			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
-		}
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+	if (len(args)-1)%4 != 0 {
+		panic(fmt.Errorf("invalid number of arguments in label_replace(): %d", len(args)))
 	}
 
-	outSet := make(map[uint64]struct{}, len(vector))
-	for _, el := range vector {
-		h := el.Metric.Hash()
-		var outMetric labels.Labels
-		if l, ok := enh.dmn[h]; ok {
-			outMetric = l
-		} else {
-			srcVal := el.Metric.Get(src)
-			indexes := enh.regex.FindStringSubmatchIndex(srcVal)
-			if indexes == nil {
-				// If there is no match, no replacement should take place.
-				outMetric = el.Metric
-				enh.dmn[h] = outMetric
-			} else {
-				res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
+	replacements := (len(args) - 1) / 4
 
-				lb := labels.NewBuilder(el.Metric).Del(dst)
-				if len(res) > 0 {
-					lb.Set(dst, string(res))
-				}
-				outMetric = lb.Labels()
-				enh.dmn[h] = outMetric
+	for i := 0; i < replacements*4; i += 4 {
+		dst = args[i+1].(*StringLiteral).Val
+		repl = args[i+2].(*StringLiteral).Val
+		src = args[i+3].(*StringLiteral).Val
+		regexStr = args[i+4].(*StringLiteral).Val
+
+		if enh.regex == nil {
+			var err error
+			enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
+			if err != nil {
+				panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 			}
+			if !model.LabelNameRE.MatchString(dst) {
+				panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+			}
+			enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
 		}
 
-		outHash := outMetric.Hash()
-		if _, ok := outSet[outHash]; ok {
-			panic(fmt.Errorf("duplicated label set in output of label_replace(): %s", el.Metric))
-		} else {
-			enh.out = append(enh.out,
-				Sample{
-					Metric: outMetric,
-					Point:  Point{V: el.Point.V},
-				})
-			outSet[outHash] = struct{}{}
+		outSet := make(map[uint64]struct{}, len(vector))
+		for _, el := range vector {
+			h := el.Metric.Hash()
+			var outMetric labels.Labels
+			if l, ok := enh.dmn[h]; ok {
+				outMetric = l
+			} else {
+				srcVal := el.Metric.Get(src)
+				indexes := enh.regex.FindStringSubmatchIndex(srcVal)
+				if indexes == nil {
+					// If there is no match, no replacement should take place.
+					outMetric = el.Metric
+					enh.dmn[h] = outMetric
+				} else {
+					res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
+
+					lb := labels.NewBuilder(el.Metric).Del(dst)
+					if len(res) > 0 {
+						lb.Set(dst, string(res))
+					}
+					outMetric = lb.Labels()
+					enh.dmn[h] = outMetric
+				}
+			}
+
+			outHash := outMetric.Hash()
+			if _, ok := outSet[outHash]; ok {
+				panic(fmt.Errorf("duplicated label set in output of label_replace(): %s", el.Metric))
+			} else {
+				enh.out = append(enh.out,
+					Sample{
+						Metric: outMetric,
+						Point:  Point{V: el.Point.V},
+					})
+				outSet[outHash] = struct{}{}
+			}
 		}
 	}
 	return enh.out
@@ -1050,6 +1063,7 @@ var functions = map[string]*Function{
 	"label_replace": {
 		Name:       "label_replace",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString, ValueTypeString, ValueTypeString},
+		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 		Call:       funcLabelReplace,
 	},
