@@ -653,20 +653,24 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
-	Name        string        `json:"name"`
-	Query       string        `json:"query"`
-	Duration    float64       `json:"duration"`
-	Labels      labels.Labels `json:"labels"`
-	Annotations labels.Labels `json:"annotations"`
-	Alerts      []*Alert      `json:"alerts"`
+	Name        string           `json:"name"`
+	Query       string           `json:"query"`
+	Duration    float64          `json:"duration"`
+	Labels      labels.Labels    `json:"labels"`
+	Annotations labels.Labels    `json:"annotations"`
+	Alerts      []*Alert         `json:"alerts"`
+	Health      rules.RuleHealth `json:"health"`
+	LastError   string           `json:"lastError,omitempty"`
 	// Type of an alertingRule is always "alerting".
 	Type string `json:"type"`
 }
 
 type recordingRule struct {
-	Name   string        `json:"name"`
-	Query  string        `json:"query"`
-	Labels labels.Labels `json:"labels,omitempty"`
+	Name      string           `json:"name"`
+	Query     string           `json:"query"`
+	Labels    labels.Labels    `json:"labels,omitempty"`
+	Health    rules.RuleHealth `json:"health"`
+	LastError string           `json:"lastError,omitempty"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
 }
@@ -685,6 +689,11 @@ func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
 
+			lastError := ""
+			if r.LastError() != nil {
+				lastError = r.LastError().Error()
+			}
+
 			switch rule := r.(type) {
 			case *rules.AlertingRule:
 				enrichedRule = alertingRule{
@@ -694,14 +703,18 @@ func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
 					Labels:      rule.Labels(),
 					Annotations: rule.Annotations(),
 					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:      rule.Health(),
+					LastError:   lastError,
 					Type:        "alerting",
 				}
 			case *rules.RecordingRule:
 				enrichedRule = recordingRule{
-					Name:   rule.Name(),
-					Query:  rule.Query().String(),
-					Labels: rule.Labels(),
-					Type:   "recording",
+					Name:      rule.Name(),
+					Query:     rule.Query().String(),
+					Labels:    rule.Labels(),
+					Health:    rule.Health(),
+					LastError: lastError,
+					Type:      "recording",
 				}
 			default:
 				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
