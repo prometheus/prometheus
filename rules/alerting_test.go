@@ -58,6 +58,9 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		// Basing alerting rule labels off of a value that can change is a very bad idea.
+		// If an alert is going back and forth between two label values it will never fire.
+		// Instead, you should write two alerts with constant labels.
 		labels.FromStrings("severity", "{{ if lt $value 80.0 }}critical{{ else }}warning{{ end }}"),
 		nil, true, nil,
 	)
