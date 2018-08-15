@@ -318,7 +318,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
 		}
 
-		h := smpl.Metric.Hash()
+		lbs := lb.Labels()
+		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 
 		// Check whether we already have alerting state for the identifying label set.
@@ -330,7 +331,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		r.active[h] = &Alert{
-			Labels:      lb.Labels(),
+			Labels:      lbs,
 			Annotations: annotations,
 			ActiveAt:    ts,
 			State:       StatePending,
