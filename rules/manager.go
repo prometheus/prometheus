@@ -694,8 +694,6 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 }
 
 // loadGroups reads groups from a list of files.
-// As there's currently no group syntax a single group named "default" containing
-// all rules will be returned.
 func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
