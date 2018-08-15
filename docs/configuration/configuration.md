@@ -387,6 +387,9 @@ names:
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
+
+# Forces the use of TCP for DNS SRV lookups.
+[ force_tcp: <boolean> | default = false ]
 ```
 
 Where `<domain_name>` is a valid DNS domain name.

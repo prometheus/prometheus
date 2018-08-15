@@ -56,6 +56,7 @@ var (
 	DefaultSDConfig = SDConfig{
 		RefreshInterval: model.Duration(30 * time.Second),
 		Type:            "SRV",
+		ForceTCP:        false,
 	}
 )
 
@@ -65,6 +66,7 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Type            string         `yaml:"type"`
 	Port            int            `yaml:"port"` // Ignored for SRV records
+	ForceTCP        bool           `yaml:"force_tcp"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -104,6 +106,7 @@ type Discovery struct {
 	port     int
 	qtype    uint16
 	logger   log.Logger
+	forceTcp bool
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -127,6 +130,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 		qtype:    qtype,
 		port:     conf.Port,
 		logger:   logger,
+		forceTcp: conf.ForceTCP,
 	}
 }
 
@@ -165,7 +169,7 @@ func (d *Discovery) refreshAll(ctx context.Context, ch chan<- []*targetgroup.Gro
 }
 
 func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targetgroup.Group) error {
-	response, err := lookupWithSearchPath(name, d.qtype, d.logger)
+	response, err := lookupWithSearchPath(name, d.qtype, d.logger, d.forceTcp)
 	dnsSDLookupsCount.Inc()
 	if err != nil {
 		dnsSDLookupFailuresCount.Inc()
@@ -236,7 +240,7 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 // error will be generic-looking, because trying to return all the errors
 // returned by the combination of all name permutations and servers is a
 // nightmare.
-func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+func lookupWithSearchPath(name string, qtype uint16, logger log.Logger, forceTcp bool) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
 		return nil, fmt.Errorf("could not load resolv.conf: %s", err)
@@ -245,7 +249,7 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 	allResponsesValid := true
 
 	for _, lname := range conf.NameList(name) {
-		response, err := lookupFromAnyServer(lname, qtype, conf, logger)
+		response, err := lookupFromAnyServer(lname, qtype, conf, logger, forceTcp)
 
 		if err != nil {
 			// We can't go home yet, because a later name
@@ -284,8 +288,11 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 // A non-viable answer is "anything else", which encompasses both various
 // system-level problems (like network timeouts) and also
 // valid-but-unexpected DNS responses (SERVFAIL, REFUSED, etc).
-func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logger log.Logger) (*dns.Msg, error) {
+func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logger log.Logger, forceTcp bool) (*dns.Msg, error) {
 	client := &dns.Client{}
+	if forceTcp {
+		client.Net = "tcp"
+	}
 
 	for _, server := range conf.Servers {
 		servAddr := net.JoinHostPort(server, conf.Port)
