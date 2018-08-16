@@ -326,8 +326,14 @@ func TestForStateAddSamples(t *testing.T) {
 	}
 }
 
-func TestForStateRestore(t *testing.T) {
+// sortAlerts sorts `[]*Alert` w.r.t. the Labels.
+func sortAlerts(items []*Alert) {
+	sort.Slice(items, func(i, j int) bool {
+		return labels.Compare(items[i].Labels, items[j].Labels) <= 0
+	})
+}
 
+func TestForStateRestore(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
@@ -364,7 +370,6 @@ func TestForStateRestore(t *testing.T) {
 	)
 
 	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
-
 	groups := make(map[string]*Group)
 	groups["default;"] = group
 
@@ -385,7 +390,6 @@ func TestForStateRestore(t *testing.T) {
 	})
 
 	// Prometheus goes down here. We create new rules and groups.
-
 	type testInput struct {
 		restoreDuration time.Duration
 		alerts          []*Alert
@@ -399,9 +403,9 @@ func TestForStateRestore(t *testing.T) {
 	tests := []testInput{
 		{
 			// Normal restore (alerts were not firing).
-			restoreDuration: 10 * time.Minute,
+			restoreDuration: 15 * time.Minute,
 			alerts:          rule.ActiveAlerts(),
-			downDuration:    5 * time.Minute,
+			downDuration:    10 * time.Minute,
 		},
 		{
 			// Testing Outage Tolerance.
@@ -449,7 +453,6 @@ func TestForStateRestore(t *testing.T) {
 		})
 
 		// Checking if we have restored it correctly.
-
 		if tst.noRestore {
 			testutil.Equals(t, tst.num, len(got))
 			for _, e := range got {
@@ -463,6 +466,8 @@ func TestForStateRestore(t *testing.T) {
 		} else {
 			exp := tst.alerts
 			testutil.Equals(t, len(exp), len(got))
+			sortAlerts(exp)
+			sortAlerts(got)
 			for i, e := range exp {
 				testutil.Equals(t, e.Labels, got[i].Labels)
 
