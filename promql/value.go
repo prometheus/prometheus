@@ -171,6 +171,15 @@ func (m Matrix) String() string {
 	return strings.Join(strs, "\n")
 }
 
+// TotalSamples returns the total number of samples in the series within a matrix.
+func (m Matrix) TotalSamples() int {
+	numSamples := 0
+	for _, series := range m {
+		numSamples += len(series.Points)
+	}
+	return numSamples
+}
+
 func (m Matrix) Len() int           { return len(m) }
 func (m Matrix) Less(i, j int) bool { return labels.Compare(m[i].Metric, m[j].Metric) < 0 }
 func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }

@@ -494,7 +494,14 @@ func TestForStateRestore(t *testing.T) {
 func TestStaleness(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	engineOpts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Appendable: storage,
@@ -623,7 +630,14 @@ func TestUpdate(t *testing.T) {
 	}
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	opts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		TSDB:       storage,
@@ -655,7 +669,14 @@ func TestUpdate(t *testing.T) {
 func TestNotify(t *testing.T) {
 	storage := testutil.NewStorage(t)
 	defer storage.Close()
-	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	engineOpts := promql.EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 10,
+		MaxSamples:    10,
+		Timeout:       10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
 	var lastNotified []*Alert
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
 		lastNotified = alerts
