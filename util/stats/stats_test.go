@@ -39,13 +39,13 @@ func TestTimerGroupNewTimer(t *testing.T) {
 }
 
 func TestQueryStatsWithTimers(t *testing.T) {
-	tg := NewTimerGroup()
-	timer := tg.GetTimer(ExecTotalTime)
+	qt := NewQueryTimers()
+	timer := qt.GetTimer(ExecTotalTime)
 	timer.Start()
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
 
-	qs := NewQueryStats(tg)
+	qs := NewQueryStats(qt)
 	actual, err := json.Marshal(qs)
 	if err != nil {
 		t.Fatalf("Unexpected error during serialization: %v", err)
