@@ -433,11 +433,6 @@ func TestForStateRestore(t *testing.T) {
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
 
-		m := NewManager(opts)
-		m.mtx.Lock()
-		m.groups = newGroups
-		m.mtx.Unlock()
-
 		restoreTime := baseTime.Add(tst.restoreDuration)
 		// First eval before restoration.
 		newGroup.Eval(suite.Context(), restoreTime)
@@ -626,11 +621,18 @@ func TestUpdate(t *testing.T) {
 	expected := map[string]labels.Labels{
 		"test": labels.FromStrings("name", "value"),
 	}
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
 	ruleManager := NewManager(&ManagerOptions{
-		Context: context.Background(),
-		Logger:  log.NewNopLogger(),
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	ruleManager.Run()
+	defer ruleManager.Stop()
 
 	err := ruleManager.Update(10*time.Second, files)
 	testutil.Ok(t, err)
