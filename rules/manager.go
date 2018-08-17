@@ -485,7 +485,10 @@ func (g *Group) RestoreForState(ts time.Time) {
 			smpl := alertRule.forStateSample(a, time.Now(), 0)
 			var matchers []*labels.Matcher
 			for _, l := range smpl.Metric {
-				mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+				mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+				if err != nil {
+					panic(err)
+				}
 				matchers = append(matchers, mt)
 			}
 
