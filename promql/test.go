@@ -433,7 +433,10 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 	case *evalCmd:
-		q, _ := t.queryEngine.NewInstantQuery(t.storage, cmd.expr, cmd.start)
+		q, err := t.queryEngine.NewInstantQuery(t.storage, cmd.expr, cmd.start)
+		if err != nil {
+			return err
+		}
 		res := q.Exec(t.context)
 		if res.Err != nil {
 			if cmd.fail {
@@ -446,14 +449,17 @@ func (t *Test) exec(tc testCommand) error {
 			return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 		}
 
-		err := cmd.compareResult(res.Value)
+		err = cmd.compareResult(res.Value)
 		if err != nil {
 			return fmt.Errorf("error in %s %s: %s", cmd, cmd.expr, err)
 		}
 
 		// Check query returns same result in range mode,
 		/// by checking against the middle step.
-		q, _ = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
+		q, err = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
+		if err != nil {
+			return err
+		}
 		rangeRes := q.Exec(t.context)
 		if rangeRes.Err != nil {
 			return fmt.Errorf("error evaluating query %q (line %d) in range mode: %s", cmd.expr, cmd.line, rangeRes.Err)
