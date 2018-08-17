@@ -370,6 +370,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	d.Unlock()
+
+	wg.Wait()
 	<-ctx.Done()
 }
 
