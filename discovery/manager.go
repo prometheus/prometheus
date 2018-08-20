@@ -235,16 +235,19 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
-	register := func(cfg interface{}) bool {
+	add := func(t string, cfg interface{}, df func() (Discoverer, error)) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
-				return true
+				return
 			}
 		}
-		return false
-	}
-	add := func(t string, d Discoverer, cfg interface{}) {
+
+		d, err := df()
+		if err != nil {
+			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
+		}
+
 		provider := provider{
 			name:   fmt.Sprintf("%s/%d", t, len(m.providers)),
 			d:      d,
@@ -255,110 +258,69 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 
 	for _, c := range cfg.DNSSDConfigs {
-		if register(c) {
-			continue
-		}
-		add("dns", dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), c)
+		add("dns", c, func() (Discoverer, error) {
+			return dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), nil
+		})
 	}
 	for _, c := range cfg.FileSDConfigs {
-		if register(c) {
-			continue
-		}
-		add("file", file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), c)
+		add("file", c, func() (Discoverer, error) {
+			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
+		})
 	}
 	for _, c := range cfg.ConsulSDConfigs {
-		if register(c) {
-			continue
-		}
-		k, err := consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create Consul discovery", "err", err)
-			continue
-		}
-		add("consul", k, c)
+		add("consul", c, func() (Discoverer, error) {
+			return consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
+		})
 	}
 	for _, c := range cfg.MarathonSDConfigs {
-		if register(c) {
-			continue
-		}
-		t, err := marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create Marathon discovery", "err", err)
-			continue
-		}
-		add("marathon", t, c)
+		add("marathon", c, func() (Discoverer, error) {
+			return marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
+		})
 	}
 	for _, c := range cfg.KubernetesSDConfigs {
-		if register(c) {
-			continue
-		}
-		k, err := kubernetes.New(log.With(m.logger, "discovery", "k8s"), c)
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create Kubernetes discovery", "err", err)
-			continue
-		}
-		add("kubernetes", k, c)
+		add("kubernetes", c, func() (Discoverer, error) {
+			return kubernetes.New(log.With(m.logger, "discovery", "k8s"), c)
+		})
 	}
 	for _, c := range cfg.ServersetSDConfigs {
-		if register(c) {
-			continue
-		}
-		add("serverset", zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper")), c)
+		add("serverset", c, func() (Discoverer, error) {
+			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper")), nil
+		})
 	}
 	for _, c := range cfg.NerveSDConfigs {
-		if register(c) {
-			continue
-		}
-		add("nerve", zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve")), c)
+		add("nerve", c, func() (Discoverer, error) {
+			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve")), nil
+		})
 	}
 	for _, c := range cfg.EC2SDConfigs {
-		if register(c) {
-			continue
-		}
-		add("ec2", ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), c)
+		add("ec2", c, func() (Discoverer, error) {
+			return ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), nil
+		})
 	}
 	for _, c := range cfg.OpenstackSDConfigs {
-		if register(c) {
-			continue
-		}
-		openstackd, err := openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot initialize OpenStack discovery", "err", err)
-			continue
-		}
-		add("openstack", openstackd, c)
+		add("openstack", c, func() (Discoverer, error) {
+			return openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))
+		})
 	}
-
 	for _, c := range cfg.GCESDConfigs {
-		if register(c) {
-			continue
-		}
-		gced, err := gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot initialize GCE discovery", "err", err)
-			continue
-		}
-		add("gce", gced, c)
+		add("gce", c, func() (Discoverer, error) {
+			return gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
+		})
 	}
 	for _, c := range cfg.AzureSDConfigs {
-		if register(c) {
-			continue
-		}
-		add("azure", azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), c)
+		add("azure", c, func() (Discoverer, error) {
+			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
+		})
 	}
 	for _, c := range cfg.TritonSDConfigs {
-		if register(c) {
-			continue
-		}
-		t, err := triton.New(log.With(m.logger, "discovery", "trition"), c)
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create Triton discovery", "err", err)
-			continue
-		}
-		add("triton", t, c)
+		add("triton", c, func() (Discoverer, error) {
+			return triton.New(log.With(m.logger, "discovery", "trition"), c)
+		})
 	}
 	if len(cfg.StaticConfigs) > 0 {
-		add("static", &StaticProvider{cfg.StaticConfigs}, &struct{}{})
+		add("static", setName, func() (Discoverer, error) {
+			return &StaticProvider{cfg.StaticConfigs}, nil
+		})
 	}
 }
 
