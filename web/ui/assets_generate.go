@@ -11,7 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ui provides the assets via a virtual filesystem.
-package ui
+// +build ignore
 
-//go:generate go run assets_generate.go
+package main
+
+import (
+	"log"
+
+	"github.com/prometheus/prometheus/web/ui"
+	"github.com/shurcooL/vfsgen"
+)
+
+func main() {
+	err := vfsgen.Generate(ui.Assets, vfsgen.Options{
+		PackageName:  "ui",
+		BuildTags:    "!dev",
+		VariableName: "Assets",
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+}

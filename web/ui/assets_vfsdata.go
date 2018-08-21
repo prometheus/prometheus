@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Assets contains the project's assets.
+// Assets statically implements the virtual filesystem provided to vfsgen.
 var Assets = func() http.FileSystem {
 	fs := vfsgen۰FS{
 		"/": &vfsgen۰DirInfo{

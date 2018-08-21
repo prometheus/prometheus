@@ -29,6 +29,3 @@ VFSGENDEV := $(FIRST_GOPATH)/bin/vfsgendev
 assets: $(VFSGENDEV)
 	@echo ">> writing assets"
 	cd $(PREFIX)/web/ui && go generate
-
-$(VFSGENDEV):
-	cd $(PREFIX)/vendor/github.com/shurcooL/vfsgen/ && go install ./cmd/vfsgendev/...
