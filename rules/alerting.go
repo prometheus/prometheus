@@ -365,6 +365,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	// We have already acquired the lock above hence using SetHealth and
+	// SetLastError will deadlock.
 	r.health = HealthGood
 	r.lastError = err
 	return vec, nil
