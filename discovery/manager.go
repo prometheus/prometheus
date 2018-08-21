@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -38,6 +39,20 @@ import (
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
+
+var (
+	failedConfigs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_sd_failed_configs",
+			Help: "Number of service discovery configurations that failed to load.",
+		},
+		[]string{"name"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(failedConfigs)
+}
 
 // Discoverer provides information about target groups. It maintains a set
 // of sources from which TargetGroups can originate. Whenever a discovery provider
@@ -69,12 +84,13 @@ type provider struct {
 }
 
 // NewManager is the Discovery Manager constructor
-func NewManager(ctx context.Context, logger log.Logger) *Manager {
+func NewManager(ctx context.Context, name string, logger log.Logger) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Manager{
 		logger:         logger,
+		name:           name,
 		syncCh:         make(chan map[string][]*targetgroup.Group),
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
@@ -86,6 +102,7 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 // Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
+	name           string
 	mtx            sync.RWMutex
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
@@ -119,9 +136,11 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	defer m.mtx.Unlock()
 
 	m.cancelDiscoverers()
+	var failed int
 	for name, scfg := range cfg {
-		m.registerProviders(scfg, name)
+		failed += m.registerProviders(scfg, name)
 	}
+	failedConfigs.WithLabelValues(m.name).Set(float64(failed))
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
 	}
@@ -234,7 +253,8 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	return tSets
 }
 
-func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
+func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) int {
+	var failed int
 	add := func(t string, cfg interface{}, df func() (Discoverer, error)) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
@@ -245,7 +265,9 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 
 		d, err := df()
 		if err != nil {
+			failed++
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
+			return
 		}
 
 		provider := provider{
@@ -314,7 +336,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	for _, c := range cfg.TritonSDConfigs {
 		add("triton", c, func() (Discoverer, error) {
-			return triton.New(log.With(m.logger, "discovery", "trition"), c)
+			return triton.New(log.With(m.logger, "discovery", "triton"), c)
 		})
 	}
 	if len(cfg.StaticConfigs) > 0 {
@@ -322,6 +344,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			return &StaticProvider{cfg.StaticConfigs}, nil
 		})
 	}
+	return failed
 }
 
 // StaticProvider holds a list of target groups that never change.

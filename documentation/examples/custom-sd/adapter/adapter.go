@@ -143,7 +143,7 @@ func NewAdapter(ctx context.Context, file string, name string, d discovery.Disco
 		ctx:     ctx,
 		disc:    d,
 		groups:  make(map[string]*customSD),
-		manager: discovery.NewManager(ctx, logger),
+		manager: discovery.NewManager(ctx, name, logger),
 		output:  file,
 		name:    name,
 		logger:  logger,
