@@ -102,6 +102,13 @@ var (
 		[]string{"rule_group"},
 		nil,
 	)
+	updateFailures = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "rule_group_update_failures_total",
+			Help:      "The total number of rule update failures.",
+		},
+	)
 )
 
 func init() {
@@ -110,6 +117,7 @@ func init() {
 	prometheus.MustRegister(iterationsMissed)
 	prometheus.MustRegister(evalFailures)
 	prometheus.MustRegister(evalDuration)
+	prometheus.MustRegister(updateFailures)
 }
 
 // QueryFunc processes PromQL queries.
@@ -654,6 +662,8 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
 		}
+
+		updateFailures.Inc()
 		return errors.New("error loading rules, previous rule set restored")
 	}
 	m.restored = true
