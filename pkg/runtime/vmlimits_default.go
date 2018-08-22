@@ -14,7 +14,7 @@
 // +build !windows
 // +build !openbsd
 
-package main
+package runtime
 
 import (
 	"syscall"

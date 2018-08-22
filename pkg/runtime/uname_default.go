@@ -11,26 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+// +build !linux
 
-import (
-	"log"
-	"syscall"
-)
+package runtime
 
-// Uname returns the uname of the host machine.
+import "runtime"
+
+// Uname for any platform other than linux.
 func Uname() string {
-	buf := syscall.Utsname{}
-	err := syscall.Uname(&buf)
-	if err != nil {
-		log.Fatal("Error!")
-	}
-
-	str := "(" + charsToString(buf.Sysname[:])
-	str += " " + charsToString(buf.Release[:])
-	str += " " + charsToString(buf.Version[:])
-	str += " " + charsToString(buf.Machine[:])
-	str += " " + charsToString(buf.Nodename[:])
-	str += " " + charsToString(buf.Domainname[:]) + ")"
-	return str
+	return "(" + runtime.GOOS + ")"
 }
