@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
 	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
@@ -229,9 +230,9 @@ func main() {
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
-	level.Info(logger).Log("host_details", Uname())
-	level.Info(logger).Log("fd_limits", FdLimits())
-	level.Info(logger).Log("vm_limits", VmLimits())
+	level.Info(logger).Log("host_details", prom_runtime.Uname())
+	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
+	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}

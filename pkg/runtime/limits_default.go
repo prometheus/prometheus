@@ -13,7 +13,7 @@
 
 // +build !windows
 
-package main
+package runtime
 
 import (
 	"fmt"
