@@ -41,12 +41,11 @@ import (
 )
 
 var (
-	failedConfigs = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "prometheus_sd_failed_configs",
-			Help: "Number of service discovery configurations that failed to load.",
+	failedConfigs = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_configs_failed_total",
+			Help: "Total number of service discovery configurations that failed to load.",
 		},
-		[]string{"name"},
 	)
 )
 
@@ -84,13 +83,12 @@ type provider struct {
 }
 
 // NewManager is the Discovery Manager constructor
-func NewManager(ctx context.Context, name string, logger log.Logger) *Manager {
+func NewManager(ctx context.Context, logger log.Logger) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Manager{
 		logger:         logger,
-		name:           name,
 		syncCh:         make(chan map[string][]*targetgroup.Group),
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
@@ -102,7 +100,6 @@ func NewManager(ctx context.Context, name string, logger log.Logger) *Manager {
 // Targets are grouped by the target set name.
 type Manager struct {
 	logger         log.Logger
-	name           string
 	mtx            sync.RWMutex
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
@@ -136,11 +133,9 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	defer m.mtx.Unlock()
 
 	m.cancelDiscoverers()
-	var failed int
 	for name, scfg := range cfg {
-		failed += m.registerProviders(scfg, name)
+		m.registerProviders(scfg, name)
 	}
-	failedConfigs.WithLabelValues(m.name).Set(float64(failed))
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
 	}
@@ -253,8 +248,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	return tSets
 }
 
-func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) int {
-	var failed int
+func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
 	add := func(t string, cfg interface{}, df func() (Discoverer, error)) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
@@ -265,8 +259,8 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 
 		d, err := df()
 		if err != nil {
-			failed++
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
+			failedConfigs.Inc()
 			return
 		}
 
@@ -344,7 +338,6 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			return &StaticProvider{cfg.StaticConfigs}, nil
 		})
 	}
-	return failed
 }
 
 // StaticProvider holds a list of target groups that never change.
