@@ -26,5 +26,4 @@ DOCKER_IMAGE_NAME       ?= prometheus
 .PHONY: assets
 assets:
 	@echo ">> writing assets"
-	$(GO) get -u github.com/shurcooL/vfsgen
 	cd $(PREFIX)/web/ui && go generate
