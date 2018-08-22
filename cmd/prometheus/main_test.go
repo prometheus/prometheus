@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -24,7 +25,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/web"
+	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
 var promPath string
@@ -172,4 +182,54 @@ func TestFailedStartupExitCode(t *testing.T) {
 	} else {
 		t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 	}
+}
+
+// TestApplyConfig ensures that no component is modifying the global config.
+// The config includes many pointers so modifying it has global side effects.
+func TestApplyConfig(t *testing.T) {
+	// Disable k8s logs.
+	k8s_runtime.ErrorHandlers = []func(error){}
+
+	var (
+		cfgOrig          *config.Config
+		ctx, cancel      = context.WithCancel(context.Background())
+		logger           = log.NewNopLogger()
+		notifyManager    = notifier.NewManager(&notifier.Options{}, logger)
+		discoveryManager = discovery.NewManager(ctx, logger)
+		scrapeManager    = scrape.NewManager(logger, nil)
+		webHandler       = web.New(logger, &web.Options{RoutePrefix: "/"})
+		remoteStorage    = remote.NewStorage(logger, nil, time.Duration(1*time.Millisecond))
+	)
+	defer cancel() // Just in case to avoid goroutine leaks.
+
+	// Load the config in all components.
+	reloaders := []func(cfg *config.Config) error{
+		// Save the config so we can compare it with a new untouched copy.
+		// Since this is a pointer any modification will be reflected in the saved copy.
+		func(cfg *config.Config) error {
+			cfgOrig = cfg
+			return nil
+		},
+		remoteStorage.ApplyConfig,
+		webHandler.ApplyConfig,
+		notifyManager.ApplyConfig,
+		scrapeManager.ApplyConfig,
+		func(cfg *config.Config) error {
+			c := make(map[string]sd_config.ServiceDiscoveryConfig)
+			for _, v := range cfg.ScrapeConfigs {
+				c[v.JobName] = v.ServiceDiscoveryConfig
+			}
+			return discoveryManager.ApplyConfig(c)
+		},
+	}
+	testutil.Ok(t, reloadConfig("../../config/testdata/conf.good.multi.static.yml", logger, reloaders...))
+
+	// Need to reload the file again so we have a completely new untouched copy.
+	reloaders = []func(cfg *config.Config) error{
+		func(cfg *config.Config) error {
+			testutil.Equals(t, cfgOrig, cfg)
+			return nil
+		},
+	}
+	testutil.Ok(t, reloadConfig("../../config/testdata/conf.good.multi.static.yml", logger, reloaders...))
 }
