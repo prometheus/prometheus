@@ -177,6 +177,9 @@ func main() {
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager. Must be lower than resolve_timeout in Alertmanager").
 		Default("1m").SetValue(&cfg.resendDelay)
 
+	a.Flag("storage.remote.read-sample-limit", "Maximum number of samples to return via the remote read interface, in a single query.  0 means no limit.").
+		Default("5e7").IntVar(&cfg.web.RemoteReadLimit)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
