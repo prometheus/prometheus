@@ -100,11 +100,16 @@ func main() {
 	http.Handle(cfg.telemetryPath, prometheus.Handler())
 
 	logLevel := promlog.AllowedLevel{}
-	logLevel.Set(cfg.logLevel)
+	if err := logLevel.Set(cfg.logLevel); err != nil {
+		panic(fmt.Sprintf("Error setting log level: %v", err))
+	}
 	logger := promlog.New(logLevel)
 
 	writers, readers := buildClients(logger, cfg)
-	serve(logger, cfg.listenAddr, writers, readers)
+	if err := serve(logger, cfg.listenAddr, writers, readers); err != nil {
+		level.Error(logger).Log("msg", "Failed to listen", "addr", cfg.listenAddr, "err", err)
+		os.Exit(1)
+	}
 }
 
 func parseFlags() *config {

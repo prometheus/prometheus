@@ -14,6 +14,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 
@@ -42,7 +43,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
-	req.ParseForm()
+	if err := req.ParseForm(); err != nil {
+		http.Error(w, fmt.Sprintf("error parsing form values: %v", err), http.StatusBadRequest)
+		return
+	}
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range req.Form["match[]"] {

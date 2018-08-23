@@ -137,6 +137,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, fmt.Errorf("unable to create request: %v", err)
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 

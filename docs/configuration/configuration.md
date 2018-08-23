@@ -266,6 +266,7 @@ The following meta labels are available on targets during relabeling:
 * `__meta_azure_machine_private_ip`: the machine's private IP
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
+* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 
 See below for the configuration options for Azure discovery:
 
@@ -401,6 +402,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_instance_id`: the EC2 instance ID
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
+* `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
@@ -587,6 +590,7 @@ address with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
 * `__meta_gce_label_<name>`: each GCE label of the instance
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance

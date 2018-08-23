@@ -38,7 +38,6 @@ import (
 
 	"google.golang.org/grpc"
 
-	pprof_runtime "runtime/pprof"
 	template_text "text/template"
 
 	"github.com/cockroachdb/cmux"
@@ -227,6 +226,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.testReady,
 		h.options.TSDB,
 		h.options.EnableAdminAPI,
+		logger,
+		h.ruleManager,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -252,8 +253,6 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/targets", readyf(h.targets))
 	router.Get("/version", readyf(h.version))
 	router.Get("/service-discovery", readyf(h.serviceDiscovery))
-
-	router.Get("/heap", h.dumpHeap)
 
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
@@ -813,11 +812,21 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 
 			return alive
 		},
-		"healthToClass": func(th scrape.TargetHealth) string {
+		"targetHealthToClass": func(th scrape.TargetHealth) string {
 			switch th {
 			case scrape.HealthUnknown:
 				return "warning"
 			case scrape.HealthGood:
+				return "success"
+			default:
+				return "danger"
+			}
+		},
+		"ruleHealthToClass": func(rh rules.RuleHealth) string {
+			switch rh {
+			case rules.HealthUnknown:
+				return "warning"
+			case rules.HealthGood:
 				return "success"
 			default:
 				return "danger"
@@ -873,18 +882,6 @@ func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data inter
 		return
 	}
 	io.WriteString(w, result)
-}
-
-func (h *Handler) dumpHeap(w http.ResponseWriter, r *http.Request) {
-	target := fmt.Sprintf("/tmp/%d.heap", time.Now().Unix())
-	f, err := os.Create(target)
-	if err != nil {
-		level.Error(h.logger).Log("msg", "Could not dump heap", "err", err)
-	}
-	fmt.Fprintf(w, "Writing to %s...", target)
-	defer f.Close()
-	pprof_runtime.WriteHeapProfile(f)
-	fmt.Fprintf(w, "Done")
 }
 
 // AlertStatus bundles alerting rules and the mapping of alert states to row classes.

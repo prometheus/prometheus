@@ -151,7 +151,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
-		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) error { return nil },
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)

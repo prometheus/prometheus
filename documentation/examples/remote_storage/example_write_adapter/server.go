@@ -16,6 +16,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 
 	"github.com/gogo/protobuf/proto"
@@ -58,5 +59,5 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":1234", nil)
+	log.Fatal(http.ListenAndServe(":1234", nil))
 }

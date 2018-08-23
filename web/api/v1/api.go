@@ -28,6 +28,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -39,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -93,6 +96,11 @@ type alertmanagerRetriever interface {
 	DroppedAlertmanagers() []*url.URL
 }
 
+type rulesRetriever interface {
+	RuleGroups() []*rules.Group
+	AlertingRules() []*rules.AlertingRule
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -117,14 +125,15 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
-
-	now      func() time.Time
-	config   func() config.Config
-	flagsMap map[string]string
-	ready    func(http.HandlerFunc) http.HandlerFunc
+	rulesRetriever        rulesRetriever
+	now                   func() time.Time
+	config                func() config.Config
+	flagsMap              map[string]string
+	ready                 func(http.HandlerFunc) http.HandlerFunc
 
 	db          func() *tsdb.DB
 	enableAdmin bool
+	logger      log.Logger
 }
 
 // NewAPI returns an initialized API type.
@@ -138,18 +147,21 @@ func NewAPI(
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
+	logger log.Logger,
+	rr rulesRetriever,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:         time.Now,
-		config:      configFunc,
-		flagsMap:    flagsMap,
-		ready:       readyFunc,
-		db:          db,
-		enableAdmin: enableAdmin,
+		now:            time.Now,
+		config:         configFunc,
+		flagsMap:       flagsMap,
+		ready:          readyFunc,
+		db:             db,
+		enableAdmin:    enableAdmin,
+		rulesRetriever: rr,
 	}
 }
 
@@ -160,9 +172,9 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			data, err, finalizer := f(r)
 			if err != nil {
-				respondError(w, err, data)
+				api.respondError(w, err, data)
 			} else if data != nil {
-				respond(w, data)
+				api.respond(w, data)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -194,6 +206,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+
+	r.Get("/alerts", wrap(api.alerts))
+	r.Get("/rules", wrap(api.rules))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -365,7 +380,9 @@ var (
 )
 
 func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil
 	}
@@ -574,6 +591,145 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError, func()) 
 	return ams, nil, nil
 }
 
+// AlertDiscovery has info for all active alerts.
+type AlertDiscovery struct {
+	Alerts []*Alert `json:"alerts"`
+}
+
+// Alert has info for an alert.
+type Alert struct {
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	State       string        `json:"state"`
+	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
+	Value       float64       `json:"value"`
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError, func()) {
+	alertingRules := api.rulesRetriever.AlertingRules()
+	alerts := []*Alert{}
+
+	for _, alertingRule := range alertingRules {
+		alerts = append(
+			alerts,
+			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
+		)
+	}
+
+	res := &AlertDiscovery{Alerts: alerts}
+
+	return res, nil, nil
+}
+
+func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
+	apiAlerts := make([]*Alert, len(rulesAlerts))
+	for i, ruleAlert := range rulesAlerts {
+		apiAlerts[i] = &Alert{
+			Labels:      ruleAlert.Labels,
+			Annotations: ruleAlert.Annotations,
+			State:       ruleAlert.State.String(),
+			ActiveAt:    &ruleAlert.ActiveAt,
+			Value:       ruleAlert.Value,
+		}
+	}
+
+	return apiAlerts
+}
+
+// RuleDiscovery has info for all rules
+type RuleDiscovery struct {
+	RuleGroups []*RuleGroup `json:"groups"`
+}
+
+// RuleGroup has info for rules which are part of a group
+type RuleGroup struct {
+	Name string `json:"name"`
+	File string `json:"file"`
+	// In order to preserve rule ordering, while exposing type (alerting or recording)
+	// specific properties, both alerting and recording rules are exposed in the
+	// same array.
+	Rules    []rule  `json:"rules"`
+	Interval float64 `json:"interval"`
+}
+
+type rule interface{}
+
+type alertingRule struct {
+	Name        string           `json:"name"`
+	Query       string           `json:"query"`
+	Duration    float64          `json:"duration"`
+	Labels      labels.Labels    `json:"labels"`
+	Annotations labels.Labels    `json:"annotations"`
+	Alerts      []*Alert         `json:"alerts"`
+	Health      rules.RuleHealth `json:"health"`
+	LastError   string           `json:"lastError,omitempty"`
+	// Type of an alertingRule is always "alerting".
+	Type string `json:"type"`
+}
+
+type recordingRule struct {
+	Name      string           `json:"name"`
+	Query     string           `json:"query"`
+	Labels    labels.Labels    `json:"labels,omitempty"`
+	Health    rules.RuleHealth `json:"health"`
+	LastError string           `json:"lastError,omitempty"`
+	// Type of a recordingRule is always "recording".
+	Type string `json:"type"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
+	ruleGroups := api.rulesRetriever.RuleGroups()
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	for i, grp := range ruleGroups {
+		apiRuleGroup := &RuleGroup{
+			Name:     grp.Name(),
+			File:     grp.File(),
+			Interval: grp.Interval().Seconds(),
+			Rules:    []rule{},
+		}
+
+		for _, r := range grp.Rules() {
+			var enrichedRule rule
+
+			lastError := ""
+			if r.LastError() != nil {
+				lastError = r.LastError().Error()
+			}
+
+			switch rule := r.(type) {
+			case *rules.AlertingRule:
+				enrichedRule = alertingRule{
+					Name:        rule.Name(),
+					Query:       rule.Query().String(),
+					Duration:    rule.Duration().Seconds(),
+					Labels:      rule.Labels(),
+					Annotations: rule.Annotations(),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:      rule.Health(),
+					LastError:   lastError,
+					Type:        "alerting",
+				}
+			case *rules.RecordingRule:
+				enrichedRule = recordingRule{
+					Name:      rule.Name(),
+					Query:     rule.Query().String(),
+					Labels:    rule.Labels(),
+					Health:    rule.Health(),
+					LastError: lastError,
+					Type:      "recording",
+				}
+			default:
+				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
+				return nil, &apiError{errorInternal, err}, nil
+			}
+
+			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+		}
+		res.RuleGroups[i] = apiRuleGroup
+	}
+	return res, nil, nil
+}
+
 type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
@@ -675,7 +831,9 @@ func (api *API) deleteSeries(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil
 	}
 
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil
 	}
@@ -725,7 +883,10 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if !api.enableAdmin {
 		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil
 	}
-	skipHead, _ := strconv.ParseBool(r.FormValue("skip_head"))
+	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
+	if err != nil {
+		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+	}
 
 	db := api.db()
 	if db == nil {
@@ -819,23 +980,38 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 	return result
 }
 
-func respond(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+func (api *API) respond(w http.ResponseWriter, data interface{}) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
 		Data:   data,
 	})
 	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Write(b)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
+	}
 }
 
-func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
+	b, err := json.Marshal(&response{
+		Status:    statusError,
+		ErrorType: apiErr.typ,
+		Error:     apiErr.err.Error(),
+		Data:      data,
+	})
+	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	var code int
 	switch apiErr.typ {
@@ -852,19 +1028,12 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	default:
 		code = http.StatusInternalServerError
 	}
-	w.WriteHeader(code)
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
-		Status:    statusError,
-		ErrorType: apiErr.typ,
-		Error:     apiErr.err.Error(),
-		Data:      data,
-	})
-	if err != nil {
-		return
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
-	w.Write(b)
 }
 
 func parseTime(s string) (time.Time, error) {
