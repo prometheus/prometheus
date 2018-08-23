@@ -406,6 +406,7 @@ $ curl http://localhost:9090/api/v1/rules
                             "summary": "High request latency"
                         },
                         "duration": 600,
+                        "health": "ok",
                         "labels": {
                             "severity": "page"
                         },
@@ -414,6 +415,7 @@ $ curl http://localhost:9090/api/v1/rules
                         "type": "alerting"
                     },
                     {
+                        "health": "ok",
                         "name": "job:http_inprogress_requests:sum",
                         "query": "sum(http_inprogress_requests) by (job)",
                         "type": "recording"
