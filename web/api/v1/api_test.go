@@ -681,6 +681,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
+								Health:      "unknown",
 								Type:        "alerting",
 							},
 							alertingRule{
@@ -690,12 +691,14 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
+								Health:      "unknown",
 								Type:        "alerting",
 							},
 							recordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
+								Health: "unknown",
 								Type:   "recording",
 							},
 						},
