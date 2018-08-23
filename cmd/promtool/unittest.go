@@ -126,15 +126,14 @@ func (utf *unitTestFile) maxEvalTime() time.Duration {
 
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
-	Interval       time.Duration    `yaml:"interval"`
-	InputSeries    []series         `yaml:"input_series"`
-	AlertRuleTest  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
-	PromqlExprTest []promqlTestCase `yaml:"promql_expr_test,omitempty"`
+	Interval        time.Duration    `yaml:"interval"`
+	InputSeries     []series         `yaml:"input_series"`
+	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
 }
 
 // test performs the unit tests.
 func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
-
 	// Setup testing suite.
 	suite, err := promql.NewTest(nil, tg.seriesLoadingString())
 	if err != nil {
@@ -169,37 +168,28 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	// All the `eval_time` for which we have unit tests.
 	var alertEvalTimes []time.Duration
 	// Map of all the eval_time+alertname combination present in the unit tests.
-	presentInTest := make(map[time.Duration]map[string]struct{})
+	alertsInTest := make(map[time.Duration]map[string]struct{})
 	// Map of all the unit tests for given eval_time.
 	alertTests := make(map[time.Duration][]alertTestCase)
-	for _, art := range tg.AlertRuleTest {
-		pos := func() int {
-			for i, d := range alertEvalTimes {
-				if d > art.EvalTime {
-					return i
-				}
-			}
-			return len(alertEvalTimes)
-		}()
-		alertEvalTimes = append(alertEvalTimes[:pos], append([]time.Duration{art.EvalTime}, alertEvalTimes[pos:]...)...)
+	for _, alert := range tg.AlertRuleTests {
+		alertEvalTimes = append(alertEvalTimes, alert.EvalTime)
 
-		if _, ok := presentInTest[art.EvalTime]; !ok {
-			presentInTest[art.EvalTime] = make(map[string]struct{})
+		if _, ok := alertsInTest[alert.EvalTime]; !ok {
+			alertsInTest[alert.EvalTime] = make(map[string]struct{})
 		}
-		presentInTest[art.EvalTime][art.Alertname] = struct{}{}
+		alertsInTest[alert.EvalTime][alert.Alertname] = struct{}{}
 
-		if _, ok := alertTests[art.EvalTime]; ok {
-			alertTests[art.EvalTime] = []alertTestCase{art}
-		} else {
-			alertTests[art.EvalTime] = append(alertTests[art.EvalTime], art)
-		}
+		alertTests[alert.EvalTime] = append(alertTests[alert.EvalTime], alert)
 	}
+	sort.Slice(alertEvalTimes, func(i, j int) bool {
+		return alertEvalTimes[i] < alertEvalTimes[j]
+	})
 
 	// Current index in alertEvalTimes what we are looking at.
 	curr := 0
 
 	var errs []error
-	for ts := mint; maxt.Sub(ts) > 0; ts = ts.Add(evalInterval) {
+	for ts := mint; ts.Before(maxt); ts = ts.Add(evalInterval) {
 		// Collects the alerts asked in unit testing.
 		for _, g := range groups {
 			g.Eval(suite.Context(), ts)
@@ -211,20 +201,19 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			// then we compare alerts with the Eval at `ts`.
 			t := alertEvalTimes[curr]
 
-			presentNames := presentInTest[t]
+			presentAlerts := alertsInTest[t]
 			got := make(map[string]labelsAndAnnotations)
 
 			// Same Alert name can be present in multiple groups.
 			// Hence we collect them all to check against expected alerts.
 			for _, g := range groups {
 				grules := g.Rules()
-
 				for _, r := range grules {
 					ar, ok := r.(*rules.AlertingRule)
 					if !ok {
 						continue
 					}
-					if _, ok := presentNames[ar.Name()]; !ok {
+					if _, ok := presentAlerts[ar.Name()]; !ok {
 						continue
 					}
 
@@ -238,26 +227,19 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 						}
 					}
 
-					if _, ok := got[ar.Name()]; ok {
-						got[ar.Name()] = append(got[ar.Name()], alerts...)
-					} else {
-						got[ar.Name()] = alerts
-					}
+					got[ar.Name()] = append(got[ar.Name()], alerts...)
 				}
 			}
 
-			for _, testCase := range alertTests[t] {
+			for _, testcase := range alertTests[t] {
 				// Checking alerts.
-				gotAlerts, ok := got[testCase.Alertname]
-				if !ok {
-					gotAlerts = labelsAndAnnotations{}
-				}
+				gotAlerts := got[testcase.Alertname]
 
 				var expAlerts labelsAndAnnotations
-				for _, a := range testCase.ExpAlerts {
+				for _, a := range testcase.ExpAlerts {
 					// User gives only the labels from alerting rule, which doesn't
 					// include this label (added by Prometheus during Eval).
-					a.ExpLabels[labels.AlertName] = testCase.Alertname
+					a.ExpLabels[labels.AlertName] = testcase.Alertname
 
 					expAlerts = append(expAlerts, labelAndAnnotation{
 						Labels:      labels.FromMap(a.ExpLabels),
@@ -267,14 +249,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 
 				if gotAlerts.Len() != expAlerts.Len() {
 					errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-						testCase.Alertname, testCase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+						testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 				} else {
 					sort.Sort(gotAlerts)
 					sort.Sort(expAlerts)
 
 					if !reflect.DeepEqual(expAlerts, gotAlerts) {
 						errs = append(errs, fmt.Errorf("    alertname:%s, time:%s, \n        exp:%#v, \n        got:%#v",
-							testCase.Alertname, testCase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
+							testcase.Alertname, testcase.EvalTime.String(), expAlerts.String(), gotAlerts.String()))
 					}
 				}
 			}
@@ -284,7 +266,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	}
 
 	// Checking promql expressions.
-	for _, testCase := range tg.PromqlExprTest {
+	for _, testCase := range tg.PromqlExprTests {
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
@@ -389,12 +371,12 @@ func orderedGroups(groupsMap map[string]*rules.Group, groupOrderMap map[string]i
 // maxEvalTime returns the max eval time among all alert and promql unit tests.
 func (tg *testGroup) maxEvalTime() time.Duration {
 	var maxd time.Duration
-	for _, art := range tg.AlertRuleTest {
-		if art.EvalTime > maxd {
-			maxd = art.EvalTime
+	for _, alert := range tg.AlertRuleTests {
+		if alert.EvalTime > maxd {
+			maxd = alert.EvalTime
 		}
 	}
-	for _, pet := range tg.PromqlExprTest {
+	for _, pet := range tg.PromqlExprTests {
 		if pet.EvalTime > maxd {
 			maxd = pet.EvalTime
 		}
@@ -429,11 +411,11 @@ type labelsAndAnnotations []labelAndAnnotation
 func (la labelsAndAnnotations) Len() int      { return len(la) }
 func (la labelsAndAnnotations) Swap(i, j int) { la[i], la[j] = la[j], la[i] }
 func (la labelsAndAnnotations) Less(i, j int) bool {
-	l1h, l2h := la[i].Labels.Hash(), la[j].Labels.Hash()
-	if l1h != l2h {
-		return l1h < l2h
+	diff := labels.Compare(la[i].Labels, la[j].Labels)
+	if diff != 0 {
+		return diff < 0
 	}
-	return la[i].Annotations.Hash() < la[j].Annotations.Hash()
+	return labels.Compare(la[i].Annotations, la[j].Annotations) < 0
 }
 
 func (la labelsAndAnnotations) String() string {
