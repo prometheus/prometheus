@@ -896,6 +896,36 @@
 			"revisionTime": "2017-06-08T03:40:07Z"
 		},
 		{
+			"checksumSHA1": "fSVkjXu8SIkCLI9RTt/vnkg9M5A=",
+			"path": "github.com/shurcooL/httpfs/filter",
+			"revision": "809beceb23714880abc4a382a00c05f89d13b1cc",
+			"revisionTime": "2017-11-19T17:43:26Z"
+		},
+		{
+			"checksumSHA1": "NJs03JE5kTrf/0jMSQzn6GGnqtI=",
+			"path": "github.com/shurcooL/httpfs/union",
+			"revision": "809beceb23714880abc4a382a00c05f89d13b1cc",
+			"revisionTime": "2017-11-19T17:43:26Z"
+		},
+		{
+			"checksumSHA1": "fhngc51BJ8gGzM5b8BpSuWjCLao=",
+			"path": "github.com/shurcooL/httpfs/vfsutil",
+			"revision": "809beceb23714880abc4a382a00c05f89d13b1cc",
+			"revisionTime": "2017-11-19T17:43:26Z"
+		},
+		{
+			"checksumSHA1": "mAsjjGWwuClAdK2+Jdfupe4t4Y4=",
+			"path": "github.com/shurcooL/vfsgen",
+			"revision": "62bca832be04bd2bcaabd3b68a6b19a7ec044411",
+			"revisionTime": "2018-07-11T16:37:06Z"
+		},
+		{
+			"checksumSHA1": "STxYqRb4gnlSr3mRpT+Igfdz/kM=",
+			"path": "github.com/spf13/pflag",
+			"revision": "e57e3eeb33f795204c1ca35f56c44f83227c6e66",
+			"revisionTime": "2017-05-08T18:43:26Z"
+		},
+		{
 			"checksumSHA1": "iydUphwYqZRq3WhstEdGsbvBAKs=",
 			"path": "github.com/stretchr/testify/assert",
 			"revision": "d77da356e56a7428ad25149ca77381849a6a5232",
