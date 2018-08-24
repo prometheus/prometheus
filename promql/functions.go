@@ -371,11 +371,12 @@ func aggrOverTime(vals []Value, enh *EvalNodeHelper, aggrFn func([]Point) float6
 // === avg_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcAvgOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum float64
+		var mean, count float64
 		for _, v := range values {
-			sum += v.V
+			count++
+			mean += (v.V - mean) / count
 		}
-		return sum / float64(len(values))
+		return mean
 	})
 }
 

@@ -1464,12 +1464,12 @@ func intersection(ls1, ls2 labels.Labels) labels.Labels {
 }
 
 type groupedAggregation struct {
-	labels       labels.Labels
-	value        float64
-	varianceMean float64
-	groupCount   int
-	heap         vectorByValueHeap
-	reverseHeap  vectorByReverseValueHeap
+	labels      labels.Labels
+	value       float64
+	mean        float64
+	groupCount  int
+	heap        vectorByValueHeap
+	reverseHeap vectorByReverseValueHeap
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
@@ -1542,6 +1542,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			result[groupingKey] = &groupedAggregation{
 				labels:     m,
 				value:      s.V,
+				mean:       s.V,
 				groupCount: 1,
 			}
 			inputVecLen := int64(len(vec))
@@ -1551,7 +1552,6 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			}
 			if op == itemStdvar || op == itemStddev {
 				result[groupingKey].value = 0.0
-				result[groupingKey].varianceMean = s.V
 			} else if op == itemTopK || op == itemQuantile {
 				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
@@ -1573,8 +1573,8 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.value += s.V
 
 		case itemAvg:
-			group.value += s.V
 			group.groupCount++
+			group.mean += (s.V - group.mean) / float64(group.groupCount)
 
 		case itemMax:
 			if group.value < s.V || math.IsNaN(group.value) {
@@ -1591,9 +1591,9 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 
 		case itemStdvar, itemStddev:
 			group.groupCount++
-			delta := s.V - group.varianceMean
-			group.varianceMean += delta / float64(group.groupCount)
-			group.value += delta * (s.V - group.varianceMean)
+			delta := s.V - group.mean
+			group.mean += delta / float64(group.groupCount)
+			group.value += delta * (s.V - group.mean)
 
 		case itemTopK:
 			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
@@ -1629,7 +1629,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	for _, aggr := range result {
 		switch op {
 		case itemAvg:
-			aggr.value = aggr.value / float64(aggr.groupCount)
+			aggr.value = aggr.mean
 
 		case itemCount, itemCountValues:
 			aggr.value = float64(aggr.groupCount)
