@@ -456,7 +456,7 @@ func (s *shards) runShard(i int) {
 	// anyways.
 	pendingSamples := model.Samples{}
 
-	timer := time.NewTimer(s.qm.cfg.BatchSendDeadline)
+	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
 		if !timer.Stop() {
 			select {
@@ -490,7 +490,7 @@ func (s *shards) runShard(i int) {
 				pendingSamples = pendingSamples[s.qm.cfg.MaxSamplesPerSend:]
 
 				stop()
-				timer.Reset(s.qm.cfg.BatchSendDeadline)
+				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 			}
 
 		case <-timer.C:
@@ -498,7 +498,7 @@ func (s *shards) runShard(i int) {
 				s.sendSamples(pendingSamples)
 				pendingSamples = pendingSamples[:0]
 			}
-			timer.Reset(s.qm.cfg.BatchSendDeadline)
+			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
 }
@@ -532,7 +532,7 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 		if _, ok := err.(recoverableError); !ok {
 			break
 		}
-		time.Sleep(backoff)
+		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
 		if backoff > s.qm.cfg.MaxBackoff {
 			backoff = s.qm.cfg.MaxBackoff

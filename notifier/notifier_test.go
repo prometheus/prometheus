@@ -170,7 +170,7 @@ func TestHandlerSendAll(t *testing.T) {
 			},
 		},
 		cfg: &config.AlertmanagerConfig{
-			Timeout: time.Second,
+			Timeout: model.Duration(time.Second),
 		},
 		client: authClient,
 	}
@@ -182,7 +182,7 @@ func TestHandlerSendAll(t *testing.T) {
 			},
 		},
 		cfg: &config.AlertmanagerConfig{
-			Timeout: time.Second,
+			Timeout: model.Duration(time.Second),
 		},
 	}
 
@@ -337,7 +337,7 @@ func TestHandlerQueueing(t *testing.T) {
 			},
 		},
 		cfg: &config.AlertmanagerConfig{
-			Timeout: time.Second,
+			Timeout: model.Duration(time.Second),
 		},
 	}
 
