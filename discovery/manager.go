@@ -249,7 +249,8 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
-	add := func(t string, cfg interface{}, df func() (Discoverer, error)) {
+	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
+		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
@@ -257,7 +258,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			}
 		}
 
-		d, err := df()
+		d, err := newDiscoverer()
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
 			failedConfigs.Inc()
@@ -274,67 +275,67 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 
 	for _, c := range cfg.DNSSDConfigs {
-		add("dns", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), nil
 		})
 	}
 	for _, c := range cfg.FileSDConfigs {
-		add("file", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
 		})
 	}
 	for _, c := range cfg.ConsulSDConfigs {
-		add("consul", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
 		})
 	}
 	for _, c := range cfg.MarathonSDConfigs {
-		add("marathon", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
 		})
 	}
 	for _, c := range cfg.KubernetesSDConfigs {
-		add("kubernetes", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return kubernetes.New(log.With(m.logger, "discovery", "k8s"), c)
 		})
 	}
 	for _, c := range cfg.ServersetSDConfigs {
-		add("serverset", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper")), nil
 		})
 	}
 	for _, c := range cfg.NerveSDConfigs {
-		add("nerve", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve")), nil
 		})
 	}
 	for _, c := range cfg.EC2SDConfigs {
-		add("ec2", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), nil
 		})
 	}
 	for _, c := range cfg.OpenstackSDConfigs {
-		add("openstack", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))
 		})
 	}
 	for _, c := range cfg.GCESDConfigs {
-		add("gce", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
 		})
 	}
 	for _, c := range cfg.AzureSDConfigs {
-		add("azure", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
 		})
 	}
 	for _, c := range cfg.TritonSDConfigs {
-		add("triton", c, func() (Discoverer, error) {
+		add(c, func() (Discoverer, error) {
 			return triton.New(log.With(m.logger, "discovery", "triton"), c)
 		})
 	}
 	if len(cfg.StaticConfigs) > 0 {
-		add("static", setName, func() (Discoverer, error) {
+		add(setName, func() (Discoverer, error) {
 			return &StaticProvider{cfg.StaticConfigs}, nil
 		})
 	}

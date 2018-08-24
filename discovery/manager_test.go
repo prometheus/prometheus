@@ -753,8 +753,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
 
 	sTwo := `
 scrape_configs:
@@ -772,8 +772,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -821,8 +821,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "file/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "file/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
