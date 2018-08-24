@@ -14,7 +14,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -262,7 +261,11 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	router.Get("/static/*filepath", h.serveStaticAsset)
+	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = filepath.Join("/static", route.Param(r.Context(), "filepath"))
+		fs := http.FileServer(ui.Assets)
+		fs.ServeHTTP(w, r)
+	})
 
 	if o.UserAssetsPath != "" {
 		router.Get("/user/*filepath", route.FileServe(o.UserAssetsPath))
@@ -347,28 +350,6 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
 	}
-}
-
-func (h *Handler) serveStaticAsset(w http.ResponseWriter, req *http.Request) {
-	fp := route.Param(req.Context(), "filepath")
-	fp = filepath.Join("web/ui/static", fp)
-
-	info, err := ui.AssetInfo(fp)
-	if err != nil {
-		level.Warn(h.logger).Log("msg", "Could not get file info", "err", err, "file", fp)
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	file, err := ui.Asset(fp)
-	if err != nil {
-		if err != io.EOF {
-			level.Warn(h.logger).Log("msg", "Could not get file", "err", err, "file", fp)
-		}
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	http.ServeContent(w, req, info.Name(), info.ModTime(), bytes.NewReader(file))
 }
 
 // Ready sets Handler to be ready.
@@ -848,15 +829,32 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 }
 
 func (h *Handler) getTemplate(name string) (string, error) {
-	baseTmpl, err := ui.Asset("web/ui/templates/_base.html")
+	var tmpl string
+
+	appendf := func(name string) error {
+		f, err := ui.Assets.Open(filepath.Join("/templates", name))
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		b, err := ioutil.ReadAll(f)
+		if err != nil {
+			return err
+		}
+		tmpl += string(b)
+		return nil
+	}
+
+	err := appendf("_base.html")
 	if err != nil {
 		return "", fmt.Errorf("error reading base template: %s", err)
 	}
-	pageTmpl, err := ui.Asset(filepath.Join("web/ui/templates", name))
+	err = appendf(name)
 	if err != nil {
 		return "", fmt.Errorf("error reading page template %s: %s", name, err)
 	}
-	return string(baseTmpl) + string(pageTmpl), nil
+
+	return tmpl, nil
 }
 
 func (h *Handler) executeTemplate(w http.ResponseWriter, name string, data interface{}) {
