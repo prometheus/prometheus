@@ -161,14 +161,13 @@ func (m *Manager) runProvider(ctx context.Context, poolKey poolKey, updates chan
 			}
 		case <-ticker.C: // Some discoverers send updates too often so we send these to the receiver once every 5 seconds.
 			select {
-			case <-ctx.Done():
-				return
 			case <-updateReceived: // Send only when there is a new update.
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
 					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full")
 				}
+			default:
 			}
 		}
 	}
