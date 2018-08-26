@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
@@ -650,4 +651,87 @@ func TestUpdate(t *testing.T) {
 			testutil.Equals(t, expected, actual)
 		}
 	}
+}
+
+func TestTemplateExpansionTest(t *testing.T) {
+	// This is a dummy storage, just for the QueryFunc.
+	suite, err := promql.NewTest(t, "")
+	testutil.Ok(t, err)
+	queryFunc := EngineQueryFunc(suite.QueryEngine(), suite.Storage())
+
+	tests := []struct {
+		ruleString string
+		shouldPass bool
+	}{
+		{
+			ruleString: "" +
+				"groups:\n" +
+				"- name: example\n" +
+				"  rules:\n" +
+				"  - alert: InstanceDown\n" +
+				"    expr: up == 0\n" +
+				"    for: 5m\n" +
+				"    labels:\n" +
+				"      severity: \"page\"\n" +
+				"    annotations:\n" +
+				"      summary: \"Instance {{ $labels.instance }} down\"\n",
+			shouldPass: true,
+		},
+		{
+			// `$label` instead of `$labels`.
+			ruleString: "" +
+				"groups:\n" +
+				"- name: example\n" +
+				"  rules:\n" +
+				"  - alert: InstanceDown\n" +
+				"    expr: up == 0\n" +
+				"    for: 5m\n" +
+				"    labels:\n" +
+				"      severity: \"page\"\n" +
+				"    annotations:\n" +
+				"      summary: \"Instance {{ $label.instance }} down\"\n",
+			shouldPass: false,
+		},
+		{
+			// `$this_is_wrong`.
+			ruleString: "" +
+				"groups:\n" +
+				"- name: example\n" +
+				"  rules:\n" +
+				"  - alert: InstanceDown\n" +
+				"    expr: up == 0\n" +
+				"    for: 5m\n" +
+				"    labels:\n" +
+				"      severity: \"{{$this_is_wrong}}\"\n" +
+				"    annotations:\n" +
+				"      summary: \"Instance {{ $labels.instance }} down\"\n",
+			shouldPass: false,
+		},
+		{
+			// `$labels.quantile * 100`.
+			ruleString: "" +
+				"groups:\n" +
+				"- name: example\n" +
+				"  rules:\n" +
+				"  - alert: InstanceDown\n" +
+				"    expr: up == 0\n" +
+				"    for: 5m\n" +
+				"    labels:\n" +
+				"      severity: \"page\"\n" +
+				"    annotations:\n" +
+				"      summary: \"Instance {{ $labels.instance }} down\"\n" +
+				"      description: \"{{$labels.quantile * 100}}\"\n",
+			shouldPass: false,
+		},
+	}
+
+	for _, tst := range tests {
+		rgs, errs := rulefmt.Parse([]byte(tst.ruleString))
+		testutil.Assert(t, len(errs) == 0, "Error in parsing the rules.")
+
+		errs = testTemplateExpansion(context.Background(), queryFunc, rgs)
+		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
+		testutil.Assert(t, passed, "`testTemplateExpansion` failed, rule=\n"+tst.ruleString)
+	}
+
 }
