@@ -653,7 +653,7 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
-func TestTemplateExpansionTest(t *testing.T) {
+func TestTemplateParsing(t *testing.T) {
 	// This is a dummy storage, just for the QueryFunc.
 	suite, err := promql.NewTest(t, "")
 	testutil.Ok(t, err)
@@ -729,7 +729,7 @@ func TestTemplateExpansionTest(t *testing.T) {
 		rgs, errs := rulefmt.Parse([]byte(tst.ruleString))
 		testutil.Assert(t, len(errs) == 0, "Error in parsing the rules.")
 
-		errs = testTemplateExpansion(context.Background(), queryFunc, rgs)
+		errs = testTemplateParsing(context.Background(), queryFunc, rgs)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		testutil.Assert(t, passed, "`testTemplateExpansion` failed, rule=\n"+tst.ruleString)
 	}

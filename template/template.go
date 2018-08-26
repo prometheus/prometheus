@@ -315,3 +315,12 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 	}
 	return buffer.String(), nil
 }
+
+// ParseTest parses the templates and returns the error if any.
+func (te Expander) ParseTest() error {
+	_, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
+	if err != nil {
+		return err
+	}
+	return nil
+}

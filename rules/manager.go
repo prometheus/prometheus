@@ -709,7 +709,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 			return nil, errs
 		}
 
-		errs = testTemplateExpansion(m.opts.Context, m.opts.QueryFunc, rgs)
+		errs = testTemplateParsing(m.opts.Context, m.opts.QueryFunc, rgs)
 		if errs != nil {
 			return nil, errs
 		}
@@ -753,12 +753,12 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 	return groups, nil
 }
 
-// testTemplateExpansion checks if the templates used in labels and annotations
-// of the alerting rules expand correctly.
+// testTemplateParsing checks if the templates used in labels and annotations
+// of the alerting rules are parsed correctly.
 // NOTE: It wont detect if a wrong key is used with the variables, like `$labels.wrongKey`.
 //       This will check for wrong variables used, like `$wrongLabelsVariable`.
 //       Also wrong usage of template like {{$labels.quantile * 100}}, etc.
-func testTemplateExpansion(ctx context.Context, queryFunc QueryFunc, rgs *rulefmt.RuleGroups) (errs []error) {
+func testTemplateParsing(ctx context.Context, queryFunc QueryFunc, rgs *rulefmt.RuleGroups) (errs []error) {
 	for _, g := range rgs.Groups {
 		for _, rl := range g.Rules {
 			if rl.Alert == "" {
@@ -766,7 +766,7 @@ func testTemplateExpansion(ctx context.Context, queryFunc QueryFunc, rgs *rulefm
 				continue
 			}
 
-			// Trying to expand templates.
+			// Trying to parse templates.
 			tmplData := struct {
 				Labels map[string]string
 				Value  float64
@@ -774,7 +774,7 @@ func testTemplateExpansion(ctx context.Context, queryFunc QueryFunc, rgs *rulefm
 				Labels: make(map[string]string),
 			}
 			defs := "{{$labels := .Labels}}{{$value := .Value}}"
-			expand := func(text string) error {
+			parseTest := func(text string) error {
 				tmpl := template.NewTemplateExpander(
 					ctx,
 					defs+text,
@@ -784,13 +784,13 @@ func testTemplateExpansion(ctx context.Context, queryFunc QueryFunc, rgs *rulefm
 					template.QueryFunc(queryFunc),
 					nil,
 				)
-				_, err := tmpl.Expand()
+				err := tmpl.ParseTest()
 				return err
 			}
 
 			// Expanding Labels.
 			for _, val := range rl.Labels {
-				err := expand(val)
+				err := parseTest(val)
 				if err != nil {
 					errs = append(errs, err)
 				}
@@ -798,7 +798,7 @@ func testTemplateExpansion(ctx context.Context, queryFunc QueryFunc, rgs *rulefm
 
 			// Expanding Annotations.
 			for _, val := range rl.Annotations {
-				err := expand(val)
+				err := parseTest(val)
 				if err != nil {
 					errs = append(errs, err)
 				}
