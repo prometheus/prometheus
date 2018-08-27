@@ -47,3 +47,19 @@ func TestLink(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeLabelName(t *testing.T) {
+	actual := SanitizeLabelName("fooClientLABEL")
+	expected := "fooClientLABEL"
+
+	if actual != expected {
+		t.Errorf("SanitizeLabelName failed for label (%s), want %s got %s", "fooClientLABEL", expected, actual)
+	}
+
+	actual = SanitizeLabelName("barClient.LABEL$$##")
+	expected = "barClient_LABEL____"
+
+	if actual != expected {
+		t.Errorf("SanitizeLabelName failed for label (%s), want %s got %s", "barClient.LABEL$$##", expected, actual)
+	}
+}
