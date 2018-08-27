@@ -45,7 +45,6 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
-	testCmd := app.Command("test", "Unit testing.")
 
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
@@ -57,12 +56,6 @@ func main() {
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
 		"The rule files to check.",
-	).Required().ExistingFiles()
-
-	ruleTestCmd := testCmd.Command("rules", "Unit tests for rules.")
-	ruleTestFiles := ruleTestCmd.Arg(
-		"test-rule-file",
-		"The unit test file.",
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
@@ -101,6 +94,13 @@ func main() {
 	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
 
+	testCmd := app.Command("test", "Unit testing.")
+	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesFiles := testRulesCmd.Arg(
+		"test-rule-file",
+		"The unit test file.",
+	).Required().ExistingFiles()
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
@@ -135,8 +135,8 @@ func main() {
 	case queryLabelsCmd.FullCommand():
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName))
 
-	case ruleTestCmd.FullCommand():
-		os.Exit(RulesUnitTest(*ruleTestFiles...))
+	case testRulesCmd.FullCommand():
+		os.Exit(RulesUnitTest(*testRulesFiles...))
 	}
 
 }

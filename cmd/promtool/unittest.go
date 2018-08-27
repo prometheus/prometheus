@@ -33,7 +33,7 @@ import (
 )
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
-// An example file as input can be found here: https://gist.github.com/codesome/f4426d28244ee9fac128031ed2f9af70
+// More info about the file format can be found in the docs.
 func RulesUnitTest(files ...string) int {
 	failed := false
 
@@ -152,6 +152,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
+		Logger:     &dummyLogger{},
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(tg.Interval, ruleFiles...)
@@ -161,9 +162,8 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	groups := orderedGroups(groupsMap, groupOrderMap)
 
 	// Pre-processing some data for testing alerts.
-	// All this preparating so that we can test the alerts as and when we evaluate
-	// the rules so that we can avoid storing them in memory, as number of eval might
-	// get very big.
+	// All this preparation is so that we can test alerts as we evaluate the rules.
+	// This avoids storing them in memory, as the number of evals might be high.
 
 	// All the `eval_time` for which we have unit tests.
 	var alertEvalTimes []time.Duration
@@ -190,12 +190,17 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 
 	var errs []error
 	for ts := mint; ts.Before(maxt); ts = ts.Add(evalInterval) {
-		// Collects the alerts asked in unit testing.
+		// Collects the alerts asked for unit testing.
 		for _, g := range groups {
 			g.Eval(suite.Context(), ts)
 		}
 
-		for curr < len(alertEvalTimes) && ts.Sub(mint) <= alertEvalTimes[curr] && alertEvalTimes[curr] < ts.Add(evalInterval).Sub(mint) {
+		for {
+			if !(curr < len(alertEvalTimes) && ts.Sub(mint) <= alertEvalTimes[curr] &&
+				alertEvalTimes[curr] < ts.Add(evalInterval).Sub(mint)) {
+				break
+			}
+
 			// We need to check alerts for this time.
 			// If 'ts <= `eval_time=alertEvalTimes[curr]` < ts+evalInterval'
 			// then we compare alerts with the Eval at `ts`.
@@ -266,12 +271,14 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	}
 
 	// Checking promql expressions.
+Outer:
 	for _, testCase := range tg.PromqlExprTests {
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(testCase.EvalTime),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
 			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
+			continue
 		}
 
 		var gotSamples []parsedSample
@@ -283,14 +290,12 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 		}
 
 		var expSamples []parsedSample
-		parseError := false
 		for _, s := range testCase.ExpSamples {
 			lb, err := promql.ParseMetric(s.Labels)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, err:%s", testCase.Expr,
 					testCase.EvalTime.String(), err.Error()))
-				parseError = true
-				break
+				continue Outer
 			}
 			expSamples = append(expSamples, parsedSample{
 				Labels: lb,
@@ -298,7 +303,7 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 			})
 		}
 
-		if !parseError && !reflect.DeepEqual(expSamples, gotSamples) {
+		if !reflect.DeepEqual(expSamples, gotSamples) {
 			errs = append(errs, fmt.Errorf("    expr:'%s', time:%s, \n        exp:%#v, \n        got:%#v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
@@ -310,19 +315,17 @@ func (tg *testGroup) test(mint, maxt time.Time, evalInterval time.Duration, grou
 	return nil
 }
 
-// seriesLoadingString returns the input series in
-// PromQL notation.
+// seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
 	result := ""
-	result += "load " + shortDur(tg.Interval) + "\n"
+	result += "load " + shortDuration(tg.Interval) + "\n"
 	for _, is := range tg.InputSeries {
 		result += "  " + is.Series + " " + is.Values + "\n"
 	}
 	return result
 }
 
-// https://stackoverflow.com/a/41336257/6219247
-func shortDur(d time.Duration) string {
+func shortDuration(d time.Duration) string {
 	s := d.String()
 	if strings.HasSuffix(s, "m0s") {
 		s = s[:len(s)-2]
@@ -333,38 +336,16 @@ func shortDur(d time.Duration) string {
 	return s
 }
 
-// orderedGroups returns a slice of *rules.Group from `groupsMap` which follows the order
-// mentioned by `groupOrderMap`. The returned slice starts with the groups that need to be in order,
-// followed by rest of the groups in undetermined order.
+// orderedGroups returns a slice of `*rules.Group` from `groupsMap` which follows the order
+// mentioned by `groupOrderMap`. NOTE: This is partial ordering.
 func orderedGroups(groupsMap map[string]*rules.Group, groupOrderMap map[string]int) []*rules.Group {
-	var groups []*rules.Group
+	groups := make([]*rules.Group, 0, len(groupsMap))
 	for _, g := range groupsMap {
-		order, ok := groupOrderMap[g.Name()]
-		if !ok {
-			groups = append(groups, g)
-			continue
-		}
-		pivot := 0
-		for i, gg := range groups {
-			pivot = i
-			if o, ok := groupOrderMap[gg.Name()]; ok {
-				if o > order {
-					break
-				}
-			} else {
-				// Found a group which doesn't need to be ordered.
-				break
-			}
-			if i == len(groups)-1 {
-				pivot = i + 1
-			}
-		}
-		if pivot == len(groups) {
-			groups = append(groups, g)
-		} else {
-			groups = append(groups[:pivot], append([]*rules.Group{g}, groups[pivot:]...)...)
-		}
+		groups = append(groups, g)
 	}
+	sort.Slice(groups, func(i, j int) bool {
+		return groupOrderMap[groups[i].Name()] < groupOrderMap[groups[j].Name()]
+	})
 	return groups
 }
 
@@ -486,4 +467,10 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
+}
+
+type dummyLogger struct{}
+
+func (l *dummyLogger) Log(keyvals ...interface{}) error {
+	return nil
 }
