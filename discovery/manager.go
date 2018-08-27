@@ -190,12 +190,14 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 			for _, s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
 			}
-
-			select {
-			case triggerUpdate <- struct{}{}:
-			default:
+			if m.updateGroup(poolKey, tgs) {
+				select {
+				case triggerUpdate <- struct{}{}: // Signal that there was an update.
+				default:
+				}
 			}
-		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
+
+		case <-ticker.C: // Some discoverers send updates too often so we send these to the receiver once every 5 seconds.
 			select {
 			case <-triggerUpdate:
 				select {
@@ -222,7 +224,7 @@ func (m *Manager) cancelDiscoverers() {
 	m.discoverCancel = nil
 }
 
-func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
+func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) (updated bool) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -231,9 +233,19 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 			if _, ok := m.targets[poolKey]; !ok {
 				m.targets[poolKey] = make(map[string]*targetgroup.Group)
 			}
-			m.targets[poolKey][tg.Source] = tg
+
+			// No need to update when there aren't any actual changes.
+			// The k8s discoverer keeps sending updates for "kube-controller-manager" and
+			// "kube-scheduler" even though these don't actually include any targets.
+			// Even if we find a way to filter these in the k8s client
+			// this check is safer for other misbehaving providers.
+			if !reflect.DeepEqual(m.targets[poolKey][tg.Source], tg) {
+				m.targets[poolKey][tg.Source] = tg
+				updated = true
+			}
 		}
 	}
+	return
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
