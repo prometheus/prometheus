@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -201,10 +202,16 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 
 	tSets := map[string][]*targetgroup.Group{}
 	for pkey, tsets := range m.targets {
-		for _, tg := range tsets {
+		//sort tsets
+		keys := make([]string, 0, len(tsets))
+		for key := range tsets {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
-			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
+			tSets[pkey.setName] = append(tSets[pkey.setName], tsets[k])
 		}
 	}
 	return tSets
