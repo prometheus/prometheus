@@ -664,63 +664,67 @@ func TestTemplateParsing(t *testing.T) {
 		shouldPass bool
 	}{
 		{
-			ruleString: "" +
-				"groups:\n" +
-				"- name: example\n" +
-				"  rules:\n" +
-				"  - alert: InstanceDown\n" +
-				"    expr: up == 0\n" +
-				"    for: 5m\n" +
-				"    labels:\n" +
-				"      severity: \"page\"\n" +
-				"    annotations:\n" +
-				"      summary: \"Instance {{ $labels.instance }} down\"\n",
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
 			shouldPass: true,
 		},
 		{
 			// `$label` instead of `$labels`.
-			ruleString: "" +
-				"groups:\n" +
-				"- name: example\n" +
-				"  rules:\n" +
-				"  - alert: InstanceDown\n" +
-				"    expr: up == 0\n" +
-				"    for: 5m\n" +
-				"    labels:\n" +
-				"      severity: \"page\"\n" +
-				"    annotations:\n" +
-				"      summary: \"Instance {{ $label.instance }} down\"\n",
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $label.instance }} down"
+`,
 			shouldPass: false,
 		},
 		{
 			// `$this_is_wrong`.
-			ruleString: "" +
-				"groups:\n" +
-				"- name: example\n" +
-				"  rules:\n" +
-				"  - alert: InstanceDown\n" +
-				"    expr: up == 0\n" +
-				"    for: 5m\n" +
-				"    labels:\n" +
-				"      severity: \"{{$this_is_wrong}}\"\n" +
-				"    annotations:\n" +
-				"      summary: \"Instance {{ $labels.instance }} down\"\n",
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "{{$this_is_wrong}}"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
 			shouldPass: false,
 		},
 		{
 			// `$labels.quantile * 100`.
-			ruleString: "" +
-				"groups:\n" +
-				"- name: example\n" +
-				"  rules:\n" +
-				"  - alert: InstanceDown\n" +
-				"    expr: up == 0\n" +
-				"    for: 5m\n" +
-				"    labels:\n" +
-				"      severity: \"page\"\n" +
-				"    annotations:\n" +
-				"      summary: \"Instance {{ $labels.instance }} down\"\n" +
-				"      description: \"{{$labels.quantile * 100}}\"\n",
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+      description: "{{$labels.quantile * 100}}"
+`,
 			shouldPass: false,
 		},
 	}

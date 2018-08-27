@@ -784,15 +784,14 @@ func testTemplateParsing(ctx context.Context, queryFunc QueryFunc, rgs *rulefmt.
 					template.QueryFunc(queryFunc),
 					nil,
 				)
-				err := tmpl.ParseTest()
-				return err
+				return tmpl.ParseTest()
 			}
 
 			// Expanding Labels.
 			for _, val := range rl.Labels {
 				err := parseTest(val)
 				if err != nil {
-					errs = append(errs, err)
+					errs = append(errs, fmt.Errorf("alertname=%s, err=%s", rl.Alert, err.Error()))
 				}
 			}
 
@@ -800,7 +799,7 @@ func testTemplateParsing(ctx context.Context, queryFunc QueryFunc, rgs *rulefmt.
 			for _, val := range rl.Annotations {
 				err := parseTest(val)
 				if err != nil {
-					errs = append(errs, err)
+					errs = append(errs, fmt.Errorf("alertname=%s, err=%s", rl.Alert, err.Error()))
 				}
 			}
 		}
