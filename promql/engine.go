@@ -1490,6 +1490,10 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	var q float64
 	if op == itemQuantile {
 		q = param.(float64)
+
+		if q > 1 || q < 0 {
+			ev.errorf("quantile expects a number included between [0,1], got %v", q)
+		}
 	}
 	var valueLabel string
 	if op == itemCountValues {
