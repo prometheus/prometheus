@@ -651,3 +651,54 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 }
+
+func TestNotify(t *testing.T) {
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	var lastNotified []*Alert
+	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
+		lastNotified = alerts
+	}
+	opts := &ManagerOptions{
+		QueryFunc:   EngineQueryFunc(engine, storage),
+		Appendable:  storage,
+		TSDB:        storage,
+		Context:     context.Background(),
+		Logger:      log.NewNopLogger(),
+		NotifyFunc:  notifyFunc,
+		ResendDelay: 2 * time.Second,
+	}
+
+	expr, err := promql.ParseExpr("a > 1")
+	testutil.Ok(t, err)
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
+	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
+
+	app, _ := storage.Appender()
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+
+	err = app.Commit()
+	testutil.Ok(t, err)
+
+	ctx := context.Background()
+
+	// Alert sent right away
+	group.Eval(ctx, time.Unix(1, 0))
+	testutil.Equals(t, 1, len(lastNotified))
+
+	// Alert is not sent 1s later
+	group.Eval(ctx, time.Unix(2, 0))
+	testutil.Equals(t, 0, len(lastNotified))
+
+	// Alert is resent at t=5s
+	group.Eval(ctx, time.Unix(5, 0))
+	testutil.Equals(t, 1, len(lastNotified))
+
+	// Resolution alert sent right away
+	group.Eval(ctx, time.Unix(6, 0))
+	testutil.Equals(t, 1, len(lastNotified))
+}

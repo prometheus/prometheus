@@ -393,7 +393,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
-				g.opts.NotifyFunc(ctx, ar.vector.String(), ar.currentAlerts()...)
+				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.opts.NotifyFunc)
 			}
 			var (
 				numOutOfOrder = 0
@@ -607,6 +607,7 @@ type ManagerOptions struct {
 	Registerer      prometheus.Registerer
 	OutageTolerance time.Duration
 	ForGracePeriod  time.Duration
+	ResendDelay     time.Duration
 }
 
 // NewManager returns an implementation of Manager, ready to be started

@@ -88,6 +88,20 @@ type Alert struct {
 	ActiveAt   time.Time
 	FiredAt    time.Time
 	ResolvedAt time.Time
+	LastSentAt time.Time
+}
+
+func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
+	if a.State == StatePending {
+		return false
+	}
+
+	// if an alert has been resolved since the last send, resend it
+	if a.ResolvedAt.After(a.LastSentAt) {
+		return true
+	}
+
+	return a.LastSentAt.Add(resendDelay).Before(ts)
 }
 
 // An AlertingRule generates alerts from its vector expression.
@@ -424,6 +438,18 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 	for _, a := range r.active {
 		f(a)
 	}
+}
+
+func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, notifyFunc NotifyFunc) {
+	alerts := make([]*Alert, 0)
+	r.ForEachActiveAlert(func(alert *Alert) {
+		if alert.needsSending(ts, resendDelay) {
+			alert.LastSentAt = ts
+			anew := *alert
+			alerts = append(alerts, &anew)
+		}
+	})
+	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
 func (r *AlertingRule) String() string {
