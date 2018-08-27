@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
 
@@ -866,6 +867,24 @@ scrape_configs:
 				origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs)
 		}
 	}
+}
+
+func TestUpdateGroupNoChanges(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, nil)
+
+	tg := []*targetgroup.Group{
+		{
+			Source: "tp1_group1",
+			Targets: []model.LabelSet{
+				{"__instance__": "1"},
+			},
+		},
+	}
+	pk := poolKey{setName: "test", provider: "test"}
+	testutil.Assert(t, discoveryManager.updateGroup(pk, tg) == true, "Expected to return true when adding a new target group.")
+	testutil.Assert(t, discoveryManager.updateGroup(pk, tg) != true, "Expected to return false when we add the same target group without any changes.")
 }
 
 type update struct {
