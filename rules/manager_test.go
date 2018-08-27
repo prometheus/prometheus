@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
@@ -651,91 +650,4 @@ func TestUpdate(t *testing.T) {
 			testutil.Equals(t, expected, actual)
 		}
 	}
-}
-
-func TestTemplateParsing(t *testing.T) {
-	// This is a dummy storage, just for the QueryFunc.
-	suite, err := promql.NewTest(t, "")
-	testutil.Ok(t, err)
-	queryFunc := EngineQueryFunc(suite.QueryEngine(), suite.Storage())
-
-	tests := []struct {
-		ruleString string
-		shouldPass bool
-	}{
-		{
-			ruleString: `
-groups:
-- name: example
-  rules:
-  - alert: InstanceDown
-    expr: up == 0
-    for: 5m
-    labels:
-      severity: "page"
-    annotations:
-      summary: "Instance {{ $labels.instance }} down"
-`,
-			shouldPass: true,
-		},
-		{
-			// `$label` instead of `$labels`.
-			ruleString: `
-groups:
-- name: example
-  rules:
-  - alert: InstanceDown
-    expr: up == 0
-    for: 5m
-    labels:
-      severity: "page"
-    annotations:
-      summary: "Instance {{ $label.instance }} down"
-`,
-			shouldPass: false,
-		},
-		{
-			// `$this_is_wrong`.
-			ruleString: `
-groups:
-- name: example
-  rules:
-  - alert: InstanceDown
-    expr: up == 0
-    for: 5m
-    labels:
-      severity: "{{$this_is_wrong}}"
-    annotations:
-      summary: "Instance {{ $labels.instance }} down"
-`,
-			shouldPass: false,
-		},
-		{
-			// `$labels.quantile * 100`.
-			ruleString: `
-groups:
-- name: example
-  rules:
-  - alert: InstanceDown
-    expr: up == 0
-    for: 5m
-    labels:
-      severity: "page"
-    annotations:
-      summary: "Instance {{ $labels.instance }} down"
-      description: "{{$labels.quantile * 100}}"
-`,
-			shouldPass: false,
-		},
-	}
-
-	for _, tst := range tests {
-		rgs, errs := rulefmt.Parse([]byte(tst.ruleString))
-		testutil.Assert(t, len(errs) == 0, "Error in parsing the rules.")
-
-		errs = testTemplateParsing(context.Background(), queryFunc, rgs)
-		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
-		testutil.Assert(t, passed, "`testTemplateExpansion` failed, rule=\n"+tst.ruleString)
-	}
-
 }

@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/template"
 )
 
 // RuleHealth describes the health state of a target.
@@ -709,11 +708,6 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 			return nil, errs
 		}
 
-		errs = testTemplateParsing(m.opts.Context, m.opts.QueryFunc, rgs)
-		if errs != nil {
-			return nil, errs
-		}
-
 		for _, rg := range rgs.Groups {
 			itv := interval
 			if rg.Interval != 0 {
@@ -751,61 +745,6 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 	}
 
 	return groups, nil
-}
-
-// testTemplateParsing checks if the templates used in labels and annotations
-// of the alerting rules are parsed correctly.
-// NOTE: It wont detect if a wrong key is used with the variables, like `$labels.wrongKey`.
-//       This will check for wrong variables used, like `$wrongLabelsVariable`.
-//       Also wrong usage of template like {{$labels.quantile * 100}}, etc.
-func testTemplateParsing(ctx context.Context, queryFunc QueryFunc, rgs *rulefmt.RuleGroups) (errs []error) {
-	for _, g := range rgs.Groups {
-		for _, rl := range g.Rules {
-			if rl.Alert == "" {
-				// Not an alerting rule.
-				continue
-			}
-
-			// Trying to parse templates.
-			tmplData := struct {
-				Labels map[string]string
-				Value  float64
-			}{
-				Labels: make(map[string]string),
-			}
-			defs := "{{$labels := .Labels}}{{$value := .Value}}"
-			parseTest := func(text string) error {
-				tmpl := template.NewTemplateExpander(
-					ctx,
-					defs+text,
-					"__alert_"+rl.Alert,
-					tmplData,
-					model.Time(timestamp.FromTime(time.Now())),
-					template.QueryFunc(queryFunc),
-					nil,
-				)
-				return tmpl.ParseTest()
-			}
-
-			// Expanding Labels.
-			for _, val := range rl.Labels {
-				err := parseTest(val)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("alertname=%s, err=%s", rl.Alert, err.Error()))
-				}
-			}
-
-			// Expanding Annotations.
-			for _, val := range rl.Annotations {
-				err := parseTest(val)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("alertname=%s, err=%s", rl.Alert, err.Error()))
-				}
-			}
-		}
-	}
-
-	return errs
 }
 
 // Group names need not be unique across filenames.

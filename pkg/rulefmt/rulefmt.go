@@ -14,11 +14,16 @@
 package rulefmt
 
 import (
+	"context"
+	"fmt"
 	"io/ioutil"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/template"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -134,6 +139,58 @@ func (r *Rule) Validate() (errs []error) {
 	for k := range r.Annotations {
 		if !model.LabelName(k).IsValid() {
 			errs = append(errs, errors.Errorf("invalid annotation name: %s", k))
+		}
+	}
+
+	errs = append(errs, testTemplateParsing(r)...)
+	return errs
+}
+
+// testTemplateParsing checks if the templates used in labels and annotations
+// of the alerting rules are parsed correctly.
+// NOTE: It wont detect if a wrong key is used with the variables, like `$labels.wrongKey`.
+//       This will check for wrong variables used, like `$wrongLabelsVariable`.
+//       Also wrong usage of template like {{$labels.quantile * 100}}, etc.
+func testTemplateParsing(rl *Rule) (errs []error) {
+	if rl.Alert == "" {
+		// Not an alerting rule.
+		return errs
+	}
+
+	// Trying to parse templates.
+	tmplData := struct {
+		Labels map[string]string
+		Value  float64
+	}{
+		Labels: make(map[string]string),
+	}
+	defs := "{{$labels := .Labels}}{{$value := .Value}}"
+	parseTest := func(text string) error {
+		tmpl := template.NewTemplateExpander(
+			context.TODO(),
+			defs+text,
+			"__alert_"+rl.Alert,
+			tmplData,
+			model.Time(timestamp.FromTime(time.Now())),
+			nil,
+			nil,
+		)
+		return tmpl.ParseTest()
+	}
+
+	// Expanding Labels.
+	for _, val := range rl.Labels {
+		err := parseTest(val)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("msg=%s", err.Error()))
+		}
+	}
+
+	// Expanding Annotations.
+	for _, val := range rl.Annotations {
+		err := parseTest(val)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("msg=%s", err.Error()))
 		}
 	}
 
