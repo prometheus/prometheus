@@ -89,6 +89,7 @@ func main() {
 		notifierTimeout     model.Duration
 		forGracePeriod      model.Duration
 		outageTolerance     model.Duration
+		resendDelay         model.Duration
 		web                 web.Options
 		tsdb                tsdb.Options
 		lookbackDelta       model.Duration
@@ -172,6 +173,9 @@ func main() {
 
 	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
 		Default("10m").SetValue(&cfg.forGracePeriod)
+
+	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager. Must be lower than resolve_timeout in Alertmanager").
+		Default("1m").SetValue(&cfg.resendDelay)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
@@ -272,6 +276,7 @@ func main() {
 			Logger:          log.With(logger, "component", "rule manager"),
 			OutageTolerance: time.Duration(cfg.outageTolerance),
 			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
+			ResendDelay:     time.Duration(cfg.resendDelay),
 		})
 	)
 
@@ -682,16 +687,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 }
 
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-// It filters any non-firing alerts from the input.
 func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
-			// Only send actually firing alerts.
-			if alert.State == rules.StatePending {
-				continue
-			}
 			a := &notifier.Alert{
 				StartsAt:     alert.FiredAt,
 				Labels:       alert.Labels,
