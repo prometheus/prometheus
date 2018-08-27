@@ -91,3 +91,26 @@ func (tg *Group) UnmarshalJSON(b []byte) error {
 	tg.Labels = g.Labels
 	return nil
 }
+
+// Equal returns true if all fields have exactly the same values and lenghts.
+// To keep a good performance the `Targets []model.LabelSet` is not sorted
+// so if these arrive in a different order the comparing won't work.
+func (tg *Group) Equal(newTg *Group) bool {
+	if tg.Source != newTg.Source {
+		return false
+	}
+	if !tg.Labels.Equal(newTg.Labels) {
+		return false
+	}
+
+	if len(tg.Targets) != len(newTg.Targets) {
+		return false
+	}
+
+	for i, t := range tg.Targets {
+		if !t.Equal(newTg.Targets[i]) {
+			return false
+		}
+	}
+	return true
+}

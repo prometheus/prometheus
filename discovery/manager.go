@@ -16,7 +16,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -239,7 +238,7 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) (update
 			// "kube-scheduler" even though these don't actually include any targets.
 			// Even if we find a way to filter these in the k8s client
 			// this check is safer for other misbehaving providers.
-			if !reflect.DeepEqual(m.targets[poolKey][tg.Source], tg) {
+			if _, exist := m.targets[poolKey][tg.Source]; !exist || !m.targets[poolKey][tg.Source].Equal(tg) {
 				m.targets[poolKey][tg.Source] = tg
 				updated = true
 			}
