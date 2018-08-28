@@ -867,7 +867,7 @@ func (api *API) deleteSeries(r *http.Request) *apiFuncResult {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+		return &apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return &apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil, nil}
@@ -920,7 +920,7 @@ func (api *API) snapshot(r *http.Request) *apiFuncResult {
 	}
 	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
 	if err != nil {
-		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+		return &apiFuncResult{nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil, nil}
 	}
 
 	db := api.db()
