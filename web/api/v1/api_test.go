@@ -503,36 +503,36 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			query: url.Values{
 				"match[]": []string{`test_metric2`},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
-			}},
+			},
 		},
 		{
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
-			}},
+			},
 		},
 		{
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o$"}`, `test_metric1{foo=~".+o"}`},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
-			}},
+			},
 		},
 		{
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric1{foo=~".+o"}`, `none`},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric1", "foo", "boo"),
-			}},
+			},
 		},
 		// Start and end before series starts.
 		{
@@ -542,7 +542,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"start":   []string{"-2"},
 				"end":     []string{"-1"},
 			},
-			response: &seriesData{Data: []labels.Labels{}},
+			response: []labels.Labels{},
 		},
 		// Start and end after series ends.
 		{
@@ -552,7 +552,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"start":   []string{"100000"},
 				"end":     []string{"100001"},
 			},
-			response: &seriesData{Data: []labels.Labels{}},
+			response: []labels.Labels{},
 		},
 		// Start before series starts, end after series ends.
 		{
@@ -562,9 +562,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"start":   []string{"-1"},
 				"end":     []string{"100000"},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
-			}},
+			},
 		},
 		// Start and end within series.
 		{
@@ -574,9 +574,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"start":   []string{"1"},
 				"end":     []string{"100"},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
-			}},
+			},
 		},
 		// Start within series, end after.
 		{
@@ -586,9 +586,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"start":   []string{"1"},
 				"end":     []string{"100000"},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
-			}},
+			},
 		},
 		// Start before series, end within series.
 		{
@@ -598,9 +598,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 				"start":   []string{"-1"},
 				"end":     []string{"1"},
 			},
-			response: &seriesData{Data: []labels.Labels{
+			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
-			}},
+			},
 		},
 		// Missing match[] query params in series requests.
 		{
@@ -768,7 +768,9 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, apiErr, _ := test.endpoint(req.WithContext(ctx))
+			result := test.endpoint(req.WithContext(ctx))
+			resp := result.data
+			apiErr := result.err
 			if apiErr != nil {
 				if test.errType == errorNone {
 					t.Fatalf("Unexpected error: %s", apiErr)
