@@ -174,7 +174,7 @@ func main() {
 	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
 		Default("10m").SetValue(&cfg.forGracePeriod)
 
-	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager. Must be lower than resolve_timeout in Alertmanager").
+	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
@@ -700,6 +700,8 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 			}
 			if !alert.ResolvedAt.IsZero() {
 				a.EndsAt = alert.ResolvedAt
+			} else {
+				a.EndsAt = alert.ValidUntil
 			}
 			res = append(res, a)
 		}
