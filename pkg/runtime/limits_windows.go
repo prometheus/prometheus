@@ -11,18 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build 386 amd64 arm64 mips64 mips64le mips mipsle
-// +build linux
+// +build windows
 
-package main
+package runtime
 
-func charsToString(ca []int8) string {
-	s := make([]byte, 0, len(ca))
-	for _, c := range ca {
-		if byte(c) == 0 {
-			break
-		}
-		s = append(s, byte(c))
-	}
-	return string(s)
+// FdLimits not supported on Windows
+func FdLimits() string {
+	return "N/A"
+}
+
+// VmLimits not supported on Windows
+func VmLimits() string {
+	return "N/A"
 }

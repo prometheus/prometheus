@@ -90,6 +90,19 @@ eval instant at 50m stdvar by (instance)(http_requests)
   {instance="0"} 50000
   {instance="1"} 50000
 
+# Float precision test for standard deviation and variance
+clear
+load 5m
+  http_requests{job="api-server", instance="0", group="production"} 0+1.33x10
+  http_requests{job="api-server", instance="1", group="production"} 0+1.33x10
+  http_requests{job="api-server", instance="0", group="canary"} 0+1.33x10
+
+eval instant at 50m stddev(http_requests)
+  {} 0.0
+
+eval instant at 50m stdvar(http_requests)
+  {} 0.0
+
 
 
 # Regression test for missing separator byte in labelsToGroupingKey.

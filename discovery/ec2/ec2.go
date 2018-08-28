@@ -42,6 +42,7 @@ const (
 	ec2LabelInstanceID      = ec2Label + "instance_id"
 	ec2LabelInstanceState   = ec2Label + "instance_state"
 	ec2LabelInstanceType    = ec2Label + "instance_type"
+	ec2LabelOwnerID         = ec2Label + "owner_id"
 	ec2LabelPublicDNS       = ec2Label + "public_dns_name"
 	ec2LabelPublicIP        = ec2Label + "public_ip"
 	ec2LabelPrivateIP       = ec2Label + "private_ip"
@@ -240,6 +241,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					continue
 				}
 				labels := model.LabelSet{
+					ec2LabelOwnerID:    model.LabelValue(*r.OwnerId),
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)

@@ -482,7 +482,9 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) error {
 		}
 	} else {
 		s.buf.Reset(resp.Body)
-		s.gzipr.Reset(s.buf)
+		if err = s.gzipr.Reset(s.buf); err != nil {
+			return err
+		}
 	}
 
 	_, err = io.Copy(w, s.gzipr)
@@ -813,7 +815,9 @@ mainLoop:
 			scrapeErr = appErr
 		}
 
-		sl.report(start, time.Since(start), total, added, scrapeErr)
+		if err := sl.report(start, time.Since(start), total, added, scrapeErr); err != nil {
+			level.Warn(sl.l).Log("msg", "appending scrape report failed", "err", err)
+		}
 		last = start
 
 		select {

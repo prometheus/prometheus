@@ -326,8 +326,14 @@ func TestForStateAddSamples(t *testing.T) {
 	}
 }
 
-func TestForStateRestore(t *testing.T) {
+// sortAlerts sorts `[]*Alert` w.r.t. the Labels.
+func sortAlerts(items []*Alert) {
+	sort.Slice(items, func(i, j int) bool {
+		return labels.Compare(items[i].Labels, items[j].Labels) <= 0
+	})
+}
 
+func TestForStateRestore(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
@@ -364,7 +370,6 @@ func TestForStateRestore(t *testing.T) {
 	)
 
 	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
-
 	groups := make(map[string]*Group)
 	groups["default;"] = group
 
@@ -385,7 +390,6 @@ func TestForStateRestore(t *testing.T) {
 	})
 
 	// Prometheus goes down here. We create new rules and groups.
-
 	type testInput struct {
 		restoreDuration time.Duration
 		alerts          []*Alert
@@ -399,9 +403,9 @@ func TestForStateRestore(t *testing.T) {
 	tests := []testInput{
 		{
 			// Normal restore (alerts were not firing).
-			restoreDuration: 10 * time.Minute,
+			restoreDuration: 15 * time.Minute,
 			alerts:          rule.ActiveAlerts(),
-			downDuration:    5 * time.Minute,
+			downDuration:    10 * time.Minute,
 		},
 		{
 			// Testing Outage Tolerance.
@@ -429,11 +433,6 @@ func TestForStateRestore(t *testing.T) {
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
 
-		m := NewManager(opts)
-		m.mtx.Lock()
-		m.groups = newGroups
-		m.mtx.Unlock()
-
 		restoreTime := baseTime.Add(tst.restoreDuration)
 		// First eval before restoration.
 		newGroup.Eval(suite.Context(), restoreTime)
@@ -449,7 +448,6 @@ func TestForStateRestore(t *testing.T) {
 		})
 
 		// Checking if we have restored it correctly.
-
 		if tst.noRestore {
 			testutil.Equals(t, tst.num, len(got))
 			for _, e := range got {
@@ -463,6 +461,8 @@ func TestForStateRestore(t *testing.T) {
 		} else {
 			exp := tst.alerts
 			testutil.Equals(t, len(exp), len(got))
+			sortAlerts(exp)
+			sortAlerts(got)
 			for i, e := range exp {
 				testutil.Equals(t, e.Labels, got[i].Labels)
 
@@ -621,11 +621,18 @@ func TestUpdate(t *testing.T) {
 	expected := map[string]labels.Labels{
 		"test": labels.FromStrings("name", "value"),
 	}
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
 	ruleManager := NewManager(&ManagerOptions{
-		Context: context.Background(),
-		Logger:  log.NewNopLogger(),
+		Appendable: storage,
+		TSDB:       storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	ruleManager.Run()
+	defer ruleManager.Stop()
 
 	err := ruleManager.Update(10*time.Second, files)
 	testutil.Ok(t, err)
@@ -643,4 +650,56 @@ func TestUpdate(t *testing.T) {
 			testutil.Equals(t, expected, actual)
 		}
 	}
+}
+
+func TestNotify(t *testing.T) {
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	engine := promql.NewEngine(nil, nil, 10, 10*time.Second)
+	var lastNotified []*Alert
+	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
+		lastNotified = alerts
+	}
+	opts := &ManagerOptions{
+		QueryFunc:   EngineQueryFunc(engine, storage),
+		Appendable:  storage,
+		TSDB:        storage,
+		Context:     context.Background(),
+		Logger:      log.NewNopLogger(),
+		NotifyFunc:  notifyFunc,
+		ResendDelay: 2 * time.Second,
+	}
+
+	expr, err := promql.ParseExpr("a > 1")
+	testutil.Ok(t, err)
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
+	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
+
+	app, _ := storage.Appender()
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
+	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+
+	err = app.Commit()
+	testutil.Ok(t, err)
+
+	ctx := context.Background()
+
+	// Alert sent right away
+	group.Eval(ctx, time.Unix(1, 0))
+	testutil.Equals(t, 1, len(lastNotified))
+	testutil.Assert(t, !lastNotified[0].ValidUntil.IsZero(), "ValidUntil should not be zero")
+
+	// Alert is not sent 1s later
+	group.Eval(ctx, time.Unix(2, 0))
+	testutil.Equals(t, 0, len(lastNotified))
+
+	// Alert is resent at t=5s
+	group.Eval(ctx, time.Unix(5, 0))
+	testutil.Equals(t, 1, len(lastNotified))
+
+	// Resolution alert sent right away
+	group.Eval(ctx, time.Unix(6, 0))
+	testutil.Equals(t, 1, len(lastNotified))
 }

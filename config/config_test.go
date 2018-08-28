@@ -542,7 +542,7 @@ var expectedConf = &Config{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
 			{
 				Scheme:  "https",
-				Timeout: 10 * time.Second,
+				Timeout: model.Duration(10 * time.Second),
 				ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 					StaticConfigs: []*targetgroup.Group{
 						{

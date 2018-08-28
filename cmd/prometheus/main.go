@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
 	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
@@ -88,6 +89,7 @@ func main() {
 		notifierTimeout     model.Duration
 		forGracePeriod      model.Duration
 		outageTolerance     model.Duration
+		resendDelay         model.Duration
 		web                 web.Options
 		tsdb                tsdb.Options
 		lookbackDelta       model.Duration
@@ -172,6 +174,9 @@ func main() {
 	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
 		Default("10m").SetValue(&cfg.forGracePeriod)
 
+	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
+		Default("1m").SetValue(&cfg.resendDelay)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
@@ -229,9 +234,9 @@ func main() {
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
-	level.Info(logger).Log("host_details", Uname())
-	level.Info(logger).Log("fd_limits", FdLimits())
-	level.Info(logger).Log("vm_limits", VmLimits())
+	level.Info(logger).Log("host_details", prom_runtime.Uname())
+	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
+	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
@@ -271,6 +276,7 @@ func main() {
 			Logger:          log.With(logger, "component", "rule manager"),
 			OutageTolerance: time.Duration(cfg.outageTolerance),
 			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
+			ResendDelay:     time.Duration(cfg.resendDelay),
 		})
 	)
 
@@ -681,16 +687,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 }
 
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-// It filters any non-firing alerts from the input.
 func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
-			// Only send actually firing alerts.
-			if alert.State == rules.StatePending {
-				continue
-			}
 			a := &notifier.Alert{
 				StartsAt:     alert.FiredAt,
 				Labels:       alert.Labels,
@@ -699,6 +700,8 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 			}
 			if !alert.ResolvedAt.IsZero() {
 				a.EndsAt = alert.ResolvedAt
+			} else {
+				a.EndsAt = alert.ValidUntil
 			}
 			res = append(res, a)
 		}

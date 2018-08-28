@@ -374,6 +374,14 @@ eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} -32000
 
+# Tests for avg_over_time
+clear
+load 10s
+  metric 1 2 3 4 5
+
+eval instant at 1m avg_over_time(metric[1m])
+  {} 3
+
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
@@ -384,6 +392,17 @@ eval instant at 1m stdvar_over_time(metric[1m])
 
 eval instant at 1m stddev_over_time(metric[1m])
   {} 3.249615
+
+# Tests for stddev_over_time and stdvar_over_time #4927.
+clear
+load 10s
+  metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
+
+eval instant at 1m stdvar_over_time(metric[1m])
+  {} 0
+
+eval instant at 1m stddev_over_time(metric[1m])
+  {} 0
 
 # Tests for quantile_over_time
 clear

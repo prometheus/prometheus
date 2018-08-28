@@ -147,7 +147,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 
 	cfg := config.DefaultQueueConfig
 	cfg.MaxShards = 1
-	cfg.BatchSendDeadline = 100 * time.Millisecond
+	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	m := NewQueueManager(nil, cfg, nil, nil, c, defaultFlushDeadline)
 	m.Start()
 	defer m.Stop()

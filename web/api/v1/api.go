@@ -690,20 +690,24 @@ type RuleGroup struct {
 type rule interface{}
 
 type alertingRule struct {
-	Name        string        `json:"name"`
-	Query       string        `json:"query"`
-	Duration    float64       `json:"duration"`
-	Labels      labels.Labels `json:"labels"`
-	Annotations labels.Labels `json:"annotations"`
-	Alerts      []*Alert      `json:"alerts"`
+	Name        string           `json:"name"`
+	Query       string           `json:"query"`
+	Duration    float64          `json:"duration"`
+	Labels      labels.Labels    `json:"labels"`
+	Annotations labels.Labels    `json:"annotations"`
+	Alerts      []*Alert         `json:"alerts"`
+	Health      rules.RuleHealth `json:"health"`
+	LastError   string           `json:"lastError,omitempty"`
 	// Type of an alertingRule is always "alerting".
 	Type string `json:"type"`
 }
 
 type recordingRule struct {
-	Name   string        `json:"name"`
-	Query  string        `json:"query"`
-	Labels labels.Labels `json:"labels,omitempty"`
+	Name      string           `json:"name"`
+	Query     string           `json:"query"`
+	Labels    labels.Labels    `json:"labels,omitempty"`
+	Health    rules.RuleHealth `json:"health"`
+	LastError string           `json:"lastError,omitempty"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
 }
@@ -722,6 +726,11 @@ func (api *API) rules(r *http.Request) *apiFuncResult {
 		for _, r := range grp.Rules() {
 			var enrichedRule rule
 
+			lastError := ""
+			if r.LastError() != nil {
+				lastError = r.LastError().Error()
+			}
+
 			switch rule := r.(type) {
 			case *rules.AlertingRule:
 				enrichedRule = alertingRule{
@@ -731,14 +740,18 @@ func (api *API) rules(r *http.Request) *apiFuncResult {
 					Labels:      rule.Labels(),
 					Annotations: rule.Annotations(),
 					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:      rule.Health(),
+					LastError:   lastError,
 					Type:        "alerting",
 				}
 			case *rules.RecordingRule:
 				enrichedRule = recordingRule{
-					Name:   rule.Name(),
-					Query:  rule.Query().String(),
-					Labels: rule.Labels(),
-					Type:   "recording",
+					Name:      rule.Name(),
+					Query:     rule.Query().String(),
+					Labels:    rule.Labels(),
+					Health:    rule.Health(),
+					LastError: lastError,
+					Type:      "recording",
 				}
 			default:
 				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
@@ -853,7 +866,9 @@ func (api *API) deleteSeries(r *http.Request) *apiFuncResult {
 		return &apiFuncResult{nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil, nil}
 	}
 
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return &apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil, nil}
 	}
@@ -903,7 +918,10 @@ func (api *API) snapshot(r *http.Request) *apiFuncResult {
 	if !api.enableAdmin {
 		return &apiFuncResult{nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil, nil}
 	}
-	skipHead, _ := strconv.ParseBool(r.FormValue("skip_head"))
+	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
+	if err != nil {
+		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+	}
 
 	db := api.db()
 	if db == nil {

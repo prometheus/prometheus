@@ -371,11 +371,12 @@ func aggrOverTime(vals []Value, enh *EvalNodeHelper, aggrFn func([]Point) float6
 // === avg_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcAvgOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum float64
+		var mean, count float64
 		for _, v := range values {
-			sum += v.V
+			count++
+			mean += (v.V - mean) / count
 		}
-		return sum / float64(len(values))
+		return mean
 	})
 }
 
@@ -444,28 +445,28 @@ func funcQuantileOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) V
 // === stddev_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcStddevOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum, squaredSum, count float64
+		var aux, count, mean float64
 		for _, v := range values {
-			sum += v.V
-			squaredSum += v.V * v.V
 			count++
+			delta := v.V - mean
+			mean += delta / count
+			aux += delta * (v.V - mean)
 		}
-		avg := sum / count
-		return math.Sqrt(squaredSum/count - avg*avg)
+		return math.Sqrt(aux / count)
 	})
 }
 
 // === stdvar_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcStdvarOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum, squaredSum, count float64
+		var aux, count, mean float64
 		for _, v := range values {
-			sum += v.V
-			squaredSum += v.V * v.V
 			count++
+			delta := v.V - mean
+			mean += delta / count
+			aux += delta * (v.V - mean)
 		}
-		avg := sum / count
-		return squaredSum/count - avg*avg
+		return aux / count
 	})
 }
 

@@ -393,7 +393,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
-				g.opts.NotifyFunc(ctx, ar.vector.String(), ar.currentAlerts()...)
+				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
 			}
 			var (
 				numOutOfOrder = 0
@@ -485,7 +485,10 @@ func (g *Group) RestoreForState(ts time.Time) {
 			smpl := alertRule.forStateSample(a, time.Now(), 0)
 			var matchers []*labels.Matcher
 			for _, l := range smpl.Metric {
-				mt, _ := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+				mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+				if err != nil {
+					panic(err)
+				}
 				matchers = append(matchers, mt)
 			}
 
@@ -604,6 +607,7 @@ type ManagerOptions struct {
 	Registerer      prometheus.Registerer
 	OutageTolerance time.Duration
 	ForGracePeriod  time.Duration
+	ResendDelay     time.Duration
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -694,8 +698,6 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 }
 
 // loadGroups reads groups from a list of files.
-// As there's currently no group syntax a single group named "default" containing
-// all rules will be returned.
 func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 

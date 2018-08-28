@@ -88,6 +88,21 @@ type Alert struct {
 	ActiveAt   time.Time
 	FiredAt    time.Time
 	ResolvedAt time.Time
+	LastSentAt time.Time
+	ValidUntil time.Time
+}
+
+func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
+	if a.State == StatePending {
+		return false
+	}
+
+	// if an alert has been resolved since the last send, resend it
+	if a.ResolvedAt.After(a.LastSentAt) {
+		return true
+	}
+
+	return a.LastSentAt.Add(resendDelay).Before(ts)
 }
 
 // An AlertingRule generates alerts from its vector expression.
@@ -318,7 +333,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
 		}
 
-		h := smpl.Metric.Hash()
+		lbs := lb.Labels()
+		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 
 		// Check whether we already have alerting state for the identifying label set.
@@ -330,7 +346,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		r.active[h] = &Alert{
-			Labels:      lb.Labels(),
+			Labels:      lbs,
 			Annotations: annotations,
 			ActiveAt:    ts,
 			State:       StatePending,
@@ -364,6 +380,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	// We have already acquired the lock above hence using SetHealth and
+	// SetLastError will deadlock.
 	r.health = HealthGood
 	r.lastError = err
 	return vec, nil
@@ -421,6 +439,24 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 	for _, a := range r.active {
 		f(a)
 	}
+}
+
+func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {
+	alerts := make([]*Alert, 0)
+	r.ForEachActiveAlert(func(alert *Alert) {
+		if alert.needsSending(ts, resendDelay) {
+			alert.LastSentAt = ts
+			// Allow for a couple Eval or Alertmanager send failures
+			delta := resendDelay
+			if interval > resendDelay {
+				delta = interval
+			}
+			alert.ValidUntil = ts.Add(3 * delta)
+			anew := *alert
+			alerts = append(alerts, &anew)
+		}
+	})
+	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
 func (r *AlertingRule) String() string {
