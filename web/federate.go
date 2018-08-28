@@ -76,9 +76,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	vec := make(promql.Vector, 0, 8000)
 
+	params := &storage.SelectParams{
+		Start: mint,
+		End:   maxt,
+	}
+
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, err := q.Select(nil, mset...)
+		s, err := q.Select(params, mset...)
 		if err != nil {
 			federationErrors.Inc()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
