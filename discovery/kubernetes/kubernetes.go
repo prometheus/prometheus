@@ -383,7 +383,6 @@ func send(ctx context.Context, l log.Logger, role Role, ch chan<- []*targetgroup
 	if tg == nil {
 		return
 	}
-	level.Debug(l).Log("msg", "kubernetes discovery update", "role", string(role), "tg", fmt.Sprintf("%#v", tg))
 	select {
 	case <-ctx.Done():
 	case ch <- []*targetgroup.Group{tg}:
