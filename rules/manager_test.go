@@ -689,6 +689,7 @@ func TestNotify(t *testing.T) {
 	// Alert sent right away
 	group.Eval(ctx, time.Unix(1, 0))
 	testutil.Equals(t, 1, len(lastNotified))
+	testutil.Assert(t, !lastNotified[0].ValidUntil.IsZero(), "ValidUntil should not be zero")
 
 	// Alert is not sent 1s later
 	group.Eval(ctx, time.Unix(2, 0))
