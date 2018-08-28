@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/mitchellh/hashstructure"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -59,7 +60,7 @@ func mapToArray(m map[string]*customSD) []customSD {
 func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
 	tempGroups := make(map[string]*customSD)
 	for k, sdTargetGroups := range allTargetGroups {
-		for i, group := range sdTargetGroups {
+		for _, group := range sdTargetGroups {
 			newTargets := make([]string, 0)
 			newLabels := make(map[string]string)
 
@@ -72,12 +73,22 @@ func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup
 			for name, value := range group.Labels {
 				newLabels[string(name)] = string(value)
 			}
-			// Make a unique key, including the current index, in case the sd_type (map key) and group.Source is not unique.
-			key := fmt.Sprintf("%s:%s:%d", k, group.Source, i)
-			tempGroups[key] = &customSD{
+
+			sdGroup := customSD{
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
+			// Make a unique key, including the current index, in case the sd_type (map key) and group.Source is not unique.
+			groupHash, err := hashstructure.Hash(sdGroup, nil)
+			if err != nil {
+				// Treat this error as fatal for this iteration of updating target groups,
+				// it's better to leave the previous (potentially stale) groups than update
+				// and end up with incomplete target groups.
+				level.Error(log.With(a.logger, "component", "sd-adapter")).Log("err", err)
+				return
+			}
+			key := fmt.Sprintf("%s:%s:%d", k, group.Source, groupHash)
+			tempGroups[key] = &sdGroup
 		}
 	}
 	if !reflect.DeepEqual(a.groups, tempGroups) {
