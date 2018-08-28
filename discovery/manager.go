@@ -86,6 +86,7 @@ type Manager struct {
 
 // Run starts the background processing
 func (m *Manager) Run() error {
+	go m.runUpdater(m.ctx)
 	for range m.ctx.Done() {
 		m.cancelDiscoverers()
 		return m.ctx.Err()
