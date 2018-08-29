@@ -412,16 +412,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		grpcSrv = grpc.NewServer()
 	)
 	av2 := api_v2.New(
-		time.Now,
 		h.options.TSDB,
-		h.options.QueryEngine,
-		h.options.Storage.Querier,
-		func() []*scrape.Target {
-			return h.options.ScrapeManager.TargetsActive()
-		},
-		func() []*url.URL {
-			return h.options.Notifier.Alertmanagers()
-		},
 		h.options.EnableAdminAPI,
 	)
 	av2.RegisterGRPC(grpcSrv)
