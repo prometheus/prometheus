@@ -15,8 +15,11 @@
     {{$alertStateToRowClass := .AlertStateToRowClass}}
     {{range .AlertingRules}}
       {{$activeAlerts := .ActiveAlerts}}
+      {{$unknownState := .IsAlertUnknown}}
       <tr class="{{index $alertStateToRowClass .State}} alert_header">
-        <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b> ({{len $activeAlerts}} active)</td>
+        <td><i class="icon-chevron-down"></i> <b>{{.Name}}</b>
+          {{if $unknownState}} (UNKNOWN) {{else}} ({{len $activeAlerts}} active) {{end}}
+        </td>
       </tr>
       <tr class="alert_details">
         <td>

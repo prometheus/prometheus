@@ -413,6 +413,15 @@ func (r *AlertingRule) ActiveAlerts() []*Alert {
 	return res
 }
 
+// IsAlertUnknown returns whether an alert's RuleHealth is still unkown.
+func (r *AlertingRule) IsAlertUnknown() RuleHealth {
+	var health RuleHealth
+	if r.Health() == HealthUnknown {
+		health = HealthUnknown
+	}
+	return health
+}
+
 // currentAlerts returns all instances of alerts for this rule. This may include
 // inactive alerts that were previously firing.
 func (r *AlertingRule) currentAlerts() []*Alert {
