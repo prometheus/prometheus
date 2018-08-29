@@ -148,9 +148,6 @@ func (r *Rule) Validate() (errs []error) {
 
 // testTemplateParsing checks if the templates used in labels and annotations
 // of the alerting rules are parsed correctly.
-// NOTE: It wont detect if a wrong key is used with the variables, like `$labels.wrongKey`.
-//       This will check for wrong variables used, like `$wrongLabelsVariable`.
-//       Also wrong usage of template like {{$labels.quantile * 100}}, etc.
 func testTemplateParsing(rl *Rule) (errs []error) {
 	if rl.Alert == "" {
 		// Not an alerting rule.
@@ -158,12 +155,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 	}
 
 	// Trying to parse templates.
-	tmplData := struct {
-		Labels map[string]string
-		Value  float64
-	}{
-		Labels: make(map[string]string),
-	}
+	tmplData := template.AlertTemplateData(make(map[string]string), 0)
 	defs := "{{$labels := .Labels}}{{$value := .Value}}"
 	parseTest := func(text string) error {
 		tmpl := template.NewTemplateExpander(
@@ -178,7 +170,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 		return tmpl.ParseTest()
 	}
 
-	// Expanding Labels.
+	// Parsing Labels.
 	for _, val := range rl.Labels {
 		err := parseTest(val)
 		if err != nil {
@@ -186,7 +178,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 		}
 	}
 
-	// Expanding Annotations.
+	// Parsing Annotations.
 	for _, val := range rl.Annotations {
 		err := parseTest(val)
 		if err != nil {

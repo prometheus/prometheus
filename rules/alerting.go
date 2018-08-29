@@ -277,13 +277,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			l[lbl.Name] = lbl.Value
 		}
 
-		tmplData := struct {
-			Labels map[string]string
-			Value  float64
-		}{
-			Labels: l,
-			Value:  smpl.V,
-		}
+		tmplData := template.AlertTemplateData(l, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"

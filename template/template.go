@@ -243,6 +243,17 @@ func NewTemplateExpander(
 	}
 }
 
+// AlertTemplateData returns the interface to be used in expanding the template.
+func AlertTemplateData(labels map[string]string, value float64) interface{} {
+	return struct {
+		Labels map[string]string
+		Value  float64
+	}{
+		Labels: labels,
+		Value:  value,
+	}
+}
+
 // Funcs adds the functions in fm to the Expander's function map.
 // Existing functions will be overwritten in case of conflict.
 func (te Expander) Funcs(fm text_template.FuncMap) {
