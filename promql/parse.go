@@ -231,8 +231,17 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 			sign = -1.0
 		}
 		offset := sign * p.number(p.expect(itemNumber, ctx).val)
-		p.expect(itemTimes, ctx)
 
+		// For standalone '+number' and '-number' without 'x'.
+		if t := p.peek().typ; t != itemTimes {
+			// Here the above 'offset' becomes the value.
+			vals = append(vals, sequenceValue{
+				value: offset,
+			})
+			continue
+		}
+
+		p.expect(itemTimes, ctx)
 		times, err := strconv.ParseUint(p.expect(itemNumber, ctx).val, 10, 64)
 		if err != nil {
 			p.errorf("invalid repetition in %s: %s", ctx, err)
