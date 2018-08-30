@@ -413,13 +413,9 @@ func (r *AlertingRule) ActiveAlerts() []*Alert {
 	return res
 }
 
-// IsHealthUnknown returns whether an alerts health is still unkown.
+// IsHealthUnknown returns true if an alert's health is unknown.
 func (r *AlertingRule) IsHealthUnknown() bool {
-	res := false
-	if r.Health() == HealthUnknown {
-		res = true
-	}
-	return res
+	return r.Health() == HealthUnknown
 }
 
 // currentAlerts returns all instances of alerts for this rule. This may include
