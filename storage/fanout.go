@@ -16,7 +16,6 @@ package storage
 import (
 	"container/heap"
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/go-kit/kit/log"
