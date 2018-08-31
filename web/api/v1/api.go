@@ -181,10 +181,8 @@ func (api *API) Register(r *route.Router) {
 			result := f(r)
 			if result.err != nil {
 				api.respondError(w, result.err, result.data)
-			} else if result.warnings != nil {
-				api.respondWarnings(w, result.warnings, result.data)
 			} else if result.data != nil {
-				api.respond(w, result.data)
+				api.respond(w, result.data, result.warnings)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -260,10 +258,7 @@ func (api *API) query(r *http.Request) *apiFuncResult {
 		defer cancel()
 	}
 
-	newQueryable := api.Queryable
-	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
-		newQueryable = fanout.Duplicate()
-	}
+	newQueryable := api.Queryable.Duplicate()
 	qry, err := api.QueryEngine.NewInstantQuery(newQueryable, r.FormValue("query"), ts)
 	if err != nil {
 		return &apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -288,10 +283,7 @@ func (api *API) query(r *http.Request) *apiFuncResult {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
-	var warnings []error
-	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
-		warnings = fanout.GetRemoteErrors()
-	}
+	var warnings = newQueryable.GetRemoteErrors()
 
 	return &apiFuncResult{
 		&queryData{
@@ -367,10 +359,8 @@ func (api *API) queryRange(r *http.Request) *apiFuncResult {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
-	var warnings []error
-	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
-		warnings = fanout.GetRemoteErrors()
-	}
+	var warnings = newQueryable.GetRemoteErrors()
+
 	return &apiFuncResult{
 		&queryData{
 			ResultType: res.Value.Type(),
@@ -444,10 +434,7 @@ func (api *API) series(r *http.Request) *apiFuncResult {
 		matcherSets = append(matcherSets, matchers)
 	}
 
-	newQueryable := api.Queryable
-	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
-		newQueryable = fanout.Duplicate()
-	}
+	newQueryable := api.Queryable.Duplicate()
 	q, err := newQueryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return &apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
@@ -472,10 +459,7 @@ func (api *API) series(r *http.Request) *apiFuncResult {
 		return &apiFuncResult{nil, &apiError{errorExec, set.Err()}, nil, nil}
 	}
 
-	var warnings []error
-	if fanout, ok := newQueryable.(storage.FanoutStorage); ok {
-		warnings = fanout.GetRemoteErrors()
-	}
+	var warnings = newQueryable.GetRemoteErrors()
 
 	return &apiFuncResult{metrics, nil, warnings, nil}
 }
@@ -1016,11 +1000,17 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 	return result
 }
 
-func (api *API) respond(w http.ResponseWriter, data interface{}) {
+func (api *API) respond(w http.ResponseWriter, data interface{}, warnings []error) {
+	var warningStrings []string
+	for _, warning := range warnings {
+		warningStrings = append(warningStrings, warning.Error())
+	}
+
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
-		Status: statusSuccess,
-		Data:   data,
+		Status:   statusSuccess,
+		Data:     data,
+		Warnings: warningStrings,
 	})
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
@@ -1070,26 +1060,6 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
-}
-
-func (api *API) respondWarnings(w http.ResponseWriter, warnings []error, data interface{}) {
-	var warningStrings []string
-	for _, warning := range warnings {
-		warningStrings = append(warningStrings, warning.Error())
-	}
-
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
-		Status:   statusSuccess,
-		Data:     data,
-		Warnings: warningStrings,
-	})
-	if err != nil {
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(b)
 }
 
 func parseTime(s string) (time.Time, error) {

@@ -57,6 +57,12 @@ func (noopSeriesSet) Err() error {
 	return nil
 }
 
+func (noopSeriesSet) GetQuerier() Querier {
+	return nil
+}
+
+func (noopSeriesSet) SetQuerier(q Querier) {}
+
 type noopSeriesIterator struct{}
 
 // NoopSeriesIt is a SeriesIterator that does nothing.

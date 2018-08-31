@@ -41,12 +41,19 @@ type Storage interface {
 
 	// Close closes the storage and all its underlying resources.
 	Close() error
+
+	AddRemoteError(e error)
+	AddFailedRemoteQuerier(q Querier)
+	GetFailedRemoteQueriers() []Querier
 }
 
 // A Queryable handles queries against a storage.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
+
+	GetRemoteErrors() []error
+	Duplicate() Storage
 }
 
 // Querier provides reading access to time series data.
@@ -84,6 +91,14 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 	return f(ctx, mint, maxt)
 }
 
+func (f QueryableFunc) GetRemoteErrors() []error {
+	return nil
+}
+
+func (f QueryableFunc) Duplicate() Storage {
+	return nil
+}
+
 // Appender provides batched appends against a storage.
 type Appender interface {
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
@@ -101,6 +116,9 @@ type SeriesSet interface {
 	Next() bool
 	At() Series
 	Err() error
+
+	GetQuerier() Querier
+	SetQuerier(q Querier)
 }
 
 // Series represents a single time series.

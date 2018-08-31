@@ -94,6 +94,18 @@ func (s *ReadyStorage) Close() error {
 	return nil
 }
 
+func (s *ReadyStorage) GetRemoteErrors() []error {
+	return nil
+}
+
+func (s *ReadyStorage) AddRemoteError(e error)                     {}
+func (s *ReadyStorage) AddFailedRemoteQuerier(q storage.Querier)   {}
+func (s *ReadyStorage) GetFailedRemoteQueriers() []storage.Querier { return nil }
+func (s *ReadyStorage) Duplicate() storage.Storage {
+	dup := ReadyStorage(*s)
+	return &dup
+}
+
 // Adapter return an adapter as storage.Storage.
 func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 	return &adapter{db: db, startTimeMargin: startTimeMargin}
@@ -184,6 +196,15 @@ func (a adapter) Close() error {
 	return a.db.Close()
 }
 
+func (a adapter) GetRemoteErrors() []error {
+	return nil
+}
+
+func (a adapter) AddRemoteError(e error)                     {}
+func (a adapter) AddFailedRemoteQuerier(q storage.Querier)   {}
+func (a adapter) GetFailedRemoteQueriers() []storage.Querier { return nil }
+func (a adapter) Duplicate() storage.Storage                 { return a }
+
 type querier struct {
 	q tsdb.Querier
 }
@@ -208,9 +229,11 @@ type seriesSet struct {
 	set tsdb.SeriesSet
 }
 
-func (s seriesSet) Next() bool         { return s.set.Next() }
-func (s seriesSet) Err() error         { return s.set.Err() }
-func (s seriesSet) At() storage.Series { return series{s: s.set.At()} }
+func (s seriesSet) Next() bool                   { return s.set.Next() }
+func (s seriesSet) Err() error                   { return s.set.Err() }
+func (s seriesSet) At() storage.Series           { return series{s: s.set.At()} }
+func (s seriesSet) GetQuerier() storage.Querier  { return nil }
+func (s seriesSet) SetQuerier(q storage.Querier) {}
 
 type series struct {
 	s tsdb.Series

@@ -242,6 +242,12 @@ func (m *mockSeriesSet) Err() error {
 	return nil
 }
 
+func (m *mockSeriesSet) GetQuerier() Querier {
+	return nil
+}
+
+func (m *mockSeriesSet) SetQuerier(q Querier) {}
+
 var result []sample
 
 func makeSeriesSet(numSeries, numSamples int) SeriesSet {

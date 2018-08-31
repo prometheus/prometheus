@@ -41,6 +41,9 @@ type Storage struct {
 	queryables             []storage.Queryable
 	localStartTimeCallback startTimeCallback
 	flushDeadline          time.Duration
+
+	remoteErrors         []error
+	failedRemoteQueriers []storage.Querier
 }
 
 // NewStorage returns a remote.Storage.
@@ -140,7 +143,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeQuerier(nil, queriers, nil), nil
+	return storage.NewMergeQuerier(nil, queriers, s), nil
 }
 
 // Close the background processing of the storage queues.
@@ -153,6 +156,27 @@ func (s *Storage) Close() error {
 	}
 
 	return nil
+}
+
+func (s *Storage) GetRemoteErrors() []error {
+	return s.remoteErrors
+}
+
+func (s *Storage) AddRemoteError(e error) {
+	s.remoteErrors = append(s.remoteErrors, e)
+}
+
+func (s *Storage) AddFailedRemoteQuerier(q storage.Querier) {
+	s.failedRemoteQueriers = append(s.failedRemoteQueriers, q)
+}
+
+func (s *Storage) GetFailedRemoteQueriers() []storage.Querier {
+	return s.failedRemoteQueriers
+}
+
+func (s *Storage) Duplicate() storage.Storage {
+	dup := Storage(*s)
+	return &dup
 }
 
 func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {

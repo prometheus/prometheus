@@ -206,6 +206,12 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
+func (e errSeriesSet) GetQuerier() storage.Querier {
+	return nil
+}
+
+func (e errSeriesSet) SetQuerier(q storage.Querier) {}
+
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
 	cur    int
@@ -224,6 +230,12 @@ func (c *concreteSeriesSet) At() storage.Series {
 func (c *concreteSeriesSet) Err() error {
 	return nil
 }
+
+func (c *concreteSeriesSet) GetQuerier() storage.Querier {
+	return nil
+}
+
+func (c *concreteSeriesSet) SetQuerier(q storage.Querier) {}
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {

@@ -159,9 +159,11 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool         { return false }
-func (errSeriesSet) At() storage.Series { return nil }
-func (e errSeriesSet) Err() error       { return e.err }
+func (errSeriesSet) Next() bool                   { return false }
+func (errSeriesSet) At() storage.Series           { return nil }
+func (e errSeriesSet) Err() error                 { return e.err }
+func (errSeriesSet) GetQuerier() storage.Querier  { return nil }
+func (errSeriesSet) SetQuerier(q storage.Querier) {}
 
 func TestQueryError(t *testing.T) {
 	engine := NewEngine(nil, nil, 10, 10*time.Second)
