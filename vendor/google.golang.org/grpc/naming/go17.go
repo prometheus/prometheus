@@ -1,6 +1,8 @@
+// +build go1.6, !go1.8
+
 /*
  *
- * Copyright 2015 gRPC authors.
+ * Copyright 2017 gRPC authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +18,17 @@
  *
  */
 
-/*
-Package grpc implements an RPC system called gRPC.
+package naming
 
-See grpc.io for more information about gRPC.
-*/
-package grpc // import "google.golang.org/grpc"
+import (
+	"net"
+
+	"golang.org/x/net/context"
+)
+
+var (
+	lookupHost = func(ctx context.Context, host string) ([]string, error) { return net.LookupHost(host) }
+	lookupSRV  = func(ctx context.Context, service, proto, name string) (string, []*net.SRV, error) {
+		return net.LookupSRV(service, proto, name)
+	}
+)

@@ -1,33 +1,18 @@
 /*
  *
- * Copyright 2014, Google Inc.
- * All rights reserved.
+ * Copyright 2014 gRPC authors.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 
@@ -51,7 +36,6 @@ import (
 	"golang.org/x/net/http2/hpack"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
 )
 
@@ -127,7 +111,9 @@ type decodeState struct {
 	timeout    time.Duration
 	method     string
 	// key-value metadata map from the peer.
-	mdata map[string][]string
+	mdata      map[string][]string
+	statsTags  []byte
+	statsTrace []byte
 }
 
 // isReservedHeader checks whether hdr belongs to HTTP2 headers
@@ -251,6 +237,13 @@ func (d *decodeState) decodeResponseHeader(frame *http2.MetaHeadersFrame) error 
 
 }
 
+func (d *decodeState) addMetadata(k, v string) {
+	if d.mdata == nil {
+		d.mdata = make(map[string][]string)
+	}
+	d.mdata[k] = append(d.mdata[k], v)
+}
+
 func (d *decodeState) processHeaderField(f hpack.HeaderField) error {
 	switch f.Name {
 	case "content-type":
@@ -291,18 +284,30 @@ func (d *decodeState) processHeaderField(f hpack.HeaderField) error {
 			return streamErrorf(codes.Internal, "transport: malformed http-status: %v", err)
 		}
 		d.httpStatus = &code
-	default:
-		if !isReservedHeader(f.Name) || isWhitelistedPseudoHeader(f.Name) {
-			if d.mdata == nil {
-				d.mdata = make(map[string][]string)
-			}
-			v, err := decodeMetadataHeader(f.Name, f.Value)
-			if err != nil {
-				grpclog.Printf("Failed to decode (%q, %q): %v", f.Name, f.Value, err)
-				return nil
-			}
-			d.mdata[f.Name] = append(d.mdata[f.Name], v)
+	case "grpc-tags-bin":
+		v, err := decodeBinHeader(f.Value)
+		if err != nil {
+			return streamErrorf(codes.Internal, "transport: malformed grpc-tags-bin: %v", err)
 		}
+		d.statsTags = v
+		d.addMetadata(f.Name, string(v))
+	case "grpc-trace-bin":
+		v, err := decodeBinHeader(f.Value)
+		if err != nil {
+			return streamErrorf(codes.Internal, "transport: malformed grpc-trace-bin: %v", err)
+		}
+		d.statsTrace = v
+		d.addMetadata(f.Name, string(v))
+	default:
+		if isReservedHeader(f.Name) && !isWhitelistedPseudoHeader(f.Name) {
+			break
+		}
+		v, err := decodeMetadataHeader(f.Name, f.Value)
+		if err != nil {
+			errorf("Failed to decode metadata header (%q, %q): %v", f.Name, f.Value, err)
+			return nil
+		}
+		d.addMetadata(f.Name, string(v))
 	}
 	return nil
 }

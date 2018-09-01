@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/grpc/grpc-go.svg)](https://travis-ci.org/grpc/grpc-go) [![GoDoc](https://godoc.org/google.golang.org/grpc?status.svg)](https://godoc.org/google.golang.org/grpc)
 
-The Go implementation of [gRPC](http://www.grpc.io/): A high performance, open source, general RPC framework that puts mobile and HTTP/2 first. For more information see the [gRPC Quick Start](http://www.grpc.io/docs/) guide.
+The Go implementation of [gRPC](https://grpc.io/): A high performance, open source, general RPC framework that puts mobile and HTTP/2 first. For more information see the [gRPC Quick Start: Go](https://grpc.io/docs/quickstart/go.html) guide.
 
 Installation
 ------------
@@ -10,7 +10,7 @@ Installation
 To install this package, you need to install Go and setup your Go workspace on your computer. The simplest way to install the library is to run:
 
 ```
-$ go get google.golang.org/grpc
+$ go get -u google.golang.org/grpc
 ```
 
 Prerequisites

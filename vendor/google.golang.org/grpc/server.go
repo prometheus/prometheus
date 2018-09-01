@@ -1,33 +1,18 @@
 /*
  *
- * Copyright 2014, Google Inc.
- * All rights reserved.
+ * Copyright 2014 gRPC authors.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 
@@ -38,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"reflect"
@@ -59,6 +45,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/tap"
 	"google.golang.org/grpc/transport"
+)
+
+const (
+	defaultServerMaxReceiveMessageSize = 1024 * 1024 * 4
+	defaultServerMaxSendMessageSize    = math.MaxInt32
 )
 
 type methodHandler func(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor UnaryServerInterceptor) (interface{}, error)
@@ -96,6 +87,7 @@ type Server struct {
 	mu     sync.Mutex // guards following
 	lis    map[net.Listener]bool
 	conns  map[io.Closer]bool
+	serve  bool
 	drain  bool
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -111,12 +103,13 @@ type options struct {
 	codec                 Codec
 	cp                    Compressor
 	dc                    Decompressor
-	maxMsgSize            int
 	unaryInt              UnaryServerInterceptor
 	streamInt             StreamServerInterceptor
 	inTapHandle           tap.ServerInHandle
 	statsHandler          stats.Handler
 	maxConcurrentStreams  uint32
+	maxReceiveMessageSize int
+	maxSendMessageSize    int
 	useHandlerImpl        bool // use http.Handler-based server
 	unknownStreamDesc     *StreamDesc
 	keepaliveParams       keepalive.ServerParameters
@@ -125,7 +118,10 @@ type options struct {
 	initialConnWindowSize int32
 }
 
-var defaultMaxMsgSize = 1024 * 1024 * 4 // use 4MB as the default message size limit
+var defaultServerOptions = options{
+	maxReceiveMessageSize: defaultServerMaxReceiveMessageSize,
+	maxSendMessageSize:    defaultServerMaxSendMessageSize,
+}
 
 // A ServerOption sets options such as credentials, codec and keepalive parameters, etc.
 type ServerOption func(*options)
@@ -181,11 +177,25 @@ func RPCDecompressor(dc Decompressor) ServerOption {
 	}
 }
 
-// MaxMsgSize returns a ServerOption to set the max message size in bytes for inbound mesages.
-// If this is not set, gRPC uses the default 4MB.
+// MaxMsgSize returns a ServerOption to set the max message size in bytes the server can receive.
+// If this is not set, gRPC uses the default limit. Deprecated: use MaxRecvMsgSize instead.
 func MaxMsgSize(m int) ServerOption {
+	return MaxRecvMsgSize(m)
+}
+
+// MaxRecvMsgSize returns a ServerOption to set the max message size in bytes the server can receive.
+// If this is not set, gRPC uses the default 4MB.
+func MaxRecvMsgSize(m int) ServerOption {
 	return func(o *options) {
-		o.maxMsgSize = m
+		o.maxReceiveMessageSize = m
+	}
+}
+
+// MaxSendMsgSize returns a ServerOption to set the max message size in bytes the server can send.
+// If this is not set, gRPC uses the default 4MB.
+func MaxSendMsgSize(m int) ServerOption {
+	return func(o *options) {
+		o.maxSendMessageSize = m
 	}
 }
 
@@ -266,8 +276,7 @@ func UnknownServiceHandler(streamHandler StreamHandler) ServerOption {
 // NewServer creates a gRPC server which has no service registered and has not
 // started to accept requests yet.
 func NewServer(opt ...ServerOption) *Server {
-	var opts options
-	opts.maxMsgSize = defaultMaxMsgSize
+	opts := defaultServerOptions
 	for _, o := range opt {
 		o(&opts)
 	}
@@ -322,6 +331,9 @@ func (s *Server) register(sd *ServiceDesc, ss interface{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.printf("RegisterService(%q)", sd.ServiceName)
+	if s.serve {
+		grpclog.Fatalf("grpc: Server.RegisterService after Server.Serve for %q", sd.ServiceName)
+	}
 	if _, ok := s.m[sd.ServiceName]; ok {
 		grpclog.Fatalf("grpc: Server.RegisterService found duplicate service registration for %q", sd.ServiceName)
 	}
@@ -410,6 +422,7 @@ func (s *Server) useTransportAuthenticator(rawConn net.Conn) (net.Conn, credenti
 func (s *Server) Serve(lis net.Listener) error {
 	s.mu.Lock()
 	s.printf("serving")
+	s.serve = true
 	if s.lis == nil {
 		s.mu.Unlock()
 		lis.Close()
@@ -445,10 +458,12 @@ func (s *Server) Serve(lis net.Listener) error {
 				s.mu.Lock()
 				s.printf("Accept error: %v; retrying in %v", err, tempDelay)
 				s.mu.Unlock()
+				timer := time.NewTimer(tempDelay)
 				select {
-				case <-time.After(tempDelay):
+				case <-timer.C:
 				case <-s.ctx.Done():
 				}
+				timer.Stop()
 				continue
 			}
 			s.mu.Lock()
@@ -471,7 +486,7 @@ func (s *Server) handleRawConn(rawConn net.Conn) {
 		s.mu.Lock()
 		s.errorf("ServerHandshake(%q) failed: %v", rawConn.RemoteAddr(), err)
 		s.mu.Unlock()
-		grpclog.Printf("grpc: Server.Serve failed to complete security handshake from %q: %v", rawConn.RemoteAddr(), err)
+		grpclog.Warningf("grpc: Server.Serve failed to complete security handshake from %q: %v", rawConn.RemoteAddr(), err)
 		// If serverHandShake returns ErrConnDispatched, keep rawConn open.
 		if err != credentials.ErrConnDispatched {
 			rawConn.Close()
@@ -516,7 +531,7 @@ func (s *Server) serveHTTP2Transport(c net.Conn, authInfo credentials.AuthInfo) 
 		s.errorf("NewServerTransport(%q) failed: %v", c.RemoteAddr(), err)
 		s.mu.Unlock()
 		c.Close()
-		grpclog.Println("grpc: Server.Serve failed to create ServerTransport: ", err)
+		grpclog.Warningln("grpc: Server.Serve failed to create ServerTransport: ", err)
 		return
 	}
 	if !s.addConn(st) {
@@ -574,6 +589,30 @@ func (s *Server) serveUsingHandler(conn net.Conn) {
 	})
 }
 
+// ServeHTTP implements the Go standard library's http.Handler
+// interface by responding to the gRPC request r, by looking up
+// the requested gRPC method in the gRPC server s.
+//
+// The provided HTTP request must have arrived on an HTTP/2
+// connection. When using the Go standard library's server,
+// practically this means that the Request must also have arrived
+// over TLS.
+//
+// To share one port (such as 443 for https) between gRPC and an
+// existing http.Handler, use a root http.Handler such as:
+//
+//   if r.ProtoMajor == 2 && strings.HasPrefix(
+//   	r.Header.Get("Content-Type"), "application/grpc") {
+//   	grpcServer.ServeHTTP(w, r)
+//   } else {
+//   	yourMux.ServeHTTP(w, r)
+//   }
+//
+// Note that ServeHTTP uses Go's HTTP/2 server implementation which is totally
+// separate from grpc-go's HTTP/2 server. Performance and features may vary
+// between the two paths. ServeHTTP does not support some gRPC features
+// available through grpc-go's HTTP/2 server, and it is currently EXPERIMENTAL
+// and subject to change.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	st, err := transport.NewServerHandlerTransport(w, r)
 	if err != nil {
@@ -638,18 +677,15 @@ func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Str
 	if s.opts.statsHandler != nil {
 		outPayload = &stats.OutPayload{}
 	}
-	p, err := encode(s.opts.codec, msg, cp, cbuf, outPayload)
+	hdr, data, err := encode(s.opts.codec, msg, cp, cbuf, outPayload)
 	if err != nil {
-		// This typically indicates a fatal issue (e.g., memory
-		// corruption or hardware faults) the application program
-		// cannot handle.
-		//
-		// TODO(zhaoq): There exist other options also such as only closing the
-		// faulty stream locally and remotely (Other streams can keep going). Find
-		// the optimal option.
-		grpclog.Fatalf("grpc: Server failed to encode response %v", err)
+		grpclog.Errorln("grpc: server failed to encode response: ", err)
+		return err
 	}
-	err = t.Write(stream, p, opts)
+	if len(data) > s.opts.maxSendMessageSize {
+		return status.Errorf(codes.ResourceExhausted, "grpc: trying to send message larger than max (%d vs. %d)", len(data), s.opts.maxSendMessageSize)
+	}
+	err = t.Write(stream, hdr, data, opts)
 	if err == nil && outPayload != nil {
 		outPayload.SentTime = time.Now()
 		s.opts.statsHandler.HandleRPC(stream.Context(), outPayload)
@@ -690,7 +726,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 		stream.SetSendCompress(s.opts.cp.Type())
 	}
 	p := &parser{r: stream}
-	pf, req, err := p.recvMsg(s.opts.maxMsgSize)
+	pf, req, err := p.recvMsg(s.opts.maxReceiveMessageSize)
 	if err == io.EOF {
 		// The entire stream is done (for unary RPC only).
 		return err
@@ -701,7 +737,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			if e := t.WriteStatus(stream, st); e != nil {
-				grpclog.Printf("grpc: Server.processUnaryRPC failed to write status %v", e)
+				grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status %v", e)
 			}
 		} else {
 			switch st := err.(type) {
@@ -709,7 +745,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 				// Nothing to do here.
 			case transport.StreamError:
 				if e := t.WriteStatus(stream, status.New(st.Code, st.Desc)); e != nil {
-					grpclog.Printf("grpc: Server.processUnaryRPC failed to write status %v", e)
+					grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status %v", e)
 				}
 			default:
 				panic(fmt.Sprintf("grpc: Unexpected error (%T) from recvMsg: %v", st, st))
@@ -721,12 +757,12 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 	if err := checkRecvPayload(pf, stream.RecvCompress(), s.opts.dc); err != nil {
 		if st, ok := status.FromError(err); ok {
 			if e := t.WriteStatus(stream, st); e != nil {
-				grpclog.Printf("grpc: Server.processUnaryRPC failed to write status %v", e)
+				grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status %v", e)
 			}
 			return err
 		}
 		if e := t.WriteStatus(stream, status.New(codes.Internal, err.Error())); e != nil {
-			grpclog.Printf("grpc: Server.processUnaryRPC failed to write status %v", e)
+			grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status %v", e)
 		}
 
 		// TODO checkRecvPayload always return RPC error. Add a return here if necessary.
@@ -748,10 +784,10 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 				return Errorf(codes.Internal, err.Error())
 			}
 		}
-		if len(req) > s.opts.maxMsgSize {
+		if len(req) > s.opts.maxReceiveMessageSize {
 			// TODO: Revisit the error code. Currently keep it consistent with
 			// java implementation.
-			return status.Errorf(codes.Internal, "grpc: server received a message of %d bytes exceeding %d limit", len(req), s.opts.maxMsgSize)
+			return status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max (%d vs. %d)", len(req), s.opts.maxReceiveMessageSize)
 		}
 		if err := s.opts.codec.Unmarshal(req, v); err != nil {
 			return status.Errorf(codes.Internal, "grpc: error unmarshalling request: %v", err)
@@ -780,7 +816,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 			trInfo.tr.SetError()
 		}
 		if e := t.WriteStatus(stream, appStatus); e != nil {
-			grpclog.Printf("grpc: Server.processUnaryRPC failed to write status: %v", e)
+			grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status: %v", e)
 		}
 		return appErr
 	}
@@ -798,7 +834,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 		}
 		if s, ok := status.FromError(err); ok {
 			if e := t.WriteStatus(stream, s); e != nil {
-				grpclog.Printf("grpc: Server.processUnaryRPC failed to write status: %v", e)
+				grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status: %v", e)
 			}
 		} else {
 			switch st := err.(type) {
@@ -806,7 +842,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 				// Nothing to do here.
 			case transport.StreamError:
 				if e := t.WriteStatus(stream, status.New(st.Code, st.Desc)); e != nil {
-					grpclog.Printf("grpc: Server.processUnaryRPC failed to write status %v", e)
+					grpclog.Warningf("grpc: Server.processUnaryRPC failed to write status %v", e)
 				}
 			default:
 				panic(fmt.Sprintf("grpc: Unexpected error (%T) from sendResponse: %v", st, st))
@@ -844,15 +880,16 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 		stream.SetSendCompress(s.opts.cp.Type())
 	}
 	ss := &serverStream{
-		t:            t,
-		s:            stream,
-		p:            &parser{r: stream},
-		codec:        s.opts.codec,
-		cp:           s.opts.cp,
-		dc:           s.opts.dc,
-		maxMsgSize:   s.opts.maxMsgSize,
-		trInfo:       trInfo,
-		statsHandler: sh,
+		t:     t,
+		s:     stream,
+		p:     &parser{r: stream},
+		codec: s.opts.codec,
+		cp:    s.opts.cp,
+		dc:    s.opts.dc,
+		maxReceiveMessageSize: s.opts.maxReceiveMessageSize,
+		maxSendMessageSize:    s.opts.maxSendMessageSize,
+		trInfo:                trInfo,
+		statsHandler:          sh,
 	}
 	if ss.cp != nil {
 		ss.cbuf = new(bytes.Buffer)
@@ -927,12 +964,12 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 			trInfo.tr.SetError()
 		}
 		errDesc := fmt.Sprintf("malformed method name: %q", stream.Method())
-		if err := t.WriteStatus(stream, status.New(codes.InvalidArgument, errDesc)); err != nil {
+		if err := t.WriteStatus(stream, status.New(codes.ResourceExhausted, errDesc)); err != nil {
 			if trInfo != nil {
 				trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
 				trInfo.tr.SetError()
 			}
-			grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
+			grpclog.Warningf("grpc: Server.handleStream failed to write status: %v", err)
 		}
 		if trInfo != nil {
 			trInfo.tr.Finish()
@@ -957,7 +994,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 				trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
 				trInfo.tr.SetError()
 			}
-			grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
+			grpclog.Warningf("grpc: Server.handleStream failed to write status: %v", err)
 		}
 		if trInfo != nil {
 			trInfo.tr.Finish()
@@ -987,7 +1024,7 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 			trInfo.tr.LazyLog(&fmtStringer{"%v", []interface{}{err}}, true)
 			trInfo.tr.SetError()
 		}
-		grpclog.Printf("grpc: Server.handleStream failed to write status: %v", err)
+		grpclog.Warningf("grpc: Server.handleStream failed to write status: %v", err)
 	}
 	if trInfo != nil {
 		trInfo.tr.Finish()
