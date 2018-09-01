@@ -43,8 +43,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_model/go"
@@ -65,6 +63,10 @@ import (
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	api_v2 "github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+
+	"go.opencensus.io/plugin/ochttp"
+	"go.opencensus.io/plugin/ochttp/propagation/b3"
+	"go.opencensus.io/zpages"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -424,9 +426,6 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	hhFunc := h.testReadyHandler(hh)
 
-	operationName := nethttp.OperationNameFunc(func(r *http.Request) string {
-		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
-	})
 	mux := http.NewServeMux()
 	mux.Handle("/", h.router)
 
@@ -447,10 +446,20 @@ func (h *Handler) Run(ctx context.Context) error {
 		}),
 	))
 
+	zpages.Handle(mux, "/trace")
+
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
+	traceHandler := &ochttp.Handler{
+		Handler:     mux,
+		Propagation: &b3.HTTPFormat{},
+		FormatSpanName: func(r *http.Request) string {
+			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		},
+	}
+
 	httpSrv := &http.Server{
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
+		Handler:     traceHandler,
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}

@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -35,6 +34,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/prometheus/prometheus/util/stats"
+
+	"go.opencensus.io/trace"
 )
 
 const (
@@ -135,8 +136,8 @@ func (q *query) Close() {
 
 // Exec implements the Query interface.
 func (q *query) Exec(ctx context.Context) *Result {
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		span.SetTag(queryTag, q.stmt.String())
+	if span := trace.FromContext(ctx); span != nil {
+		span.AddAttributes(trace.StringAttribute(queryTag, q.stmt.String()))
 	}
 
 	res, err := q.ng.exec(ctx, q)

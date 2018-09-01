@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/common/model"
@@ -37,6 +36,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+
+	"go.opencensus.io/trace"
 )
 
 // RuleHealth describes the health state of a target.
@@ -371,10 +372,11 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
-			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
-			sp.SetTag("name", rule.Name())
+			ctx, sp := trace.StartSpan(ctx, "rule")
+			sp.AddAttributes(trace.StringAttribute("name", rule.Name()))
+
 			defer func(t time.Time) {
-				sp.Finish()
+				sp.End()
 				evalDuration.Observe(time.Since(t).Seconds())
 				rule.SetEvaluationDuration(time.Since(t))
 			}(time.Now())
