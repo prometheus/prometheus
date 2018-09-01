@@ -1,0 +1,24 @@
+version: "{build}"
+
+platform: x64
+
+clone_folder: c:\gopath\src\go.opencensus.io
+
+environment:
+  GOPATH: c:\gopath
+  GOVERSION: 1.8
+
+install:
+  - set PATH=%GOPATH%\bin;c:\go\bin;%PATH%
+  - go version
+  - go env
+
+build: false
+deploy: false
+
+test_script:
+  - cd %APPVEYOR_BUILD_FOLDER%
+  - gofmt -w .
+  - go get -v -t .\...
+  - go test -race -v .\...
+  - go vet .\...
