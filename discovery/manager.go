@@ -177,7 +177,7 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 			return
 		case tgs, ok := <-updates:
 			if !ok {
-				level.Debug(m.logger).Log("msg", "discoverer chanel closed, sending the last update", "provider", p.name)
+				level.Debug(m.logger).Log("msg", "discoverer channel closed, sending the last update", "provider", p.name)
 				select {
 				case m.syncCh <- m.allGroups(): // Waiting until the receiver can accept the last update.
 					level.Debug(m.logger).Log("msg", "discoverer exited", "provider", p.name)
@@ -195,13 +195,13 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 			case triggerUpdate <- struct{}{}:
 			default:
 			}
-		case <-ticker.C: // Some discoverers send updates too often so we throtle these with the ticker.
+		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
 			case <-triggerUpdate:
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					level.Debug(m.logger).Log("msg", "discovery receiver's chanel was full so will retry the next cycle", "provider", p.name)
+					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle", "provider", p.name)
 					select {
 					case triggerUpdate <- struct{}{}:
 					default:
