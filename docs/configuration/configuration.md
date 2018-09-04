@@ -272,6 +272,8 @@ See below for the configuration options for Azure discovery:
 
 ```yaml
 # The information to access the Azure API.
+# The Azure environment.
+[ environment: <string> | default = AzurePublicCloud ]
 # The subscription ID.
 subscription_id: <string>
 # The tenant ID.

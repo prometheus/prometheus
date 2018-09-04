@@ -65,11 +65,13 @@ var (
 	DefaultSDConfig = SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(5 * time.Minute),
+		Environment:     azure.PublicCloud.Name,
 	}
 )
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
+	Environment     string             `yaml:"environment,omitempty"`
 	Port            int                `yaml:"port"`
 	SubscriptionID  string             `yaml:"subscription_id"`
 	TenantID        string             `yaml:"tenant_id,omitempty"`
@@ -159,27 +161,37 @@ type azureClient struct {
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
 func createAzureClient(cfg SDConfig) (azureClient, error) {
+	env, err := azure.EnvironmentFromName(cfg.Environment)
+	if err != nil {
+		return azureClient{}, err
+	}
+
+	activeDirectoryEndpoint := env.ActiveDirectoryEndpoint
+	resourceManagerEndpoint := env.ResourceManagerEndpoint
+
 	var c azureClient
-	oauthConfig, err := adal.NewOAuthConfig(azure.PublicCloud.ActiveDirectoryEndpoint, cfg.TenantID)
+	oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
 	if err != nil {
 		return azureClient{}, err
 	}
-	spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), azure.PublicCloud.ResourceManagerEndpoint)
+	spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
 	if err != nil {
 		return azureClient{}, err
 	}
 
-	c.vm = compute.NewVirtualMachinesClient(cfg.SubscriptionID)
-	c.vm.Authorizer = autorest.NewBearerAuthorizer(spt)
+	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
-	c.nic = network.NewInterfacesClient(cfg.SubscriptionID)
-	c.nic.Authorizer = autorest.NewBearerAuthorizer(spt)
+	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
+	c.vm.Authorizer = bearerAuthorizer
 
-	c.vmss = compute.NewVirtualMachineScaleSetsClient(cfg.SubscriptionID)
-	c.vmss.Authorizer = autorest.NewBearerAuthorizer(spt)
+	c.nic = network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
+	c.nic.Authorizer = bearerAuthorizer
 
-	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClient(cfg.SubscriptionID)
-	c.vmssvm.Authorizer = autorest.NewBearerAuthorizer(spt)
+	c.vmss = compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
+	c.vmss.Authorizer = bearerAuthorizer
+
+	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
+	c.vmssvm.Authorizer = bearerAuthorizer
 
 	return c, nil
 }
@@ -347,7 +359,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 }
 
 func (client *azureClient) getVMs() ([]virtualMachine, error) {
-	vms := []virtualMachine{}
+	var vms []virtualMachine
 	result, err := client.vm.ListAll()
 	if err != nil {
 		return vms, fmt.Errorf("could not list virtual machines: %s", err)
@@ -373,7 +385,7 @@ func (client *azureClient) getVMs() ([]virtualMachine, error) {
 }
 
 func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, error) {
-	scaleSets := []compute.VirtualMachineScaleSet{}
+	var scaleSets []compute.VirtualMachineScaleSet
 	result, err := client.vmss.ListAll()
 	if err != nil {
 		return scaleSets, fmt.Errorf("could not list virtual machine scale sets: %s", err)
@@ -392,7 +404,7 @@ func (client *azureClient) getScaleSets() ([]compute.VirtualMachineScaleSet, err
 }
 
 func (client *azureClient) getScaleSetVMs(scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
-	vms := []virtualMachine{}
+	var vms []virtualMachine
 	//TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
 
