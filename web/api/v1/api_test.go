@@ -313,7 +313,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			resp.Results[i], err = remote.ToQueryResult(set)
+			resp.Results[i], err = remote.ToQueryResult(set, 1e6)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -833,6 +833,7 @@ func TestReadEndpoint(t *testing.T) {
 				},
 			}
 		},
+		remoteReadLimit: 1e6,
 	}
 
 	// Encode the request.
@@ -860,6 +861,10 @@ func TestReadEndpoint(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	api.remoteRead(recorder, request)
+
+	if recorder.Code/100 != 2 {
+		t.Fatal(recorder.Code)
+	}
 
 	// Decode the response.
 	compressed, err = ioutil.ReadAll(recorder.Result().Body)
