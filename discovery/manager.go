@@ -162,47 +162,50 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 	m.discoverCancel = append(m.discoverCancel, cancel)
 
 	go p.d.Run(ctx, updates)
-	go m.runProvider(ctx, p, updates)
+	go m.updater(ctx, p, updates)
 }
 
-func (m *Manager) runProvider(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
+func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	updateReceived := make(chan struct{}, 1)
+	triggerUpdate := make(chan struct{}, 1)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
-			// Handle the case that a target provider(E.g. StaticProvider) exits and
-			// closes the channel before the context is done.
-			// This will prevent sending the updates to the receiver so we send them before exiting.
 			if !ok {
+				level.Debug(m.logger).Log("msg", "discoverer channel closed, sending the last update", "provider", p.name)
 				select {
-				case m.syncCh <- m.allGroups():
-				default:
-					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full")
+				case m.syncCh <- m.allGroups(): // Waiting until the receiver can accept the last update.
+					level.Debug(m.logger).Log("msg", "discoverer exited", "provider", p.name)
+					return
+				case <-ctx.Done():
+					return
 				}
-				return
+
 			}
 			for _, s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
 			}
 
-			// Signal that there was an update.
 			select {
-			case updateReceived <- struct{}{}:
+			case triggerUpdate <- struct{}{}:
 			default:
 			}
-		case <-ticker.C: // Some discoverers send updates too often so we send these to the receiver once every 5 seconds.
+		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
-			case <-updateReceived: // Send only when there is a new update.
+			case <-triggerUpdate:
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full")
+					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle", "provider", p.name)
+					select {
+					case triggerUpdate <- struct{}{}:
+					default:
+					}
 				}
 			default:
 			}
