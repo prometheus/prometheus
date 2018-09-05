@@ -135,7 +135,7 @@ func TestSeriesSetFilter(t *testing.T) {
 
 	for i, tc := range tests {
 		filtered := newSeriesSetFilter(FromQueryResult(tc.in), tc.toRemove)
-		have, err := ToQueryResult(filtered)
+		have, err := ToQueryResult(filtered, 1e6)
 		if err != nil {
 			t.Fatal(err)
 		}
