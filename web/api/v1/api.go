@@ -801,9 +801,9 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if httpErr, ok := err.(remote.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
-			} else {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 

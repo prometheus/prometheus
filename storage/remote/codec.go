@@ -156,11 +156,11 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		samples := []*prompb.Sample{}
 
 		for iter.Next() {
-			numSamples += 1
+			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
 				return nil, HTTPError{
 					msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
-					status: http.StatusRequestEntityTooLarge,
+					status: http.StatusBadRequest,
 				}
 			}
 			ts, val := iter.At()
