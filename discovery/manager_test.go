@@ -655,51 +655,67 @@ func TestTargetUpdatesOrder(t *testing.T) {
 		},
 	}
 
-	for testIndex, testCase := range testCases {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		discoveryManager := NewManager(ctx, log.NewNopLogger())
+	for i, tc := range testCases {
+		tc := tc
+		t.Run(tc.title, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			discoveryManager := NewManager(ctx, log.NewNopLogger())
+			discoveryManager.updatert = 100 * time.Millisecond
 
-		var totalUpdatesCount int
+			var totalUpdatesCount int
 
-		provUpdates := make(chan []*targetgroup.Group)
-		for _, up := range testCase.updates {
-			go newMockDiscoveryProvider(up).Run(ctx, provUpdates)
-			if len(up) > 0 {
-				totalUpdatesCount = totalUpdatesCount + len(up)
+			provUpdates := make(chan []*targetgroup.Group)
+			for _, up := range tc.updates {
+				go newMockDiscoveryProvider(up).Run(ctx, provUpdates)
+				if len(up) > 0 {
+					totalUpdatesCount = totalUpdatesCount + len(up)
+				}
 			}
-		}
 
-	Loop:
-		for x := 0; x < totalUpdatesCount; x++ {
-			select {
-			case <-time.After(10 * time.Second):
-				t.Errorf("%v. %q: no update arrived within the timeout limit", x, testCase.title)
-				break Loop
-			case tgs := <-provUpdates:
-				discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(testIndex), provider: testCase.title}, tgs)
-				for _, received := range discoveryManager.allGroups() {
-					// Need to sort by the Groups source as the received order is not guaranteed.
-					sort.Sort(byGroupSource(received))
-					if !reflect.DeepEqual(received, testCase.expectedTargets[x]) {
-						var receivedFormated string
-						for _, receivedTargets := range received {
-							receivedFormated = receivedFormated + receivedTargets.Source + ":" + fmt.Sprint(receivedTargets.Targets)
-						}
-						var expectedFormated string
-						for _, expectedTargets := range testCase.expectedTargets[x] {
-							expectedFormated = expectedFormated + expectedTargets.Source + ":" + fmt.Sprint(expectedTargets.Targets)
-						}
-
-						t.Errorf("%v. %v: \ntargets mismatch \nreceived: %v \nexpected: %v",
-							x, testCase.title,
-							receivedFormated,
-							expectedFormated)
+		Loop:
+			for x := 0; x < totalUpdatesCount; x++ {
+				select {
+				case <-time.After(10 * time.Second):
+					t.Errorf("%d: no update arrived within the timeout limit", x)
+					break Loop
+				case tgs := <-provUpdates:
+					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
+					for _, got := range discoveryManager.allGroups() {
+						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
+							return fmt.Sprintf("%d: \ntargets mismatch \ngot: %v \nexpected: %v",
+								x,
+								got,
+								expected)
+						})
 					}
 				}
 			}
-		}
+		})
 	}
+}
+
+func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg func(got, expected string) string) {
+	t.Helper()
+	format := func(groups []*targetgroup.Group) string {
+		var s string
+		for i, group := range groups {
+			if i > 0 {
+				s += ","
+			}
+			s += group.Source + ":" + fmt.Sprint(group.Targets)
+		}
+		return s
+	}
+
+	// Need to sort by the groups's source as the received order is not guaranteed.
+	sort.Sort(byGroupSource(got))
+	sort.Sort(byGroupSource(expected))
+
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf(msg(format(got), format(expected)))
+	}
+
 }
 
 func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
@@ -813,6 +829,7 @@ scrape_configs:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
+	discoveryManager.updatert = 500 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -868,6 +885,251 @@ scrape_configs:
 	}
 }
 
+func TestCoordinationWithReceiver(t *testing.T) {
+	updateDelay := 100 * time.Millisecond
+
+	type expect struct {
+		delay time.Duration
+		tgs   map[string][]*targetgroup.Group
+	}
+
+	testCases := []struct {
+		title     string
+		providers map[string][]update
+		expected  []expect
+	}{
+		{
+			title: "Receiver should get updates even when the channel is blocked",
+			providers: map[string][]update{
+				"mock1": []update{
+					update{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+					update{
+						interval: 4 * updateDelay / time.Millisecond,
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				},
+			},
+			expected: []expect{
+				{
+					delay: 2 * updateDelay,
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+				{
+					delay: 4 * updateDelay,
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			title: "The receiver gets an update when a target group is gone",
+			providers: map[string][]update{
+				"mock1": []update{
+					update{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+					update{
+						interval: 2 * updateDelay / time.Millisecond,
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{},
+							},
+						},
+					},
+				},
+			},
+			expected: []expect{
+				{
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+				{
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			title: "The receiver gets merged updates",
+			providers: map[string][]update{
+				"mock1": []update{
+					// This update should never be seen by the receiver because
+					// it is overwritten by the next one.
+					update{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "0"}},
+							},
+						},
+					},
+					update{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+			},
+			expected: []expect{
+				{
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			title: "Discovery with multiple providers",
+			providers: map[string][]update{
+				"mock1": []update{
+					// This update is available in the first receive.
+					update{
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+				"mock2": []update{
+					// This update should only arrive after the receiver has read from the channel once.
+					update{
+						interval: 2 * updateDelay / time.Millisecond,
+						targetGroups: []targetgroup.Group{
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				},
+			},
+			expected: []expect{
+				{
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+					},
+				},
+				{
+					delay: 1 * updateDelay,
+					tgs: map[string][]*targetgroup.Group{
+						"mock1": []*targetgroup.Group{
+							{
+								Source:  "tg1",
+								Targets: []model.LabelSet{{"__instance__": "1"}},
+							},
+						},
+						"mock2": []*targetgroup.Group{
+							{
+								Source:  "tg2",
+								Targets: []model.LabelSet{{"__instance__": "2"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.title, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			mgr := NewManager(ctx, nil)
+			mgr.updatert = updateDelay
+			go mgr.Run()
+
+			for name := range tc.providers {
+				p := newMockDiscoveryProvider(tc.providers[name])
+				mgr.StartCustomProvider(ctx, name, p)
+			}
+
+			for i, expected := range tc.expected {
+				time.Sleep(expected.delay)
+				tgs, ok := <-mgr.SyncCh()
+				if !ok {
+					t.Fatal("discovery manager channel is closed")
+				}
+				if len(tgs) != len(expected.tgs) {
+					t.Fatalf("step %d: target groups mismatch, got: %d, expected: %d\ngot: %#v\nexpected: %#v",
+						i, len(tgs), len(expected.tgs), tgs, expected.tgs)
+				}
+				for k := range expected.tgs {
+					if _, ok := tgs[k]; !ok {
+						t.Fatalf("step %d: target group not found: %s", i, k)
+					}
+					assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
+						return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
+					})
+				}
+			}
+		})
+	}
+}
+
 type update struct {
 	targetGroups []targetgroup.Group
 	interval     time.Duration
@@ -875,33 +1137,37 @@ type update struct {
 
 type mockdiscoveryProvider struct {
 	updates []update
-	up      chan<- []*targetgroup.Group
 }
 
 func newMockDiscoveryProvider(updates []update) mockdiscoveryProvider {
-
 	tp := mockdiscoveryProvider{
 		updates: updates,
 	}
 	return tp
 }
 
-func (tp mockdiscoveryProvider) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
-	tp.up = up
-	tp.sendUpdates()
-}
-
-func (tp mockdiscoveryProvider) sendUpdates() {
-	for _, update := range tp.updates {
-
-		time.Sleep(update.interval * time.Millisecond)
-
-		tgs := make([]*targetgroup.Group, len(update.targetGroups))
-		for i := range update.targetGroups {
-			tgs[i] = &update.targetGroups[i]
+func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgroup.Group) {
+	for _, u := range tp.updates {
+		if u.interval > 0 {
+			t := time.NewTicker(u.interval * time.Millisecond)
+			defer t.Stop()
+		Loop:
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					break Loop
+				}
+			}
 		}
-		tp.up <- tgs
+		tgs := make([]*targetgroup.Group, len(u.targetGroups))
+		for i := range u.targetGroups {
+			tgs[i] = &u.targetGroups[i]
+		}
+		upCh <- tgs
 	}
+	<-ctx.Done()
 }
 
 // byGroupSource implements sort.Interface so we can sort by the Source field.
