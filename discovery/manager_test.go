@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -657,7 +658,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for testIndex, testCase := range testCases {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		discoveryManager := NewManager(ctx, nil)
+		discoveryManager := NewManager(ctx, log.NewNopLogger())
 
 		var totalUpdatesCount int
 
@@ -743,7 +744,7 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -849,7 +850,7 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
