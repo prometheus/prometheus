@@ -24,6 +24,12 @@ message WriteRequest {
 
 message ReadRequest {
   repeated Query queries = 1;
+
+  enum Response {
+    RAW = 0;
+    RAW_STREAMED = 1;
+  }
+  Response response_type = 2;
 }
 
 message ReadResponse {
@@ -41,4 +47,5 @@ message Query {
 message QueryResult {
   // Samples within a time series must be ordered by time.
   repeated prometheus.TimeSeries timeseries = 1;
+  int64 query_num = 2;
 }

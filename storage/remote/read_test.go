@@ -19,6 +19,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -113,34 +114,40 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 
 func TestSeriesSetFilter(t *testing.T) {
 	tests := []struct {
-		in       *prompb.QueryResult
+		in       []*prompb.TimeSeries
 		toRemove model.LabelSet
 
-		expected *prompb.QueryResult
+		expected []*prompb.TimeSeries
 	}{
 		{
 			toRemove: model.LabelSet{"foo": "bar"},
-			in: &prompb.QueryResult{
-				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []*prompb.Sample{}},
-				},
+			in: []*prompb.TimeSeries{
+				{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b")), Samples: []*prompb.Sample{}},
 			},
-			expected: &prompb.QueryResult{
-				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []*prompb.Sample{}},
-				},
+			expected: []*prompb.TimeSeries{
+				{Labels: labelsToLabelsProto(labels.FromStrings("a", "b")), Samples: []*prompb.Sample{}},
 			},
 		},
 	}
 
 	for i, tc := range tests {
-		filtered := newSeriesSetFilter(FromQueryResult(tc.in), tc.toRemove)
-		have, err := ToQueryResult(filtered, 1e6)
+		ss := &concreteSeriesSet{}
+		for _, ts := range tc.in {
+			ss.series = append(ss.series, &concreteSeries{
+				labels:  labelProtosToLabels(ts.Labels),
+				samples: ts.Samples,
+			})
+		}
+		filtered := newSeriesSetFilter(ss, tc.toRemove)
+		have, err := ToTimeSeries(filtered)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if !reflect.DeepEqual(have, tc.expected) {
+		if !proto.Equal(
+			&prompb.QueryResult{Timeseries: have},
+			&prompb.QueryResult{Timeseries: tc.expected},
+		) {
 			t.Fatalf("%d. unexpected labels; want %v, got %v", i, tc.expected, have)
 		}
 	}

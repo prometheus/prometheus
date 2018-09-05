@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -30,13 +29,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -47,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type testTargetRetriever struct{}
@@ -285,48 +285,9 @@ func TestEndpoints(t *testing.T) {
 }
 
 func setupRemote(s storage.Storage) *httptest.Server {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req, err := remote.DecodeReadRequest(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		resp := prompb.ReadResponse{
-			Results: make([]*prompb.QueryResult, len(req.Queries)),
-		}
-		for i, query := range req.Queries {
-			from, through, matchers, selectParams, err := remote.FromQuery(query)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-
-			querier, err := s.Querier(r.Context(), from, through)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			defer querier.Close()
-
-			set, err := querier.Select(selectParams, matchers...)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			resp.Results[i], err = remote.ToQueryResult(set, 1e6)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := remote.EncodeReadResponse(&resp, w); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	})
-
-	return httptest.NewServer(handler)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteReadHandler(w, r, s, func() model.LabelSet { return nil }, 1e6)
+	}))
 }
 
 func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
@@ -805,10 +766,12 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 	}
 }
 
-func TestReadEndpoint(t *testing.T) {
+func TestRawReadEndpointCompatibleWith1_x(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
+			test_metric1{foo="bar2",baz="qux"} 1
+			test_metric2{foo="bar",baz="qux"} 1
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -866,7 +829,8 @@ func TestReadEndpoint(t *testing.T) {
 		t.Fatal(recorder.Code)
 	}
 
-	// Decode the response.
+	// This code decodes the response without remote.DecodeReadResponse method to check if the new code
+	// is compatible with 1.x remote read clients.
 	compressed, err = ioutil.ReadAll(recorder.Result().Body)
 	if err != nil {
 		t.Fatal(err)
@@ -899,10 +863,135 @@ func TestReadEndpoint(t *testing.T) {
 				},
 				Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
 			},
+			{
+				Labels: []*prompb.Label{
+					{Name: "__name__", Value: "test_metric1"},
+					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "qux"},
+					{Name: "d", Value: "e"},
+					{Name: "foo", Value: "bar2"},
+				},
+				Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
+			},
 		},
 	}
 	if !reflect.DeepEqual(result, expected) {
 		t.Fatalf("Expected response \n%v\n but got \n%v\n", result, expected)
+	}
+}
+
+func TestRawStreamedReadEndpoint(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar",baz="qux"} 1
+			test_metric1{foo="bar2",baz="qux"} 1
+			test_metric2{foo="bar",baz="qux"} 1
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer suite.Close()
+
+	if err := suite.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, format := range []prompb.ReadRequest_Response{prompb.ReadRequest_RAW, prompb.ReadRequest_RAW_STREAMED} {
+		t.Run(format.String(), func(t *testing.T) {
+			api := &API{
+				Queryable:   suite.Storage(),
+				QueryEngine: suite.QueryEngine(),
+				config: func() config.Config {
+					return config.Config{
+						GlobalConfig: config.GlobalConfig{
+							ExternalLabels: model.LabelSet{
+								"baz": "a",
+								"b":   "c",
+								"d":   "e",
+							},
+						},
+					}
+				},
+			}
+
+			// Encode the request.
+			matcher1, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			matcher2, err := labels.NewMatcher(labels.MatchEqual, "d", "e")
+			if err != nil {
+				t.Fatal(err)
+			}
+			query, err := remote.ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectParams{Step: 0, Func: "avg"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := &prompb.ReadRequest{
+				ResponseType: format,
+				Queries:      []*prompb.Query{query},
+			}
+			data, err := proto.Marshal(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compressed := snappy.Encode(nil, data)
+			request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recorder := httptest.NewRecorder()
+
+			api.remoteRead(recorder, request)
+
+			querySet := remote.DecodeReadResponse(recorder.Header(), ioutil.NopCloser(recorder.Body))
+
+			var (
+				touched bool
+				ts      []*prompb.TimeSeries
+			)
+			for querySet.Next() {
+				if touched {
+					// Make sure to empty querySet to release resources.
+					for querySet.Next() {
+					}
+					t.Fatal("Unexpected query number in response; expected only one, got more than one.")
+				}
+				touched = true
+
+				ts, err = remote.ToTimeSeries(querySet.At())
+				require.NoError(t, err)
+			}
+			require.NoError(t, querySet.Err())
+
+			expected := &prompb.QueryResult{
+				Timeseries: []*prompb.TimeSeries{
+					{
+						Labels: []*prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar"},
+						},
+						Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
+					},
+					{
+						Labels: []*prompb.Label{
+							{Name: "__name__", Value: "test_metric1"},
+							{Name: "b", Value: "c"},
+							{Name: "baz", Value: "qux"},
+							{Name: "d", Value: "e"},
+							{Name: "foo", Value: "bar2"},
+						},
+						Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
+					},
+				},
+			}
+			if !reflect.DeepEqual(&prompb.QueryResult{Timeseries: ts}, expected) {
+				t.Fatalf("Expected response \n%v\n but got \n%v\n", &prompb.QueryResult{Timeseries: ts}, expected)
+			}
+		})
 	}
 }
 

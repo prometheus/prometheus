@@ -15,7 +15,6 @@ package remote
 
 import (
 	"context"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -49,12 +48,7 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 		return nil, err
 	}
 
-	res, err := q.client.Read(q.ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	return FromQueryResult(res), nil
+	return q.client.Read(q.ctx, query)
 }
 
 // LabelValues implements storage.Querier and is a noop.

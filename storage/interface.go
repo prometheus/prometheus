@@ -92,6 +92,29 @@ type Appender interface {
 }
 
 // SeriesSet contains a set of series.
+// It's caller responsibility to ensure it is always emptied (`Next()` is invoked until false)
+// or error is return from `Err()`. This ensures that all used resources are released.
+//
+// Example usage:
+//	 ```
+//	 for s.Next {
+//		series := s.At()
+//
+//		(...)
+//		if someErr {
+//   		// Empty seriesSet to release all resources.
+//			for s.Next() {}
+//
+//			// (...) handle someErr.
+//			return
+//		}
+//
+//	 }
+//     if err := s.Err(); err != nil {
+//		// (...) handle err.
+//		return
+//	 }
+//	 ```
 type SeriesSet interface {
 	Next() bool
 	At() Series

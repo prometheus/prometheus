@@ -30,11 +30,9 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"github.com/prometheus/tsdb"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -47,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
@@ -751,15 +750,32 @@ func (api *API) serveFlags(r *http.Request) (interface{}, *apiError, func()) {
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
+	remoteReadHandler(w, r, api.Queryable, api.config().GlobalConfig.ExternalLabels.Clone, api.remoteReadLimit)
+}
+
+func remoteReadHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+	queryable storage.Queryable,
+	extLabels func() model.LabelSet,
+	sampleLimit int,
+) {
 	req, err := remote.DecodeReadRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	resp := prompb.ReadResponse{
-		Results: make([]*prompb.QueryResult, len(req.Queries)),
+	enc, err := remote.NewEncoder(w, req, sampleLimit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+
+	for key, val := range enc.ContentHeaders() {
+		w.Header().Set(key, val)
+	}
+
 	for i, query := range req.Queries {
 		from, through, matchers, selectParams, err := remote.FromQuery(query)
 		if err != nil {
@@ -767,38 +783,21 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		querier, err := api.Queryable.Querier(r.Context(), from, through)
+		querier, err := queryable.Querier(r.Context(), from, through)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer querier.Close()
 
-		// Change equality matchers which match external labels
-		// to a matcher that looks for an empty label,
-		// as that label should not be present in the storage.
-		externalLabels := api.config().GlobalConfig.ExternalLabels.Clone()
-		filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
-		for _, m := range matchers {
-			value := externalLabels[model.LabelName(m.Name)]
-			if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
-				matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				filteredMatchers = append(filteredMatchers, matcher)
-			} else {
-				filteredMatchers = append(filteredMatchers, m)
-			}
-		}
-
-		set, err := querier.Select(selectParams, filteredMatchers...)
+		externalLabels := extLabels()
+		filteredMatchers, err := filterExtLabelMatchers(matchers, externalLabels)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadLimit)
+
+		set, err := querier.Select(selectParams, filteredMatchers...)
 		if err != nil {
 			if httpErr, ok := err.(remote.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
@@ -808,7 +807,6 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Add external labels back in, in sorted order.
 		sortedExternalLabels := make([]*prompb.Label, 0, len(externalLabels))
 		for name, value := range externalLabels {
 			sortedExternalLabels = append(sortedExternalLabels, &prompb.Label{
@@ -820,15 +818,83 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
 		})
 
-		for _, ts := range resp.Results[i].Timeseries {
+		for set.Next() {
+			series := set.At()
+			iter := series.Iterator()
+			samples := []*prompb.Sample{}
+
+			for iter.Next() {
+				ts, val := iter.At()
+				samples = append(samples, &prompb.Sample{
+					Timestamp: ts,
+					Value:     val,
+				})
+			}
+			if err := iter.Err(); err != nil {
+				for set.Next() {
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			ts := &prompb.TimeSeries{
+				Labels:  labelsToLabelsProto(series.Labels()),
+				Samples: samples,
+			}
+
+			// Add external labels back in, in sorted order.
 			ts.Labels = mergeLabels(ts.Labels, sortedExternalLabels)
+
+			// Currently we stream individual series.
+			if err := enc.Encode([]*prompb.TimeSeries{ts}, i); err != nil {
+				for set.Next() {
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if err := set.Err(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 
-	if err := remote.EncodeReadResponse(&resp, w); err != nil {
+	if err := enc.Close(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func labelsToLabelsProto(labels labels.Labels) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(labels))
+	for _, l := range labels {
+		result = append(result, &prompb.Label{
+			Name:  l.Name,
+			Value: l.Value,
+		})
+	}
+	return result
+}
+
+// filterExtLabelMatchers changes equality matchers which match external labels
+// to a matcher that looks for an empty label. This is because external labels are not present in the storage.
+// They are appended on run time.
+func filterExtLabelMatchers(matchers []*labels.Matcher, externalLabels model.LabelSet) ([]*labels.Matcher, error) {
+	filteredMatchers := make([]*labels.Matcher, 0, len(matchers))
+	for _, m := range matchers {
+		value := externalLabels[model.LabelName(m.Name)]
+		if m.Type == labels.MatchEqual && value == model.LabelValue(m.Value) {
+			matcher, err := labels.NewMatcher(labels.MatchEqual, m.Name, "")
+			if err != nil {
+				return nil, err
+			}
+			filteredMatchers = append(filteredMatchers, matcher)
+			continue
+		}
+
+		filteredMatchers = append(filteredMatchers, m)
+	}
+	return filteredMatchers, nil
 }
 
 func (api *API) deleteSeries(r *http.Request) (interface{}, *apiError, func()) {

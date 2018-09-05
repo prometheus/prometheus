@@ -25,11 +25,12 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/prometheus/common/model"
-	"golang.org/x/net/context/ctxhttp"
-
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
+	"golang.org/x/net/context/ctxhttp"
 )
 
 const maxErrMsgLen = 256
@@ -118,13 +119,15 @@ func (c Client) Name() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *Client) Read(ctx context.Context, query *prompb.Query) (storage.SeriesSet, error) {
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
 		Queries: []*prompb.Query{
 			query,
 		},
+		// This is ok, as protobuf is forward compatible. We accept here RAW as well.
+		ResponseType: prompb.ReadRequest_RAW_STREAMED,
 	}
 	data, err := proto.Marshal(req)
 	if err != nil {
@@ -148,30 +151,41 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %v", err)
 	}
-	defer httpResp.Body.Close()
+
 	if httpResp.StatusCode/100 != 2 {
+		io.Copy(ioutil.Discard, httpResp.Body)
+		httpResp.Body.Close()
 		return nil, fmt.Errorf("server returned HTTP status %s", httpResp.Status)
 	}
 
-	compressed, err = ioutil.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
+	querySet := DecodeReadResponse(httpResp.Header, httpResp.Body)
+
+	// TODO(bplotka): Do not buffer response in concreteSeriesSet. Add caller support for remote.QuerySet or
+	// implement singleQuerySet wrapper that returns just first query and error if there are more.
+	var (
+		touched bool
+		series  []storage.Series
+	)
+	for querySet.Next() {
+		if touched {
+			// Make sure to empty querySet to release resources.
+			for querySet.Next() {
+			}
+			return nil, errors.New("unexpected query number in response; expected only one, got more than one")
+		}
+		touched = true
+
+		ss := querySet.At()
+		for ss.Next() {
+			series = append(series, ss.At())
+		}
+		if err := ss.Err(); err != nil {
+			return nil, err
+		}
+	}
+	if err := querySet.Err(); err != nil {
+		return nil, err
 	}
 
-	uncompressed, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %v", err)
-	}
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %v", err)
-	}
-
-	if len(resp.Results) != len(req.Queries) {
-		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
-	}
-
-	return resp.Results[0], nil
+	return &concreteSeriesSet{series: series}, nil
 }
