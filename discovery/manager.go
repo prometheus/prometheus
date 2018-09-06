@@ -93,6 +93,7 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
 		ctx:            ctx,
+		updaterInterval: 5*time.Second,
 	}
 }
 
@@ -103,6 +104,7 @@ type Manager struct {
 	mtx            sync.RWMutex
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
+	updaterInterval		time.Duration
 
 	// Some Discoverers(eg. k8s) send only the updates for a given target group
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
@@ -166,7 +168,7 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 }
 
 func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(m.updaterInterval)
 	defer ticker.Stop()
 
 	triggerUpdate := make(chan struct{}, 1)

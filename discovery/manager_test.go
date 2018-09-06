@@ -813,6 +813,7 @@ scrape_configs:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
+	discoveryManager.updaterInterval = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
