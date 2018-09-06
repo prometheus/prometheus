@@ -166,6 +166,7 @@ func NewAPI(
 		enableAdmin:     enableAdmin,
 		rulesRetriever:  rr,
 		remoteReadLimit: remoteReadLimit,
+		logger:          logger,
 	}
 }
 
