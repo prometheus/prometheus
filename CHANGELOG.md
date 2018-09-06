@@ -1,3 +1,40 @@
+## 2.4.0-rc.0 / 2018-09-06
+
+This release includes multiple bugfixes and features. Further, the WAL implementation has been re-written so the storage is not backward compatible. Prometheus 2.3 storage will work on 2.4 but not vice-versa.
+
+* [CHANGE] Reduce remote write default retries #4279
+* [CHANGE] Remove /heap endpoint #4460
+* [FEATURE] Persist alert 'for' state across restarts #4061
+* [FEATURE] Add API providing per target metric metadata #4183
+* [FEATURE] Add API providing recording and alerting rules #4318 #4501
+* [ENHANCEMENT] Brand new WAL implementation for TSDB. Backwards incompatible with previous WAL. 
+* [ENHANCEMENT] Show rule evaluation errors in UI #4457 
+* [ENHANCEMENT] Throttle resends of alerts to Alertmanager #4538
+* [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550
+* [ENHANCEMENT] Limit the samples returned by remote read endpoint #4532
+* [ENHANCEMENT] Limit the data read in through remote read #4239
+* [ENHANCEMENT] Coalesce identical SD configuations #3912
+* [ENHANCEMENT] `promtool`: Add new commands for debugging and querying #4247 #4308 #4346 #4454
+* [ENHANCEMENT] Update console examples for node_exporter v0.16.0 #4208
+* [ENHANCEMENT] Optimize PromQL aggregations #4248
+* [ENHANCEMENT] Remote read: Add Offset to hints #4226
+* [ENHANCEMENT] `consul_sd`: Add support for ServiceMeta field #4280
+* [ENHANCEMENT] `ec2_sd`: Maintain order of subnet_id label #4405
+* [ENHANCEMENT] `ec2_sd`: Add support for custom endpoint to support EC2 compliant APIs #4333
+* [ENHANCEMENT] `ec2_sd`: Add instance_owner label #4514
+* [ENHANCEMENT] `azure_sd`: Add support for VMSS discovery and multiple environments #4202 #4569
+* [ENHANCEMENT] `gce_sd`: Add instance_id label #4488
+* [ENHANCEMENT] Forbid rule-abiding robots from indexing #4266
+* [ENHANCEMENT] Log virtual memory limits on startup #4418
+* [BUGFIX] Wait for service discovery to stop before exiting #4508
+* [BUGFIX] Render SD configs properly #4338
+* [BUGFIX] Only add LookbackDelta to vector selectors #4399
+* [BUGFIX] `ec2_sd`: Handle panic-ing nil pointer #4469
+* [BUGFIX] `consul_sd`: Stop leaking connections #4443
+* [BUGFIX] Use templated labels also to identify alerts #4500
+* [BUGFIX] Reduce floating point errors in stddev and related functions #4533
+* [BUGFIX] Log errors while encoding responses #4359
+
 ## 2.3.2 / 2018-07-12
 
 * [BUGFIX] Fix various tsdb bugs #4369
