@@ -19,9 +19,12 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -35,7 +38,12 @@ type Storage struct {
 	mtx    sync.RWMutex
 
 	// For writes
-	queues []*QueueManager
+	walDir                 string
+	queues                 []*QueueManager
+	samplesIn              *ewmaRate
+	samplesInMetric        prometheus.Counter
+	highestTimestamp       int64
+	highestTimestampMetric prometheus.Gauge
 
 	// For reads
 	queryables             []storage.Queryable
@@ -44,15 +52,30 @@ type Storage struct {
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, stCallback startTimeCallback, flushDeadline time.Duration) *Storage {
+func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &Storage{
+	shardUpdateDuration := 10 * time.Second
+	s := &Storage{
 		logger:                 l,
 		localStartTimeCallback: stCallback,
 		flushDeadline:          flushDeadline,
+		walDir:                 walDir,
+		// queues:                 make(map[*QueueManager]struct{}),
+		samplesIn: newEWMARate(ewmaWeight, shardUpdateDuration),
+		samplesInMetric: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_remote_storage_samples_in_total",
+			Help: "Samples in to remote storage, compare to samples out for queue managers.",
+		}),
+		highestTimestampMetric: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_remote_storage_highest_timestamp_in",
+			Help: "Highest timestamp that has come into the remote storage via the Appender interface.",
+		}),
 	}
+	reg.MustRegister(s.samplesInMetric)
+	reg.MustRegister(s.highestTimestampMetric)
+	return s
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -61,7 +84,6 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	defer s.mtx.Unlock()
 
 	// Update write queues
-
 	newQueues := []*QueueManager{}
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
@@ -74,13 +96,20 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
+		// Convert to int64 for comparison with timestamps from samples
+		// we will eventually read from the WAL on startup.
+		startTime := timestamp.FromTime(time.Now())
 		newQueues = append(newQueues, NewQueueManager(
 			s.logger,
+			s.walDir,
+			s.samplesIn,
+			&s.highestTimestamp,
 			rwConf.QueueConfig,
 			conf.GlobalConfig.ExternalLabels,
 			rwConf.WriteRelabelConfigs,
 			c,
 			s.flushDeadline,
+			startTime,
 		))
 	}
 

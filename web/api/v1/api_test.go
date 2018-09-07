@@ -33,6 +33,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
@@ -279,9 +280,14 @@ func TestEndpoints(t *testing.T) {
 			Format: &af,
 		}
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), func() (int64, error) {
+		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+		testutil.Ok(t, err)
+		defer os.RemoveAll(dbDir)
+
+		testutil.Ok(t, err)
+		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, 1*time.Second)
+		}, dbDir, 1*time.Second)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
