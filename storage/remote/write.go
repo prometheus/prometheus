@@ -14,7 +14,6 @@
 package remote
 
 import (
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -26,16 +25,10 @@ func (s *Storage) Appender() (storage.Appender, error) {
 
 // Add implements storage.Appender.
 func (s *Storage) Add(l labels.Labels, t int64, v float64) (uint64, error) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	for _, q := range s.queues {
-		if err := q.Append(&model.Sample{
-			Metric:    labelsToMetric(l),
-			Timestamp: model.Time(t),
-			Value:     model.SampleValue(v),
-		}); err != nil {
-			panic(err) // QueueManager.Append() should always return nil as per doc string.
-		}
+	s.samplesIn.incr(1)
+	s.samplesInMetric.Inc()
+	if t > s.highestTimestamp {
+		s.highestTimestamp = t
 	}
 	return 0, nil
 }
@@ -47,7 +40,8 @@ func (s *Storage) AddFast(l labels.Labels, _ uint64, t int64, v float64) error {
 }
 
 // Commit implements storage.Appender.
-func (*Storage) Commit() error {
+func (s *Storage) Commit() error {
+	s.highestTimestampMetric.Set(float64(s.highestTimestamp))
 	return nil
 }
 

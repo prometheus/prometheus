@@ -80,28 +80,6 @@ func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error 
 	return err
 }
 
-// ToWriteRequest converts an array of samples into a WriteRequest proto.
-func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
-	req := &prompb.WriteRequest{
-		Timeseries: make([]prompb.TimeSeries, 0, len(samples)),
-	}
-
-	for _, s := range samples {
-		ts := prompb.TimeSeries{
-			Labels: MetricToLabelProtos(s.Metric),
-			Samples: []prompb.Sample{
-				{
-					Value:     float64(s.Value),
-					Timestamp: int64(s.Timestamp),
-				},
-			},
-		}
-		req.Timeseries = append(req.Timeseries, ts)
-	}
-
-	return req
-}
-
 // ToQuery builds a Query proto.
 func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams) (*prompb.Query, error) {
 	ms, err := toLabelMatchers(matchers)
@@ -364,21 +342,6 @@ func fromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-// MetricToLabelProtos builds a []*prompb.Label from a model.Metric
-func MetricToLabelProtos(metric model.Metric) []prompb.Label {
-	labels := make([]prompb.Label, 0, len(metric))
-	for k, v := range metric {
-		labels = append(labels, prompb.Label{
-			Name:  string(k),
-			Value: string(v),
-		})
-	}
-	sort.Slice(labels, func(i int, j int) bool {
-		return labels[i].Name < labels[j].Name
-	})
-	return labels
-}
-
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
@@ -400,6 +363,26 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return result
 }
 
+func labelsetToLabelsProto(ls model.LabelSet) []prompb.Label {
+	result := make([]prompb.Label, 0, len(ls))
+	keys := make([]string, 0, len(ls))
+
+	for k := range ls {
+		keys = append(keys, string(k))
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		ln := model.LabelName(k)
+		result = append(result, prompb.Label{
+			Name:  k,
+			Value: string(ls[ln]),
+		})
+	}
+
+	return result
+}
+
 func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
 	result := make([]prompb.Label, 0, len(labels))
 	for _, l := range labels {
@@ -409,12 +392,4 @@ func labelsToLabelsProto(labels labels.Labels) []prompb.Label {
 		})
 	}
 	return result
-}
-
-func labelsToMetric(ls labels.Labels) model.Metric {
-	metric := make(model.Metric, len(ls))
-	for _, l := range ls {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return metric
 }
