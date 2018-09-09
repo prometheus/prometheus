@@ -719,6 +719,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// Make the function call.
 		enh.ts = ts
 		result := f(args, enh)
+		if result.ContainsSameLabelset() {
+			panic(fmt.Errorf("vector cannot contain metrics with the same labelset"))
+		}
 		enh.out = result[:0] // Reuse result vector.
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -896,6 +899,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 				for j := range mat[i].Points {
 					mat[i].Points[j].V = -mat[i].Points[j].V
 				}
+			}
+			if mat.ContainsSameLabelset() {
+				panic(fmt.Errorf("vector cannot contain metrics with the same labelset"))
 			}
 		}
 		return mat
