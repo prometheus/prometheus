@@ -213,7 +213,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 			return azureClient{}, err
 		}
 	default:
-		return azureClient{}, fmt.Errorf("authentication_type is not set. Needs to be 'OAuth' or 'ManagedServiceIdentity'")
+		return azureClient{}, fmt.Errorf("Unsupported authentication_type set. Needs to be 'OAuth' or 'ManagedServiceIdentity'")
 	}
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
