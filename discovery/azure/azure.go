@@ -64,21 +64,23 @@ var (
 
 	// DefaultSDConfig is the default Azure SD configuration.
 	DefaultSDConfig = SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(5 * time.Minute),
-		Environment:     azure.PublicCloud.Name,
+		Port:                 80,
+		RefreshInterval:      model.Duration(5 * time.Minute),
+		Environment:          azure.PublicCloud.Name,
+		AuthenticationMethod: "OAuth",
 	}
 )
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Environment     string             `yaml:"environment,omitempty"`
-	Port            int                `yaml:"port"`
-	SubscriptionID  string             `yaml:"subscription_id"`
-	TenantID        string             `yaml:"tenant_id,omitempty"`
-	ClientID        string             `yaml:"client_id,omitempty"`
-	ClientSecret    config_util.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
+	Environment          string             `yaml:"environment,omitempty"`
+	Port                 int                `yaml:"port"`
+	SubscriptionID       string             `yaml:"subscription_id"`
+	TenantID             string             `yaml:"tenant_id,omitempty"`
+	ClientID             string             `yaml:"client_id,omitempty"`
+	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
+	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
+	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 }
 
 func validateAuthParam(param, name string) error {
@@ -183,24 +185,36 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		return azureClient{}, err
 	}
 
-	// activeDirectoryEndpoint := env.ActiveDirectoryEndpoint
+	activeDirectoryEndpoint := env.ActiveDirectoryEndpoint
 	resourceManagerEndpoint := env.ResourceManagerEndpoint
 
 	var c azureClient
-	// oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
+
+	oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
 	if err != nil {
 		return azureClient{}, err
 	}
 
-	msiEndpoint, err := adal.GetMSIVMEndpoint()
-	if err != nil {
-		return azureClient{}, err
-	}
+	var spt *adal.ServicePrincipalToken
 
-	// spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
-	spt, err := adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
-	if err != nil {
-		return azureClient{}, err
+	switch cfg.AuthenticationMethod {
+	case "ManagedServiceIdentity":
+		msiEndpoint, err := adal.GetMSIVMEndpoint()
+		if err != nil {
+			return azureClient{}, err
+		}
+
+		spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		if err != nil {
+			return azureClient{}, err
+		}
+	case "OAuth":
+		spt, err = adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
+		if err != nil {
+			return azureClient{}, err
+		}
+	default:
+		return azureClient{}, fmt.Errorf("authentication_type is not set. Needs to be 'OAuth' or 'ManagedServiceIdentity'")
 	}
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
