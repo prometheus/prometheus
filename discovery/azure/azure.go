@@ -182,15 +182,22 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		return azureClient{}, err
 	}
 
-	activeDirectoryEndpoint := env.ActiveDirectoryEndpoint
+	// activeDirectoryEndpoint := env.ActiveDirectoryEndpoint
 	resourceManagerEndpoint := env.ResourceManagerEndpoint
 
 	var c azureClient
-	oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
+	// oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
 	if err != nil {
 		return azureClient{}, err
 	}
-	spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
+
+	msiEndpoint, err := adal.GetMSIVMEndpoint()
+	if err != nil {
+		return azureClient{}, err
+	}
+
+	// spt, err := adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
+	spt, err := adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
 	if err != nil {
 		return azureClient{}, err
 	}
