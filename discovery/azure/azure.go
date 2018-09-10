@@ -190,11 +190,6 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	var c azureClient
 
-	oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
-	if err != nil {
-		return azureClient{}, err
-	}
-
 	var spt *adal.ServicePrincipalToken
 
 	switch cfg.AuthenticationMethod {
@@ -209,6 +204,11 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 			return azureClient{}, err
 		}
 	case "OAuth":
+		oauthConfig, err := adal.NewOAuthConfig(activeDirectoryEndpoint, cfg.TenantID)
+		if err != nil {
+			return azureClient{}, err
+		}
+
 		spt, err = adal.NewServicePrincipalToken(*oauthConfig, cfg.ClientID, string(cfg.ClientSecret), resourceManagerEndpoint)
 		if err != nil {
 			return azureClient{}, err
