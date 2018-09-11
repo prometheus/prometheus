@@ -109,6 +109,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
 		return err
 	}
+
+	if c.AuthenticationMethod != "OAuth" && c.AuthenticationMethod != "ManagedServiceIdentity" {
+		return fmt.Errorf("Unsupported authentication_type set. Needs to be 'OAuth' or 'ManagedServiceIdentity'")
+	}
+
 	return nil
 }
 
@@ -212,8 +217,6 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		if err != nil {
 			return azureClient{}, err
 		}
-	default:
-		return azureClient{}, fmt.Errorf("Unsupported authentication_type set. Needs to be 'OAuth' or 'ManagedServiceIdentity'")
 	}
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
