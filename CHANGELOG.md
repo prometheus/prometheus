@@ -1,4 +1,4 @@
-## 2.4.0-rc.0 / 2018-09-06
+## 2.4.0 / 2018-09-11
 
 This release includes multiple bugfixes and features. Further, the WAL implementation has been re-written so the storage is not backward compatible. Prometheus 2.3 storage will work on 2.4 but not vice-versa.
 
