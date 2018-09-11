@@ -696,6 +696,9 @@ var expectedErrors = []struct {
 		filename: "marathon_authtoken_bearertoken.bad.yml",
 		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
 	}, {
+		filename: "openstack_role.bad.yml",
+		errMsg:   "unknown OpenStack SD role",
+	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
 	}, {
