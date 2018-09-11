@@ -112,7 +112,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if c.AuthenticationMethod != "OAuth" && c.AuthenticationMethod != "ManagedServiceIdentity" {
-		return fmt.Errorf("Unsupported authentication_type set. Needs to be 'OAuth' or 'ManagedServiceIdentity'")
+		return fmt.Errorf("Unknown authentication_type %q. Supported types are 'OAuth' or 'ManagedServiceIdentity'", c.AuthenticationMethod)
 	}
 
 	return nil
