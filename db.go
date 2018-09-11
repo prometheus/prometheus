@@ -119,6 +119,7 @@ type DB struct {
 
 type dbMetrics struct {
 	loadedBlocks         prometheus.GaugeFunc
+	symbolTableSize      prometheus.GaugeFunc
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
@@ -137,6 +138,19 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		return float64(len(db.blocks))
+	})
+	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_symbol_table_size",
+		Help: "Size of symbol table on disk (in bytes)",
+	}, func() float64 {
+		db.mtx.RLock()
+		blocks := db.blocks[:]
+		db.mtx.RUnlock()
+		symTblSize := float64(0)
+		for _, b := range blocks {
+			symTblSize += float64(b.GetSymbolTableSize())
+		}
+		return symTblSize
 	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_reloads_total",
@@ -166,6 +180,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
+			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
 			m.cutoffs,
