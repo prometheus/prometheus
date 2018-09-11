@@ -885,6 +885,31 @@ scrape_configs:
 	}
 }
 
+func TestCoordinationWithEmptyProvider(t *testing.T) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	mgr := NewManager(ctx, nil)
+	mgr.updatert = 100 * time.Millisecond
+	go mgr.Run()
+
+	p := emptyProvider{}
+	mgr.StartCustomProvider(ctx, "empty", p)
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("no update received in the expected timeframe")
+	case tgs, ok := <-mgr.SyncCh():
+		if !ok {
+			t.Fatal("discovery manager channel is closed")
+		}
+		if len(tgs) != 0 {
+			t.Fatalf("target groups mismatch, got: %#v, expected: {}\n", tgs)
+		}
+	}
+}
+
 func TestCoordinationWithReceiver(t *testing.T) {
 	updateDelay := 100 * time.Millisecond
 
@@ -1095,7 +1120,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			mgr := NewManager(ctx, nil)
@@ -1109,21 +1134,25 @@ func TestCoordinationWithReceiver(t *testing.T) {
 
 			for i, expected := range tc.expected {
 				time.Sleep(expected.delay)
-				tgs, ok := <-mgr.SyncCh()
-				if !ok {
-					t.Fatal("discovery manager channel is closed")
-				}
-				if len(tgs) != len(expected.tgs) {
-					t.Fatalf("step %d: target groups mismatch, got: %d, expected: %d\ngot: %#v\nexpected: %#v",
-						i, len(tgs), len(expected.tgs), tgs, expected.tgs)
-				}
-				for k := range expected.tgs {
-					if _, ok := tgs[k]; !ok {
-						t.Fatalf("step %d: target group not found: %s", i, k)
+				select {
+				case <-ctx.Done():
+					t.Fatal("no update received in the expected timeframe")
+				case tgs, ok := <-mgr.SyncCh():
+					if !ok {
+						t.Fatal("discovery manager channel is closed")
 					}
-					assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
-						return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
-					})
+					if len(tgs) != len(expected.tgs) {
+						t.Fatalf("step %d: target groups mismatch, got: %d, expected: %d\ngot: %#v\nexpected: %#v",
+							i, len(tgs), len(expected.tgs), tgs, expected.tgs)
+					}
+					for k := range expected.tgs {
+						if _, ok := tgs[k]; !ok {
+							t.Fatalf("step %d: target group not found: %s", i, k)
+						}
+						assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
+							return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
+						})
+					}
 				}
 			}
 		})
@@ -1176,3 +1205,10 @@ type byGroupSource []*targetgroup.Group
 func (a byGroupSource) Len() int           { return len(a) }
 func (a byGroupSource) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byGroupSource) Less(i, j int) bool { return a[i].Source < a[j].Source }
+
+// emptyProvider sends no updates and closes the update channel.
+type emptyProvider struct{}
+
+func (e emptyProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
+	close(ch)
+}
