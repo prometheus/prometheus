@@ -23,7 +23,10 @@ import (
 	"testing"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/azure"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
@@ -34,10 +37,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
-
-	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
@@ -767,6 +766,10 @@ var expectedErrors = []struct {
 	{
 		filename: "azure_tenant_id_missing.bad.yml",
 		errMsg:   "Azure SD configuration requires a tenant_id",
+	},
+	{
+		filename: "azure_authentication_method.bad.yml",
+		errMsg:   "Unknown authentication_type \"invalid\". Supported types are 'OAuth' or 'ManagedServiceIdentity'",
 	},
 	{
 		filename: "empty_scrape_config.bad.yml",
