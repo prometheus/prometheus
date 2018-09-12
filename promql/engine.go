@@ -874,6 +874,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 				enh.ts = ts
 				// Make the function call.
 				outVec := e.Func.Call(inArgs, e.Args, enh)
+				if outVec.ContainsSameLabelset() {
+					panic(fmt.Errorf("vector cannot contain metrics with the same labelset"))
+				}
 				enh.out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
