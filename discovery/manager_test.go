@@ -65,7 +65,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     5,
+						interval:     5 * time.Millisecond,
 					},
 				},
 			},
@@ -79,19 +79,19 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				"tp1": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     5,
+						interval:     5 * time.Millisecond,
 					},
 				},
 				"tp2": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     200,
+						interval:     200 * time.Millisecond,
 					},
 				},
 				"tp3": {
 					{
 						targetGroups: []targetgroup.Group{},
-						interval:     100,
+						interval:     100 * time.Millisecond,
 					},
 				},
 			},
@@ -156,7 +156,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "3"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -214,7 +214,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -273,7 +273,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "1"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -319,7 +319,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -332,7 +332,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 500,
+						interval: 500 * time.Millisecond,
 					},
 				},
 				"tp2": {
@@ -347,7 +347,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
-						interval: 100,
+						interval: 100 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -360,7 +360,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 				},
 			},
@@ -470,7 +470,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -483,7 +483,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 150,
+						interval: 150 * time.Millisecond,
 					},
 				},
 				"tp2": {
@@ -498,7 +498,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "6"}},
 							},
 						},
-						interval: 200,
+						interval: 200 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -511,7 +511,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "8"}},
 							},
 						},
-						interval: 100,
+						interval: 100 * time.Millisecond,
 					},
 				},
 			},
@@ -590,7 +590,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "2"}},
 							},
 						},
-						interval: 30,
+						interval: 30 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -603,7 +603,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{},
 							},
 						},
-						interval: 10,
+						interval: 10 * time.Millisecond,
 					},
 					{
 						targetGroups: []targetgroup.Group{
@@ -616,7 +616,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 								Targets: []model.LabelSet{{"__instance__": "4"}},
 							},
 						},
-						interval: 300,
+						interval: 300 * time.Millisecond,
 					},
 				},
 			},
@@ -922,7 +922,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				},
 				"mock1": newMockDiscoveryProvider(
 					update{
-						interval: 2 * updateDelay / time.Millisecond,
+						interval: 2 * updateDelay,
 						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tg2",
@@ -974,7 +974,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 						},
 					},
 					update{
-						interval: 4 * updateDelay / time.Millisecond,
+						interval: 4 * updateDelay,
 						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tg2",
@@ -1026,7 +1026,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 						},
 					},
 					update{
-						interval: 2 * updateDelay / time.Millisecond,
+						interval: 2 * updateDelay,
 						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tg1",
@@ -1113,7 +1113,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				"mock2": newMockDiscoveryProvider(
 					// This update should only arrive after the receiver has read from the channel once.
 					update{
-						interval: 2 * updateDelay / time.Millisecond,
+						interval: 2 * updateDelay,
 						targetGroups: []targetgroup.Group{
 							{
 								Source:  "tg2",
@@ -1214,7 +1214,7 @@ func newMockDiscoveryProvider(updates ...update) mockdiscoveryProvider {
 func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgroup.Group) {
 	for _, u := range tp.updates {
 		if u.interval > 0 {
-			t := time.NewTicker(u.interval * time.Millisecond)
+			t := time.NewTicker(u.interval)
 			defer t.Stop()
 		Loop:
 			for {
