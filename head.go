@@ -82,8 +82,8 @@ type headMetrics struct {
 	seriesRemoved       prometheus.Counter
 	seriesNotFound      prometheus.Counter
 	chunks              prometheus.Gauge
-	chunksCreated       prometheus.Gauge
-	chunksRemoved       prometheus.Gauge
+	chunksCreated       prometheus.Counter
+	chunksRemoved       prometheus.Counter
 	gcDuration          prometheus.Summary
 	minTime             prometheus.GaugeFunc
 	maxTime             prometheus.GaugeFunc
@@ -102,27 +102,27 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_head_series",
 		Help: "Total number of series in the head block.",
 	})
-	m.seriesCreated = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.seriesCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_created_total",
 		Help: "Total number of series created in the head",
 	})
-	m.seriesRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.seriesRemoved = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
 	})
 	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_head_series_not_found",
+		Name: "prometheus_tsdb_head_series_not_found_total",
 		Help: "Total number of requests for series that were not found.",
 	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_chunks",
 		Help: "Total number of chunks in the head block.",
 	})
-	m.chunksCreated = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.chunksCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_chunks_created_total",
 		Help: "Total number of chunks created in the head",
 	})
-	m.chunksRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.chunksRemoved = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_chunks_removed_total",
 		Help: "Total number of chunks removed in the head",
 	})

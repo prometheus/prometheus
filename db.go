@@ -140,17 +140,17 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(len(db.blocks))
 	})
 	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_symbol_table_size",
+		Name: "prometheus_tsdb_symbol_table_size_bytes",
 		Help: "Size of symbol table on disk (in bytes)",
 	}, func() float64 {
 		db.mtx.RLock()
 		blocks := db.blocks[:]
 		db.mtx.RUnlock()
-		symTblSize := float64(0)
+		symTblSize := uint64(0)
 		for _, b := range blocks {
-			symTblSize += float64(b.GetSymbolTableSize())
+			symTblSize += b.GetSymbolTableSize()
 		}
-		return symTblSize
+		return float64(symTblSize)
 	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_reloads_total",
