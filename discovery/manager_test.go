@@ -658,13 +658,13 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for i, tc := range testCases {
 		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+
 			discoveryManager := NewManager(ctx, log.NewNopLogger())
 			discoveryManager.updatert = 100 * time.Millisecond
 
 			var totalUpdatesCount int
-
 			provUpdates := make(chan []*targetgroup.Group)
 			for _, up := range tc.updates {
 				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
@@ -676,7 +676,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 		Loop:
 			for x := 0; x < totalUpdatesCount; x++ {
 				select {
-				case <-time.After(10 * time.Second):
+				case <-ctx.Done():
 					t.Errorf("%d: no update arrived within the timeout limit", x)
 					break Loop
 				case tgs := <-provUpdates:
