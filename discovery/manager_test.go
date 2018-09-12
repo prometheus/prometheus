@@ -761,6 +761,7 @@ scrape_configs:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -829,7 +830,7 @@ scrape_configs:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
-	discoveryManager.updatert = 500 * time.Millisecond
+	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -868,6 +869,7 @@ scrape_configs:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
