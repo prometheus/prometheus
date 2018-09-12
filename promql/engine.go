@@ -719,9 +719,6 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// Make the function call.
 		enh.ts = ts
 		result := f(args, enh)
-		if result.ContainsSameLabelset() {
-			panic(fmt.Errorf("vector cannot contain metrics with the same labelset"))
-		}
 		enh.out = result[:0] // Reuse result vector.
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -729,6 +726,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 			for i, s := range result {
 				s.Point.T = ts
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
+			}
+			if mat.ContainsSameLabelset() {
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 			return mat
 		}
@@ -757,6 +757,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	mat := make(Matrix, 0, len(seriess))
 	for _, ss := range seriess {
 		mat = append(mat, ss)
+	}
+	if mat.ContainsSameLabelset() {
+		ev.errorf("vector cannot contain metrics with the same labelset")
 	}
 	return mat
 }
@@ -874,9 +877,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 				enh.ts = ts
 				// Make the function call.
 				outVec := e.Func.Call(inArgs, e.Args, enh)
-				if outVec.ContainsSameLabelset() {
-					panic(fmt.Errorf("vector cannot contain metrics with the same labelset"))
-				}
 				enh.out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
@@ -888,6 +888,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 				mat = append(mat, ss)
 			}
 		}
+		if mat.ContainsSameLabelset() {
+			ev.errorf("vector cannot contain metrics with the same labelset")
+		}
+
 		putPointSlice(points)
 		return mat
 
