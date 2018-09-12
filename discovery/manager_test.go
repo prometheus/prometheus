@@ -899,18 +899,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 		expected  []expect
 	}{
 		{
-			title: "Receiver should get an empty map even when the provider sends nothing and closes the channel",
-			providers: map[string]Discoverer{
-				"empty": &onceProvider{},
-			},
-			expected: []expect{
-				{
-					tgs: map[string][]*targetgroup.Group{},
-				},
-			},
-		},
-		{
-			title: "Receiver should get updates even when one provider closes its channel",
+			title: "Receiver should get all updates even when one provider closes its channel",
 			providers: map[string]Discoverer{
 				"once1": &onceProvider{
 					tgs: []*targetgroup.Group{
@@ -962,7 +951,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 			},
 		},
 		{
-			title: "Receiver should get updates even when the channel is blocked",
+			title: "Receiver should get all updates even when the channel is blocked",
 			providers: map[string]Discoverer{
 				"mock1": newMockDiscoveryProvider(
 					update{
