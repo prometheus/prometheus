@@ -1753,6 +1753,23 @@ var testSeries = []struct {
 		input:          `my_metric{a="b"} 1 +1 +4 -6 -2 8`,
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 1, 4, -6, -2, 8),
+	}, {
+		// Trailing spaces should be correctly handles.
+		input:          `my_metric{a="b"} 1 2 3    `,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input: `my_metric{a="b"} -3-3 -3`,
+		fail:  true,
+	}, {
+		input: `my_metric{a="b"} -3 -3-3`,
+		fail:  true,
+	}, {
+		input: `my_metric{a="b"} -3 _-2`,
+		fail:  true,
+	}, {
+		input: `my_metric{a="b"} -3 3+3x4-4`,
+		fail:  true,
 	},
 }
 
