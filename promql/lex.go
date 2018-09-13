@@ -143,6 +143,7 @@ const (
 	itemDuration
 	itemBlank
 	itemTimes
+	itemSpace
 
 	operatorsStart
 	// Operators.
@@ -247,6 +248,7 @@ var itemTypeStr = map[ItemType]string{
 	itemSemicolon:    ";",
 	itemBlank:        "_",
 	itemTimes:        "x",
+	itemSpace:        "<space>",
 
 	itemSUB:      "-",
 	itemADD:      "+",
@@ -616,6 +618,7 @@ func lexValueSequence(l *lexer) stateFn {
 	case r == eof:
 		return lexStatements
 	case isSpace(r):
+		l.emit(itemSpace)
 		lexSpace(l)
 	case r == '+':
 		l.emit(itemADD)
