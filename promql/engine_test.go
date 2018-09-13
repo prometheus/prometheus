@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestQueryConcurrency(t *testing.T) {
@@ -267,11 +268,12 @@ load 10s
 	}
 
 	cases := []struct {
-		Query    string
-		Result   Value
-		Start    time.Time
-		End      time.Time
-		Interval time.Duration
+		Query       string
+		Result      Value
+		Start       time.Time
+		End         time.Time
+		Interval    time.Duration
+		ShouldError bool
 	}{
 		// Instant queries.
 		{
@@ -326,6 +328,10 @@ load 10s
 			End:      time.Unix(10, 0),
 			Interval: 5 * time.Second,
 		},
+		{
+			Query:       `count_values("wrong label!", metric)`,
+			ShouldError: true,
+		},
 	}
 
 	for _, c := range cases {
@@ -340,6 +346,10 @@ load 10s
 			t.Fatalf("unexpected error creating query: %q", err)
 		}
 		res := qry.Exec(test.Context())
+		if c.ShouldError {
+			testutil.NotOk(t, res.Err, "expected error for the query %q", c.Query)
+			continue
+		}
 		if res.Err != nil {
 			t.Fatalf("unexpected error running query: %q", res.Err)
 		}
