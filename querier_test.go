@@ -1243,11 +1243,11 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 		100,
 		1000,
 		10000,
-		100000,
+		20000,
 	} {
 		for _, j := range []int{1, 2, 4, 8, 16, 32} {
 			b.Run(fmt.Sprintf("series=%d,blocks=%d", k, j), func(b *testing.B) {
-				lbls, err := labels.ReadLabels("testdata/1m.series", k)
+				lbls, err := labels.ReadLabels("testdata/20kseries.json", k)
 				testutil.Ok(b, err)
 
 				sort.Sort(labels.Slice(lbls))
