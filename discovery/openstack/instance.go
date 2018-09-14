@@ -45,21 +45,22 @@ const (
 
 // InstanceDiscovery discovers OpenStack instances.
 type InstanceDiscovery struct {
-	authOpts *gophercloud.AuthOptions
-	region   string
-	interval time.Duration
-	logger   log.Logger
-	port     int
+	authOpts     *gophercloud.AuthOptions
+	region       string
+	interval     time.Duration
+	logger       log.Logger
+	port         int
+	endpointType string
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
 func NewInstanceDiscovery(opts *gophercloud.AuthOptions,
-	interval time.Duration, port int, region string, l log.Logger) *InstanceDiscovery {
+	interval time.Duration, port int, region string, l log.Logger, endpointType string) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	return &InstanceDiscovery{authOpts: opts,
-		region: region, interval: interval, port: port, logger: l}
+		region: region, interval: interval, port: port, logger: l, endpointType: endpointType}
 }
 
 // Run implements the Discoverer interface.
@@ -113,8 +114,18 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack session: %s", err)
 	}
+
+	availability := gophercloud.AvailabilityPublic
+	switch i.endpointType {
+	case "internal":
+		availability = gophercloud.AvailabilityInternal
+	case "admin":
+		availability = gophercloud.AvailabilityAdmin
+
+	}
+
 	client, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
-		Region: i.region,
+		Region: i.region, Availability: availability,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)

@@ -60,6 +60,7 @@ type SDConfig struct {
 	Region           string             `yaml:"region"`
 	RefreshInterval  model.Duration     `yaml:"refresh_interval,omitempty"`
 	Port             int                `yaml:"port"`
+	EndpointType     string             `yaml:"endpoint_type"`
 }
 
 // OpenStackRole is role of the target in OpenStack.
@@ -145,7 +146,7 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 		return hypervisor, nil
 	case OpenStackRoleInstance:
 		instance := NewInstanceDiscovery(&opts,
-			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l)
+			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l, conf.EndpointType)
 		return instance, nil
 	default:
 		return nil, errors.New("unknown OpenStack discovery role")
