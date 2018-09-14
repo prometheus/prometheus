@@ -514,3 +514,11 @@ eval instant at 0m days_in_month(vector(1454284800))
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
 
+clear
+
+# Test duplicate labelset in promql output.
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
