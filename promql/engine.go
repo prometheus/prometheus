@@ -905,7 +905,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				}
 			}
 			if mat.ContainsSameLabelset() {
-				panic(fmt.Errorf("vector cannot contain metrics with the same labelset"))
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 		}
 		return mat
