@@ -18,15 +18,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"reflect"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"reflect"
 )
 
 type customSD struct {
@@ -54,10 +53,8 @@ func mapToArray(m map[string]*customSD) []customSD {
 	return arr
 }
 
-// Parses incoming target groups updates. If the update contains changes to the target groups
-// Adapter already knows about, or new target groups, we Marshal to JSON and write to file.
-func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
-	tempGroups := make(map[string]*customSD)
+func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[string]*customSD {
+	groups := make(map[string]*customSD)
 	for k, sdTargetGroups := range allTargetGroups {
 		for i, group := range sdTargetGroups {
 
@@ -80,12 +77,21 @@ func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup
 			}
 			// Make a unique key, including the current index, in case the sd_type (map key) and group.Source is not unique.
 			key := fmt.Sprintf("%s:%s:%d", k, group.Source, i)
-			tempGroups[key] = &customSD{
+			groups[key] = &customSD{
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
 		}
 	}
+
+	return groups
+}
+
+// Parses incoming target groups updates. If the update contains changes to the target groups
+// Adapter already knows about, or new target groups, we Marshal to JSON and write to file.
+func (a *Adapter) refreshTargetGroups(allTargetGroups map[string][]*targetgroup.Group) {
+	tempGroups := generateTargetGroups(allTargetGroups)
+
 	if !reflect.DeepEqual(a.groups, tempGroups) {
 		a.groups = tempGroups
 		err := a.writeOutput()
@@ -93,7 +99,6 @@ func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup
 			level.Error(log.With(a.logger, "component", "sd-adapter")).Log("err", err)
 		}
 	}
-
 }
 
 // Writes JSON formatted targets to output file.
@@ -131,7 +136,7 @@ func (a *Adapter) runCustomSD(ctx context.Context) {
 			if !ok {
 				return
 			}
-			a.generateTargetGroups(allTargetGroups)
+			a.refreshTargetGroups(allTargetGroups)
 		}
 	}
 }
