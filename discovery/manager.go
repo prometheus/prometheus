@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -187,16 +188,15 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 
 			}
 			for _, s := range p.subs {
-				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
-			}
-			if m.updateGroup(poolKey, tgs) {
-				select {
-				case triggerUpdate <- struct{}{}: // Signal that there was an update.
-				default:
+				if m.updateGroup(poolKey{setName: s, provider: p.name}, tgs) {
+					select {
+					case triggerUpdate <- struct{}{}: // Signal that there was an update.
+					default:
+					}
 				}
 			}
 
-		case <-ticker.C: // Some discoverers send updates too often so we send these to the receiver once every 5 seconds.
+		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
 			case <-triggerUpdate:
 				select {
@@ -223,6 +223,8 @@ func (m *Manager) cancelDiscoverers() {
 	m.discoverCancel = nil
 }
 
+// updateGroup updates or creates targets.
+// Returns false if nothing changed.
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) (updated bool) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -233,11 +235,6 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) (update
 				m.targets[poolKey] = make(map[string]*targetgroup.Group)
 			}
 
-			// No need to update when there aren't any actual changes.
-			// The k8s discoverer keeps sending updates for "kube-controller-manager" and
-			// "kube-scheduler" even though these don't actually include any targets.
-			// Even if we find a way to filter these in the k8s client
-			// this check is safer for other misbehaving providers.
 			if _, exist := m.targets[poolKey][tg.Source]; !exist || !m.targets[poolKey][tg.Source].Equal(tg) {
 				m.targets[poolKey][tg.Source] = tg
 				updated = true

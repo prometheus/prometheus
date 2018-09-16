@@ -94,7 +94,7 @@ func (tg *Group) UnmarshalJSON(b []byte) error {
 
 // Equal returns true if all fields have exactly the same values and lenghts.
 // To keep a good performance the `Targets []model.LabelSet` is not sorted
-// so if these arrive in a different order the comparing won't work.
+// so if Targets of the compared objects are in different order they are not equal.
 func (tg *Group) Equal(newTg *Group) bool {
 	if tg.Source != newTg.Source {
 		return false
