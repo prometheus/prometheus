@@ -60,6 +60,12 @@ func (a *Adapter) generateTargetGroups(allTargetGroups map[string][]*targetgroup
 	tempGroups := make(map[string]*customSD)
 	for k, sdTargetGroups := range allTargetGroups {
 		for i, group := range sdTargetGroups {
+
+			// There is no target, so no need to keep it
+			if len(group.Targets) <= 0 {
+				continue
+			}
+
 			newTargets := make([]string, 0)
 			newLabels := make(map[string]string)
 

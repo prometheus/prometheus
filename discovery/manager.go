@@ -232,11 +232,6 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 				m.targets[poolKey] = make(map[string]*targetgroup.Group)
 			}
 			m.targets[poolKey][tg.Source] = tg
-
-			// Clear the key in the case where the targets is empty.
-			if tg.Targets == nil || len(tg.Targets) <= 0 {
-				delete(m.targets[poolKey], tg.Source)
-			}
 		}
 	}
 }
