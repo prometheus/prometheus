@@ -97,12 +97,21 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
+	if c.EndpointType != "" &&
+		c.EndpointType != "admin" &&
+		c.EndpointType != "internal" &&
+		c.EndpointType != "public" {
+		return fmt.Errorf("endpoint_type must be one of admin, internal or public")
+	}
+
 	if c.Role == "" {
 		return fmt.Errorf("role missing (one of: instance, hypervisor)")
 	}
 	if c.Region == "" {
 		return fmt.Errorf("Openstack SD configuration requires a region")
 	}
+
 	return nil
 }
 
