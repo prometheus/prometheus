@@ -64,11 +64,11 @@ func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_wal_fsync_duration_seconds",
+		Name: "tsdb_wal_fsync_duration_seconds",
 		Help: "Duration of WAL fsync.",
 	})
 	m.corruptions = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_corruptions_total",
+		Name: "tsdb_wal_corruptions_total",
 		Help: "Total number of WAL corruptions.",
 	})
 
