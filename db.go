@@ -220,7 +220,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	if err := repairBadIndexVersion(l, dir); err != nil {
 		return nil, err
 	}
-	// Migrate old WAL.
+	// Migrate old WAL if one exists.
 	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
 		return nil, errors.Wrap(err, "migrate WAL")
 	}
