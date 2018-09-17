@@ -22,7 +22,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/prometheus/util/testutil"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
@@ -185,7 +185,7 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 		panic(err)
 	}
 
-	require.JSONEq(t, string(b1), string(b2))
+	testutil.Equals(t, string(b1), string(b2))
 }
 
 type hasSynced interface {
