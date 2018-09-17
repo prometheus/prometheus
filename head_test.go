@@ -781,6 +781,64 @@ func TestGCSeriesAccess(t *testing.T) {
 	testutil.Equals(t, ErrNotFound, err)
 }
 
+func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	app := h.appender()
+	lset := labels.FromStrings("a", "1")
+	_, err = app.Add(lset, 2100, 1)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, h.Truncate(2000))
+	testutil.Assert(t, nil != h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
+
+	testutil.Ok(t, app.Commit())
+
+	q, err := NewBlockQuerier(h, 1500, 2500)
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	ss, err := q.Select(labels.NewEqualMatcher("a", "1"))
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, true, ss.Next())
+}
+
+func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
+	h, err := NewHead(nil, nil, nil, 1000)
+	testutil.Ok(t, err)
+	defer h.Close()
+
+	h.initTime(0)
+
+	app := h.appender()
+	lset := labels.FromStrings("a", "1")
+	_, err = app.Add(lset, 2100, 1)
+	testutil.Ok(t, err)
+
+	testutil.Ok(t, h.Truncate(2000))
+	testutil.Assert(t, nil != h.series.getByHash(lset.Hash(), lset), "series should not have been garbage collected")
+
+	testutil.Ok(t, app.Rollback())
+
+	q, err := NewBlockQuerier(h, 1500, 2500)
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	ss, err := q.Select(labels.NewEqualMatcher("a", "1"))
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, false, ss.Next())
+
+	// Truncate again, this time the series should be deleted
+	testutil.Ok(t, h.Truncate(2050))
+	testutil.Equals(t, (*memSeries)(nil), h.series.getByHash(lset.Hash(), lset))
+}
+
 func TestHead_LogRollback(t *testing.T) {
 	dir, err := ioutil.TempDir("", "wal_rollback")
 	testutil.Ok(t, err)
