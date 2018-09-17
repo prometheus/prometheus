@@ -51,7 +51,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, true, nil,
+		nil, true, nil, nil,
 	)
 	result := promql.Vector{
 		{
@@ -192,7 +192,7 @@ func TestForStateAddSamples(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, true, nil,
+		nil, true, nil, nil,
 	)
 	result := promql.Vector{
 		{
@@ -366,7 +366,7 @@ func TestForStateRestore(t *testing.T) {
 		expr,
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
-		nil, true, nil,
+		nil, true, nil, nil,
 	)
 
 	group := NewGroup("default", "", time.Second, []Rule{rule}, true, opts)
@@ -426,7 +426,7 @@ func TestForStateRestore(t *testing.T) {
 			expr,
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
-			nil, false, nil,
+			nil, false, nil, nil,
 		)
 		newGroup := NewGroup("default", "", time.Second, []Rule{newRule}, true, opts)
 
@@ -574,7 +574,7 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, true, nil, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule2", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
@@ -595,7 +595,7 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, true, nil,nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule4", nil, nil),
 		},
@@ -672,7 +672,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := promql.ParseExpr("a > 1")
 	testutil.Ok(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, true, log.NewNopLogger(), nil)
 	group := NewGroup("alert", "", time.Second, []Rule{rule}, true, opts)
 
 	app, _ := storage.Appender()
