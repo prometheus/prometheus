@@ -30,6 +30,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
 
 	influx "github.com/influxdata/influxdb/client/v2"
@@ -97,7 +98,7 @@ func init() {
 
 func main() {
 	cfg := parseFlags()
-	http.Handle(cfg.telemetryPath, prometheus.Handler())
+	http.Handle(cfg.telemetryPath, promhttp.Handler())
 
 	logLevel := promlog.AllowedLevel{}
 	if err := logLevel.Set(cfg.logLevel); err != nil {
