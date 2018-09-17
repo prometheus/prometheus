@@ -193,7 +193,7 @@ func (r *Rule) Validate() (errs []error) {
 				if len(match.RelationalOperator) > 0 {
 					errs = append(errs, errors.Errorf("invalid filter: mutual exclusion between op and v_range"))
 				}
-			}else{
+			} else {
 				if _, ok := relationalOpMap[match.RelationalOperator]; !ok {
 					errs = append(errs, errors.Errorf("invalid filter match operator name: %s", match.RelationalOperator))
 				}

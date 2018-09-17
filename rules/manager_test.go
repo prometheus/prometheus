@@ -595,7 +595,7 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
 			NewRecordingRule("rule3", nil, nil),
-			NewAlertingRule("alert", nil, 0, nil, nil, true, nil,nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, true, nil, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule4", nil, nil),
 		},
