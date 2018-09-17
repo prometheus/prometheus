@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/rules/match"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -723,6 +724,26 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 				}
 
 				if r.Alert != "" {
+					//filter
+					var matchersConds match.MatchersConds
+
+					for _, matchersArr := range r.Filters {
+						for _, matcher := range matchersArr {
+							var matchers []*match.Matcher
+
+							for lln, llv := range matcher.MatchMap{
+								matchers = append(matchers, match.NewMatcher(lln, llv))
+							}
+
+							for lln, llv := range matcher.MatchREMap{
+								matchers = append(matchers, match.NewRegexMatcher(lln, llv.Regexp))
+							}
+
+							matchersConds = append(matchersConds, match.NewMatchers(matchers, matcher.Value,
+								matcher.RelationalOperator, matcher.ValueRange["min"], matcher.ValueRange["max"]))
+						}
+					}
+
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
 						expr,
@@ -731,6 +752,7 @@ func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[s
 						labels.FromMap(r.Annotations),
 						m.restored,
 						log.With(m.logger, "alert", r.Alert),
+						matchersConds,
 					))
 					continue
 				}

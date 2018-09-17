@@ -62,3 +62,26 @@ groups:
       severity: critical
     annotations:
       description: "stuff's happening with {{ $.labels.service }}"
+    filters:
+      match:
+      - label:
+          instance: prometheus
+        v: 50
+        op: lt
+      - label:
+          instance: prometheuss
+          job: prom
+        v: 1
+        op: gt
+
+      match_re:
+      - label:
+          instance: prometheusre
+        v: 50
+        op: '>='
+      - label:
+          instance: prometheuss
+          job: prom
+        v_range:
+          min: 1
+          max: 100
