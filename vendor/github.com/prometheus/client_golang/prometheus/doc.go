@@ -121,7 +121,17 @@
 // NewConstSummary (and their respective Must… versions). That will happen in
 // the Collect method. The Describe method has to return separate Desc
 // instances, representative of the “throw-away” metrics to be created later.
-// NewDesc comes in handy to create those Desc instances.
+// NewDesc comes in handy to create those Desc instances. Alternatively, you
+// could return no Desc at all, which will marke the Collector “unchecked”.  No
+// checks are porformed at registration time, but metric consistency will still
+// be ensured at scrape time, i.e. any inconsistencies will lead to scrape
+// errors. Thus, with unchecked Collectors, the responsibility to not collect
+// metrics that lead to inconsistencies in the total scrape result lies with the
+// implementer of the Collector. While this is not a desirable state, it is
+// sometimes necessary. The typical use case is a situatios where the exact
+// metrics to be returned by a Collector cannot be predicted at registration
+// time, but the implementer has sufficient knowledge of the whole system to
+// guarantee metric consistency.
 //
 // The Collector example illustrates the use case. You can also look at the
 // source code of the processCollector (mirroring process metrics), the
