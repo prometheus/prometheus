@@ -190,15 +190,15 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		stopc:       make(chan chan struct{}),
 	}
 	w.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_tsdb_wal_fsync_duration_seconds",
+		Name: "tsdb_wal_fsync_duration_seconds",
 		Help: "Duration of WAL fsync.",
 	})
 	w.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_page_flushes_total",
+		Name: "tsdb_wal_page_flushes_total",
 		Help: "Total number of page flushes.",
 	})
 	w.pageCompletions = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_completed_pages_total",
+		Name: "tsdb_wal_completed_pages_total",
 		Help: "Total number of completed pages.",
 	})
 	if reg != nil {
