@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"regexp"
 	"time"
 
 	"github.com/pkg/errors"
@@ -92,12 +93,21 @@ type RuleGroup struct {
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record      string            `yaml:"record,omitempty"`
-	Alert       string            `yaml:"alert,omitempty"`
-	Expr        string            `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Record      string                      `yaml:"record,omitempty"`
+	Alert       string                      `yaml:"alert,omitempty"`
+	Expr        string                      `yaml:"expr"`
+	For         model.Duration              `yaml:"for,omitempty"`
+	Labels      map[string]string           `yaml:"labels,omitempty"`
+	Annotations map[string]string           `yaml:"annotations,omitempty"`
+	Filters     map[string][]*FilterSection `yaml:"filters,omitempty"`
+}
+
+type FilterSection struct {
+	MatchMap           map[string]string  `yaml:"label,omitempty"`
+	MatchREMap         map[string]Regexp  `yaml:"label_re,omitempty"`
+	Value              float64            `yaml:"v,omitempty"`
+	RelationalOperator string             `yaml:"op,omitempty"`
+	ValueRange         map[string]float64 `yaml:"v_range,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -139,6 +149,53 @@ func (r *Rule) Validate() (errs []error) {
 	for k := range r.Annotations {
 		if !model.LabelName(k).IsValid() {
 			errs = append(errs, errors.Errorf("invalid annotation name: %s", k))
+		}
+	}
+
+	matchKeyMap := map[string]bool{"match": true, "match_re": true}
+	relationalOpMap := map[string]bool{"eq": true, "ne": true, "gt": true, "ge": true, "lt": true, "le": true,
+		"=": true, "!=": true, ">": true, ">=": true, "<": true, "<=": true}
+	valueRangeMap := map[string]bool{"min": true, "max": true}
+	for key, matches := range r.Filters {
+		if _, ok := matchKeyMap[key]; !ok {
+			errs = append(errs, errors.Errorf("invalid filter map key name: %s", key))
+		}
+		for _, match := range matches {
+			if len(match.MatchMap) > 0 {
+				for k, _ := range match.MatchMap {
+					if !model.LabelName(k).IsValid() {
+						errs = append(errs, errors.Errorf("invalid filter match condition label name: %s", k))
+					}
+				}
+			}
+			if len(match.MatchREMap) > 0 {
+				for k, _ := range match.MatchREMap {
+					if !model.LabelName(k).IsValid() {
+						errs = append(errs, errors.Errorf("invalid filter match_re condition label name: %s", k))
+					}
+				}
+			}
+			if len(match.ValueRange) > 0 {
+				fbool := true
+				for k, _ := range match.ValueRange {
+					if _, ok := valueRangeMap[k]; !ok {
+						errs = append(errs, errors.Errorf("invalid filter condition value range name: %s", k))
+						fbool = false
+					}
+				}
+				if fbool {
+					if match.ValueRange["min"] > match.ValueRange["max"] {
+						errs = append(errs, errors.Errorf("invalid filter v_range: min is greater than max"))
+					}
+				}
+				if len(match.RelationalOperator) > 0 {
+					errs = append(errs, errors.Errorf("invalid filter: mutual exclusion between op and v_range"))
+				}
+			} else {
+				if _, ok := relationalOpMap[match.RelationalOperator]; !ok {
+					errs = append(errs, errors.Errorf("invalid filter match operator name: %s", match.RelationalOperator))
+				}
+			}
 		}
 	}
 
@@ -205,4 +262,51 @@ func ParseFile(file string) (*RuleGroups, []error) {
 		return nil, []error{err}
 	}
 	return Parse(b)
+}
+
+// Regexp encapsulates a regexp.Regexp and makes it YAML marshallable.
+type Regexp struct {
+	*regexp.Regexp
+	original string
+}
+
+// NewRegexp creates a new anchored Regexp and returns an error if the
+// passed-in regular expression does not compile.
+func NewRegexp(s string) (Regexp, error) {
+	regex, err := regexp.Compile("^(?:" + s + ")$")
+	return Regexp{
+		Regexp:   regex,
+		original: s,
+	}, err
+}
+
+// MustNewRegexp works like NewRegexp, but panics if the regular expression does not compile.
+func MustNewRegexp(s string) Regexp {
+	re, err := NewRegexp(s)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	r, err := NewRegexp(s)
+	if err != nil {
+		return err
+	}
+	*re = r
+	return nil
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (re Regexp) MarshalYAML() (interface{}, error) {
+	if re.original != "" {
+		return re.original, nil
+	}
+	return nil, nil
 }
