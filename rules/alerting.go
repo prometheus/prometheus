@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules/match"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -133,21 +134,25 @@ type AlertingRule struct {
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
 
+	// rule filter match conditions
+	matchersConds match.MatchersConds
+
 	logger log.Logger
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
+func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger, mConds match.MatchersConds) *AlertingRule {
 	return &AlertingRule{
-		name:         name,
-		vector:       vec,
-		holdDuration: hold,
-		labels:       lbls,
-		annotations:  anns,
-		health:       HealthUnknown,
-		active:       map[uint64]*Alert{},
-		logger:       logger,
-		restored:     restored,
+		name:          name,
+		vector:        vec,
+		holdDuration:  hold,
+		labels:        lbls,
+		annotations:   anns,
+		health:        HealthUnknown,
+		active:        map[uint64]*Alert{},
+		logger:        logger,
+		restored:      restored,
+		matchersConds: mConds,
 	}
 }
 
@@ -285,11 +290,22 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	resultFPs := map[uint64]struct{}{}
 
 	var vec promql.Vector
+
+Loop:
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := make(map[string]string, len(smpl.Metric))
 		for _, lbl := range smpl.Metric {
 			l[lbl.Name] = lbl.Value
+		}
+
+		if len(r.matchersConds) > 0 {
+			for _, matchers := range r.matchersConds {
+				fbool := matchers.Match(l, smpl.V)
+				if fbool {
+					continue Loop
+				}
+			}
 		}
 
 		tmplData := template.AlertTemplateData(l, smpl.V)
@@ -489,12 +505,49 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		annotations[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
+	var match []*rulefmt.FilterSection
+	var matchRE []*rulefmt.FilterSection
+	for _, matchers := range r.matchersConds {
+		//map
+		temp := map[string]string{}
+		temp_re := map[string]rulefmt.Regexp{}
+		for _, matcher := range matchers.Matches {
+			if matcher.IsRegex {
+				regex, _ := rulefmt.NewRegexp(matcher.Value)
+				temp_re[matcher.Name] = regex
+				continue
+			}
+			temp[matcher.Name] = matcher.Value
+		}
+		v_range := map[string]float64{}
+		if matchers.IsRangeValue {
+			v_range["min"] = matchers.MinValue
+			v_range["max"] = matchers.MaxValue
+		}
+		if len(temp_re) > 0 {
+			matchRE = append(matchRE, &rulefmt.FilterSection{MatchREMap: temp_re,
+				Value: matchers.Value, ValueRange: v_range,
+				RelationalOperator: matchers.RelationalOperator})
+		}
+		if len(temp) > 0 {
+			match = append(match, &rulefmt.FilterSection{MatchMap: temp,
+				Value: matchers.Value, ValueRange: v_range,
+				RelationalOperator: matchers.RelationalOperator})
+		}
+	}
+
+	filters := map[string][]*rulefmt.FilterSection{
+		"match":    match,
+		"match_re": matchRE,
+	}
+
 	ar := rulefmt.Rule{
 		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
 		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
 		For:         model.Duration(r.holdDuration),
 		Labels:      labels,
 		Annotations: annotations,
+		Filters:     filters,
 	}
 
 	byt, err := yaml.Marshal(ar)
