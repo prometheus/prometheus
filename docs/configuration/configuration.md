@@ -535,6 +535,9 @@ region: <string>
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# The endpoint type to connect to. Must be one of public, admin or internal.
+ [ endpoint_type <string> | default = public ]
 ```
 
 ### `<file_sd_config>`
