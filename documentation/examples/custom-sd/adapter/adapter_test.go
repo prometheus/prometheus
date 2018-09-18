@@ -14,10 +14,11 @@
 package adapter
 
 import (
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"reflect"
 	"testing"
+
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 // TestGenerateTargetGroups checks that the target is correctly generated.
@@ -141,7 +142,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 		result := generateTargetGroups(testCase.targetGroup)
 
 		if !reflect.DeepEqual(result, testCase.expectedCustomSD) {
-			t.Errorf("%v :\nresult produced %v\nmismatch the expected customSD: %v",
+			t.Errorf("%q failed\ngot: %#v\nexpected: %v",
 				testCase.title,
 				result,
 				testCase.expectedCustomSD)
