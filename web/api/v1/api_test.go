@@ -234,11 +234,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:            func() time.Time { return now },
-			config:         func() config.Config { return samplePrometheusCfg },
-			flagsMap:       sampleFlagMap,
-			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever: algr,
+			now:                   func() time.Time { return now },
+			config:                func() config.Config { return samplePrometheusCfg },
+			flagsMap:              sampleFlagMap,
+			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, true)
@@ -287,11 +287,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:            func() time.Time { return now },
-			config:         func() config.Config { return samplePrometheusCfg },
-			flagsMap:       sampleFlagMap,
-			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever: algr,
+			now:                   func() time.Time { return now },
+			config:                func() config.Config { return samplePrometheusCfg },
+			flagsMap:              sampleFlagMap,
+			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever:        algr,
 		}
 
 		testEndpoints(t, api, false)
