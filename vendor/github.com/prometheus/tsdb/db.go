@@ -119,11 +119,13 @@ type DB struct {
 
 type dbMetrics struct {
 	loadedBlocks         prometheus.GaugeFunc
+	symbolTableSize      prometheus.GaugeFunc
 	reloads              prometheus.Counter
 	reloadsFailed        prometheus.Counter
 	compactionsTriggered prometheus.Counter
 	cutoffs              prometheus.Counter
 	cutoffsFailed        prometheus.Counter
+	startTime            prometheus.GaugeFunc
 	tombCleanTimer       prometheus.Histogram
 }
 
@@ -131,46 +133,72 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m := &dbMetrics{}
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_blocks_loaded",
+		Name: "tsdb_blocks_loaded",
 		Help: "Number of currently loaded data blocks",
 	}, func() float64 {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		return float64(len(db.blocks))
 	})
+	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "tsdb_symbol_table_size_bytes",
+		Help: "Size of symbol table on disk (in bytes)",
+	}, func() float64 {
+		db.mtx.RLock()
+		blocks := db.blocks[:]
+		db.mtx.RUnlock()
+		symTblSize := uint64(0)
+		for _, b := range blocks {
+			symTblSize += b.GetSymbolTableSize()
+		}
+		return float64(symTblSize)
+	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_reloads_total",
+		Name: "tsdb_reloads_total",
 		Help: "Number of times the database reloaded block data from disk.",
 	})
 	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_reloads_failures_total",
+		Name: "tsdb_reloads_failures_total",
 		Help: "Number of times the database failed to reload block data from disk.",
 	})
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_triggered_total",
+		Name: "tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
 	m.cutoffs = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_retention_cutoffs_total",
+		Name: "tsdb_retention_cutoffs_total",
 		Help: "Number of times the database cut off block data from disk.",
 	})
 	m.cutoffsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_retention_cutoffs_failures_total",
+		Name: "tsdb_retention_cutoffs_failures_total",
 		Help: "Number of times the database failed to cut off block data from disk.",
 	})
+	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "tsdb_lowest_timestamp",
+		Help: "Lowest timestamp value stored in the database.",
+	}, func() float64 {
+		db.mtx.RLock()
+		defer db.mtx.RUnlock()
+		if len(db.blocks) == 0 {
+			return float64(db.head.minTime)
+		}
+		return float64(db.blocks[0].meta.MinTime)
+	})
 	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
+		Name: "tsdb_tombstone_cleanup_seconds",
 		Help: "The time taken to recompact blocks to remove tombstones.",
 	})
 
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
+			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
 			m.cutoffs,
 			m.cutoffsFailed,
 			m.compactionsTriggered,
+			m.startTime,
 			m.tombCleanTimer,
 		)
 	}

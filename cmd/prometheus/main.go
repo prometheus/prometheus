@@ -555,7 +555,10 @@ func main() {
 				db, err := tsdb.Open(
 					cfg.localStoragePath,
 					log.With(logger, "component", "tsdb"),
-					prometheus.DefaultRegisterer,
+					prometheus.WrapRegistererWithPrefix(
+						"prometheus_",
+						prometheus.DefaultRegisterer,
+					),
 					&cfg.tsdb,
 				)
 				if err != nil {
