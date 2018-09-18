@@ -43,6 +43,7 @@ var (
 	DefaultSDConfig = SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
+		EndpointType:    "public",
 	}
 )
 
@@ -98,10 +99,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.EndpointType != "" &&
-		c.EndpointType != "admin" &&
-		c.EndpointType != "internal" &&
-		c.EndpointType != "public" {
+	if c.EndpointType != "public" && c.EndpointType != "admin" && c.EndpointType != "internal" {
 		return fmt.Errorf("endpoint_type must be one of admin, internal or public")
 	}
 
