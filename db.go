@@ -133,7 +133,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	m := &dbMetrics{}
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_blocks_loaded",
+		Name: "prometheus_tsdb_blocks_loaded",
 		Help: "Number of currently loaded data blocks",
 	}, func() float64 {
 		db.mtx.RLock()
@@ -141,7 +141,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(len(db.blocks))
 	})
 	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_symbol_table_size_bytes",
+		Name: "prometheus_tsdb_symbol_table_size_bytes",
 		Help: "Size of symbol table on disk (in bytes)",
 	}, func() float64 {
 		db.mtx.RLock()
@@ -154,27 +154,27 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(symTblSize)
 	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_reloads_total",
+		Name: "prometheus_tsdb_reloads_total",
 		Help: "Number of times the database reloaded block data from disk.",
 	})
 	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_reloads_failures_total",
+		Name: "prometheus_tsdb_reloads_failures_total",
 		Help: "Number of times the database failed to reload block data from disk.",
 	})
 	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_triggered_total",
+		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
 	})
 	m.cutoffs = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_retention_cutoffs_total",
+		Name: "prometheus_tsdb_retention_cutoffs_total",
 		Help: "Number of times the database cut off block data from disk.",
 	})
 	m.cutoffsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_retention_cutoffs_failures_total",
+		Name: "prometheus_tsdb_retention_cutoffs_failures_total",
 		Help: "Number of times the database failed to cut off block data from disk.",
 	})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "tsdb_lowest_timestamp",
+		Name: "prometheus_tsdb_lowest_timestamp",
 		Help: "Lowest timestamp value stored in the database.",
 	}, func() float64 {
 		db.mtx.RLock()
@@ -185,7 +185,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		return float64(db.blocks[0].meta.MinTime)
 	})
 	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "tsdb_tombstone_cleanup_seconds",
+		Name: "prometheus_tsdb_tombstone_cleanup_seconds",
 		Help: "The time taken to recompact blocks to remove tombstones.",
 	})
 

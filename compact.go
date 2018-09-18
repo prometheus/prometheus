@@ -84,30 +84,30 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m := &compactorMetrics{}
 
 	m.ran = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_total",
+		Name: "prometheus_tsdb_compactions_total",
 		Help: "Total number of compactions that were executed for the partition.",
 	})
 	m.failed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "tsdb_compactions_failed_total",
+		Name: "prometheus_tsdb_compactions_failed_total",
 		Help: "Total number of compactions that failed for the partition.",
 	})
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_duration_seconds",
+		Name:    "prometheus_tsdb_compaction_duration_seconds",
 		Help:    "Duration of compaction runs",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	})
 	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_chunk_size_bytes",
+		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
 		Help:    "Final size of chunks on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(32, 1.5, 12),
 	})
 	m.chunkSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_chunk_samples",
+		Name:    "prometheus_tsdb_compaction_chunk_samples",
 		Help:    "Final number of samples on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(4, 1.5, 12),
 	})
 	m.chunkRange = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "tsdb_compaction_chunk_range_seconds",
+		Name:    "prometheus_tsdb_compaction_chunk_range_seconds",
 		Help:    "Final time range of chunks on their first compaction",
 		Buckets: prometheus.ExponentialBuckets(100, 4, 10),
 	})
