@@ -140,6 +140,22 @@ func (vec Vector) String() string {
 	return strings.Join(entries, "\n")
 }
 
+// ContainsSameLabelset checks if a vector has samples with the same labelset
+// Such a behaviour is semantically undefined
+// https://github.com/prometheus/prometheus/issues/4562
+func (vec Vector) ContainsSameLabelset() bool {
+	l := make(map[uint64]struct{}, len(vec))
+	for _, s := range vec {
+		hash := s.Metric.Hash()
+		if _, ok := l[hash]; ok {
+			return true
+		} else {
+			l[hash] = struct{}{}
+		}
+	}
+	return false
+}
+
 // Matrix is a slice of Seriess that implements sort.Interface and
 // has a String method.
 type Matrix []Series
@@ -158,6 +174,22 @@ func (m Matrix) String() string {
 func (m Matrix) Len() int           { return len(m) }
 func (m Matrix) Less(i, j int) bool { return labels.Compare(m[i].Metric, m[j].Metric) < 0 }
 func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
+
+// ContainsSameLabelset checks if a matrix has samples with the same labelset
+// Such a behaviour is semantically undefined
+// https://github.com/prometheus/prometheus/issues/4562
+func (m Matrix) ContainsSameLabelset() bool {
+	l := make(map[uint64]struct{}, len(m))
+	for _, ss := range m {
+		hash := ss.Metric.Hash()
+		if _, ok := l[hash]; ok {
+			return true
+		} else {
+			l[hash] = struct{}{}
+		}
+	}
+	return false
+}
 
 // Result holds the resulting value of an execution or an error
 // if any occurred.
