@@ -39,18 +39,19 @@ const (
 
 // HypervisorDiscovery discovers OpenStack hypervisors.
 type HypervisorDiscovery struct {
-	authOpts *gophercloud.AuthOptions
-	region   string
-	interval time.Duration
-	logger   log.Logger
-	port     int
+	authOpts     *gophercloud.AuthOptions
+	region       string
+	interval     time.Duration
+	logger       log.Logger
+	port         int
+	endpointType string
 }
 
 // NewHypervisorDiscovery returns a new hypervisor discovery.
 func NewHypervisorDiscovery(opts *gophercloud.AuthOptions,
-	interval time.Duration, port int, region string, l log.Logger) *HypervisorDiscovery {
+	interval time.Duration, port int, region string, l log.Logger, endpointType string) *HypervisorDiscovery {
 	return &HypervisorDiscovery{authOpts: opts,
-		region: region, interval: interval, port: port, logger: l}
+		region: region, interval: interval, port: port, logger: l, endpointType: endpointType}
 }
 
 // Run implements the Discoverer interface.
@@ -104,8 +105,18 @@ func (h *HypervisorDiscovery) refresh() (*targetgroup.Group, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack session: %s", err)
 	}
+
+	availability := gophercloud.AvailabilityPublic
+	switch h.endpointType {
+	case "internal":
+		availability = gophercloud.AvailabilityInternal
+	case "admin":
+		availability = gophercloud.AvailabilityAdmin
+
+	}
+
 	client, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
-		Region: h.region,
+		Region: h.region, Availability: availability,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %s", err)

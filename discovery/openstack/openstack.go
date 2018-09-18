@@ -149,7 +149,7 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
 		hypervisor := NewHypervisorDiscovery(&opts,
-			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l)
+			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l, conf.EndpointType)
 		return hypervisor, nil
 	case OpenStackRoleInstance:
 		instance := NewInstanceDiscovery(&opts,
