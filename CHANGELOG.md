@@ -1,3 +1,9 @@
+## 2.4.1 / 2018-09-19
+
+* [ENHANCEMENT] New TSDB metrics prometheus/tsdb#375 prometheus/tsdb#363
+* [BUGFIX] Render UI correctly for Windows #4616
+* [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
+
 ## 2.4.0 / 2018-09-11
 
 This release includes multiple bugfixes and features. Further, the WAL implementation has been re-written so the storage is not forward compatible. Prometheus 2.3 storage will work on 2.4 but not vice-versa.
