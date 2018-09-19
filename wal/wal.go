@@ -255,15 +255,17 @@ Loop:
 
 // Repair attempts to repair the WAL based on the error.
 // It discards all data after the corruption.
-func (w *WAL) Repair(err error) error {
+func (w *WAL) Repair(origErr error) error {
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
 	// But that's not generally applicable if the records have any kind of causality.
 	// Maybe as an extra mode in the future if mid-WAL corruptions become
 	// a frequent concern.
+	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
+
 	cerr, ok := err.(*CorruptionErr)
 	if !ok {
-		return errors.New("cannot handle error")
+		return errors.Wrap(origErr, "cannot handle error")
 	}
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
