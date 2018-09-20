@@ -465,18 +465,19 @@ func targetsForApp(app *App) []model.LabelSet {
 		}
 
 		// Iterate over the ports we gathered using one of the methods above.
-		for i := 0; i < len(ports); i++ {
+		for i, port := range ports {
 
 			// Each port represents a possible Prometheus target.
-			targetAddress := targetEndpoint(&t, ports[i], app.isContainerNet())
+			targetAddress := targetEndpoint(&t, port, app.isContainerNet())
 			target := model.LabelSet{
 				model.AddressLabel: model.LabelValue(targetAddress),
 				taskLabel:          model.LabelValue(t.ID),
 				portIndexLabel:     model.LabelValue(strconv.Itoa(i)),
 			}
 
-			// Gather all port labels and set them on the current target.
-			// Skip if there are no Marathon labels set on this port.
+			// Gather all port labels and set them on the current target, skip if the port has no Marathon labels.
+			// This will happen in the host networking case with only `ports` defined, where
+			// it is inefficient to allocate a list of possibly hundreds of empty label maps per host port.
 			if len(labels) > 0 {
 				for ln, lv := range labels[i] {
 					ln = prefix + strutil.SanitizeLabelName(ln)
