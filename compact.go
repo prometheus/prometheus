@@ -626,7 +626,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		for _, chk := range chks {
-			c.chunkPool.Put(chk.Chunk)
+			if err := c.chunkPool.Put(chk.Chunk); err != nil {
+				return errors.Wrap(err, "put chunk")
+			}
 		}
 
 		for _, l := range lset {

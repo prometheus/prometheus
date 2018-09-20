@@ -145,7 +145,9 @@ func (b *writeBenchmark) run() {
 		if err := b.storage.Close(); err != nil {
 			exitWithError(err)
 		}
-		b.stopProfiling()
+		if err := b.stopProfiling(); err != nil {
+			exitWithError(err)
+		}
 	})
 }
 
@@ -248,7 +250,9 @@ func (b *writeBenchmark) startProfiling() {
 	if err != nil {
 		exitWithError(fmt.Errorf("bench: could not create cpu profile: %v", err))
 	}
-	pprof.StartCPUProfile(b.cpuprof)
+	if err := pprof.StartCPUProfile(b.cpuprof); err != nil {
+		exitWithError(fmt.Errorf("bench: could not start CPU profile: %v", err))
+	}
 
 	// Start memory profiling.
 	b.memprof, err = os.Create(filepath.Join(b.outPath, "mem.prof"))
@@ -271,29 +275,36 @@ func (b *writeBenchmark) startProfiling() {
 	runtime.SetMutexProfileFraction(20)
 }
 
-func (b *writeBenchmark) stopProfiling() {
+func (b *writeBenchmark) stopProfiling() error {
 	if b.cpuprof != nil {
 		pprof.StopCPUProfile()
 		b.cpuprof.Close()
 		b.cpuprof = nil
 	}
 	if b.memprof != nil {
-		pprof.Lookup("heap").WriteTo(b.memprof, 0)
+		if err := pprof.Lookup("heap").WriteTo(b.memprof, 0); err != nil {
+			return fmt.Errorf("error writing mem profile: %v", err)
+		}
 		b.memprof.Close()
 		b.memprof = nil
 	}
 	if b.blockprof != nil {
-		pprof.Lookup("block").WriteTo(b.blockprof, 0)
+		if err := pprof.Lookup("block").WriteTo(b.blockprof, 0); err != nil {
+			return fmt.Errorf("error writing block profile: %v", err)
+		}
 		b.blockprof.Close()
 		b.blockprof = nil
 		runtime.SetBlockProfileRate(0)
 	}
 	if b.mtxprof != nil {
-		pprof.Lookup("mutex").WriteTo(b.mtxprof, 0)
+		if err := pprof.Lookup("mutex").WriteTo(b.mtxprof, 0); err != nil {
+			return fmt.Errorf("error writing mutex profile: %v", err)
+		}
 		b.mtxprof.Close()
 		b.mtxprof = nil
 		runtime.SetMutexProfileFraction(0)
 	}
+	return nil
 }
 
 func measureTime(stage string, f func()) time.Duration {
