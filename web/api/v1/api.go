@@ -611,10 +611,18 @@ type Alert struct {
 }
 
 func (api *API) alerts(r *http.Request) (interface{}, *apiError, func()) {
+	alertName := r.FormValue("alertname")
 	alertingRules := api.rulesRetriever.AlertingRules()
+	instanceName := r.FormValue("instance")
 	alerts := []*Alert{}
 
 	for _, alertingRule := range alertingRules {
+		if alertName != "" && alertingRule.Name() != alertName {
+			continue
+		}
+		if instanceName != "" && alertingRule.Labels().Get("instance") != instanceName {
+			continue
+		}
 		alerts = append(
 			alerts,
 			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
