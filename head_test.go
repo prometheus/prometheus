@@ -355,7 +355,7 @@ Outer:
 			expSamples = append(expSamples, sample{ts, smpls[ts]})
 		}
 
-		expss := newListSeriesSet([]Series{
+		expss := newMockSeriesSet([]Series{
 			newSeries(map[string]string{"a": "b"}, expSamples),
 		})
 
@@ -553,7 +553,7 @@ func TestDelete_e2e(t *testing.T) {
 					))
 				}
 			}
-			expSs := newListSeriesSet(matchedSeries)
+			expSs := newMockSeriesSet(matchedSeries)
 			// Compare both SeriesSets.
 			for {
 				eok, rok := expSs.Next(), ss.Next()

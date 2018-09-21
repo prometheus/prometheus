@@ -28,6 +28,30 @@ import (
 	"github.com/prometheus/tsdb/testutil"
 )
 
+type mockSeriesSet struct {
+	next   func() bool
+	series func() Series
+	err    func() error
+}
+
+func (m *mockSeriesSet) Next() bool { return m.next() }
+func (m *mockSeriesSet) At() Series { return m.series() }
+func (m *mockSeriesSet) Err() error { return m.err() }
+
+func newMockSeriesSet(list []Series) *mockSeriesSet {
+	i := -1
+	return &mockSeriesSet{
+		next: func() bool {
+			i++
+			return i < len(list)
+		},
+		series: func() Series {
+			return list[i]
+		},
+		err: func() error { return nil },
+	}
+}
+
 type mockSeriesIterator struct {
 	seek func(int64) bool
 	at   func() (int64, float64)
@@ -101,14 +125,14 @@ func TestMergedSeriesSet(t *testing.T) {
 		exp SeriesSet
 	}{
 		{
-			a: newListSeriesSet([]Series{
+			a: newMockSeriesSet([]Series{
 				newSeries(map[string]string{
 					"a": "a",
 				}, []sample{
 					{t: 1, v: 1},
 				}),
 			}),
-			b: newListSeriesSet([]Series{
+			b: newMockSeriesSet([]Series{
 				newSeries(map[string]string{
 					"a": "a",
 				}, []sample{
@@ -120,7 +144,7 @@ func TestMergedSeriesSet(t *testing.T) {
 					{t: 1, v: 1},
 				}),
 			}),
-			exp: newListSeriesSet([]Series{
+			exp: newMockSeriesSet([]Series{
 				newSeries(map[string]string{
 					"a": "a",
 				}, []sample{
@@ -135,7 +159,7 @@ func TestMergedSeriesSet(t *testing.T) {
 			}),
 		},
 		{
-			a: newListSeriesSet([]Series{
+			a: newMockSeriesSet([]Series{
 				newSeries(map[string]string{
 					"handler":  "prometheus",
 					"instance": "127.0.0.1:9090",
@@ -149,7 +173,7 @@ func TestMergedSeriesSet(t *testing.T) {
 					{t: 1, v: 2},
 				}),
 			}),
-			b: newListSeriesSet([]Series{
+			b: newMockSeriesSet([]Series{
 				newSeries(map[string]string{
 					"handler":  "prometheus",
 					"instance": "127.0.0.1:9090",
@@ -163,7 +187,7 @@ func TestMergedSeriesSet(t *testing.T) {
 					{t: 2, v: 2},
 				}),
 			}),
-			exp: newListSeriesSet([]Series{
+			exp: newMockSeriesSet([]Series{
 				newSeries(map[string]string{
 					"handler":  "prometheus",
 					"instance": "127.0.0.1:9090",
@@ -397,25 +421,25 @@ func TestBlockQuerier(t *testing.T) {
 				mint: 0,
 				maxt: 0,
 				ms:   []labels.Matcher{},
-				exp:  newListSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]Series{}),
 			},
 			{
 				mint: 0,
 				maxt: 0,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-				exp:  newListSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]Series{}),
 			},
 			{
 				mint: 1,
 				maxt: 0,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-				exp:  newListSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]Series{}),
 			},
 			{
 				mint: 2,
 				maxt: 6,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-				exp: newListSeriesSet([]Series{
+				exp: newMockSeriesSet([]Series{
 					newSeries(map[string]string{
 						"a": "a",
 					},
@@ -433,7 +457,7 @@ func TestBlockQuerier(t *testing.T) {
 				mint: 2,
 				maxt: 6,
 				ms:   []labels.Matcher{labels.NewPrefixMatcher("p", "abc")},
-				exp: newListSeriesSet([]Series{
+				exp: newMockSeriesSet([]Series{
 					newSeries(map[string]string{
 						"a": "ab",
 						"p": "abce",
@@ -567,7 +591,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 2,
 				maxt: 7,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-				exp: newListSeriesSet([]Series{
+				exp: newMockSeriesSet([]Series{
 					newSeries(map[string]string{
 						"a": "a",
 					},
@@ -585,7 +609,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 2,
 				maxt: 7,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("b", "b")},
-				exp: newListSeriesSet([]Series{
+				exp: newMockSeriesSet([]Series{
 					newSeries(map[string]string{
 						"a": "a",
 						"b": "b",
@@ -603,7 +627,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 1,
 				maxt: 4,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-				exp: newListSeriesSet([]Series{
+				exp: newMockSeriesSet([]Series{
 					newSeries(map[string]string{
 						"a": "a",
 						"b": "b",
@@ -616,7 +640,7 @@ func TestBlockQuerierDelete(t *testing.T) {
 				mint: 1,
 				maxt: 3,
 				ms:   []labels.Matcher{labels.NewEqualMatcher("a", "a")},
-				exp:  newListSeriesSet([]Series{}),
+				exp:  newMockSeriesSet([]Series{}),
 			},
 		},
 	}
@@ -1266,7 +1290,7 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					var sets []SeriesSet
 					for _, s := range in {
-						sets = append(sets, newListSeriesSet(s))
+						sets = append(sets, newMockSeriesSet(s))
 					}
 					ms := sel(sets)
 
