@@ -1131,7 +1131,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err := app.Commit()
 	testutil.Ok(t, err)
 
-	_, err = db.compact()
+	err = db.compact()
 	testutil.Ok(t, err)
 
 	for _, block := range db.blocks {
@@ -1183,7 +1183,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	err := app.Commit()
 	testutil.Ok(t, err)
 
-	_, err = db.compact()
+	err = db.compact()
 	testutil.Ok(t, err)
 
 	testutil.Assert(t, len(db.blocks) >= 3, "invalid test, less than three blocks in DB")
