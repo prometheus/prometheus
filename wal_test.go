@@ -66,7 +66,7 @@ func TestSegmentWAL_cut(t *testing.T) {
 		et, flag, b, err := newWALReader(nil, nil).entry(f)
 		testutil.Ok(t, err)
 		testutil.Equals(t, WALEntrySeries, et)
-		testutil.Equals(t, flag, byte(walSeriesSimple))
+		testutil.Equals(t, byte(walSeriesSimple), flag)
 		testutil.Equals(t, []byte("Hello World!!"), b)
 	}
 }

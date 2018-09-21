@@ -858,5 +858,5 @@ func TestHead_LogRollback(t *testing.T) {
 
 	series, ok := recs[0].([]RefSeries)
 	testutil.Assert(t, ok, "expected series record but got %+v", recs[0])
-	testutil.Equals(t, series, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}})
+	testutil.Equals(t, []RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
 }

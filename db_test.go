@@ -110,7 +110,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	testutil.Ok(t, err)
 	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
-	testutil.Equals(t, seriesSet, map[string][]sample{})
+	testutil.Equals(t, map[string][]sample{}, seriesSet)
 	testutil.Ok(t, querier.Close())
 
 	err = app.Commit()
@@ -122,7 +122,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	seriesSet = query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
-	testutil.Equals(t, seriesSet, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}})
+	testutil.Equals(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
@@ -143,7 +143,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 
 	seriesSet := query(t, querier, labels.NewEqualMatcher("foo", "bar"))
 
-	testutil.Equals(t, seriesSet, map[string][]sample{})
+	testutil.Equals(t, map[string][]sample{}, seriesSet)
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
@@ -179,7 +179,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	testutil.Ok(t, err)
 
 	err = app2.AddFast(9999999, 1, 1)
-	testutil.Equals(t, errors.Cause(err), ErrNotFound)
+	testutil.Equals(t, ErrNotFound, errors.Cause(err))
 
 	testutil.Ok(t, app2.Commit())
 
@@ -412,7 +412,7 @@ func TestDB_Snapshot(t *testing.T) {
 		testutil.Ok(t, series.Err())
 	}
 	testutil.Ok(t, seriesSet.Err())
-	testutil.Equals(t, sum, 1000.0)
+	testutil.Equals(t, 1000.0, sum)
 }
 
 func TestDB_SnapshotWithDelete(t *testing.T) {
@@ -689,7 +689,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	values, err := q.LabelValues("labelname")
 	testutil.Ok(t, err)
-	testutil.Equals(t, values, []string{"labelvalue"})
+	testutil.Equals(t, []string{"labelvalue"}, values)
 }
 
 func TestTombstoneClean(t *testing.T) {
