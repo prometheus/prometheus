@@ -723,6 +723,13 @@ func (w *SegmentWAL) run(interval time.Duration) {
 
 // Close syncs all data and closes the underlying resources.
 func (w *SegmentWAL) Close() error {
+	// Make sure you can call Close() multiple times.
+	select {
+	case <-w.stopc:
+		return nil // Already closed.
+	default:
+	}
+
 	close(w.stopc)
 	<-w.donec
 
@@ -735,10 +742,12 @@ func (w *SegmentWAL) Close() error {
 	// On opening, a WAL must be fully consumed once. Afterwards
 	// only the current segment will still be open.
 	if hf := w.head(); hf != nil {
-		return errors.Wrapf(hf.Close(), "closing WAL head %s", hf.Name())
+		if err := hf.Close(); err != nil {
+			return errors.Wrapf(err, "closing WAL head %s", hf.Name())
+		}
 	}
 
-	return w.dirFile.Close()
+	return errors.Wrapf(w.dirFile.Close(), "closing WAL dir %s", w.dirFile.Name())
 }
 
 const (
@@ -1212,38 +1221,44 @@ func (r *walReader) decodeDeletes(flag byte, b []byte, res *[]Stone) error {
 	return nil
 }
 
-// MigrateWAL rewrites the deprecated write ahead log into the new format.
-func MigrateWAL(logger log.Logger, dir string) (err error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
+func deprecatedWALExists(logger log.Logger, dir string) (bool, error) {
 	// Detect whether we still have the old WAL.
 	fns, err := sequenceFiles(dir)
 	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrap(err, "list sequence files")
+		return false, errors.Wrap(err, "list sequence files")
 	}
 	if len(fns) == 0 {
-		return nil // No WAL at all yet.
+		return false, nil // No WAL at all yet.
 	}
 	// Check header of first segment to see whether we are still dealing with an
 	// old WAL.
 	f, err := os.Open(fns[0])
 	if err != nil {
-		return errors.Wrap(err, "check first existing segment")
+		return false, errors.Wrap(err, "check first existing segment")
 	}
 	defer f.Close()
 
 	var hdr [4]byte
 	if _, err := f.Read(hdr[:]); err != nil && err != io.EOF {
-		return errors.Wrap(err, "read header from first segment")
+		return false, errors.Wrap(err, "read header from first segment")
 	}
 	// If we cannot read the magic header for segments of the old WAL, abort.
 	// Either it's migrated already or there's a corruption issue with which
 	// we cannot deal here anyway. Subsequent attempts to open the WAL will error in that case.
 	if binary.BigEndian.Uint32(hdr[:]) != WALMagic {
-		return nil
+		return false, nil
 	}
+	return true, nil
+}
 
+// MigrateWAL rewrites the deprecated write ahead log into the new format.
+func MigrateWAL(logger log.Logger, dir string) (err error) {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+	if exists, err := deprecatedWALExists(logger, dir); err != nil || !exists {
+		return err
+	}
 	level.Info(logger).Log("msg", "migrating WAL format")
 
 	tmpdir := dir + ".tmp"
@@ -1254,6 +1269,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}
+
 	// It should've already been closed as part of the previous finalization.
 	// Do it once again in case of prior errors.
 	defer func() {
@@ -1299,6 +1315,12 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	}
 	if err != nil {
 		return errors.Wrap(err, "write new entries")
+	}
+	// We explicitly close even when there is a defer for Windows to be
+	// able to delete it. The defer is in place to close it in-case there
+	// are errors above.
+	if err := w.Close(); err != nil {
+		return errors.Wrap(err, "close old WAL")
 	}
 	if err := repl.Close(); err != nil {
 		return errors.Wrap(err, "close new WAL")

@@ -1,13 +1,25 @@
+## 2.4.2 / 2018-09-21
+
+ The last release didn't have bugfix included due to a vendoring error.
+
+ * [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
+ * [BUGFIX] Handle WAL migrations correctly on Windows prometheus/tsdb#392
+
+## 2.4.1 / 2018-09-19
+
+* [ENHANCEMENT] New TSDB metrics prometheus/tsdb#375 prometheus/tsdb#363
+* [BUGFIX] Render UI correctly for Windows #4616
+
 ## 2.4.0 / 2018-09-11
 
-This release includes multiple bugfixes and features. Further, the WAL implementation has been re-written so the storage is not backward compatible. Prometheus 2.3 storage will work on 2.4 but not vice-versa.
+This release includes multiple bugfixes and features. Further, the WAL implementation has been re-written so the storage is not forward compatible. Prometheus 2.3 storage will work on 2.4 but not vice-versa.
 
 * [CHANGE] Reduce remote write default retries #4279
 * [CHANGE] Remove /heap endpoint #4460
 * [FEATURE] Persist alert 'for' state across restarts #4061
 * [FEATURE] Add API providing per target metric metadata #4183
 * [FEATURE] Add API providing recording and alerting rules #4318 #4501
-* [ENHANCEMENT] Brand new WAL implementation for TSDB. Backwards incompatible with previous WAL. 
+* [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL. 
 * [ENHANCEMENT] Show rule evaluation errors in UI #4457 
 * [ENHANCEMENT] Throttle resends of alerts to Alertmanager #4538
 * [ENHANCEMENT] Send EndsAt along with the alert to Alertmanager #4550

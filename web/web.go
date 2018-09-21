@@ -264,7 +264,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
 	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = filepath.Join("/static", route.Param(r.Context(), "filepath"))
+		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
 		fs := http.FileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
@@ -825,7 +825,7 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	var tmpl string
 
 	appendf := func(name string) error {
-		f, err := ui.Assets.Open(filepath.Join("/templates", name))
+		f, err := ui.Assets.Open(path.Join("/templates", name))
 		if err != nil {
 			return err
 		}
