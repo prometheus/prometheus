@@ -48,7 +48,7 @@ func Rename(from, to string) error {
 // It is not atomic.
 func Replace(from, to string) error {
 	if err := os.RemoveAll(to); err != nil {
-		return nil
+		return err
 	}
 	if err := os.Rename(from, to); err != nil {
 		return err

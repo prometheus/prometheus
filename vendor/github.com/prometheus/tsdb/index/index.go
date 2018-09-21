@@ -271,7 +271,9 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	}
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
-	w.addPadding(16)
+	if err := w.addPadding(16); err != nil {
+		return errors.Errorf("failed to write padding bytes: %v", err)
+	}
 
 	if w.pos%16 != 0 {
 		return errors.Errorf("series write not 16-byte aligned at %d", w.pos)
