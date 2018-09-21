@@ -2,7 +2,6 @@ package tsdb
 
 import (
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/prometheus/tsdb/chunks"
@@ -50,48 +49,32 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	// In its current state, lookups should fail with the fixed code.
 	const dir = "testdata/repair_index_version/01BZJ9WJQPWHGNC2W4J9TA62KC/"
 	meta, err := readMetaFile(dir)
-	if err == nil {
-		t.Fatal("error expected but got none")
-	}
+	testutil.NotOk(t, err)
 	// Touch chunks dir in block.
 	os.MkdirAll(dir+"chunks", 0777)
 
 	r, err := index.NewFileReader(dir + "index")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	p, err := r.Postings("b", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	for p.Next() {
 		t.Logf("next ID %d", p.At())
 
 		var lset labels.Labels
-		if err := r.Series(p.At(), &lset, nil); err == nil {
-			t.Fatal("expected error but got none")
-		}
+		testutil.NotOk(t, r.Series(p.At(), &lset, nil))
 	}
-	if p.Err() != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, p.Err())
 	testutil.Ok(t, r.Close())
 
 	// On DB opening all blocks in the base dir should be repaired.
 	db, err := Open("testdata/repair_index_version", nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	db.Close()
 
 	r, err = index.NewFileReader(dir + "index")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	p, err = r.Postings("b", "1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testutil.Ok(t, err)
 	res := []labels.Labels{}
 
 	for p.Next() {
@@ -99,26 +82,17 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 		var lset labels.Labels
 		var chks []chunks.Meta
-		if err := r.Series(p.At(), &lset, &chks); err != nil {
-			t.Fatal(err)
-		}
+		testutil.Ok(t, r.Series(p.At(), &lset, &chks))
 		res = append(res, lset)
 	}
-	if p.Err() != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(res, []labels.Labels{
+
+	testutil.Ok(t, p.Err())
+	testutil.Equals(t, []labels.Labels{
 		{{"a", "1"}, {"b", "1"}},
 		{{"a", "2"}, {"b", "1"}},
-	}) {
-		t.Fatalf("unexpected result %v", res)
-	}
+	}, res)
 
 	meta, err = readMetaFile(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if meta.Version != 1 {
-		t.Fatalf("unexpected meta version %d", meta.Version)
-	}
+	testutil.Ok(t, err)
+	testutil.Assert(t, meta.Version == 1, "unexpected meta version %d", meta.Version)
 }

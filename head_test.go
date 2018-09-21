@@ -33,9 +33,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 	testutil.Ok(b, err)
 
 	h, err := NewHead(nil, nil, nil, 10000)
-	if err != nil {
-		testutil.Ok(b, err)
-	}
+	testutil.Ok(b, err)
 	defer h.Close()
 
 	b.ReportAllocs()
