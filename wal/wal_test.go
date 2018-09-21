@@ -287,8 +287,14 @@ func TestWAL_Repair(t *testing.T) {
 			for r.Next() {
 			}
 			testutil.NotOk(t, r.Err())
+			testutil.Ok(t, sr.Close())
 			testutil.Ok(t, w.Repair(r.Err()))
-			testutil.Ok(t, w.Repair(errors.Wrap(r.Err(), "err"))) // See https://github.com/prometheus/prometheus/issues/4603
+
+			// See https://github.com/prometheus/prometheus/issues/4603
+			// We need to close w.segment because it needs to be deleted.
+			// But this is to mainly artificially test Repair() again.
+			testutil.Ok(t, w.segment.Close())
+			testutil.Ok(t, w.Repair(errors.Wrap(r.Err(), "err")))
 
 			sr, err = NewSegmentsReader(dir)
 			testutil.Ok(t, err)

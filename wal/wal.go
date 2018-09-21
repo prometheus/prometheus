@@ -285,6 +285,15 @@ func (w *WAL) Repair(origErr error) error {
 		if s.n <= cerr.Segment {
 			continue
 		}
+		if w.segment.i == s.n {
+			// The active segment needs to be removed,
+			// close it first (Windows!). Can be closed safely
+			// as we set the current segment to repaired file
+			// below.
+			if err := w.segment.Close(); err != nil {
+				return errors.Wrap(err, "close active segment")
+			}
+		}
 		if err := os.Remove(filepath.Join(w.dir, s.s)); err != nil {
 			return errors.Wrap(err, "delete segment")
 		}
@@ -312,6 +321,7 @@ func (w *WAL) Repair(origErr error) error {
 		return errors.Wrap(err, "open segment")
 	}
 	defer f.Close()
+
 	r := NewReader(bufio.NewReader(f))
 
 	for r.Next() {
@@ -319,8 +329,14 @@ func (w *WAL) Repair(origErr error) error {
 			return errors.Wrap(err, "insert record")
 		}
 	}
-	// We expect an error here, so nothing to handle.
+	// We expect an error here from r.Err(), so nothing to handle.
 
+	// We explicitly close even when there is a defer for Windows to be
+	// able to delete it. The defer is in place to close it in-case there
+	// are errors above.
+	if err := f.Close(); err != nil {
+		return errors.Wrap(err, "close corrupted file")
+	}
 	if err := os.Remove(tmpfn); err != nil {
 		return errors.Wrap(err, "delete corrupted segment")
 	}

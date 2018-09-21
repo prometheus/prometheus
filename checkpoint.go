@@ -109,6 +109,10 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 	stats := &CheckpointStats{}
 
 	var sr io.Reader
+	// We close everything explicitly because Windows needs files to be
+	// closed before being deleted. But we also have defer so that we close
+	// files if there is an error somewhere.
+	var closers []io.Closer
 	{
 		lastFn, k, err := LastCheckpoint(w.Dir())
 		if err != nil && err != ErrNotFound {
@@ -126,6 +130,7 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 				return nil, errors.Wrap(err, "open last checkpoint")
 			}
 			defer last.Close()
+			closers = append(closers, last)
 			sr = last
 		}
 
@@ -134,6 +139,7 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 			return nil, errors.Wrap(err, "create segment reader")
 		}
 		defer segsr.Close()
+		closers = append(closers, segsr)
 
 		if sr != nil {
 			sr = io.MultiReader(sr, segsr)
@@ -262,6 +268,9 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 	}
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, errors.Wrap(err, "rename checkpoint directory")
+	}
+	if err := closeAll(closers...); err != nil {
+		return stats, errors.Wrap(err, "close opened files")
 	}
 	if err := w.Truncate(n + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.

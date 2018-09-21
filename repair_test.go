@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/tsdb/chunks"
+	"github.com/prometheus/tsdb/testutil"
 
 	"github.com/prometheus/tsdb/index"
 	"github.com/prometheus/tsdb/labels"
@@ -74,6 +75,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	if p.Err() != nil {
 		t.Fatal(err)
 	}
+	testutil.Ok(t, r.Close())
 
 	// On DB opening all blocks in the base dir should be repaired.
 	db, err := Open("testdata/repair_index_version", nil, nil, nil)
