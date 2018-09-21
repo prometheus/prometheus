@@ -504,10 +504,13 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, error) {
 	numStones := 0
 
-	pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
+	if err := pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
 		numStones += len(ivs)
 		return nil
-	})
+	}); err != nil {
+		// This should never happen, as the iteration function only returns nil.
+		panic(err)
+	}
 	if numStones == 0 {
 		return nil, nil
 	}

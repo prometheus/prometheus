@@ -16,12 +16,13 @@ package tsdb
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
 const tombstoneFilename = "tombstones"
@@ -72,7 +73,7 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 
 	mw := io.MultiWriter(f, hash)
 
-	tr.Iter(func(ref uint64, ivs Intervals) error {
+	if err := tr.Iter(func(ref uint64, ivs Intervals) error {
 		for _, iv := range ivs {
 			buf.reset()
 
@@ -86,7 +87,9 @@ func writeTombstoneFile(dir string, tr TombstoneReader) error {
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("error writing tombstones: %v", err)
+	}
 
 	_, err = f.Write(hash.Sum(nil))
 	if err != nil {

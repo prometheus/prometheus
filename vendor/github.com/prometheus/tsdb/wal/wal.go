@@ -255,15 +255,17 @@ Loop:
 
 // Repair attempts to repair the WAL based on the error.
 // It discards all data after the corruption.
-func (w *WAL) Repair(err error) error {
+func (w *WAL) Repair(origErr error) error {
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
 	// But that's not generally applicable if the records have any kind of causality.
 	// Maybe as an extra mode in the future if mid-WAL corruptions become
 	// a frequent concern.
+	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
+
 	cerr, ok := err.(*CorruptionErr)
 	if !ok {
-		return errors.New("cannot handle error")
+		return errors.Wrap(origErr, "cannot handle error")
 	}
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
@@ -282,6 +284,15 @@ func (w *WAL) Repair(err error) error {
 	for _, s := range segs {
 		if s.n <= cerr.Segment {
 			continue
+		}
+		if w.segment.i == s.n {
+			// The active segment needs to be removed,
+			// close it first (Windows!). Can be closed safely
+			// as we set the current segment to repaired file
+			// below.
+			if err := w.segment.Close(); err != nil {
+				return errors.Wrap(err, "close active segment")
+			}
 		}
 		if err := os.Remove(filepath.Join(w.dir, s.s)); err != nil {
 			return errors.Wrap(err, "delete segment")
@@ -310,6 +321,7 @@ func (w *WAL) Repair(err error) error {
 		return errors.Wrap(err, "open segment")
 	}
 	defer f.Close()
+
 	r := NewReader(bufio.NewReader(f))
 
 	for r.Next() {
@@ -317,8 +329,14 @@ func (w *WAL) Repair(err error) error {
 			return errors.Wrap(err, "insert record")
 		}
 	}
-	// We expect an error here, so nothing to handle.
+	// We expect an error here from r.Err(), so nothing to handle.
 
+	// We explicitly close even when there is a defer for Windows to be
+	// able to delete it. The defer is in place to close it in-case there
+	// are errors above.
+	if err := f.Close(); err != nil {
+		return errors.Wrap(err, "close corrupted file")
+	}
 	if err := os.Remove(tmpfn); err != nil {
 		return errors.Wrap(err, "delete corrupted segment")
 	}

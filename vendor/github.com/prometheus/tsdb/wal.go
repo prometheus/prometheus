@@ -723,6 +723,13 @@ func (w *SegmentWAL) run(interval time.Duration) {
 
 // Close syncs all data and closes the underlying resources.
 func (w *SegmentWAL) Close() error {
+	// Make sure you can call Close() multiple times.
+	select {
+	case <-w.stopc:
+		return nil // Already closed.
+	default:
+	}
+
 	close(w.stopc)
 	<-w.donec
 
@@ -735,10 +742,12 @@ func (w *SegmentWAL) Close() error {
 	// On opening, a WAL must be fully consumed once. Afterwards
 	// only the current segment will still be open.
 	if hf := w.head(); hf != nil {
-		return errors.Wrapf(hf.Close(), "closing WAL head %s", hf.Name())
+		if err := hf.Close(); err != nil {
+			return errors.Wrapf(err, "closing WAL head %s", hf.Name())
+		}
 	}
 
-	return w.dirFile.Close()
+	return errors.Wrapf(w.dirFile.Close(), "closing WAL dir %s", w.dirFile.Name())
 }
 
 const (
@@ -1260,6 +1269,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}
+
 	// It should've already been closed as part of the previous finalization.
 	// Do it once again in case of prior errors.
 	defer func() {
@@ -1305,6 +1315,12 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	}
 	if err != nil {
 		return errors.Wrap(err, "write new entries")
+	}
+	// We explicitly close even when there is a defer for Windows to be
+	// able to delete it. The defer is in place to close it in-case there
+	// are errors above.
+	if err := w.Close(); err != nil {
+		return errors.Wrap(err, "close old WAL")
 	}
 	if err := repl.Close(); err != nil {
 		return errors.Wrap(err, "close new WAL")

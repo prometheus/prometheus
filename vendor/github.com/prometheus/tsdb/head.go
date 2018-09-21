@@ -793,7 +793,7 @@ func (h *Head) gc() {
 	symbols := make(map[string]struct{})
 	values := make(map[string]stringset, len(h.values))
 
-	h.postings.Iter(func(t labels.Label, _ index.Postings) error {
+	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
 		symbols[t.Name] = struct{}{}
 		symbols[t.Value] = struct{}{}
 
@@ -804,7 +804,10 @@ func (h *Head) gc() {
 		}
 		ss.set(t.Value)
 		return nil
-	})
+	}); err != nil {
+		// This should never happen, as the iteration function only returns nil.
+		panic(err)
+	}
 
 	h.symMtx.Lock()
 
