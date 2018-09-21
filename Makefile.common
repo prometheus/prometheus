@@ -121,12 +121,12 @@ common-docker-tag-latest:
 
 .PHONY: promu
 promu:
-	GOOS= GOARCH= $(GO) get -u github.com/prometheus/promu
+	$(GO) get -u github.com/prometheus/promu
 
 .PHONY: $(STATICCHECK)
 $(STATICCHECK):
-	GOOS= GOARCH= $(GO) get -u honnef.co/go/tools/cmd/staticcheck
+	$(GO) get -u honnef.co/go/tools/cmd/staticcheck
 
 .PHONY: $(GOVENDOR)
 $(GOVENDOR):
-	GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
+	$(GO) get -u github.com/kardianos/govendor
