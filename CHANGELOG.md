@@ -1,8 +1,14 @@
+## 2.4.2 / 2018-09-21
+
+ The last release didn't have bugfix included due to a vendoring error.
+
+ * [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
+ * [BUGFIX] Handle WAL migrations correctly on Windows prometheus/tsdb#392
+
 ## 2.4.1 / 2018-09-19
 
 * [ENHANCEMENT] New TSDB metrics prometheus/tsdb#375 prometheus/tsdb#363
 * [BUGFIX] Render UI correctly for Windows #4616
-* [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
 
 ## 2.4.0 / 2018-09-11
 
