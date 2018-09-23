@@ -357,3 +357,12 @@ load 1h
 eval instant at 0h testmetric
 	testmetric{aa="bb"} 1
 	testmetric{a="abb"} 2
+
+clear
+
+# Test duplicate labelset in promql output.
+load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1
+
+eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})

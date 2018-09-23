@@ -16,12 +16,15 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
@@ -32,7 +35,7 @@ import (
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
 
-	// The order by which the updates are send is detirmened by the interval passed to the mock discovery adapter
+	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
 	testCases := []struct {
@@ -655,7 +658,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for testIndex, testCase := range testCases {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		discoveryManager := NewManager(ctx, nil)
+		discoveryManager := NewManager(ctx, log.NewNopLogger())
 
 		var totalUpdatesCount int
 
@@ -699,34 +702,34 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 }
 
-func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	verifyPresence := func(tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
-		if _, ok := tSets[poolKey]; !ok {
-			t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
-			return
-		}
-
-		match := false
-		var mergedTargets string
-		for _, targetGroup := range tSets[poolKey] {
-
-			for _, l := range targetGroup.Targets {
-				mergedTargets = mergedTargets + " " + l.String()
-				if l.String() == label {
-					match = true
-				}
-			}
-
-		}
-		if match != present {
-			msg := ""
-			if !present {
-				msg = "not"
-			}
-			t.Fatalf("'%s' should %s be present in Targets labels: %v", label, msg, mergedTargets)
-		}
+func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
+	if _, ok := tSets[poolKey]; !ok {
+		t.Fatalf("'%s' should be present in Pool keys: %v", poolKey, tSets)
+		return
 	}
 
+	match := false
+	var mergedTargets string
+	for _, targetGroup := range tSets[poolKey] {
+
+		for _, l := range targetGroup.Targets {
+			mergedTargets = mergedTargets + " " + l.String()
+			if l.String() == label {
+				match = true
+			}
+		}
+
+	}
+	if match != present {
+		msg := ""
+		if !present {
+			msg = "not"
+		}
+		t.Fatalf("'%s' should %s be present in Targets labels: %v", label, msg, mergedTargets)
+	}
+}
+
+func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	cfg := &config.Config{}
 
 	sOne := `
@@ -741,7 +744,7 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -751,8 +754,8 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
 
 	sTwo := `
 scrape_configs:
@@ -770,8 +773,60 @@ scrape_configs:
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
+}
+
+func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
+	tmpFile, err := ioutil.TempFile("", "sd")
+	if err != nil {
+		t.Fatalf("error creating temporary file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write([]byte(`[{"targets": ["foo:9090"]}]`)); err != nil {
+		t.Fatalf("error writing temporary file: %v", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("error closing temporary file: %v", err)
+	}
+	tmpFile2 := fmt.Sprintf("%s.json", tmpFile.Name())
+	if err = os.Link(tmpFile.Name(), tmpFile2); err != nil {
+		t.Fatalf("error linking temporary file: %v", err)
+	}
+	defer os.Remove(tmpFile2)
+
+	cfg := &config.Config{}
+
+	sOne := `
+scrape_configs:
+ - job_name: 'prometheus'
+   file_sd_configs:
+   - files: ["%s"]
+ - job_name: 'prometheus2'
+   file_sd_configs:
+   - files: ["%s"]
+`
+	sOne = fmt.Sprintf(sOne, tmpFile2, tmpFile2)
+	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config sOne: %s", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, nil)
+	go discoveryManager.Run()
+
+	c := make(map[string]sd_config.ServiceDiscoveryConfig)
+	for _, v := range cfg.ScrapeConfigs {
+		c[v.JobName] = v.ServiceDiscoveryConfig
+	}
+	discoveryManager.ApplyConfig(c)
+
+	<-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	if len(discoveryManager.providers) != 1 {
+		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
+	}
 }
 
 func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
@@ -795,7 +850,7 @@ scrape_configs:
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	go discoveryManager.Run()
 
 	c := make(map[string]sd_config.ServiceDiscoveryConfig)

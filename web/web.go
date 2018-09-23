@@ -167,6 +167,7 @@ type Options struct {
 	ConsoleLibrariesPath string
 	EnableLifecycle      bool
 	EnableAdminAPI       bool
+	RemoteReadLimit      int
 }
 
 func instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
@@ -227,6 +228,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.EnableAdminAPI,
 		logger,
 		h.ruleManager,
+		h.options.RemoteReadLimit,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -262,7 +264,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
 	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = filepath.Join("/static", route.Param(r.Context(), "filepath"))
+		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
 		fs := http.FileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
@@ -412,16 +414,7 @@ func (h *Handler) Run(ctx context.Context) error {
 		grpcSrv = grpc.NewServer()
 	)
 	av2 := api_v2.New(
-		time.Now,
 		h.options.TSDB,
-		h.options.QueryEngine,
-		h.options.Storage.Querier,
-		func() []*scrape.Target {
-			return h.options.ScrapeManager.TargetsActive()
-		},
-		func() []*url.URL {
-			return h.options.Notifier.Alertmanagers()
-		},
 		h.options.EnableAdminAPI,
 	)
 	av2.RegisterGRPC(grpcSrv)
@@ -832,7 +825,7 @@ func (h *Handler) getTemplate(name string) (string, error) {
 	var tmpl string
 
 	appendf := func(name string) error {
-		f, err := ui.Assets.Open(filepath.Join("/templates", name))
+		f, err := ui.Assets.Open(path.Join("/templates", name))
 		if err != nil {
 			return err
 		}

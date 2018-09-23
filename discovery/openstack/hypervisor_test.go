@@ -16,15 +16,11 @@ package openstack
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type OpenstackSDHypervisorTestSuite struct {
-	suite.Suite
 	Mock *SDMock
 }
 
@@ -32,18 +28,14 @@ func (s *OpenstackSDHypervisorTestSuite) TearDownSuite() {
 	s.Mock.ShutdownServer()
 }
 
-func (s *OpenstackSDHypervisorTestSuite) SetupTest() {
-	s.Mock = NewSDMock(s.T())
+func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
+	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 
 	s.Mock.HandleHypervisorListSuccessfully()
 
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
-}
-
-func TestOpenstackSDHypervisorSuite(t *testing.T) {
-	suite.Run(t, new(OpenstackSDHypervisorTestSuite))
 }
 
 func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, error) {
@@ -58,25 +50,31 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (Discovery, erro
 	return NewDiscovery(&conf, nil)
 }
 
-func (s *OpenstackSDHypervisorTestSuite) TestOpenstackSDHypervisorRefresh() {
-	hypervisor, _ := s.openstackAuthSuccess()
+func TestOpenstackSDHypervisorRefresh(t *testing.T) {
+
+	mock := &OpenstackSDHypervisorTestSuite{}
+	mock.SetupTest(t)
+
+	hypervisor, _ := mock.openstackAuthSuccess()
 	tg, err := hypervisor.refresh()
-	assert.Nil(s.T(), err)
-	require.NotNil(s.T(), tg)
-	require.NotNil(s.T(), tg.Targets)
-	require.Len(s.T(), tg.Targets, 2)
+	testutil.Ok(t, err)
+	testutil.Assert(t, tg != nil, "")
+	testutil.Assert(t, tg.Targets != nil, "")
+	testutil.Assert(t, len(tg.Targets) == 2, "")
 
-	assert.Equal(s.T(), tg.Targets[0]["__address__"], model.LabelValue("172.16.70.14:0"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_hostname"], model.LabelValue("nc14.cloud.com"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.14"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
-	assert.Equal(s.T(), tg.Targets[0]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+	testutil.Equals(t, tg.Targets[0]["__address__"], model.LabelValue("172.16.70.14:0"))
+	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_hostname"], model.LabelValue("nc14.cloud.com"))
+	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
+	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.14"))
+	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
+	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
 
-	assert.Equal(s.T(), tg.Targets[1]["__address__"], model.LabelValue("172.16.70.13:0"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_hostname"], model.LabelValue("cc13.cloud.com"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.13"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
-	assert.Equal(s.T(), tg.Targets[1]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+	testutil.Equals(t, tg.Targets[1]["__address__"], model.LabelValue("172.16.70.13:0"))
+	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_hostname"], model.LabelValue("cc13.cloud.com"))
+	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
+	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.13"))
+	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
+	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+
+	mock.TearDownSuite()
 }

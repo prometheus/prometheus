@@ -29,6 +29,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -719,6 +720,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// Make the function call.
 		enh.ts = ts
 		result := f(args, enh)
+		if result.ContainsSameLabelset() {
+			ev.errorf("vector cannot contain metrics with the same labelset")
+		}
 		enh.out = result[:0] // Reuse result vector.
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -882,6 +886,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 				mat = append(mat, ss)
 			}
 		}
+		if mat.ContainsSameLabelset() {
+			ev.errorf("vector cannot contain metrics with the same labelset")
+		}
+
 		putPointSlice(points)
 		return mat
 
@@ -896,6 +904,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 				for j := range mat[i].Points {
 					mat[i].Points[j].V = -mat[i].Points[j].V
 				}
+			}
+			if mat.ContainsSameLabelset() {
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 		}
 		return mat
@@ -1494,6 +1505,9 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	var valueLabel string
 	if op == itemCountValues {
 		valueLabel = param.(string)
+		if !model.LabelName(valueLabel).IsValid() {
+			ev.errorf("invalid label name %q", valueLabel)
+		}
 		if !without {
 			grouping = append(grouping, valueLabel)
 		}

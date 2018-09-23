@@ -32,6 +32,19 @@ import (
 // decodeReadLimit is the maximum size of a read request body in bytes.
 const decodeReadLimit = 32 * 1024 * 1024
 
+type HTTPError struct {
+	msg    string
+	status int
+}
+
+func (e HTTPError) Error() string {
+	return e.msg
+}
+
+func (e HTTPError) Status() int {
+	return e.status
+}
+
 // DecodeReadRequest reads a remote.Request from a http.Request.
 func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 	compressed, err := ioutil.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
@@ -134,7 +147,8 @@ func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.Sel
 }
 
 // ToQueryResult builds a QueryResult proto.
-func ToQueryResult(ss storage.SeriesSet) (*prompb.QueryResult, error) {
+func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
+	numSamples := 0
 	resp := &prompb.QueryResult{}
 	for ss.Next() {
 		series := ss.At()
@@ -142,6 +156,13 @@ func ToQueryResult(ss storage.SeriesSet) (*prompb.QueryResult, error) {
 		samples := []*prompb.Sample{}
 
 		for iter.Next() {
+			numSamples++
+			if sampleLimit > 0 && numSamples > sampleLimit {
+				return nil, HTTPError{
+					msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
+					status: http.StatusBadRequest,
+				}
+			}
 			ts, val := iter.At()
 			samples = append(samples, &prompb.Sample{
 				Timestamp: ts,

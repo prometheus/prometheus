@@ -175,6 +175,9 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 
 	const ctx = "series values"
 	for {
+		for p.peek().typ == itemSpace {
+			p.next()
+		}
 		if p.peek().typ == itemEOF {
 			break
 		}
@@ -192,6 +195,11 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 			}
 			for i := uint64(0); i < times; i++ {
 				vals = append(vals, sequenceValue{omitted: true})
+			}
+			// This is to ensure that there is a space between this and the next number.
+			// This is especially required if the next number is negative.
+			if t := p.expectOneOf(itemSpace, itemEOF, ctx).typ; t == itemEOF {
+				break
 			}
 			continue
 		}
@@ -217,7 +225,8 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 		})
 
 		// If there are no offset repetitions specified, proceed with the next value.
-		if t := p.peek(); t.typ == itemNumber || t.typ == itemBlank || t.typ == itemIdentifier && t.val == "stale" {
+		if t := p.peek(); t.typ == itemSpace {
+			// This ensures there is a space between every value.
 			continue
 		} else if t.typ == itemEOF {
 			break
@@ -243,6 +252,12 @@ func (p *parser) parseSeriesDesc() (m labels.Labels, vals []sequenceValue, err e
 			vals = append(vals, sequenceValue{
 				value: k,
 			})
+		}
+		// This is to ensure that there is a space between this expanding notation
+		// and the next number. This is especially required if the next number
+		// is negative.
+		if t := p.expectOneOf(itemSpace, itemEOF, ctx).typ; t == itemEOF {
+			break
 		}
 	}
 	return m, vals, nil

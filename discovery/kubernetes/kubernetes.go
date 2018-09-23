@@ -40,15 +40,18 @@ import (
 const (
 	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
-	metaLabelPrefix = model.MetaLabelPrefix + "kubernetes_"
-	namespaceLabel  = metaLabelPrefix + "namespace"
+	metaLabelPrefix  = model.MetaLabelPrefix + "kubernetes_"
+	namespaceLabel   = metaLabelPrefix + "namespace"
+	metricsNamespace = "prometheus_sd_kubernetes"
 )
 
 var (
+	// Custom events metric
 	eventCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "prometheus_sd_kubernetes_events_total",
-			Help: "The number of Kubernetes events handled.",
+			Namespace: metricsNamespace,
+			Name:      "events_total",
+			Help:      "The number of Kubernetes events handled.",
 		},
 		[]string{"role", "event"},
 	)
@@ -139,6 +142,17 @@ func init() {
 			eventCount.WithLabelValues(role, evt)
 		}
 	}
+
+	var (
+		clientGoRequestMetricAdapterInstance     = clientGoRequestMetricAdapter{}
+		clientGoCacheMetricsProviderInstance     = clientGoCacheMetricsProvider{}
+		clientGoWorkqueueMetricsProviderInstance = clientGoWorkqueueMetricsProvider{}
+	)
+
+	clientGoRequestMetricAdapterInstance.Register(prometheus.DefaultRegisterer)
+	clientGoCacheMetricsProviderInstance.Register(prometheus.DefaultRegisterer)
+	clientGoWorkqueueMetricsProviderInstance.Register(prometheus.DefaultRegisterer)
+
 }
 
 // This is only for internal use.
@@ -383,7 +397,6 @@ func send(ctx context.Context, l log.Logger, role Role, ch chan<- []*targetgroup
 	if tg == nil {
 		return
 	}
-	level.Debug(l).Log("msg", "kubernetes discovery update", "role", string(role), "tg", fmt.Sprintf("%#v", tg))
 	select {
 	case <-ctx.Done():
 	case ch <- []*targetgroup.Group{tg}:

@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -248,6 +249,10 @@ type Block struct {
 	dir  string
 	meta BlockMeta
 
+	// Symbol Table Size in bytes.
+	// We maintain this variable to avoid recalculation everytime.
+	symbolTableSize uint64
+
 	chunkr     ChunkReader
 	indexr     IndexReader
 	tombstones TombstoneReader
@@ -275,12 +280,23 @@ func OpenBlock(dir string, pool chunkenc.Pool) (*Block, error) {
 		return nil, err
 	}
 
+	// Calculating symbol table size.
+	tmp := make([]byte, 8)
+	symTblSize := uint64(0)
+	for _, v := range ir.SymbolTable() {
+		// Size of varint length of the symbol.
+		symTblSize += uint64(binary.PutUvarint(tmp, uint64(len(v))))
+		// Size of the symbol.
+		symTblSize += uint64(len(v))
+	}
+
 	pb := &Block{
-		dir:        dir,
-		meta:       *meta,
-		chunkr:     cr,
-		indexr:     ir,
-		tombstones: tr,
+		dir:             dir,
+		meta:            *meta,
+		chunkr:          cr,
+		indexr:          ir,
+		tombstones:      tr,
+		symbolTableSize: symTblSize,
 	}
 	return pb, nil
 }
@@ -348,6 +364,11 @@ func (pb *Block) Tombstones() (TombstoneReader, error) {
 		return nil, err
 	}
 	return blockTombstoneReader{TombstoneReader: pb.tombstones, b: pb}, nil
+}
+
+// GetSymbolTableSize returns the Symbol Table Size in the index of this block.
+func (pb *Block) GetSymbolTableSize() uint64 {
+	return pb.symbolTableSize
 }
 
 func (pb *Block) setCompactionFailed() error {
@@ -483,10 +504,13 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, error) {
 	numStones := 0
 
-	pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
+	if err := pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
 		numStones += len(ivs)
 		return nil
-	})
+	}); err != nil {
+		// This should never happen, as the iteration function only returns nil.
+		panic(err)
+	}
 	if numStones == 0 {
 		return nil, nil
 	}

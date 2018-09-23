@@ -131,9 +131,10 @@ type API struct {
 	flagsMap              map[string]string
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 
-	db          func() *tsdb.DB
-	enableAdmin bool
-	logger      log.Logger
+	db              func() *tsdb.DB
+	enableAdmin     bool
+	logger          log.Logger
+	remoteReadLimit int
 }
 
 // NewAPI returns an initialized API type.
@@ -149,19 +150,23 @@ func NewAPI(
 	enableAdmin bool,
 	logger log.Logger,
 	rr rulesRetriever,
+	remoteReadLimit int,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:            time.Now,
-		config:         configFunc,
-		flagsMap:       flagsMap,
-		ready:          readyFunc,
-		db:             db,
-		enableAdmin:    enableAdmin,
-		rulesRetriever: rr,
+
+		now:             time.Now,
+		config:          configFunc,
+		flagsMap:        flagsMap,
+		ready:           readyFunc,
+		db:              db,
+		enableAdmin:     enableAdmin,
+		rulesRetriever:  rr,
+		remoteReadLimit: remoteReadLimit,
+		logger:          logger,
 	}
 }
 
@@ -793,8 +798,12 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		resp.Results[i], err = remote.ToQueryResult(set)
+		resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadLimit)
 		if err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
+				return
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

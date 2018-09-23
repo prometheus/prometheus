@@ -82,8 +82,8 @@ type headMetrics struct {
 	seriesRemoved       prometheus.Counter
 	seriesNotFound      prometheus.Counter
 	chunks              prometheus.Gauge
-	chunksCreated       prometheus.Gauge
-	chunksRemoved       prometheus.Gauge
+	chunksCreated       prometheus.Counter
+	chunksRemoved       prometheus.Counter
 	gcDuration          prometheus.Summary
 	minTime             prometheus.GaugeFunc
 	maxTime             prometheus.GaugeFunc
@@ -102,27 +102,27 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_head_series",
 		Help: "Total number of series in the head block.",
 	})
-	m.seriesCreated = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.seriesCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_created_total",
 		Help: "Total number of series created in the head",
 	})
-	m.seriesRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.seriesRemoved = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_removed_total",
 		Help: "Total number of series removed in the head",
 	})
 	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_head_series_not_found",
+		Name: "prometheus_tsdb_head_series_not_found_total",
 		Help: "Total number of requests for series that were not found.",
 	})
 	m.chunks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_chunks",
 		Help: "Total number of chunks in the head block.",
 	})
-	m.chunksCreated = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.chunksCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_chunks_created_total",
 		Help: "Total number of chunks created in the head",
 	})
-	m.chunksRemoved = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.chunksRemoved = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_chunks_removed_total",
 		Help: "Total number of chunks removed in the head",
 	})
@@ -620,21 +620,22 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 }
 
 func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
-	s := a.head.series.getByID(ref)
+	if t < a.minValidTime {
+		return ErrOutOfBounds
+	}
 
+	s := a.head.series.getByID(ref)
 	if s == nil {
 		return errors.Wrap(ErrNotFound, "unknown series")
 	}
 	s.Lock()
-	err := s.appendable(t, v)
-	s.Unlock()
-
-	if err != nil {
+	if err := s.appendable(t, v); err != nil {
+		s.Unlock()
 		return err
 	}
-	if t < a.minValidTime {
-		return ErrOutOfBounds
-	}
+	s.pendingCommit = true
+	s.Unlock()
+
 	if t < a.mint {
 		a.mint = t
 	}
@@ -694,6 +695,7 @@ func (a *headAppender) Commit() error {
 	for _, s := range a.samples {
 		s.series.Lock()
 		ok, chunkCreated := s.series.append(s.T, s.V)
+		s.series.pendingCommit = false
 		s.series.Unlock()
 
 		if !ok {
@@ -713,6 +715,11 @@ func (a *headAppender) Commit() error {
 
 func (a *headAppender) Rollback() error {
 	a.head.metrics.activeAppenders.Dec()
+	for _, s := range a.samples {
+		s.series.Lock()
+		s.series.pendingCommit = false
+		s.series.Unlock()
+	}
 	a.head.putAppendBuffer(a.samples)
 
 	// Series are created in the head memory regardless of rollback. Thus we have
@@ -786,7 +793,7 @@ func (h *Head) gc() {
 	symbols := make(map[string]struct{})
 	values := make(map[string]stringset, len(h.values))
 
-	h.postings.Iter(func(t labels.Label, _ index.Postings) error {
+	if err := h.postings.Iter(func(t labels.Label, _ index.Postings) error {
 		symbols[t.Name] = struct{}{}
 		symbols[t.Value] = struct{}{}
 
@@ -797,7 +804,10 @@ func (h *Head) gc() {
 		}
 		ss.set(t.Value)
 		return nil
-	})
+	}); err != nil {
+		// This should never happen, as the iteration function only returns nil.
+		panic(err)
+	}
 
 	h.symMtx.Lock()
 
@@ -1165,7 +1175,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 				series.Lock()
 				rmChunks += series.truncateChunksBefore(mint)
 
-				if len(series.chunks) > 0 {
+				if len(series.chunks) > 0 || series.pendingCommit {
 					series.Unlock()
 					continue
 				}
@@ -1256,9 +1266,10 @@ type memSeries struct {
 	chunkRange   int64
 	firstChunkID int
 
-	nextAt    int64 // timestamp at which to cut the next chunk.
-	lastValue float64
-	sampleBuf [4]sample
+	nextAt        int64 // Timestamp at which to cut the next chunk.
+	lastValue     float64
+	sampleBuf     [4]sample
+	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
 	app chunkenc.Appender // Current appender for the chunk.
 }

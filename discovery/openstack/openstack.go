@@ -84,7 +84,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case OpenStackRoleHypervisor, OpenStackRoleInstance:
 		return nil
 	default:
-		return fmt.Errorf("Unknown OpenStack SD role %q", *c)
+		return fmt.Errorf("unknown OpenStack SD role %q", *c)
 	}
 }
 
