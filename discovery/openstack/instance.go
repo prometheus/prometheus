@@ -45,6 +45,7 @@ const (
 
 // InstanceDiscovery discovers OpenStack instances.
 type InstanceDiscovery struct {
+	provider *gophercloud.ProviderClient
 	authOpts *gophercloud.AuthOptions
 	region   string
 	interval time.Duration
@@ -53,12 +54,12 @@ type InstanceDiscovery struct {
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
-func NewInstanceDiscovery(opts *gophercloud.AuthOptions,
+func NewInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
 	interval time.Duration, port int, region string, l log.Logger) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &InstanceDiscovery{authOpts: opts,
+	return &InstanceDiscovery{provider: provider, authOpts: opts,
 		region: region, interval: interval, port: port, logger: l}
 }
 
@@ -109,11 +110,11 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		}
 	}()
 
-	provider, err := openstack.AuthenticatedClient(*i.authOpts)
+	err = openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack session: %s", err)
+		return nil, fmt.Errorf("could not authenticate to OpenStack: %s", err)
 	}
-	client, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
+	client, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region,
 	})
 	if err != nil {

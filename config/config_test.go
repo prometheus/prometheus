@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -533,6 +534,31 @@ var expectedConf = &Config{
 						TLSConfig: config_util.TLSConfig{
 							CertFile: "testdata/valid_cert_file",
 							KeyFile:  "testdata/valid_key_file",
+						},
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-openstack",
+
+			ScrapeInterval: model.Duration(15 * time.Second),
+			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: DefaultScrapeConfig.MetricsPath,
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				OpenstackSDConfigs: []*openstack.SDConfig{
+					{
+						Role:            "instance",
+						Region:          "RegionOne",
+						Port:            80,
+						RefreshInterval: model.Duration(60 * time.Second),
+						TLSConfig: config_util.TLSConfig{
+							CAFile:   "valid_ca_file",
+							CertFile: "valid_cert_file",
+							KeyFile:  "valid_key_file",
 						},
 					},
 				},

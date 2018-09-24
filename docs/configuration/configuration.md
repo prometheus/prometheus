@@ -535,6 +535,10 @@ region: <string>
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<file_sd_config>`

@@ -233,6 +233,17 @@ scrape_configs:
       cert_file: testdata/valid_cert_file
       key_file: testdata/valid_key_file
 
+- job_name: service-openstack
+  openstack_sd_configs:
+  - role: instance
+    region: RegionOne
+    port: 80
+    refresh_interval: 1m
+    tls_config:
+      ca_file: valid_ca_file
+      cert_file: valid_cert_file
+      key_file:  valid_key_file
+
 alerting:
   alertmanagers:
   - scheme: https
