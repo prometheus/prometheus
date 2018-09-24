@@ -477,8 +477,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `instance`
 
-The `instance` role discovers one target per Nova instance. The target
-address defaults to the first private IP address of the instance.
+The `instance` role discovers one target per network interface of Nova
+instance. The target address defaults to the private IP address of the network
+interface.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 

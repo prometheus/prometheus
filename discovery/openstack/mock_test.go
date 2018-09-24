@@ -327,6 +327,11 @@ const serverListBody = `
 						"version": 4,
 						"addr": "10.0.0.32",
 						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.10.10.2",
+						"OS-EXT-IPS:type": "floating"
 					}
 				]
 			},
@@ -463,10 +468,19 @@ const serverListBody = `
 		"addresses": {
 			"private": [
 				{
-					"OS-EXT-IPS-MAC:mac_addr": "fa:16:3e:9e:89:be",
 					"version": 4,
-					"addr": "10.0.0.31",
+					"addr": "10.0.0.33",
 					"OS-EXT-IPS:type": "fixed"
+				},
+				{
+					"version": 4,
+					"addr": "10.0.0.34",
+					"OS-EXT-IPS:type": "fixed"
+				},
+				{
+					"version": 4,
+					"addr": "10.10.10.4",
+					"OS-EXT-IPS:type": "floating"
 				}
 			]
 		},
@@ -488,7 +502,7 @@ const serverListBody = `
 		"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
 		"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
 		"flavor": {
-			"id": "1",
+			"id": "4",
 			"links": [
 				{
 					"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/flavors/1",
@@ -515,7 +529,9 @@ const serverListBody = `
 		"progress": 0,
 		"OS-EXT-STS:power_state": 1,
 		"config_drive": "",
-		"metadata": {}
+		"metadata": {
+			"env": "prod"
+		}
 	}
 	]
 }
@@ -543,10 +559,17 @@ const listOutput = `
             "pool": "nova"
         },
         {
-            "fixed_ip": "166.78.185.201",
+            "fixed_ip": "10.0.0.32",
             "id": "2",
             "instance_id": "ef079b0c-e610-4dfb-b1aa-b49f07ac48e5",
             "ip": "10.10.10.2",
+            "pool": "nova"
+        },
+        {
+            "fixed_ip": "10.0.0.34",
+            "id": "3",
+            "instance_id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
+            "ip": "10.10.10.4",
             "pool": "nova"
         }
     ]

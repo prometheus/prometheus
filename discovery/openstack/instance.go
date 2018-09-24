@@ -99,6 +99,11 @@ func (i *InstanceDiscovery) Run(ctx context.Context, ch chan<- []*targetgroup.Gr
 	}
 }
 
+type floatingIPKey struct {
+	id    string
+	fixed string
+}
+
 func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 	var err error
 	t0 := time.Now()
@@ -123,7 +128,8 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-floating-ips
 	pagerFIP := floatingips.List(client)
-	floatingIPList := make(map[string][]string)
+	floatingIPList := make(map[floatingIPKey]string)
+	fipPresent := make(map[string]struct{})
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
@@ -131,9 +137,11 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		}
 		for _, ip := range result {
 			// Skip not associated ips
-			if ip.InstanceID != "" {
-				floatingIPList[ip.InstanceID] = append(floatingIPList[ip.InstanceID], ip.IP)
+			if ip.InstanceID == "" || ip.FixedIP == "" {
+				continue
 			}
+			floatingIPList[floatingIPKey{id: ip.InstanceID, fixed: ip.FixedIP}] = ip.IP
+			fipPresent[ip.IP] = struct{}{}
 		}
 		return true, nil
 	})
@@ -155,12 +163,26 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 		}
 
 		for _, s := range instanceList {
-			labels := model.LabelSet{
-				openstackLabelInstanceID: model.LabelValue(s.ID),
-			}
 			if len(s.Addresses) == 0 {
 				level.Info(i.logger).Log("msg", "Got no IP address", "instance", s.ID)
 				continue
+			}
+
+			labels := model.LabelSet{
+				openstackLabelInstanceID: model.LabelValue(s.ID),
+			}
+			labels[openstackLabelInstanceStatus] = model.LabelValue(s.Status)
+			labels[openstackLabelInstanceName] = model.LabelValue(s.Name)
+
+			id, ok := s.Flavor["id"].(string)
+			if !ok {
+				level.Warn(i.logger).Log("msg", "Invalid type for flavor id, expected string")
+				continue
+			}
+			labels[openstackLabelInstanceFlavor] = model.LabelValue(id)
+			for k, v := range s.Metadata {
+				name := strutil.SanitizeLabelName(k)
+				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)
 			}
 			for _, address := range s.Addresses {
 				md, ok := address.([]interface{})
@@ -172,38 +194,34 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 					level.Debug(i.logger).Log("msg", "Got no IP address", "instance", s.ID)
 					continue
 				}
-				md1, ok := md[0].(map[string]interface{})
-				if !ok {
-					level.Warn(i.logger).Log("msg", "Invalid type for address, expected dict")
-					continue
+				for _, address := range md {
+					md1, ok := address.(map[string]interface{})
+					if !ok {
+						level.Warn(i.logger).Log("msg", "Invalid type for address, expected dict")
+						continue
+					}
+					addr, ok := md1["addr"].(string)
+					if !ok {
+						level.Warn(i.logger).Log("msg", "Invalid type for address, expected string")
+						continue
+					}
+					if _, ok := fipPresent[addr]; ok {
+						continue
+					}
+					lbls := make(model.LabelSet, len(labels))
+					for k, v := range labels {
+						lbls[k] = v
+					}
+					lbls[openstackLabelPrivateIP] = model.LabelValue(addr)
+					if val, ok := floatingIPList[floatingIPKey{id: s.ID, fixed: addr}]; ok {
+						lbls[openstackLabelPublicIP] = model.LabelValue(val)
+					}
+					addr = net.JoinHostPort(addr, fmt.Sprintf("%d", i.port))
+					lbls[model.AddressLabel] = model.LabelValue(addr)
+
+					tg.Targets = append(tg.Targets, lbls)
 				}
-				addr, ok := md1["addr"].(string)
-				if !ok {
-					level.Warn(i.logger).Log("msg", "Invalid type for address, expected string")
-					continue
-				}
-				labels[openstackLabelPrivateIP] = model.LabelValue(addr)
-				addr = net.JoinHostPort(addr, fmt.Sprintf("%d", i.port))
-				labels[model.AddressLabel] = model.LabelValue(addr)
-				// Only use first private IP
-				break
 			}
-			if val, ok := floatingIPList[s.ID]; ok && len(val) > 0 {
-				labels[openstackLabelPublicIP] = model.LabelValue(val[0])
-			}
-			labels[openstackLabelInstanceStatus] = model.LabelValue(s.Status)
-			labels[openstackLabelInstanceName] = model.LabelValue(s.Name)
-			id, ok := s.Flavor["id"].(string)
-			if !ok {
-				level.Warn(i.logger).Log("msg", "Invalid type for instance id, excepted string")
-				continue
-			}
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(id)
-			for k, v := range s.Metadata {
-				name := strutil.SanitizeLabelName(k)
-				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)
-			}
-			tg.Targets = append(tg.Targets, labels)
 		}
 		return true, nil
 	})
