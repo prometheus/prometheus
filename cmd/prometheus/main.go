@@ -169,7 +169,10 @@ func main() {
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
 	a.Flag("storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit.").
-		Default("5e7").IntVar(&cfg.web.RemoteReadLimit)
+		Default("5e7").IntVar(&cfg.web.RemoteReadSampleLimit)
+
+	a.Flag("storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
+		Default("10").IntVar(&cfg.web.RemoteReadConcurrencyLimit)
 
 	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
