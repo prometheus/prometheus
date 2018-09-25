@@ -702,14 +702,11 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
-<<<<<<< HEAD
-	tempNumSamples := ev.currentSamples
-=======
+
 	originalNumSamples := ev.currentSamples
 
 	var tempNumSamples int
 
->>>>>>> c6453509... asdf
 	for i, e := range exprs {
 		// Functions will take string arguments from the expressions, not the values.
 		if e != nil && e.Type() != ValueTypeString {
@@ -780,7 +777,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 				s.Point.T = ts
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 			}
-			ev.currentSamples = tempNumSamples + mat.TotalSamples()
+			ev.currentSamples = originalNumSamples + mat.TotalSamples()
 			return mat
 		}
 
@@ -811,7 +808,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	for _, ss := range seriess {
 		mat = append(mat, ss)
 	}
-	ev.currentSamples = tempNumSamples + mat.TotalSamples()
+	ev.currentSamples = originalNumSamples + mat.TotalSamples()
 	return mat
 }
 
