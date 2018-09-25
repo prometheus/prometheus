@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -30,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	config_util "github.com/prometheus/common/config"
@@ -38,6 +39,7 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
@@ -833,7 +835,8 @@ func TestReadEndpoint(t *testing.T) {
 				},
 			}
 		},
-		remoteReadLimit: 1e6,
+		remoteReadSampleLimit: 1e6,
+		remoteReadGate:        gate.New(1),
 	}
 
 	// Encode the request.

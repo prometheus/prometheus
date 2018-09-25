@@ -30,6 +30,7 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -148,17 +149,20 @@ func (q *query) Exec(ctx context.Context) *Result {
 func contextDone(ctx context.Context, env string) error {
 	select {
 	case <-ctx.Done():
-		err := ctx.Err()
-		switch err {
-		case context.Canceled:
-			return ErrQueryCanceled(env)
-		case context.DeadlineExceeded:
-			return ErrQueryTimeout(env)
-		default:
-			return err
-		}
+		return contextErr(ctx.Err(), env)
 	default:
 		return nil
+	}
+}
+
+func contextErr(err error, env string) error {
+	switch err {
+	case context.Canceled:
+		return ErrQueryCanceled(env)
+	case context.DeadlineExceeded:
+		return ErrQueryTimeout(env)
+	default:
+		return err
 	}
 }
 
@@ -168,7 +172,7 @@ type Engine struct {
 	logger  log.Logger
 	metrics *engineMetrics
 	timeout time.Duration
-	gate    *queryGate
+	gate    *gate.Gate
 }
 
 // NewEngine returns a new engine.
@@ -232,7 +236,7 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 		)
 	}
 	return &Engine{
-		gate:    newQueryGate(maxConcurrent),
+		gate:    gate.New(maxConcurrent),
 		timeout: timeout,
 		logger:  logger,
 		metrics: metrics,
@@ -317,7 +321,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 
 	if err := ng.gate.Start(ctx); err != nil {
-		return nil, err
+		return nil, contextErr(err, "query queue")
 	}
 	defer ng.gate.Done()
 
@@ -1713,38 +1717,6 @@ func shouldDropMetricName(op ItemType) bool {
 // LookbackDelta determines the time since the last sample after which a time
 // series is considered stale.
 var LookbackDelta = 5 * time.Minute
-
-// A queryGate controls the maximum number of concurrently running and waiting queries.
-type queryGate struct {
-	ch chan struct{}
-}
-
-// newQueryGate returns a query gate that limits the number of queries
-// being concurrently executed.
-func newQueryGate(length int) *queryGate {
-	return &queryGate{
-		ch: make(chan struct{}, length),
-	}
-}
-
-// Start blocks until the gate has a free spot or the context is done.
-func (g *queryGate) Start(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return contextDone(ctx, "query queue")
-	case g.ch <- struct{}{}:
-		return nil
-	}
-}
-
-// Done releases a single spot in the gate.
-func (g *queryGate) Done() {
-	select {
-	case <-g.ch:
-	default:
-		panic("engine.queryGate.Done: more operations done than started")
-	}
-}
 
 // documentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.
