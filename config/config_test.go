@@ -699,6 +699,9 @@ var expectedErrors = []struct {
 		filename: "openstack_role.bad.yml",
 		errMsg:   "unknown OpenStack SD role",
 	}, {
+		filename: "openstack_endpoint_type.bad.yml",
+		errMsg:   "endpoint_type must be one of admin, internal or public",
+	}, {
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
 	}, {
