@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -461,16 +462,19 @@ func (h *Head) Truncate(mint int64) error {
 	}
 	// The lower third of segments should contain mostly obsolete samples.
 	// If we have less than three segments, it's not worth checkpointing yet.
-	n = m + (n-m)/3
-	if n <= m {
-		return nil
-	}
+	// n = m + (n-m)/3
+	// if n <= m {
+	// 	fmt.Println("no checkpoint2")
+	// 	return nil
+	// }
 
 	keep := func(id uint64) bool {
 		return h.series.getByID(id) != nil
 	}
-	if _, err = Checkpoint(h.logger, h.wal, m, n, keep, mint); err != nil {
+	if t, err := Checkpoint(h.logger, h.wal, m, n, keep, mint); err != nil {
 		return errors.Wrap(err, "create checkpoint")
+	} else {
+		fmt.Printf("%+v \n", t)
 	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 

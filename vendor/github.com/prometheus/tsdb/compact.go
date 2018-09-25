@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -352,9 +353,8 @@ func (c *LeveledCompactor) Compact(dest string, dirs ...string) (uid ulid.ULID, 
 		level.Info(c.logger).Log(
 			"msg", "compact blocks",
 			"count", len(blocks),
-			"mint", meta.MinTime,
-			"maxt", meta.MaxTime,
-			"ulid", meta.ULID,
+			"mint", time.Unix(meta.MinTime/1000, 0).String()+" "+strconv.Itoa(int(meta.MinTime)),
+			"maxt", time.Unix(meta.MaxTime/1000, 0).String()+" "+strconv.Itoa(int(meta.MaxTime)),
 			"sources", fmt.Sprintf("%v", uids),
 		)
 		return uid, nil
@@ -395,7 +395,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		return uid, err
 	}
 
-	level.Info(c.logger).Log("msg", "write block", "mint", meta.MinTime, "maxt", meta.MaxTime, "ulid", meta.ULID)
+	level.Info(c.logger).Log("msg", "write block", "mint", time.Unix(meta.MinTime/1000, 0).String()+" "+strconv.Itoa(int(meta.MinTime)), "maxt", time.Unix(meta.MaxTime/1000, 0).String()+" "+strconv.Itoa(int(meta.MaxTime)), "ulid", meta.ULID)
 	return uid, nil
 }
 

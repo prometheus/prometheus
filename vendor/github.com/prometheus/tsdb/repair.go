@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -34,8 +36,8 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 		if meta.Version == 1 {
 			level.Info(logger).Log(
 				"msg", "found healthy block",
-				"mint", meta.MinTime,
-				"maxt", meta.MaxTime,
+				"mint", time.Unix(meta.MinTime/1000, 0).String()+" "+strconv.Itoa(int(meta.MinTime)),
+				"maxt", time.Unix(meta.MaxTime/1000, 0).String()+" "+strconv.Itoa(int(meta.MaxTime)),
 				"ulid", meta.ULID,
 			)
 			continue
