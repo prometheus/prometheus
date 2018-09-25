@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
@@ -138,10 +137,12 @@ func TestCheckpoint(t *testing.T) {
 	}
 	testutil.Ok(t, w.Close())
 
-	_, err = Checkpoint(nil, w, 100, 106, func(x uint64) bool {
+	_, err = Checkpoint(w, 100, 106, func(x uint64) bool {
 		return x%2 == 0
-	}, last/2, prometheus.NewCounter(prometheus.CounterOpts{}))
+	}, last/2)
 	testutil.Ok(t, err)
+	testutil.Ok(t, w.Truncate(107))
+	testutil.Ok(t, DeleteCheckpoints(w.Dir(), 106))
 
 	// Only the new checkpoint should be left.
 	files, err := fileutil.ReadDir(dir)
