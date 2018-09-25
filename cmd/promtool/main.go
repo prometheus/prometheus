@@ -94,6 +94,13 @@ func main() {
 	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
 
+	testCmd := app.Command("test", "Unit testing.")
+	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesFiles := testRulesCmd.Arg(
+		"test-rule-file",
+		"The unit test file.",
+	).Required().ExistingFiles()
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
@@ -127,6 +134,9 @@ func main() {
 
 	case queryLabelsCmd.FullCommand():
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName))
+
+	case testRulesCmd.FullCommand():
+		os.Exit(RulesUnitTest(*testRulesFiles...))
 	}
 
 }

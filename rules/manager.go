@@ -650,7 +650,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.loadGroups(interval, files...)
+	groups, errs := m.LoadGroups(interval, files...)
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -697,8 +697,8 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	return nil
 }
 
-// loadGroups reads groups from a list of files.
-func (m *Manager) loadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
+// LoadGroups reads groups from a list of files.
+func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
 	shouldRestore := !m.restored
