@@ -89,7 +89,7 @@ func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
 	for _, s := range samples {
 		ts := prompb.TimeSeries{
 			Labels: MetricToLabelProtos(s.Metric),
-			Samples: []*prompb.Sample{
+			Samples: []prompb.Sample{
 				{
 					Value:     float64(s.Value),
 					Timestamp: int64(s.Timestamp),
@@ -153,7 +153,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 	for ss.Next() {
 		series := ss.At()
 		iter := series.Iterator()
-		samples := []*prompb.Sample{}
+		samples := []prompb.Sample{}
 
 		for iter.Next() {
 			numSamples++
@@ -164,7 +164,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 				}
 			}
 			ts, val := iter.At()
-			samples = append(samples, &prompb.Sample{
+			samples = append(samples, prompb.Sample{
 				Timestamp: ts,
 				Value:     val,
 			})
@@ -249,7 +249,7 @@ func (c *concreteSeriesSet) Err() error {
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
 	labels  labels.Labels
-	samples []*prompb.Sample
+	samples []prompb.Sample
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
