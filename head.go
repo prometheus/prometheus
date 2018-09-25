@@ -76,19 +76,20 @@ type Head struct {
 }
 
 type headMetrics struct {
-	activeAppenders     prometheus.Gauge
-	series              prometheus.Gauge
-	seriesCreated       prometheus.Counter
-	seriesRemoved       prometheus.Counter
-	seriesNotFound      prometheus.Counter
-	chunks              prometheus.Gauge
-	chunksCreated       prometheus.Counter
-	chunksRemoved       prometheus.Counter
-	gcDuration          prometheus.Summary
-	minTime             prometheus.GaugeFunc
-	maxTime             prometheus.GaugeFunc
-	samplesAppended     prometheus.Counter
-	walTruncateDuration prometheus.Summary
+	activeAppenders      prometheus.Gauge
+	series               prometheus.Gauge
+	seriesCreated        prometheus.Counter
+	seriesRemoved        prometheus.Counter
+	seriesNotFound       prometheus.Counter
+	chunks               prometheus.Gauge
+	chunksCreated        prometheus.Counter
+	chunksRemoved        prometheus.Counter
+	gcDuration           prometheus.Summary
+	minTime              prometheus.GaugeFunc
+	maxTime              prometheus.GaugeFunc
+	samplesAppended      prometheus.Counter
+	walTruncateDuration  prometheus.Summary
+	checkpointDeleteFail prometheus.Counter
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -150,6 +151,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		Name: "prometheus_tsdb_head_samples_appended_total",
 		Help: "Total number of appended samples.",
 	})
+	m.checkpointDeleteFail = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_checkpoint_delete_fail",
+		Help: "Number of times deletion of old checkpoint failed.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -166,6 +171,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.gcDuration,
 			m.walTruncateDuration,
 			m.samplesAppended,
+			m.checkpointDeleteFail,
 		)
 	}
 	return m
@@ -469,7 +475,7 @@ func (h *Head) Truncate(mint int64) error {
 	keep := func(id uint64) bool {
 		return h.series.getByID(id) != nil
 	}
-	if _, err = Checkpoint(h.logger, h.wal, m, n, keep, mint); err != nil {
+	if _, err = Checkpoint(h.logger, h.wal, m, n, keep, mint, h.metrics.checkpointDeleteFail); err != nil {
 		return errors.Wrap(err, "create checkpoint")
 	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())

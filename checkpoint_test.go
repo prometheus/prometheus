@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/labels"
 	"github.com/prometheus/tsdb/testutil"
@@ -139,7 +140,7 @@ func TestCheckpoint(t *testing.T) {
 
 	_, err = Checkpoint(nil, w, 100, 106, func(x uint64) bool {
 		return x%2 == 0
-	}, last/2)
+	}, last/2, prometheus.NewCounter(prometheus.CounterOpts{}))
 	testutil.Ok(t, err)
 
 	// Only the new checkpoint should be left.

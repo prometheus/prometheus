@@ -162,6 +162,7 @@ type WAL struct {
 	fsyncDuration   prometheus.Summary
 	pageFlushes     prometheus.Counter
 	pageCompletions prometheus.Counter
+	truncateFail    prometheus.Counter
 }
 
 // New returns a new WAL over the given directory.
@@ -201,8 +202,12 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		Name: "prometheus_tsdb_wal_completed_pages_total",
 		Help: "Total number of completed pages.",
 	})
+	w.truncateFail = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_truncate_fail",
+		Help: "Number of times WAL truncation failed.",
+	})
 	if reg != nil {
-		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions)
+		reg.MustRegister(w.fsyncDuration, w.pageFlushes, w.pageCompletions, w.truncateFail)
 	}
 
 	_, j, err := w.Segments()
@@ -530,6 +535,7 @@ func (w *WAL) Segments() (m, n int, err error) {
 func (w *WAL) Truncate(i int) error {
 	refs, err := listSegments(w.dir)
 	if err != nil {
+		w.truncateFail.Add(float64(1))
 		return err
 	}
 	for _, r := range refs {
@@ -537,6 +543,7 @@ func (w *WAL) Truncate(i int) error {
 			break
 		}
 		if err := os.Remove(filepath.Join(w.dir, r.s)); err != nil {
+			w.truncateFail.Add(float64(1))
 			return err
 		}
 	}

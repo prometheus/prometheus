@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/tsdb/fileutil"
 	"github.com/prometheus/tsdb/wal"
 )
@@ -102,7 +103,7 @@ const checkpointPrefix = "checkpoint."
 // it with the original WAL.
 //
 // Non-critical errors are logged and not returned.
-func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bool, mint int64, checkpointDeleteFail prometheus.Counter) (*CheckpointStats, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -283,6 +284,7 @@ func Checkpoint(logger log.Logger, w *wal.WAL, m, n int, keep func(id uint64) bo
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
 		level.Error(logger).Log("msg", "delete old checkpoints", "err", err)
+		checkpointDeleteFail.Add(float64(1))
 	}
 	return stats, nil
 }
