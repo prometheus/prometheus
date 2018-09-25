@@ -58,16 +58,19 @@ promql_expr_test:
 ### `<series>`
 
 ```yaml
-# This follows the usual series notation (x{a="b", c="d"}).
+# This follows the usual series notation '<metric name>{<label name>=<label value>, ...}'
+# Examples: 
+#      series_name{label1="value1", label2="value2"}
+#      go_goroutines{job="prometheus", instance="localhost:9090"}
 series: <string>
 
 # This uses expanding notation.
 # Expanding notation: 
-#     a+bxc ~ a a+b a+(2*b) a+(3*b) … a+(c*b)
-#     a-bxc ~ a a-b a-(2*b) a-(3*b) … a-(c*b)
+#     'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'
+#     'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'
 # Examples:
-#     1. -2+4x3 ~ -2 2 6 10
-#     2.  1-2x4 ~ 1 -1 -3 -5 -7
+#     1. '-2+4x3' becomes '-2 2 6 10'
+#     2. ' 1-2x4' becomes '1 -1 -3 -5 -7'
 values: <string>
 ```
 
@@ -90,8 +93,6 @@ exp_alerts:
 ```
 
 ### `<alert>`
-
-Remember, this alert shoud be firing.
 
 ``` yaml
 # These are the expanded labels and annotations of the expected alert. 
@@ -120,8 +121,11 @@ exp_samples:
 ### `<sample>`
 
 ```yaml
-# Labels of the sample in series notation.
-labels: <series_notation>
+# Labels of the sample in usual series notation '<metric name>{<label name>=<label value>, ...}'
+# Examples: 
+#      series_name{label1="value1", label2="value2"}
+#      go_goroutines{job="prometheus", instance="localhost:9090"}
+labels: <string>
 
 # The expected value of the promql expression.
 value: <number>
@@ -171,18 +175,18 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
- # Test 1.
+    # Test 1.
     - interval: 1m
       # Series data.
       input_series:
           - series: 'up{job="prometheus", instance="localhost:9090"}'
             values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
           - series: 'up{job="node_exporter", instance="localhost:9100"}'
-            values: '1 1 1 1 1 1 1 0 0 0 0 0 0 0 0'
+            values: '1+0x6 0 0 0 0 0 0 0 0' # 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0
           - series: 'go_goroutines{job="prometheus", instance="localhost:9090"}'
-            values: '10+10x2 30+20x5'
+            values: '10+10x2 30+20x5' # 10 20 30 30 50 70 90 110 130
           - series: 'go_goroutines{job="node_exporter", instance="localhost:9100"}'
-            values: '10+10x7 10+30x4'
+            values: '10+10x7 10+30x4' # 10 20 30 40 50 60 70 80 10 40 70 100 130
 
     # Unit test for alerting rules.
     alert_rule_test:
