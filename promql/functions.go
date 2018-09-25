@@ -391,9 +391,11 @@ func funcCountOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vect
 // === max_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		max := math.Inf(-1)
+		max := values[0].V
 		for _, v := range values {
-			max = math.Max(max, v.V)
+			if v.V > max || math.IsNaN(max) {
+				max = v.V
+			}
 		}
 		return max
 	})
@@ -402,9 +404,11 @@ func funcMaxOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 // === min_over_time(Matrix ValueTypeMatrix) Vector ===
 func funcMinOverTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		min := math.Inf(1)
+		min := values[0].V
 		for _, v := range values {
-			min = math.Min(min, v.V)
+			if v.V < min || math.IsNaN(min) {
+				min = v.V
+			}
 		}
 		return min
 	})
