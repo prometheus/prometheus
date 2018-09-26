@@ -733,9 +733,10 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	}
 	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
+	tempNumSamples = ev.currentSamples
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		// Reset num. of samples in memory after each timestamp.
-		tempNumSamples = ev.currentSamples
+		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
 			vectors[i] = vectors[i][:0]
@@ -795,7 +796,6 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 			seriess[h] = ss
 
 		}
-		ev.currentSamples = tempNumSamples
 	}
 	// Reuse the original point slices.
 	for _, m := range origMatrixes {
@@ -1009,7 +1009,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 		}
 
 	case *NumberLiteral:
-
 		return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 			return append(enh.out, Sample{Point: Point{V: e.Val}})
 		})
