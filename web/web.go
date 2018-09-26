@@ -674,13 +674,7 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
-	// Bucket targets by job label
-	tps := map[string][]*scrape.Target{}
-	for _, t := range h.scrapeManager.TargetsActive() {
-		job := t.Labels().Get(model.JobLabel)
-		tps[job] = append(tps[job], t)
-	}
-
+	tps := h.scrapeManager.TargetsActive()
 	for _, targets := range tps {
 		sort.Slice(targets, func(i, j int) bool {
 			return targets[i].Labels().Get(labels.InstanceName) < targets[j].Labels().Get(labels.InstanceName)

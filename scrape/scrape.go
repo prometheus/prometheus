@@ -124,7 +124,7 @@ type scrapePool struct {
 	client *http.Client
 	// Targets and loops must always be synchronized to have the same
 	// set of hashes.
-	targets        map[uint64]*Target
+	activeTargets  map[uint64]*Target
 	droppedTargets []*Target
 	loops          map[uint64]loop
 	cancel         context.CancelFunc
@@ -152,13 +152,13 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:     cancel,
-		appendable: app,
-		config:     cfg,
-		client:     client,
-		targets:    map[uint64]*Target{},
-		loops:      map[uint64]loop{},
-		logger:     logger,
+		cancel:        cancel,
+		appendable:    app,
+		config:        cfg,
+		client:        client,
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		logger:        logger,
 	}
 	sp.newLoop = func(t *Target, s scraper, limit int, honor bool, mrc []*config.RelabelConfig) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -186,6 +186,23 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, logger log.Logger) 
 	return sp
 }
 
+func (sp *scrapePool) ActiveTargets() []*Target {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+
+	var tActive []*Target
+	for _, t := range sp.activeTargets {
+		tActive = append(tActive, t)
+	}
+	return tActive
+}
+
+func (sp *scrapePool) DroppedTargets() []*Target {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+	return sp.droppedTargets
+}
+
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	sp.cancel()
@@ -203,7 +220,7 @@ func (sp *scrapePool) stop() {
 		}(l)
 
 		delete(sp.loops, fp)
-		delete(sp.targets, fp)
+		delete(sp.activeTargets, fp)
 	}
 	wg.Wait()
 }
@@ -236,7 +253,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 	for fp, oldLoop := range sp.loops {
 		var (
-			t       = sp.targets[fp]
+			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			newLoop = sp.newLoop(t, s, limit, honor, mrc)
 		)
@@ -260,7 +277,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) {
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set and returns all scraped and dropped targets.
-func (sp *scrapePool) Sync(tgs []*targetgroup.Group) (tActive []*Target, tDropped []*Target) {
+func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	start := time.Now()
 
 	var all []*Target
@@ -287,15 +304,6 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) (tActive []*Target, tDroppe
 		time.Since(start).Seconds(),
 	)
 	targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
-
-	sp.mtx.RLock()
-	for _, t := range sp.targets {
-		tActive = append(tActive, t)
-	}
-	tDropped = sp.droppedTargets
-	sp.mtx.RUnlock()
-
-	return tActive, tDropped
 }
 
 // sync takes a list of potentially duplicated targets, deduplicates them, starts
@@ -319,34 +327,36 @@ func (sp *scrapePool) sync(targets []*Target) {
 		hash := t.hash()
 		uniqueTargets[hash] = struct{}{}
 
-		if _, ok := sp.targets[hash]; !ok {
+		if _, ok := sp.activeTargets[hash]; !ok {
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
 			l := sp.newLoop(t, s, limit, honor, mrc)
 
-			sp.targets[hash] = t
+			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
 
 			go l.run(interval, timeout, nil)
 		} else {
 			// Need to keep the most updated labels information
 			// for displaying it in the Service Discovery web page.
-			sp.targets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
+			sp.activeTargets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
 		}
 	}
 
 	var wg sync.WaitGroup
 
 	// Stop and remove old targets and scraper loops.
-	for hash := range sp.targets {
+	for hash := range sp.activeTargets {
 		if _, ok := uniqueTargets[hash]; !ok {
 			wg.Add(1)
 			go func(l loop) {
+
 				l.stop()
+
 				wg.Done()
 			}(sp.loops[hash])
 
 			delete(sp.loops, hash)
-			delete(sp.targets, hash)
+			delete(sp.activeTargets, hash)
 		}
 	}
 
