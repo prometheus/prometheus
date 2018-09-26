@@ -51,3 +51,39 @@ func TestDeriv(t *testing.T) {
 	testutil.Assert(t, len(vec) == 1, "Expected 1 result, got %d", len(vec))
 	testutil.Assert(t, vec[0].V == 0.0, "Expected 0.0 as value, got %f", vec[0].V)
 }
+
+func TestRegisterFunctionFailure(t *testing.T) {
+	err := RegisterFunction("ln", nil)
+	testutil.Assert(t, err != nil, "Expected not nil and got %v", err)
+}
+
+func TestRegisterFunctionSuccess(t *testing.T) {
+	err := RegisterFunction("test", &Function{
+		Name:       "test",
+		ArgTypes:   []ValueType{},
+		ReturnType: ValueTypeVector,
+		Call:       testFunc,
+	})
+
+	testutil.Assert(t, err == nil, "Expected nil and got %v", err)
+
+	storage := testutil.NewStorage(t)
+	defer storage.Close()
+	engine := NewEngine(nil, nil, 10, 10*time.Second)
+
+	query, err := engine.NewInstantQuery(storage, "test()", time.Now())
+	testutil.Ok(t, err)
+
+	result := query.Exec(context.Background())
+	testutil.Ok(t, result.Err)
+
+	vec, _ := result.Vector()
+	testutil.Assert(t, len(vec) == 1, "Expected 1 result, got %d", len(vec))
+	testutil.Assert(t, vec[0].V == 5.0, "Expected 5.0 as value, got %f", vec[0].V)
+}
+
+func testFunc(_ []Value, _ Expressions, _ *EvalNodeHelper) Vector {
+	return Vector{Sample{
+		Point: Point{V: 5},
+	}}
+}

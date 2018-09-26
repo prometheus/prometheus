@@ -50,6 +50,16 @@ type Function struct {
 	Call func(vals []Value, args Expressions, enh *EvalNodeHelper) Vector
 }
 
+// RegisterFunction allows to register custom functions into PromQL
+func RegisterFunction(fnName string, fn *Function) error {
+	if _, ok := functions[fnName]; ok {
+		return fmt.Errorf("unable to register function %s as it already exists", fnName)
+	}
+
+	functions[fnName] = fn
+	return nil
+}
+
 // === time() float64 ===
 func funcTime(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return Vector{Sample{Point: Point{
@@ -298,7 +308,7 @@ func funcClampMax(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	max := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: math.Min(max, el.V)},
 		})
 	}
@@ -311,7 +321,7 @@ func funcClampMin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	min := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: math.Max(min, el.V)},
 		})
 	}
@@ -333,7 +343,7 @@ func funcRound(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	for _, el := range vec {
 		v := math.Floor(el.V*toNearestInverse+0.5) / toNearestInverse
 		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: v},
 		})
 	}
@@ -498,7 +508,7 @@ func funcAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 func simpleFunc(vals []Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: f(el.V)},
 		})
 	}
@@ -550,7 +560,7 @@ func funcTimestamp(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
 		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: float64(el.T) / 1000},
 		})
 	}
@@ -850,7 +860,7 @@ func dateWrapper(vals []Value, enh *EvalNodeHelper, f func(time.Time) float64) V
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
 		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: f(t)},
 		})
 	}

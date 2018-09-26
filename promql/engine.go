@@ -623,7 +623,7 @@ type EvalNodeHelper struct {
 	out Vector
 
 	// Caches.
-	// dropMetricName and label_*.
+	// DropMetricName and label_*.
 	dmn map[uint64]labels.Labels
 	// signatureFunc.
 	sigf map[uint64]uint64
@@ -638,8 +638,8 @@ type EvalNodeHelper struct {
 	resultMetric map[uint64]labels.Labels
 }
 
-// dropMetricName is a cached version of dropMetricName.
-func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
+// DropMetricName is a cached version of DropMetricName.
+func (enh *EvalNodeHelper) DropMetricName(l labels.Labels) labels.Labels {
 	if enh.dmn == nil {
 		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
 	}
@@ -1389,7 +1389,7 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 		if keep {
 			lhsSample.V = value
 			if shouldDropMetricName(op) || returnBool {
-				lhsSample.Metric = enh.dropMetricName(lhsSample.Metric)
+				lhsSample.Metric = enh.DropMetricName(lhsSample.Metric)
 			}
 			enh.out = append(enh.out, lhsSample)
 		}
