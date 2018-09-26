@@ -522,3 +522,27 @@ load 5m
   testmetric2{src="a",dst="b"} 1
 
 eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
+
+# Tests for *_over_time
+clear
+
+load 10s
+	data{type="numbers"} 2 0 3
+	data{type="some_nan"} 2 0 NaN
+	data{type="some_nan2"} 2 NaN 1
+	data{type="some_nan3"} NaN 0 1
+	data{type="only_nan"} NaN NaN NaN
+
+eval instant at 1m min_over_time(data[1m])
+	{type="numbers"} 0
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 0
+	{type="only_nan"} NaN
+
+eval instant at 1m max_over_time(data[1m])
+	{type="numbers"} 3
+	{type="some_nan"} 2
+	{type="some_nan2"} 2
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN
