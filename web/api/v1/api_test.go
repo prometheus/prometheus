@@ -53,31 +53,35 @@ import (
 
 type testTargetRetriever struct{}
 
-func (t testTargetRetriever) TargetsActive() []*scrape.Target {
-	return []*scrape.Target{
-		scrape.NewTarget(
-			labels.FromMap(map[string]string{
-				model.SchemeLabel:      "http",
-				model.AddressLabel:     "example.com:8080",
-				model.MetricsPathLabel: "/metrics",
-			}),
-			nil,
-			url.Values{},
-		),
+func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
+	return map[string][]*scrape.Target{
+		"test": {
+			scrape.NewTarget(
+				labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "example.com:8080",
+					model.MetricsPathLabel: "/metrics",
+				}),
+				nil,
+				url.Values{},
+			),
+		},
 	}
 }
-func (t testTargetRetriever) TargetsDropped() []*scrape.Target {
-	return []*scrape.Target{
-		scrape.NewTarget(
-			nil,
-			labels.FromMap(map[string]string{
-				model.AddressLabel:     "http://dropped.example.com:9115",
-				model.MetricsPathLabel: "/probe",
-				model.SchemeLabel:      "http",
-				model.JobLabel:         "blackbox",
-			}),
-			url.Values{},
-		),
+func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
+	return map[string][]*scrape.Target{
+		"test": {
+			scrape.NewTarget(
+				nil,
+				labels.FromMap(map[string]string{
+					model.AddressLabel:     "http://dropped.example.com:9115",
+					model.MetricsPathLabel: "/probe",
+					model.SchemeLabel:      "http",
+					model.JobLabel:         "blackbox",
+				}),
+				url.Values{},
+			),
+		},
 	}
 }
 
@@ -616,21 +620,25 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 		{
 			endpoint: api.targets,
 			response: &TargetDiscovery{
-				ActiveTargets: []*Target{
-					{
-						DiscoveredLabels: map[string]string{},
-						Labels:           map[string]string{},
-						ScrapeURL:        "http://example.com:8080/metrics",
-						Health:           "unknown",
+				ActiveTargets: map[string][]*Target{
+					"test": {
+						{
+							DiscoveredLabels: map[string]string{},
+							Labels:           map[string]string{},
+							ScrapeURL:        "http://example.com:8080/metrics",
+							Health:           "unknown",
+						},
 					},
 				},
-				DroppedTargets: []*DroppedTarget{
-					{
-						DiscoveredLabels: map[string]string{
-							"__address__":      "http://dropped.example.com:9115",
-							"__metrics_path__": "/probe",
-							"__scheme__":       "http",
-							"job":              "blackbox",
+				DroppedTargets: map[string][]*DroppedTarget{
+					"test": {
+						{
+							DiscoveredLabels: map[string]string{
+								"__address__":      "http://dropped.example.com:9115",
+								"__metrics_path__": "/probe",
+								"__scheme__":       "http",
+								"job":              "blackbox",
+							},
 						},
 					},
 				},

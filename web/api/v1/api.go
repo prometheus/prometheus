@@ -88,8 +88,8 @@ func (e *apiError) Error() string {
 }
 
 type targetRetriever interface {
-	TargetsActive() []*scrape.Target
-	TargetsDropped() []*scrape.Target
+	TargetsActive() map[string][]*scrape.Target
+	TargetsDropped() map[string][]*scrape.Target
 }
 
 type alertmanagerRetriever interface {
@@ -480,35 +480,39 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  []*Target        `json:"activeTargets"`
-	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
+	ActiveTargets  map[string][]*Target        `json:"activeTargets"`
+	DroppedTargets map[string][]*DroppedTarget `json:"droppedTargets"`
 }
 
 func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 	tActive := api.targetRetriever.TargetsActive()
 	tDropped := api.targetRetriever.TargetsDropped()
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(tActive)), DroppedTargets: make([]*DroppedTarget, len(tDropped))}
+	res := &TargetDiscovery{ActiveTargets: make(map[string][]*Target, len(tActive)), DroppedTargets: make(map[string][]*DroppedTarget, len(tDropped))}
 
-	for i, t := range tActive {
-		lastErrStr := ""
-		lastErr := t.LastError()
-		if lastErr != nil {
-			lastErrStr = lastErr.Error()
-		}
+	for tset, targets := range tActive {
+		for _, target := range targets {
+			lastErrStr := ""
+			lastErr := target.LastError()
+			if lastErr != nil {
+				lastErrStr = lastErr.Error()
+			}
 
-		res.ActiveTargets[i] = &Target{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
-			Labels:           t.Labels().Map(),
-			ScrapeURL:        t.URL().String(),
-			LastError:        lastErrStr,
-			LastScrape:       t.LastScrape(),
-			Health:           t.Health(),
+			res.ActiveTargets[tset] = append(res.ActiveTargets[tset], &Target{
+				DiscoveredLabels: target.DiscoveredLabels().Map(),
+				Labels:           target.Labels().Map(),
+				ScrapeURL:        target.URL().String(),
+				LastError:        lastErrStr,
+				LastScrape:       target.LastScrape(),
+				Health:           target.Health(),
+			})
 		}
 	}
 
-	for i, t := range tDropped {
-		res.DroppedTargets[i] = &DroppedTarget{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
+	for tset, tt := range tDropped {
+		for _, t := range tt {
+			res.DroppedTargets[tset] = append(res.DroppedTargets[tset], &DroppedTarget{
+				DiscoveredLabels: t.DiscoveredLabels().Map(),
+			})
 		}
 	}
 	return res, nil, nil
@@ -532,35 +536,37 @@ func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError, func())
 
 	var res []metricMetadata
 Outer:
-	for _, t := range api.targetRetriever.TargetsActive() {
-		if limit >= 0 && len(res) >= limit {
-			break
-		}
-		for _, m := range matchers {
-			// Filter targets that don't satisfy the label matchers.
-			if !m.Matches(t.Labels().Get(m.Name)) {
-				continue Outer
+	for _, tt := range api.targetRetriever.TargetsActive() {
+		for _, t := range tt {
+			if limit >= 0 && len(res) >= limit {
+				break
 			}
-		}
-		// If no metric is specified, get the full list for the target.
-		if metric == "" {
-			for _, md := range t.MetadataList() {
+			for _, m := range matchers {
+				// Filter targets that don't satisfy the label matchers.
+				if !m.Matches(t.Labels().Get(m.Name)) {
+					continue Outer
+				}
+			}
+			// If no metric is specified, get the full list for the target.
+			if metric == "" {
+				for _, md := range t.MetadataList() {
+					res = append(res, metricMetadata{
+						Target: t.Labels(),
+						Metric: md.Metric,
+						Type:   md.Type,
+						Help:   md.Help,
+					})
+				}
+				continue
+			}
+			// Get metadata for the specified metric.
+			if md, ok := t.Metadata(metric); ok {
 				res = append(res, metricMetadata{
 					Target: t.Labels(),
-					Metric: md.Metric,
 					Type:   md.Type,
 					Help:   md.Help,
 				})
 			}
-			continue
-		}
-		// Get metadata for the specified metric.
-		if md, ok := t.Metadata(metric); ok {
-			res = append(res, metricMetadata{
-				Target: t.Labels(),
-				Type:   md.Type,
-				Help:   md.Help,
-			})
 		}
 	}
 	if len(res) == 0 {
