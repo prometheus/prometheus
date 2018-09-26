@@ -39,9 +39,11 @@ import (
 const (
 	ec2Label                = model.MetaLabelPrefix + "ec2_"
 	ec2LabelAZ              = ec2Label + "availability_zone"
+	ec2LabelImageID         = ec2Label + "image_id"
 	ec2LabelInstanceID      = ec2Label + "instance_id"
 	ec2LabelInstanceState   = ec2Label + "instance_state"
 	ec2LabelInstanceType    = ec2Label + "instance_type"
+	ec2LabelKeyName         = ec2Label + "key_name"
 	ec2LabelOwnerID         = ec2Label + "owner_id"
 	ec2LabelPublicDNS       = ec2Label + "public_dns_name"
 	ec2LabelPublicIP        = ec2Label + "public_ip"
@@ -254,8 +256,10 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				}
 
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+				labels[ec2LabelImageID] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)
+				labels[ec2LabelKeyName] = model.LabelValue(*inst.KeyName)
 
 				if inst.VpcId != nil {
 					labels[ec2LabelVPCID] = model.LabelValue(*inst.VpcId)
