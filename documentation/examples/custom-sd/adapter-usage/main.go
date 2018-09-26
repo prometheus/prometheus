@@ -200,7 +200,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			tgs = append(tgs, tg)
 			newSourceList[tg.Source] = true
 		}
-		// when targetGroup disappear, send an update with empty targetList
+		// When targetGroup disappear, send an update with empty targetList.
 		for key := range d.oldSourceList {
 			if !newSourceList[key] {
 				tgs = append(tgs, &targetgroup.Group{

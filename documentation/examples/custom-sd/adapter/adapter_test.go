@@ -22,7 +22,7 @@ import (
 )
 
 // TestGenerateTargetGroups checks that the target is correctly generated.
-// It covers the case when the target is empty
+// It covers the case when the target is empty.
 func TestGenerateTargetGroups(t *testing.T) {
 	testCases := []struct {
 		title            string
