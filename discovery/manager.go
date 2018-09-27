@@ -93,6 +93,7 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
 		ctx:            ctx,
+		updatert:       5 * time.Second,
 	}
 }
 
@@ -111,6 +112,10 @@ type Manager struct {
 	providers []*provider
 	// The sync channels sends the updates in map[targetSetName] where targetSetName is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
+
+	// How long to wait before sending updates to the channel. The variable
+	// should only be modified in unit tests.
+	updatert time.Duration
 }
 
 // Run starts the background processing
@@ -166,7 +171,7 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 }
 
 func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(m.updatert)
 	defer ticker.Stop()
 
 	triggerUpdate := make(chan struct{}, 1)
@@ -181,11 +186,10 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 				select {
 				case m.syncCh <- m.allGroups(): // Waiting until the receiver can accept the last update.
 					level.Debug(m.logger).Log("msg", "discoverer exited", "provider", p.name)
-					return
 				case <-ctx.Done():
-					return
 				}
 
+				return
 			}
 			for _, s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
