@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/testutil"
 	"gopkg.in/yaml.v2"
 )
 
@@ -865,6 +866,120 @@ scrape_configs:
 			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
 				origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs)
 		}
+	}
+}
+
+func TestUpdateGroupNoChanges(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, nil)
+
+	tests := []struct {
+		title          string
+		groupUpdates   [][]*targetgroup.Group
+		expectedStatus bool
+	}{
+
+		{
+			"Single group",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+			},
+			true,
+		},
+		{
+			"Same groups",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+			},
+			false,
+		},
+		{
+			"Same groups with different order",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "2"},
+							{"__instance__": "1"},
+						},
+					},
+				},
+			},
+			false,
+		},
+		{
+			"Different groups",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "3"},
+							{"__instance__": "4"},
+						},
+					},
+				},
+			},
+			true,
+		},
+	}
+
+	pk := poolKey{setName: "test", provider: "test"}
+
+	for _, test := range tests {
+		t.Run(test.title, func(t *testing.T) {
+			var updateStatus bool
+			for _, groups := range test.groupUpdates {
+				updateStatus = discoveryManager.updateGroup(pk, groups)
+			}
+			testutil.Assert(t, updateStatus == test.expectedStatus, "Expected update status:%v, but got:%v", test.expectedStatus, updateStatus)
+
+		})
 	}
 }
 

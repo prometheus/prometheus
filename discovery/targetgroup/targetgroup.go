@@ -91,3 +91,30 @@ func (tg *Group) UnmarshalJSON(b []byte) error {
 	tg.Labels = g.Labels
 	return nil
 }
+
+// Equal returns true if all fields have exactly the same values and lenghts.
+// The targets equality is based on the labels FastFingerprint for better performance.
+func (tg *Group) Equal(tgNew *Group) bool {
+	if tg.Source != tgNew.Source {
+		return false
+	}
+
+	if len(tg.Targets) != len(tgNew.Targets) {
+		return false
+	}
+
+	// Check that all LabelSets exists in both groups and their fingerprint matches.
+	checkMap := map[model.Fingerprint]struct{}{}
+	for _, ls := range tg.Targets {
+		checkMap[ls.FastFingerprint()] = struct{}{}
+	}
+	for _, ls := range tgNew.Targets {
+		fp := ls.FastFingerprint()
+		if _, ok := checkMap[fp]; !ok {
+			return false
+		}
+		delete(checkMap, fp)
+	}
+
+	return true
+}

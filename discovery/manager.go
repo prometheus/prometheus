@@ -188,13 +188,14 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 
 			}
 			for _, s := range p.subs {
-				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
+				if m.updateGroup(poolKey{setName: s, provider: p.name}, tgs) {
+					select {
+					case triggerUpdate <- struct{}{}: // Signal that there was an update.
+					default:
+					}
+				}
 			}
 
-			select {
-			case triggerUpdate <- struct{}{}:
-			default:
-			}
 		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
 			case <-triggerUpdate:
@@ -222,7 +223,9 @@ func (m *Manager) cancelDiscoverers() {
 	m.discoverCancel = nil
 }
 
-func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
+// updateGroup updates or creates targets.
+// Returns false if nothing changed.
+func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) (updated bool) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -231,9 +234,14 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 			if _, ok := m.targets[poolKey]; !ok {
 				m.targets[poolKey] = make(map[string]*targetgroup.Group)
 			}
-			m.targets[poolKey][tg.Source] = tg
+
+			if _, exist := m.targets[poolKey][tg.Source]; !exist || !m.targets[poolKey][tg.Source].Equal(tg) {
+				m.targets[poolKey][tg.Source] = tg
+				updated = true
+			}
 		}
 	}
+	return
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
