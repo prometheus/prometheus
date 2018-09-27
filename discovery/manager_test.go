@@ -874,17 +874,113 @@ func TestUpdateGroupNoChanges(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
 
-	tg := []*targetgroup.Group{
+	tests := []struct {
+		title          string
+		groupUpdates   [][]*targetgroup.Group
+		expectedStatus bool
+	}{
+
 		{
-			Source: "tp1_group1",
-			Targets: []model.LabelSet{
-				{"__instance__": "1"},
+			"Single group",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
 			},
+			true,
+		},
+		{
+			"Same groups",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+			},
+			false,
+		},
+		{
+			"Same groups with different order",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "2"},
+							{"__instance__": "1"},
+						},
+					},
+				},
+			},
+			false,
+		},
+		{
+			"Different groups",
+			[][]*targetgroup.Group{
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "1"},
+							{"__instance__": "2"},
+						},
+					},
+				},
+				{
+					{
+						Source: "tp1_group1",
+						Targets: []model.LabelSet{
+							{"__instance__": "3"},
+							{"__instance__": "4"},
+						},
+					},
+				},
+			},
+			true,
 		},
 	}
+
 	pk := poolKey{setName: "test", provider: "test"}
-	testutil.Assert(t, discoveryManager.updateGroup(pk, tg) == true, "Expected to return true when adding a new target group.")
-	testutil.Assert(t, discoveryManager.updateGroup(pk, tg) != true, "Expected to return false when we add the same target group without any changes.")
+
+	for _, test := range tests {
+		t.Run(test.title, func(t *testing.T) {
+			var updateStatus bool
+			for _, groups := range test.groupUpdates {
+				updateStatus = discoveryManager.updateGroup(pk, groups)
+			}
+			testutil.Assert(t, updateStatus == test.expectedStatus, "Expected update status:%v, but got:%v", test.expectedStatus, updateStatus)
+
+		})
+	}
 }
 
 type update struct {
