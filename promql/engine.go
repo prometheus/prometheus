@@ -767,6 +767,10 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// In some cases we only have the result of 'f' without having tracked any samples
 		// in the above for loop that built the input vectors.
 		ev.currentSamples += len(result)
+		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
+		// needs to include the samples from the result here, as they're still in memory.
+		tempNumSamples += len(result)
+
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}
