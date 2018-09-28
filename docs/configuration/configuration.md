@@ -537,7 +537,7 @@ region: <string>
 [ port: <int> | default = 80 ]
 
 # The endpoint type to connect to. Must be one of public, admin or internal.
- [ endpoint_type <string> | default = public ]
+[ endpoint_type <string> | default = public ]
 ```
 
 ### `<file_sd_config>`
