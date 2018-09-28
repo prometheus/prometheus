@@ -1320,7 +1320,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 	}
 	testutil.Ok(t, app.Commit())
 
-	_, err := db.compact()
+	err := db.compact()
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, len(db.blocks))
 
