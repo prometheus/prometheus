@@ -241,9 +241,13 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 					continue
 				}
 				labels := model.LabelSet{
-					ec2LabelOwnerID:    model.LabelValue(*r.OwnerId),
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
+
+				if r.OwnerId != nil {
+					labels[ec2LabelOwnerID] = model.LabelValue(*r.OwnerId)
+				}
+
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
 				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
