@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -60,6 +61,7 @@ type SDConfig struct {
 	Region           string             `yaml:"region"`
 	RefreshInterval  model.Duration     `yaml:"refresh_interval,omitempty"`
 	Port             int                `yaml:"port"`
+	AllTenants       bool               `yaml:"all_tenants"`
 }
 
 // OpenStackRole is role of the target in OpenStack.
@@ -120,6 +122,7 @@ type Discovery interface {
 // NewDiscovery returns a new OpenStackDiscovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 	var opts gophercloud.AuthOptions
+	var listOpts servers.ListOpts
 	if conf.IdentityEndpoint == "" {
 		var err error
 		opts, err = openstack.AuthOptionsFromEnv()
@@ -138,6 +141,11 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 			DomainID:         conf.DomainID,
 		}
 	}
+
+        listOpts = servers.ListOpts{
+		AllTenants:	conf.AllTenants,
+	}
+
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
 		hypervisor := NewHypervisorDiscovery(&opts,
@@ -145,7 +153,7 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (Discovery, error) {
 		return hypervisor, nil
 	case OpenStackRoleInstance:
 		instance := NewInstanceDiscovery(&opts,
-			time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l)
+			&listOpts, time.Duration(conf.RefreshInterval), conf.Port, conf.Region, l)
 		return instance, nil
 	default:
 		return nil, errors.New("unknown OpenStack discovery role")

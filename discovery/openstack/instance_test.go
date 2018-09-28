@@ -47,6 +47,7 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (Discovery, error)
 		DomainName:       "12345",
 		Region:           "RegionOne",
 		Role:             "instance",
+		AllTenants:       "true",
 	}
 	return NewDiscovery(&conf, nil)
 }
