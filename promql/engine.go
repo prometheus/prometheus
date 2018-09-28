@@ -765,8 +765,6 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		}
 		enh.out = result[:0] // Reuse result vector.
 
-		// In some cases we only have the result of 'f' without having tracked any samples
-		// in the above for loop that built the input vectors.
 		ev.currentSamples += len(result)
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
@@ -1201,22 +1199,22 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		}
 		// Values in the buffer are guaranteed to be smaller than maxt.
 		if t >= mint {
-			if ev.currentSamples < ev.maxSamples {
-				out = append(out, Point{T: t, V: v})
-				ev.currentSamples++
-			} else {
+			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
+			out = append(out, Point{T: t, V: v})
+			ev.currentSamples++
 		}
 	}
 	// The seeked sample might also be in the range.
 	if ok {
 		t, v := it.Values()
 		if t == maxt && !value.IsStaleNaN(v) {
-			if ev.currentSamples < ev.maxSamples {
-				out = append(out, Point{T: t, V: v})
-				ev.currentSamples++
+			if ev.currentSamples >= ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
+			out = append(out, Point{T: t, V: v})
+			ev.currentSamples++
 		}
 	}
 	return out

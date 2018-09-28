@@ -459,11 +459,11 @@ load 10s
 		},
 		{
 			Query:      "metric[20s]",
-			MaxSamples: 1,
+			MaxSamples: 2,
 			Result: Result{
 				nil,
 				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}},
+					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric")},
 				},
 			},
@@ -573,7 +573,7 @@ load 10s
 		}
 		res := qry.Exec(test.Context())
 		if res.Err != nil && res.Err != c.Result.Err {
-			t.Fatalf("unexpected error running query: %q", res.Err)
+			t.Fatalf("unexpected error running query: %q, expected to get result: %q", res.Err, c.Result.Value)
 		}
 		if !reflect.DeepEqual(res.Value, c.Result.Value) {
 			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
