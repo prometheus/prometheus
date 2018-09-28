@@ -118,7 +118,7 @@ func NewManager(ctx context.Context, logger log.Logger) *Manager {
 		discoverCancel: []context.CancelFunc{},
 		ctx:            ctx,
 		updatert:       5 * time.Second,
-		trigger:        make(chan struct{}, 1),
+		triggerSend:    make(chan struct{}, 1),
 	}
 }
 
@@ -142,13 +142,13 @@ type Manager struct {
 	// should only be modified in unit tests.
 	updatert time.Duration
 
-	// The trigger channel signals to the manager that new updates have been received from providers.
-	trigger chan struct{}
+	// The triggerSend channel signals to the manager that new updates have been received from providers.
+	triggerSend chan struct{}
 }
 
 // Run starts the background processing
 func (m *Manager) Run() error {
-	go m.sendUpdates()
+	go m.sender()
 	for range m.ctx.Done() {
 		m.cancelDiscoverers()
 		return m.ctx.Err()
@@ -216,14 +216,14 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 			}
 
 			select {
-			case m.trigger <- struct{}{}:
+			case m.triggerSend <- struct{}{}:
 			default:
 			}
 		}
 	}
 }
 
-func (m *Manager) sendUpdates() {
+func (m *Manager) sender() {
 	ticker := time.NewTicker(m.updatert)
 	defer ticker.Stop()
 
@@ -233,7 +233,7 @@ func (m *Manager) sendUpdates() {
 			return
 		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
-			case <-m.trigger:
+			case <-m.triggerSend:
 				sentUpdates.Inc()
 				select {
 				case m.syncCh <- m.allGroups():
@@ -241,7 +241,7 @@ func (m *Manager) sendUpdates() {
 					delayedUpdates.Inc()
 					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
 					select {
-					case m.trigger <- struct{}{}:
+					case m.triggerSend <- struct{}{}:
 					default:
 					}
 				}
