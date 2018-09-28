@@ -892,9 +892,15 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if !api.enableAdmin {
 		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil
 	}
-	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
-	if err != nil {
-		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+	var (
+		skipHead bool
+		err      error
+	)
+	if r.FormValue("skip_head") != "" {
+		skipHead, err = strconv.ParseBool(r.FormValue("skip_head"))
+		if err != nil {
+			return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+		}
 	}
 
 	db := api.db()
