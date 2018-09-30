@@ -36,7 +36,7 @@ import (
 var (
 	a             = kingpin.New("sd adapter usage", "Tool to generate file_sd target files for unimplemented SD mechanisms.")
 	outputFile    = a.Flag("output.file", "Output file for file_sd compatible file.").Default("custom_sd.json").String()
-	listenAddress = a.Flag("listen.address", "The address the HTTP sd is listening on for requests.").Default("localhost:8080").String()
+	listenAddress = a.Flag("listen.address", "The address the Consul HTTP API is listening on for requests.").Default("localhost:8500").String()
 	logger        log.Logger
 
 	// addressLabel is the name for the label containing a target's address.
@@ -94,6 +94,7 @@ type discovery struct {
 	clientDatacenter string
 	tagSeparator     string
 	logger           log.Logger
+	oldSourceList    map[string]bool
 }
 
 func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*targetgroup.Group, error) {
@@ -180,6 +181,8 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		// list of targets simply because there may have been a timeout. If the service is actually
 		// gone as far as consul is concerned, that will be picked up during the next iteration of
 		// the outer loop.
+
+		newSourceList := make(map[string]bool)
 		for name := range srvs {
 			if name == "consul" {
 				continue
@@ -195,8 +198,18 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				break
 			}
 			tgs = append(tgs, tg)
+			newSourceList[tg.Source] = true
 		}
-		if err != nil {
+		// When targetGroup disappear, send an update with empty targetList.
+		for key := range d.oldSourceList {
+			if !newSourceList[key] {
+				tgs = append(tgs, &targetgroup.Group{
+					Source: key,
+				})
+			}
+		}
+		d.oldSourceList = newSourceList
+		if err == nil {
 			// We're returning all Consul services as a single targetgroup.
 			ch <- tgs
 		}
@@ -216,6 +229,7 @@ func newDiscovery(conf sdConfig) (*discovery, error) {
 		refreshInterval: conf.RefreshInterval,
 		tagSeparator:    conf.TagSeparator,
 		logger:          logger,
+		oldSourceList:   make(map[string]bool),
 	}
 	return cd, nil
 }
@@ -236,7 +250,7 @@ func main() {
 	// NOTE: create an instance of your new SD implementation here.
 	cfg := sdConfig{
 		TagSeparator:    ",",
-		Address:         "localhost:8500",
+		Address:         *listenAddress,
 		RefreshInterval: 30,
 	}
 

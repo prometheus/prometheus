@@ -15,6 +15,7 @@ package scrape
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
+
+	yaml "gopkg.in/yaml.v2"
 )
 
 func mustNewRegexp(s string) config.Regexp {
@@ -229,39 +232,77 @@ func TestPopulateLabels(t *testing.T) {
 func TestManagerReloadNoChange(t *testing.T) {
 	tsetName := "test"
 
-	reloadCfg := &config.Config{
-		ScrapeConfigs: []*config.ScrapeConfig{
-			&config.ScrapeConfig{
-				ScrapeInterval: model.Duration(3 * time.Second),
-				ScrapeTimeout:  model.Duration(2 * time.Second),
-			},
-		},
+	cfgText := `
+scrape_configs:
+ - job_name: '` + tsetName + `'
+   static_configs:
+   - targets: ["foo:9090"]
+   - targets: ["bar:9090"]
+`
+	cfg := &config.Config{}
+	if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
 	}
 
 	scrapeManager := NewManager(nil, nil)
-	scrapeManager.scrapeConfigs[tsetName] = reloadCfg.ScrapeConfigs[0]
+	// Load the current config.
+	scrapeManager.ApplyConfig(cfg)
+
 	// As reload never happens, new loop should never be called.
 	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
 		t.Fatal("reload happened")
 		return nil
 	}
+
 	sp := &scrapePool{
-		appendable: &nopAppendable{},
-		targets:    map[uint64]*Target{},
+		appendable:    &nopAppendable{},
+		activeTargets: map[uint64]*Target{},
 		loops: map[uint64]loop{
-			1: &scrapeLoop{},
+			1: &testLoop{},
 		},
 		newLoop: newLoop,
 		logger:  nil,
-		config:  reloadCfg.ScrapeConfigs[0],
+		config:  cfg.ScrapeConfigs[0],
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		tsetName: sp,
 	}
 
-	targets := map[string][]*targetgroup.Group{
-		tsetName: []*targetgroup.Group{},
+	scrapeManager.ApplyConfig(cfg)
+}
+
+func TestManagerTargetsUpdates(t *testing.T) {
+	m := NewManager(nil, nil)
+
+	ts := make(chan map[string][]*targetgroup.Group)
+	go m.Run(ts)
+
+	tgSent := make(map[string][]*targetgroup.Group)
+	for x := 0; x < 10; x++ {
+
+		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
+			&targetgroup.Group{
+				Source: strconv.Itoa(x),
+			},
+		}
+
+		select {
+		case ts <- tgSent:
+		case <-time.After(10 * time.Millisecond):
+			t.Error("Scrape manager's channel remained blocked after the set threshold.")
+		}
 	}
 
-	scrapeManager.reload(targets)
+	m.mtxScrape.Lock()
+	tsetActual := m.targetSets
+	m.mtxScrape.Unlock()
+
+	// Make sure all updates have been received.
+	testutil.Equals(t, tgSent, tsetActual)
+
+	select {
+	case <-m.triggerReload:
+	default:
+		t.Error("No scrape loops reload was triggered after targets update.")
+	}
 }

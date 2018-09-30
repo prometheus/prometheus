@@ -30,6 +30,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
 
 	influx "github.com/influxdata/influxdb/client/v2"
@@ -54,6 +55,7 @@ type config struct {
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
+	logLevel                string
 }
 
 var (
@@ -96,15 +98,19 @@ func init() {
 
 func main() {
 	cfg := parseFlags()
-	http.Handle(cfg.telemetryPath, prometheus.Handler())
+	http.Handle(cfg.telemetryPath, promhttp.Handler())
 
 	logLevel := promlog.AllowedLevel{}
-	logLevel.Set("debug")
-
+	if err := logLevel.Set(cfg.logLevel); err != nil {
+		panic(fmt.Sprintf("Error setting log level: %v", err))
+	}
 	logger := promlog.New(logLevel)
 
 	writers, readers := buildClients(logger, cfg)
-	serve(logger, cfg.listenAddr, writers, readers)
+	if err := serve(logger, cfg.listenAddr, writers, readers); err != nil {
+		level.Error(logger).Log("msg", "Failed to listen", "addr", cfg.listenAddr, "err", err)
+		os.Exit(1)
+	}
 }
 
 func parseFlags() *config {
@@ -141,6 +147,7 @@ func parseFlags() *config {
 	)
 	flag.StringVar(&cfg.listenAddr, "web.listen-address", ":9201", "Address to listen on for web endpoints.")
 	flag.StringVar(&cfg.telemetryPath, "web.telemetry-path", "/metrics", "Address to listen on for web endpoints.")
+	flag.StringVar(&cfg.logLevel, "log.level", "debug", "Only log messages with the given severity or above. One of: [debug, info, warn, error]")
 
 	flag.Parse()
 
@@ -197,7 +204,7 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	level.Info(logger).Log("Starting up...")
+	level.Info(logger).Log("msg", "Starting up...")
 	return writers, readers
 }
 

@@ -107,7 +107,7 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 		ScrapeInterval: model.Duration(1),
 		ScrapeTimeout:  model.Duration(1),
 	}
-	sp.targets = make(map[uint64]*Target)
+	sp.activeTargets = make(map[uint64]*Target)
 	t1 := &Target{
 		discoveredLabels: labels.Labels{
 			labels.Label{
@@ -116,7 +116,7 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 			},
 		},
 	}
-	sp.targets[t1.hash()] = t1
+	sp.activeTargets[t1.hash()] = t1
 
 	t2 := &Target{
 		discoveredLabels: labels.Labels{
@@ -128,7 +128,7 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	}
 	sp.sync([]*Target{t2})
 
-	testutil.Equals(t, t2.DiscoveredLabels(), sp.targets[t1.hash()].DiscoveredLabels())
+	testutil.Equals(t, t2.DiscoveredLabels(), sp.activeTargets[t1.hash()].DiscoveredLabels())
 }
 
 type testLoop struct {
@@ -146,9 +146,9 @@ func (l *testLoop) stop() {
 
 func TestScrapePoolStop(t *testing.T) {
 	sp := &scrapePool{
-		targets: map[uint64]*Target{},
-		loops:   map[uint64]loop{},
-		cancel:  func() {},
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		cancel:        func() {},
 	}
 	var mtx sync.Mutex
 	stopped := map[uint64]bool{}
@@ -171,7 +171,7 @@ func TestScrapePoolStop(t *testing.T) {
 			mtx.Unlock()
 		}
 
-		sp.targets[t.hash()] = t
+		sp.activeTargets[t.hash()] = t
 		sp.loops[t.hash()] = l
 	}
 
@@ -199,8 +199,8 @@ func TestScrapePoolStop(t *testing.T) {
 	}
 	mtx.Unlock()
 
-	if len(sp.targets) > 0 {
-		t.Fatalf("Targets were not cleared on stopping: %d left", len(sp.targets))
+	if len(sp.activeTargets) > 0 {
+		t.Fatalf("Targets were not cleared on stopping: %d left", len(sp.activeTargets))
 	}
 	if len(sp.loops) > 0 {
 		t.Fatalf("Loops were not cleared on stopping: %d left", len(sp.loops))
@@ -237,11 +237,11 @@ func TestScrapePoolReload(t *testing.T) {
 		return l
 	}
 	sp := &scrapePool{
-		appendable: &nopAppendable{},
-		targets:    map[uint64]*Target{},
-		loops:      map[uint64]loop{},
-		newLoop:    newLoop,
-		logger:     nil,
+		appendable:    &nopAppendable{},
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		newLoop:       newLoop,
+		logger:        nil,
 	}
 
 	// Reloading a scrape pool with a new scrape configuration must stop all scrape
@@ -261,13 +261,13 @@ func TestScrapePoolReload(t *testing.T) {
 			mtx.Unlock()
 		}
 
-		sp.targets[t.hash()] = t
+		sp.activeTargets[t.hash()] = t
 		sp.loops[t.hash()] = l
 	}
 	done := make(chan struct{})
 
 	beforeTargets := map[uint64]*Target{}
-	for h, t := range sp.targets {
+	for h, t := range sp.activeTargets {
 		beforeTargets[h] = t
 	}
 
@@ -294,7 +294,7 @@ func TestScrapePoolReload(t *testing.T) {
 	}
 	mtx.Unlock()
 
-	if !reflect.DeepEqual(sp.targets, beforeTargets) {
+	if !reflect.DeepEqual(sp.activeTargets, beforeTargets) {
 		t.Fatalf("Reloading affected target states unexpectedly")
 	}
 	if len(sp.loops) != numTargets {
@@ -364,9 +364,11 @@ func TestScrapePoolRaces(t *testing.T) {
 		},
 	}
 
-	active, dropped := sp.Sync(tgts)
+	sp.Sync(tgts)
+	active := sp.ActiveTargets()
+	dropped := sp.DroppedTargets()
 	expectedActive, expectedDropped := len(tgts[0].Targets), 0
-	if len(active) != expectedActive {
+	if len(sp.ActiveTargets()) != expectedActive {
 		t.Fatalf("Invalid number of active targets: expected %v, got %v", expectedActive, len(active))
 	}
 	if len(dropped) != expectedDropped {

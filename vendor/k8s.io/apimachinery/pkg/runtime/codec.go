@@ -139,6 +139,7 @@ func NewParameterCodec(scheme *Scheme) ParameterCodec {
 		typer:     scheme,
 		convertor: scheme,
 		creator:   scheme,
+		defaulter: scheme,
 	}
 }
 
@@ -147,6 +148,7 @@ type parameterCodec struct {
 	typer     ObjectTyper
 	convertor ObjectConvertor
 	creator   ObjectCreater
+	defaulter ObjectDefaulter
 }
 
 var _ ParameterCodec = &parameterCodec{}
@@ -163,15 +165,27 @@ func (c *parameterCodec) DecodeParameters(parameters url.Values, from schema.Gro
 	}
 	for i := range targetGVKs {
 		if targetGVKs[i].GroupVersion() == from {
-			return c.convertor.Convert(&parameters, into, nil)
+			if err := c.convertor.Convert(&parameters, into, nil); err != nil {
+				return err
+			}
+			// in the case where we going into the same object we're receiving, default on the outbound object
+			if c.defaulter != nil {
+				c.defaulter.Default(into)
+			}
+			return nil
 		}
 	}
+
 	input, err := c.creator.New(from.WithKind(targetGVKs[0].Kind))
 	if err != nil {
 		return err
 	}
 	if err := c.convertor.Convert(&parameters, input, nil); err != nil {
 		return err
+	}
+	// if we have defaulter, default the input before converting to output
+	if c.defaulter != nil {
+		c.defaulter.Default(input)
 	}
 	return c.convertor.Convert(input, into, nil)
 }
@@ -267,7 +281,7 @@ func (disabledGroupVersioner) KindForGroupVersionKinds(kinds []schema.GroupVersi
 // GroupVersioners implements GroupVersioner and resolves to the first exact match for any kind.
 type GroupVersioners []GroupVersioner
 
-// KindForGroupVersionKinds returns the first match of any of the group versioners, or false if no match occured.
+// KindForGroupVersionKinds returns the first match of any of the group versioners, or false if no match occurred.
 func (gvs GroupVersioners) KindForGroupVersionKinds(kinds []schema.GroupVersionKind) (schema.GroupVersionKind, bool) {
 	for _, gv := range gvs {
 		target, ok := gv.KindForGroupVersionKinds(kinds)

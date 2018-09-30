@@ -101,11 +101,11 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 func TestConcreteSeriesSet(t *testing.T) {
 	series1 := &concreteSeries{
 		labels:  labels.FromStrings("foo", "bar"),
-		samples: []*prompb.Sample{&prompb.Sample{Value: 1, Timestamp: 2}},
+		samples: []prompb.Sample{prompb.Sample{Value: 1, Timestamp: 2}},
 	}
 	series2 := &concreteSeries{
 		labels:  labels.FromStrings("foo", "baz"),
-		samples: []*prompb.Sample{&prompb.Sample{Value: 3, Timestamp: 4}},
+		samples: []prompb.Sample{prompb.Sample{Value: 3, Timestamp: 4}},
 	}
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},

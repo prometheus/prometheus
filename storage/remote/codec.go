@@ -32,6 +32,19 @@ import (
 // decodeReadLimit is the maximum size of a read request body in bytes.
 const decodeReadLimit = 32 * 1024 * 1024
 
+type HTTPError struct {
+	msg    string
+	status int
+}
+
+func (e HTTPError) Error() string {
+	return e.msg
+}
+
+func (e HTTPError) Status() int {
+	return e.status
+}
+
 // DecodeReadRequest reads a remote.Request from a http.Request.
 func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 	compressed, err := ioutil.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
@@ -76,7 +89,7 @@ func ToWriteRequest(samples []*model.Sample) *prompb.WriteRequest {
 	for _, s := range samples {
 		ts := prompb.TimeSeries{
 			Labels: MetricToLabelProtos(s.Metric),
-			Samples: []*prompb.Sample{
+			Samples: []prompb.Sample{
 				{
 					Value:     float64(s.Value),
 					Timestamp: int64(s.Timestamp),
@@ -96,9 +109,14 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 		return nil, err
 	}
 
-	rp := &prompb.ReadHints{
-		StepMs: p.Step,
-		Func:   p.Func,
+	var rp *prompb.ReadHints
+	if p != nil {
+		rp = &prompb.ReadHints{
+			StepMs:  p.Step,
+			Func:    p.Func,
+			StartMs: p.Start,
+			EndMs:   p.End,
+		}
 	}
 
 	return &prompb.Query{
@@ -110,25 +128,43 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, p *storage.SelectParams
 }
 
 // FromQuery unpacks a Query proto.
-func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, error) {
+func FromQuery(req *prompb.Query) (int64, int64, []*labels.Matcher, *storage.SelectParams, error) {
 	matchers, err := fromLabelMatchers(req.Matchers)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
+	var selectParams *storage.SelectParams
+	if req.Hints != nil {
+		selectParams = &storage.SelectParams{
+			Start: req.Hints.StartMs,
+			End:   req.Hints.EndMs,
+			Step:  req.Hints.StepMs,
+			Func:  req.Hints.Func,
+		}
+	}
+
+	return req.StartTimestampMs, req.EndTimestampMs, matchers, selectParams, nil
 }
 
 // ToQueryResult builds a QueryResult proto.
-func ToQueryResult(ss storage.SeriesSet) (*prompb.QueryResult, error) {
+func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
+	numSamples := 0
 	resp := &prompb.QueryResult{}
 	for ss.Next() {
 		series := ss.At()
 		iter := series.Iterator()
-		samples := []*prompb.Sample{}
+		samples := []prompb.Sample{}
 
 		for iter.Next() {
+			numSamples++
+			if sampleLimit > 0 && numSamples > sampleLimit {
+				return nil, HTTPError{
+					msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
+					status: http.StatusBadRequest,
+				}
+			}
 			ts, val := iter.At()
-			samples = append(samples, &prompb.Sample{
+			samples = append(samples, prompb.Sample{
 				Timestamp: ts,
 				Value:     val,
 			})
@@ -213,7 +249,7 @@ func (c *concreteSeriesSet) Err() error {
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
 	labels  labels.Labels
-	samples []*prompb.Sample
+	samples []prompb.Sample
 }
 
 func (c *concreteSeries) Labels() labels.Labels {

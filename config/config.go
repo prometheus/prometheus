@@ -89,7 +89,7 @@ var (
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
 	DefaultAlertmanagerConfig = AlertmanagerConfig{
 		Scheme:  "http",
-		Timeout: 10 * time.Second,
+		Timeout: model.Duration(10 * time.Second),
 	}
 
 	// DefaultRelabelConfig is the default Relabel configuration.
@@ -113,15 +113,15 @@ var (
 		MaxShards:         1000,
 		MaxSamplesPerSend: 100,
 
-		// By default, buffer 1000 batches, which at 100ms per batch is 1:40mins. At
-		// 1000 shards, this will buffer 100M samples total.
-		Capacity:          100 * 1000,
-		BatchSendDeadline: 5 * time.Second,
+		// By default, buffer 100 batches, which at 100ms per batch is 10s. At
+		// 1000 shards, this will buffer 10M samples total.
+		Capacity:          100 * 100,
+		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Max number of times to retry a batch on recoverable errors.
-		MaxRetries: 10,
-		MinBackoff: 30 * time.Millisecond,
-		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: 3,
+		MinBackoff: model.Duration(30 * time.Millisecond),
+		MaxBackoff: model.Duration(100 * time.Millisecond),
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
@@ -408,7 +408,7 @@ type AlertmanagerConfig struct {
 	// Path prefix to add in front of the push endpoint path.
 	PathPrefix string `yaml:"path_prefix,omitempty"`
 	// The timeout used when sending alerts.
-	Timeout time.Duration `yaml:"timeout,omitempty"`
+	Timeout model.Duration `yaml:"timeout,omitempty"`
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*RelabelConfig `yaml:"relabel_configs,omitempty"`
@@ -652,14 +652,14 @@ type QueueConfig struct {
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 
 	// Maximum time sample will wait in buffer.
-	BatchSendDeadline time.Duration `yaml:"batch_send_deadline,omitempty"`
+	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
 
 	// Max number of times to retry a batch on recoverable errors.
 	MaxRetries int `yaml:"max_retries,omitempty"`
 
 	// On recoverable errors, backoff exponentially.
-	MinBackoff time.Duration `yaml:"min_backoff,omitempty"`
-	MaxBackoff time.Duration `yaml:"max_backoff,omitempty"`
+	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
+	MaxBackoff model.Duration `yaml:"max_backoff,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

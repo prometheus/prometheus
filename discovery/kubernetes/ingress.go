@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -55,26 +55,26 @@ func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
 	return s
 }
 
-func (e *Ingress) enqueue(obj interface{}) {
+func (i *Ingress) enqueue(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
 	}
 
-	e.queue.Add(key)
+	i.queue.Add(key)
 }
 
 // Run implements the Discoverer interface.
-func (s *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
-	defer s.queue.ShutDown()
+func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+	defer i.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
-		level.Error(s.logger).Log("msg", "ingress informer unable to sync cache")
+	if !cache.WaitForCacheSync(ctx.Done(), i.informer.HasSynced) {
+		level.Error(i.logger).Log("msg", "ingress informer unable to sync cache")
 		return
 	}
 
 	go func() {
-		for s.process(ctx, ch) {
+		for i.process(ctx, ch) {
 		}
 	}()
 
@@ -82,12 +82,12 @@ func (s *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	<-ctx.Done()
 }
 
-func (s *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := s.queue.Get()
+func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	keyObj, quit := i.queue.Get()
 	if quit {
 		return false
 	}
-	defer s.queue.Done(keyObj)
+	defer i.queue.Done(keyObj)
 	key := keyObj.(string)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
@@ -95,20 +95,20 @@ func (s *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 
-	o, exists, err := s.store.GetByKey(key)
+	o, exists, err := i.store.GetByKey(key)
 	if err != nil {
 		return true
 	}
 	if !exists {
-		send(ctx, s.logger, RoleIngress, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, i.logger, RoleIngress, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToIngress(o)
 	if err != nil {
-		level.Error(s.logger).Log("msg", "converting to Ingress object failed", "err", err)
+		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err", err)
 		return true
 	}
-	send(ctx, s.logger, RoleIngress, ch, s.buildIngress(eps))
+	send(ctx, i.logger, RoleIngress, ch, i.buildIngress(eps))
 	return true
 }
 
@@ -170,23 +170,32 @@ func pathsFromIngressRule(rv *v1beta1.IngressRuleValue) []string {
 	return paths
 }
 
-func (s *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
+func (i *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)
 
-	schema := "http"
-	if ingress.Spec.TLS != nil {
-		schema = "https"
+	tlsHosts := make(map[string]struct{})
+	for _, tls := range ingress.Spec.TLS {
+		for _, host := range tls.Hosts {
+			tlsHosts[host] = struct{}{}
+		}
 	}
+
 	for _, rule := range ingress.Spec.Rules {
 		paths := pathsFromIngressRule(&rule.IngressRuleValue)
+
+		scheme := "http"
+		_, isTLS := tlsHosts[rule.Host]
+		if isTLS {
+			scheme = "https"
+		}
 
 		for _, path := range paths {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel: lv(rule.Host),
-				ingressSchemeLabel: lv(schema),
+				ingressSchemeLabel: lv(scheme),
 				ingressHostLabel:   lv(rule.Host),
 				ingressPathLabel:   lv(path),
 			})

@@ -31,12 +31,15 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -47,7 +50,6 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
@@ -90,13 +92,18 @@ func (e *apiError) Error() string {
 }
 
 type targetRetriever interface {
-	TargetsActive() []*scrape.Target
-	TargetsDropped() []*scrape.Target
+	TargetsActive() map[string][]*scrape.Target
+	TargetsDropped() map[string][]*scrape.Target
 }
 
 type alertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 	DroppedAlertmanagers() []*url.URL
+}
+
+type rulesRetriever interface {
+	RuleGroups() []*rules.Group
+	AlertingRules() []*rules.AlertingRule
 }
 
 type response struct {
@@ -123,14 +130,17 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
+	rulesRetriever        rulesRetriever
+	now                   func() time.Time
+	config                func() config.Config
+	flagsMap              map[string]string
+	ready                 func(http.HandlerFunc) http.HandlerFunc
 
-	now      func() time.Time
-	config   func() config.Config
-	flagsMap map[string]string
-	ready    func(http.HandlerFunc) http.HandlerFunc
-
-	db          func() *tsdb.DB
-	enableAdmin bool
+	db                    func() *tsdb.DB
+	enableAdmin           bool
+	logger                log.Logger
+	remoteReadSampleLimit int
+	remoteReadGate        *gate.Gate
 }
 
 // NewAPI returns an initialized API type.
@@ -144,18 +154,27 @@ func NewAPI(
 	readyFunc func(http.HandlerFunc) http.HandlerFunc,
 	db func() *tsdb.DB,
 	enableAdmin bool,
+	logger log.Logger,
+	rr rulesRetriever,
+	remoteReadSampleLimit int,
+	remoteReadConcurrencyLimit int,
 ) *API {
 	return &API{
 		QueryEngine:           qe,
 		Queryable:             q,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now:         time.Now,
-		config:      configFunc,
-		flagsMap:    flagsMap,
-		ready:       readyFunc,
-		db:          db,
-		enableAdmin: enableAdmin,
+
+		now:                   time.Now,
+		config:                configFunc,
+		flagsMap:              flagsMap,
+		ready:                 readyFunc,
+		db:                    db,
+		enableAdmin:           enableAdmin,
+		rulesRetriever:        rr,
+		remoteReadSampleLimit: remoteReadSampleLimit,
+		remoteReadGate:        gate.New(remoteReadConcurrencyLimit),
+		logger:                logger,
 	}
 }
 
@@ -166,9 +185,9 @@ func (api *API) Register(r *route.Router) {
 			setCORS(w)
 			data, err, finalizer := f(r)
 			if err != nil {
-				respondError(w, err, data)
+				api.respondError(w, err, data)
 			} else if data != nil {
-				respond(w, data)
+				api.respond(w, data)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -202,6 +221,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
+
+	r.Get("/alerts", wrap(api.alerts))
+	r.Get("/rules", wrap(api.rules))
 
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
@@ -382,7 +404,9 @@ var (
 )
 
 func (api *API) series(r *http.Request) (interface{}, *apiError, func()) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil
 	}
@@ -471,35 +495,39 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  []*Target        `json:"activeTargets"`
-	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
+	ActiveTargets  map[string][]*Target        `json:"activeTargets"`
+	DroppedTargets map[string][]*DroppedTarget `json:"droppedTargets"`
 }
 
 func (api *API) targets(r *http.Request) (interface{}, *apiError, func()) {
 	tActive := api.targetRetriever.TargetsActive()
 	tDropped := api.targetRetriever.TargetsDropped()
-	res := &TargetDiscovery{ActiveTargets: make([]*Target, len(tActive)), DroppedTargets: make([]*DroppedTarget, len(tDropped))}
+	res := &TargetDiscovery{ActiveTargets: make(map[string][]*Target, len(tActive)), DroppedTargets: make(map[string][]*DroppedTarget, len(tDropped))}
 
-	for i, t := range tActive {
-		lastErrStr := ""
-		lastErr := t.LastError()
-		if lastErr != nil {
-			lastErrStr = lastErr.Error()
-		}
+	for tset, targets := range tActive {
+		for _, target := range targets {
+			lastErrStr := ""
+			lastErr := target.LastError()
+			if lastErr != nil {
+				lastErrStr = lastErr.Error()
+			}
 
-		res.ActiveTargets[i] = &Target{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
-			Labels:           t.Labels().Map(),
-			ScrapeURL:        t.URL().String(),
-			LastError:        lastErrStr,
-			LastScrape:       t.LastScrape(),
-			Health:           t.Health(),
+			res.ActiveTargets[tset] = append(res.ActiveTargets[tset], &Target{
+				DiscoveredLabels: target.DiscoveredLabels().Map(),
+				Labels:           target.Labels().Map(),
+				ScrapeURL:        target.URL().String(),
+				LastError:        lastErrStr,
+				LastScrape:       target.LastScrape(),
+				Health:           target.Health(),
+			})
 		}
 	}
 
-	for i, t := range tDropped {
-		res.DroppedTargets[i] = &DroppedTarget{
-			DiscoveredLabels: t.DiscoveredLabels().Map(),
+	for tset, tt := range tDropped {
+		for _, t := range tt {
+			res.DroppedTargets[tset] = append(res.DroppedTargets[tset], &DroppedTarget{
+				DiscoveredLabels: t.DiscoveredLabels().Map(),
+			})
 		}
 	}
 	return res, nil, nil
@@ -523,35 +551,37 @@ func (api *API) targetMetadata(r *http.Request) (interface{}, *apiError, func())
 
 	var res []metricMetadata
 Outer:
-	for _, t := range api.targetRetriever.TargetsActive() {
-		if limit >= 0 && len(res) >= limit {
-			break
-		}
-		for _, m := range matchers {
-			// Filter targets that don't satisfy the label matchers.
-			if !m.Matches(t.Labels().Get(m.Name)) {
-				continue Outer
+	for _, tt := range api.targetRetriever.TargetsActive() {
+		for _, t := range tt {
+			if limit >= 0 && len(res) >= limit {
+				break
 			}
-		}
-		// If no metric is specified, get the full list for the target.
-		if metric == "" {
-			for _, md := range t.MetadataList() {
+			for _, m := range matchers {
+				// Filter targets that don't satisfy the label matchers.
+				if !m.Matches(t.Labels().Get(m.Name)) {
+					continue Outer
+				}
+			}
+			// If no metric is specified, get the full list for the target.
+			if metric == "" {
+				for _, md := range t.MetadataList() {
+					res = append(res, metricMetadata{
+						Target: t.Labels(),
+						Metric: md.Metric,
+						Type:   md.Type,
+						Help:   md.Help,
+					})
+				}
+				continue
+			}
+			// Get metadata for the specified metric.
+			if md, ok := t.Metadata(metric); ok {
 				res = append(res, metricMetadata{
 					Target: t.Labels(),
-					Metric: md.Metric,
 					Type:   md.Type,
 					Help:   md.Help,
 				})
 			}
-			continue
-		}
-		// Get metadata for the specified metric.
-		if md, ok := t.Metadata(metric); ok {
-			res = append(res, metricMetadata{
-				Target: t.Labels(),
-				Type:   md.Type,
-				Help:   md.Help,
-			})
 		}
 	}
 	if len(res) == 0 {
@@ -591,6 +621,145 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError, func()) 
 	return ams, nil, nil
 }
 
+// AlertDiscovery has info for all active alerts.
+type AlertDiscovery struct {
+	Alerts []*Alert `json:"alerts"`
+}
+
+// Alert has info for an alert.
+type Alert struct {
+	Labels      labels.Labels `json:"labels"`
+	Annotations labels.Labels `json:"annotations"`
+	State       string        `json:"state"`
+	ActiveAt    *time.Time    `json:"activeAt,omitempty"`
+	Value       float64       `json:"value"`
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError, func()) {
+	alertingRules := api.rulesRetriever.AlertingRules()
+	alerts := []*Alert{}
+
+	for _, alertingRule := range alertingRules {
+		alerts = append(
+			alerts,
+			rulesAlertsToAPIAlerts(alertingRule.ActiveAlerts())...,
+		)
+	}
+
+	res := &AlertDiscovery{Alerts: alerts}
+
+	return res, nil, nil
+}
+
+func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
+	apiAlerts := make([]*Alert, len(rulesAlerts))
+	for i, ruleAlert := range rulesAlerts {
+		apiAlerts[i] = &Alert{
+			Labels:      ruleAlert.Labels,
+			Annotations: ruleAlert.Annotations,
+			State:       ruleAlert.State.String(),
+			ActiveAt:    &ruleAlert.ActiveAt,
+			Value:       ruleAlert.Value,
+		}
+	}
+
+	return apiAlerts
+}
+
+// RuleDiscovery has info for all rules
+type RuleDiscovery struct {
+	RuleGroups []*RuleGroup `json:"groups"`
+}
+
+// RuleGroup has info for rules which are part of a group
+type RuleGroup struct {
+	Name string `json:"name"`
+	File string `json:"file"`
+	// In order to preserve rule ordering, while exposing type (alerting or recording)
+	// specific properties, both alerting and recording rules are exposed in the
+	// same array.
+	Rules    []rule  `json:"rules"`
+	Interval float64 `json:"interval"`
+}
+
+type rule interface{}
+
+type alertingRule struct {
+	Name        string           `json:"name"`
+	Query       string           `json:"query"`
+	Duration    float64          `json:"duration"`
+	Labels      labels.Labels    `json:"labels"`
+	Annotations labels.Labels    `json:"annotations"`
+	Alerts      []*Alert         `json:"alerts"`
+	Health      rules.RuleHealth `json:"health"`
+	LastError   string           `json:"lastError,omitempty"`
+	// Type of an alertingRule is always "alerting".
+	Type string `json:"type"`
+}
+
+type recordingRule struct {
+	Name      string           `json:"name"`
+	Query     string           `json:"query"`
+	Labels    labels.Labels    `json:"labels,omitempty"`
+	Health    rules.RuleHealth `json:"health"`
+	LastError string           `json:"lastError,omitempty"`
+	// Type of a recordingRule is always "recording".
+	Type string `json:"type"`
+}
+
+func (api *API) rules(r *http.Request) (interface{}, *apiError, func()) {
+	ruleGroups := api.rulesRetriever.RuleGroups()
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	for i, grp := range ruleGroups {
+		apiRuleGroup := &RuleGroup{
+			Name:     grp.Name(),
+			File:     grp.File(),
+			Interval: grp.Interval().Seconds(),
+			Rules:    []rule{},
+		}
+
+		for _, r := range grp.Rules() {
+			var enrichedRule rule
+
+			lastError := ""
+			if r.LastError() != nil {
+				lastError = r.LastError().Error()
+			}
+
+			switch rule := r.(type) {
+			case *rules.AlertingRule:
+				enrichedRule = alertingRule{
+					Name:        rule.Name(),
+					Query:       rule.Query().String(),
+					Duration:    rule.Duration().Seconds(),
+					Labels:      rule.Labels(),
+					Annotations: rule.Annotations(),
+					Alerts:      rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Health:      rule.Health(),
+					LastError:   lastError,
+					Type:        "alerting",
+				}
+			case *rules.RecordingRule:
+				enrichedRule = recordingRule{
+					Name:      rule.Name(),
+					Query:     rule.Query().String(),
+					Labels:    rule.Labels(),
+					Health:    rule.Health(),
+					LastError: lastError,
+					Type:      "recording",
+				}
+			default:
+				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
+				return nil, &apiError{errorInternal, err}, nil
+			}
+
+			apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
+		}
+		res.RuleGroups[i] = apiRuleGroup
+	}
+	return res, nil, nil
+}
+
 type prometheusConfig struct {
 	YAML string `json:"yaml"`
 }
@@ -607,6 +776,9 @@ func (api *API) serveFlags(r *http.Request) (interface{}, *apiError, func()) {
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
+	api.remoteReadGate.Start(r.Context())
+	defer api.remoteReadGate.Done()
+
 	req, err := remote.DecodeReadRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -617,7 +789,7 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 	for i, query := range req.Queries {
-		from, through, matchers, err := remote.FromQuery(query)
+		from, through, matchers, selectParams, err := remote.FromQuery(query)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -649,13 +821,17 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		set, err := querier.Select(nil, filteredMatchers...)
+		set, err := querier.Select(selectParams, filteredMatchers...)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		resp.Results[i], err = remote.ToQueryResult(set)
+		resp.Results[i], err = remote.ToQueryResult(set, api.remoteReadSampleLimit)
 		if err != nil {
+			if httpErr, ok := err.(remote.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.Status())
+				return
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -692,7 +868,9 @@ func (api *API) deleteSeries(r *http.Request) (interface{}, *apiError, func()) {
 		return nil, &apiError{errorUnavailable, errors.New("TSDB not ready")}, nil
 	}
 
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		return nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %v", err)}, nil
+	}
 	if len(r.Form["match[]"]) == 0 {
 		return nil, &apiError{errorBadData, fmt.Errorf("no match[] parameter provided")}, nil
 	}
@@ -742,7 +920,10 @@ func (api *API) snapshot(r *http.Request) (interface{}, *apiError, func()) {
 	if !api.enableAdmin {
 		return nil, &apiError{errorUnavailable, errors.New("Admin APIs disabled")}, nil
 	}
-	skipHead, _ := strconv.ParseBool(r.FormValue("skip_head"))
+	skipHead, err := strconv.ParseBool(r.FormValue("skip_head"))
+	if err != nil {
+		return nil, &apiError{errorUnavailable, fmt.Errorf("unable to parse boolean 'skip_head' argument: %v", err)}, nil
+	}
 
 	db := api.db()
 	if db == nil {
@@ -836,23 +1017,38 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 	return result
 }
 
-func respond(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+func (api *API) respond(w http.ResponseWriter, data interface{}) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	b, err := json.Marshal(&response{
 		Status: statusSuccess,
 		Data:   data,
 	})
 	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Write(b)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
+	}
 }
 
-func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
+	b, err := json.Marshal(&response{
+		Status:    statusError,
+		ErrorType: apiErr.typ,
+		Error:     apiErr.err.Error(),
+		Data:      data,
+	})
+	if err != nil {
+		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	var code int
 	switch apiErr.typ {
@@ -869,19 +1065,12 @@ func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	default:
 		code = http.StatusInternalServerError
 	}
-	w.WriteHeader(code)
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
-		Status:    statusError,
-		ErrorType: apiErr.typ,
-		Error:     apiErr.err.Error(),
-		Data:      data,
-	})
-	if err != nil {
-		return
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if n, err := w.Write(b); err != nil {
+		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
-	w.Write(b)
 }
 
 func parseTime(s string) (time.Time, error) {
@@ -1019,14 +1208,6 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 	}
 
 	queryFunc = rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
-
-	// Trying to expand the templates.
-	result.Errors = testTemplateExpansion(r.Context(), queryFunc, rgs)
-	if len(result.Errors) > 0 {
-		result.IsError = true
-		goto endLabel
-	}
-
 	// Simulating the Alerts.
 	for _, g := range rgs.Groups {
 		for _, rl := range g.Rules {
@@ -1042,7 +1223,7 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 				goto endLabel
 			}
 			lbls, anns := labels.FromMap(rl.Labels), labels.FromMap(rl.Annotations)
-			alertingRule := rules.NewAlertingRule(rl.Alert, expr, time.Duration(rl.For), lbls, anns, nil)
+			alertingRule := rules.NewAlertingRule(rl.Alert, expr, time.Duration(rl.For), lbls, anns, true, nil)
 
 			seriesHashMap := make(map[uint64]*promql.Series) // All the series created for this rule.
 			nextiter := func(curr, max time.Time, step time.Duration) time.Time {
@@ -1072,6 +1253,9 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 
 			var matrix promql.Matrix
 			for _, series := range seriesHashMap {
+				if series.Metric.Get(labels.MetricName) == rules.AlertForStateMetricName {
+					continue
+				}
 				p := 0
 				for p < len(matrix) {
 					if matrix[p].Metric.Hash() < series.Metric.Hash() {
@@ -1174,62 +1358,6 @@ func parseAlertsTestingBody(r *http.Request) (time.Time, time.Time, string, *api
 	}
 
 	return mint, maxt, ruleString, nil
-}
-
-func testTemplateExpansion(ctx context.Context, queryFunc rules.QueryFunc, rgs *rulefmt.RuleGroups) (errs []string) {
-	// NOTE: This will only check for correct variables used, like `$wrongLabelsVariable`.
-	//       It wont detect if a wrong key is used with the variables, like `$labels.wrongKey`.
-	for _, g := range rgs.Groups {
-		for _, rl := range g.Rules {
-			if rl.Alert == "" {
-				// Not an alerting rule.
-				continue
-			}
-
-			// Trying to expand templates.
-			l := make(map[string]string)
-
-			tmplData := struct {
-				Labels map[string]string
-				Value  float64
-			}{
-				Labels: l,
-			}
-			defs := "{{$labels := .Labels}}{{$value := .Value}}"
-			expand := func(text string) error {
-				tmpl := template.NewTemplateExpander(
-					ctx,
-					defs+text,
-					"__alert_"+rl.Alert,
-					tmplData,
-					model.Time(timestamp.FromTime(time.Now())),
-					template.QueryFunc(queryFunc),
-					nil,
-				)
-				_, err := tmpl.Expand()
-				return err
-			}
-
-			// Expanding Labels.
-			for _, val := range rl.Labels {
-				err := expand(val)
-				if err != nil {
-					errs = append(errs, err.Error())
-				}
-			}
-
-			// Expanding Annotations.
-			for _, val := range rl.Annotations {
-				err := expand(val)
-				if err != nil {
-					errs = append(errs, err.Error())
-				}
-			}
-
-		}
-	}
-
-	return errs
 }
 
 func min(a, b int) int {

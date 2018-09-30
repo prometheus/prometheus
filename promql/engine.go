@@ -29,6 +29,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -85,7 +87,7 @@ type Query interface {
 	// Statement returns the parsed statement of the query.
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
-	Stats() *stats.TimerGroup
+	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 }
@@ -99,7 +101,7 @@ type query struct {
 	// Statement of the parsed query.
 	stmt Statement
 	// Timer stats for the query execution.
-	stats *stats.TimerGroup
+	stats *stats.QueryTimers
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
@@ -115,7 +117,7 @@ func (q *query) Statement() Statement {
 }
 
 // Stats implements the Query interface.
-func (q *query) Stats() *stats.TimerGroup {
+func (q *query) Stats() *stats.QueryTimers {
 	return q.stats
 }
 
@@ -147,17 +149,20 @@ func (q *query) Exec(ctx context.Context) *Result {
 func contextDone(ctx context.Context, env string) error {
 	select {
 	case <-ctx.Done():
-		err := ctx.Err()
-		switch err {
-		case context.Canceled:
-			return ErrQueryCanceled(env)
-		case context.DeadlineExceeded:
-			return ErrQueryTimeout(env)
-		default:
-			return err
-		}
+		return contextErr(ctx.Err(), env)
 	default:
 		return nil
+	}
+}
+
+func contextErr(err error, env string) error {
+	switch err {
+	case context.Canceled:
+		return ErrQueryCanceled(env)
+	case context.DeadlineExceeded:
+		return ErrQueryTimeout(env)
+	default:
+		return err
 	}
 }
 
@@ -167,7 +172,7 @@ type Engine struct {
 	logger  log.Logger
 	metrics *engineMetrics
 	timeout time.Duration
-	gate    *queryGate
+	gate    *gate.Gate
 }
 
 // NewEngine returns a new engine.
@@ -224,13 +229,14 @@ func NewEngine(logger log.Logger, reg prometheus.Registerer, maxConcurrent int, 
 		reg.MustRegister(
 			metrics.currentQueries,
 			metrics.maxConcurrentQueries,
-			metrics.queryInnerEval,
+			metrics.queryQueueTime,
 			metrics.queryPrepareTime,
+			metrics.queryInnerEval,
 			metrics.queryResultSort,
 		)
 	}
 	return &Engine{
-		gate:    newQueryGate(maxConcurrent),
+		gate:    gate.New(maxConcurrent),
 		timeout: timeout,
 		logger:  logger,
 		metrics: metrics,
@@ -275,7 +281,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time,
 	qry := &query{
 		stmt:      es,
 		ng:        ng,
-		stats:     stats.NewTimerGroup(),
+		stats:     stats.NewQueryTimers(),
 		queryable: q,
 	}
 	return qry
@@ -293,7 +299,7 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 		q:     "test statement",
 		stmt:  testStmt(f),
 		ng:    ng,
-		stats: stats.NewTimerGroup(),
+		stats: stats.NewQueryTimers(),
 	}
 	return qry
 }
@@ -309,25 +315,25 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
 	q.cancel = cancel
 
-	execTimer := q.stats.GetTimer(stats.ExecTotalTime).Start()
-	defer execTimer.Stop()
-	queueTimer := q.stats.GetTimer(stats.ExecQueueTime).Start()
+	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
+	defer execSpanTimer.Finish()
+
+	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 
 	if err := ng.gate.Start(ctx); err != nil {
-		return nil, err
+		return nil, contextErr(err, "query queue")
 	}
 	defer ng.gate.Done()
 
-	queueTimer.Stop()
-	ng.metrics.queryQueueTime.Observe(queueTimer.ElapsedTime().Seconds())
+	queueSpanTimer.Finish()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
 
 	const env = "query execution"
 
-	evalTimer := q.stats.GetTimer(stats.EvalTotalTime).Start()
-	defer evalTimer.Stop()
+	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
+	defer evalSpanTimer.Finish()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
 	if err := contextDone(ctx, env); err != nil {
@@ -354,10 +360,9 @@ func durationMilliseconds(d time.Duration) int64 {
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, error) {
-	prepareTimer := query.stats.GetTimer(stats.QueryPreparationTime).Start()
-	querier, err := ng.populateSeries(ctx, query.queryable, s)
-	prepareTimer.Stop()
-	ng.metrics.queryPrepareTime.Observe(prepareTimer.ElapsedTime().Seconds())
+	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
+	querier, err := ng.populateSeries(ctxPrepare, query.queryable, s)
+	prepareSpanTimer.Finish()
 
 	// XXX(fabxc): the querier returned by populateSeries might be instantiated
 	// we must not return without closing irrespective of the error.
@@ -370,7 +375,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		return nil, err
 	}
 
-	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
+	evalSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -386,8 +391,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			return nil, err
 		}
 
-		evalTimer.Stop()
-		ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+		evalSpanTimer.Finish()
 
 		mat, ok := val.(Matrix)
 		if !ok {
@@ -426,8 +430,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if err != nil {
 		return nil, err
 	}
-	evalTimer.Stop()
-	ng.metrics.queryInnerEval.Observe(evalTimer.ElapsedTime().Seconds())
+	evalSpanTimer.Finish()
 
 	mat, ok := val.(Matrix)
 	if !ok {
@@ -441,11 +444,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// TODO(fabxc): order ensured by storage?
 	// TODO(fabxc): where to ensure metric labels are a copy from the storage internals.
-	sortTimer := query.stats.GetTimer(stats.ResultSortTime).Start()
+	sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
 	sort.Sort(mat)
-	sortTimer.Stop()
+	sortSpanTimer.Finish()
 
-	ng.metrics.queryResultSort.Observe(sortTimer.ElapsedTime().Seconds())
 	return mat, nil
 }
 
@@ -481,19 +483,27 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
-			Step: int64(s.Interval / time.Millisecond),
+			Start: timestamp.FromTime(s.Start),
+			End:   timestamp.FromTime(s.End),
+			Step:  int64(s.Interval / time.Millisecond),
 		}
 
 		switch n := node.(type) {
 		case *VectorSelector:
+			params.Start = params.Start - durationMilliseconds(LookbackDelta)
 			params.Func = extractFuncFromPath(path)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				params.Start = params.Start - offsetMilliseconds
+				params.End = params.End - offsetMilliseconds
+			}
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return err
 			}
-			n.series, err = expandSeriesSet(set)
+			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
@@ -502,13 +512,21 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			// For all matrix queries we want to ensure that we have (end-start) + range selected
+			// this way we have `range` data before the start time
+			params.Start = params.Start - durationMilliseconds(n.Range)
+			if n.Offset > 0 {
+				offsetMilliseconds := durationMilliseconds(n.Offset)
+				params.Start = params.Start - offsetMilliseconds
+				params.End = params.End - offsetMilliseconds
+			}
 
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return err
 			}
-			n.series, err = expandSeriesSet(set)
+			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return err
@@ -538,8 +556,13 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
+func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, err error) {
 	for it.Next() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		res = append(res, it.At())
 	}
 	return res, it.Err()
@@ -592,7 +615,7 @@ func (ev *evaluator) Eval(expr Expr) (v Value, err error) {
 	return ev.eval(expr), nil
 }
 
-// Extra information and caches for evaluating a single node across steps.
+// EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
 type EvalNodeHelper struct {
 	// Evaluation timestamp.
 	ts int64
@@ -701,6 +724,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 		// Make the function call.
 		enh.ts = ts
 		result := f(args, enh)
+		if result.ContainsSameLabelset() {
+			ev.errorf("vector cannot contain metrics with the same labelset")
+		}
 		enh.out = result[:0] // Reuse result vector.
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -810,19 +836,20 @@ func (ev *evaluator) eval(expr Expr) Value {
 		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
 		offset := durationMilliseconds(sel.Offset)
 		selRange := durationMilliseconds(sel.Range)
+		stepRange := selRange
+		if stepRange > ev.interval {
+			stepRange = ev.interval
+		}
 		// Reuse objects across steps to save memory allocations.
 		points := getPointSlice(16)
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
-		var it *storage.BufferedSeriesIterator
+		it := storage.NewBuffer(selRange)
 		for i, s := range sel.series {
-			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), selRange)
-			} else {
-				it.Reset(s.Iterator())
-			}
+			points = points[:0]
+			it.Reset(s.Iterator())
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
@@ -844,7 +871,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				maxt := ts - offset
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
-				points = ev.matrixIterSlice(it, mint, maxt, points[:0])
+				points = ev.matrixIterSlice(it, mint, maxt, points)
 				if len(points) == 0 {
 					continue
 				}
@@ -856,11 +883,17 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
 				}
+				// Only buffer stepRange milliseconds from the second step on.
+				it.ReduceDelta(stepRange)
 			}
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
 			}
 		}
+		if mat.ContainsSameLabelset() {
+			ev.errorf("vector cannot contain metrics with the same labelset")
+		}
+
 		putPointSlice(points)
 		return mat
 
@@ -875,6 +908,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 				for j := range mat[i].Points {
 					mat[i].Points[j].V = -mat[i].Points[j].V
 				}
+			}
+			if mat.ContainsSameLabelset() {
+				ev.errorf("vector cannot contain metrics with the same labelset")
 			}
 		}
 		return mat
@@ -924,13 +960,9 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *VectorSelector:
 		mat := make(Matrix, 0, len(e.series))
-		var it *storage.BufferedSeriesIterator
+		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
-			if it == nil {
-				it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-			} else {
-				it.Reset(s.Iterator())
-			}
+			it.Reset(s.Iterator())
 			ss := Series{
 				Metric: e.series[i].Labels(),
 				Points: getPointSlice(numSteps),
@@ -965,13 +997,9 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 		vec = make(Vector, 0, len(node.series))
 	)
 
-	var it *storage.BufferedSeriesIterator
+	it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 	for i, s := range node.series {
-		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
-		} else {
-			it.Reset(s.Iterator())
-		}
+		it.Reset(s.Iterator())
 
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
@@ -1037,13 +1065,12 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		matrix = make(Matrix, 0, len(node.series))
 	)
 
-	var it *storage.BufferedSeriesIterator
+	it := storage.NewBuffer(durationMilliseconds(node.Range))
 	for i, s := range node.series {
-		if it == nil {
-			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
-		} else {
-			it.Reset(s.Iterator())
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+			ev.error(err)
 		}
+		it.Reset(s.Iterator())
 		ss := Series{
 			Metric: node.series[i].Labels(),
 		}
@@ -1052,13 +1079,39 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
+		} else {
+			putPointSlice(ss.Points)
 		}
 	}
 	return matrix
 }
 
-// matrixIterSlice evaluates a matrix vector for the iterator of one time series.
+// matrixIterSlice populates a matrix vector covering the requested range for a
+// single time series, with points retrieved from an iterator.
+//
+// As an optimization, the matrix vector may already contain points of the same
+// time series from the evaluation of an earlier step (with lower mint and maxt
+// values). Any such points falling before mint are discarded; points that fall
+// into the [mint, maxt] range are retained; only points with later timestamps
+// are populated from the iterator.
 func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Point) []Point {
+	if len(out) > 0 && out[len(out)-1].T >= mint {
+		// There is an overlap between previous and current ranges, retain common
+		// points. In most such cases:
+		//   (a) the overlap is significantly larger than the eval step; and/or
+		//   (b) the number of samples is relatively small.
+		// so a linear search will be as fast as a binary search.
+		var drop int
+		for drop = 0; out[drop].T < mint; drop++ {
+		}
+		copy(out, out[drop:])
+		out = out[:len(out)-drop]
+		// Only append points with timestamps after the last timestamp we have.
+		mint = out[len(out)-1].T + 1
+	} else {
+		out = out[:0]
+	}
+
 	ok := it.Seek(maxt)
 	if !ok {
 		if it.Err() != nil {
@@ -1252,39 +1305,6 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	return enh.out
 }
 
-func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(lset))
-
-Outer:
-	for _, l := range lset {
-		for _, n := range names {
-			if n == l.Name {
-				continue Outer
-			}
-		}
-		if l.Name == labels.MetricName {
-			continue
-		}
-		cm = append(cm, l)
-	}
-
-	return cm.Hash()
-}
-
-func hashForLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(names))
-
-	for _, l := range lset {
-		for _, n := range names {
-			if l.Name == n {
-				cm = append(cm, l)
-				break
-			}
-		}
-	}
-	return cm.Hash()
-}
-
 // signatureFunc returns a function that calculates the signature for a metric
 // ignoring the provided labels. If on, then the given labels are only used instead.
 func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
@@ -1292,9 +1312,9 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	// of labels by names to speed up the operations below.
 	// Alternatively, inline the hashing and don't build new label sets.
 	if on {
-		return func(lset labels.Labels) uint64 { return hashForLabels(lset, names...) }
+		return func(lset labels.Labels) uint64 { return lset.HashForLabels(names...) }
 	}
-	return func(lset labels.Labels) uint64 { return hashWithoutLabels(lset, names...) }
+	return func(lset labels.Labels) uint64 { return lset.HashWithoutLabels(names...) }
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -1459,12 +1479,12 @@ func intersection(ls1, ls2 labels.Labels) labels.Labels {
 }
 
 type groupedAggregation struct {
-	labels           labels.Labels
-	value            float64
-	valuesSquaredSum float64
-	groupCount       int
-	heap             vectorByValueHeap
-	reverseHeap      vectorByReverseValueHeap
+	labels      labels.Labels
+	value       float64
+	mean        float64
+	groupCount  int
+	heap        vectorByValueHeap
+	reverseHeap vectorByReverseValueHeap
 }
 
 // aggregation evaluates an aggregation operation on a Vector.
@@ -1489,30 +1509,30 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	var valueLabel string
 	if op == itemCountValues {
 		valueLabel = param.(string)
+		if !model.LabelName(valueLabel).IsValid() {
+			ev.errorf("invalid label name %q", valueLabel)
+		}
 		if !without {
 			grouping = append(grouping, valueLabel)
 		}
 	}
 
 	for _, s := range vec {
-		lb := labels.NewBuilder(s.Metric)
+		metric := s.Metric
 
-		if without {
-			lb.Del(grouping...)
-			lb.Del(labels.MetricName)
-		}
 		if op == itemCountValues {
+			lb := labels.NewBuilder(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
+			metric = lb.Labels()
 		}
 
 		var (
 			groupingKey uint64
-			metric      = lb.Labels()
 		)
 		if without {
-			groupingKey = metric.Hash()
+			groupingKey = metric.HashWithoutLabels(grouping...)
 		} else {
-			groupingKey = hashForLabels(metric, grouping...)
+			groupingKey = metric.HashForLabels(grouping...)
 		}
 
 		group, ok := result[groupingKey]
@@ -1521,13 +1541,16 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			var m labels.Labels
 
 			if without {
-				m = metric
+				lb := labels.NewBuilder(metric)
+				lb.Del(grouping...)
+				lb.Del(labels.MetricName)
+				m = lb.Labels()
 			} else {
 				m = make(labels.Labels, 0, len(grouping))
 				for _, l := range metric {
 					for _, n := range grouping {
 						if l.Name == n {
-							m = append(m, labels.Label{Name: n, Value: l.Value})
+							m = append(m, l)
 							break
 						}
 					}
@@ -1535,24 +1558,26 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				sort.Sort(m)
 			}
 			result[groupingKey] = &groupedAggregation{
-				labels:           m,
-				value:            s.V,
-				valuesSquaredSum: s.V * s.V,
-				groupCount:       1,
+				labels:     m,
+				value:      s.V,
+				mean:       s.V,
+				groupCount: 1,
 			}
-			input_vec_len := int64(len(vec))
-			result_size := k
-			if k > input_vec_len {
-				result_size = input_vec_len
+			inputVecLen := int64(len(vec))
+			resultSize := k
+			if k > inputVecLen {
+				resultSize = inputVecLen
 			}
-			if op == itemTopK || op == itemQuantile {
-				result[groupingKey].heap = make(vectorByValueHeap, 0, result_size)
+			if op == itemStdvar || op == itemStddev {
+				result[groupingKey].value = 0.0
+			} else if op == itemTopK || op == itemQuantile {
+				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
 			} else if op == itemBottomK {
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, result_size)
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
@@ -1566,8 +1591,8 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.value += s.V
 
 		case itemAvg:
-			group.value += s.V
 			group.groupCount++
+			group.mean += (s.V - group.mean) / float64(group.groupCount)
 
 		case itemMax:
 			if group.value < s.V || math.IsNaN(group.value) {
@@ -1583,9 +1608,10 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.groupCount++
 
 		case itemStdvar, itemStddev:
-			group.value += s.V
-			group.valuesSquaredSum += s.V * s.V
 			group.groupCount++
+			delta := s.V - group.mean
+			group.mean += delta / float64(group.groupCount)
+			group.value += delta * (s.V - group.mean)
 
 		case itemTopK:
 			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
@@ -1621,18 +1647,16 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	for _, aggr := range result {
 		switch op {
 		case itemAvg:
-			aggr.value = aggr.value / float64(aggr.groupCount)
+			aggr.value = aggr.mean
 
 		case itemCount, itemCountValues:
 			aggr.value = float64(aggr.groupCount)
 
 		case itemStdvar:
-			avg := aggr.value / float64(aggr.groupCount)
-			aggr.value = aggr.valuesSquaredSum/float64(aggr.groupCount) - avg*avg
+			aggr.value = aggr.value / float64(aggr.groupCount)
 
 		case itemStddev:
-			avg := aggr.value / float64(aggr.groupCount)
-			aggr.value = math.Sqrt(aggr.valuesSquaredSum/float64(aggr.groupCount) - avg*avg)
+			aggr.value = math.Sqrt(aggr.value / float64(aggr.groupCount))
 
 		case itemTopK:
 			// The heap keeps the lowest value on top, so reverse it.
@@ -1693,38 +1717,6 @@ func shouldDropMetricName(op ItemType) bool {
 // LookbackDelta determines the time since the last sample after which a time
 // series is considered stale.
 var LookbackDelta = 5 * time.Minute
-
-// A queryGate controls the maximum number of concurrently running and waiting queries.
-type queryGate struct {
-	ch chan struct{}
-}
-
-// newQueryGate returns a query gate that limits the number of queries
-// being concurrently executed.
-func newQueryGate(length int) *queryGate {
-	return &queryGate{
-		ch: make(chan struct{}, length),
-	}
-}
-
-// Start blocks until the gate has a free spot or the context is done.
-func (g *queryGate) Start(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return contextDone(ctx, "query queue")
-	case g.ch <- struct{}{}:
-		return nil
-	}
-}
-
-// Done releases a single spot in the gate.
-func (g *queryGate) Done() {
-	select {
-	case <-g.ch:
-	default:
-		panic("engine.queryGate.Done: more operations done than started")
-	}
-}
 
 // documentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.

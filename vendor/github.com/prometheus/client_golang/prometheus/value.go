@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"sort"
 
-	dto "github.com/prometheus/client_model/go"
-
 	"github.com/golang/protobuf/proto"
+
+	dto "github.com/prometheus/client_model/go"
 )
 
 // ValueType is an enumeration of metric types that represent a simple value.
@@ -77,8 +77,12 @@ func (v *valueFunc) Write(out *dto.Metric) error {
 // operations. However, when implementing custom Collectors, it is useful as a
 // throw-away metric that is generated on the fly to send it to Prometheus in
 // the Collect method. NewConstMetric returns an error if the length of
-// labelValues is not consistent with the variable labels in Desc.
+// labelValues is not consistent with the variable labels in Desc or if Desc is
+// invalid.
 func NewConstMetric(desc *Desc, valueType ValueType, value float64, labelValues ...string) (Metric, error) {
+	if desc.err != nil {
+		return nil, desc.err
+	}
 	if err := validateLabelValues(labelValues, len(desc.variableLabels)); err != nil {
 		return nil, err
 	}
@@ -152,9 +156,7 @@ func makeLabelPairs(desc *Desc, labelValues []string) []*dto.LabelPair {
 			Value: proto.String(labelValues[i]),
 		})
 	}
-	for _, lp := range desc.constLabelPairs {
-		labelPairs = append(labelPairs, lp)
-	}
-	sort.Sort(LabelPairSorter(labelPairs))
+	labelPairs = append(labelPairs, desc.constLabelPairs...)
+	sort.Sort(labelPairSorter(labelPairs))
 	return labelPairs
 }

@@ -56,6 +56,7 @@ var unquotetests = []unQuoteTest{
 	{`'abc'`, "abc"},
 	{`'☺'`, "☺"},
 	{`'hello world'`, "hello world"},
+	{`'\ahéllo world'`, "\ahéllo world"},
 	{`'\xFF'`, "\xFF"},
 	{`'\377'`, "\377"},
 	{`'\u1234'`, "\u1234"},
@@ -101,6 +102,10 @@ var misquoted = []string{
 	"\"\n\"",
 	"\"\\n\n\"",
 	"'\n'",
+	"`1`9`",
+	`1231`,
+	`'\xF'`,
+	`""12345"`,
 }
 
 func TestUnquote(t *testing.T) {

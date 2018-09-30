@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"gopkg.in/alecthomas/kingpin.v2"
 	k8s_runtime "k8s.io/apimachinery/pkg/util/runtime"
 
@@ -86,6 +87,9 @@ func main() {
 		localStoragePath    string
 		notifier            notifier.Options
 		notifierTimeout     model.Duration
+		forGracePeriod      model.Duration
+		outageTolerance     model.Duration
+		resendDelay         model.Duration
 		web                 web.Options
 		tsdb                tsdb.Options
 		lookbackDelta       model.Duration
@@ -164,6 +168,21 @@ func main() {
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
+	a.Flag("storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit.").
+		Default("5e7").IntVar(&cfg.web.RemoteReadSampleLimit)
+
+	a.Flag("storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
+		Default("10").IntVar(&cfg.web.RemoteReadConcurrencyLimit)
+
+	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
+		Default("1h").SetValue(&cfg.outageTolerance)
+
+	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
+		Default("10m").SetValue(&cfg.forGracePeriod)
+
+	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
+		Default("1m").SetValue(&cfg.resendDelay)
+
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
@@ -221,8 +240,9 @@ func main() {
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	level.Info(logger).Log("build_context", version.BuildContext())
-	level.Info(logger).Log("host_details", Uname())
-	level.Info(logger).Log("fd_limits", FdLimits())
+	level.Info(logger).Log("host_details", prom_runtime.Uname())
+	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
+	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
@@ -252,13 +272,17 @@ func main() {
 		)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:  fanoutStorage,
-			QueryFunc:   rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
-			Context:     ctxRule,
-			ExternalURL: cfg.web.ExternalURL,
-			Registerer:  prometheus.DefaultRegisterer,
-			Logger:      log.With(logger, "component", "rule manager"),
+			Appendable:      fanoutStorage,
+			TSDB:            localStorage,
+			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:      sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			Context:         ctxRule,
+			ExternalURL:     cfg.web.ExternalURL,
+			Registerer:      prometheus.DefaultRegisterer,
+			Logger:          log.With(logger, "component", "rule manager"),
+			OutageTolerance: time.Duration(cfg.outageTolerance),
+			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
+			ResendDelay:     time.Duration(cfg.resendDelay),
 		})
 	)
 
@@ -472,7 +496,9 @@ func main() {
 
 			},
 			func(err error) {
-				close(cancel)
+				// Wait for any in-progress reloads to complete to avoid
+				// reloading things after they have been shutdown.
+				cancel <- struct{}{}
 			},
 		)
 	}
@@ -491,7 +517,7 @@ func main() {
 				}
 
 				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
-					return fmt.Errorf("Error loading config %s", err)
+					return fmt.Errorf("error loading config from %q: %s", cfg.configFile, err)
 				}
 
 				reloadReady.Close()
@@ -502,6 +528,23 @@ func main() {
 				return nil
 			},
 			func(err error) {
+				close(cancel)
+			},
+		)
+	}
+	{
+		// Rule manager.
+		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				ruleManager.Run()
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				ruleManager.Stop()
 				close(cancel)
 			},
 		)
@@ -519,7 +562,7 @@ func main() {
 					&cfg.tsdb,
 				)
 				if err != nil {
-					return fmt.Errorf("Opening storage failed %s", err)
+					return fmt.Errorf("opening storage failed: %s", err)
 				}
 				level.Info(logger).Log("msg", "TSDB started")
 
@@ -542,32 +585,12 @@ func main() {
 		g.Add(
 			func() error {
 				if err := webHandler.Run(ctxWeb); err != nil {
-					return fmt.Errorf("Error starting web server: %s", err)
+					return fmt.Errorf("error starting web server: %s", err)
 				}
 				return nil
 			},
 			func(err error) {
-				// Keep this interrupt before the ruleManager.Stop().
-				// Shutting down the query engine before the rule manager will cause pending queries
-				// to be canceled and ensures a quick shutdown of the rule manager.
 				cancelWeb()
-			},
-		)
-	}
-	{
-		// Rule manager.
-
-		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
-		g.Add(
-			func() error {
-				ruleManager.Run()
-				<-cancel
-				return nil
-			},
-			func(err error) {
-				ruleManager.Stop()
-				close(cancel)
 			},
 		)
 	}
@@ -595,6 +618,7 @@ func main() {
 	}
 	if err := g.Run(); err != nil {
 		level.Error(logger).Log("err", err)
+		os.Exit(1)
 	}
 	level.Info(logger).Log("msg", "See you next time!")
 }
@@ -613,7 +637,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%s): %v", filename, err)
+		return fmt.Errorf("couldn't load configuration (--config.file=%q): %v", filename, err)
 	}
 
 	failed := false
@@ -624,8 +648,9 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%s)", filename)
+		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
 
@@ -668,16 +693,11 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 }
 
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
-// It filters any non-firing alerts from the input.
 func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
+	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
-			// Only send actually firing alerts.
-			if alert.State == rules.StatePending {
-				continue
-			}
 			a := &notifier.Alert{
 				StartsAt:     alert.FiredAt,
 				Labels:       alert.Labels,
@@ -686,6 +706,8 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 			}
 			if !alert.ResolvedAt.IsZero() {
 				a.EndsAt = alert.ResolvedAt
+			} else {
+				a.EndsAt = alert.ValidUntil
 			}
 			res = append(res, a)
 		}
@@ -693,6 +715,5 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		if len(alerts) > 0 {
 			n.Send(res...)
 		}
-		return nil
 	}
 }

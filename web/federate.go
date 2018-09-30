@@ -14,6 +14,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 
@@ -42,7 +43,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
-	req.ParseForm()
+	if err := req.ParseForm(); err != nil {
+		http.Error(w, fmt.Sprintf("error parsing form values: %v", err), http.StatusBadRequest)
+		return
+	}
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range req.Form["match[]"] {
@@ -72,9 +76,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	vec := make(promql.Vector, 0, 8000)
 
+	params := &storage.SelectParams{
+		Start: mint,
+		End:   maxt,
+	}
+
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s, err := q.Select(nil, mset...)
+		s, err := q.Select(params, mset...)
 		if err != nil {
 			federationErrors.Inc()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -84,12 +93,13 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	set := storage.NewMergeSeriesSet(sets)
+	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
 	for set.Next() {
 		s := set.At()
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it := storage.NewBuffer(s.Iterator(), int64(promql.LookbackDelta/1e6))
+		it.Reset(s.Iterator())
 
 		var t int64
 		var v float64

@@ -243,6 +243,17 @@ func NewTemplateExpander(
 	}
 }
 
+// AlertTemplateData returns the interface to be used in expanding the template.
+func AlertTemplateData(labels map[string]string, value float64) interface{} {
+	return struct {
+		Labels map[string]string
+		Value  float64
+	}{
+		Labels: labels,
+		Value:  value,
+	}
+}
+
 // Funcs adds the functions in fm to the Expander's function map.
 // Existing functions will be overwritten in case of conflict.
 func (te Expander) Funcs(fm text_template.FuncMap) {
@@ -314,4 +325,13 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 		return "", fmt.Errorf("error executing template %v: %v", te.name, err)
 	}
 	return buffer.String(), nil
+}
+
+// ParseTest parses the templates and returns the error if any.
+func (te Expander) ParseTest() error {
+	_, err := text_template.New(te.name).Funcs(te.funcMap).Option("missingkey=zero").Parse(te.text)
+	if err != nil {
+		return err
+	}
+	return nil
 }

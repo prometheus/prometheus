@@ -19,7 +19,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,38 +38,22 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
 )
 
 // API encapsulates all API services.
 type API struct {
-	enableAdmin   bool
-	now           func() time.Time
-	db            func() *tsdb.DB
-	q             func(ctx context.Context, mint, maxt int64) (storage.Querier, error)
-	targets       func() []*scrape.Target
-	alertmanagers func() []*url.URL
+	enableAdmin bool
+	db          func() *tsdb.DB
 }
 
 // New returns a new API object.
 func New(
-	now func() time.Time,
 	db func() *tsdb.DB,
-	qe *promql.Engine,
-	q func(ctx context.Context, mint, maxt int64) (storage.Querier, error),
-	targets func() []*scrape.Target,
-	alertmanagers func() []*url.URL,
 	enableAdmin bool,
 ) *API {
 	return &API{
-		now:           now,
-		db:            db,
-		q:             q,
-		targets:       targets,
-		alertmanagers: alertmanagers,
-		enableAdmin:   enableAdmin,
+		db:          db,
+		enableAdmin: enableAdmin,
 	}
 }
 
