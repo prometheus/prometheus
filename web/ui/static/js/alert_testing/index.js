@@ -73,12 +73,11 @@ function reinitJQueryFunctions() {
       targetEl.removeClass('is-checked');
     }
   });
-
 }
 
 /**
  * Graph
-*/
+ */
 var Graph = function(element, options, json) {
   this.el = element;
   this.graphHTML = null;
@@ -238,7 +237,6 @@ Graph.prototype.initialize = function() {
   self.spinner.hide();
 
   self.initGraphUpdate();
-
 };
 
 Graph.prototype.parseDuration = function(rangeText) {
@@ -411,8 +409,7 @@ Graph.prototype.updateGraph = function() {
     self.yAxis.remove();
   }
 
-  // TODO: encode into html entity
-  self.exprGraphTitle.html("<u>Graph</u>: '"+self.graphJSON.expr+"'");
+  self.exprGraphTitle.html("<u>Graph</u>: '"+ escapeHTML(self.graphJSON.expr)+"'");
   
   self.graph = $('<div class="graph"></div>');
   self.yAxis = $('<div class="y_axis"></div>');
@@ -518,7 +515,6 @@ Graph.prototype.updateGraph = function() {
     graph: self.rickshawGraph,
     legend: legend
   });
-
 };
 
 Graph.prototype.updateAlertGraph = function() {
@@ -635,7 +631,6 @@ Graph.prototype.updateAlertGraph = function() {
     graph: self.alertGraphRef.rickshawGraph,
     legend: legend
   });
-
 };
 
 Graph.prototype.resizeGraph = function() {
@@ -745,11 +740,9 @@ var replaceRules = function(json) {
   }
 
   $('[data-toggle="popover"]').popover(); 
-  
 };
 
 function evaluate(data) {
-  
   var time = data.Time;
   if(time == 0) {
     $("#ruleTestInfo").html("Testing for current time");
@@ -790,7 +783,6 @@ function evaluate(data) {
       $("#ruleTestInfo").html(redHtml("ERROR: "+errorThrown));
     }
   });
-
 }
 
 function initRuleTesting() {

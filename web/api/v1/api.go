@@ -1178,36 +1178,27 @@ type queryDataWithExpr struct {
 	Expr       string           `json:"expr"`
 }
 
-var alertTestingSampleInterval = 15 * time.Second
+const alertTestingSampleInterval = 15 * time.Second
 
 func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) {
+	result := newAlertsTestResult() // Final result variables.
 
-	// As we have 'goto' statement ahead, variables have to be declared beforehand.
-	var (
-		// Final result variables.
-		result = newAlertsTestResult()
-
-		rgs       *rulefmt.RuleGroups
-		queryFunc rules.QueryFunc
-
-		errs []error
-	)
-
-	mint, maxt, ruleString, ae := parseAlertsTestingBody(r)
-	if ae != nil {
-		goto endLabel
+	mint, maxt, ruleString, apiErr := parseAlertsTestingBody(r)
+	if apiErr != nil {
+		return nil, apiErr, nil
 	}
 
 	// Checking syntax of rule file and expression.
-	if rgs, errs = rulefmt.Parse([]byte(ruleString)); len(errs) > 0 {
+	rgs, errs := rulefmt.Parse([]byte(ruleString))
+	if len(errs) > 0 {
 		result.IsError = true
 		for _, e := range errs {
 			result.Errors = append(result.Errors, e.Error())
 		}
-		goto endLabel
+		return result, nil, nil
 	}
 
-	queryFunc = rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
+	queryFunc := rules.EngineQueryFunc(api.QueryEngine, api.Queryable)
 	// Simulating the Alerts.
 	for _, g := range rgs.Groups {
 		for _, rl := range g.Rules {
@@ -1219,27 +1210,25 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 			expr, err := promql.ParseExpr(rl.Expr)
 			if err != nil {
 				result.IsError = true
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed the parse the expression `%s`", rl.Expr))
-				goto endLabel
+				result.Errors = append(result.Errors, fmt.Sprintf("Failed to parse the expression %q", rl.Expr))
+				return result, nil, nil
 			}
 			lbls, anns := labels.FromMap(rl.Labels), labels.FromMap(rl.Annotations)
 			alertingRule := rules.NewAlertingRule(rl.Alert, expr, time.Duration(rl.For), lbls, anns, true, nil)
 
 			seriesHashMap := make(map[uint64]*promql.Series) // All the series created for this rule.
-			nextiter := func(curr, max time.Time, step time.Duration) time.Time {
+			nextiter := func(curr, max time.Time) time.Time {
 				diff := max.Sub(curr)
-				if diff != 0 && diff < step {
+				if diff != 0 && diff < alertTestingSampleInterval {
 					return max
-				} else {
-					return curr.Add(step)
 				}
+				return curr.Add(alertTestingSampleInterval)
 			}
-			// Evaluating the alerting rule for past 1 day.
-			for t := mint; maxt.Sub(t) >= 0; t = nextiter(t, maxt, alertTestingSampleInterval) {
+			// Evaluating the alerting rules.
+			for t := mint; maxt.Sub(t) >= 0; t = nextiter(t, maxt) {
 				vec, err := alertingRule.Eval(r.Context(), t, queryFunc, nil)
 				if err != nil {
-					ae = &apiError{errorInternal, err}
-					goto endLabel
+					return nil, &apiError{errorInternal, err}, nil
 				}
 				for _, smpl := range vec {
 					series, ok := seriesHashMap[smpl.Metric.Hash()]
@@ -1258,11 +1247,10 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 				}
 				p := 0
 				for p < len(matrix) {
-					if matrix[p].Metric.Hash() < series.Metric.Hash() {
-						p++
-					} else {
+					if matrix[p].Metric.Hash() >= series.Metric.Hash() {
 						break
 					}
+					p++
 				}
 				matrix = append(matrix[:p], append(promql.Matrix{*series}, matrix[p:]...)...)
 			}
@@ -1272,26 +1260,22 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 			// Removing the hyperlinks from the HTML snippet.
 			var ar rulefmt.Rule
 			if err = yaml.Unmarshal([]byte(htmlSnippet), &ar); err != nil {
-				ae = &apiError{errorInternal, err}
-				goto endLabel
+				return nil, &apiError{errorInternal, err}, nil
 			}
 			ar.Alert, ar.Expr = rl.Alert, rl.Expr
 			bytes, err := yaml.Marshal(ar)
 			if err != nil {
-				ae = &apiError{errorInternal, err}
-				goto endLabel
+				return nil, &apiError{errorInternal, err}, nil
 			}
 
-			// Querying the expression.
+			// Querying the expression for its graph.
 			_, res, apiErr := rangeQuery(api, r.Context(), rl.Expr, mint, maxt, alertTestingSampleInterval)
 			if apiErr != nil {
-				ae = apiErr
-				goto endLabel
+				return nil, apiErr, nil
 			}
 			exprMatrix, err := res.Matrix()
 			if err != nil {
-				ae = &apiError{errorExec, err}
-				goto endLabel
+				return nil, &apiError{errorExec, err}, nil
 			}
 			exprMatrix = downsampleMatrix(exprMatrix, 256, true)
 			var activeAlerts []rules.Alert
@@ -1316,48 +1300,37 @@ func (api *API) alertsTesting(r *http.Request) (interface{}, *apiError, func()) 
 		}
 	}
 
-endLabel:
-	return result, ae, nil
+	return result, nil, nil
 }
 
+// parseAlertsTestingBody parses the body of alert testing http request
+// and returns (mint, maxt, rule file content as string, *apiError)
 func parseAlertsTestingBody(r *http.Request) (time.Time, time.Time, string, *apiError) {
-
-	var (
-		postData struct {
-			RuleText string
-			Time     float64
-		}
-
-		// Time ranges for which the alerting rule will be simulated.
-		// It is set to past 1 day.
-		maxt = time.Now()
-		mint = time.Unix(0, 0)
-
-		ruleString string
-		err        error
-	)
-
-	postData.RuleText = r.FormValue("RuleText")
-	if postData.RuleText == "" {
-		return maxt, maxt, "", &apiError{errorBadData, errors.New("RuleText missing")}
+	ruleString := r.FormValue("RuleText")
+	if ruleString == "" {
+		return time.Unix(0, 0), time.Unix(0, 0), "", &apiError{errorBadData, errors.New("RuleText missing")}
 	}
-	postData.Time, err = strconv.ParseFloat(r.FormValue("Time"), 64)
+	formMaxt, err := strconv.ParseFloat(r.FormValue("Time"), 64)
 	if err != nil {
-		return maxt, maxt, "", &apiError{errorBadData, errors.New("Error in parsing time")}
+		return time.Unix(0, 0), time.Unix(0, 0), "", &apiError{errorBadData, errors.New("Error in parsing time")}
 	}
 
-	if postData.Time > 0 && int64(postData.Time) <= maxt.Unix() {
-		maxt = time.Unix(int64(postData.Time), 0)
+	maxt := time.Now()
+	if formMaxt > 0 && int64(formMaxt) <= maxt.Unix() {
+		maxt = time.Unix(int64(formMaxt), 0)
 	}
+	// mint is set to 24hrs before maxt.
+	mint := time.Unix(0, 0)
 	if maxt.Sub(mint) > 24*time.Hour {
 		mint = maxt.Add(-24 * time.Hour)
 	}
 
-	if ruleString, err = url.QueryUnescape(postData.RuleText); err != nil {
+	ruleStringUnescaped, err := url.QueryUnescape(ruleString)
+	if err != nil {
 		return maxt, maxt, "", &apiError{errorBadData, err}
 	}
 
-	return mint, maxt, ruleString, nil
+	return mint, maxt, ruleStringUnescaped, nil
 }
 
 func min(a, b int) int {
@@ -1371,7 +1344,7 @@ func min(a, b int) int {
 // maximum of `maxSamples` or `maxSamples + 1` samples as result for
 // every series (including the first and the last sample in the series).
 // If avg=true, it performs average of samples over the range within the step,
-// else only pics the samples.
+// else will only pics the samples.
 func downsampleMatrix(matrix promql.Matrix, maxSamples int, avg bool) promql.Matrix {
 	var newMatrix promql.Matrix
 	for _, series := range matrix {
@@ -1381,11 +1354,11 @@ func downsampleMatrix(matrix promql.Matrix, maxSamples int, avg bool) promql.Mat
 			var filtered []promql.Point
 			if avg {
 				for i := 0; i < maxSamples; i++ {
-					var v float64 = 0
+					var v float64
 					for j := i * step; j < min((i+1)*step, len(series.Points)); j++ {
 						v += series.Points[j].V
 					}
-					filtered = append(filtered, promql.Point{series.Points[i*step].T, v})
+					filtered = append(filtered, promql.Point{T: series.Points[i*step].T, V: v})
 				}
 			} else {
 				for i := 0; i < maxSamples; i++ {
@@ -1402,6 +1375,5 @@ func downsampleMatrix(matrix promql.Matrix, maxSamples int, avg bool) promql.Mat
 		}
 		newMatrix = append(newMatrix, series)
 	}
-
 	return newMatrix
 }
