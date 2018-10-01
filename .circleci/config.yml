@@ -14,7 +14,13 @@ jobs:
     - checkout
     - run: make promu
     - run: make check_license style unused staticcheck build
-    - run: rm -v prometheus
+    - store_artifacts:
+        path: prometheus
+        destination: /build/prometheus
+    - store_artifacts:
+        path: promtool
+        destination: /build/promtool
+    - run: rm -v prometheus promtool
 
   build:
     machine: true
@@ -28,6 +34,9 @@ jobs:
         root: .
         paths:
         - .build
+    - store_artifacts:
+        path: .build
+        destination: /build
 
   docker_hub_master:
     docker:
