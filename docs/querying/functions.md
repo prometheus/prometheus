@@ -304,6 +304,15 @@ regression](http://en.wikipedia.org/wiki/Simple_linear_regression).
 
 `predict_linear` should only be used with gauges.
 
+## `quantile()`
+
+`quantile(φ float, v instant-vector)` calculates the φ-quantile (0 ≤ φ
+≤ 1) for all values in `v`
+
+To show all jobs with at least 90% targets in up state, run:
+
+`quantile(0.9,up) by (job)`
+
 ## `rate()`
 
 `rate(v range-vector)` calculates the per-second average rate of increase of the
