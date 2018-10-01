@@ -1,48 +1,103 @@
 ---
 version: 2
 
+docker-install: &docker-install |
+  set -x && \
+  export DOCKER_VERSION=$(curl --silent --fail --retry 3 https://download.docker.com/linux/static/stable/x86_64/ | grep -o -e 'docker-[.0-9]*-ce\.tgz' | sort -r | head -n 1) \
+  && DOCKER_URL="https://download.docker.com/linux/static/stable/x86_64/${DOCKER_VERSION}" \
+  && curl --silent --show-error --location --fail --retry 3 --output /tmp/docker.tgz "${DOCKER_URL}" \
+  && tar -xz -C /tmp -f /tmp/docker.tgz \
+  && mv /tmp/docker/* /usr/bin
+
 jobs:
-  test:
-    # Whenever the Go version is updated here, .travis.yml should also be
-    # updated.
-    docker:
-    - image: circleci/golang:1.10
-    working_directory: /go/src/github.com/prometheus/prometheus
-    resource_class: large
-
-    steps:
-    - checkout
-    - run: make promu
-    - run: make check_license style unused staticcheck build
-    - run: rm -v prometheus
-
-  build:
+  promu:
     machine: true
     working_directory: /home/circleci/.go_workspace/src/github.com/prometheus/prometheus
 
     steps:
     - checkout
     - run: make promu
+    - persist_to_workspace:
+        root:  /home/circleci/.go_workspace/
+        paths:
+        - bin
+
+  test:
+    # Whenever the Go version is updated here, .travis.yml should also be
+    # updated.
+    docker:
+    - image: golang:1.10
+    working_directory: /go/src/github.com/prometheus/prometheus
+    resource_class: large
+
+    steps:
+    - checkout
+    - attach_workspace:
+        at: /go/
+    - run: make check_license style unused staticcheck build
+    - run: rm -v prometheus
+
+  crossbuild-linux-amd64:
+    machine: true
+    working_directory: /home/circleci/.go_workspace/src/github.com/prometheus/prometheus
+
+    steps:
+    - checkout
+    - attach_workspace:
+        at: /home/circleci/.go_workspace/
+    - run: promu crossbuild -v -p linux/amd64
+    - persist_to_workspace:
+        root: /home/circleci/.go_workspace/
+        paths:
+        - src/github.com/prometheus/prometheus/.build
+
+  crossbuild:
+    machine: true
+    working_directory: /home/circleci/.go_workspace/src/github.com/prometheus/prometheus
+
+    steps:
+    - checkout
+    - attach_workspace:
+        at: /home/circleci/.go_workspace/
     - run: promu crossbuild -v
     - persist_to_workspace:
-        root: .
+        root: /home/circleci/.go_workspace/
         paths:
-        - .build
+        - src/github.com/prometheus/prometheus/.build
 
-  docker_hub_master:
+  docker_hub_pr:
     docker:
-    - image: circleci/golang:1.10
+    - image: golang:1.10
     working_directory: /go/src/github.com/prometheus/prometheus
 
     steps:
     - checkout
     - setup_remote_docker
     - attach_workspace:
-        at: .
+        at: /go/
+    - run: *docker-install
     - run: ln -s .build/linux-amd64/prometheus prometheus
     - run: ln -s .build/linux-amd64/promtool promtool
-    - run: make docker
-    - run: make docker DOCKER_REPO=quay.io/prometheus
+    - run: make docker DOCKER_IMAGE_TAG=pr-${CIRCLE_PR_NUMBER} DOCKER_REPO=quay.io/prometheus
+    - run: docker images
+    - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
+    - run: make docker-publish DOCKER_REPO=quay.io/prometheus
+
+  docker_hub_master_and_releases:
+    docker:
+    - image: golang:1.10
+    working_directory: /go/src/github.com/prometheus/prometheus
+
+    steps:
+    - checkout
+    - setup_remote_docker
+    - attach_workspace:
+        at: /go/
+    - run: *docker-install
+    - run: ln -s .build/linux-amd64/prometheus prometheus
+    - run: ln -s .build/linux-amd64/promtool promtool
+    - run: make docker DOCKER_IMAGE_TAG=${CIRCLE_BRANCH}
+    - run: make docker DOCKER_IMAGE_TAG=${CIRCLE_BRANCH} DOCKER_REPO=quay.io/prometheus
     - run: docker images
     - run: docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
     - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
@@ -51,7 +106,7 @@ jobs:
 
   docker_hub_release_tags:
     docker:
-    - image: circleci/golang:1.10
+    - image: golang:1.10
     working_directory: /go/src/github.com/prometheus/prometheus
 
     steps:
@@ -61,8 +116,8 @@ jobs:
     - run: curl -L 'https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C ${HOME}/bin
     - run: echo 'export PATH=${HOME}/bin:${PATH}' >> ${BASH_ENV}
     - attach_workspace:
-        at: .
-    - run: make promu
+        at: /go/
+    - run: *docker-install
     - run: promu crossbuild tarballs
     - run: promu checksum .tarballs
     - run: promu release .tarballs
@@ -85,27 +140,70 @@ jobs:
 
 workflows:
   version: 2
-  prometheus:
+  prometheus-pr:
     jobs:
-    - test:
-        filters:
-          tags:
-            only: /.*/
-    - build:
-        filters:
-          tags:
-            only: /.*/
-    - docker_hub_master:
-        requires:
-        - test
-        - build
+    - promu:
         filters:
           branches:
-            only: master
+            ignore: /^(master|release-.*)$/
+    - test:
+        requires:
+        - promu
+        filters:
+          branches:
+            ignore: /^(master|release-.*)$/
+    - crossbuild-linux-amd64:
+        requires:
+        - promu
+        filters:
+          branches:
+            ignore: /^(master|release-.*)$/
+    - docker_hub_pr:
+        requires:
+        - promu
+        - crossbuild-linux-amd64
+        filters:
+          branches:
+            ignore: /^(master|release-.*)$/
+    - crossbuild:
+        requires:
+        - promu
+        - crossbuild-linux-amd64
+        filters:
+          branches:
+            ignore: /^(master|release-.*)$/
+  prometheus-master-and-releases:
+    jobs:
+    - promu:
+        filters:
+          branches:
+            only: /^(master|release-.*)$/
+    - test:
+        requires:
+        - promu
+        filters:
+          branches:
+            only: /^(master|release-.*)$/
+    - crossbuild:
+        requires:
+        - test
+        - promu
+        filters:
+          branches:
+            only: /^(master|release-.*)$/
+    - docker_hub_master_and_releases:
+        requires:
+        - test
+        - promu
+        - crossbuild
+        filters:
+          branches:
+            only: /^(master|release-.*)$/
     - docker_hub_release_tags:
         requires:
         - test
-        - build
+        - promu
+        - crossbuild
         filters:
           tags:
             only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
