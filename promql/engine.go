@@ -703,10 +703,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
-
 	originalNumSamples := ev.currentSamples
-
-	var tempNumSamples int
 
 	for i, e := range exprs {
 		// Functions will take string arguments from the expressions, not the values.
@@ -734,23 +731,25 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	}
 	enh := &EvalNodeHelper{out: make(Vector, 0, biggestLen)}
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
-	tempNumSamples = ev.currentSamples
+	tempNumSamples := ev.currentSamples
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-		// Reset num. of samples in memory after each timestamp.
+		// Reset number of samples in memory after each timestamp.
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
 			vectors[i] = vectors[i][:0]
 			for si, series := range matrixes[i] {
 				for _, point := range series.Points {
-					if point.T == ts && ev.currentSamples < ev.maxSamples {
-						vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
-						// Move input vectors forward so we don't have to re-scan the same
-						// past points at the next step.
-						matrixes[i][si].Points = series.Points[1:]
-						ev.currentSamples++
-					} else if ev.currentSamples >= ev.maxSamples {
-						ev.error(ErrTooManySamples(env))
+					if point.T == ts {
+						if ev.currentSamples < ev.maxSamples {
+							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
+							// Move input vectors forward so we don't have to re-scan the same
+							// past points at the next step.
+							matrixes[i][si].Points = series.Points[1:]
+							ev.currentSamples++
+						} else {
+							ev.error(ErrTooManySamples(env))
+						}
 					}
 					break
 				}
@@ -785,6 +784,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 			return mat
 		}
 
+		// Add samples in output vector to output series.
 		for _, sample := range result {
 			h := sample.Metric.Hash()
 			ss, ok := seriess[h]
@@ -800,6 +800,7 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 
 		}
 	}
+
 	// Reuse the original point slices.
 	for _, m := range origMatrixes {
 		for _, s := range m {
@@ -878,7 +879,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 			if i != matrixArgIndex {
 				otherArgs[i] = ev.eval(e).(Matrix)
 				otherInArgs[i] = Vector{Sample{}}
-				// (callum) this is just building args for later procesing so I don't think we need to track samples here
 				inArgs[i] = otherInArgs[i]
 			}
 		}
@@ -937,7 +937,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 				// Only buffer stepRange milliseconds from the second step on.
 				it.ReduceDelta(stepRange)
 			}
-			// (callum) I think we still need to track number of samples here
 			if len(ss.Points) > 0 {
 				if ev.currentSamples < ev.maxSamples {
 					mat = append(mat, ss)
@@ -964,7 +963,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
 				for j := range mat[i].Points {
 					mat[i].Points[j].V = -mat[i].Points[j].V
-					// (callum) shouldn't need to track number of samples here, we're just modifiying the results from ev.eval a few lines above
 				}
 			}
 			if mat.ContainsSameLabelset() {
@@ -1029,7 +1027,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
-					// (callum) we need to track number of samples here too
 					if ev.currentSamples < ev.maxSamples {
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
 						ev.currentSamples++
@@ -1050,7 +1047,6 @@ func (ev *evaluator) eval(expr Expr) Value {
 		if ev.startTimestamp != ev.endTimestamp {
 			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
 		}
-		// (callum) no need to track samples here since we do it in matrixSelector
 		return ev.matrixSelector(e)
 	}
 
@@ -1148,7 +1144,6 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
 
-		// (callum) no need to update # of samples here, it's done in matrixIterSlice
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
 		} else {
