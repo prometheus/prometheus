@@ -506,7 +506,15 @@ func (t *Test) clear() {
 	}
 	t.storage = testutil.NewStorage(t)
 
-	t.queryEngine = NewEngine(nil, nil, 20, 10*time.Second)
+	opts := EngineOpts{
+		Logger:        nil,
+		Reg:           nil,
+		MaxConcurrent: 20,
+		MaxSamples:    1000,
+		Timeout:       100 * time.Second,
+	}
+
+	t.queryEngine = NewEngine(opts)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
