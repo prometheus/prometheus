@@ -133,7 +133,62 @@ value: <number>
 
 ## Example 
 
-This is an example input files for unit testing which passes the test. `alerts.yml` contains the alerting rule, `tests.yml` is the test file which follows the syntax above.
+This is an example input file for unit testing which passes the test. `test.yml` is the test file which follows the syntax above and `alerts.yml` contains the alerting rules.
+
+With `alerts.yml` in the same directory, run `./promtool test rules test.yml`.
+
+### `test.yml`
+
+```yaml
+# This is the main input for unit testing. 
+# Only this file is passed as command line argument.
+
+rule_files:
+    - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+    # Test 1.
+    - interval: 1m
+      # Series data.
+      input_series:
+          - series: 'up{job="prometheus", instance="localhost:9090"}'
+            values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+          - series: 'up{job="node_exporter", instance="localhost:9100"}'
+            values: '1+0x6 0 0 0 0 0 0 0 0' # 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0
+          - series: 'go_goroutines{job="prometheus", instance="localhost:9090"}'
+            values: '10+10x2 30+20x5' # 10 20 30 30 50 70 90 110 130
+          - series: 'go_goroutines{job="node_exporter", instance="localhost:9100"}'
+            values: '10+10x7 10+30x4' # 10 20 30 40 50 60 70 80 10 40 70 100 130
+
+      # Unit test for alerting rules.
+      alert_rule_test:
+          # Unit test 1.
+          - eval_time: 10m
+            alertname: InstanceDown
+            exp_alerts:
+                # Alert 1.
+                - exp_labels:
+                      severity: page
+                      instance: localhost:9090
+                      job: prometheus
+                  exp_annotations:
+                      summary: "Instance localhost:9090 down"
+                      description: "localhost:9090 of job prometheus has been down for more than 5 minutes."
+      # Unit tests for promql expressions.
+      promql_expr_test:
+          # Unit test 1.
+          - expr: go_goroutines > 5
+            eval_time: 4m
+            exp_samples:
+                # Sample 1.
+                - labels: 'go_goroutines{job="prometheus",instance="localhost:9090"}'
+                  value: 50
+                # Sample 2.
+                - labels: 'go_goroutines{job="node_exporter",instance="localhost:9100"}'
+                  value: 50
+```
 
 ### `alerts.yml`
 
@@ -161,57 +216,4 @@ groups:
     annotations:
         summary: "Instance {{ $labels.instance }} down"
         description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
-```
-
-### `test.yml`
-
-```yaml
-# This is the main input for unit testing. 
-# Only this file is passed as command line argument.
-
-rule_files:
-    - alerts.yml
-
-evaluation_interval: 1m
-
-tests:
-    # Test 1.
-    - interval: 1m
-      # Series data.
-      input_series:
-          - series: 'up{job="prometheus", instance="localhost:9090"}'
-            values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
-          - series: 'up{job="node_exporter", instance="localhost:9100"}'
-            values: '1+0x6 0 0 0 0 0 0 0 0' # 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0
-          - series: 'go_goroutines{job="prometheus", instance="localhost:9090"}'
-            values: '10+10x2 30+20x5' # 10 20 30 30 50 70 90 110 130
-          - series: 'go_goroutines{job="node_exporter", instance="localhost:9100"}'
-            values: '10+10x7 10+30x4' # 10 20 30 40 50 60 70 80 10 40 70 100 130
-
-    # Unit test for alerting rules.
-    alert_rule_test:
-        # Unit test 1.
-        - eval_time: 10m
-          alertname: InstanceDown
-          exp_alerts:
-              # Alert 1.
-              - exp_labels:
-                    severity: page
-                    instance: localhost:9090
-                    job: prometheus
-                exp_annotations:
-                    summary: "Instance localhost:9090 down"
-                    description: "localhost:9090 of job prometheus has been down for more than 5 minutes."
-    # Unit tests for promql expressions.
-    promql_expr_test:
-        # Unit test 1.
-        - expr: go_goroutines > 5
-          eval_time: 4m
-          exp_samples:
-              # Sample 1.
-              - labels: 'go_goroutines{job="prometheus",instance="localhost:9090"}'
-                value: 50
-              # Sample 2.
-              - labels: 'go_goroutines{job="node_exporter",instance="localhost:9100"}'
-                value: 50
 ```
