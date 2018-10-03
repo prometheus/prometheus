@@ -144,7 +144,7 @@ func TestReader(t *testing.T) {
 			if j >= len(c.exp) {
 				t.Fatal("received more records than inserted")
 			}
-			testutil.Equals(t, c.exp[j], rec)
+			testutil.Equals(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 		}
 		if !c.fail && r.Err() != nil {
 			t.Fatalf("unexpected error: %s", r.Err())
@@ -256,6 +256,7 @@ func TestWAL_Repair(t *testing.T) {
 			// We create 3 segments with 3 records each and then corrupt the 2nd record
 			// of the 2nd segment.
 			// As a result we want a repaired WAL with the first 4 records intact.
+			intactRecords := 4
 			w, err := NewSize(nil, nil, dir, 3*pageSize)
 			testutil.Ok(t, err)
 
@@ -306,7 +307,7 @@ func TestWAL_Repair(t *testing.T) {
 				result = append(result, append(b, r.Record()...))
 			}
 			testutil.Ok(t, r.Err())
-			testutil.Equals(t, 4, len(result))
+			testutil.Equals(t, intactRecords, len(result), "Wrong number of intact records")
 
 			for i, r := range result {
 				if !bytes.Equal(records[i], r) {
