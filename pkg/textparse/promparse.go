@@ -12,9 +12,8 @@
 // limitations under the License.
 
 //go:generate go get github.com/cznic/golex
-//go:generate golex -o=lex.l.go lex.l
+//go:generate golex -o=promlex.l.go promlex.l
 
-// Package textparse contains an efficient parser for the Prometheus text format.
 package textparse
 
 import (
@@ -32,7 +31,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 )
 
-type lexer struct {
+type promlexer struct {
 	b     []byte
 	i     int
 	start int
@@ -106,16 +105,16 @@ func (t token) String() string {
 }
 
 // buf returns the buffer of the current token.
-func (l *lexer) buf() []byte {
+func (l *promlexer) buf() []byte {
 	return l.b[l.start:l.i]
 }
 
-func (l *lexer) cur() byte {
+func (l *promlexer) cur() byte {
 	return l.b[l.i]
 }
 
-// next advances the lexer to the next character.
-func (l *lexer) next() byte {
+// next advances the promlexer to the next character.
+func (l *promlexer) next() byte {
 	l.i++
 	if l.i >= len(l.b) {
 		l.err = io.EOF
@@ -129,14 +128,14 @@ func (l *lexer) next() byte {
 	return l.b[l.i]
 }
 
-func (l *lexer) Error(es string) {
+func (l *promlexer) Error(es string) {
 	l.err = errors.New(es)
 }
 
-// Parser parses samples from a byte slice of samples in the official
+// PromParser parses samples from a byte slice of samples in the official
 // Prometheus text exposition format.
-type Parser struct {
-	l       *lexer
+type PromParser struct {
+	l       *promlexer
 	series  []byte
 	text    []byte
 	mtype   MetricType
@@ -148,13 +147,13 @@ type Parser struct {
 }
 
 // New returns a new parser of the byte slice.
-func New(b []byte) *Parser {
-	return &Parser{l: &lexer{b: append(b, '\n')}}
+func NewPromParser(b []byte) Parser {
+	return &PromParser{l: &promlexer{b: append(b, '\n')}}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
 // of the current sample.
-func (p *Parser) Series() ([]byte, *int64, float64) {
+func (p *PromParser) Series() ([]byte, *int64, float64) {
 	if p.hasTS {
 		return p.series, &p.ts, p.val
 	}
@@ -164,7 +163,7 @@ func (p *Parser) Series() ([]byte, *int64, float64) {
 // Help returns the metric name and help text in the current entry.
 // Must only be called after Next returned a help entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *Parser) Help() ([]byte, []byte) {
+func (p *PromParser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 
 	// Replacer causes allocations. Replace only when necessary.
@@ -177,20 +176,20 @@ func (p *Parser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *Parser) Type() ([]byte, MetricType) {
+func (p *PromParser) Type() ([]byte, MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 
 // Comment returns the text of the current comment.
 // Must only be called after Next returned a comment entry.
 // The returned byte slice becomes invalid after the next call to Next.
-func (p *Parser) Comment() []byte {
+func (p *PromParser) Comment() []byte {
 	return p.text
 }
 
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
-func (p *Parser) Metric(l *labels.Labels) string {
+func (p *PromParser) Metric(l *labels.Labels) string {
 	// Allocate the full immutable string immediately, so we just
 	// have to create references on it below.
 	s := string(p.series)
@@ -221,9 +220,9 @@ func (p *Parser) Metric(l *labels.Labels) string {
 	return s
 }
 
-// nextToken returns the next token from the lexer. It skips over tabs
+// nextToken returns the next token from the promlexer. It skips over tabs
 // and spaces.
-func (p *Parser) nextToken() token {
+func (p *PromParser) nextToken() token {
 	for {
 		if tok := p.l.Lex(); tok != tWhitespace {
 			return tok
@@ -231,35 +230,13 @@ func (p *Parser) nextToken() token {
 	}
 }
 
-// Entry represents the type of a parsed entry.
-type Entry int
-
-const (
-	EntryInvalid Entry = -1
-	EntryType    Entry = 0
-	EntryHelp    Entry = 1
-	EntrySeries  Entry = 2
-	EntryComment Entry = 3
-)
-
-// MetricType represents metric type values.
-type MetricType string
-
-const (
-	MetricTypeCounter   = "counter"
-	MetricTypeGauge     = "gauge"
-	MetricTypeHistogram = "histogram"
-	MetricTypeSummary   = "summary"
-	MetricTypeUntyped   = "untyped"
-)
-
 func parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q", exp, got)
 }
 
 // Next advances the parser to the next sample. It returns false if no
 // more samples were read or an error occurred.
-func (p *Parser) Next() (Entry, error) {
+func (p *PromParser) Next() (Entry, error) {
 	var err error
 
 	p.start = p.l.i
@@ -371,7 +348,7 @@ func (p *Parser) Next() (Entry, error) {
 	return EntryInvalid, err
 }
 
-func (p *Parser) parseLVals() error {
+func (p *PromParser) parseLVals() error {
 	t := p.nextToken()
 	for {
 		switch t {
@@ -393,7 +370,7 @@ func (p *Parser) parseLVals() error {
 			return fmt.Errorf("invalid UTF-8 label value")
 		}
 
-		// The lexer ensures the value string is quoted. Strip first
+		// The promlexer ensures the value string is quoted. Strip first
 		// and last character.
 		p.offsets = append(p.offsets, p.l.start+1, p.l.i-1)
 

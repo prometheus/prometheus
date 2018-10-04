@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParse(t *testing.T) {
+func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # 	TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
@@ -164,7 +164,7 @@ testmetric{label="\"bar\""} 1`
 		},
 	}
 
-	p := New([]byte(input))
+	p := NewPromParser([]byte(input))
 	i := 0
 
 	var res labels.Labels
@@ -207,7 +207,7 @@ testmetric{label="\"bar\""} 1`
 	require.Equal(t, len(exp), i)
 }
 
-func TestParseErrors(t *testing.T) {
+func TestPromParseErrors(t *testing.T) {
 	cases := []struct {
 		input string
 		err   string
@@ -247,7 +247,7 @@ func TestParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := New([]byte(c.input))
+		p := NewPromParser([]byte(c.input))
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -257,7 +257,7 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
-func TestNullByteHandling(t *testing.T) {
+func TestPromNullByteHandling(t *testing.T) {
 	cases := []struct {
 		input string
 		err   string
@@ -297,7 +297,7 @@ func TestNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := New([]byte(c.input))
+		p := NewPromParser([]byte(c.input))
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -314,11 +314,11 @@ func TestNullByteHandling(t *testing.T) {
 }
 
 const (
-	testdataSampleCount = 410
+	promtestdataSampleCount = 410
 )
 
-func BenchmarkParse(b *testing.B) {
-	for _, fn := range []string{"testdata.txt", "testdata.nometa.txt"} {
+func BenchmarkPromParse(b *testing.B) {
+	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 		f, err := os.Open(fn)
 		require.NoError(b, err)
 		defer f.Close()
@@ -329,12 +329,12 @@ func BenchmarkParse(b *testing.B) {
 		b.Run("no-decode-metric/"+fn, func(b *testing.B) {
 			total := 0
 
-			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i += testdataSampleCount {
-				p := New(buf)
+			for i := 0; i < b.N; i += promtestdataSampleCount {
+				p := NewPromParser(buf)
 
 			Outer:
 				for i < b.N {
@@ -357,12 +357,12 @@ func BenchmarkParse(b *testing.B) {
 		b.Run("decode-metric/"+fn, func(b *testing.B) {
 			total := 0
 
-			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i += testdataSampleCount {
-				p := New(buf)
+			for i := 0; i < b.N; i += promtestdataSampleCount {
+				p := NewPromParser(buf)
 
 			Outer:
 				for i < b.N {
@@ -390,12 +390,12 @@ func BenchmarkParse(b *testing.B) {
 			total := 0
 			res := make(labels.Labels, 0, 5)
 
-			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i += testdataSampleCount {
-				p := New(buf)
+			for i := 0; i < b.N; i += promtestdataSampleCount {
+				p := NewPromParser(buf)
 
 			Outer:
 				for i < b.N {
@@ -420,13 +420,13 @@ func BenchmarkParse(b *testing.B) {
 			_ = total
 		})
 		b.Run("expfmt-text/"+fn, func(b *testing.B) {
-			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
+			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
 			b.ReportAllocs()
 			b.ResetTimer()
 
 			total := 0
 
-			for i := 0; i < b.N; i += testdataSampleCount {
+			for i := 0; i < b.N; i += promtestdataSampleCount {
 				var (
 					decSamples = make(model.Vector, 0, 50)
 				)
@@ -450,7 +450,7 @@ func BenchmarkParse(b *testing.B) {
 	}
 }
 func BenchmarkGzip(b *testing.B) {
-	for _, fn := range []string{"testdata.txt", "testdata.nometa.txt"} {
+	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 		b.Run(fn, func(b *testing.B) {
 			f, err := os.Open(fn)
 			require.NoError(b, err)
@@ -466,7 +466,7 @@ func BenchmarkGzip(b *testing.B) {
 			gbuf, err := ioutil.ReadAll(&buf)
 			require.NoError(b, err)
 
-			k := b.N / testdataSampleCount
+			k := b.N / promtestdataSampleCount
 
 			b.ReportAllocs()
 			b.SetBytes(int64(k) * int64(n))
