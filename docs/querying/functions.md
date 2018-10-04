@@ -109,6 +109,11 @@ Special cases are:
 * `Exp(+Inf) = +Inf`
 * `Exp(NaN) = NaN`
 
+## `fill_absent()`
+
+`fill_absent(v instant-vector, val=0 scalar)` fills all absent values in `v`
+to have all value of `val`.
+
 ## `floor()`
 
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down

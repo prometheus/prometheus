@@ -308,6 +308,21 @@ eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
 	{src="clamp-b"}	0
 	{src="clamp-c"}	70
 
+# Tests for fill_absent()
+load 5m
+	test_fill_absent{src="clamp-a"}	-50
+	test_fill_absent{src="clamp-b"}	NaN
+	test_fill_absent{src="clamp-c"}	100
+
+eval instant at 0m fill_absent(test_fill_absent)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	0
+	{src="clamp-c"}	100
+
+eval instant at 0m fill_absent(test_fill_absent, 50)
+	{src="clamp-a"}	-50
+	{src="clamp-b"}	50
+	{src="clamp-c"}	100
 
 # Tests for sort/sort_desc.
 clear

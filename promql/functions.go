@@ -318,6 +318,44 @@ func funcClampMin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return enh.out
 }
 
+// === fill_absent(Vector ValueTypeVector, val Scalar) Vector ===
+func funcFillAbsent(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+	vec := vals[0].(Vector)
+
+	// We already have non-empty value
+	if len(vec) > 0 {
+		for _, el := range vec {
+			enh.out = append(enh.out, Sample{
+				Metric: enh.dropMetricName(el.Metric),
+				Point:  Point{V: el.V},
+			})
+		}
+
+		return enh.out
+	}
+
+	fillValue := float64(0)
+
+	if len(vals) >= 2 {
+		fillValue = vals[1].(Vector)[0].Point.V
+	}
+
+	m := []labels.Label{}
+
+	// Rebuilding labels for empty value
+	if vs, ok := args[0].(*VectorSelector); ok {
+		for _, ma := range vs.LabelMatchers {
+			m = append(m, labels.Label{Name: ma.Name, Value: ma.Value})
+		}
+	}
+
+	return append(enh.out,
+		Sample{
+			Metric: labels.New(m...),
+			Point:  Point{V: fillValue},
+		})
+}
+
 // === round(Vector ValueTypeVector, toNearest=1 Scalar) Vector ===
 func funcRound(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
@@ -948,6 +986,13 @@ var functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 		Call:       funcClampMin,
+	},
+	"fill_absent": {
+		Name:       "fill_absent",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+		Call:       funcFillAbsent,
 	},
 	"count_over_time": {
 		Name:       "count_over_time",
