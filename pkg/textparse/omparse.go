@@ -12,7 +12,7 @@
 // limitations under the License.
 
 //go:generate go get github.com/cznic/golex
-//go:generate golex -o=promlex.l.go promlex.l
+//go:generate golex -o=omlex.l.go omlex.l
 
 package textparse
 
@@ -25,13 +25,12 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
 
-type promlexer struct {
+type omlexer struct {
 	b     []byte
 	i     int
 	start int
@@ -39,88 +38,17 @@ type promlexer struct {
 	state int
 }
 
-type token int
-
-const (
-	tInvalid   token = -1
-	tEOF       token = 0
-	tLinebreak token = iota
-	tWhitespace
-	tHelp
-	tType
-	tUnit
-	tEofWord
-	tText
-	tComment
-	tBlank
-	tMName
-	tBraceOpen
-	tBraceClose
-	tLName
-	tLValue
-	tComma
-	tEqual
-	tTimestamp
-	tValue
-)
-
-func (t token) String() string {
-	switch t {
-	case tInvalid:
-		return "INVALID"
-	case tEOF:
-		return "EOF"
-	case tLinebreak:
-		return "LINEBREAK"
-	case tWhitespace:
-		return "WHITESPACE"
-	case tHelp:
-		return "HELP"
-	case tType:
-		return "TYPE"
-	case tUnit:
-		return "UNIT"
-	case tEofWord:
-		return "EOFWORD"
-	case tText:
-		return "TEXT"
-	case tComment:
-		return "COMMENT"
-	case tBlank:
-		return "BLANK"
-	case tMName:
-		return "MNAME"
-	case tBraceOpen:
-		return "BOPEN"
-	case tBraceClose:
-		return "BCLOSE"
-	case tLName:
-		return "LNAME"
-	case tLValue:
-		return "LVALUE"
-	case tEqual:
-		return "EQUAL"
-	case tComma:
-		return "COMMA"
-	case tTimestamp:
-		return "TIMESTAMP"
-	case tValue:
-		return "VALUE"
-	}
-	return fmt.Sprintf("<invalid: %d>", t)
-}
-
 // buf returns the buffer of the current token.
-func (l *promlexer) buf() []byte {
+func (l *omlexer) buf() []byte {
 	return l.b[l.start:l.i]
 }
 
-func (l *promlexer) cur() byte {
+func (l *omlexer) cur() byte {
 	return l.b[l.i]
 }
 
-// next advances the promlexer to the next character.
-func (l *promlexer) next() byte {
+// next advances the omlexer to the next character.
+func (l *omlexer) next() byte {
 	l.i++
 	if l.i >= len(l.b) {
 		l.err = io.EOF
@@ -130,18 +58,22 @@ func (l *promlexer) next() byte {
 	// they are allowed, consume them here immediately.
 	for l.b[l.i] == 0 && (l.state == sLValue || l.state == sMeta2 || l.state == sComment) {
 		l.i++
+		if l.i >= len(l.b) {
+			l.err = io.EOF
+			return byte(tEOF)
+		}
 	}
 	return l.b[l.i]
 }
 
-func (l *promlexer) Error(es string) {
+func (l *omlexer) Error(es string) {
 	l.err = errors.New(es)
 }
 
-// PromParser parses samples from a byte slice of samples in the official
-// Prometheus text exposition format.
-type PromParser struct {
-	l       *promlexer
+// OMParser parses samples from a byte slice of samples in the official
+// OpenMetrics text exposition format.
+type OMParser struct {
+	l       *omlexer
 	series  []byte
 	text    []byte
 	mtype   MetricType
@@ -153,13 +85,13 @@ type PromParser struct {
 }
 
 // New returns a new parser of the byte slice.
-func NewPromParser(b []byte) Parser {
-	return &PromParser{l: &promlexer{b: append(b, '\n')}}
+func NewOMParser(b []byte) Parser {
+	return &OMParser{l: &omlexer{b: b}}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
 // of the current sample.
-func (p *PromParser) Series() ([]byte, *int64, float64) {
+func (p *OMParser) Series() ([]byte, *int64, float64) {
 	if p.hasTS {
 		return p.series, &p.ts, p.val
 	}
@@ -169,12 +101,13 @@ func (p *PromParser) Series() ([]byte, *int64, float64) {
 // Help returns the metric name and help text in the current entry.
 // Must only be called after Next returned a help entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Help() ([]byte, []byte) {
+func (p *OMParser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 
 	// Replacer causes allocations. Replace only when necessary.
 	if strings.IndexByte(yoloString(p.text), byte('\\')) >= 0 {
-		return m, []byte(helpReplacer.Replace(string(p.text)))
+		// OpenMetrics always uses the Prometheus format label value escaping.
+		return m, []byte(lvalReplacer.Replace(string(p.text)))
 	}
 	return m, p.text
 }
@@ -182,28 +115,28 @@ func (p *PromParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Type() ([]byte, MetricType) {
+func (p *OMParser) Type() ([]byte, MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 
 // Unit returns the metric name and unit in the current entry.
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Unit() ([]byte, []byte) {
+func (p *OMParser) Unit() ([]byte, []byte) {
 	// The Prometheus format does not have units.
-	return nil, nil
+	return p.l.b[p.offsets[0]:p.offsets[1]], p.text
 }
 
 // Comment returns the text of the current comment.
 // Must only be called after Next returned a comment entry.
 // The returned byte slice becomes invalid after the next call to Next.
-func (p *PromParser) Comment() []byte {
+func (p *OMParser) Comment() []byte {
 	return p.text
 }
 
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
-func (p *PromParser) Metric(l *labels.Labels) string {
+func (p *OMParser) Metric(l *labels.Labels) string {
 	// Allocate the full immutable string immediately, so we just
 	// have to create references on it below.
 	s := string(p.series)
@@ -234,36 +167,29 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	return s
 }
 
-// nextToken returns the next token from the promlexer. It skips over tabs
-// and spaces.
-func (p *PromParser) nextToken() token {
-	for {
-		if tok := p.l.Lex(); tok != tWhitespace {
-			return tok
-		}
-	}
-}
-
-func parseError(exp string, got token) error {
-	return fmt.Errorf("%s, got %q", exp, got)
+// nextToken returns the next token from the omlexer.
+func (p *OMParser) nextToken() token {
+	tok := p.l.Lex()
+	return tok
 }
 
 // Next advances the parser to the next sample. It returns false if no
 // more samples were read or an error occurred.
-func (p *PromParser) Next() (Entry, error) {
+func (p *OMParser) Next() (Entry, error) {
 	var err error
 
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
 
 	switch t := p.nextToken(); t {
-	case tEOF:
+	case tEofWord:
+		if t := p.nextToken(); t != tEOF {
+			return EntryInvalid, fmt.Errorf("unexpected data after # EOF")
+		}
 		return EntryInvalid, io.EOF
-	case tLinebreak:
-		// Allow full blank lines.
-		return p.Next()
-
-	case tHelp, tType:
+	case tEOF:
+		return EntryInvalid, parseError("unexpected end of data", t)
+	case tHelp, tType, tUnit:
 		switch t := p.nextToken(); t {
 		case tMName:
 			p.offsets = append(p.offsets, p.l.start, p.l.i)
@@ -273,7 +199,7 @@ func (p *PromParser) Next() (Entry, error) {
 		switch t := p.nextToken(); t {
 		case tText:
 			if len(p.l.buf()) > 1 {
-				p.text = p.l.buf()[1:]
+				p.text = p.l.buf()[1 : len(p.l.buf())-1]
 			} else {
 				p.text = []byte{}
 			}
@@ -289,9 +215,15 @@ func (p *PromParser) Next() (Entry, error) {
 				p.mtype = MetricTypeGauge
 			case "histogram":
 				p.mtype = MetricTypeHistogram
+			case "gaugehistogram":
+				p.mtype = MetricTypeGaugeHistogram
 			case "summary":
 				p.mtype = MetricTypeSummary
-			case "untyped":
+			case "info":
+				p.mtype = MetricTypeInfo
+			case "stateset":
+				p.mtype = MetricTypeStateset
+			case "unknown":
 				p.mtype = MetricTypeUnknown
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
@@ -301,21 +233,21 @@ func (p *PromParser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("help text is not a valid utf8 string")
 			}
 		}
-		if t := p.nextToken(); t != tLinebreak {
-			return EntryInvalid, parseError("linebreak expected after metadata", t)
-		}
 		switch t {
 		case tHelp:
 			return EntryHelp, nil
 		case tType:
 			return EntryType, nil
+		case tUnit:
+			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
+			u := yoloString(p.text)
+			if len(u) > 0 {
+				if !strings.HasSuffix(m, u) || len(m) < len(u)+1 || p.l.b[p.offsets[1]-len(u)-1] != '_' {
+					return EntryInvalid, fmt.Errorf("unit not a suffix of metric %q", m)
+				}
+			}
+			return EntryUnit, nil
 		}
-	case tComment:
-		p.text = p.l.buf()
-		if t := p.nextToken(); t != tLinebreak {
-			return EntryInvalid, parseError("linebreak expected after comment", t)
-		}
-		return EntryComment, nil
 
 	case tMName:
 		p.offsets = append(p.offsets, p.l.i)
@@ -332,7 +264,7 @@ func (p *PromParser) Next() (Entry, error) {
 		if t2 != tValue {
 			return EntryInvalid, parseError("expected value after metric", t)
 		}
-		if p.val, err = strconv.ParseFloat(yoloString(p.l.buf()), 64); err != nil {
+		if p.val, err = strconv.ParseFloat(yoloString(p.l.buf()[1:]), 64); err != nil {
 			return EntryInvalid, err
 		}
 		// Ensure canonical NaN value.
@@ -345,9 +277,12 @@ func (p *PromParser) Next() (Entry, error) {
 			break
 		case tTimestamp:
 			p.hasTS = true
-			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
+			var ts float64
+			// A float is enough to hold what we need for millisecond resolution.
+			if ts, err = strconv.ParseFloat(yoloString(p.l.buf()[1:]), 64); err != nil {
 				return EntryInvalid, err
 			}
+			p.ts = int64(ts * 1000)
 			if t2 := p.nextToken(); t2 != tLinebreak {
 				return EntryInvalid, parseError("expected next entry after timestamp", t)
 			}
@@ -357,21 +292,40 @@ func (p *PromParser) Next() (Entry, error) {
 		return EntrySeries, nil
 
 	default:
-		err = fmt.Errorf("%q is not a valid start token", t)
+		err = fmt.Errorf("%q %q is not a valid start token", t, string(p.l.cur()))
 	}
 	return EntryInvalid, err
 }
 
-func (p *PromParser) parseLVals() error {
-	t := p.nextToken()
+func (p *OMParser) parseLVals() error {
+	first := true
 	for {
+		t := p.nextToken()
 		switch t {
 		case tBraceClose:
 			return nil
+		case tComma:
+			if first {
+				return parseError("expected label name or left brace", t)
+			}
+			t = p.nextToken()
+			if t != tLName {
+				return parseError("expected label name", t)
+			}
 		case tLName:
+			if !first {
+				return parseError("expected comma", t)
+			}
 		default:
-			return parseError("expected label name", t)
+			if first {
+				return parseError("expected label name or left brace", t)
+			}
+			return parseError("expected comma or left brace", t)
+
 		}
+		first = false
+		// t is now a label name.
+
 		p.offsets = append(p.offsets, p.l.start, p.l.i)
 
 		if t := p.nextToken(); t != tEqual {
@@ -384,28 +338,9 @@ func (p *PromParser) parseLVals() error {
 			return fmt.Errorf("invalid UTF-8 label value")
 		}
 
-		// The promlexer ensures the value string is quoted. Strip first
+		// The omlexer ensures the value string is quoted. Strip first
 		// and last character.
 		p.offsets = append(p.offsets, p.l.start+1, p.l.i-1)
 
-		// Free trailing commas are allowed.
-		if t = p.nextToken(); t == tComma {
-			t = p.nextToken()
-		}
 	}
-}
-
-var lvalReplacer = strings.NewReplacer(
-	`\"`, "\"",
-	`\\`, "\\",
-	`\n`, "\n",
-)
-
-var helpReplacer = strings.NewReplacer(
-	`\\`, "\\",
-	`\n`, "\n",
-)
-
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
 }

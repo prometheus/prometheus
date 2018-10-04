@@ -317,136 +317,142 @@ const (
 	promtestdataSampleCount = 410
 )
 
-func BenchmarkPromParse(b *testing.B) {
-	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
-		f, err := os.Open(fn)
-		require.NoError(b, err)
-		defer f.Close()
+func BenchmarkParse(b *testing.B) {
+	for parserName, parser := range map[string]func([]byte) Parser{
+		"prometheus":  NewPromParser,
+		"openmetrics": NewOMParser,
+	} {
 
-		buf, err := ioutil.ReadAll(f)
-		require.NoError(b, err)
+		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
+			f, err := os.Open(fn)
+			require.NoError(b, err)
+			defer f.Close()
 
-		b.Run("no-decode-metric/"+fn, func(b *testing.B) {
-			total := 0
+			buf, err := ioutil.ReadAll(f)
+			require.NoError(b, err)
 
-			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
-			b.ReportAllocs()
-			b.ResetTimer()
+			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
+				total := 0
 
-			for i := 0; i < b.N; i += promtestdataSampleCount {
-				p := NewPromParser(buf)
+				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.ReportAllocs()
+				b.ResetTimer()
 
-			Outer:
-				for i < b.N {
-					t, err := p.Next()
-					switch t {
-					case EntryInvalid:
-						if err == io.EOF {
-							break Outer
+				for i := 0; i < b.N; i += promtestdataSampleCount {
+					p := parser(buf)
+
+				Outer:
+					for i < b.N {
+						t, err := p.Next()
+						switch t {
+						case EntryInvalid:
+							if err == io.EOF {
+								break Outer
+							}
+							b.Fatal(err)
+						case EntrySeries:
+							m, _, _ := p.Series()
+							total += len(m)
+							i++
 						}
-						b.Fatal(err)
-					case EntrySeries:
-						m, _, _ := p.Series()
-						total += len(m)
-						i++
 					}
 				}
-			}
-			_ = total
-		})
-		b.Run("decode-metric/"+fn, func(b *testing.B) {
-			total := 0
+				_ = total
+			})
+			b.Run(parserName+"/decode-metric/"+fn, func(b *testing.B) {
+				total := 0
 
-			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
-			b.ReportAllocs()
-			b.ResetTimer()
+				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.ReportAllocs()
+				b.ResetTimer()
 
-			for i := 0; i < b.N; i += promtestdataSampleCount {
-				p := NewPromParser(buf)
+				for i := 0; i < b.N; i += promtestdataSampleCount {
+					p := parser(buf)
 
-			Outer:
-				for i < b.N {
-					t, err := p.Next()
-					switch t {
-					case EntryInvalid:
-						if err == io.EOF {
-							break Outer
+				Outer:
+					for i < b.N {
+						t, err := p.Next()
+						switch t {
+						case EntryInvalid:
+							if err == io.EOF {
+								break Outer
+							}
+							b.Fatal(err)
+						case EntrySeries:
+							m, _, _ := p.Series()
+
+							res := make(labels.Labels, 0, 5)
+							p.Metric(&res)
+
+							total += len(m)
+							i++
 						}
-						b.Fatal(err)
-					case EntrySeries:
-						m, _, _ := p.Series()
-
-						res := make(labels.Labels, 0, 5)
-						p.Metric(&res)
-
-						total += len(m)
-						i++
 					}
 				}
-			}
-			_ = total
-		})
-		b.Run("decode-metric-reuse/"+fn, func(b *testing.B) {
-			total := 0
-			res := make(labels.Labels, 0, 5)
+				_ = total
+			})
+			b.Run(parserName+"/decode-metric-reuse/"+fn, func(b *testing.B) {
+				total := 0
+				res := make(labels.Labels, 0, 5)
 
-			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
-			b.ReportAllocs()
-			b.ResetTimer()
+				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.ReportAllocs()
+				b.ResetTimer()
 
-			for i := 0; i < b.N; i += promtestdataSampleCount {
-				p := NewPromParser(buf)
+				for i := 0; i < b.N; i += promtestdataSampleCount {
+					p := parser(buf)
 
-			Outer:
-				for i < b.N {
-					t, err := p.Next()
-					switch t {
-					case EntryInvalid:
-						if err == io.EOF {
-							break Outer
+				Outer:
+					for i < b.N {
+						t, err := p.Next()
+						switch t {
+						case EntryInvalid:
+							if err == io.EOF {
+								break Outer
+							}
+							b.Fatal(err)
+						case EntrySeries:
+							m, _, _ := p.Series()
+
+							p.Metric(&res)
+
+							total += len(m)
+							i++
+							res = res[:0]
 						}
-						b.Fatal(err)
-					case EntrySeries:
-						m, _, _ := p.Series()
-
-						p.Metric(&res)
-
-						total += len(m)
-						i++
-						res = res[:0]
 					}
 				}
-			}
-			_ = total
-		})
-		b.Run("expfmt-text/"+fn, func(b *testing.B) {
-			b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
-			b.ReportAllocs()
-			b.ResetTimer()
+				_ = total
+			})
+			b.Run("expfmt-text/"+fn, func(b *testing.B) {
+				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.ReportAllocs()
+				b.ResetTimer()
 
-			total := 0
+				total := 0
 
-			for i := 0; i < b.N; i += promtestdataSampleCount {
-				var (
-					decSamples = make(model.Vector, 0, 50)
-				)
-				sdec := expfmt.SampleDecoder{
-					Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
-					Opts: &expfmt.DecodeOptions{
-						Timestamp: model.TimeFromUnixNano(0),
-					},
-				}
-
-				for {
-					if err = sdec.Decode(&decSamples); err != nil {
-						break
+				for i := 0; i < b.N; i += promtestdataSampleCount {
+					var (
+						decSamples = make(model.Vector, 0, 50)
+					)
+					sdec := expfmt.SampleDecoder{
+						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
+						Opts: &expfmt.DecodeOptions{
+							Timestamp: model.TimeFromUnixNano(0),
+						},
 					}
-					total += len(decSamples)
-					decSamples = decSamples[:0]
+
+					for {
+						if err = sdec.Decode(&decSamples); err != nil {
+							break
+						}
+						total += len(decSamples)
+						decSamples = decSamples[:0]
+					}
 				}
-			}
-			_ = total
-		})
+				_ = total
+			})
+		}
 	}
 }
 func BenchmarkGzip(b *testing.B) {

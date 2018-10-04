@@ -18,7 +18,7 @@ import (
 )
 
 // Parser parses samples from a byte slice of samples in the official
-// Prometheus text exposition format.
+// Prometheus and OpenMetrics text exposition formats.
 type Parser interface {
 	// Series returns the bytes of the series, the timestamp if set, and the value
 	// of the current sample.
@@ -33,6 +33,11 @@ type Parser interface {
 	// Must only be called after Next returned a type entry.
 	// The returned byte slices become invalid after the next call to Next.
 	Type() ([]byte, MetricType)
+
+	// Unit returns the metric name and unit in the current entry.
+	// Must only be called after Next returned a unit entry.
+	// The returned byte slices become invalid after the next call to Next.
+	Unit() ([]byte, []byte)
 
 	// Comment returns the text of the current comment.
 	// Must only be called after Next returned a comment entry.
@@ -62,15 +67,19 @@ const (
 	EntryHelp    Entry = 1
 	EntrySeries  Entry = 2
 	EntryComment Entry = 3
+	EntryUnit    Entry = 4
 )
 
 // MetricType represents metric type values.
 type MetricType string
 
 const (
-	MetricTypeCounter   = "counter"
-	MetricTypeGauge     = "gauge"
-	MetricTypeHistogram = "histogram"
-	MetricTypeSummary   = "summary"
-	MetricTypeUntyped   = "untyped"
+	MetricTypeCounter        = "counter"
+	MetricTypeGauge          = "gauge"
+	MetricTypeHistogram      = "histogram"
+	MetricTypeGaugeHistogram = "gaugehistogram"
+	MetricTypeSummary        = "summary"
+	MetricTypeInfo           = "info"
+	MetricTypeStateset       = "stateset"
+	MetricTypeUnknown        = "unknown"
 )
