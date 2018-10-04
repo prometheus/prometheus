@@ -310,19 +310,18 @@ eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
 
 # Tests for fill_absent()
 load 5m
-	test_fill_absent{src="clamp-a"}	-50
-	test_fill_absent{src="clamp-b"}	NaN
-	test_fill_absent{src="clamp-c"}	100
+	test_fill_absent{src="fill-a"}	50
+	test_fill_absent{src="fill-b"}	100
 
-eval instant at 0m fill_absent(test_fill_absent)
-	{src="clamp-a"}	-50
-	{src="clamp-b"}	0
-	{src="clamp-c"}	100
+eval instant at 0m absent(test_fill_absent)
+	{src="fill-a"}	50
+	{src="fill-b"}	100
 
-eval instant at 0m fill_absent(test_fill_absent, 50)
-	{src="clamp-a"}	-50
-	{src="clamp-b"}	50
-	{src="clamp-c"}	100
+eval instant at 50m absent(absen_nonexistent1{job="testjob", instance="testinstance", method=~".x"})
+	{instance="testinstance", job="testjob"} 0
+
+eval instant at 0m absent(absen_nonexistent2{job="testjob", instance="testinstance", method=~".x"}, 50)
+	{instance="testinstance", job="testjob"} 50
 
 # Tests for sort/sort_desc.
 clear
