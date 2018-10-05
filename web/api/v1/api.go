@@ -28,6 +28,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
@@ -49,6 +51,11 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
+)
+
+const (
+	namespace = "prometheus"
+	subsystem = "api"
 )
 
 type status string
@@ -77,6 +84,13 @@ var corsHeaders = map[string]string{
 	"Access-Control-Allow-Origin":   "*",
 	"Access-Control-Expose-Headers": "Date",
 }
+
+var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "remote_read_queries",
+	Help:      "The current number of remote read queries being executed or waiting.",
+})
 
 type apiError struct {
 	typ errorType
@@ -781,10 +795,12 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		}
 
 		querier, err := api.Queryable.Querier(r.Context(), from, through)
+		remoteReadQueries.Inc()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		defer remoteReadQueries.Dec()
 		defer querier.Close()
 
 		// Change equality matchers which match external labels
@@ -1085,6 +1101,7 @@ func parseDuration(s string) (time.Duration, error) {
 
 func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
+	prometheus.MustRegister(remoteReadQueries)
 }
 
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
