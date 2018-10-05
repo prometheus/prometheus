@@ -187,6 +187,7 @@ func newHistogram(desc *Desc, opts HistogramOpts, labelValues ...string) Histogr
 		desc:        desc,
 		upperBounds: opts.Buckets,
 		labelPairs:  makeLabelPairs(desc, labelValues),
+		counts:      [2]*histogramCounts{&histogramCounts{}, &histogramCounts{}},
 	}
 	for i, upperBound := range h.upperBounds {
 		if i < len(h.upperBounds)-1 {
@@ -223,6 +224,21 @@ type histogramCounts struct {
 }
 
 type histogram struct {
+	// countAndHotIdx is a complicated one. For lock-free yet atomic
+	// observations, we need to save the total count of observations again,
+	// combined with the index of the currently-hot counts struct, so that
+	// we can perform the operation on both values atomically. The least
+	// significant bit defines the hot counts struct. The remaining 63 bits
+	// represent the total count of observations. This happens under the
+	// assumption that the 63bit count will never overflow. Rationale: An
+	// observations takes about 30ns. Let's assume it could happen in
+	// 10ns. Overflowing the counter will then take at least (2^63)*10ns,
+	// which is about 3000 years.
+	//
+	// This has to be first in the struct for 64bit alignment. See
+	// http://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	countAndHotIdx uint64
+
 	selfCollector
 	desc     *Desc
 	writeMtx sync.Mutex // Only used in the Write method.
@@ -230,22 +246,11 @@ type histogram struct {
 	upperBounds []float64
 
 	// Two counts, one is "hot" for lock-free observations, the other is
-	// "cold" for writing out a dto.Metric.
-	counts [2]histogramCounts
-
+	// "cold" for writing out a dto.Metric. It has to be an array of
+	// pointers to guarantee 64bit alignment of the histogramCounts, see
+	// http://golang.org/pkg/sync/atomic/#pkg-note-BUG.
+	counts [2]*histogramCounts
 	hotIdx int // Index of currently-hot counts. Only used within Write.
-
-	// This is a complicated one. For lock-free yet atomic observations, we
-	// need to save the total count of observations again, combined with the
-	// index of the currently-hot counts struct, so that we can perform the
-	// operation on both values atomically. The least significant bit
-	// defines the hot counts struct. The remaining 63 bits represent the
-	// total count of observations. This happens under the assumption that
-	// the 63bit count will never overflow. Rationale: An observations takes
-	// about 30ns. Let's assume it could happen in 10ns. Overflowing the
-	// counter will then take at least (2^63)*10ns, which is about 3000
-	// years.
-	countAndHotIdx uint64
 
 	labelPairs []*dto.LabelPair
 }
@@ -270,7 +275,7 @@ func (h *histogram) Observe(v float64) {
 	// 63 bits gets incremented by 1. At the same time, we get the new value
 	// back, which we can use to find the currently-hot counts.
 	n := atomic.AddUint64(&h.countAndHotIdx, 2)
-	hotCounts := &h.counts[n%2]
+	hotCounts := h.counts[n%2]
 
 	if i < len(h.upperBounds) {
 		atomic.AddUint64(&hotCounts.buckets[i], 1)
@@ -322,13 +327,13 @@ func (h *histogram) Write(out *dto.Metric) error {
 	if h.hotIdx == 0 {
 		count = atomic.AddUint64(&h.countAndHotIdx, 1) >> 1
 		h.hotIdx = 1
-		hotCounts = &h.counts[1]
-		coldCounts = &h.counts[0]
+		hotCounts = h.counts[1]
+		coldCounts = h.counts[0]
 	} else {
 		count = atomic.AddUint64(&h.countAndHotIdx, ^uint64(0)) >> 1 // Decrement.
 		h.hotIdx = 0
-		hotCounts = &h.counts[0]
-		coldCounts = &h.counts[1]
+		hotCounts = h.counts[0]
+		coldCounts = h.counts[1]
 	}
 
 	// Now we have to wait for the now-declared-cold counts to actually cool
