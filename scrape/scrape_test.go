@@ -615,13 +615,13 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	)
 	defer cancel()
 
-	total, _, err := sl.append([]byte(`
-# TYPE test_metric counter
+	total, _, err := sl.append([]byte(`# TYPE test_metric counter
 # HELP test_metric some help text
-# other comment
+# UNIT test_metric metric
 test_metric 1
 # TYPE test_metric_no_help gauge
-# HELP test_metric_no_type other help text`), "", time.Now())
+# HELP test_metric_no_type other help text
+# EOF`), "application/openmetrics-text", time.Now())
 	testutil.Ok(t, err)
 	testutil.Equals(t, 1, total)
 
@@ -629,16 +629,19 @@ test_metric 1
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeCounter == md.Type, "unexpected metric type")
 	testutil.Equals(t, "some help text", md.Help)
+	testutil.Equals(t, "metric", md.Unit)
 
 	md, ok = cache.getMetadata("test_metric_no_help")
 	testutil.Assert(t, ok, "expected metadata to be present")
 	testutil.Assert(t, textparse.MetricTypeGauge == md.Type, "unexpected metric type")
 	testutil.Equals(t, "", md.Help)
+	testutil.Equals(t, "", md.Unit)
 
 	md, ok = cache.getMetadata("test_metric_no_type")
 	testutil.Assert(t, ok, "expected metadata to be present")
-	testutil.Assert(t, textparse.MetricTypeUntyped == md.Type, "unexpected metric type")
+	testutil.Assert(t, textparse.MetricTypeUnknown == md.Type, "unexpected metric type")
 	testutil.Equals(t, "other help text", md.Help)
+	testutil.Equals(t, "", md.Unit)
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
@@ -1177,8 +1180,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			accept := r.Header.Get("Accept")
-			if !strings.HasPrefix(accept, "text/plain;") {
-				t.Errorf("Expected Accept header to prefer text/plain, got %q", accept)
+			if !strings.HasPrefix(accept, "application/openmetrics-text;") {
+				t.Errorf("Expected Accept header to prefer application/openmetrics-text, got %q", accept)
 			}
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")

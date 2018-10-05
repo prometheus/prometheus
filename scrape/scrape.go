@@ -451,7 +451,7 @@ type targetScraper struct {
 	buf   *bufio.Reader
 }
 
-const acceptHeader = `text/plain;version=0.0.4;q=1,*/*;q=0.1`
+const acceptHeader = `application/openmetrics-text; version=0.0.1,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 
 var userAgentHeader = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -565,6 +565,7 @@ type metaEntry struct {
 	lastIter uint64 // Last scrape iteration the entry was observed at.
 	typ      textparse.MetricType
 	help     string
+	unit     string
 }
 
 func newScrapeCache() *scrapeCache {
@@ -659,7 +660,7 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUntyped}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
 	e.typ = t
@@ -673,11 +674,27 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUntyped}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
 	if e.help != yoloString(help) {
 		e.help = string(help)
+	}
+	e.lastIter = c.iter
+
+	c.metaMtx.Unlock()
+}
+
+func (c *scrapeCache) setUnit(metric, unit []byte) {
+	c.metaMtx.Lock()
+
+	e, ok := c.metadata[yoloString(metric)]
+	if !ok {
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		c.metadata[string(metric)] = e
+	}
+	if e.unit != yoloString(unit) {
+		e.unit = string(unit)
 	}
 	e.lastIter = c.iter
 
@@ -696,6 +713,7 @@ func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
 		Metric: metric,
 		Type:   m.typ,
 		Help:   m.help,
+		Unit:   m.unit,
 	}, true
 }
 
@@ -710,6 +728,7 @@ func (c *scrapeCache) listMetadata() []MetricMetadata {
 			Metric: m,
 			Type:   e.typ,
 			Help:   e.help,
+			Unit:   e.unit,
 		})
 	}
 	return res
@@ -950,6 +969,9 @@ loop:
 			continue
 		case textparse.EntryHelp:
 			sl.cache.setHelp(p.Help())
+			continue
+		case textparse.EntryUnit:
+			sl.cache.setUnit(p.Unit())
 			continue
 		case textparse.EntryComment:
 			continue

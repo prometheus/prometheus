@@ -85,6 +85,7 @@ type MetricMetadata struct {
 	Metric string
 	Type   textparse.MetricType
 	Help   string
+	Unit   string
 }
 
 func (t *Target) MetadataList() []MetricMetadata {
