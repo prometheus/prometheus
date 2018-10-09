@@ -345,12 +345,12 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	for _, c := range cfg.ServersetSDConfigs {
 		add(c, func() (Discoverer, error) {
-			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper")), nil
+			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper"))
 		})
 	}
 	for _, c := range cfg.NerveSDConfigs {
 		add(c, func() (Discoverer, error) {
-			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve")), nil
+			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve"))
 		})
 	}
 	for _, c := range cfg.EC2SDConfigs {
