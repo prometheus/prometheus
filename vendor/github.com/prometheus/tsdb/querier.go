@@ -892,30 +892,6 @@ func (it *deletedIterator) Err() error {
 	return it.it.Err()
 }
 
-type mockSeriesSet struct {
-	next   func() bool
-	series func() Series
-	err    func() error
-}
-
-func (m *mockSeriesSet) Next() bool { return m.next() }
-func (m *mockSeriesSet) At() Series { return m.series() }
-func (m *mockSeriesSet) Err() error { return m.err() }
-
-func newListSeriesSet(list []Series) *mockSeriesSet {
-	i := -1
-	return &mockSeriesSet{
-		next: func() bool {
-			i++
-			return i < len(list)
-		},
-		series: func() Series {
-			return list[i]
-		},
-		err: func() error { return nil },
-	}
-}
-
 type errSeriesSet struct {
 	err error
 }

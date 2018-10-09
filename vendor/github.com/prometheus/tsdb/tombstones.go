@@ -42,6 +42,9 @@ type TombstoneReader interface {
 	// Iter calls the given function for each encountered interval.
 	Iter(func(uint64, Intervals) error) error
 
+	// Total returns the total count of tombstones.
+	Total() uint64
+
 	// Close any underlying resources
 	Close() error
 }
@@ -183,6 +186,17 @@ func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
 		}
 	}
 	return nil
+}
+
+func (t *memTombstones) Total() uint64 {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	total := uint64(0)
+	for _, ivs := range t.intvlGroups {
+		total += uint64(len(ivs))
+	}
+	return total
 }
 
 // addInterval to an existing memTombstones

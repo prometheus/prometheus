@@ -185,16 +185,10 @@ type BlockMetaCompaction struct {
 	Failed  bool        `json:"failed,omitempty"`
 }
 
-const (
-	flagNone = 0
-	flagStd  = 1
-)
-
 const indexFilename = "index"
 const metaFilename = "meta.json"
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
-func walDir(dir string) string   { return filepath.Join(dir, "wal") }
 
 func readMetaFile(dir string) (*BlockMeta, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
@@ -484,7 +478,6 @@ Outer:
 	err = pb.tombstones.Iter(func(id uint64, ivs Intervals) error {
 		for _, iv := range ivs {
 			stones.addInterval(id, iv)
-			pb.meta.Stats.NumTombstones++
 		}
 		return nil
 	})
@@ -492,6 +485,7 @@ Outer:
 		return err
 	}
 	pb.tombstones = stones
+	pb.meta.Stats.NumTombstones = pb.tombstones.Total()
 
 	if err := writeTombstoneFile(pb.dir, pb.tombstones); err != nil {
 		return err
