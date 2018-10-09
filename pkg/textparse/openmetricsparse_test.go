@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOMParse(t *testing.T) {
+func TestOpenMetricsParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 # UNIT go_gc_duration_seconds seconds
@@ -177,7 +177,7 @@ testmetric{label="\"bar\""} 1`
 		},
 	}
 
-	p := NewOMParser([]byte(input))
+	p := NewOpenMetricsParser([]byte(input))
 	i := 0
 
 	var res labels.Labels
@@ -225,7 +225,7 @@ testmetric{label="\"bar\""} 1`
 	require.Equal(t, len(exp), i)
 }
 
-func TestOMParseErrors(t *testing.T) {
+func TestOpenMetricsParseErrors(t *testing.T) {
 	cases := []struct {
 		input string
 		err   string
@@ -373,7 +373,7 @@ func TestOMParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOMParser([]byte(c.input))
+		p := NewOpenMetricsParser([]byte(c.input))
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -423,7 +423,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOMParser([]byte(c.input))
+		p := NewOpenMetricsParser([]byte(c.input))
 		var err error
 		for err == nil {
 			_, err = p.Next()

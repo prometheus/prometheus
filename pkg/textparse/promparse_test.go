@@ -320,7 +320,7 @@ const (
 func BenchmarkParse(b *testing.B) {
 	for parserName, parser := range map[string]func([]byte) Parser{
 		"prometheus":  NewPromParser,
-		"openmetrics": NewOMParser,
+		"openmetrics": NewOpenMetricsParser,
 	} {
 
 		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {

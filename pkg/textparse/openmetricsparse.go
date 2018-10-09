@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2018 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,7 +12,7 @@
 // limitations under the License.
 
 //go:generate go get github.com/cznic/golex
-//go:generate golex -o=omlex.l.go omlex.l
+//go:generate golex -o=openmetricslex.l.go openmetricslex.l
 
 package textparse
 
@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 )
 
-type omlexer struct {
+type openMetricsLexer struct {
 	b     []byte
 	i     int
 	start int
@@ -39,16 +39,16 @@ type omlexer struct {
 }
 
 // buf returns the buffer of the current token.
-func (l *omlexer) buf() []byte {
+func (l *openMetricsLexer) buf() []byte {
 	return l.b[l.start:l.i]
 }
 
-func (l *omlexer) cur() byte {
+func (l *openMetricsLexer) cur() byte {
 	return l.b[l.i]
 }
 
-// next advances the omlexer to the next character.
-func (l *omlexer) next() byte {
+// next advances the openMetricsLexer to the next character.
+func (l *openMetricsLexer) next() byte {
 	l.i++
 	if l.i >= len(l.b) {
 		l.err = io.EOF
@@ -66,14 +66,15 @@ func (l *omlexer) next() byte {
 	return l.b[l.i]
 }
 
-func (l *omlexer) Error(es string) {
+func (l *openMetricsLexer) Error(es string) {
 	l.err = errors.New(es)
 }
 
-// OMParser parses samples from a byte slice of samples in the official
+// OpenMetricsParser parses samples from a byte slice of samples in the official
 // OpenMetrics text exposition format.
-type OMParser struct {
-	l       *omlexer
+// This is based on the working draft https://docs.google.com/document/u/1/d/1KwV0mAXwwbvvifBvDKH_LU1YjyXE_wxCkHNoCGq1GX0/edit
+type OpenMetricsParser struct {
+	l       *openMetricsLexer
 	series  []byte
 	text    []byte
 	mtype   MetricType
@@ -85,13 +86,13 @@ type OMParser struct {
 }
 
 // New returns a new parser of the byte slice.
-func NewOMParser(b []byte) Parser {
-	return &OMParser{l: &omlexer{b: b}}
+func NewOpenMetricsParser(b []byte) Parser {
+	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
 // of the current sample.
-func (p *OMParser) Series() ([]byte, *int64, float64) {
+func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 	if p.hasTS {
 		return p.series, &p.ts, p.val
 	}
@@ -101,7 +102,7 @@ func (p *OMParser) Series() ([]byte, *int64, float64) {
 // Help returns the metric name and help text in the current entry.
 // Must only be called after Next returned a help entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *OMParser) Help() ([]byte, []byte) {
+func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 	m := p.l.b[p.offsets[0]:p.offsets[1]]
 
 	// Replacer causes allocations. Replace only when necessary.
@@ -115,14 +116,14 @@ func (p *OMParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *OMParser) Type() ([]byte, MetricType) {
+func (p *OpenMetricsParser) Type() ([]byte, MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 
 // Unit returns the metric name and unit in the current entry.
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *OMParser) Unit() ([]byte, []byte) {
+func (p *OpenMetricsParser) Unit() ([]byte, []byte) {
 	// The Prometheus format does not have units.
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.text
 }
@@ -130,13 +131,13 @@ func (p *OMParser) Unit() ([]byte, []byte) {
 // Comment returns the text of the current comment.
 // Must only be called after Next returned a comment entry.
 // The returned byte slice becomes invalid after the next call to Next.
-func (p *OMParser) Comment() []byte {
+func (p *OpenMetricsParser) Comment() []byte {
 	return p.text
 }
 
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
-func (p *OMParser) Metric(l *labels.Labels) string {
+func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 	// Allocate the full immutable string immediately, so we just
 	// have to create references on it below.
 	s := string(p.series)
@@ -167,15 +168,15 @@ func (p *OMParser) Metric(l *labels.Labels) string {
 	return s
 }
 
-// nextToken returns the next token from the omlexer.
-func (p *OMParser) nextToken() token {
+// nextToken returns the next token from the openMetricsLexer.
+func (p *OpenMetricsParser) nextToken() token {
 	tok := p.l.Lex()
 	return tok
 }
 
 // Next advances the parser to the next sample. It returns false if no
 // more samples were read or an error occurred.
-func (p *OMParser) Next() (Entry, error) {
+func (p *OpenMetricsParser) Next() (Entry, error) {
 	var err error
 
 	p.start = p.l.i
@@ -297,7 +298,7 @@ func (p *OMParser) Next() (Entry, error) {
 	return EntryInvalid, err
 }
 
-func (p *OMParser) parseLVals() error {
+func (p *OpenMetricsParser) parseLVals() error {
 	first := true
 	for {
 		t := p.nextToken()
@@ -338,7 +339,7 @@ func (p *OMParser) parseLVals() error {
 			return fmt.Errorf("invalid UTF-8 label value")
 		}
 
-		// The omlexer ensures the value string is quoted. Strip first
+		// The openMetricsLexer ensures the value string is quoted. Strip first
 		// and last character.
 		p.offsets = append(p.offsets, p.l.start+1, p.l.i-1)
 
