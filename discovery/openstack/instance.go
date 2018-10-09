@@ -34,6 +34,7 @@ import (
 
 const (
 	openstackLabelPrefix         = model.MetaLabelPrefix + "openstack_"
+	openstackLabelAddressPool    = openstackLabelPrefix + "address_pool"
 	openstackLabelInstanceID     = openstackLabelPrefix + "instance_id"
 	openstackLabelInstanceName   = openstackLabelPrefix + "instance_name"
 	openstackLabelInstanceStatus = openstackLabelPrefix + "instance_status"
@@ -184,7 +185,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 				name := strutil.SanitizeLabelName(k)
 				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)
 			}
-			for _, address := range s.Addresses {
+			for pool, address := range s.Addresses {
 				md, ok := address.([]interface{})
 				if !ok {
 					level.Warn(i.logger).Log("msg", "Invalid type for address, expected array")
@@ -212,6 +213,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 					for k, v := range labels {
 						lbls[k] = v
 					}
+					lbls[openstackLabelAddressPool] = model.LabelValue(pool)
 					lbls[openstackLabelPrivateIP] = model.LabelValue(addr)
 					if val, ok := floatingIPList[floatingIPKey{id: s.ID, fixed: addr}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)

@@ -76,6 +76,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_instance_name":   model.LabelValue("herp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.32"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.2"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
 		},
 		model.LabelSet{
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
@@ -84,6 +85,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("derp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
 		},
 		model.LabelSet{
 			"__address__":                      model.LabelValue("10.0.0.33:0"),
@@ -92,6 +94,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("merp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.33"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
 		},
 		model.LabelSet{
@@ -101,6 +104,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("merp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.34"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.4"),
 		},
