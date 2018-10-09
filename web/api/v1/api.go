@@ -28,11 +28,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/json-iterator/go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -56,6 +55,7 @@ import (
 const (
 	namespace = "prometheus"
 	subsystem = "api"
+	urlLabel  = "url"
 )
 
 type status string
@@ -85,12 +85,14 @@ var corsHeaders = map[string]string{
 	"Access-Control-Expose-Headers": "Date",
 }
 
-var remoteReadQueries = prometheus.NewGauge(prometheus.GaugeOpts{
-	Namespace: namespace,
-	Subsystem: subsystem,
-	Name:      "remote_read_queries",
-	Help:      "The current number of remote read queries being executed or waiting.",
-})
+var remoteReadQueries = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "remote_read_queries",
+		Help:      "The current number of remote read queries being executed or waiting.",
+	},
+	[]string{urlLabel})
 
 type apiError struct {
 	typ errorType
@@ -776,7 +778,10 @@ func (api *API) serveFlags(r *http.Request) (interface{}, *apiError, func()) {
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	api.remoteReadGate.Start(r.Context())
+	remoteReadQueries.WithLabelValues(r.RequestURI).Inc()
+
 	defer api.remoteReadGate.Done()
+	defer remoteReadQueries.WithLabelValues(r.RequestURI).Dec()
 
 	req, err := remote.DecodeReadRequest(r)
 	if err != nil {
@@ -795,12 +800,10 @@ func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 		}
 
 		querier, err := api.Queryable.Querier(r.Context(), from, through)
-		remoteReadQueries.Inc()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer remoteReadQueries.Dec()
 		defer querier.Close()
 
 		// Change equality matchers which match external labels
