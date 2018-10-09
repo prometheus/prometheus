@@ -1,13 +1,17 @@
 ---
 version: 2.1
 
-jobs:
-  test:
-    # Whenever the Go version is updated here, .travis.yml should also be
-    # updated.
+executors:
+  # Whenever the Go version is updated here, .travis.yml and .promu.yml
+  # should also be updated.
+  golang:
     docker:
     - image: circleci/golang:1.11
     working_directory: /go/src/github.com/prometheus/prometheus
+
+jobs:
+  test:
+    executor: golang
     resource_class: large
 
     steps:
@@ -24,12 +28,11 @@ jobs:
 
   build:
     machine: true
-    working_directory: /home/circleci/.go_workspace/src/github.com/prometheus/prometheus
 
     steps:
     - checkout
     - run: make promu
-    - run: promu crossbuild -v --go 1.11
+    - run: promu crossbuild -v
     - persist_to_workspace:
         root: .
         paths:
@@ -39,9 +42,7 @@ jobs:
         destination: /build
 
   docker_hub_master:
-    docker:
-    - image: circleci/golang:1.11
-    working_directory: /go/src/github.com/prometheus/prometheus
+    executor: golang
 
     steps:
     - checkout
@@ -59,9 +60,7 @@ jobs:
     - run: make docker-publish DOCKER_REPO=quay.io/prometheus
 
   docker_hub_release_tags:
-    docker:
-    - image: circleci/golang:1.11
-    working_directory: /go/src/github.com/prometheus/prometheus
+    executor: golang
 
     steps:
     - checkout
@@ -72,7 +71,7 @@ jobs:
     - attach_workspace:
         at: .
     - run: make promu
-    - run: promu crossbuild tarballs --go 1.11
+    - run: promu crossbuild tarballs
     - run: promu checksum .tarballs
     - run: promu release .tarballs
     - store_artifacts:
