@@ -129,7 +129,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 	// https://developer.openstack.org/api-ref/compute/#list-floating-ips
 	pagerFIP := floatingips.List(client)
 	floatingIPList := make(map[floatingIPKey]string)
-	fipPresent := make(map[string]struct{})
+	floatingIPPresent := make(map[string]struct{})
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
@@ -141,7 +141,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 				continue
 			}
 			floatingIPList[floatingIPKey{id: ip.InstanceID, fixed: ip.FixedIP}] = ip.IP
-			fipPresent[ip.IP] = struct{}{}
+			floatingIPPresent[ip.IP] = struct{}{}
 		}
 		return true, nil
 	})
@@ -169,10 +169,10 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 			}
 
 			labels := model.LabelSet{
-				openstackLabelInstanceID: model.LabelValue(s.ID),
+				openstackLabelInstanceID:     model.LabelValue(s.ID),
+				openstackLabelInstanceStatus: model.LabelValue(s.Status),
+				openstackLabelInstanceName:   model.LabelValue(s.Name),
 			}
-			labels[openstackLabelInstanceStatus] = model.LabelValue(s.Status)
-			labels[openstackLabelInstanceName] = model.LabelValue(s.Name)
 
 			id, ok := s.Flavor["id"].(string)
 			if !ok {
@@ -205,7 +205,7 @@ func (i *InstanceDiscovery) refresh() (*targetgroup.Group, error) {
 						level.Warn(i.logger).Log("msg", "Invalid type for address, expected string")
 						continue
 					}
-					if _, ok := fipPresent[addr]; ok {
+					if _, ok := floatingIPPresent[addr]; ok {
 						continue
 					}
 					lbls := make(model.LabelSet, len(labels))
