@@ -14,6 +14,7 @@
 package openstack
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -56,28 +57,62 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	mock := &OpenstackSDInstanceTestSuite{}
 	mock.SetupTest(t)
 
-	instance, _ := mock.openstackAuthSuccess()
+	instance, err := mock.openstackAuthSuccess()
+	testutil.Ok(t, err)
+
 	tg, err := instance.refresh()
 
 	testutil.Ok(t, err)
 	testutil.Assert(t, tg != nil, "")
 	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Assert(t, len(tg.Targets) == 3, "")
+	testutil.Equals(t, 4, len(tg.Targets))
 
-	testutil.Equals(t, tg.Targets[0]["__address__"], model.LabelValue("10.0.0.32:0"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_instance_flavor"], model.LabelValue("1"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_instance_id"], model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_instance_name"], model.LabelValue("herp"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_instance_status"], model.LabelValue("ACTIVE"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_private_ip"], model.LabelValue("10.0.0.32"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_public_ip"], model.LabelValue("10.10.10.2"))
-
-	testutil.Equals(t, tg.Targets[1]["__address__"], model.LabelValue("10.0.0.31:0"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_instance_flavor"], model.LabelValue("1"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_instance_id"], model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_instance_name"], model.LabelValue("derp"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_instance_status"], model.LabelValue("ACTIVE"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_private_ip"], model.LabelValue("10.0.0.31"))
+	for i, lbls := range []model.LabelSet{
+		model.LabelSet{
+			"__address__":                      model.LabelValue("10.0.0.32:0"),
+			"__meta_openstack_instance_flavor": model.LabelValue("1"),
+			"__meta_openstack_instance_id":     model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"),
+			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
+			"__meta_openstack_instance_name":   model.LabelValue("herp"),
+			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.32"),
+			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.2"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
+		},
+		model.LabelSet{
+			"__address__":                      model.LabelValue("10.0.0.31:0"),
+			"__meta_openstack_instance_flavor": model.LabelValue("1"),
+			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"),
+			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
+			"__meta_openstack_instance_name":   model.LabelValue("derp"),
+			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
+		},
+		model.LabelSet{
+			"__address__":                      model.LabelValue("10.0.0.33:0"),
+			"__meta_openstack_instance_flavor": model.LabelValue("4"),
+			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682bb"),
+			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
+			"__meta_openstack_instance_name":   model.LabelValue("merp"),
+			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.33"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_tag_env":         model.LabelValue("prod"),
+		},
+		model.LabelSet{
+			"__address__":                      model.LabelValue("10.0.0.34:0"),
+			"__meta_openstack_instance_flavor": model.LabelValue("4"),
+			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682bb"),
+			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
+			"__meta_openstack_instance_name":   model.LabelValue("merp"),
+			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.34"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_tag_env":         model.LabelValue("prod"),
+			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.4"),
+		},
+	} {
+		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			testutil.Equals(t, lbls, tg.Targets[i])
+		})
+	}
 
 	mock.TearDownSuite()
 }

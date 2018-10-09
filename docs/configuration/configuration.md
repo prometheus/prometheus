@@ -477,8 +477,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `instance`
 
-The `instance` role discovers one target per Nova instance. The target
-address defaults to the first private IP address of the instance.
+The `instance` role discovers one target per network interface of Nova
+instance. The target address defaults to the private IP address of the network
+interface.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -488,6 +489,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
+* `__meta_openstack_address_pool`: the pool of the private IP.
 * `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
 
 See below for the configuration options for OpenStack discovery:
