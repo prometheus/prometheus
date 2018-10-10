@@ -244,11 +244,9 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 			}
 
 			// GCE labels are key-value pairs that group associated resources
-			if inst.Labels != nil {
-				for key, value := range inst.Labels {
-					name := strutil.SanitizeLabelName(key)
-					labels[gceLabelLabel+model.LabelName(name)] = model.LabelValue(value)
-				}
+			for key, value := range inst.Labels {
+				name := strutil.SanitizeLabelName(key)
+				labels[gceLabelLabel+model.LabelName(name)] = model.LabelValue(value)
 			}
 
 			if len(priIface.AccessConfigs) > 0 {
