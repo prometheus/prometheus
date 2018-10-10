@@ -1228,7 +1228,7 @@ tls_config:
 # Configures the queue used to write to remote storage.
 queue_config:
   # Number of samples to buffer per shard before we start dropping them.
-  [ capacity: <int> | default = 100000 ]
+  [ capacity: <int> | default = 10000 ]
   # Maximum number of shards, i.e. amount of concurrency.
   [ max_shards: <int> | default = 1000 ]
   # Maximum number of samples per send.
@@ -1236,7 +1236,7 @@ queue_config:
   # Maximum time a sample will wait in buffer.
   [ batch_send_deadline: <duration> | default = 5s ]
   # Maximum number of times to retry a batch on recoverable errors.
-  [ max_retries: <int> | default = 10 ]
+  [ max_retries: <int> | default = 3 ]
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
