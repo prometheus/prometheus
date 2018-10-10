@@ -935,10 +935,12 @@ discovery endpoints.
 
 The following meta labels are available on targets during relabeling:
 
-* `__meta_triton_machine_id`: the UUID of the target container
+* `__meta_triton_groups`: the list of groups belonging to the target joined by a comma separator
 * `__meta_triton_machine_alias`: the alias of the target container
+* `__meta_triton_machine_brand`: the brand of the target container
+* `__meta_triton_machine_id`: the UUID of the target container
 * `__meta_triton_machine_image`: the target containers image type
-* `__meta_triton_machine_server_id`: the server UUID for the target container
+* `__meta_triton_server_id`: the server UUID for the target container
 
 ```yaml
 # The information to access the Triton discovery API.
@@ -952,6 +954,11 @@ dns_suffix: <string>
 # The Triton discovery endpoint (e.g. 'cmon.us-east-3b.triton.zone'). This is
 # often the same value as dns_suffix.
 endpoint: <string>
+
+# A list of groups for which targets are retrieved. If omitted, all containers
+# available to the requesting account are scraped.
+groups: 
+  [ - <string> ... ]
 
 # The port to use for discovery and metric scraping.
 [ port: <int> | default = 9163 ]

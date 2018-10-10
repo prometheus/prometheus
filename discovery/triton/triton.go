@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -33,6 +35,7 @@ import (
 
 const (
 	tritonLabel             = model.MetaLabelPrefix + "triton_"
+	tritonLabelGroups       = tritonLabel + "groups"
 	tritonLabelMachineID    = tritonLabel + "machine_id"
 	tritonLabelMachineAlias = tritonLabel + "machine_alias"
 	tritonLabelMachineBrand = tritonLabel + "machine_brand"
@@ -65,6 +68,7 @@ type SDConfig struct {
 	Account         string                `yaml:"account"`
 	DNSSuffix       string                `yaml:"dns_suffix"`
 	Endpoint        string                `yaml:"endpoint"`
+	Groups          []string              `yaml:"groups,omitempty"`
 	Port            int                   `yaml:"port"`
 	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
 	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
@@ -102,11 +106,12 @@ func init() {
 // DiscoveryResponse models a JSON response from the Triton discovery.
 type DiscoveryResponse struct {
 	Containers []struct {
-		ServerUUID  string `json:"server_uuid"`
-		VMAlias     string `json:"vm_alias"`
-		VMBrand     string `json:"vm_brand"`
-		VMImageUUID string `json:"vm_image_uuid"`
-		VMUUID      string `json:"vm_uuid"`
+		Groups      []string `json:"groups"`
+		ServerUUID  string   `json:"server_uuid"`
+		VMAlias     string   `json:"vm_alias"`
+		VMBrand     string   `json:"vm_brand"`
+		VMImageUUID string   `json:"vm_image_uuid"`
+		VMUUID      string   `json:"vm_uuid"`
 	} `json:"containers"`
 }
 
@@ -187,6 +192,11 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	}()
 
 	var endpoint = fmt.Sprintf("https://%s:%d/v%d/discover", d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
+	if len(d.sdConfig.Groups) > 0 {
+		groups := url.QueryEscape(strings.Join(d.sdConfig.Groups, ","))
+		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
+	}
+
 	tg = &targetgroup.Group{
 		Source: endpoint,
 	}
@@ -219,6 +229,12 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		}
 		addr := fmt.Sprintf("%s.%s:%d", container.VMUUID, d.sdConfig.DNSSuffix, d.sdConfig.Port)
 		labels[model.AddressLabel] = model.LabelValue(addr)
+
+		if len(container.Groups) > 0 {
+			name := "," + strings.Join(container.Groups, ",") + ","
+			labels[tritonLabelGroups] = model.LabelValue(name)
+		}
+
 		tg.Targets = append(tg.Targets, labels)
 	}
 
